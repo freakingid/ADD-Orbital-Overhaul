@@ -27,7 +27,7 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v1.6
+   ASTEROID FIELD DELUXE — v1.7
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
    - Energy shield (hold SHIFT) that deflects debris
    - Killer satellite that splits into homing wedge ships
@@ -65,6 +65,15 @@
    from the start (gentle wave-1 floor at HUNTER_FLOOR_FRAC of the ceiling, ramping up over
    ~20 waves). Hunter contact damage is 60/45/30 by tier; homers still die on shield contact
    (and split), the core bounces; Hunters still sever the tow chain.
+   v1.7: Powerups — five free-floating pickups (each a distinct vector-glow icon). Health spawns
+   ambiently on a saucer-like timer and instantly repairs +25 HP (capped); Rapid Fire, Triple Shot,
+   Magnet and Engine drop from small-tier Debris/Hunter kills at POWERUP_DROP_CHANCE and last
+   POWERUP_DURATION seconds. Rapid Fire doubles the bullet cap (4->8); Triple Shot fires a 3-bullet
+   spread and triples the cap (4->12) — both active uses the higher cap (12), not 24. Magnet pulls
+   free garbage toward the ship inside an extended radius (and widens the pickup radius); Engine
+   halves the effective towed-mass sum (chainMass) so thrust/top-speed/tug all lighten. Same-type
+   pickups refresh the duration (no magnitude stacking); different types stack. A HUD row shows each
+   active timed effect with a shield-bar-style remaining-duration bar.
    ============================================================ */
 
 // ---------- Constants ----------
@@ -172,6 +181,32 @@ const SAUCER_AIM_ERR_CEIL  = 0.09;    // full-difficulty aim error (shipped prec
 // so there's one wave-driven escalation system instead of two (F10 cleanup).
 const SAUCER_SMALL_CHANCE_FLOOR = 0.15; // wave-1: mostly the harmless random-fire big saucer
 const SAUCER_SMALL_CHANCE_CEIL  = 0.60; // full difficulty: the dangerous aimed 1000-pt saucer common
+
+// Powerups (F6) — five free-floating pickups. Health spawns ambiently on a saucer-like timer
+// and is instant; the other four (rapid/triple/magnet/engine) are timed effects that drop from
+// small-tier Debris/Hunter kills. Same-type pickups refresh the timer (no magnitude stacking);
+// different types run independently. Icons/labels/colors live with COLOR (below the helpers).
+const POWERUP_DURATION = 15;        // sec a timed effect (rapid/triple/magnet/engine) stays active
+const POWERUP_RADIUS = 15;          // pickup icon radius = its collision radius from ship center
+const POWERUP_DECAY = 14;           // sec an uncollected powerup lingers before fading away
+const POWERUP_DROP_CHANCE = 0.10;   // chance a small-tier kill drops a random weapon/utility powerup (8-12% band)
+const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine"]; // Health is ambient-only, never a drop
+const POWERUP_HEALTH_GAP = [18, 26]; // sec between ambient Health spawns (saucer-like cadence)
+const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
+const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
+const POWERUP_HEALTH_MAX_DIST = 520;
+// Weapon caps. Triple's cap (12) is also the combined Rapid+Triple cap — the higher of the two,
+// not the product (24), to keep bullet clutter from fighting Pillar 1 (vector clarity).
+const RAPID_MAX_BULLETS  = 8;       // Rapid Fire bullet cap (2x base MAX_BULLETS)
+const TRIPLE_MAX_BULLETS = 12;      // Triple Shot bullet cap (3x base) — also the higher-of combined cap
+const TRIPLE_SPREAD = 0.14;         // rad between the 3 Triple Shot bullets (a narrow fan)
+// Magnet: attraction force (reads better than a bigger invisible circle) + a modest pickup-radius bump.
+const MAGNET_RANGE_MULT  = 3;       // garbage within this x GARBAGE_PICKUP is pulled toward the ship (~54 px)
+const MAGNET_PICKUP_MULT = 1.6;     // effective pickup radius grows this much while the magnet is active
+const MAGNET_PULL = 360;            // px/sec^2 attraction toward the ship inside the magnet range
+const MAGNET_DAMP = 0.06;           // per-sec velocity damping inside range so the pull glides, not jitters
+// Engine: lightens the effective towed mass so thrust/top-speed/tug (all fed by chainMass) ease.
+const ENGINE_MASS_MULT = 0.5;       // Engine halves the effective towed-mass sum while active
 
 // ---------- Canvas / scaling ----------
 const canvas = document.getElementById("game");
@@ -343,6 +378,22 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
     o.connect(g).connect(this.ctx.destination);
     o.start(t); o.stop(t + 0.23);
+  },
+
+  powerup() { // collected a powerup — a bright two-note rising "power on" chime (distinct from pickup)
+    if (!this.ctx) return;
+    const t = this.now();
+    [660, 990].forEach((f, i) => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, t + i * 0.07);
+      const g0 = 0.12;
+      g.gain.setValueAtTime(g0, t + i * 0.07);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.14);
+      o.connect(g).connect(this.ctx.destination);
+      o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.15);
+    });
   }
 };
 
@@ -464,6 +515,19 @@ const COLOR = {
   hp: "#5fe08a"
 };
 
+// Per-type powerup identity (F6): a distinct glow color + a short HUD label per kind. Health
+// keeps the universal red-cross red; the rest are hued apart for a readable at-a-glance tell.
+const POWERUP_COLOR = {
+  rapid:  "#ffd24a",   // Rapid Fire — amber
+  triple: "#ff8adf",   // Triple Shot — magenta
+  health: "#ff6b6b",   // Health — red (cross)
+  magnet: "#8ab6ff",   // Magnet — blue
+  engine: "#7dffb0"    // Engine — mint green
+};
+const POWERUP_LABEL = {
+  rapid: "RAPID", triple: "TRIPLE", health: "+HP", magnet: "MAGNET", engine: "ENGINE"
+};
+
 // ---------- Entities ----------
 class Ship {
   constructor() { this.reset(); }
@@ -517,14 +581,20 @@ class Ship {
       this.energy = Math.min(1, this.energy + SHIELD_RECHARGE * dt);
     }
 
-    // Fire
+    // Fire. The bullet cap flexes with the weapon powerups (F6): Rapid Fire raises it to
+    // RAPID_MAX_BULLETS, Triple Shot to TRIPLE_MAX_BULLETS and fires a 3-bullet spread; both
+    // active uses the higher (Triple) cap, not the product (see maxBullets()).
     this.cooldown -= dt;
-    if (input.fire() && this.cooldown <= 0 && game.bullets.filter(b => !b.hostile).length < MAX_BULLETS) {
-      const bx = this.x + Math.cos(this.angle) * SHIP_RADIUS;
-      const by = this.y + Math.sin(this.angle) * SHIP_RADIUS;
-      game.bullets.push(new Bullet(bx, by,
-        this.vx + Math.cos(this.angle) * BULLET_SPEED,
-        this.vy + Math.sin(this.angle) * BULLET_SPEED, false));
+    if (input.fire() && this.cooldown <= 0 &&
+        game.bullets.filter(b => !b.hostile).length < maxBullets()) {
+      const shoot = a => game.bullets.push(new Bullet(
+        this.x + Math.cos(a) * SHIP_RADIUS, this.y + Math.sin(a) * SHIP_RADIUS,
+        this.vx + Math.cos(a) * BULLET_SPEED, this.vy + Math.sin(a) * BULLET_SPEED, false));
+      if (game.powerFx.triple > 0) {
+        shoot(this.angle - TRIPLE_SPREAD); shoot(this.angle); shoot(this.angle + TRIPLE_SPREAD);
+      } else {
+        shoot(this.angle);
+      }
       this.cooldown = FIRE_COOLDOWN;
       AudioSys.fire();
     }
@@ -851,6 +921,85 @@ class Garbage {
   }
 }
 
+// Draw a powerup's type glyph centered at (x,y), scaled to icon radius r, in `color`.
+// Reused by the field entity (with a housing ring) and the HUD active-effect row (bare glyph),
+// so a powerup reads identically in the world and on the HUD. Local-space icons designed at r=12.
+function drawPowerupGlyph(type, x, y, r, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(r / 12, r / 12);
+  ctx.beginPath();
+  switch (type) {
+    case "rapid":  // fast-forward: two right-pointing chevrons
+      ctx.moveTo(-6, -6); ctx.lineTo(0, 0); ctx.lineTo(-6, 6);
+      ctx.moveTo(1, -6);  ctx.lineTo(7, 0); ctx.lineTo(1, 6);
+      break;
+    case "triple": // a 3-way spread fan from a single origin
+      ctx.moveTo(-7, 0); ctx.lineTo(7, -7);
+      ctx.moveTo(-7, 0); ctx.lineTo(8, 0);
+      ctx.moveTo(-7, 0); ctx.lineTo(7, 7);
+      break;
+    case "health": // plus / medical cross
+      ctx.moveTo(0, -8); ctx.lineTo(0, 8);
+      ctx.moveTo(-8, 0); ctx.lineTo(8, 0);
+      break;
+    case "magnet": // horseshoe magnet opening up, with pole tips
+      ctx.arc(0, 1, 5, 0, Math.PI);
+      ctx.moveTo(-5, 1); ctx.lineTo(-5, -7);
+      ctx.moveTo(5, 1);  ctx.lineTo(5, -7);
+      ctx.moveTo(-7, -7); ctx.lineTo(-3, -7);
+      ctx.moveTo(3, -7);  ctx.lineTo(7, -7);
+      break;
+    case "engine": // thruster bell firing exhaust
+      ctx.moveTo(-4, -8); ctx.lineTo(4, -8); ctx.lineTo(6, 2); ctx.lineTo(-6, 2); ctx.closePath();
+      ctx.moveTo(-4, 3); ctx.lineTo(-3, 8);
+      ctx.moveTo(0, 3);  ctx.lineTo(0, 9);
+      ctx.moveTo(4, 3);  ctx.lineTo(3, 8);
+      break;
+  }
+  glowStroke(color, 1.6, 8);
+  ctx.restore();
+}
+
+// Powerup (F6): a free-floating pickup following the standard entity contract. A rotating
+// hexagon housing (so every kind reads as one "collect me" family) wraps a distinct per-type
+// glyph. Health spawns ambiently and is instant; rapid/triple/magnet/engine are timed drops.
+// Uncollected powerups fade after POWERUP_DECAY with the same blink countdown as garbage.
+class Powerup {
+  constructor(x, y, type, vx = 0, vy = 0) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.type = type;
+    this.radius = POWERUP_RADIUS;
+    this.spin = rand(0, TAU);
+    this.spinRate = rand(-0.8, 0.8);
+    this.pulse = rand(0, TAU);
+    this.decay = POWERUP_DECAY;
+    this.dead = false;
+  }
+  update(dt) {
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    this.vx *= Math.pow(0.4, dt); this.vy *= Math.pow(0.4, dt); // drop kick settles quickly
+    this.spin += this.spinRate * dt;
+    this.pulse += dt * 4;
+    wrap(this);
+    this.decay -= dt;
+    if (this.decay <= 0) this.dead = true;
+  }
+  draw() {
+    const blink = this.decay < 4 && Math.floor(this.decay * (this.decay < 2 ? 8 : 4)) % 2 === 0;
+    if (blink) return;
+    const color = POWERUP_COLOR[this.type];
+    const r = this.radius;
+    const hex = [];
+    for (let i = 0; i < 6; i++) { const th = (i / 6) * TAU; hex.push([Math.cos(th) * r, Math.sin(th) * r]); }
+    ctx.globalAlpha = 0.75 + 0.25 * Math.sin(this.pulse);
+    drawPoly(hex, this.x, this.y, this.spin, color);
+    ctx.globalAlpha = 1;
+    drawPowerupGlyph(this.type, this.x, this.y, r * 0.62, color);
+  }
+}
+
 class FloatText {
   constructor(text, x, y, color) {
     this.text = text; this.x = x; this.y = y; this.color = color;
@@ -910,6 +1059,9 @@ const game = {
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
   garbage: [], chain: [], floaters: [], dock: null,
+  powerups: [],                                        // free-floating Powerup pickups (F6)
+  powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // remaining sec per timed effect (0 = inactive)
+  healthTimer: 0,                                      // countdown to the next ambient Health spawn
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
@@ -928,6 +1080,9 @@ function startGame() {
   game.debris = []; game.bullets = []; game.saucers = [];
   game.hunters = []; game.particles = [];
   game.garbage = []; game.chain = []; game.floaters = [];
+  game.powerups = [];
+  game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
+  game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
   game.camera = { x: game.ship.x, y: game.ship.y };
@@ -994,6 +1149,8 @@ function destroyDebris(a, awardScore = true) {
     for (let i = 0; i < 3; i++) {
       game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speedMul));
     }
+  } else {
+    maybeDropPowerup(a.x, a.y); // finishing off a lineage's smallest tier can drop a powerup (F6)
   }
 }
 
@@ -1013,6 +1170,7 @@ function destroyHunter(h, awardScore = true) {
         h.vy * 0.25 + Math.sin(spread) * kick,
         GARBAGE_DECAY, HUNTER_SMALL_MASS));
     }
+    maybeDropPowerup(h.x, h.y); // finishing off a Hunter line can drop a powerup (F6)
   } else {
     // Large/medium: 3 normal-mass canisters, then a 3-way split into actively-homing children.
     for (let i = 0; i < HUNTER_GARBAGE; i++) {
@@ -1026,6 +1184,45 @@ function destroyHunter(h, awardScore = true) {
       game.hunters.push(new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle));
     }
   }
+}
+
+// ---------- Powerups (F6) ----------
+// Effective player-bullet cap. Triple Shot wins over Rapid Fire when both are active because its
+// cap (12) is the higher of the two — the spec's "use the higher cap, don't multiply to 24".
+function maxBullets() {
+  if (game.powerFx.triple > 0) return TRIPLE_MAX_BULLETS; // 12 (also the Rapid+Triple combined cap)
+  if (game.powerFx.rapid > 0)  return RAPID_MAX_BULLETS;  // 8
+  return MAX_BULLETS;                                      // 4
+}
+
+// A modest chance for a small-tier kill (Debris or Hunter) to drop one random weapon/utility
+// powerup, tying powerup access to finishing off a lineage. Health is NOT in this pool — it
+// spawns ambiently. The single choke point for both destroy paths.
+function maybeDropPowerup(x, y) {
+  if (Math.random() >= POWERUP_DROP_CHANCE) return;
+  const type = POWERUP_DROP_TYPES[Math.floor(Math.random() * POWERUP_DROP_TYPES.length)];
+  const a = rand(0, TAU), kick = rand(20, 50);
+  game.powerups.push(new Powerup(x, y, type, Math.cos(a) * kick, Math.sin(a) * kick));
+}
+
+// Ambient Health powerup — floats into the field in a reachable ring around the ship, one at a
+// time (its decay bounds coexistence), on a saucer-like cadence.
+function spawnHealthPowerup() {
+  const a = rand(0, TAU), d = rand(POWERUP_HEALTH_MIN_DIST, POWERUP_HEALTH_MAX_DIST);
+  const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
+  game.powerups.push(new Powerup(p.x, p.y, "health"));
+}
+
+// Collect a powerup. Health is instant (repair, capped). The four timed effects REFRESH their
+// duration (no magnitude stacking); different types run independently. A floater confirms the grab.
+function applyPowerup(type) {
+  if (type === "health") {
+    game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + POWERUP_HEALTH_AMOUNT);
+  } else {
+    game.powerFx[type] = POWERUP_DURATION; // refresh, not add — same-type pickups extend, never stack
+  }
+  game.floaters.push(new FloatText(POWERUP_LABEL[type], game.ship.x, game.ship.y - 22, POWERUP_COLOR[type]));
+  AudioSys.powerup();
 }
 
 // Apply an unshielded hit: subtract HP, knock the ship away from the hazard, and
@@ -1096,7 +1293,11 @@ function chainAnchor() { // hitch point just behind the ship
 // so for now this equals game.chain.length; lighter (Hunter-sourced) scrap will tow
 // more easily once it exists. Drives the thrust/top-speed penalties and the momentum tug.
 function chainMass() {
-  return game.chain.reduce((sum, n) => sum + n.mass, 0);
+  const m = game.chain.reduce((sum, n) => sum + n.mass, 0);
+  // Engine powerup (F6) temporarily lightens the EFFECTIVE towed mass. chainMass() is the single
+  // quantity feeding thrustMul/maxSp (Ship.update) and the momentum-tug massFactor (updateChain),
+  // so halving it here eases all three at once — "easier to maneuver even when towing garbage."
+  return game.powerFx.engine > 0 ? m * ENGINE_MASS_MULT : m;
 }
 
 function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity survives
@@ -1223,10 +1424,24 @@ function update(dt) {
   if (game.dock) game.dock.update(dt);
 
   // --- Salvage pickup & chain physics ---
+  // Magnet (F6): while active, pull free garbage within an extended radius toward the ship (a real
+  // attraction force reads better than a bigger invisible circle) AND widen the pickup radius.
+  const magnet = game.powerFx.magnet > 0;
+  const pickR = magnet ? GARBAGE_PICKUP * MAGNET_PICKUP_MULT : GARBAGE_PICKUP;
   for (const g of game.garbage) {
     g.update(dt);
-    if (!g.dead && !game.ship.dead && game.chain.length < CHAIN_MAX &&
-        dist2(g, game.ship) < GARBAGE_PICKUP * GARBAGE_PICKUP) {
+    if (g.dead || game.ship.dead) continue;
+    if (magnet) {
+      const mr = GARBAGE_PICKUP * MAGNET_RANGE_MULT;
+      if (dist2(g, game.ship) < mr * mr) {
+        const [dx, dy] = shortDelta(g.x, g.y, game.ship.x, game.ship.y); // vector toward the ship
+        const d = Math.hypot(dx, dy) || 0.0001;
+        const damp = Math.pow(MAGNET_DAMP, dt);   // light in-range damping so the pull glides (not jitters)
+        g.vx = g.vx * damp + (dx / d) * MAGNET_PULL * dt;
+        g.vy = g.vy * damp + (dy / d) * MAGNET_PULL * dt;
+      }
+    }
+    if (game.chain.length < CHAIN_MAX && dist2(g, game.ship) < pickR * pickR) {
       g.dead = true;
       game.chain.push({
         x: g.x, y: g.y, px: g.x, py: g.y,
@@ -1236,6 +1451,18 @@ function update(dt) {
     }
   }
   updateChain(dt);
+
+  // --- Powerups: field pickups + active-effect countdown (F6) ---
+  for (const p of game.powerups) {
+    p.update(dt);
+    if (!p.dead && !game.ship.dead) {
+      const r = POWERUP_RADIUS + SHIP_RADIUS;
+      if (dist2(p, game.ship) < r * r) { p.dead = true; applyPowerup(p.type); }
+    }
+  }
+  for (const k in game.powerFx) {
+    if (game.powerFx[k] > 0) game.powerFx[k] = Math.max(0, game.powerFx[k] - dt);
+  }
 
   // --- Recycling dock offload ---
   if (game.dock) {
@@ -1284,6 +1511,14 @@ function update(dt) {
   if (game.hunterTimer <= 0 && game.hunters.length === 0 && game.wave >= 2) {
     game.hunters.push(HunterSatellite.spawnCore());
     game.hunterTimer = rand(20, 32);
+  }
+
+  // Ambient Health powerup (F6): drifts into the field on a saucer-like cadence, at most one at a
+  // time (its own decay bounds coexistence — like the one-saucer-at-a-time gate).
+  game.healthTimer -= dt;
+  if (game.healthTimer <= 0) {
+    if (!game.powerups.some(p => p.type === "health")) spawnHealthPowerup();
+    game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   }
 
   // --- Collisions: player bullets vs targets ---
@@ -1407,6 +1642,7 @@ function update(dt) {
   game.particles = game.particles.filter(p => !p.dead);
   game.garbage = game.garbage.filter(g => !g.dead);
   game.floaters = game.floaters.filter(f => !f.dead);
+  game.powerups = game.powerups.filter(p => !p.dead);
   if (hadSaucer && game.saucers.length === 0) AudioSys.saucer(false);
 
   // --- Wave clear ---
@@ -1513,6 +1749,7 @@ function draw() {
   game.debris.forEach(drawEntity);
   game.hunters.forEach(drawEntity);
   game.saucers.forEach(drawEntity);
+  game.powerups.forEach(drawEntity);   // above hazards so pickups stay readable (F6)
   game.bullets.forEach(drawEntity);
   game.ship.draw();                 // always at the camera center
   game.floaters.forEach(drawEntity);
@@ -1531,6 +1768,21 @@ function draw() {
   drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
   drawText("CARGO " + game.chain.length + "/" + CHAIN_MAX, 30, 104, 16,
     game.chain.length ? COLOR.garbage : COLOR.dim, "left");
+  // active-powerup row (F6): one row per running timed effect — a small type glyph + a
+  // shield-bar-style remaining-duration bar. Health is instant, so it never appears here.
+  let prow = 130;
+  for (const t of POWERUP_DROP_TYPES) {          // rapid / triple / magnet / engine (stable order)
+    const rem = game.powerFx[t];
+    if (rem <= 0) continue;
+    const c = POWERUP_COLOR[t];
+    drawPowerupGlyph(t, 40, prow, 9, c);
+    const pw = 96, ph = 6, ppx = 58, ppy = prow - 3;
+    ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1;
+    ctx.strokeRect(ppx, ppy, pw, ph);
+    ctx.fillStyle = c;
+    ctx.fillRect(ppx + 1, ppy + 1, (pw - 2) * (rem / POWERUP_DURATION), ph - 2);
+    prow += 20;
+  }
   // when hauling, a chevron orbiting screen-center points toward the (maybe off-screen) dock
   if (game.chain.length && game.dock && !game.ship.dead) {
     const a = angleTo(game.ship, game.dock);

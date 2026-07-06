@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1–F5 (Phases 1–5) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5). **F6–F9 remain unbuilt**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
+**Status:** Design complete for all features below. **F1–F6 (Phases 1–6) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5), F6 Powerups as v1.7 (spec in GDD §2.14). **F7–F9 remain unbuilt**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -90,15 +90,23 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 - Pickup copies `mass` from the collected `Garbage` onto the new chain node.
 - Chain math (`CARGO_THRUST`/`CARGO_MAXSPD` penalties and the momentum-tug `massFactor`) now uses a new `chainMass()` = `sum(node.mass)` instead of `chain.length`. Verified: an 8× mass-1.0 chain tows identically to a 16× mass-0.5 chain across thrust, top speed, and tug. All current (Debris-sourced) scrap is mass 1.0, so v1.3 handling is unchanged — the groundwork is in place for F4's low-mass Hunter scrap.
 
-### Forward note (still open)
-- The **Engine powerup** (F6) drops in cleanly on top of this: "easier to maneuver despite more mass" is naturally a temporary multiplier applied to the `chainMass()` result used by `thrustMul`/`maxSp`. Not built (Phase 6).
+### Forward note (resolved)
+- The **Engine powerup** (F6) ✅ **shipped in v1.7** exactly as forecast: `chainMass()` applies `ENGINE_MASS_MULT` (0.5) while the effect is active, so the one function feeding `thrustMul`/`maxSp` (Ship.update) and the momentum-tug `massFactor` (updateChain) lightens all three at once. See GDD §2.14.
 
 ---
 
 ## F6 — Powerups
-**Status:** 🔴 Not Started
+**Status:** 🟢 Done — shipped in v1.7 (build Phase 6). The full shipped spec now lives in **GDD §2.14** (with §2.2 weapons and §2.7 health updated); this section is retained only for the resolved-decisions note below.
 
-### Weapon powerups
+**Built:** a new `Powerup` entity class with five types. **Health** spawns ambiently on a saucer-like timer (`POWERUP_HEALTH_GAP` 18–26 s, one at a time) and instantly repairs +25 HP capped; **Rapid Fire / Triple Shot / Magnet / Engine** drop from small-tier Debris/Hunter kills at `POWERUP_DROP_CHANCE` (10%) via `maybeDropPowerup()` and last `POWERUP_DURATION` (15 s). Rapid raises the bullet cap 4→8; Triple fires a 3-bullet spread and raises it 4→12 — both active takes the higher cap (12), not 24, through the new `maxBullets()`. Magnet pulls free garbage toward the ship inside 3× the pickup radius (with in-range damping so it glides) and widens the pickup radius 1.6×; Engine halves the effective towed mass by applying `ENGINE_MASS_MULT` inside `chainMass()` (so thrust/top-speed/tug all lighten). Same-type pickups refresh the timer (`game.powerFx`), different types stack; a HUD row shows each active timed effect with a shield-bar-style duration bar. Headless-tested (`scratchpad/test-f6.js`, 39 assertions). See GDD §2.14 and Version History v1.7.
+
+### Resolved decisions (noted for the record)
+- **Rapid + Triple = the higher cap (12), not the product (24).** Confirmed as spec'd — `maxBullets()` returns Triple's cap whenever Triple is active, so combining them never multiplies bullet volume. Keeps clutter from fighting Pillar 1.
+- **Drop chance = 10%** (middle of the proposed 8–12% band), tunable via `POWERUP_DROP_CHANCE`. Health is *not* in the drop pool — it's ambient-only (`POWERUP_DROP_TYPES` = rapid/triple/magnet/engine), matching "floating spheres appear in the field on their own."
+- **Magnet is a real attraction force, not just a bigger circle.** A `MAGNET_PULL` accel toward the ship with `MAGNET_DAMP` in-range velocity damping (terminal ≈ 130 px/s) so garbage glides in rather than oscillating, plus a modest `MAGNET_PICKUP_MULT` (1.6×) pickup-radius bump to honor "increases effective pickup radius." Respects momentum (Pillar 2).
+- **Engine hooks the single `chainMass()` chokepoint** rather than touching `thrustMul`/`maxSp`/`massFactor` in three places — one guard reaches all three handling penalties, per the F5 forward-note.
+
+### Weapon powerups (original design — see GDD §2.14 for the shipped spec)
 - **Rapid Fire:** doubles the max simultaneous player bullets (from 4 to 8) and likely shortens fire cooldown somewhat so the higher cap is reachable — exact cooldown change is a tuning detail.
 - **Triple Shot Spread:** fires 3 bullets in a narrow spread per shot, with max simultaneous bullets tripled (4 → 12) to accommodate it.
 - **If both are active at once** (no rule specified by you): proposed **take the higher cap, don't multiply them together** (i.e. 12, not 24) — stacking multiplicatively risks pathological bullet-spam and screen clutter that fights Pillar 1 (vector clarity). Flagged as a guess.
