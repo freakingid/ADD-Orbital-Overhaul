@@ -27,7 +27,7 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v1.7
+   ASTEROID FIELD DELUXE — v1.8
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
    - Energy shield (hold SHIFT) that deflects debris
    - Killer satellite that splits into homing wedge ships
@@ -74,6 +74,13 @@
    halves the effective towed-mass sum (chainMass) so thrust/top-speed/tug all lighten. Same-type
    pickups refresh the duration (no magnitude stacking); different types stack. A HUD row shows each
    active timed effect with a shield-bar-style remaining-duration bar.
+   v1.8: Gamepad support — the input layer now checks either keyboard OR the first connected gamepad
+   through a data-driven `bindings` table (one entry per action, listing keyboard keys + gamepad
+   buttons/axis), polled once per frame via navigator.getGamepads(). Defaults: D-Pad / Left Stick for
+   rotate + thrust (25% deadzone), A to fire, right trigger/bumper for shield (a gap-fill — no shield
+   binding was spec'd). Fixed menu/system reads wired now for later phases: A = confirm, B = back
+   (reserved for F8's menus), Start = start/pause/unpause (Start toggles pause like P today). Call
+   sites are unchanged (still input.left() etc.). Rebinding UI is Phase 8; these are hardcoded defaults.
    ============================================================ */
 
 // ---------- Constants ----------
@@ -207,6 +214,11 @@ const MAGNET_PULL = 360;            // px/sec^2 attraction toward the ship insid
 const MAGNET_DAMP = 0.06;           // per-sec velocity damping inside range so the pull glides, not jitters
 // Engine: lightens the effective towed mass so thrust/top-speed/tug (all fed by chainMass) ease.
 const ENGINE_MASS_MULT = 0.5;       // Engine halves the effective towed-mass sum while active
+
+// Controller / gamepad input (F7). The one tunable knob for controller *feel* — how far an analog
+// stick must travel before it counts as a directional press. Button/axis index enums and the binding
+// table itself live with the Input section (below); they're structural, not balance. Rebinding UI is F8.
+const GP_DEADZONE = 0.25;           // |left-stick axis| must exceed this to register (matches F7 spec)
 
 // ---------- Canvas / scaling ----------
 const canvas = document.getElementById("game");
@@ -398,23 +410,117 @@ const AudioSys = {
 };
 
 // ---------- Input ----------
+// One input layer serves both keyboard and gamepad. Everything downstream only ever calls
+// input.left()/right()/thrust()/fire()/shield() — it never reads keys{} or the gamepad directly,
+// so the two input methods stay swappable and Phase 8's rebinding UI has a single table to edit.
+
 const keys = {};
+
+// W3C "Standard Gamepad" button/axis layout (developer.mozilla.org/en-US/docs/Web/API/Gamepad).
+// These are the physical hardware indices, not tunable balance — they name the binding table below.
+const GP = {
+  A: 0, B: 1, X: 2, Y: 3,          // face buttons
+  LB: 4, RB: 5, LT: 6, RT: 7,      // shoulders / triggers
+  BACK: 8, START: 9,               // center buttons
+  LS: 10, RS: 11,                  // stick presses
+  DPAD_UP: 12, DPAD_DOWN: 13, DPAD_LEFT: 14, DPAD_RIGHT: 15,
+  AXIS_LX: 0, AXIS_LY: 1, AXIS_RX: 2, AXIS_RY: 3   // analog axis indices
+};
+
+// The binding table — the single source of truth for what triggers each action, as DATA (not
+// per-action logic) so Phase 8 can render/rebind it directly. Each action lists the keyboard keys
+// (lowercased, matching the keys{} map), the gamepad buttons, and optionally one analog axis
+// (dir < 0 = negative half past the deadzone, dir > 0 = positive half). `fixed:true` marks the
+// menu/system actions that F7 spec'd as non-rebindable (A confirm / B back / Start pause).
+const bindings = {
+  // Gameplay actions (held-state, polled every frame). Rebindable in Phase 8.
+  left:    { label: "Rotate CCW", fixed: false, keys: ["arrowleft", "a"],  buttons: [GP.DPAD_LEFT],  axis: { index: GP.AXIS_LX, dir: -1 } },
+  right:   { label: "Rotate CW",  fixed: false, keys: ["arrowright", "d"], buttons: [GP.DPAD_RIGHT], axis: { index: GP.AXIS_LX, dir: +1 } },
+  thrust:  { label: "Thrust",     fixed: false, keys: ["arrowup", "w"],    buttons: [GP.DPAD_UP],    axis: { index: GP.AXIS_LY, dir: -1 } },
+  fire:    { label: "Fire",       fixed: false, keys: [" "],               buttons: [GP.A] },
+  shield:  { label: "Shield",     fixed: false, keys: ["shift"],           buttons: [GP.RT, GP.RB] }, // gap-fill: no controller shield was spec'd (see notes)
+  // Menu / system actions (edge-triggered). Fixed per F7 — not exposed to rebinding.
+  confirm: { label: "Confirm",    fixed: true,  keys: ["enter"],           buttons: [GP.A] },
+  back:    { label: "Back",       fixed: true,  keys: ["escape"],          buttons: [GP.B] },     // reserved for F8 menu screens; no target yet
+  pause:   { label: "Pause",      fixed: true,  keys: ["p"],               buttons: [GP.START] }
+};
+
+// Snapshot of the first connected gamepad, refreshed once per frame by pollGamepad() (main loop,
+// before update()). buttons/axes are the current frame; prevButtons is last frame, for edge detection.
+const gamepad = { connected: false, buttons: [], axes: [], prevButtons: [] };
+
+function pollGamepad() {
+  const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
+  let pad = null;
+  for (const p of pads) { if (p) { pad = p; break; } }   // first connected only; ignore the rest (F7)
+  gamepad.prevButtons = gamepad.buttons;                 // keep last frame's booleans for edge detection
+  if (!pad) { gamepad.connected = false; gamepad.buttons = []; gamepad.axes = []; return; }
+  gamepad.connected = true;
+  // GamepadButton objects expose .pressed; some environments hand back raw numbers — support both.
+  gamepad.buttons = pad.buttons.map(b => (b && typeof b === "object") ? b.pressed : b > 0.5);
+  gamepad.axes = pad.axes.slice();
+}
+
+// --- Binding resolution (shared by held-state predicates and edge-triggered menu reads) ---
+function kbActive(b) {              // any bound keyboard key currently down?
+  for (const k of b.keys) if (keys[k]) return true;
+  return false;
+}
+function gpActive(b) {              // any bound gamepad button held, or the bound axis past its deadzone?
+  if (!gamepad.connected) return false;
+  if (b.buttons) for (const i of b.buttons) if (gamepad.buttons[i]) return true;
+  if (b.axis) {
+    const v = gamepad.axes[b.axis.index];
+    if (v !== undefined && (b.axis.dir < 0 ? v < -GP_DEADZONE : v > GP_DEADZONE)) return true;
+  }
+  return false;
+}
+function actionHeld(name) {         // held-state: keyboard OR gamepad, for the gameplay predicates
+  const b = bindings[name];
+  return kbActive(b) || gpActive(b);
+}
+function gpPressed(b) {             // gamepad edge: a bound button newly pressed THIS frame (not held)
+  if (!gamepad.connected || !b.buttons) return false;
+  for (const i of b.buttons) if (gamepad.buttons[i] && !gamepad.prevButtons[i]) return true;
+  return false;
+}
+
+// The predicate object the rest of the game reads — call signature unchanged from before F7.
+const input = {
+  left:   () => actionHeld("left"),
+  right:  () => actionHeld("right"),
+  thrust: () => actionHeld("thrust"),
+  fire:   () => actionHeld("fire"),
+  shield: () => actionHeld("shield")
+};
+
+// Keyboard edge events (menu/system). The key checks read the SAME binding table as the gamepad path,
+// so there's one place to change what "confirm" or "pause" means. Held-state gameplay keys are just
+// recorded into keys{} here and read later via input.*().
 window.addEventListener("keydown", e => {
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
-  keys[e.key.toLowerCase()] = true;
+  const k = e.key.toLowerCase();
+  keys[k] = true;
   AudioSys.init(); AudioSys.resume();
-  if (e.key === "Enter" && (game.state === "title" || game.state === "gameover")) startGame();
-  if ((e.key === "p" || e.key === "P") && game.state === "playing") game.paused = !game.paused;
+  if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover")) startGame();
+  if (bindings.pause.keys.includes(k) && game.state === "playing") game.paused = !game.paused;
 });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
-const input = {
-  left:   () => keys["arrowleft"] || keys["a"],
-  right:  () => keys["arrowright"] || keys["d"],
-  thrust: () => keys["arrowup"] || keys["w"],
-  fire:   () => keys[" "],
-  shield: () => keys["shift"]
-};
+// Gamepad edge events (menu/system), mirroring the keydown handler. Called once per frame from the
+// main loop right after pollGamepad(). Start = start/pause/unpause; A = confirm (title/gameover only,
+// so it never collides with A = fire during play); B = back is reserved for the F8 menu screens.
+function handleGamepadMenu() {
+  const pressedStart   = gpPressed(bindings.pause);
+  const pressedConfirm = gpPressed(bindings.confirm);
+  if (pressedStart || pressedConfirm) { AudioSys.init(); AudioSys.resume(); } // best-effort audio unlock
+  if (pressedStart) {
+    if (game.state === "title" || game.state === "gameover") startGame();
+    else if (game.state === "playing") game.paused = !game.paused;
+  }
+  if (pressedConfirm && (game.state === "title" || game.state === "gameover")) startGame();
+  // gpPressed(bindings.back) — no menu screen to back out of yet (arrives with F8/Phase 8).
+}
 
 // ---------- Helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -1825,6 +1931,8 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  pollGamepad();        // refresh the first-gamepad snapshot once per frame, before anything reads it
+  handleGamepadMenu();  // edge-triggered controller menu/system actions (Start/A/B)
   update(dt);
   draw();
   requestAnimationFrame(loop);

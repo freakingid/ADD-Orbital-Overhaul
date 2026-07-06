@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1–F6 (Phases 1–6) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5), F6 Powerups as v1.7 (spec in GDD §2.14). **F7–F9 remain unbuilt**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
+**Status:** Design complete for all features below. **F1–F6 (Phases 1–6) are built**, and **F7's hardcoded-defaults half shipped in Phase 7 (v1.8)** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5), F6 Powerups as v1.7 (spec in GDD §2.14), F7 default gamepad bindings as v1.8 (spec in GDD §2.15). **F8–F9 remain unbuilt, and F7's rebinding UI is deferred into F8**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -136,7 +136,18 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 ---
 
 ## F7 — Controller Support
-**Status:** 🔴 Not Started
+**Status:** 🟡 In Progress — **the hardcoded default bindings shipped in Phase 7 (v1.8)**; the player-facing rebinding UI is deferred into F8 (Options → Controls), as always planned. The shipped default-bindings spec now lives in **GDD §2.15** (with §2.9 controls updated); this section is retained for the rebinding-UI scope that's still pending and the resolved decisions below.
+
+### Shipped in v1.8 (Phase 7) — hardcoded defaults
+- The `input` predicate object (`left`/`right`/`thrust`/`fire`/`shield`) now resolves keyboard **or** the first connected gamepad, with **no call-site changes** — the whole game still calls `input.left()` etc. Driven by a data-driven **`bindings`** table (one entry per action: keyboard `keys` / gamepad `buttons` / analog `axis` / a `fixed` rebindable flag), so F8's rebinding UI has a single structure to edit.
+- `pollGamepad()` reads `navigator.getGamepads()` once per frame (before `update()`), uses the **first connected** pad only (ignores the rest), and snapshots buttons/axes + the prior frame's buttons for edge detection.
+- Defaults exactly as spec'd: D-Pad / Left Stick past a `GP_DEADZONE` (0.25) for rotate CCW/CW + thrust, A to fire. Menu/system reads wired now (edge-triggered): A = confirm, B = back (reserved — no menu to back out of until F8), Start = start/pause/unpause (Start toggles pause like `P`).
+- Headless-tested (`scratchpad/test-f7.js`, 52 assertions); f2–f6 regressions re-run green. See GDD §2.15 and Version History v1.8.
+
+### Resolved decisions (noted for the record)
+- **Shield → Right Trigger *or* Right Bumper** — the one binding F7 left unspecified. Filled with *both* shoulder inputs on the right side (either fires it), matching the "a shoulder button (e.g. right trigger or right bumper)" suggestion. Flagged as a gap-fill in the delivery notes / STATUS.md, and rebindable in F8 like the rest.
+- **Menu keyboard reads route through the same `bindings` table.** The keydown handler now checks `bindings.confirm.keys` / `bindings.pause.keys` instead of inline `"Enter"`/`"p"` literals, so there's one source of truth for both input methods — behavior is byte-identical to before (Enter still starts/restarts, P still pauses).
+- **Audio unlock on a controller press is best-effort only.** A Start/A press attempts `AudioSys.init()`/`resume()` (same as the keyboard), but browsers don't reliably count gamepad input as a user-activation gesture for the Web Audio autoplay policy — a controller-only player may still need one keyboard press for sound. A known browser limitation, surfaced as a playtest item.
 
 ### Spec (your defaults, as given)
 **Configurable (player can rebind via Options → Controls):**
@@ -158,7 +169,7 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 
 ### Interactions with existing systems
 - Requires refactoring the current `input` predicate object (GDD 3, Input row) from hardcoded key-checks into a layer that checks *either* keyboard state *or* gamepad state against a configurable binding table. This is a clean, contained refactor — the rest of the game only ever calls `input.left()`, `input.thrust()`, etc., and doesn't need to change.
-- The **rebinding UI itself** is part of F8 (Options → Controls submenu), so F7's first pass (Phase 6) should ship with the *hardcoded* defaults above working end-to-end, with the rebinding UI arriving in Phase 7 alongside the rest of the options menu.
+- The **rebinding UI itself** is part of F8 (Options → Controls submenu). F7's first pass (Phase 7) ✅ shipped the *hardcoded* defaults working end-to-end (v1.8); the rebinding UI arrives in **Phase 8** alongside the rest of the options menu, editing the `bindings` table this phase established.
 
 ---
 
