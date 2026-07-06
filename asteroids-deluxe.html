@@ -27,12 +27,12 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v1.3
+   ASTEROID FIELD DELUXE — v1.4
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
-   - Energy shield (hold SHIFT) that deflects rocks
+   - Energy shield (hold SHIFT) that deflects debris
    - Killer satellite that splits into homing wedge ships
    - Large & small saucers
-   v1.1: Radioactive salvage — destroyed rocks drop garbage canisters;
+   v1.1: Radioactive salvage — destroyed debris drops garbage canisters;
    fly over them to hook them into a physics-simulated tow chain, then
    haul the chain into the recycling dock for escalating bonus points.
    Cargo has mass: it cuts thrust/top speed and tugs the ship around.
@@ -42,6 +42,13 @@
    hits deal source-specific damage, shove the ship away (knockback), and grant
    ~1s of hit-stun i-frames; 0 HP is a permanent game over (no respawn). Score
    milestones now repair the hull instead of granting extra lives.
+   v1.4: Asteroids redesigned as Debris Satellites — a broken-satellite silhouette
+   with 3-way splits at large/medium (small tier is destroyed). Every tier's
+   destruction emits exactly 3 garbage canisters (replacing the old probabilistic
+   single drop), so the field carries far more salvage — GARBAGE_DECAY and the
+   wave spawn count were trimmed to compensate. Garbage and chain nodes gained a
+   `mass` field; chain thrust/top-speed/tug now scale with the chain's total mass
+   (sum of node.mass), not its node count.
    ============================================================ */
 
 // ---------- Constants ----------
@@ -66,9 +73,10 @@ const SHIELD_RECHARGE = 0.12;   // energy/sec while off
 const SHIELD_HIT_COST = 0.22;   // energy per deflection
 const SHIELD_RADIUS = 26;
 
-const AST_SPEEDS = { 3: 70, 2: 110, 1: 160 };  // base speed by size
-const AST_RADII  = { 3: 46, 2: 26, 1: 13 };
-const AST_SCORE  = { 3: 20, 2: 50, 1: 100 };
+const DEBRIS_SPEEDS = { 3: 70, 2: 110, 1: 160 };  // base drift speed by size
+const DEBRIS_RADII  = { 3: 46, 2: 26, 1: 13 };
+const DEBRIS_SCORE  = { 3: 20, 2: 50, 1: 100 };
+const DEBRIS_GARBAGE = 3;       // canisters emitted at EVERY tier's destruction (F3)
 
 const SAT_SCORE = 200;          // killer satellite core
 const WEDGE_SCORE = { 2: 150, 1: 250 };  // homing wedges by size
@@ -80,7 +88,7 @@ const DMG_SMALL = 20;           // contact damage from a small hazard
 const DMG_MEDIUM = 35;          // contact damage from a medium hazard
 const DMG_LARGE = 50;           // contact damage from a large hazard
 const DMG_BULLET = 15;          // damage from a hostile (saucer) bullet
-const AST_DAMAGE = { 3: DMG_LARGE, 2: DMG_MEDIUM, 1: DMG_SMALL };
+const DEBRIS_DAMAGE = { 3: DMG_LARGE, 2: DMG_MEDIUM, 1: DMG_SMALL };
 const KNOCKBACK_SPEED = 250;    // px/sec shove directly away from a hazard on an unshielded hit
 const HIT_STUN_DURATION = 1.0;  // sec of hit-stun invulnerability granted after any non-lethal hit
 const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonus (was: extra life)
@@ -88,16 +96,16 @@ const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
 const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
 
 // Radioactive salvage / tow chain / recycling dock
-const GARBAGE_DECAY = 20;       // sec before uncollected garbage decays away
+const GARBAGE_DECAY = 12;       // sec before uncollected garbage decays away (F3: shortened from 20 to hold on-screen canister density down against the higher drop volume)
+const GARBAGE_SEVER_DECAY = 10; // sec decay for garbage knocked loose from a severed chain (was an inline 15; kept < GARBAGE_DECAY so loose scrap stays the more ephemeral)
 const GARBAGE_PICKUP = 18;      // pickup radius from ship center
-const GARBAGE_DROP = { 3: 0.25, 2: 0.4, 1: 1.0 };  // drop chance by rock size
 
 const CHAIN_LINK = 20;          // px between chain nodes
 const CHAIN_MAX = 12;           // max towed canisters
 const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
-const CARGO_MASS = 0.12;        // per-canister contribution to tug mass factor
-const CARGO_THRUST = 0.10;      // thrust divisor grows by this per canister
-const CARGO_MAXSPD = 0.05;      // max-speed divisor grows by this per canister
+const CARGO_MASS = 0.12;        // tug mass-factor grows by this per unit of towed mass (F5: mass sum, not count)
+const CARGO_THRUST = 0.10;      // thrust divisor grows by this per unit of towed mass
+const CARGO_MAXSPD = 0.05;      // max-speed divisor grows by this per unit of towed mass
 
 const DOCK_RADIUS = 44;
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
@@ -105,8 +113,8 @@ const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
 
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
-const SPAWN_MIN_DIST = 220;     // new asteroids: nearest allowed to the ship
-const SPAWN_MAX_DIST = 1100;    // new asteroids: farthest from the ship (stay reachable)
+const SPAWN_MIN_DIST = 220;     // new debris satellites: nearest allowed to the ship
+const SPAWN_MAX_DIST = 1100;    // new debris satellites: farthest from the ship (stay reachable)
 const DOCK_MIN_DIST = 260;      // recycling dock: nearest allowed to the ship
 const DOCK_MAX_DIST = 900;      // recycling dock: farthest from the ship (stay reachable)
 const STAR_DENSITY = 40;        // background stars per viewport-sized area of world
@@ -376,7 +384,7 @@ function drawPoly(points, x, y, angle, color, closed = true) {
 const COLOR = {
   ship: "#9fd8ff",
   bullet: "#ffffff",
-  asteroid: "#7fb7e8",
+  debris: "#7fb7e8",
   saucer: "#b8e6ff",
   satellite: "#6fe8d8",
   wedge: "#5fffc8",
@@ -410,8 +418,10 @@ class Ship {
     if (input.right()) this.angle += SHIP_TURN * dt;
 
     this.thrusting = input.thrust();
-    // towed cargo makes the ship heavier: weaker thrust, lower top speed
-    const cargo = game.chain.length;
+    // towed cargo makes the ship heavier: weaker thrust, lower top speed. Scales with
+    // the chain's total mass, not its node count (F5) — all-mass-1.0 cargo behaves
+    // exactly as the old length-based penalty did.
+    const cargo = chainMass();
     const thrustMul = 1 / (1 + cargo * CARGO_THRUST);
     const maxSp = SHIP_MAX_SPEED / (1 + cargo * CARGO_MAXSPD);
     if (this.thrusting) {
@@ -499,26 +509,44 @@ class Bullet {
   }
 }
 
-class Asteroid {
+// Debris Satellite (F3): the passive main hazard (formerly Asteroid). Drifts randomly
+// like the old rocks, but reads as wrecked hardware — a broken-satellite silhouette —
+// and splits 3-ways at the large/medium tiers, emitting garbage at every tier.
+class DebrisSatellite {
   constructor(x, y, size, speedMul = 1) {
     this.x = x; this.y = y;
     this.size = size;
-    this.radius = AST_RADII[size];
-    this.damage = AST_DAMAGE[size];   // contact damage to the ship (F2)
-    const sp = AST_SPEEDS[size] * speedMul * rand(0.7, 1.3);
+    this.radius = DEBRIS_RADII[size];
+    this.damage = DEBRIS_DAMAGE[size];   // contact damage to the ship (F2)
+    const sp = DEBRIS_SPEEDS[size] * speedMul * rand(0.7, 1.3);
     const a = rand(0, TAU);
     this.vx = Math.cos(a) * sp;
     this.vy = Math.sin(a) * sp;
     this.angle = rand(0, TAU);
     this.spin = rand(-1.2, 1.2);
     this.dead = false;
-    // jagged polygon
-    this.pts = [];
-    const n = 10 + size * 2;
+    // Broken-satellite silhouette: an irregular hull polygon (a bit blockier than a
+    // rock) plus 1-2 protruding antenna/panel shards, drawn as open polylines.
+    this.hull = [];
+    const n = 6 + size;                 // large 9 / medium 8 / small 7 vertices
     for (let i = 0; i < n; i++) {
       const th = (i / n) * TAU;
-      const r = this.radius * rand(0.72, 1.12);
-      this.pts.push([Math.cos(th) * r, Math.sin(th) * r]);
+      const r = this.radius * rand(0.65, 1.05);
+      this.hull.push([Math.cos(th) * r, Math.sin(th) * r]);
+    }
+    this.shards = [];
+    const antennas = 1 + (Math.random() < 0.6 ? 1 : 0);  // 1-2 protruding shards
+    for (let k = 0; k < antennas; k++) {
+      const th = rand(0, TAU);
+      const base = [Math.cos(th) * this.radius * 0.8, Math.sin(th) * this.radius * 0.8];
+      const rTip = this.radius * rand(1.35, 1.75);
+      const tip  = [Math.cos(th) * rTip, Math.sin(th) * rTip];
+      this.shards.push([base, tip]);                     // antenna stalk
+      const perp = th + Math.PI / 2, cross = this.radius * 0.22;
+      this.shards.push([                                 // dish/panel crossbar at the tip
+        [tip[0] + Math.cos(perp) * cross, tip[1] + Math.sin(perp) * cross],
+        [tip[0] - Math.cos(perp) * cross, tip[1] - Math.sin(perp) * cross]
+      ]);
     }
   }
   update(dt) {
@@ -526,7 +554,10 @@ class Asteroid {
     this.angle += this.spin * dt;
     wrap(this);
   }
-  draw() { drawPoly(this.pts, this.x, this.y, this.angle, COLOR.asteroid); }
+  draw() {
+    drawPoly(this.hull, this.x, this.y, this.angle, COLOR.debris);
+    for (const s of this.shards) drawPoly(s, this.x, this.y, this.angle, COLOR.debris, false);
+  }
 }
 
 // Killer satellite: hexagonal core; when shot, splits into 3 homing wedges,
@@ -714,19 +745,20 @@ function drawCanister(x, y, angle, alpha) {
 }
 
 class Garbage {
-  constructor(x, y, vx = 0, vy = 0, decay = GARBAGE_DECAY) {
+  constructor(x, y, vx = 0, vy = 0, decay = GARBAGE_DECAY, mass = 1.0) {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.spin = rand(0, TAU);
     this.spinRate = rand(-1.5, 1.5);
     this.decay = decay;
+    this.mass = mass;   // towing weight (F5): 1.0 for Debris scrap; lighter scrap tows easier
     this.radius = 7;
     this.dead = false;
   }
-  static fromNode(n, decay = 15) { // chain node knocked loose -> free garbage
+  static fromNode(n, decay = GARBAGE_SEVER_DECAY) { // chain node knocked loose -> free garbage
     const a = rand(0, TAU);
     return new Garbage(n.x, n.y,
-      Math.cos(a) * rand(20, 60), Math.sin(a) * rand(20, 60), decay);
+      Math.cos(a) * rand(20, 60), Math.sin(a) * rand(20, 60), decay, n.mass);
   }
   update(dt) {
     this.x += this.vx * dt; this.y += this.vy * dt;
@@ -800,7 +832,7 @@ const game = {
   paused: false,
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
-  asteroids: [], bullets: [], saucers: [], wedges: [], satellites: [], particles: [],
+  debris: [], bullets: [], saucers: [], wedges: [], satellites: [], particles: [],
   garbage: [], chain: [], floaters: [], dock: null,
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
@@ -817,7 +849,7 @@ function startGame() {
   game.score = 0;
   game.wave = 0;
   game.nextRepair = REPAIR_MILESTONE;
-  game.asteroids = []; game.bullets = []; game.saucers = [];
+  game.debris = []; game.bullets = []; game.saucers = [];
   game.wedges = []; game.satellites = []; game.particles = [];
   game.garbage = []; game.chain = []; game.floaters = [];
   game.deliveryCount = 0; game.offloadTimer = 0;
@@ -831,7 +863,10 @@ function startGame() {
 function nextWave() {
   game.wave++;
   game.dock = new Dock(); // recycling dock relocates each wave
-  const count = Math.min(4 + game.wave, 11);
+  // F3 first-pass balance: trimmed from min(4+wave, 11) to offset the ~8x higher garbage
+  // volume from guaranteed 3-per-tier drops. Decay (GARBAGE_DECAY) is the primary density
+  // lever; this is the secondary trim. F10 may push this back up for a fuller field.
+  const count = Math.min(3 + game.wave, 9);
   const speedMul = 1 + (game.wave - 1) * 0.08;
   for (let i = 0; i < count; i++) {
     // spawn in a ring around the ship's current world position so the wave is
@@ -840,7 +875,7 @@ function nextWave() {
     const a = rand(0, TAU);
     const d = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
     const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
-    game.asteroids.push(new Asteroid(p.x, p.y, 3, speedMul));
+    game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
   }
 }
 
@@ -864,19 +899,24 @@ function boom(x, y, size, color) {
   AudioSys.explosion(size);
 }
 
-function destroyAsteroid(a, awardScore = true) {
+function destroyDebris(a, awardScore = true) {
   a.dead = true;
-  if (awardScore) addScore(AST_SCORE[a.size]);
-  boom(a.x, a.y, a.size, COLOR.asteroid);
-  if (Math.random() < GARBAGE_DROP[a.size]) {
+  if (awardScore) addScore(DEBRIS_SCORE[a.size]);
+  boom(a.x, a.y, a.size, COLOR.debris);
+  // Every tier's destruction — including the final small-tier kill — emits exactly
+  // DEBRIS_GARBAGE canisters (F3), each with an outward kick so they fan out instead
+  // of stacking. All are mass 1.0 by the Garbage default.
+  for (let i = 0; i < DEBRIS_GARBAGE; i++) {
+    const spread = rand(0, TAU), kick = rand(20, 55);
     game.garbage.push(new Garbage(a.x, a.y,
-      a.vx * 0.25 + rand(-15, 15), a.vy * 0.25 + rand(-15, 15)));
+      a.vx * 0.25 + Math.cos(spread) * kick,
+      a.vy * 0.25 + Math.sin(spread) * kick));
   }
+  // Large -> 3 mediums, medium -> 3 smalls, small -> destroyed (F3: 3-way splits)
   if (a.size > 1) {
     const speedMul = 1 + (game.wave - 1) * 0.08;
-    for (let i = 0; i < 2; i++) {
-      const child = new Asteroid(a.x, a.y, a.size - 1, speedMul);
-      game.asteroids.push(child);
+    for (let i = 0; i < 3; i++) {
+      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speedMul));
     }
   }
 }
@@ -945,6 +985,13 @@ function chainAnchor() { // hitch point just behind the ship
   };
 }
 
+// Total towed mass = Sum of node.mass (F5). All Debris-sourced canisters are mass 1.0,
+// so for now this equals game.chain.length; lighter (Hunter-sourced) scrap will tow
+// more easily once it exists. Drives the thrust/top-speed penalties and the momentum tug.
+function chainMass() {
+  return game.chain.reduce((sum, n) => sum + n.mass, 0);
+}
+
 function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity survives
   if (n.x < -60) { n.x += WORLD_W + 120; n.px += WORLD_W + 120; }
   if (n.x > WORLD_W + 60) { n.x -= WORLD_W + 120; n.px -= WORLD_W + 120; }
@@ -972,7 +1019,7 @@ function updateChain(dt) {
   const [tdx, tdy] = shortDelta(a0.x, a0.y, chain[0].x, chain[0].y);
   const td = Math.hypot(tdx, tdy);
   if (td > CHAIN_LINK) {
-    const massFactor = Math.min(1.4, chain.length * CARGO_MASS);
+    const massFactor = Math.min(1.4, chainMass() * CARGO_MASS);
     const f = CHAIN_TUG * (td - CHAIN_LINK) * massFactor;
     game.ship.vx += (tdx / td) * f * dt;
     game.ship.vy += (tdy / td) * f * dt;
@@ -1059,7 +1106,7 @@ function update(dt) {
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
   game.camera.y = game.ship.y;
-  game.asteroids.forEach(a => a.update(dt));
+  game.debris.forEach(a => a.update(dt));
   game.bullets.forEach(b => b.update(dt));
   game.saucers.forEach(s => s.update(dt));
   game.wedges.forEach(w => w.update(dt));
@@ -1076,7 +1123,7 @@ function update(dt) {
       g.dead = true;
       game.chain.push({
         x: g.x, y: g.y, px: g.x, py: g.y,
-        spin: g.spin, spinRate: g.spinRate
+        spin: g.spin, spinRate: g.spinRate, mass: g.mass  // carry towing weight onto the node (F5)
       });
       AudioSys.pickup();
     }
@@ -1127,9 +1174,9 @@ function update(dt) {
   for (const b of game.bullets) {
     if (b.dead) continue;
     if (!b.hostile) {
-      for (const a of game.asteroids) {
+      for (const a of game.debris) {
         if (!a.dead && dist2(b, a) < a.radius * a.radius) {
-          b.dead = true; destroyAsteroid(a); break;
+          b.dead = true; destroyDebris(a); break;
         }
       }
       if (b.dead) continue;
@@ -1187,7 +1234,7 @@ function update(dt) {
 
   // --- Collisions: hazards vs ship ---
   if (!game.ship.dead && game.ship.invuln <= 0) {
-    const hazards = [...game.asteroids, ...game.satellites, ...game.wedges];
+    const hazards = [...game.debris, ...game.satellites, ...game.wedges];
     for (const h of hazards) {
       if (h.dead) continue;
       const r = (game.ship.shieldOn ? SHIELD_RADIUS : SHIP_RADIUS) + h.radius;
@@ -1224,7 +1271,7 @@ function update(dt) {
   // --- Hazards vs tow chain: a hit destroys that canister and cuts loose
   //     everything behind it (falls back to free garbage) ---
   if (game.chain.length) {
-    const chainHazards = [...game.asteroids, ...game.wedges, ...game.satellites];
+    const chainHazards = [...game.debris, ...game.wedges, ...game.satellites];
     chainScan:
     for (let i = 0; i < game.chain.length; i++) {
       const n = game.chain[i];
@@ -1236,19 +1283,19 @@ function update(dt) {
     }
   }
 
-  // Saucer bullets can hit asteroids too (classic behavior)
+  // Saucer bullets can shatter debris satellites too (classic behavior)
   for (const b of game.bullets) {
     if (b.dead || !b.hostile) continue;
-    for (const a of game.asteroids) {
+    for (const a of game.debris) {
       if (!a.dead && dist2(b, a) < a.radius * a.radius) {
-        b.dead = true; destroyAsteroid(a, false); break;
+        b.dead = true; destroyDebris(a, false); break;
       }
     }
   }
 
   // --- Cleanup ---
   const hadSaucer = game.saucers.length > 0;
-  game.asteroids = game.asteroids.filter(a => !a.dead);
+  game.debris = game.debris.filter(a => !a.dead);
   game.bullets = game.bullets.filter(b => !b.dead);
   game.saucers = game.saucers.filter(s => !s.dead);
   game.wedges = game.wedges.filter(w => !w.dead);
@@ -1259,7 +1306,7 @@ function update(dt) {
   if (hadSaucer && game.saucers.length === 0) AudioSys.saucer(false);
 
   // --- Wave clear ---
-  if (game.asteroids.length === 0 && game.satellites.length === 0 && game.wedges.length === 0) {
+  if (game.debris.length === 0 && game.satellites.length === 0 && game.wedges.length === 0) {
     game.waveClearTimer += dt;
     if (game.waveClearTimer > 2.5) {
       game.waveClearTimer = 0;
@@ -1270,7 +1317,7 @@ function update(dt) {
   }
 
   // --- Heartbeat ---
-  const density = game.asteroids.length + game.wedges.length * 2;
+  const density = game.debris.length + game.wedges.length * 2;
   game.beatInterval = Math.max(0.28, 1.05 - game.wave * 0.04 - Math.max(0, (14 - density)) * 0.02);
   game.beatTimer -= dt;
   if (game.beatTimer <= 0 && !game.ship.dead && density > 0) {
@@ -1340,8 +1387,8 @@ function draw() {
     drawText("BEWARE THE KILLER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.wedge);
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
-    // decorative drifting rocks live in screen space (their own tiny wrapped field)
-    titleRocks.forEach(a => {
+    // decorative drifting debris lives in screen space (its own tiny wrapped field)
+    titleDebris.forEach(a => {
       a.update(1/60);
       if (a.x < -60) a.x += VIEW_W + 120;
       if (a.x > VIEW_W + 60) a.x -= VIEW_W + 120;
@@ -1359,7 +1406,7 @@ function draw() {
   game.particles.forEach(drawEntity);
   game.garbage.forEach(drawEntity);
   drawChain();
-  game.asteroids.forEach(drawEntity);
+  game.debris.forEach(drawEntity);
   game.satellites.forEach(drawEntity);
   game.wedges.forEach(drawEntity);
   game.saucers.forEach(drawEntity);
@@ -1411,11 +1458,11 @@ function draw() {
 }
 
 // title screen decoration
-const titleRocks = [];
+const titleDebris = [];
 for (let i = 0; i < 5; i++) {
-  const a = new Asteroid(rand(0, VIEW_W), rand(0, VIEW_H), 3);
+  const a = new DebrisSatellite(rand(0, VIEW_W), rand(0, VIEW_H), 3);
   a.vx *= 0.5; a.vy *= 0.5;
-  titleRocks.push(a);
+  titleDebris.push(a);
 }
 
 // ---------- Main loop ----------

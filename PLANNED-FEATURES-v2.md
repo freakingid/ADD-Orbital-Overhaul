@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1–F2 (Phases 1–2) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12); F3–F10 remain unbuilt.
+**Status:** Design complete for all features below. **F1–F3 + F5 (Phases 1–3) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4); F4 and F6–F10 remain unbuilt.
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -53,26 +53,18 @@ Both families read as "satellites" thematically (per your request), but stay vis
 ---
 
 ## F3 — Debris Satellites (Asteroid Reskin)
-**Status:** 🔴 Not Started
+**Status:** 🟢 Done — shipped in v1.4 (build Phase 3). The full shipped spec now lives in **GDD §2.4** (with §2.7 and §2.10/§2.10.1 updated); this section is retained only for the still-open joint-tuning note below.
 
-### Spec
-- Replaces the `Asteroid` class/behavior (see Naming Resolution above). Visual redesign: broken-satellite silhouette (antenna/panel-shard polygon) instead of jagged rock, keeping the vector-glow rendering style (Pillar 1).
-- **Large hit** → splits into **3 medium** Debris Satellites + emits **3 garbage canisters**.
-- **Medium hit** → splits into **3 small** Debris Satellites + emits **3 garbage canisters**.
-- **Small hit** → fully destroyed, emits **3 garbage canisters** (no further split).
-- This replaces the old model (2-way split, probabilistic single-canister drop) with a fixed 3-way split and guaranteed 3-canister drop at every tier.
+**Built:** the `Asteroid` class → `DebrisSatellite` (array `game.asteroids` → `game.debris`; `AST_*` → `DEBRIS_*`; `destroyAsteroid` → `destroyDebris`; `COLOR.asteroid` → `COLOR.debris`), redrawn as a broken-satellite silhouette (irregular hull + 1–2 antenna/panel shards). Splits are 3-way at large/medium (small destroyed); every tier's destruction emits exactly `DEBRIS_GARBAGE` (3) canisters — replacing the probabilistic `GARBAGE_DROP` — so a fully-cleared large lineage yields 39. Scores (20/50/100) and per-tier contact damage (50/35/20) carried over unchanged. The `mass` field (F5, below) shipped alongside. Headless-tested per GDD §5.4 rule 7 (`scratchpad/test-f3.js`, 28 assertions). See GDD §2.4 and Version History v1.4.
 
-### Assumptions / open questions (best guess — override freely)
-- **Guaranteed 3 garbage per kill at every tier is a large volume increase.** One fully-cleared large rock under the old model produced up to ~5 canisters total (probabilistic); under this spec, one large lineage produces 3 (from the large) + 9 (from 3 mediums × 3) + 27 (from 9 smalls × 3) = **39 garbage canisters** if a player clears the entire lineage. That's roughly 8× the current volume. This is a deliberate request-driven change, but it has real knock-on effects:
-  - `GARBAGE_DECAY` (currently 20 s) may need to shrink so the field doesn't carpet itself in canisters.
-  - `CHAIN_MAX` (currently 12) already caps how much a player can tow at once, which helps, but free-floating garbage density on screen will be much higher.
-  - Wave asteroid counts (`min(4+wave, 11)` large spawns) likely need adjusting — but note the **opposing pressure from F10**: Paul wants *more* Debris Satellites to fill the larger, calmer world, while F3's garbage volume wants *fewer*. Resolve this as a joint F3+F10 tuning pass (see F10), leaning on `GARBAGE_DECAY` for density control so the field can stay populated with satellites without drowning in canisters.
-  - **I'm not silently retuning these** — flagging them as a required balance pass during/after Phase 3, not guessing numbers now with zero data.
-- **Introduces a `mass` field on garbage** as part of this phase's foundation (defaulting to 1.0 for all Debris-Satellite-sourced garbage), because Hunter Satellites (F4) need low-mass garbage from their final tier, and the chain math needs to support per-node mass rather than a flat per-canister penalty. See F5 below — I've folded F5 into this feature's implementation rather than keeping it separate, since it has no independent purpose without F3/F4.
+### First-pass balance landed (documented for retuning)
+The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a guess-and-ship — flagged in STATUS.md for retune):
+- `GARBAGE_DECAY` 20 → **12 s** (the *primary* density lever — spawn counts can't absorb an inherent 39-per-lineage without making waves trivial).
+- New `GARBAGE_SEVER_DECAY` = **10 s** (was an inline 15; kept below the fresh window).
+- Wave spawn `min(4+wave, 11)` → **`min(3+wave, 9)`** (secondary trim).
 
-### Interactions with existing systems
-- **Chain physics (3.4 in GDD):** `CARGO_MASS`, `CARGO_THRUST`, `CARGO_MAXSPD` currently scale off `chain.length` (a count). This needs to become a sum of `node.mass` across the chain instead, so lighter (Hunter-sourced) garbage tows more easily than heavier (Debris-sourced) garbage, per your explicit request ("lower mass than regular satellite garbage... can be towed more easily").
-- **Scoring:** existing `AST_SCORE` table can carry over directly to Debris Satellite tiers unless you want new values reflecting the harder 3-way fights — no strong signal either way; defaulting to keep current large/medium/small score values (20/50/100) unless told otherwise.
+### Still open — joint F3 + F10 tuning pass (do NOT treat as closed)
+- The density balance is deliberately a *first pass* with no playtest data. F3's garbage volume wants *fewer* Debris Satellites; **F10 wants *more*** to fill the larger, calmer world. The intended resolution is a playtested middle that leans on `GARBAGE_DECAY` for density control so the field stays populated without drowning in canisters — to be done once F10 is in. Until then, the v1.4 numbers above are the documented baseline.
 
 ---
 
@@ -101,15 +93,16 @@ Both families read as "satellites" thematically (per your request), but stay vis
 ---
 
 ## F5 — Variable-Mass Garbage (folded into F3, noted separately for clarity)
-**Status:** 🔴 Not Started (ships as part of Phase 3)
+**Status:** 🟢 Done — shipped in v1.4 as part of build Phase 3. The chain-physics change is documented in **GDD §3.4** (and §2.10); this section is retained for the F6 forward-note below.
 
-This isn't a player-facing feature on its own — it's the technical foundation that makes F4's "low-mass garbage" request possible, and it changes the chain-physics contract documented in GDD 3.4. Recording it here as its own entry so the change is easy to find:
+**Built** (all headless-tested in `scratchpad/test-f3.js`):
+- `Garbage` instances and chain nodes both carry a `mass` field (default `1.0`).
+- `Garbage.fromNode()` carries `mass` over when a node is severed back into free garbage.
+- Pickup copies `mass` from the collected `Garbage` onto the new chain node.
+- Chain math (`CARGO_THRUST`/`CARGO_MAXSPD` penalties and the momentum-tug `massFactor`) now uses a new `chainMass()` = `sum(node.mass)` instead of `chain.length`. Verified: an 8× mass-1.0 chain tows identically to a 16× mass-0.5 chain across thrust, top speed, and tug. All current (Debris-sourced) scrap is mass 1.0, so v1.3 handling is unchanged — the groundwork is in place for F4's low-mass Hunter scrap.
 
-- `Garbage` instances and chain nodes both gain a `mass` field (default `1.0`).
-- `Garbage.fromNode()` must carry `mass` over when a chain node is severed back into free garbage.
-- Pickup logic must copy `mass` from the collected `Garbage` onto the new chain node.
-- Chain math (`CARGO_MASS`/`CARGO_THRUST`/`CARGO_MAXSPD` factors, and the momentum-tug `massFactor`) changes from `chain.length` (a count) to `sum(node.mass for node in chain)`. A chain of 8 normal-mass canisters and a chain of 16 half-mass canisters should now tow identically.
-- This is a good place to also implement the **Engine powerup** (F6) cleanly, since "easier to maneuver despite more mass" is naturally a temporary multiplier applied to the same mass-sum calculation.
+### Forward note (still open)
+- The **Engine powerup** (F6) drops in cleanly on top of this: "easier to maneuver despite more mass" is naturally a temporary multiplier applied to the `chainMass()` result used by `thrustMul`/`maxSp`. Not built (Phase 6).
 
 ---
 
