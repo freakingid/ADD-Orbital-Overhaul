@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Game Design Document & Handoff Guide
 
-**Version:** 1.2 shipped · v2.0 in progress (Phase 1 of 9 done — see companion docs below)
+**Version:** 1.3 shipped · v2.0 in progress (Phase 2 of 9 done — see companion docs below)
 **File:** `asteroids-deluxe.html` (single self-contained HTML file)
 **Stack:** Vanilla JavaScript, HTML5 Canvas 2D, Web Audio API. No dependencies, no build step.
 **Logical resolution:** 1280×720 viewport (`VIEW_W×VIEW_H`), scaled to fit window with letterboxing (CSS scaling, canvas stays 1280×720 internally). As of v1.2 the simulation runs in a larger **3840×2160 toroidal world** (`WORLD_W×WORLD_H`) that the viewport scrolls across, keeping the ship centered — see §2.11.
@@ -29,9 +29,9 @@ A faithful-in-spirit knockoff of Atari's *Asteroids Deluxe* (1981), the harder s
 
 ### 2.1 Ship
 - Rotation 4.2 rad/s; thrust 340 px/s²; max speed 520 px/s; drag 35%/s (exponential).
-- Collision radius 13 px. Screen-wraps.
-- Spawn/respawn invulnerability: 2.5 s (rendered as blinking).
-- Respawn only occurs when the screen center is clear (no asteroid within 150 px, no wedge within 180 px of center).
+- Collision radius 13 px. Wraps at the world edge.
+- **Health:** a single HP pool (`SHIP_MAX_HP` = 250) for the whole run — no lives, no respawns. Unshielded hazard/bullet hits subtract source-specific damage; 0 HP is a permanent game over. See §2.7 and §2.12.
+- **Hit-stun invulnerability:** any non-lethal hit grants `HIT_STUN_DURATION` (1.0 s) of invulnerability (rendered as blinking) during which further hits are ignored, and shoves the ship away from the hazard at `KNOCKBACK_SPEED` (250 px/s). There is no longer a separate 2.5 s spawn invulnerability — a run starts immediately vulnerable (the first wave spawns ≥220 px away). `ship.invuln` is now purely the hit-stun timer.
 
 ### 2.2 Weapons
 - Max 4 player bullets alive at once; 0.16 s fire cooldown; bullet speed 620 px/s + ship velocity inherited; 1.05 s lifetime. Bullets wrap.
@@ -63,12 +63,12 @@ A faithful-in-spirit knockoff of Atari's *Asteroids Deluxe* (1981), the harder s
 - Small saucer: radius 12, 150 px/s, fires *aimed* (±0.09 rad error) every 0.7–1.1 s. Worth 1000. Spawn chance 25%, rising to 60% above 8000 points.
 - Saucer bullets are red, 380 px/s, 1.4 s life, and destroy asteroids (no score awarded).
 
-### 2.7 Waves, Lives, Scoring
-> ⚠️ **Planned for replacement in v2.0** — discrete lives are being replaced by a single Health Points pool with knockback-on-hit. See `PLANNED-FEATURES-v2.md` Feature F2. Not yet built.
+### 2.7 Waves, Health & Scoring
 
 - Wave N spawns `min(4 + N, 11)` large asteroids, placed in a ring 220–1100 px around the ship's *current* world position (see §2.11).
 - Next wave starts 2.5 s after the field is clear of asteroids, satellites, AND wedges. Free garbage and towed cargo do **not** block wave-clear; both persist into the next wave (the dock relocates).
-- 3 starting lives; extra life every 10,000 points.
+- **Health, not lives (v1.3).** The ship has one HP pool (`SHIP_MAX_HP` = 250); there are no discrete lives, no respawns, and no continues — one hull for the whole run. Any unshielded hazard contact or hostile bullet subtracts source-specific damage, applies knockback, and opens a 1.0 s hit-stun window (see §2.12). At 0 HP the ship explodes, the tow load scatters, and the run ends (true game over).
+- **Score milestones repair the hull.** Every 10,000 points (`REPAIR_MILESTONE`) grants +25 HP (`REPAIR_AMOUNT`), capped at max; if already at full HP the milestone instead pays a flat `REPAIR_FULL_BONUS` (2,500) points so it's never wasted. This replaces the old "extra life every 10,000 points."
 
 ### 2.8 Audio (all synthesized, no assets)
 - Fire: square-wave pitch drop. Explosions: filtered noise bursts, deeper/longer by size. Thrust: looped low-passed noise. Saucer: LFO-warbled triangle (higher/faster for small). Heartbeat: alternating two-tone sine thump whose interval shrinks with wave number and field density (floor 0.28 s). Shield ping / extra life: sine chirp.
@@ -119,6 +119,28 @@ The simulation space and the screen used to be the same 1280×720 rectangle. As 
 
 > New tuning constants live in the "Larger world & scrolling camera (v1.2)" block at the top: `CULL_MARGIN`, `SPAWN_MIN_DIST`, `SPAWN_MAX_DIST`, `DOCK_MIN_DIST`, `DOCK_MAX_DIST`, `STAR_DENSITY`, plus `WORLD_W/H` and `VIEW_W/H`.
 
+### 2.12 Health, Damage & Knockback (v1.3)
+
+Discrete lives (3 stock + an extra life per 10,000 points) are gone. The ship carries a single HP pool for the entire run; survival is about managing that pool, not stock count. This keeps Pillar 4 intact — the shield is still the "free," energy-priced answer that prevents damage outright — while making one misjudged contact a costly setback rather than an instant stock loss.
+
+- **HP pool.** `ship.hp` starts at `SHIP_MAX_HP` (250). The HUD shows it as a "HULL" bar top-left, styled exactly like the shield-energy bar (same stroke/fill pattern; `COLOR.hp` green, switching to red below 30%).
+- **Damage table** (contact = ramming a hazard body; every value is a named constant in the tuning block — first-pass and tunable):
+
+  | Source | Damage | Constant |
+  |---|---|---|
+  | Small hazard (small asteroid, small wedge, small saucer) | 20 | `DMG_SMALL` |
+  | Medium hazard (medium asteroid, big wedge, big saucer) | 35 | `DMG_MEDIUM` |
+  | Large hazard (large asteroid, killer satellite) | 50 | `DMG_LARGE` |
+  | Hostile (saucer) bullet | 15 | `DMG_BULLET` |
+
+  Each hazard carries its own `damage` field, set in its constructor from these constants (asteroids via the `AST_DAMAGE` size table). *These are placeholder assignments mapping the existing v1.1 hazards onto the damage tiers; the Phase 3/5 Debris/Hunter redesigns will define their own per-tier values (the plan proposes higher Hunter ramming damage).*
+- **Knockback.** A non-lethal unshielded hit **sets** (not adds) the ship's velocity to `KNOCKBACK_SPEED` (250 px/s) pointing directly away from the hazard's center (wrap-aware, via `shortDelta`), so the ship physically separates instead of grinding inside the hazard. Setting rather than adding guarantees clear separation regardless of prior momentum; drag then bleeds the impulse off naturally over the following second.
+- **Hit-stun.** The same hit sets `ship.invuln = HIT_STUN_DURATION` (1.0 s) of invulnerability (the existing blink render doubles as the hit-stun tell). Further hits are ignored until it expires, so no single hazard can chew through the pool in consecutive frames, and several hazards overlapping in one frame still only land one hit. `damageShip()` self-guards on shield/hit-stun/dead, so the collision passes don't need to break early.
+- **Death.** At 0 HP `killShip()` runs the explosion boom + particles, `scatterChain()` drops the whole tow load as free garbage, and the state goes straight to `gameover`. There is no respawn path — the old "respawn only when the center is clear" logic (former §2.1) is deleted entirely.
+- **Shield unchanged.** A raised shield deflects/blocks at its usual energy cost, and a shielded hit takes **no** damage, knockback, or hit-stun — knockback is strictly the unshielded fallback. The shield still does not protect the tow chain (§2.10.1).
+
+> Tuning constants live in the "Health, damage & knockback (F2)" block at the top: `SHIP_MAX_HP`, `DMG_SMALL/MEDIUM/LARGE`, `DMG_BULLET`, `AST_DAMAGE`, `KNOCKBACK_SPEED`, `HIT_STUN_DURATION`, `REPAIR_MILESTONE`, `REPAIR_AMOUNT`, `REPAIR_FULL_BONUS`.
+
 ---
 
 ## 3. Code Architecture Map
@@ -127,17 +149,17 @@ Everything lives in one `<script>` block. Reading order top to bottom:
 
 | Section | Contents | Notes for modification |
 |---|---|---|
-| **Constants** | All tuning values (SHIP_*, BULLET_*, SHIELD_*, AST_*, scores) + v1.1 block (GARBAGE_*, CHAIN_*, CARGO_*, DOCK_*) + v1.2 world block (`WORLD_W/H`, `VIEW_W/H`, `CULL_MARGIN`, `SPAWN_MIN/MAX_DIST`, `DOCK_MIN/MAX_DIST`, `STAR_DENSITY`) | **Change balance here first.** Never hardcode magic numbers deeper in the file. `WORLD_*` = the wrap boundary; `VIEW_*` = the screen — keep the distinction (see §2.11). |
+| **Constants** | All tuning values (SHIP_*, BULLET_*, SHIELD_*, AST_*, scores) + v1.1 block (GARBAGE_*, CHAIN_*, CARGO_*, DOCK_*) + v1.2 world block (`WORLD_W/H`, `VIEW_W/H`, `CULL_MARGIN`, `SPAWN_MIN/MAX_DIST`, `DOCK_MIN/MAX_DIST`, `STAR_DENSITY`) + v1.3 HP block (`SHIP_MAX_HP`, `DMG_SMALL/MEDIUM/LARGE`, `DMG_BULLET`, `AST_DAMAGE`, `KNOCKBACK_SPEED`, `HIT_STUN_DURATION`, `REPAIR_MILESTONE`, `REPAIR_AMOUNT`, `REPAIR_FULL_BONUS`) | **Change balance here first.** Never hardcode magic numbers deeper in the file. `WORLD_*` = the wrap boundary; `VIEW_*` = the screen — keep the distinction (see §2.11). |
 | **Canvas/scaling** | `resize()` — CSS scaling, fixed 1280×720 logical viewport | Same pattern as Atomic Dustbin Dan. `resize()` uses `VIEW_W/VIEW_H` (screen); all *world* math uses `WORLD_W/WORLD_H`, never window size. |
 | **AudioSys** | Singleton object; all sounds are methods; init on first keypress (autoplay policy). v1.1 adds `pickup()` and `deliver(count)` (pitch climbs with delivery combo) | Continuous sounds (thrust, saucer) are start/stop node pairs. Add new SFX as new methods; follow the `now()` + gain-envelope pattern. |
 | **Input** | `keys{}` map + `input` helper predicates | Add new bindings as predicates in `input`, not by reading `keys` inline. Enter/P handled in keydown directly. |
 | **Helpers** | `rand`, `wrap`, `dist2`, `angleTo`, **`shortDelta`** (v1.1), **`wrapOffset`/`wrapPos`** (v1.2), `glowStroke`, `drawPoly`, `COLOR` | ⚠️ `wrap`, `dist2`, `angleTo`, `shortDelta` are **wrap-aware** and now operate against `WORLD_W/WORLD_H`. Always use these for distance/aiming/link math — naive `Math.hypot` deltas break near edges. `wrapOffset` gives the nearest wrapped image of a point relative to the camera (rendering); `wrapPos` folds a fresh spawn into `[0,WORLD)`. |
-| **Entity classes** | `Ship`, `Bullet`, `Asteroid`, `Satellite`, `Wedge`, `Saucer`, `Particle`, and (v1.1) `Garbage`, `FloatText`, `Dock` + `drawCanister()` shared renderer | Uniform contract: constructor, `update(dt)`, `draw()`, `dead` flag. Some have `split()`. `Garbage.fromNode(n)` converts a severed chain node back to free garbage. |
-| **game object** | Central state: entity arrays, score/lives/wave, spawn timers. v1.1 adds `garbage`, `chain`, `floaters`, `dock`, `deliveryCount`, `offloadTimer`. v1.2 adds **`camera` `{x,y}`** | Single mutable global. **`game.chain` is NOT a class-entity array** — it holds plain verlet nodes (see 3.4). `game.camera` is set to the ship's position each frame in `update()`. |
-| **Flow functions** | `startGame`, `nextWave` (now also places the Dock), `addScore`, `boom`, `destroyAsteroid` (now drops garbage), `killShip` (now calls `scatterChain`), `shieldDeflect` | `addScore` handles extra-life logic — always score through it. `boom` = particles + explosion sound. |
+| **Entity classes** | `Ship`, `Bullet`, `Asteroid`, `Satellite`, `Wedge`, `Saucer`, `Particle`, and (v1.1) `Garbage`, `FloatText`, `Dock` + `drawCanister()` shared renderer | Uniform contract: constructor, `update(dt)`, `draw()`, `dead` flag. Some have `split()`. `Garbage.fromNode(n)` converts a severed chain node back to free garbage. v1.3: `Ship` gains an `hp` field; every hazard (`Asteroid`/`Satellite`/`Wedge`/`Saucer`) carries a `damage` field (contact damage — see §2.12). |
+| **game object** | Central state: entity arrays, score/wave, spawn timers. v1.1 adds `garbage`, `chain`, `floaters`, `dock`, `deliveryCount`, `offloadTimer`. v1.2 adds **`camera` `{x,y}`**. v1.3 removes `lives`/`nextExtraLife`/`respawnTimer` and adds **`nextRepair`** (next hull-repair score threshold); HP lives on `game.ship.hp` | Single mutable global. **`game.chain` is NOT a class-entity array** — it holds plain verlet nodes (see 3.4). `game.camera` is set to the ship's position each frame in `update()`. |
+| **Flow functions** | `startGame`, `nextWave` (now also places the Dock), `addScore`, `boom`, `destroyAsteroid` (now drops garbage), **`damageShip`** (v1.3), `killShip`, `shieldDeflect` | `addScore` now handles the HP-repair milestone (was extra-life) — always score through it. `damageShip(amount, hazardX, hazardY)` is the single entry point for unshielded hits (HP−, knockback, hit-stun, → `killShip` at 0 HP); it self-guards on shield/hit-stun/dead. `killShip` is now a true, respawn-free game over (still calls `scatterChain`). `boom` = particles + explosion sound. |
 | **Chain physics** (v1.1) | `chainAnchor`, `wrapNode`, `updateChain`, `breakChain(i)`, `scatterChain`, `drawLink`, `drawChain` — located directly after `shieldDeflect` | See 3.4 for the physics contract. `breakChain(i)` destroys node i and converts nodes i+1..end to free garbage — never splice the chain array directly. |
-| **update(dt)** | Respawn → ship update → **camera-follow** → entity updates → **pickup/chain/dock pass** → spawn timers → collision passes → cleanup filters → wave-clear check → heartbeat | Collision order matters (see 3.1). `game.camera` is set to the ship's position right after `ship.update` (before spawns, so ship-relative spawns use the current position). Cleanup uses `.filter(!dead)` — never splice mid-loop. |
-| **draw()** | Starfield (wrap-aware, screen space) → title OR [**camera transform** → (**dock** → particles → **garbage** → **chain** → rocks → satellites → wedges → saucers → bullets → ship → **floaters**) → **restore** → HUD → overlays] | Draw order = z-order: dock is the floor, floaters sit above the ship. World entities go inside the camera translate via `drawEntity` (cull + nearest-image); HUD/overlays are screen-fixed, drawn after `ctx.restore()`. HUD includes shield bar, cargo counter, and dock-pointer chevron (which now orbits screen-center). See §2.11. |
+| **update(dt)** | ship update → **camera-follow** → entity updates → **pickup/chain/dock pass** → spawn timers → collision passes → cleanup filters → wave-clear check → heartbeat | Collision order matters (see 3.1). The old respawn-clearing step is gone (v1.3 — no respawn). `game.camera` is set to the ship's position right after `ship.update` (before spawns, so ship-relative spawns use the current position). Cleanup uses `.filter(!dead)` — never splice mid-loop. |
+| **draw()** | Starfield (wrap-aware, screen space) → title OR [**camera transform** → (**dock** → particles → **garbage** → **chain** → rocks → satellites → wedges → saucers → bullets → ship → **floaters**) → **restore** → HUD → overlays] | Draw order = z-order: dock is the floor, floaters sit above the ship. World entities go inside the camera translate via `drawEntity` (cull + nearest-image); HUD/overlays are screen-fixed, drawn after `ctx.restore()`. HUD includes the **HULL/HP bar** (v1.3, top-left, replacing the old life-ship icons; same style as the shield bar), the shield bar, cargo counter, and dock-pointer chevron (which now orbits screen-center). See §2.11–2.12. |
 | **Main loop** | rAF loop, dt clamped to 0.05 s | Clamp prevents tunneling after tab-switch. The dt clamp also keeps chain constraints stable — keep it. |
 
 ### 3.1 Collision conventions
@@ -146,6 +168,7 @@ Everything lives in one `<script>` block. Reading order top to bottom:
 - Entities are killed by setting `dead = true`; arrays are filtered once at the end of the frame. **Follow this pattern** — it avoids iterator invalidation bugs. (Exception: chain nodes are removed via `breakChain`/`chain.pop()`, never a dead flag — see 3.4.)
 - Ship collision radius switches to `SHIELD_RADIUS` (26) whenever the shield is up. The shield does **not** extend to chain nodes (deliberate — see 2.10.1).
 - Chain nodes use an effective radius of 7 vs hazard bodies and 9 vs hostile bullets.
+- **Unshielded contact/bullet hits call `damageShip(amount, hazardX, hazardY)`** (v1.3) instead of the old instant-kill `killShip()`: it subtracts source-specific HP, applies knockback + a 1.0 s hit-stun, and only routes to `killShip()` (game over) at 0 HP. Shielded contact deflects/blocks instead (no damage). Because `damageShip` self-guards on shield/hit-stun/dead, the hazard-vs-ship loops no longer `break` after the first hit — a shielded ship still deflects every overlapping hazard, and an unshielded one absorbs exactly one hit per stun window (§2.12).
 
 ### 3.2 Rendering conventions
 - `drawPoly(points, x, y, angle, color, closed)` + `glowStroke(color, width, blur)` produce the vector look via `shadowBlur`. New entities should define local-space point arrays and reuse these — don't invent per-entity draw pipelines. Canisters (free and chained) share one renderer, `drawCanister()`.
@@ -261,11 +284,13 @@ Any Claude session working on this project should:
 Areas most likely to hide issues, worth checking during playtests:
 
 - **Shield-deflection edge cases** — deflecting a rock into a wall of other rocks; deflecting at exactly the moment energy hits zero. New in v1.1: deflecting a rock directly into your own tow chain (working as designed, but verify it feels fair).
-- **Respawn deadlock** — if the center never clears (many small wedges circling), respawn waits indefinitely. Possible fix: force-clear a respawn zone after ~6 s.
+- ~~**Respawn deadlock**~~ — *resolved by F2 (v1.3): there is no respawn anymore, so this can't occur.*
+- **Knockback vs. tow chain (v1.3)** — knockback shoves the ship away from a hazard, which can drag a long chain tail through *other* hazards or fling it across the wrap seam. The chain is wrap-aware and severs per its existing rules, but verify a hit never yanks the ship somewhere that instantly severs the whole haul unfairly.
+- **Knockback into a second hazard (v1.3)** — the 1.0 s hit-stun means being knocked straight into another rock is safe *during* the window; verify it doesn't feel like the ship pinballs helplessly once the window expires in a dense field.
 - **Saucer sound leak** — the warble is stopped on saucer death/exit and on game over; verify it can't persist if a saucer dies the same frame the ship does.
 - **Performance** — heavy `shadowBlur`; the salvage feature raises the entity ceiling (up to 12 chain nodes + ~15 canisters). Watch frame rate late-wave on modest hardware.
 - **Chain tug oscillation** — `CHAIN_TUG 26` is stable in headless tests but hasn't been feel-tested against every input pattern. Rapid thrust-flip-thrust with a full chain is the stress case; if the ship judders, lower `CHAIN_TUG` before touching the constraint code.
-- **Dock/respawn interaction** — respawning at center with cargo intact (chain scatters on death, so this shouldn't occur) — verify no path leaves a chain attached to a dead ship.
+- ~~**Dock/respawn interaction**~~ — *moot post-F2 (v1.3): no respawn. `killShip()` still calls `scatterChain()`, so a dead ship never keeps a chain.*
 - **Wave-transition cargo** — the chain persists across waves (deliberate) but new large rocks spawn ≥220 px from the *ship*; a long chain tail can extend beyond that. Verify a wave spawn can't instantly sever a fresh chain unfairly often.
 - **Delivery combo reset radius** — combo resets at dock radius+40. Verify a player orbiting the dock edge can't accidentally keep/lose the combo in a confusing way.
 
@@ -276,7 +301,8 @@ Areas most likely to hide issues, worth checking during playtests:
 - **v1.0** — Initial build: ship/asteroids/saucers, shield, killer satellite + homing wedges, waves, synth audio.
 - **v1.1** — Radioactive salvage: garbage drops with decay, verlet tow chain (mass/momentum penalties, momentum tug), chain vulnerability with aft-severing, relocating recycling dock with escalating delivery scores, cargo HUD + dock pointer, pickup/deliver SFX. New constants block; `shortDelta` helper; `Garbage`/`FloatText`/`Dock` classes; chain physics functions after `shieldDeflect`. Headless-tested: pickup, tow, wrap, delivery scoring, severing.
 - **v1.2** — *v2.0 Phase 1 (F1): Larger scrolling world & camera.* Simulation space split from the screen: a 3840×2160 toroidal world (`WORLD_W/H`) with a 1280×720 viewport (`VIEW_W/H`) that scrolls to keep the ship centered (`game.camera`). All wrap-aware helpers (`wrap`/`dist2`/`angleTo`/`shortDelta`/`wrapNode`) retargeted to `WORLD_*`; added `wrapOffset`/`wrapPos`. `draw()` gained a camera transform, wrap-aware per-entity nearest-image rendering + viewport culling (`onScreen`/`drawEntity`), and a world-spanning seamless starfield; HUD/overlays drawn screen-fixed after restore. Spawns (wave asteroids, dock) now ship-relative rings; satellites/saucers enter from viewport edges relative to the ship (feel unchanged). New constants: `CULL_MARGIN`, `SPAWN_MIN/MAX_DIST`, `DOCK_MIN/MAX_DIST`, `STAR_DENSITY`. Headless-tested: camera-follow, world-boundary wrap (x & y), no wrap at old 1280 boundary, ship-relative spawn reachability across the seam, draw() crash-free in all states.
-- **v2.0 (in progress)** — Phase 1 (larger scrolling world) shipped as v1.2. Still planned: HP-based survival replacing lives, a Debris Satellite redesign of asteroids, a difficulty ramp, a Hunter Satellite redesign of the killer satellite/wedge system, weapon/health/utility powerups, controller support, pause/options menu with rebindable controls, and an achievements system. Full specs in `PLANNED-FEATURES-v2.md`; build order in `IMPLEMENTATION-PHASES.md`.
+- **v1.3** — *v2.0 Phase 2 (F2): Health Points & Knockback.* Discrete lives replaced by a single HP pool (`SHIP_MAX_HP` = 250) for the whole run; all respawn/lives logic removed (`game.lives`/`nextExtraLife`/`respawnTimer` gone, plus the "respawn only when center is clear" gate). New `damageShip()` handles unshielded hits: source-specific damage (`DMG_SMALL/MEDIUM/LARGE` 20/35/50, `DMG_BULLET` 15, via each hazard's new `damage` field), a `KNOCKBACK_SPEED` (250 px/s) shove away from the hazard, and a `HIT_STUN_DURATION` (1.0 s) i-frame window (reusing `ship.invuln`). `killShip()` is now a respawn-free game over at 0 HP. `addScore()` milestone changed from extra-life to a +25 HP hull repair (`REPAIR_*`), converting to a flat score bonus at full HP. HUD: HULL/HP bar (`COLOR.hp`) replaces the life-ship icons, styled like the shield bar. New `AudioSys.hit()` damage thud. Headless-tested (`scratchpad/test-f2.js`, 54 assertions): per-hit-type damage, hit-stun double-hit prevention, knockback direction/magnitude, 0-HP game over with no respawn, milestone repair, and shield still blocking damage+knockback.
+- **v2.0 (in progress)** — Phases 1–2 shipped (larger scrolling world as v1.2; HP & knockback as v1.3). Still planned: a Debris Satellite redesign of asteroids, a difficulty ramp, a Hunter Satellite redesign of the killer satellite/wedge system, weapon/health/utility powerups, controller support, pause/options menu with rebindable controls, and an achievements system. Full specs in `PLANNED-FEATURES-v2.md`; build order in `IMPLEMENTATION-PHASES.md`.
 
 ---
 

@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1 (Phase 1) is built and shipped as v1.2** — its spec has moved to GDD §2.11; F2–F10 remain unbuilt.
+**Status:** Design complete for all features below. **F1–F2 (Phases 1–2) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12); F3–F10 remain unbuilt.
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -39,27 +39,16 @@ Both families read as "satellites" thematically (per your request), but stay vis
 ---
 
 ## F2 — Health Points & Knockback (replaces Lives)
-**Status:** 🔴 Not Started
+**Status:** 🟢 Done — shipped in v1.3 (build Phase 2). The full shipped spec now lives in **GDD §2.12** (with §2.1/§2.7 updated); this section is retained only for the resolved-decisions note and the follow-ups below.
 
-### Spec
-- Replace the discrete lives counter (`game.lives`, currently 3 + extra life every 10,000 pts) with a single **HP pool**. Ship takes damage from hazard contact and hostile bullets instead of dying outright; explosion (game over) only happens at 0 HP. No mid-game respawns — one HP pool for the whole run.
-- **Knockback:** on any hit that doesn't destroy the ship, the ship's velocity is set away from the hazard at a strong impulse, so it physically separates rather than sitting inside the hazard racking up continuous damage.
-- A brief **hit-stun invulnerability** (distinct from the old 2.5 s spawn invulnerability, which goes away since there's no respawn) prevents the same hazard from hitting the ship again in the same handful of frames.
-- Health powerups (F6) restore HP, capped at max.
-- HUD: HP bar replaces the life-ship icons.
+**Built:** a single HP pool (`SHIP_MAX_HP` = 250) replacing discrete lives; all respawn/lives state removed. Unshielded hits go through a new `damageShip()`: source-specific damage via each hazard's `damage` field (`DMG_SMALL/MEDIUM/LARGE` = 20/35/50, `DMG_BULLET` = 15), a `KNOCKBACK_SPEED` (250 px/s) shove away from the hazard, and a `HIT_STUN_DURATION` (1.0 s) i-frame window (reusing `ship.invuln`; the old 2.5 s spawn invuln is gone). `killShip()` is now a respawn-free game over at 0 HP. The 10,000-point milestone repairs +25 HP (flat score bonus at full HP) instead of granting a life. HUD gained a HULL/HP bar styled like the shield bar. Headless-tested per GDD §5.4 rule 7 (`scratchpad/test-f2.js`, 54 assertions). See GDD §2.12 and Version History v1.3.
 
-### Assumptions / open questions (best guess — override freely)
-- **Max HP: 250** (confirmed by Paul for initial testing). Damage per hit (proposed, tunable, confirmed as starting values): small Debris Satellite 20, medium 35, large 50; Hunter Satellite ramming damage slightly higher per tier (30/45/60) since it's the more dangerous, actively-hunting threat; hostile saucer bullet 15. These are first-pass numbers — flagged as a balance lever, but Paul has confirmed them as the starting point.
-- **Hit-stun duration:** 1.0 s (confirmed).
-- **Knockback strength:** ~250 px/s impulse directly away from the hazard's center (confirmed as starting value). Still worth feel-testing but Paul has confirmed the starting number.
-- **What happens to "extra life at 10,000 points"?** Doesn't make sense in an HP-only model. Replacement (confirmed by Paul): the same score milestone grants a **+25 HP repair bonus** instead (capped at max HP; if already full, converts to a flat score bonus instead so the milestone always means something).
-- **Does the shield still work exactly as before?** Yes (confirmed) — shield deflection continues to prevent damage entirely at the cost of energy, same as today. Knockback only applies to *unshielded* hits. This keeps the shield as the "free" answer and HP/knockback as the fallback when the shield isn't up, preserving Pillar 4.
-- **Is this a genuinely permanent game-over with no continues?** Yes (confirmed) — single HP pool, no respawns, no lives in reserve, no continues.
+### Resolved decision (noted for the record)
+- **Max HP = 250, not 100.** The Phase 2 prompt (and its copy in `IMPLEMENTATION-PHASES.md`) said `SHIP_MAX_HP` = 100, but this doc and STATUS.md both recorded 250 as Paul-confirmed. That conflict was surfaced during the build and **Paul reconfirmed 250**. The damage table (20/35/50/15) was identical across both sources, so only the pool size differed. `IMPLEMENTATION-PHASES.md`'s Phase 2 prompt still reads 100 as a historical artifact — the shipped, authoritative value is 250 (GDD §2.12).
 
-### Interactions with existing systems
-- **Salvage chain (v1.1):** `killShip()`/`scatterChain()` still fire, but only at true 0-HP death now, not at every hit. This is arguably a buff to the salvage mechanic — cargo runs become less fragile since a single hazard touch no longer risks ending the run outright.
-- **Respawn-clearing logic** (GDD 2.1, "respawn only when center is clear") is deleted entirely — there's no respawn to gate.
-- **Debris/Hunter Satellites (F3/F4):** their contact damage numbers should be defined alongside F2's implementation so the whole damage table is consistent.
+### Deferred to later phases (not part of F2)
+- **Hunter ramming damage (30/45/60 per tier):** the plan proposes Hunter Satellites hit harder than equivalent Debris tiers. F2 only wired the *existing* v1.1 hazards (killer satellite = `DMG_LARGE`; wedges and saucers by size) — the Hunter-specific values land with the F4 redesign (Phase 5).
+- **Health powerups (F6):** restore HP capped at max — depend on this HP system existing; built in Phase 6.
 
 ---
 

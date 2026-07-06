@@ -1,53 +1,57 @@
 # Asteroid Field Deluxe — STATUS
 
-Last updated: 2026-07-05 · Build version: **1.2** (v2.0 Phase 1 of 9 shipped) · Last session: implemented **F1 — larger scrolling world & camera** (world/screen split, camera follow, wrap-aware culled rendering, ship-relative spawns, seamless starfield)
+Last updated: 2026-07-06 · Build version: **1.3** (v2.0 Phase 2 of 9 shipped) · Last session: implemented **F2 — HP pool + knockback replaces lives** (removed discrete lives + all respawn logic; source-specific contact/bullet damage; knockback + 1.0 s hit-stun; score-milestone hull repair; HULL/HP bar)
 
 ## Working / verified
 
-**Headless-verified this session (v1.2, `scratchpad/test-f1.js`, 26 assertions):**
-- Camera tracks the ship's world position every frame with zero lag (`game.camera` == ship exactly).
-- World wraps at the **new 3840×2160 boundary** on both X and Y; the ship never renders past `WORLD_*+60`, and folds back near 0 after crossing.
-- The ship crosses the **old 1280×720 boundary without wrapping** (regression guard against a stale wrap boundary).
-- Wave asteroids spawn in the `[SPAWN_MIN_DIST, SPAWN_MAX_DIST]` = [220, 1100] px ring around the ship's *current* position — verified at world center, near-origin, and far-corner (i.e. across the wrap seam). Dock lands within [260, 900] px each wave.
-- Entities keep simulating off-screen with no NaN/blowup; all stay within wrapped world bounds.
-- `draw()` runs without throwing in title / playing / seam-straddling / gameover states.
+**Headless-verified this session (v1.3, `scratchpad/test-f2.js`, 54 assertions):**
+- **Per-hit-type damage** — driving real `update()` collisions, HP drops by exactly `DMG_LARGE` 50 (large asteroid, killer satellite), `DMG_MEDIUM` 35 (medium asteroid, big wedge, big saucer), `DMG_SMALL` 20 (small asteroid, small wedge, small saucer), and `DMG_BULLET` 15 (hostile bullet). Each hit opens the ~1.0 s hit-stun window.
+- **Hit-stun blocks repeat damage** — after one hit, re-overlapping the same hazard for 10 consecutive frames (<1 s) deals zero further damage; once the stun clears, the next contact damages again.
+- **Knockback** — an unshielded hit sets ship velocity to ≈`KNOCKBACK_SPEED` (250 px/s) pointing directly *away* from the hazard (verified on both +x and −x sides; magnitude within 1 px/s).
+- **0 HP → permanent game over, no respawn** — a lethal hit floors HP at 0, sets `dead`, flips state to `gameover`, and `scatterChain()` drops the tow load to free garbage; `game.lives`/`game.respawnTimer` no longer exist, and 200 further `update()` frames (~3.3 s) produce no respawn.
+- **Score-milestone hull repair** — crossing a 10,000-pt milestone below max HP adds +25 (capped); at full HP it pays a flat `REPAIR_FULL_BONUS` (2,500) instead.
+- **Shield unchanged** — a shielded hit (shift held) deals no HP damage, no hit-stun, and no knockback, and still spends deflection energy.
 
-**Verified headlessly (v1.1, unchanged):**
-- Garbage drops, decay, pickup, tow physics, screen-wrap, dock delivery scoring, chain severing all still hold (chain now wrap-aware against `WORLD_*`; the chain-render path was updated to nearest-image but the physics contract in GDD §3.4 is untouched).
+`node --check` clean.
 
-**Not yet verified (needs a real browser — see playtest asks below):**
-- Camera *feel* (lag/floatiness), starfield seam, entity pop-in at the world edge, satellite/saucer entry distances, and frame rate with the 9× world + culling. Plus all prior v1.1 items (tug feel, serpentine visuals, audio).
+**Verified headlessly earlier (v1.2 / v1.1, unchanged):** camera-follow + world-boundary wrap + ship-relative spawns (v1.2, `test-f1.js` — not re-run this session, no F1 code touched); garbage drop/decay/pickup/tow/wrap/dock-delivery/chain-severing (v1.1). F2 did not alter chain physics (GDD §3.4) — `scatterChain()` is reused as-is on death.
+
+**Not yet verified (needs a real browser — see playtest asks):** knockback *feel*, damage pacing across waves, HULL-bar readability, and all prior v1.2/v1.1 feel items.
 
 ## Known issues
 
-- None confirmed. Watch items introduced by F1 are in the playtest asks and the balance notes below; the v1.1 watch list (GDD §6) still applies.
+- None confirmed. New F2 watch items (knockback dragging the chain through hazards; knockback pinballing in dense fields) are in GDD §6 and the playtest asks. The two old respawn-related §6 watch items are now moot (no respawn exists).
 
 ## Balance notes
 
-- **New spawn-distance knobs (first-pass, tunable):** `SPAWN_MIN_DIST` 220 / `SPAWN_MAX_DIST` 1100 for wave asteroids; `DOCK_MIN_DIST` 260 / `DOCK_MAX_DIST` 900 for the dock. Chosen so a wave is reachable within ~1.5 screens and the dock within ~1.2 screens. If early waves feel sparse or the dock feels too far, these are the levers.
-- **`CULL_MARGIN` 100 px** — generous enough that nothing pops at the viewport edge; lower only if profiling says so.
-- **`STAR_DENSITY` 40** preserves the original per-screen star density (→ ~360 stars across the world). Purely cosmetic.
-- v1.1 balance notes unchanged (see GDD §6 / prior STATUS entries).
-- **Still pending for later phases:** F3 (Debris Satellites) will increase garbage volume ~8× per cleared large lineage — a Phase 3 rebalance, not this session.
+- **Max HP = 250 (`SHIP_MAX_HP`).** The Phase 2 prompt said 100, but PLANNED-FEATURES-v2 F2 and this STATUS both recorded 250 as Paul-confirmed — the conflict was surfaced and **Paul reconfirmed 250**. (`IMPLEMENTATION-PHASES.md` Phase 2 still reads 100 as a stale artifact; 250 is authoritative.) With 250 HP and the damage table, a large hit is 20% of the pool (≈5 large hits to die); at 100 it would have been ≈2. If the game feels too forgiving/too swingy, this is the top lever.
+- **Damage table (first-pass, tunable):** small 20 / medium 35 / large 50 / hostile bullet 15 (`DMG_*`). The *existing* v1.1 hazards are mapped onto these (killer satellite = large; wedges & saucers by size). Hunter-specific 30/45/60 ramming damage is deferred to F4/Phase 5.
+- **`KNOCKBACK_SPEED` 250 px/s**, **`HIT_STUN_DURATION` 1.0 s** — knockback *sets* (not adds) velocity so the ship always separates; over the 1 s stun, drag bleeds ~250→~160 px/s, moving the ship a few hundred px clear of any hazard. If knockback feels floaty, raise it; if it feels violent/disorienting, lower it (and/or shorten the stun).
+- **Hull repair:** `REPAIR_MILESTONE` 10,000 pts → `REPAIR_AMOUNT` +25 HP, or `REPAIR_FULL_BONUS` 2,500 pts flat at full HP.
+- v1.2 spawn-distance knobs and v1.1 balance notes unchanged.
+- **Still pending for later phases:** F3 (Debris Satellites) will increase garbage volume ~8× per cleared large lineage and convert chain physics from a node *count* to a `mass` sum — a Phase 3 concern, not this session.
 
 ## Next up
 
-**Phase 2 — Health Points & Knockback (F2).** Replaces discrete lives with a single HP pool (max 250), knockback-on-hit, 1.0 s hit-stun, permanent no-continue game-over; deletes the respawn-clearing logic. Use the Phase 2 prompt in `IMPLEMENTATION-PHASES.md`. Note for that session: F1 left the respawn/lives system intact (respawn now gates on the *world* center being clear and the ship returns to world center) — F2 removes it wholesale, so don't spend effort preserving it.
+**Phase 3 — Debris Satellites (F3) + variable-mass garbage (F5).** Rename/redesign `Asteroid` → `DebrisSatellite` (broken-satellite silhouette), 3-way splits at large/medium, guaranteed 3 canisters at every tier (incl. small), and add a `mass` field to garbage/chain nodes with chain math moving from `chain.length` to `sum(node.mass)`. Requires a real garbage-volume balance pass (decay/wave-count). Use the Phase 3 prompt in `IMPLEMENTATION-PHASES.md`.
 
-Attach/have present all four docs. GDD §2 is now current truth *including* §2.11 (world/camera).
+Notes for that session:
+- **The F2 damage table is now in place** — assign the renamed entity's per-tier contact damage from `AST_DAMAGE`/`DMG_*` (defaults carry over unchanged unless you have a reason to change them, per the Phase 3 prompt).
+- F2 left every other system untouched; the chain-physics contract (GDD §3.4) is unchanged, so Phase 3's count→mass-sum conversion starts from the current, documented baseline.
+
+Attach/have present all four docs. GDD §2 is current truth *including* §2.12 (HP/damage/knockback) and the updated §2.1/§2.7.
 
 ## Changed this session
 
-- **`asteroids-deluxe.html` → v1.2.** Split world from screen: added `WORLD_W/H` (3840×2160) and `VIEW_W/H` (1280×720) constants; retargeted every wrap-aware helper (`wrap`, `dist2`, `angleTo`, `shortDelta`, `wrapNode`) to `WORLD_*`; added `wrapOffset` (nearest wrapped image vs camera) and `wrapPos` (fold a spawn into the world). Added `game.camera`, updated to the ship's position each frame in `update()`. Rebuilt `draw()`: wrap-aware seamless starfield across world space, a camera translate for world-space entities, per-entity cull + nearest-image render (`onScreen`/`drawEntity`), chain drawn nearest-image, HUD/overlays screen-fixed after `ctx.restore()`, dock chevron now orbits screen-center. Ship-relative spawns for waves and the dock (rings). `resize()`/title/HUD use `VIEW_*`; ship spawns at world center.
-- **Scope decision (flagged):** the killer Satellite and both Saucers spawned at fixed *screen* edges, which a mechanical world-rename would have placed ~2000 px away (unreachable/invisible). I treated their spawn edge as a **viewport** concept and now spawn them just beyond a viewport edge relative to the ship, folded into the world — this preserves their shipped "slide in from off-screen, cross the screen, drift toward the ship" feel with no change to speed/homing/fire/splits. This is a coordinate-system fix intrinsic to F1, **not** the Phase 4 (saucer calming) / Phase 5 (Hunter redesign) behaviour work — those remain untouched. Saucers keep a `baseY` so their vertical zig-zag stays in a screen-height band around their entry height; they still despawn after crossing ~one viewport width.
-- **Headless test** added at `scratchpad/test-f1.js` (evals the real script via stubs, drives `update()`/`draw()`). `node --check` clean; 26/26 assertions pass.
-- **Docs:** GDD — version header + resolution note bumped, new **§2.11 (Larger Scrolling World & Camera)**, §2.7/§2.10 spawn-distance lines updated, Architecture Map rows (Constants, Canvas/scaling, Helpers, game object, update(dt), draw()) updated, Version History v1.2 added. `PLANNED-FEATURES-v2.md` — F1 marked 🟢 Done with spec pointed to GDD §2.11, deferred off-screen-awareness note retained; top status line updated.
+- **`asteroids-deluxe.html` → v1.3.** Added the "Health, damage & knockback (F2)" constants block (`SHIP_MAX_HP`, `DMG_SMALL/MEDIUM/LARGE`, `DMG_BULLET`, `AST_DAMAGE`, `KNOCKBACK_SPEED`, `HIT_STUN_DURATION`, `REPAIR_MILESTONE`, `REPAIR_AMOUNT`, `REPAIR_FULL_BONUS`); removed `EXTRA_LIFE_AT`/`START_LIVES`. `Ship.reset()` now sets `hp = SHIP_MAX_HP` and `invuln = 0` (the 2.5 s spawn invuln is gone; `invuln` is now the hit-stun timer). Every hazard constructor sets a `damage` field. New **`damageShip(amount, srcX, srcY)`** (self-guarding: HP−, knockback shove via wrap-aware `shortDelta`, 1.0 s hit-stun, hit particles + new `AudioSys.hit()` thud, → `killShip` at 0 HP). **`killShip()`** rewritten to a respawn-free game over (boom + `scatterChain` + state → `gameover`). All three unshielded-hit sites (hostile bullet, hazard body, saucer body) call `damageShip` instead of `killShip`; the hazard-loop `break` removed (self-guard handles single-hit-per-frame). Deleted the respawn-clearing block in `update()`. `addScore()` milestone changed from extra-life to hull-repair. `game` state drops `lives`/`nextExtraLife`/`respawnTimer`, gains `nextRepair`. HUD: removed `drawShipIcon` + the life-ship loop; added a HULL/HP bar (`COLOR.hp` green, red < 30%) mirroring the shield bar. Version header + changelog bumped to v1.3.
+- **Headless test** added at `scratchpad/test-f2.js` (evals the real script via GDD §5.4 stubs, drives `update()`/`damageShip()`/`addScore()`). 54/54 assertions pass; `node --check` clean.
+- **Docs:** GDD — version header → 1.3; §2.1 (health + hit-stun, respawn removed), §2.7 (Waves, Health & Scoring), new **§2.12 (Health, Damage & Knockback)**; Architecture Map rows (Constants, Entity classes, game object, Flow functions, update(dt), draw()) + §3.1 collision conventions updated; §6 respawn watch items retired and two knockback watch items added; Version History v1.3. `PLANNED-FEATURES-v2.md` — F2 marked 🟢 Done with spec pointed to GDD §2.12, resolved max-HP decision recorded, deferred Hunter-damage/health-powerup notes retained; top status line updated.
 
 ## Playtest asks (Paul — can't be checked headlessly)
 
-1. **Camera feel** — does the scroll feel tight and responsive, or laggy/floaty? (It's a hard 1:1 follow with no smoothing; if it feels *too* rigid/jittery we can add a touch of lerp, but that's a deliberate later call.)
-2. **Starfield** — fly to and across a world edge in every direction: any visible seam, tiling repeat, or star "pop"? (Rendered wrap-aware, so there should be none.)
-3. **Entity seam rendering** — when near a world edge with asteroids/wedges around, does anything pop in/out or fail to appear on the wrapped side? (Nearest-image render should keep the far side visible.)
-4. **Satellite & saucer entry** — do they still slide in from just off-screen and reach the ship at a fair distance? Confirm a saucer still crosses the view and exits rather than lingering or never appearing.
-5. **Wave reachability** — do new waves feel reachable (some rocks visible or a short flight away), not stranded across the world? Dock reachable, and does the green chevron point to it correctly when it's off-screen?
-6. **Frame rate** — with the 9× world + culling, confirm no regression late-wave (garbage-heavy) on modest hardware.
+1. **Knockback strength** — does 250 px/s feel right? Not too weak/floaty (ship barely nudged, keeps grinding the hazard) and not too violent (flung across the screen, disorienting)? Pair this with the 1.0 s hit-stun — does the shove + brief blink read clearly as "I got hit, I'm briefly safe, get clear"?
+2. **HP damage pacing** — play a few waves unshielded-ish: do the 20/35/50 contact hits and 15 bullet hits feel fairly paced against the 250 pool, or does the run end too fast / never feel threatened? (Top tuning lever if off.)
+3. **Max HP = 250** — now that it's in the build (over the prompt's 100), does 250 feel like the right survivability target, or should we try lower for more bite?
+4. **HULL bar readability** — top-left HULL bar vs top-right SHIELD bar: clear at a glance which is which? Does the red-below-30% warning register in the heat of a wave?
+5. **Shield still the "free" answer** — does shielding to negate a hit (no damage/knockback) vs. eating the hit (damage + shove + i-frames) feel like a real tension, per Pillar 4? Watch the case where a deflected rock still hits your tow chain.
+6. **Knockback + chain** — with a long tow chain, does a hit ever yank the ship somewhere that instantly severs the whole haul unfairly (esp. near a wrap seam)?

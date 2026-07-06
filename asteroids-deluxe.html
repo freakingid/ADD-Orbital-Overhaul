@@ -27,7 +27,7 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v1.2
+   ASTEROID FIELD DELUXE — v1.3
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
    - Energy shield (hold SHIFT) that deflects rocks
    - Killer satellite that splits into homing wedge ships
@@ -38,6 +38,10 @@
    Cargo has mass: it cuts thrust/top speed and tugs the ship around.
    v1.2: Larger 3840x2160 wrapping world with a scrolling camera that keeps
    the ship centered; the 1280x720 canvas is now a viewport onto that world.
+   v1.3: Discrete lives replaced by a single HP pool (SHIP_MAX_HP). Unshielded
+   hits deal source-specific damage, shove the ship away (knockback), and grant
+   ~1s of hit-stun i-frames; 0 HP is a permanent game over (no respawn). Score
+   milestones now repair the hull instead of granting extra lives.
    ============================================================ */
 
 // ---------- Constants ----------
@@ -70,8 +74,18 @@ const SAT_SCORE = 200;          // killer satellite core
 const WEDGE_SCORE = { 2: 150, 1: 250 };  // homing wedges by size
 const SAUCER_SCORE = { big: 200, small: 1000 };
 
-const EXTRA_LIFE_AT = 10000;
-const START_LIVES = 3;
+// Health, damage & knockback (F2) — a single HP pool replaces discrete lives
+const SHIP_MAX_HP = 250;        // full hull integrity at game start; no respawns
+const DMG_SMALL = 20;           // contact damage from a small hazard
+const DMG_MEDIUM = 35;          // contact damage from a medium hazard
+const DMG_LARGE = 50;           // contact damage from a large hazard
+const DMG_BULLET = 15;          // damage from a hostile (saucer) bullet
+const AST_DAMAGE = { 3: DMG_LARGE, 2: DMG_MEDIUM, 1: DMG_SMALL };
+const KNOCKBACK_SPEED = 250;    // px/sec shove directly away from a hazard on an unshielded hit
+const HIT_STUN_DURATION = 1.0;  // sec of hit-stun invulnerability granted after any non-lethal hit
+const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonus (was: extra life)
+const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
+const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
 
 // Radioactive salvage / tow chain / recycling dock
 const GARBAGE_DECAY = 20;       // sec before uncollected garbage decays away
@@ -253,6 +267,20 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
     o.connect(g).connect(this.ctx.destination);
     o.start(t); o.stop(t + 0.16);
+  },
+
+  hit() { // ship takes hull damage — a low, heavy descending thud (distinct from fire)
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(200, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.18);
+    g.gain.setValueAtTime(0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.23);
   }
 };
 
@@ -357,7 +385,8 @@ const COLOR = {
   dim: "#3a5a80",
   garbage: "#c8ff50",
   chain: "#8aa0ff",
-  dock: "#70ffa0"
+  dock: "#70ffa0",
+  hp: "#5fe08a"
 };
 
 // ---------- Entities ----------
@@ -369,7 +398,8 @@ class Ship {
     this.angle = -Math.PI / 2;
     this.cooldown = 0;
     this.dead = false;
-    this.invuln = 2.5;      // spawn invulnerability
+    this.hp = SHIP_MAX_HP;  // one hull pool for the whole run (F2)
+    this.invuln = 0;        // hit-stun i-frames; set on each non-lethal hit (drives the blink)
     this.shieldOn = false;
     this.energy = 1;        // 0..1
     this.thrusting = false;
@@ -474,6 +504,7 @@ class Asteroid {
     this.x = x; this.y = y;
     this.size = size;
     this.radius = AST_RADII[size];
+    this.damage = AST_DAMAGE[size];   // contact damage to the ship (F2)
     const sp = AST_SPEEDS[size] * speedMul * rand(0.7, 1.3);
     const a = rand(0, TAU);
     this.vx = Math.cos(a) * sp;
@@ -517,6 +548,7 @@ class Satellite {
     this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp;
     this.angle = 0;
     this.radius = 30;
+    this.damage = DMG_LARGE;   // contact damage to the ship (F2)
     this.dead = false;
     // snowflake-hex: outer hexagon + inner hexagon
     this.outer = []; this.inner = [];
@@ -547,6 +579,7 @@ class Wedge {
     this.x = x; this.y = y;
     this.size = size;                       // 2 = big, 1 = small
     this.radius = size === 2 ? 14 : 9;
+    this.damage = size === 2 ? DMG_MEDIUM : DMG_SMALL;   // contact damage to the ship (F2)
     this.speed = size === 2 ? 120 : 175;
     this.turnRate = size === 2 ? 1.6 : 2.6; // rad/sec homing agility
     this.heading = scatterAngle;
@@ -588,6 +621,7 @@ class Saucer {
   constructor(small) {
     this.small = small;
     this.radius = small ? 12 : 20;
+    this.damage = small ? DMG_SMALL : DMG_MEDIUM;   // ramming contact damage to the ship (F2)
     this.fromLeft = Math.random() < 0.5;
     // enter from just beyond the left/right viewport edge, relative to the ship
     const p = wrapPos({
@@ -769,9 +803,8 @@ const game = {
   asteroids: [], bullets: [], saucers: [], wedges: [], satellites: [], particles: [],
   garbage: [], chain: [], floaters: [], dock: null,
   deliveryCount: 0, offloadTimer: 0,
-  score: 0, lives: START_LIVES, wave: 0,
-  nextExtraLife: EXTRA_LIFE_AT,
-  respawnTimer: 0,
+  score: 0, wave: 0,
+  nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
   saucerTimer: 0,
   satelliteTimer: 0,
   beatTimer: 0, beatHigh: false, beatInterval: 1.0,
@@ -782,9 +815,8 @@ function startGame() {
   game.state = "playing";
   game.paused = false;
   game.score = 0;
-  game.lives = START_LIVES;
   game.wave = 0;
-  game.nextExtraLife = EXTRA_LIFE_AT;
+  game.nextRepair = REPAIR_MILESTONE;
   game.asteroids = []; game.bullets = []; game.saucers = [];
   game.wedges = []; game.satellites = []; game.particles = [];
   game.garbage = []; game.chain = []; game.floaters = [];
@@ -814,9 +846,14 @@ function nextWave() {
 
 function addScore(pts) {
   game.score += pts;
-  if (game.score >= game.nextExtraLife) {
-    game.lives++;
-    game.nextExtraLife += EXTRA_LIFE_AT;
+  // Score milestones repair the hull instead of granting an extra life (F2).
+  if (game.score >= game.nextRepair) {
+    game.nextRepair += REPAIR_MILESTONE;
+    if (game.ship.hp < SHIP_MAX_HP) {
+      game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + REPAIR_AMOUNT);
+    } else {
+      game.score += REPAIR_FULL_BONUS; // already at full HP: cash the milestone in as points
+    }
     AudioSys.shieldPing();
   }
 }
@@ -844,18 +881,42 @@ function destroyAsteroid(a, awardScore = true) {
   }
 }
 
-function killShip() {
-  if (game.ship.invuln > 0 || game.ship.shieldOn || game.ship.dead) return;
+// Apply an unshielded hit: subtract HP, knock the ship away from the hazard, and
+// open a hit-stun i-frame window. Self-guarding — shielded, already-stunned, or dead
+// hits are ignored, so only one hit lands per stun window even with several overlapping
+// hazards in a frame. Lethal damage routes to killShip (game over). Returns whether
+// damage was actually applied.
+function damageShip(amount, srcX, srcY) {
+  const s = game.ship;
+  if (s.dead || s.shieldOn || s.invuln > 0) return false;
+  s.hp -= amount;
+  if (s.hp <= 0) {
+    s.hp = 0;
+    killShip();
+    return true;
+  }
+  // Knockback: shove directly away from the hazard so the ship physically separates
+  // instead of sitting inside it racking up damage. Set (not add) velocity so a hit
+  // always pushes the ship clear regardless of its current momentum.
+  const [dx, dy] = shortDelta(srcX, srcY, s.x, s.y); // vector from hazard to ship = away
+  const d = Math.hypot(dx, dy);
+  const a = d > 0.001 ? Math.atan2(dy, dx) : rand(0, TAU);
+  s.vx = Math.cos(a) * KNOCKBACK_SPEED;
+  s.vy = Math.sin(a) * KNOCKBACK_SPEED;
+  s.invuln = HIT_STUN_DURATION;
+  for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
+  AudioSys.hit();
+  return true;
+}
+
+function killShip() { // hull destroyed (0 HP): a true, permanent game over — no respawn (F2)
+  if (game.ship.dead) return;
   game.ship.dead = true;
   AudioSys.thrust(false);
   boom(game.ship.x, game.ship.y, 3, COLOR.ship);
   scatterChain();
-  game.lives--;
-  game.respawnTimer = 2.2;
-  if (game.lives < 0) {
-    game.state = "gameover";
-    AudioSys.saucer(false);
-  }
+  game.state = "gameover";
+  AudioSys.saucer(false);
 }
 
 // Shield deflection: bounce object away from ship, cost energy
@@ -994,17 +1055,6 @@ function update(dt) {
     return;
   }
 
-  // Respawn (ship reappears at world center, so gate on the world center being clear)
-  if (game.ship.dead && game.lives >= 0) {
-    game.respawnTimer -= dt;
-    if (game.respawnTimer <= 0) {
-      const center = { x: WORLD_W / 2, y: WORLD_H / 2 };
-      const clear = game.asteroids.every(a => dist2(a, center) > 150*150)
-        && game.wedges.every(w => dist2(w, center) > 180*180);
-      if (clear) game.ship.reset();
-    }
-  }
-
   game.ship.update(dt);
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
@@ -1121,7 +1171,7 @@ function update(dt) {
           if (game.ship.shieldOn) {
             game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
             AudioSys.shieldPing();
-          } else killShip();
+          } else damageShip(DMG_BULLET, b.x, b.y);
         }
       }
       // hostile bullet vs tow chain
@@ -1152,8 +1202,7 @@ function update(dt) {
             h.split();
           }
         } else {
-          killShip();
-          break;
+          damageShip(h.damage, h.x, h.y);
         }
       }
     }
@@ -1167,7 +1216,7 @@ function update(dt) {
           addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
           boom(s.x, s.y, 2, COLOR.saucer);
           AudioSys.saucer(false);
-        } else killShip();
+        } else damageShip(s.damage, s.x, s.y);
       }
     }
   }
@@ -1240,11 +1289,6 @@ function drawText(str, x, y, size, color = COLOR.text, align = "center") {
   ctx.shadowBlur = 8;
   ctx.fillText(str, x, y);
   ctx.shadowBlur = 0;
-}
-
-function drawShipIcon(x, y) {
-  const pts = [[0, -8], [-5, 6], [0, 3], [5, 6]];
-  drawPoly(pts, x, y, 0, COLOR.ship);
 }
 
 // Background stars scattered across the whole world (count scales with world area
@@ -1326,7 +1370,15 @@ function draw() {
 
   // --- HUD (screen space, drawn after restoring the untranslated context) ---
   drawText(String(game.score).padStart(6, "0"), 30, 46, 30, COLOR.text, "left");
-  for (let i = 0; i < Math.max(0, game.lives); i++) drawShipIcon(42 + i * 24, 74);
+  // hull HP bar (replaces the old life-ship icons; same stroke/fill style as the shield bar)
+  const hpw = 140, hph = 8, hpx = 92, hpy = 62;
+  ctx.strokeStyle = COLOR.dim;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(hpx, hpy, hpw, hph);
+  const hpFrac = Math.max(0, game.ship.hp) / SHIP_MAX_HP;
+  ctx.fillStyle = hpFrac > 0.3 ? COLOR.hp : "#ff7060";
+  ctx.fillRect(hpx + 1, hpy + 1, (hpw - 2) * hpFrac, hph - 2);
+  drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
   drawText("CARGO " + game.chain.length + "/" + CHAIN_MAX, 30, 104, 16,
     game.chain.length ? COLOR.garbage : COLOR.dim, "left");
   // when hauling, a chevron orbiting screen-center points toward the (maybe off-screen) dock
