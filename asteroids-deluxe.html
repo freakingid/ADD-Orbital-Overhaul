@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASTEROID FIELD DELUXE</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: monospace;
+  }
+  #game-container {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    background: #000208;
+    image-rendering: auto;
+  }
+</style>
+</head>
+<body>
+<div id="game-container"><canvas id="game"></canvas></div>
+<script>
+"use strict";
+
+/* ============================================================
+   ASTEROID FIELD DELUXE — v1.1
+   A vector-style arcade shooter in the spirit of Asteroids Deluxe
+   - Energy shield (hold SHIFT) that deflects rocks
+   - Killer satellite that splits into homing wedge ships
+   - Large & small saucers
+   v1.1: Radioactive salvage — destroyed rocks drop garbage canisters;
+   fly over them to hook them into a physics-simulated tow chain, then
+   haul the chain into the recycling dock for escalating bonus points.
+   Cargo has mass: it cuts thrust/top speed and tugs the ship around.
+   Logical resolution 1280x720, scaled to fit window.
+   ============================================================ */
+
+// ---------- Constants ----------
+const W = 1280, H = 720;
+const TAU = Math.PI * 2;
+
+const SHIP_TURN = 4.2;          // rad/sec
+const SHIP_THRUST = 340;        // px/sec^2
+const SHIP_DRAG = 0.35;         // fraction of velocity lost per second
+const SHIP_MAX_SPEED = 520;
+const SHIP_RADIUS = 13;
+
+const BULLET_SPEED = 620;
+const BULLET_LIFE = 1.05;       // seconds
+const MAX_BULLETS = 4;
+const FIRE_COOLDOWN = 0.16;
+
+const SHIELD_DRAIN = 0.55;      // energy/sec while on
+const SHIELD_RECHARGE = 0.12;   // energy/sec while off
+const SHIELD_HIT_COST = 0.22;   // energy per deflection
+const SHIELD_RADIUS = 26;
+
+const AST_SPEEDS = { 3: 70, 2: 110, 1: 160 };  // base speed by size
+const AST_RADII  = { 3: 46, 2: 26, 1: 13 };
+const AST_SCORE  = { 3: 20, 2: 50, 1: 100 };
+
+const SAT_SCORE = 200;          // killer satellite core
+const WEDGE_SCORE = { 2: 150, 1: 250 };  // homing wedges by size
+const SAUCER_SCORE = { big: 200, small: 1000 };
+
+const EXTRA_LIFE_AT = 10000;
+const START_LIVES = 3;
+
+// Radioactive salvage / tow chain / recycling dock
+const GARBAGE_DECAY = 20;       // sec before uncollected garbage decays away
+const GARBAGE_PICKUP = 18;      // pickup radius from ship center
+const GARBAGE_DROP = { 3: 0.25, 2: 0.4, 1: 1.0 };  // drop chance by rock size
+
+const CHAIN_LINK = 20;          // px between chain nodes
+const CHAIN_MAX = 12;           // max towed canisters
+const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
+const CARGO_MASS = 0.12;        // per-canister contribution to tug mass factor
+const CARGO_THRUST = 0.10;      // thrust divisor grows by this per canister
+const CARGO_MAXSPD = 0.05;      // max-speed divisor grows by this per canister
+
+const DOCK_RADIUS = 44;
+const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
+const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
+
+// ---------- Canvas / scaling ----------
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W;
+  canvas.height = H;
+  canvas.style.width = Math.floor(W * scale) + "px";
+  canvas.style.height = Math.floor(H * scale) + "px";
+}
+window.addEventListener("resize", resize);
+resize();
+
+// ---------- Audio (Web Audio synth) ----------
+const AudioSys = {
+  ctx: null, thrustNode: null, thrustGain: null,
+  saucerOsc: null, saucerGain: null,
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  },
+  resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+  now() { return this.ctx ? this.ctx.currentTime : 0; },
+
+  fire() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(880, t);
+    o.frequency.exponentialRampToValueAtTime(160, t + 0.12);
+    g.gain.setValueAtTime(0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.15);
+  },
+
+  explosion(size) { // size 1..3, bigger = deeper/longer
+    if (!this.ctx) return;
+    const t = this.now();
+    const dur = 0.25 + size * 0.15;
+    const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 1.6);
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = "lowpass";
+    filt.frequency.setValueAtTime(900 - size * 180, t);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(filt).connect(g).connect(this.ctx.destination);
+    src.start(t);
+  },
+
+  thrust(on) {
+    if (!this.ctx) return;
+    if (on && !this.thrustNode) {
+      const dur = 1;
+      const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = "lowpass"; filt.frequency.value = 320;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.10;
+      src.connect(filt).connect(g).connect(this.ctx.destination);
+      src.start();
+      this.thrustNode = src; this.thrustGain = g;
+    } else if (!on && this.thrustNode) {
+      this.thrustNode.stop();
+      this.thrustNode = null; this.thrustGain = null;
+    }
+  },
+
+  beat(high) {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = high ? 110 : 82;
+    g.gain.setValueAtTime(0.16, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.13);
+  },
+
+  saucer(on, small) {
+    if (!this.ctx) return;
+    if (on && !this.saucerOsc) {
+      const o = this.ctx.createOscillator();
+      const lfo = this.ctx.createOscillator();
+      const lfoGain = this.ctx.createGain();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.value = small ? 520 : 260;
+      lfo.frequency.value = small ? 7 : 4;
+      lfoGain.gain.value = small ? 90 : 45;
+      lfo.connect(lfoGain).connect(o.frequency);
+      g.gain.value = 0.055;
+      o.connect(g).connect(this.ctx.destination);
+      o.start(); lfo.start();
+      this.saucerOsc = { o, lfo }; this.saucerGain = g;
+    } else if (!on && this.saucerOsc) {
+      this.saucerOsc.o.stop(); this.saucerOsc.lfo.stop();
+      this.saucerOsc = null; this.saucerGain = null;
+    }
+  },
+
+  shieldPing() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(1400, t);
+    o.frequency.exponentialRampToValueAtTime(500, t + 0.18);
+    g.gain.setValueAtTime(0.14, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.21);
+  },
+
+  pickup() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.exponentialRampToValueAtTime(620, t + 0.08);
+    g.gain.setValueAtTime(0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.13);
+  },
+
+  deliver(count) { // pitch climbs with each canister in a delivery run
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "triangle";
+    o.frequency.value = 440 * Math.pow(1.06, Math.min(count, 20));
+    g.gain.setValueAtTime(0.13, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.16);
+  }
+};
+
+// ---------- Input ----------
+const keys = {};
+window.addEventListener("keydown", e => {
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+  keys[e.key.toLowerCase()] = true;
+  AudioSys.init(); AudioSys.resume();
+  if (e.key === "Enter" && (game.state === "title" || game.state === "gameover")) startGame();
+  if ((e.key === "p" || e.key === "P") && game.state === "playing") game.paused = !game.paused;
+});
+window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+
+const input = {
+  left:   () => keys["arrowleft"] || keys["a"],
+  right:  () => keys["arrowright"] || keys["d"],
+  thrust: () => keys["arrowup"] || keys["w"],
+  fire:   () => keys[" "],
+  shield: () => keys["shift"]
+};
+
+// ---------- Helpers ----------
+const rand = (a, b) => a + Math.random() * (b - a);
+const randSign = () => Math.random() < 0.5 ? -1 : 1;
+
+function wrap(obj) {
+  if (obj.x < -60) obj.x += W + 120;
+  if (obj.x > W + 60) obj.x -= W + 120;
+  if (obj.y < -60) obj.y += H + 120;
+  if (obj.y > H + 60) obj.y -= H + 120;
+}
+
+function dist2(a, b) {
+  // shortest distance squared on a wrapping field
+  let dx = Math.abs(a.x - b.x); if (dx > W / 2) dx = W - dx;
+  let dy = Math.abs(a.y - b.y); if (dy > H / 2) dy = H - dy;
+  return dx * dx + dy * dy;
+}
+
+function angleTo(from, to) {
+  let dx = to.x - from.x, dy = to.y - from.y;
+  if (dx > W / 2) dx -= W; if (dx < -W / 2) dx += W;
+  if (dy > H / 2) dy -= H; if (dy < -H / 2) dy += H;
+  return Math.atan2(dy, dx);
+}
+
+function shortDelta(ax, ay, bx, by) {
+  // shortest vector from a to b on the wrapping field
+  let dx = bx - ax, dy = by - ay;
+  if (dx > W / 2) dx -= W; if (dx < -W / 2) dx += W;
+  if (dy > H / 2) dy -= H; if (dy < -H / 2) dy += H;
+  return [dx, dy];
+}
+
+// Vector-glow stroke
+function glowStroke(color, width = 1.6, blur = 10) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function drawPoly(points, x, y, angle, color, closed = true) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed) ctx.closePath();
+  glowStroke(color);
+  ctx.restore();
+}
+
+const COLOR = {
+  ship: "#9fd8ff",
+  bullet: "#ffffff",
+  asteroid: "#7fb7e8",
+  saucer: "#b8e6ff",
+  satellite: "#6fe8d8",
+  wedge: "#5fffc8",
+  shield: "#40b0ff",
+  text: "#a8d4ff",
+  dim: "#3a5a80",
+  garbage: "#c8ff50",
+  chain: "#8aa0ff",
+  dock: "#70ffa0"
+};
+
+// ---------- Entities ----------
+class Ship {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = W / 2; this.y = H / 2;
+    this.vx = 0; this.vy = 0;
+    this.angle = -Math.PI / 2;
+    this.cooldown = 0;
+    this.dead = false;
+    this.invuln = 2.5;      // spawn invulnerability
+    this.shieldOn = false;
+    this.energy = 1;        // 0..1
+    this.thrusting = false;
+  }
+  update(dt) {
+    if (this.dead) return;
+    if (input.left())  this.angle -= SHIP_TURN * dt;
+    if (input.right()) this.angle += SHIP_TURN * dt;
+
+    this.thrusting = input.thrust();
+    // towed cargo makes the ship heavier: weaker thrust, lower top speed
+    const cargo = game.chain.length;
+    const thrustMul = 1 / (1 + cargo * CARGO_THRUST);
+    const maxSp = SHIP_MAX_SPEED / (1 + cargo * CARGO_MAXSPD);
+    if (this.thrusting) {
+      this.vx += Math.cos(this.angle) * SHIP_THRUST * thrustMul * dt;
+      this.vy += Math.sin(this.angle) * SHIP_THRUST * thrustMul * dt;
+      const sp = Math.hypot(this.vx, this.vy);
+      if (sp > maxSp) {
+        this.vx *= maxSp / sp;
+        this.vy *= maxSp / sp;
+      }
+    }
+    AudioSys.thrust(this.thrusting && game.state === "playing" && !game.paused);
+
+    const drag = Math.pow(1 - SHIP_DRAG, dt);
+    this.vx *= drag; this.vy *= drag;
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    wrap(this);
+
+    // Shield
+    if (input.shield() && this.energy > 0.02) {
+      this.shieldOn = true;
+      this.energy = Math.max(0, this.energy - SHIELD_DRAIN * dt);
+      if (this.energy <= 0.02) this.shieldOn = false;
+    } else {
+      this.shieldOn = false;
+      this.energy = Math.min(1, this.energy + SHIELD_RECHARGE * dt);
+    }
+
+    // Fire
+    this.cooldown -= dt;
+    if (input.fire() && this.cooldown <= 0 && game.bullets.filter(b => !b.hostile).length < MAX_BULLETS) {
+      const bx = this.x + Math.cos(this.angle) * SHIP_RADIUS;
+      const by = this.y + Math.sin(this.angle) * SHIP_RADIUS;
+      game.bullets.push(new Bullet(bx, by,
+        this.vx + Math.cos(this.angle) * BULLET_SPEED,
+        this.vy + Math.sin(this.angle) * BULLET_SPEED, false));
+      this.cooldown = FIRE_COOLDOWN;
+      AudioSys.fire();
+    }
+
+    if (this.invuln > 0) this.invuln -= dt;
+  }
+  draw() {
+    if (this.dead) return;
+    const blink = this.invuln > 0 && Math.floor(this.invuln * 10) % 2 === 0;
+    if (!blink) {
+      const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
+      drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);
+      if (this.thrusting && Math.random() < 0.8) {
+        const flame = [[-7, -4], [-15 - Math.random() * 6, 0], [-7, 4]];
+        drawPoly(flame, this.x, this.y, this.angle, "#ffb060", false);
+      }
+    }
+    if (this.shieldOn) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, SHIELD_RADIUS, 0, TAU);
+      ctx.globalAlpha = 0.5 + Math.random() * 0.4;
+      glowStroke(COLOR.shield, 2, 14);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+class Bullet {
+  constructor(x, y, vx, vy, hostile) {
+    this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+    this.life = hostile ? 1.4 : BULLET_LIFE;
+    this.hostile = hostile;
+    this.dead = false;
+  }
+  update(dt) {
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    wrap(this);
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 2, 0, TAU);
+    ctx.fillStyle = this.hostile ? "#ff9090" : COLOR.bullet;
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+class Asteroid {
+  constructor(x, y, size, speedMul = 1) {
+    this.x = x; this.y = y;
+    this.size = size;
+    this.radius = AST_RADII[size];
+    const sp = AST_SPEEDS[size] * speedMul * rand(0.7, 1.3);
+    const a = rand(0, TAU);
+    this.vx = Math.cos(a) * sp;
+    this.vy = Math.sin(a) * sp;
+    this.angle = rand(0, TAU);
+    this.spin = rand(-1.2, 1.2);
+    this.dead = false;
+    // jagged polygon
+    this.pts = [];
+    const n = 10 + size * 2;
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * TAU;
+      const r = this.radius * rand(0.72, 1.12);
+      this.pts.push([Math.cos(th) * r, Math.sin(th) * r]);
+    }
+  }
+  update(dt) {
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    this.angle += this.spin * dt;
+    wrap(this);
+  }
+  draw() { drawPoly(this.pts, this.x, this.y, this.angle, COLOR.asteroid); }
+}
+
+// Killer satellite: hexagonal core; when shot, splits into 3 homing wedges,
+// each of which splits into 2 smaller wedges.
+class Satellite {
+  constructor() {
+    const edge = Math.floor(rand(0, 4));
+    this.x = edge < 2 ? (edge === 0 ? -40 : W + 40) : rand(0, W);
+    this.y = edge < 2 ? rand(0, H) : (edge === 2 ? -40 : H + 40);
+    const a = angleTo(this, game.ship) + rand(-0.4, 0.4);
+    const sp = 55;
+    this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp;
+    this.angle = 0;
+    this.radius = 30;
+    this.dead = false;
+    // snowflake-hex: outer hexagon + inner hexagon
+    this.outer = []; this.inner = [];
+    for (let i = 0; i < 6; i++) {
+      const th = (i / 6) * TAU;
+      this.outer.push([Math.cos(th) * 30, Math.sin(th) * 30]);
+      this.inner.push([Math.cos(th + 0.5) * 14, Math.sin(th + 0.5) * 14]);
+    }
+  }
+  update(dt) {
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    this.angle += 0.8 * dt;
+    wrap(this);
+  }
+  draw() {
+    drawPoly(this.outer, this.x, this.y, this.angle, COLOR.satellite);
+    drawPoly(this.inner, this.x, this.y, -this.angle * 1.5, COLOR.satellite);
+  }
+  split() {
+    for (let i = 0; i < 3; i++) {
+      game.wedges.push(new Wedge(this.x, this.y, 2, (i / 3) * TAU));
+    }
+  }
+}
+
+class Wedge {
+  constructor(x, y, size, scatterAngle) {
+    this.x = x; this.y = y;
+    this.size = size;                       // 2 = big, 1 = small
+    this.radius = size === 2 ? 14 : 9;
+    this.speed = size === 2 ? 120 : 175;
+    this.turnRate = size === 2 ? 1.6 : 2.6; // rad/sec homing agility
+    this.heading = scatterAngle;
+    this.vx = Math.cos(scatterAngle) * this.speed;
+    this.vy = Math.sin(scatterAngle) * this.speed;
+    this.dead = false;
+    this.scatter = 0.6; // brief scatter before homing kicks in
+  }
+  update(dt) {
+    if (this.scatter > 0) {
+      this.scatter -= dt;
+    } else if (!game.ship.dead) {
+      const target = angleTo(this, game.ship);
+      let diff = target - this.heading;
+      while (diff > Math.PI) diff -= TAU;
+      while (diff < -Math.PI) diff += TAU;
+      const maxTurn = this.turnRate * dt;
+      this.heading += Math.max(-maxTurn, Math.min(maxTurn, diff));
+    }
+    this.vx = Math.cos(this.heading) * this.speed;
+    this.vy = Math.sin(this.heading) * this.speed;
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    wrap(this);
+  }
+  draw() {
+    const s = this.size === 2 ? 1 : 0.65;
+    const pts = [[18 * s, 0], [-10 * s, -12 * s], [-4 * s, 0], [-10 * s, 12 * s]];
+    drawPoly(pts, this.x, this.y, this.heading, COLOR.wedge);
+  }
+  split() {
+    if (this.size === 2) {
+      game.wedges.push(new Wedge(this.x, this.y, 1, this.heading + 0.7));
+      game.wedges.push(new Wedge(this.x, this.y, 1, this.heading - 0.7));
+    }
+  }
+}
+
+class Saucer {
+  constructor(small) {
+    this.small = small;
+    this.radius = small ? 12 : 20;
+    this.fromLeft = Math.random() < 0.5;
+    this.x = this.fromLeft ? -40 : W + 40;
+    this.y = rand(H * 0.15, H * 0.85);
+    this.vx = (this.fromLeft ? 1 : -1) * (small ? 150 : 100);
+    this.vy = 0;
+    this.dead = false;
+    this.fireTimer = rand(0.6, 1.4);
+    this.zigTimer = rand(0.8, 1.8);
+    this.travel = 0;
+  }
+  update(dt) {
+    this.zigTimer -= dt;
+    if (this.zigTimer <= 0) {
+      this.vy = randSign() * rand(40, 110);
+      this.zigTimer = rand(0.8, 1.8);
+    }
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    if (this.y < 30 || this.y > H - 30) this.vy *= -1;
+    this.travel += Math.abs(this.vx) * dt;
+    if (this.travel > W + 120) { this.dead = true; return; } // exits, no wrap-x
+
+    this.fireTimer -= dt;
+    if (this.fireTimer <= 0 && !game.ship.dead) {
+      let a;
+      if (this.small) {
+        a = angleTo(this, game.ship) + rand(-0.09, 0.09); // aimed
+      } else {
+        a = rand(0, TAU); // random
+      }
+      game.bullets.push(new Bullet(this.x, this.y,
+        Math.cos(a) * 380, Math.sin(a) * 380, true));
+      this.fireTimer = this.small ? rand(0.7, 1.1) : rand(0.9, 1.6);
+    }
+  }
+  draw() {
+    const s = this.small ? 0.62 : 1;
+    const body = [[-20*s,4*s],[-9*s,-4*s],[9*s,-4*s],[20*s,4*s],[9*s,11*s],[-9*s,11*s]];
+    const dome = [[-9*s,-4*s],[-5*s,-11*s],[5*s,-11*s],[9*s,-4*s]];
+    drawPoly(body, this.x, this.y, 0, COLOR.saucer);
+    drawPoly(dome, this.x, this.y, 0, COLOR.saucer, false);
+    // middle line
+    ctx.beginPath();
+    ctx.moveTo(this.x - 20*s, this.y + 4*s);
+    ctx.lineTo(this.x + 20*s, this.y + 4*s);
+    glowStroke(COLOR.saucer);
+  }
+}
+
+class Particle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    const a = rand(0, TAU), sp = rand(30, 240);
+    this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp;
+    this.life = rand(0.3, 0.9);
+    this.maxLife = this.life;
+    this.color = color;
+    this.dead = false;
+  }
+  update(dt) {
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+  draw() {
+    ctx.globalAlpha = this.life / this.maxLife;
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x - 1, this.y - 1, 2, 2);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Shared renderer for radioactive canisters (free-floating and chained)
+function drawCanister(x, y, angle, alpha) {
+  ctx.globalAlpha = alpha * (0.75 + Math.random() * 0.25); // radioactive flicker
+  const body = [[7, -5], [7, 5], [-7, 5], [-7, -5]];
+  drawPoly(body, x, y, angle, COLOR.garbage);
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(angle);
+  ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); // hazard stripe
+  glowStroke(COLOR.garbage, 1, 5);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+class Garbage {
+  constructor(x, y, vx = 0, vy = 0, decay = GARBAGE_DECAY) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.spin = rand(0, TAU);
+    this.spinRate = rand(-1.5, 1.5);
+    this.decay = decay;
+    this.radius = 7;
+    this.dead = false;
+  }
+  static fromNode(n, decay = 15) { // chain node knocked loose -> free garbage
+    const a = rand(0, TAU);
+    return new Garbage(n.x, n.y,
+      Math.cos(a) * rand(20, 60), Math.sin(a) * rand(20, 60), decay);
+  }
+  update(dt) {
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    this.spin += this.spinRate * dt;
+    wrap(this);
+    this.decay -= dt;
+    if (this.decay <= 0) this.dead = true;
+  }
+  draw() {
+    // blink faster as decay approaches
+    const blink = this.decay < 5 &&
+      Math.floor(this.decay * (this.decay < 2 ? 8 : 4)) % 2 === 0;
+    if (!blink) drawCanister(this.x, this.y, this.spin, 0.9);
+  }
+}
+
+class FloatText {
+  constructor(text, x, y, color) {
+    this.text = text; this.x = x; this.y = y; this.color = color;
+    this.life = 1.1; this.dead = false;
+  }
+  update(dt) {
+    this.y -= 30 * dt;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+  draw() {
+    ctx.globalAlpha = Math.max(0, this.life / 1.1);
+    drawText(this.text, this.x, this.y, 16, this.color);
+    ctx.globalAlpha = 1;
+  }
+}
+
+class Dock {
+  constructor() {
+    let x, y;
+    do { // keep clear of the ship spawn point at screen center
+      x = rand(120, W - 120); y = rand(120, H - 120);
+    } while (Math.hypot(x - W / 2, y - H / 2) < 260);
+    this.x = x; this.y = y;
+    this.radius = DOCK_RADIUS;
+    this.spin = 0;
+    this.pts = [];
+    for (let i = 0; i < 8; i++) {
+      const th = (i / 8) * TAU + TAU / 16;
+      this.pts.push([Math.cos(th) * DOCK_RADIUS, Math.sin(th) * DOCK_RADIUS]);
+    }
+  }
+  update(dt) { this.spin += dt * 0.7; }
+  draw() {
+    drawPoly(this.pts, this.x, this.y, 0, COLOR.dock);
+    // rotating intake vanes
+    for (let i = 0; i < 3; i++) {
+      const th = this.spin + (i * TAU) / 3;
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(th) * (DOCK_RADIUS - 10),
+                 this.y + Math.sin(th) * (DOCK_RADIUS - 10));
+      ctx.lineTo(this.x + Math.cos(th + 0.25) * 14,
+                 this.y + Math.sin(th + 0.25) * 14);
+      glowStroke(COLOR.dock, 1.4, 8);
+    }
+    const hot = game.chain.length > 0 && Math.floor(performance.now() / 350) % 2 === 0;
+    drawText("RECYCLE", this.x, this.y + DOCK_RADIUS + 22, 14,
+      hot ? COLOR.garbage : COLOR.dim);
+  }
+}
+
+// ---------- Game state ----------
+const game = {
+  state: "title",   // title | playing | gameover
+  paused: false,
+  ship: new Ship(),
+  asteroids: [], bullets: [], saucers: [], wedges: [], satellites: [], particles: [],
+  garbage: [], chain: [], floaters: [], dock: null,
+  deliveryCount: 0, offloadTimer: 0,
+  score: 0, lives: START_LIVES, wave: 0,
+  nextExtraLife: EXTRA_LIFE_AT,
+  respawnTimer: 0,
+  saucerTimer: 0,
+  satelliteTimer: 0,
+  beatTimer: 0, beatHigh: false, beatInterval: 1.0,
+  waveClearTimer: 0
+};
+
+function startGame() {
+  game.state = "playing";
+  game.paused = false;
+  game.score = 0;
+  game.lives = START_LIVES;
+  game.wave = 0;
+  game.nextExtraLife = EXTRA_LIFE_AT;
+  game.asteroids = []; game.bullets = []; game.saucers = [];
+  game.wedges = []; game.satellites = []; game.particles = [];
+  game.garbage = []; game.chain = []; game.floaters = [];
+  game.deliveryCount = 0; game.offloadTimer = 0;
+  game.ship = new Ship();
+  game.saucerTimer = rand(10, 18);
+  game.satelliteTimer = rand(14, 22);
+  nextWave();
+}
+
+function nextWave() {
+  game.wave++;
+  game.dock = new Dock(); // recycling dock relocates each wave
+  const count = Math.min(4 + game.wave, 11);
+  const speedMul = 1 + (game.wave - 1) * 0.08;
+  for (let i = 0; i < count; i++) {
+    // spawn away from the ship
+    let x, y;
+    do {
+      x = rand(0, W); y = rand(0, H);
+    } while (dist2({x, y}, game.ship) < 220 * 220);
+    game.asteroids.push(new Asteroid(x, y, 3, speedMul));
+  }
+}
+
+function addScore(pts) {
+  game.score += pts;
+  if (game.score >= game.nextExtraLife) {
+    game.lives++;
+    game.nextExtraLife += EXTRA_LIFE_AT;
+    AudioSys.shieldPing();
+  }
+}
+
+function boom(x, y, size, color) {
+  const n = 6 + size * 6;
+  for (let i = 0; i < n; i++) game.particles.push(new Particle(x, y, color));
+  AudioSys.explosion(size);
+}
+
+function destroyAsteroid(a, awardScore = true) {
+  a.dead = true;
+  if (awardScore) addScore(AST_SCORE[a.size]);
+  boom(a.x, a.y, a.size, COLOR.asteroid);
+  if (Math.random() < GARBAGE_DROP[a.size]) {
+    game.garbage.push(new Garbage(a.x, a.y,
+      a.vx * 0.25 + rand(-15, 15), a.vy * 0.25 + rand(-15, 15)));
+  }
+  if (a.size > 1) {
+    const speedMul = 1 + (game.wave - 1) * 0.08;
+    for (let i = 0; i < 2; i++) {
+      const child = new Asteroid(a.x, a.y, a.size - 1, speedMul);
+      game.asteroids.push(child);
+    }
+  }
+}
+
+function killShip() {
+  if (game.ship.invuln > 0 || game.ship.shieldOn || game.ship.dead) return;
+  game.ship.dead = true;
+  AudioSys.thrust(false);
+  boom(game.ship.x, game.ship.y, 3, COLOR.ship);
+  scatterChain();
+  game.lives--;
+  game.respawnTimer = 2.2;
+  if (game.lives < 0) {
+    game.state = "gameover";
+    AudioSys.saucer(false);
+  }
+}
+
+// Shield deflection: bounce object away from ship, cost energy
+function shieldDeflect(obj) {
+  const a = angleTo(game.ship, obj);
+  const sp = Math.hypot(obj.vx, obj.vy) || 80;
+  obj.vx = Math.cos(a) * sp * 1.1;
+  obj.vy = Math.sin(a) * sp * 1.1;
+  if (obj.heading !== undefined) obj.heading = a;
+  // push out of overlap
+  obj.x = game.ship.x + Math.cos(a) * (SHIELD_RADIUS + obj.radius + 2);
+  obj.y = game.ship.y + Math.sin(a) * (SHIELD_RADIUS + obj.radius + 2);
+  game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
+  AudioSys.shieldPing();
+}
+
+// ---------- Tow chain physics ----------
+// Verlet nodes with position-based distance constraints, wrap-aware.
+// The ship is the (mostly) kinematic head; nodes trail serpentine behind.
+// A taut first link tugs real momentum back into the ship.
+
+function chainAnchor() { // hitch point just behind the ship
+  return {
+    x: game.ship.x - Math.cos(game.ship.angle) * 12,
+    y: game.ship.y - Math.sin(game.ship.angle) * 12
+  };
+}
+
+function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity survives
+  if (n.x < -60) { n.x += W + 120; n.px += W + 120; }
+  if (n.x > W + 60) { n.x -= W + 120; n.px -= W + 120; }
+  if (n.y < -60) { n.y += H + 120; n.py += H + 120; }
+  if (n.y > H + 60) { n.y -= H + 120; n.py -= H + 120; }
+}
+
+function updateChain(dt) {
+  const chain = game.chain;
+  if (chain.length === 0 || game.ship.dead) return;
+
+  // 1. Integrate: verlet inertia with heavy damping (space trash is sluggish)
+  const damp = Math.pow(0.18, dt);
+  for (const n of chain) {
+    const vx = (n.x - n.px) * damp;
+    const vy = (n.y - n.py) * damp;
+    n.px = n.x; n.py = n.y;
+    n.x += vx; n.y += vy;
+    n.spin += n.spinRate * dt;
+  }
+
+  // 2. Momentum transfer: pre-constraint stretch of the first link measures
+  //    how hard the cargo resisted the ship this frame; tug the ship back.
+  const a0 = chainAnchor();
+  const [tdx, tdy] = shortDelta(a0.x, a0.y, chain[0].x, chain[0].y);
+  const td = Math.hypot(tdx, tdy);
+  if (td > CHAIN_LINK) {
+    const massFactor = Math.min(1.4, chain.length * CARGO_MASS);
+    const f = CHAIN_TUG * (td - CHAIN_LINK) * massFactor;
+    game.ship.vx += (tdx / td) * f * dt;
+    game.ship.vy += (tdy / td) * f * dt;
+  }
+
+  // 3. Relax distance constraints a few passes so the chain follows serpentine
+  for (let iter = 0; iter < 3; iter++) {
+    const a = chainAnchor();
+    for (let i = 0; i < chain.length; i++) {
+      const leader = i === 0 ? a : chain[i - 1];
+      const n = chain[i];
+      const [dx, dy] = shortDelta(leader.x, leader.y, n.x, n.y);
+      const d = Math.hypot(dx, dy) || 0.0001;
+      const diff = (d - CHAIN_LINK) / d;
+      if (i === 0) {          // anchor is kinematic; node takes full correction
+        n.x -= dx * diff; n.y -= dy * diff;
+      } else {                // equal-mass nodes share the correction
+        n.x -= dx * diff * 0.5; n.y -= dy * diff * 0.5;
+        leader.x += dx * diff * 0.5; leader.y += dy * diff * 0.5;
+      }
+    }
+  }
+  chain.forEach(wrapNode);
+}
+
+function breakChain(i) { // node i destroyed; everything aft breaks loose
+  const chain = game.chain;
+  const hit = chain[i];
+  boom(hit.x, hit.y, 1, COLOR.garbage);
+  for (let j = i + 1; j < chain.length; j++) {
+    game.garbage.push(Garbage.fromNode(chain[j]));
+  }
+  chain.length = i;
+  game.deliveryCount = 0;
+}
+
+function scatterChain() { // ship destroyed: whole load breaks loose
+  for (const n of game.chain) game.garbage.push(Garbage.fromNode(n));
+  game.chain.length = 0;
+  game.deliveryCount = 0;
+}
+
+function drawLink(x1, y1, x2, y2) {
+  const [dx, dy] = shortDelta(x1, y1, x2, y2);
+  if (Math.hypot(dx, dy) > 120) return; // don't streak across the wrap seam
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 + dx, y1 + dy);
+  ctx.globalAlpha = 0.7;
+  glowStroke(COLOR.chain, 1.2, 6);
+  ctx.globalAlpha = 1;
+}
+
+function drawChain() {
+  const chain = game.chain;
+  if (!chain.length) return;
+  if (!game.ship.dead) {
+    const a = chainAnchor();
+    drawLink(a.x, a.y, chain[0].x, chain[0].y);
+  }
+  for (let i = 1; i < chain.length; i++) {
+    drawLink(chain[i - 1].x, chain[i - 1].y, chain[i].x, chain[i].y);
+  }
+  for (const n of chain) drawCanister(n.x, n.y, n.spin, 1);
+}
+
+// ---------- Update ----------
+function update(dt) {
+  if (game.state !== "playing" || game.paused) {
+    AudioSys.thrust(false);
+    return;
+  }
+
+  // Respawn
+  if (game.ship.dead && game.lives >= 0) {
+    game.respawnTimer -= dt;
+    if (game.respawnTimer <= 0) {
+      // only respawn when center is reasonably clear
+      const clear = game.asteroids.every(a => dist2(a, {x: W/2, y: H/2}) > 150*150)
+        && game.wedges.every(w => dist2(w, {x: W/2, y: H/2}) > 180*180);
+      if (clear) game.ship.reset();
+    }
+  }
+
+  game.ship.update(dt);
+  game.asteroids.forEach(a => a.update(dt));
+  game.bullets.forEach(b => b.update(dt));
+  game.saucers.forEach(s => s.update(dt));
+  game.wedges.forEach(w => w.update(dt));
+  game.satellites.forEach(s => s.update(dt));
+  game.particles.forEach(p => p.update(dt));
+  game.floaters.forEach(f => f.update(dt));
+  if (game.dock) game.dock.update(dt);
+
+  // --- Salvage pickup & chain physics ---
+  for (const g of game.garbage) {
+    g.update(dt);
+    if (!g.dead && !game.ship.dead && game.chain.length < CHAIN_MAX &&
+        dist2(g, game.ship) < GARBAGE_PICKUP * GARBAGE_PICKUP) {
+      g.dead = true;
+      game.chain.push({
+        x: g.x, y: g.y, px: g.x, py: g.y,
+        spin: g.spin, spinRate: g.spinRate
+      });
+      AudioSys.pickup();
+    }
+  }
+  updateChain(dt);
+
+  // --- Recycling dock offload ---
+  if (game.dock) {
+    const nearDock = !game.ship.dead &&
+      dist2(game.ship, game.dock) < (DOCK_RADIUS + 10) * (DOCK_RADIUS + 10);
+    if (nearDock && game.chain.length > 0) {
+      game.offloadTimer -= dt;
+      if (game.offloadTimer <= 0) {
+        const node = game.chain.pop(); // canisters peel off from the tail
+        game.deliveryCount++;
+        const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
+        addScore(pts);
+        game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
+        AudioSys.deliver(game.deliveryCount);
+        game.offloadTimer = 0.13;
+      }
+    } else {
+      game.offloadTimer = 0;
+      // combo resets once you leave the dock's neighborhood
+      if (!game.ship.dead &&
+          dist2(game.ship, game.dock) > (DOCK_RADIUS + 40) * (DOCK_RADIUS + 40)) {
+        game.deliveryCount = 0;
+      }
+    }
+  }
+
+  // --- Spawning ---
+  game.saucerTimer -= dt;
+  if (game.saucerTimer <= 0 && game.saucers.length === 0) {
+    const small = game.score > 8000 ? Math.random() < 0.6 : Math.random() < 0.25;
+    game.saucers.push(new Saucer(small));
+    AudioSys.saucer(true, small);
+    game.saucerTimer = rand(12, 22) - Math.min(6, game.wave);
+  }
+
+  game.satelliteTimer -= dt;
+  if (game.satelliteTimer <= 0 && game.satellites.length === 0 && game.wedges.length === 0 && game.wave >= 2) {
+    game.satellites.push(new Satellite());
+    game.satelliteTimer = rand(20, 32);
+  }
+
+  // --- Collisions: player bullets vs targets ---
+  for (const b of game.bullets) {
+    if (b.dead) continue;
+    if (!b.hostile) {
+      for (const a of game.asteroids) {
+        if (!a.dead && dist2(b, a) < a.radius * a.radius) {
+          b.dead = true; destroyAsteroid(a); break;
+        }
+      }
+      if (b.dead) continue;
+      for (const s of game.saucers) {
+        if (!s.dead && dist2(b, s) < s.radius * s.radius) {
+          b.dead = true; s.dead = true;
+          addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
+          boom(s.x, s.y, 2, COLOR.saucer);
+          AudioSys.saucer(false);
+          break;
+        }
+      }
+      if (b.dead) continue;
+      for (const s of game.satellites) {
+        if (!s.dead && dist2(b, s) < s.radius * s.radius) {
+          b.dead = true; s.dead = true;
+          addScore(SAT_SCORE);
+          boom(s.x, s.y, 3, COLOR.satellite);
+          s.split();
+          break;
+        }
+      }
+      if (b.dead) continue;
+      for (const w of game.wedges) {
+        if (!w.dead && dist2(b, w) < (w.radius + 3) * (w.radius + 3)) {
+          b.dead = true; w.dead = true;
+          addScore(WEDGE_SCORE[w.size]);
+          boom(w.x, w.y, w.size, COLOR.wedge);
+          w.split();
+          break;
+        }
+      }
+    } else {
+      // hostile bullet vs player
+      if (!game.ship.dead && game.ship.invuln <= 0) {
+        const r = game.ship.shieldOn ? SHIELD_RADIUS : SHIP_RADIUS;
+        if (dist2(b, game.ship) < r * r) {
+          b.dead = true;
+          if (game.ship.shieldOn) {
+            game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
+            AudioSys.shieldPing();
+          } else killShip();
+        }
+      }
+      // hostile bullet vs tow chain
+      if (!b.dead && game.chain.length) {
+        for (let i = 0; i < game.chain.length; i++) {
+          if (dist2(b, game.chain[i]) < 9 * 9) {
+            b.dead = true; breakChain(i); break;
+          }
+        }
+      }
+    }
+  }
+
+  // --- Collisions: hazards vs ship ---
+  if (!game.ship.dead && game.ship.invuln <= 0) {
+    const hazards = [...game.asteroids, ...game.satellites, ...game.wedges];
+    for (const h of hazards) {
+      if (h.dead) continue;
+      const r = (game.ship.shieldOn ? SHIELD_RADIUS : SHIP_RADIUS) + h.radius;
+      if (dist2(h, game.ship) < r * r) {
+        if (game.ship.shieldOn) {
+          shieldDeflect(h);
+          // wedges die on shield contact (they're fragile ships)
+          if (h instanceof Wedge) {
+            h.dead = true;
+            addScore(WEDGE_SCORE[h.size]);
+            boom(h.x, h.y, h.size, COLOR.wedge);
+            h.split();
+          }
+        } else {
+          killShip();
+          break;
+        }
+      }
+    }
+    // saucer body contact
+    for (const s of game.saucers) {
+      if (s.dead) continue;
+      const r = (game.ship.shieldOn ? SHIELD_RADIUS : SHIP_RADIUS) + s.radius;
+      if (dist2(s, game.ship) < r * r) {
+        if (game.ship.shieldOn) {
+          s.dead = true;
+          addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
+          boom(s.x, s.y, 2, COLOR.saucer);
+          AudioSys.saucer(false);
+        } else killShip();
+      }
+    }
+  }
+
+  // --- Hazards vs tow chain: a hit destroys that canister and cuts loose
+  //     everything behind it (falls back to free garbage) ---
+  if (game.chain.length) {
+    const chainHazards = [...game.asteroids, ...game.wedges, ...game.satellites];
+    chainScan:
+    for (let i = 0; i < game.chain.length; i++) {
+      const n = game.chain[i];
+      for (const h of chainHazards) {
+        if (h.dead) continue;
+        const r = h.radius + 7;
+        if (dist2(n, h) < r * r) { breakChain(i); break chainScan; }
+      }
+    }
+  }
+
+  // Saucer bullets can hit asteroids too (classic behavior)
+  for (const b of game.bullets) {
+    if (b.dead || !b.hostile) continue;
+    for (const a of game.asteroids) {
+      if (!a.dead && dist2(b, a) < a.radius * a.radius) {
+        b.dead = true; destroyAsteroid(a, false); break;
+      }
+    }
+  }
+
+  // --- Cleanup ---
+  const hadSaucer = game.saucers.length > 0;
+  game.asteroids = game.asteroids.filter(a => !a.dead);
+  game.bullets = game.bullets.filter(b => !b.dead);
+  game.saucers = game.saucers.filter(s => !s.dead);
+  game.wedges = game.wedges.filter(w => !w.dead);
+  game.satellites = game.satellites.filter(s => !s.dead);
+  game.particles = game.particles.filter(p => !p.dead);
+  game.garbage = game.garbage.filter(g => !g.dead);
+  game.floaters = game.floaters.filter(f => !f.dead);
+  if (hadSaucer && game.saucers.length === 0) AudioSys.saucer(false);
+
+  // --- Wave clear ---
+  if (game.asteroids.length === 0 && game.satellites.length === 0 && game.wedges.length === 0) {
+    game.waveClearTimer += dt;
+    if (game.waveClearTimer > 2.5) {
+      game.waveClearTimer = 0;
+      nextWave();
+    }
+  } else {
+    game.waveClearTimer = 0;
+  }
+
+  // --- Heartbeat ---
+  const density = game.asteroids.length + game.wedges.length * 2;
+  game.beatInterval = Math.max(0.28, 1.05 - game.wave * 0.04 - Math.max(0, (14 - density)) * 0.02);
+  game.beatTimer -= dt;
+  if (game.beatTimer <= 0 && !game.ship.dead && density > 0) {
+    AudioSys.beat(game.beatHigh);
+    game.beatHigh = !game.beatHigh;
+    game.beatTimer = game.beatInterval;
+  }
+}
+
+// ---------- Draw ----------
+function drawText(str, x, y, size, color = COLOR.text, align = "center") {
+  ctx.font = `${size}px monospace`;
+  ctx.textAlign = align;
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  ctx.fillText(str, x, y);
+  ctx.shadowBlur = 0;
+}
+
+function drawShipIcon(x, y) {
+  const pts = [[0, -8], [-5, 6], [0, 3], [5, 6]];
+  drawPoly(pts, x, y, 0, COLOR.ship);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // faint starfield
+  ctx.fillStyle = "#1a2a40";
+  for (let i = 0; i < 40; i++) {
+    const sx = (i * 337.7) % W, sy = (i * 191.3) % H;
+    ctx.fillRect(sx, sy, 1.5, 1.5);
+  }
+
+  if (game.state === "title") {
+    drawText("ASTEROID FIELD", W/2, H/2 - 120, 64);
+    drawText("D E L U X E", W/2, H/2 - 60, 32, COLOR.satellite);
+    drawText("ROTATE: ←→ / A D      THRUST: ↑ / W", W/2, H/2 + 30, 20, COLOR.dim);
+    drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE: P", W/2, H/2 + 62, 20, COLOR.dim);
+    drawText("BEWARE THE KILLER SATELLITE", W/2, H/2 + 120, 18, COLOR.wedge);
+    if (Math.floor(performance.now() / 600) % 2 === 0)
+      drawText("PRESS ENTER TO START", W/2, H/2 + 180, 26);
+    // decorative drifting rocks
+    titleRocks.forEach(a => { a.update(1/60); a.draw(); });
+    return;
+  }
+
+  if (game.dock) game.dock.draw();
+  game.particles.forEach(p => p.draw());
+  game.garbage.forEach(g => g.draw());
+  drawChain();
+  game.asteroids.forEach(a => a.draw());
+  game.satellites.forEach(s => s.draw());
+  game.wedges.forEach(w => w.draw());
+  game.saucers.forEach(s => s.draw());
+  game.bullets.forEach(b => b.draw());
+  game.ship.draw();
+  game.floaters.forEach(f => f.draw());
+
+  // HUD
+  drawText(String(game.score).padStart(6, "0"), 30, 46, 30, COLOR.text, "left");
+  for (let i = 0; i < Math.max(0, game.lives); i++) drawShipIcon(42 + i * 24, 74);
+  drawText("CARGO " + game.chain.length + "/" + CHAIN_MAX, 30, 104, 16,
+    game.chain.length ? COLOR.garbage : COLOR.dim, "left");
+  // when hauling, a small chevron near the ship points toward the dock
+  if (game.chain.length && game.dock && !game.ship.dead) {
+    const a = angleTo(game.ship, game.dock);
+    drawPoly([[7, 0], [-4, -4], [-4, 4]],
+      game.ship.x + Math.cos(a) * 42, game.ship.y + Math.sin(a) * 42, a, COLOR.dock);
+  }
+  drawText("WAVE " + game.wave, W - 30, 46, 22, COLOR.dim, "right");
+
+  // shield energy bar
+  const bw = 140, bh = 8, bx = W - 30 - bw, by = 60;
+  ctx.strokeStyle = COLOR.dim;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillStyle = game.ship.energy > 0.25 ? COLOR.shield : "#ff7060";
+  ctx.fillRect(bx + 1, by + 1, (bw - 2) * game.ship.energy, bh - 2);
+  drawText("SHIELD", bx - 12, by + 8, 13, COLOR.dim, "right");
+
+  if (game.paused) {
+    drawText("PAUSED", W/2, H/2, 48);
+  }
+
+  if (game.state === "gameover") {
+    drawText("GAME OVER", W/2, H/2 - 20, 56);
+    drawText("FINAL SCORE  " + game.score, W/2, H/2 + 36, 26);
+    if (Math.floor(performance.now() / 600) % 2 === 0)
+      drawText("PRESS ENTER TO PLAY AGAIN", W/2, H/2 + 90, 22);
+  }
+}
+
+// title screen decoration
+const titleRocks = [];
+for (let i = 0; i < 5; i++) {
+  const a = new Asteroid(rand(0, W), rand(0, H), 3);
+  a.vx *= 0.5; a.vy *= 0.5;
+  titleRocks.push(a);
+}
+
+// ---------- Main loop ----------
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
