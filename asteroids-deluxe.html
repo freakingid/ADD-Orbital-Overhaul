@@ -27,7 +27,7 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v1.5
+   ASTEROID FIELD DELUXE — v1.6
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
    - Energy shield (hold SHIFT) that deflects debris
    - Killer satellite that splits into homing wedge ships
@@ -56,6 +56,15 @@
    and a rarer (wave-driven, not score-gated) small saucer — all easing to the shipped
    intensity at full difficulty. Hunter/Satellite scaling is deferred to its Phase-5
    redesign.
+   v1.6: Killer satellite + homing wedges redesigned into the Hunter Satellite — one diamond
+   family with three tiers (3 large / 2 medium / 1 small). The large core drifts passively
+   toward the ship (spawn-time aim, no re-aim); shooting it splits it 3-ways into medium then
+   small children that actively home, each faster/more agile than the last. Every tier emits
+   garbage; the small tier drops a larger burst of LOW-mass (0.5) scrap that tows easily and
+   renders in a paler tint. All Hunter speeds/turn rates wire into the v1.5 difficulty ramp
+   from the start (gentle wave-1 floor at HUNTER_FLOOR_FRAC of the ceiling, ramping up over
+   ~20 waves). Hunter contact damage is 60/45/30 by tier; homers still die on shield contact
+   (and split), the core bounces; Hunters still sever the tow chain.
    ============================================================ */
 
 // ---------- Constants ----------
@@ -85,9 +94,23 @@ const DEBRIS_RADII  = { 3: 46, 2: 26, 1: 13 };
 const DEBRIS_SCORE  = { 3: 20, 2: 50, 1: 100 };
 const DEBRIS_GARBAGE = 3;       // canisters emitted at EVERY tier's destruction (F3)
 
-const SAT_SCORE = 200;          // killer satellite core
-const WEDGE_SCORE = { 2: 150, 1: 250 };  // homing wedges by size
 const SAUCER_SCORE = { big: 200, small: 1000 };
+
+// Hunter Satellites (F4) — the reshaped killer-satellite/wedge system: a diamond core that
+// drifts passively toward the ship, then splits 3-ways into actively-homing children,
+// emitting garbage at every tier. All speeds/turn rates are CEILINGS the difficulty ramp
+// (§2.13) climbs toward; at wave 1 the whole family moves at HUNTER_FLOOR_FRAC of them, so
+// early waves are gentle and full pressure arrives ~wave 20.
+const HUNTER_RADII      = { 3: 24, 2: 15, 1: 10 };    // collision radius by tier
+const HUNTER_SCORE      = { 3: 200, 2: 150, 1: 250 }; // large core / medium / small (small worth most — hardest to hit)
+const HUNTER_DAMAGE     = { 3: 60, 2: 45, 1: 30 };    // contact damage — harder than the equivalent Debris tier (F2/F4)
+const HUNTER_SPEED_CEIL = { 3: 70, 2: 120, 1: 175 };  // full-difficulty px/s: large drifts, medium/small home (anchored on the old wedge 120/175)
+const HUNTER_TURN_CEIL  = { 3: 0, 2: 1.6, 1: 2.6 };   // full-difficulty homing turn rate (rad/s); large never turns (passive drift)
+const HUNTER_FLOOR_FRAC = 0.58;   // wave-1 speeds & turn rates = this × ceiling (THE knob for early-game Hunter calm)
+const HUNTER_SCATTER    = 0.6;    // sec a freshly-split homer scatters outward before homing engages
+const HUNTER_GARBAGE       = 3;   // canisters from a large/medium kill (normal mass 1.0)
+const HUNTER_SMALL_GARBAGE = 6;   // canisters from a small kill — a larger burst...
+const HUNTER_SMALL_MASS    = 0.5; // ...of LOW-mass scrap (tows easier — a valuable bonus for finishing a Hunter line)
 
 // Health, damage & knockback (F2) — a single HP pool replaces discrete lives
 const SHIP_MAX_HP = 250;        // full hull integrity at game start; no respawns
@@ -435,6 +458,7 @@ const COLOR = {
   text: "#a8d4ff",
   dim: "#3a5a80",
   garbage: "#c8ff50",
+  garbageLight: "#b8ffb0",   // low-mass Hunter scrap: a paler, mintier tint so it reads as "lighter / easier to tow" (F4)
   chain: "#8aa0ff",
   dock: "#70ffa0",
   hp: "#5fe08a"
@@ -603,12 +627,54 @@ class DebrisSatellite {
   }
 }
 
-// Killer satellite: hexagonal core; when shot, splits into 3 homing wedges,
-// each of which splits into 2 smaller wedges.
-class Satellite {
-  constructor() {
-    // enter from just beyond a random viewport edge, relative to the ship, so it
-    // still slides in from off-screen and drifts toward the ship (feel unchanged)
+// Hunter Satellite (F4): the reshaped killer-satellite/wedge system. A diamond core drifts
+// passively toward the ship (like the old Satellite); when shot it splits 3-ways into
+// actively-homing children — medium then small, each faster and more agile than the last
+// (like the old Wedge). Every tier emits garbage; the final small tier drops a larger burst
+// of LOW-mass scrap. All speeds/turn rates scale from a gentle wave-1 floor up to their
+// ceilings via the difficulty ramp (§2.13), so early waves are calm and full pressure
+// arrives ~wave 20. Tiers use the Debris 3/2/1 convention: 3 large, 2 medium, 1 small.
+class HunterSatellite {
+  constructor(x, y, size, scatterAngle = 0) {
+    this.x = x; this.y = y;
+    this.size = size;                       // 3 large (core) / 2 medium / 1 small
+    this.radius = HUNTER_RADII[size];
+    this.damage = HUNTER_DAMAGE[size];      // contact damage to the ship (F2/F4)
+    this.dead = false;
+    // Wave-scaled from a gentle floor (HUNTER_FLOOR_FRAC × ceiling) up to the full ceiling.
+    // game.wave is fixed for a Hunter's lifetime (Hunters block wave-clear), so sample once.
+    this.speed    = ramp(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_SPEED_CEIL[size], game.wave);
+    this.turnRate = ramp(HUNTER_TURN_CEIL[size]  * HUNTER_FLOOR_FRAC, HUNTER_TURN_CEIL[size],  game.wave);
+    if (size === 3) {
+      // Large core: passive drift toward the ship's position AT SPAWN — no continuous re-aim
+      // (confirmed design). Only its drift *speed* scales with difficulty, not its behavior.
+      this.homing = false;
+      this.heading = angleTo(this, game.ship) + rand(-0.4, 0.4);
+      this.angle = rand(0, TAU);
+      this.spinRate = rand(0.6, 1.0) * randSign();  // slow visual tumble (reads as "not aiming at you")
+    } else {
+      // Medium/small: relentless wrap-aware homing after a brief outward scatter.
+      this.homing = true;
+      this.heading = scatterAngle;
+      this.scatter = HUNTER_SCATTER;
+    }
+    this.vx = Math.cos(this.heading) * this.speed;
+    this.vy = Math.sin(this.heading) * this.speed;
+    // Diamond silhouette, scaled per tier. The large core is a symmetric diamond that spins
+    // in place; homers are a forward-elongated kite-diamond that points along the pursuit
+    // heading (reads as "aiming at you"). Inner diamond on the two larger tiers for presence.
+    const r = this.radius;
+    this.shape = this.homing
+      ? [[r * 1.35, 0], [0, -r * 0.8], [-r * 0.75, 0], [0, r * 0.8]]
+      : [[r, 0], [0, -r], [-r, 0], [0, r]];
+    this.inner = size >= 2
+      ? [[r * 0.5, 0], [0, -r * 0.4], [-r * 0.4, 0], [0, r * 0.4]]
+      : null;
+  }
+  // Spawn a fresh large core from just beyond a random viewport edge, relative to the ship,
+  // so it still slides in from off-screen and drifts toward the ship (feel unchanged from
+  // the old Satellite). Children are created directly at the parent's position in destroyHunter.
+  static spawnCore() {
     const edge = Math.floor(rand(0, 4));
     const p = { x: game.ship.x, y: game.ship.y };
     if (edge === 0)      { p.x -= VIEW_W / 2 + 40; p.y += rand(-VIEW_H / 2, VIEW_H / 2); }
@@ -616,77 +682,34 @@ class Satellite {
     else if (edge === 2) { p.y -= VIEW_H / 2 + 40; p.x += rand(-VIEW_W / 2, VIEW_W / 2); }
     else                 { p.y += VIEW_H / 2 + 40; p.x += rand(-VIEW_W / 2, VIEW_W / 2); }
     wrapPos(p);
-    this.x = p.x; this.y = p.y;
-    const a = angleTo(this, game.ship) + rand(-0.4, 0.4);
-    const sp = 55;
-    this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp;
-    this.angle = 0;
-    this.radius = 30;
-    this.damage = DMG_LARGE;   // contact damage to the ship (F2)
-    this.dead = false;
-    // snowflake-hex: outer hexagon + inner hexagon
-    this.outer = []; this.inner = [];
-    for (let i = 0; i < 6; i++) {
-      const th = (i / 6) * TAU;
-      this.outer.push([Math.cos(th) * 30, Math.sin(th) * 30]);
-      this.inner.push([Math.cos(th + 0.5) * 14, Math.sin(th + 0.5) * 14]);
-    }
+    return new HunterSatellite(p.x, p.y, 3);
   }
   update(dt) {
-    this.x += this.vx * dt; this.y += this.vy * dt;
-    this.angle += 0.8 * dt;
-    wrap(this);
-  }
-  draw() {
-    drawPoly(this.outer, this.x, this.y, this.angle, COLOR.satellite);
-    drawPoly(this.inner, this.x, this.y, -this.angle * 1.5, COLOR.satellite);
-  }
-  split() {
-    for (let i = 0; i < 3; i++) {
-      game.wedges.push(new Wedge(this.x, this.y, 2, (i / 3) * TAU));
+    if (this.homing) {
+      if (this.scatter > 0) {
+        this.scatter -= dt;
+      } else if (!game.ship.dead) {
+        const target = angleTo(this, game.ship);
+        let diff = target - this.heading;
+        while (diff > Math.PI) diff -= TAU;
+        while (diff < -Math.PI) diff += TAU;
+        const maxTurn = this.turnRate * dt;
+        this.heading += Math.max(-maxTurn, Math.min(maxTurn, diff));
+      }
+      this.vx = Math.cos(this.heading) * this.speed;
+      this.vy = Math.sin(this.heading) * this.speed;
+    } else {
+      this.angle += this.spinRate * dt;   // large core tumbles; keeps its fixed spawn-time drift velocity
     }
-  }
-}
-
-class Wedge {
-  constructor(x, y, size, scatterAngle) {
-    this.x = x; this.y = y;
-    this.size = size;                       // 2 = big, 1 = small
-    this.radius = size === 2 ? 14 : 9;
-    this.damage = size === 2 ? DMG_MEDIUM : DMG_SMALL;   // contact damage to the ship (F2)
-    this.speed = size === 2 ? 120 : 175;
-    this.turnRate = size === 2 ? 1.6 : 2.6; // rad/sec homing agility
-    this.heading = scatterAngle;
-    this.vx = Math.cos(scatterAngle) * this.speed;
-    this.vy = Math.sin(scatterAngle) * this.speed;
-    this.dead = false;
-    this.scatter = 0.6; // brief scatter before homing kicks in
-  }
-  update(dt) {
-    if (this.scatter > 0) {
-      this.scatter -= dt;
-    } else if (!game.ship.dead) {
-      const target = angleTo(this, game.ship);
-      let diff = target - this.heading;
-      while (diff > Math.PI) diff -= TAU;
-      while (diff < -Math.PI) diff += TAU;
-      const maxTurn = this.turnRate * dt;
-      this.heading += Math.max(-maxTurn, Math.min(maxTurn, diff));
-    }
-    this.vx = Math.cos(this.heading) * this.speed;
-    this.vy = Math.sin(this.heading) * this.speed;
     this.x += this.vx * dt; this.y += this.vy * dt;
     wrap(this);
   }
   draw() {
-    const s = this.size === 2 ? 1 : 0.65;
-    const pts = [[18 * s, 0], [-10 * s, -12 * s], [-4 * s, 0], [-10 * s, 12 * s]];
-    drawPoly(pts, this.x, this.y, this.heading, COLOR.wedge);
-  }
-  split() {
-    if (this.size === 2) {
-      game.wedges.push(new Wedge(this.x, this.y, 1, this.heading + 0.7));
-      game.wedges.push(new Wedge(this.x, this.y, 1, this.heading - 0.7));
+    const ang = this.homing ? this.heading : this.angle;
+    drawPoly(this.shape, this.x, this.y, ang, COLOR.satellite);
+    if (this.inner) {
+      // homers: inner tracks the nose; core: counter-rotate for a faceted shimmer
+      drawPoly(this.inner, this.x, this.y, this.homing ? ang : -this.angle * 1.5, COLOR.satellite);
     }
   }
 }
@@ -782,15 +805,16 @@ class Particle {
   }
 }
 
-// Shared renderer for radioactive canisters (free-floating and chained)
-function drawCanister(x, y, angle, alpha) {
+// Shared renderer for radioactive canisters (free-floating and chained). Low-mass scrap
+// (Hunter small-tier drops) renders in a paler tint so it's visibly the easier-to-tow bonus.
+function drawCanister(x, y, angle, alpha, color = COLOR.garbage) {
   ctx.globalAlpha = alpha * (0.75 + Math.random() * 0.25); // radioactive flicker
   const body = [[7, -5], [7, 5], [-7, 5], [-7, -5]];
-  drawPoly(body, x, y, angle, COLOR.garbage);
+  drawPoly(body, x, y, angle, color);
   ctx.save();
   ctx.translate(x, y); ctx.rotate(angle);
   ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); // hazard stripe
-  glowStroke(COLOR.garbage, 1, 5);
+  glowStroke(color, 1, 5);
   ctx.restore();
   ctx.globalAlpha = 1;
 }
@@ -822,7 +846,8 @@ class Garbage {
     // blink faster as decay approaches
     const blink = this.decay < 5 &&
       Math.floor(this.decay * (this.decay < 2 ? 8 : 4)) % 2 === 0;
-    if (!blink) drawCanister(this.x, this.y, this.spin, 0.9);
+    if (!blink) drawCanister(this.x, this.y, this.spin, 0.9,
+      this.mass < 1 ? COLOR.garbageLight : COLOR.garbage);
   }
 }
 
@@ -883,13 +908,13 @@ const game = {
   paused: false,
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
-  debris: [], bullets: [], saucers: [], wedges: [], satellites: [], particles: [],
+  debris: [], bullets: [], saucers: [], hunters: [], particles: [],
   garbage: [], chain: [], floaters: [], dock: null,
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
   saucerTimer: 0,
-  satelliteTimer: 0,
+  hunterTimer: 0,
   beatTimer: 0, beatHigh: false, beatInterval: 1.0,
   waveClearTimer: 0
 };
@@ -901,13 +926,13 @@ function startGame() {
   game.wave = 0;
   game.nextRepair = REPAIR_MILESTONE;
   game.debris = []; game.bullets = []; game.saucers = [];
-  game.wedges = []; game.satellites = []; game.particles = [];
+  game.hunters = []; game.particles = [];
   game.garbage = []; game.chain = []; game.floaters = [];
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
   game.camera = { x: game.ship.x, y: game.ship.y };
   game.saucerTimer = rand(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX); // first saucer waits the wave-1 floor gap (F10)
-  game.satelliteTimer = rand(14, 22);
+  game.hunterTimer = rand(14, 22);
   nextWave();
 }
 
@@ -968,6 +993,37 @@ function destroyDebris(a, awardScore = true) {
     const speedMul = 1 + (game.wave - 1) * 0.08;
     for (let i = 0; i < 3; i++) {
       game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speedMul));
+    }
+  }
+}
+
+// Destroy one Hunter Satellite: score + boom + garbage, then split — or, at the small tier,
+// a larger burst of LOW-mass scrap and no children. Parallels destroyDebris (F3); the garbage
+// fan-out mirrors that pattern. Called both when shot and when a homer dies on the shield.
+function destroyHunter(h, awardScore = true) {
+  h.dead = true;
+  if (awardScore) addScore(HUNTER_SCORE[h.size]);
+  boom(h.x, h.y, h.size, COLOR.satellite);
+  if (h.size === 1) {
+    // Final tier: an easy-to-tow bonus pile of low-mass canisters (mass 0.5, paler tint).
+    for (let i = 0; i < HUNTER_SMALL_GARBAGE; i++) {
+      const spread = rand(0, TAU), kick = rand(30, 70);
+      game.garbage.push(new Garbage(h.x, h.y,
+        h.vx * 0.25 + Math.cos(spread) * kick,
+        h.vy * 0.25 + Math.sin(spread) * kick,
+        GARBAGE_DECAY, HUNTER_SMALL_MASS));
+    }
+  } else {
+    // Large/medium: 3 normal-mass canisters, then a 3-way split into actively-homing children.
+    for (let i = 0; i < HUNTER_GARBAGE; i++) {
+      const spread = rand(0, TAU), kick = rand(20, 55);
+      game.garbage.push(new Garbage(h.x, h.y,
+        h.vx * 0.25 + Math.cos(spread) * kick,
+        h.vy * 0.25 + Math.sin(spread) * kick));
+    }
+    for (let i = 0; i < 3; i++) {
+      const scatterAngle = (i / 3) * TAU + rand(-0.3, 0.3);
+      game.hunters.push(new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle));
     }
   }
 }
@@ -1143,7 +1199,8 @@ function drawChain() {
     const p = img(chain[i - 1]), q = img(chain[i]);
     drawLink(p.x, p.y, q.x, q.y);
   }
-  for (const n of chain) { const p = img(n); drawCanister(p.x, p.y, n.spin, 1); }
+  for (const n of chain) { const p = img(n); drawCanister(p.x, p.y, n.spin, 1,
+    n.mass < 1 ? COLOR.garbageLight : COLOR.garbage); }
 }
 
 // ---------- Update ----------
@@ -1160,8 +1217,7 @@ function update(dt) {
   game.debris.forEach(a => a.update(dt));
   game.bullets.forEach(b => b.update(dt));
   game.saucers.forEach(s => s.update(dt));
-  game.wedges.forEach(w => w.update(dt));
-  game.satellites.forEach(s => s.update(dt));
+  game.hunters.forEach(h => h.update(dt));
   game.particles.forEach(p => p.update(dt));
   game.floaters.forEach(f => f.update(dt));
   if (game.dock) game.dock.update(dt);
@@ -1221,10 +1277,13 @@ function update(dt) {
     game.saucerTimer = rand(gapMin, gapMax);
   }
 
-  game.satelliteTimer -= dt;
-  if (game.satelliteTimer <= 0 && game.satellites.length === 0 && game.wedges.length === 0 && game.wave >= 2) {
-    game.satellites.push(new Satellite());
-    game.satelliteTimer = rand(20, 32);
+  // One Hunter lineage at a time: a fresh large core only spawns once the whole family is
+  // clear (core + any homing children). Cadence is unchanged from the old Satellite; only the
+  // Hunters' movement speed/agility ramps with difficulty (F4), not how often they appear.
+  game.hunterTimer -= dt;
+  if (game.hunterTimer <= 0 && game.hunters.length === 0 && game.wave >= 2) {
+    game.hunters.push(HunterSatellite.spawnCore());
+    game.hunterTimer = rand(20, 32);
   }
 
   // --- Collisions: player bullets vs targets ---
@@ -1247,22 +1306,10 @@ function update(dt) {
         }
       }
       if (b.dead) continue;
-      for (const s of game.satellites) {
-        if (!s.dead && dist2(b, s) < s.radius * s.radius) {
-          b.dead = true; s.dead = true;
-          addScore(SAT_SCORE);
-          boom(s.x, s.y, 3, COLOR.satellite);
-          s.split();
-          break;
-        }
-      }
-      if (b.dead) continue;
-      for (const w of game.wedges) {
-        if (!w.dead && dist2(b, w) < (w.radius + 3) * (w.radius + 3)) {
-          b.dead = true; w.dead = true;
-          addScore(WEDGE_SCORE[w.size]);
-          boom(w.x, w.y, w.size, COLOR.wedge);
-          w.split();
+      for (const h of game.hunters) {
+        if (!h.dead && dist2(b, h) < (h.radius + 3) * (h.radius + 3)) {
+          b.dead = true;
+          destroyHunter(h);   // score + boom + garbage + 3-way split, all tiers
           break;
         }
       }
@@ -1291,19 +1338,20 @@ function update(dt) {
 
   // --- Collisions: hazards vs ship ---
   if (!game.ship.dead && game.ship.invuln <= 0) {
-    const hazards = [...game.debris, ...game.satellites, ...game.wedges];
+    const hazards = [...game.debris, ...game.hunters];
     for (const h of hazards) {
       if (h.dead) continue;
       const r = (game.ship.shieldOn ? SHIELD_RADIUS : SHIP_RADIUS) + h.radius;
       if (dist2(h, game.ship) < r * r) {
         if (game.ship.shieldOn) {
-          shieldDeflect(h);
-          // wedges die on shield contact (they're fragile ships)
-          if (h instanceof Wedge) {
-            h.dead = true;
-            addScore(WEDGE_SCORE[h.size]);
-            boom(h.x, h.y, h.size, COLOR.wedge);
-            h.split();
+          // Homing Hunters (medium/small, the old fragile "wedges") die on shield contact
+          // and still split; debris and the large Hunter core bounce off elastically.
+          if (h instanceof HunterSatellite && h.size < 3) {
+            game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
+            AudioSys.shieldPing();
+            destroyHunter(h);
+          } else {
+            shieldDeflect(h);
           }
         } else {
           damageShip(h.damage, h.x, h.y);
@@ -1328,7 +1376,7 @@ function update(dt) {
   // --- Hazards vs tow chain: a hit destroys that canister and cuts loose
   //     everything behind it (falls back to free garbage) ---
   if (game.chain.length) {
-    const chainHazards = [...game.debris, ...game.wedges, ...game.satellites];
+    const chainHazards = [...game.debris, ...game.hunters];
     chainScan:
     for (let i = 0; i < game.chain.length; i++) {
       const n = game.chain[i];
@@ -1355,15 +1403,14 @@ function update(dt) {
   game.debris = game.debris.filter(a => !a.dead);
   game.bullets = game.bullets.filter(b => !b.dead);
   game.saucers = game.saucers.filter(s => !s.dead);
-  game.wedges = game.wedges.filter(w => !w.dead);
-  game.satellites = game.satellites.filter(s => !s.dead);
+  game.hunters = game.hunters.filter(h => !h.dead);
   game.particles = game.particles.filter(p => !p.dead);
   game.garbage = game.garbage.filter(g => !g.dead);
   game.floaters = game.floaters.filter(f => !f.dead);
   if (hadSaucer && game.saucers.length === 0) AudioSys.saucer(false);
 
   // --- Wave clear ---
-  if (game.debris.length === 0 && game.satellites.length === 0 && game.wedges.length === 0) {
+  if (game.debris.length === 0 && game.hunters.length === 0) {
     game.waveClearTimer += dt;
     if (game.waveClearTimer > 2.5) {
       game.waveClearTimer = 0;
@@ -1374,7 +1421,7 @@ function update(dt) {
   }
 
   // --- Heartbeat ---
-  const density = game.debris.length + game.wedges.length * 2;
+  const density = game.debris.length + game.hunters.length * 2;
   game.beatInterval = Math.max(0.28, 1.05 - game.wave * 0.04 - Math.max(0, (14 - density)) * 0.02);
   game.beatTimer -= dt;
   if (game.beatTimer <= 0 && !game.ship.dead && density > 0) {
@@ -1441,7 +1488,7 @@ function draw() {
     drawText("D E L U X E", VIEW_W/2, VIEW_H/2 - 60, 32, COLOR.satellite);
     drawText("ROTATE: ←→ / A D      THRUST: ↑ / W", VIEW_W/2, VIEW_H/2 + 30, 20, COLOR.dim);
     drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE: P", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
-    drawText("BEWARE THE KILLER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.wedge);
+    drawText("BEWARE THE HUNTER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.satellite);
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
     // decorative drifting debris lives in screen space (its own tiny wrapped field)
@@ -1464,8 +1511,7 @@ function draw() {
   game.garbage.forEach(drawEntity);
   drawChain();
   game.debris.forEach(drawEntity);
-  game.satellites.forEach(drawEntity);
-  game.wedges.forEach(drawEntity);
+  game.hunters.forEach(drawEntity);
   game.saucers.forEach(drawEntity);
   game.bullets.forEach(drawEntity);
   game.ship.draw();                 // always at the camera center

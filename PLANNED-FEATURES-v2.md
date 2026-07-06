@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1–F3 + F5 (Phases 1–3) are built**, and **F10's difficulty helper + saucer application shipped in Phase 4 (v1.5)** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13). F4 and F6–F9 remain unbuilt; F10's Hunter-scaling and Debris-density portions are deferred (see F10 below).
+**Status:** Design complete for all features below. **F1–F5 (Phases 1–5) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5). **F6–F9 remain unbuilt**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -47,7 +47,7 @@ Both families read as "satellites" thematically (per your request), but stay vis
 - **Max HP = 250, not 100.** The Phase 2 prompt (and its copy in `IMPLEMENTATION-PHASES.md`) said `SHIP_MAX_HP` = 100, but this doc and STATUS.md both recorded 250 as Paul-confirmed. That conflict was surfaced during the build and **Paul reconfirmed 250**. The damage table (20/35/50/15) was identical across both sources, so only the pool size differed. `IMPLEMENTATION-PHASES.md`'s Phase 2 prompt still reads 100 as a historical artifact — the shipped, authoritative value is 250 (GDD §2.12).
 
 ### Deferred to later phases (not part of F2)
-- **Hunter ramming damage (30/45/60 per tier):** the plan proposes Hunter Satellites hit harder than equivalent Debris tiers. F2 only wired the *existing* v1.1 hazards (killer satellite = `DMG_LARGE`; wedges and saucers by size) — the Hunter-specific values land with the F4 redesign (Phase 5).
+- **Hunter ramming damage (30/45/60 per tier):** ✅ shipped with the F4 redesign in v1.6 as `HUNTER_DAMAGE` (large 60 / medium 45 / small 30 — a step above the equivalent Debris tier). F2 itself only wired the v1.1 hazards; the Hunter-specific values landed when the entity was rebuilt in Phase 5.
 - **Health powerups (F6):** restore HP capped at max — depend on this HP system existing; built in Phase 6.
 
 ---
@@ -69,26 +69,15 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 ---
 
 ## F4 — Hunter Satellites (Killer Satellite / Wedge Redesign)
-**Status:** 🔴 Not Started
+**Status:** 🟢 Done — shipped in v1.6 (build Phase 5). The full shipped spec now lives in **GDD §2.5** (with §2.3 shield behaviour and the §2.12 damage table updated); this section is retained only for the resolved-decisions note below.
 
-### Spec
-- Replaces the shipped `Satellite` + `Wedge` system (see Naming Resolution above). Shape changes to a diamond (all three tiers).
-- **Split children actively home** (relentless, wrap-aware re-aiming pursuit — Paul confirmed this over passive-drift, preserving the *Asteroids Deluxe* character; the early-game gentleness comes from the F10 difficulty ramp slowing everything down, not from making the children passive).
-- **Large Hunter hit** → splits into **3 medium** Hunters, which home toward the player **faster** than the large did, + emits **3 garbage canisters** (normal mass).
-- **Medium Hunter hit** → splits into **3 small** Hunters, homing **even faster**, + emits **3 garbage canisters** (normal mass).
-- **Small Hunter hit** → fully destroyed, emits a **larger-than-normal burst of low-mass garbage** (proposed: 5–6 canisters at `mass: 0.5`) — per your note, explicitly a valuable, easy-to-tow bonus for finishing off a Hunter line.
-- **All speed and turn-rate values are ceilings** that the F10 difficulty factor interpolates *up toward* — at wave 1 the whole Hunter family moves at a gentle fraction of these, ramping to full over ~20 waves. Build F4 wired into F10's `difficultyFactor` from the start (see phase ordering).
-- Spawn cadence, drift/homing behavior, and wrap-aware pursuit carry over from the shipped Satellite/Wedge system's proven feel (GDD 2.5) — this is a reshape/renumber/enrich of that system, not a from-scratch enemy.
+**Built:** the killer `Satellite` + homing `Wedge` classes merged into one **`HunterSatellite`** class — a teal diamond family, tiers 3/2/1. The large core drifts passively toward the ship (spawn-time aim, no re-aim) and, when shot, splits **3-ways** into medium then small children that actively home (wrap-aware, relentless), each faster/more agile than the last; scoring/boom/garbage/split all run through a new **`destroyHunter`** (parallel to `destroyDebris`), with a `static spawnCore()` for the off-edge large. Every speed & turn rate wires into the v1.5 difficulty ramp from the start — `ramp(ceiling × HUNTER_FLOOR_FRAC, ceiling, wave)` (ceilings 70 drift / 120·1.6 medium / 175·2.6 small; `HUNTER_FLOOR_FRAC` = 0.58), so the family moves at ~60% at wave 1 and ~96% by wave 20. Garbage at every tier: 3 normal-mass at large/medium, a burst of `HUNTER_SMALL_GARBAGE` (6) low-mass (0.5) canisters at small (paler `COLOR.garbageLight` tint). Contact damage 60/45/30 (`HUNTER_DAMAGE`). Shield: core bounces, homers destroyed-on-contact and still split; chain-severing preserved. Headless-tested (`scratchpad/test-f5.js`, 40 assertions). See GDD §2.5 and Version History v1.6.
 
-### Assumptions / open questions (best guess — override freely)
-- **Speed progression per tier:** the shipped Wedge system already speeds up per tier (120 → 175 px/s) and increases turn rate (1.6 → 2.6 rad/s); proposing to keep that same progression philosophy across three tiers instead of two, with medium landing between the old large-wedge and small-wedge values and small becoming the fastest/most agile thing in the game. Exact numbers are a tuning pass, not a design blocker.
-- **Low-mass garbage quantity ("sizable amount"):** guessed at 5–6 canisters, tunable.
-- **Does the large Hunter still drift passively before being hit** (like the current hexagon does at 55 px/s) or does it home immediately? Keeping the current behavior (large drifts toward the ship's position at spawn time, doesn't continuously re-aim) since your description says "slowly drifts towards the player at all times," matching the existing shipped behavior — only the split counts, shape, and garbage emission are new.
-
-### Interactions with existing systems
-- **Reuses F3's mass field** for its low-mass final-tier garbage — this is why F4 depends on F3 shipping first (see `IMPLEMENTATION-PHASES.md`).
-- **Chain vulnerability rules (GDD 2.10):** Hunter Satellites already damage the tow chain on contact today (as "satellites" in the existing hazard list) — this carries forward unchanged, just against the renamed/reshaped entity.
-- **HP damage table (F2):** Hunter contact damage should be defined slightly above equivalent-tier Debris Satellite damage, since Hunters are the more dangerous, actively-seeking threat (see F2's proposed numbers).
+### Resolved decisions (noted for the record)
+- **Floor as a fraction, not per-value floor/ceiling pairs.** The saucers (F10) used explicit floor/ceiling constant pairs; the Hunters instead use explicit *ceilings* plus one shared `HUNTER_FLOOR_FRAC` (0.58) that derives every floor. This is faithful to F4's "floors are ~55–60% of ceiling" wording, keeps one knob for family-wide early calm, and can't drift out of sync when a ceiling is retuned. Speeds/turns still flow through the standard `ramp(floor, ceil, wave)`.
+- **Small-tier garbage = 6 (top of the proposed 5–6).** Reads clearly as a "larger burst" bonus vs. the 3 at other tiers; 6 × 0.5 mass = 3.0 mass-equivalent, so the *weight* is modest. Flagged as the first Hunter-side density lever if the jackpot feels cluttered.
+- **Shield behaviour on the merged entity.** The old satellite bounced off the shield; the old wedges were destroyed (and split). Preserved by tier: the large core bounces (you must shoot it), medium/small homers are destroyed on shield contact and still split (a shield-killed medium spawns 3 scattering smalls) at a deflection's energy cost. Bouncing a homer would be near-useless (it re-homes in ~1 s), so destroy-on-contact is the meaningful, in-tension answer (Pillar 4).
+- **Score/damage inversion kept.** Small worth 250 (> medium 150), matching the old small-wedge value — small is the hardest to hit. Contact damage 60/45/30 sits a step above the equivalent Debris tier (F2's proposed Hunter numbers).
 
 ---
 
@@ -236,16 +225,18 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 ---
 
 ## F10 — Difficulty Ramp & Early-Game Pacing
-**Status:** 🟡 In Progress — **the difficulty helper + the saucer application shipped in Phase 4 (v1.5)**; the Hunter-Satellite scaling and the Debris-density retune are deferred (see below). The shipped spec now lives in **GDD §2.6 / §2.13** (with Pillar 6 flipped from planned to shipped in §1).
+**Status:** 🟡 In Progress — **the difficulty helper + saucer application shipped in Phase 4 (v1.5), and the Hunter-Satellite scaling shipped in Phase 5 (v1.6)**; only the Debris-density retune remains deferred (see below). The shipped spec lives in **GDD §2.6 / §2.13** (saucers), **§2.5** (Hunters), with Pillar 6 flipped from planned to shipped in §1.
 
 ### Shipped in v1.5 (Phase 4)
 - **`difficultyFactor(wave)`** = `1 − Math.exp(−(wave − 1) / RAMP_WAVES)` (0 at wave 1, → 1 over many waves) and a **`ramp(floor, ceil, wave)`** interpolation helper, both in the Helpers block. `RAMP_WAVES = 8` is the single ramp knob.
 - **Saucers** re-expressed as named floor/ceiling pairs scaled through `ramp`: spawn gap `rand(20,30)s` → `rand(12,16)s`; fire-rate multiplier `1.8×` → `1.0×` (via a new `Saucer.rollFireTimer(range)` on both reload and first-shot); small-saucer aim error `±0.35` → `±0.09` rad; small-saucer appearance chance `15%` → `60%`.
 - **Folded in the old score>8000 small-saucer gate** (per the cleanup note below) — escalation is now purely wave-driven, one system not two. Behavior/shape otherwise unchanged. Headless-tested (`scratchpad/test-f4.js`, 30 assertions).
 
-### Still open (NOT shipped in v1.5)
-- **Hunter Satellite scaling** — built with F4 (Phase 5). Its drift/homing speeds and turn rates become the *ceilings* the existing `difficultyFactor`/`ramp` interpolate up toward; F4 wires into them from the start. The helper is now in place for exactly this.
-- **Debris Satellite density retune** — the joint F3+F10 pass (see F3's "Still open" note). Leans on `GARBAGE_DECAY` for density, not the difficulty curve; still a post-playtest tuning pass, not a number to guess.
+### Shipped in v1.6 (Phase 5)
+- **Hunter Satellite scaling** ✅ — the Hunter redesign (F4) wired every drift/homing speed and turn rate into `difficultyFactor`/`ramp` from the start: the full-intensity numbers are the ceilings, `HUNTER_FLOOR_FRAC` (0.58) sets the wave-1 floor. See GDD §2.5 / §2.13.
+
+### Still open (NOT shipped)
+- **Debris Satellite density retune** — the joint F3+F10 pass (see F3's "Still open" note). Leans on `GARBAGE_DECAY` for density, not the difficulty curve; still a post-playtest tuning pass, not a number to guess. Now that both the saucers (v1.5) and the Hunters (v1.6) are calmer early, this is closer to being judgeable — but it wants the *combined* early-game feel confirmed in a browser first.
 
 ---
 
