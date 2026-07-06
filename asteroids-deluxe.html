@@ -27,7 +27,7 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v1.4
+   ASTEROID FIELD DELUXE — v1.5
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
    - Energy shield (hold SHIFT) that deflects debris
    - Killer satellite that splits into homing wedge ships
@@ -49,6 +49,13 @@
    wave spawn count were trimmed to compensate. Garbage and chain nodes gained a
    `mass` field; chain thrust/top-speed/tug now scale with the chain's total mass
    (sum of node.mass), not its node count.
+   v1.5: Global difficulty ramp — difficultyFactor(wave) climbs from ~0 at wave 1
+   toward 1 over many waves (RAMP_WAVES is the single knob), and threat parameters
+   interpolate floor->ceiling through it via ramp(). Applied to the saucers so early
+   waves are calmer: longer gaps between saucers, slower fire, wider small-saucer aim,
+   and a rarer (wave-driven, not score-gated) small saucer — all easing to the shipped
+   intensity at full difficulty. Hunter/Satellite scaling is deferred to its Phase-5
+   redesign.
    ============================================================ */
 
 // ---------- Constants ----------
@@ -118,6 +125,30 @@ const SPAWN_MAX_DIST = 1100;    // new debris satellites: farthest from the ship
 const DOCK_MIN_DIST = 260;      // recycling dock: nearest allowed to the ship
 const DOCK_MAX_DIST = 900;      // recycling dock: farthest from the ship (stay reachable)
 const STAR_DENSITY = 40;        // background stars per viewport-sized area of world
+
+// Difficulty ramp & early-game pacing (F10) — one shared curve scales every wave-driven
+// threat parameter from an easy wave-1 floor up to a full-intensity ceiling (see §2.6/§2.13).
+const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficultyFactor(wave);
+                                // ~0 at wave 1, ~0.9 by wave 20, plateauing near 1 by ~wave 25.
+// Saucer spawn gap (sec between saucers): wide early, tightening with difficulty.
+// Re-expresses the old `rand(12,22) - min(6,wave)` as an interpolated rand(min,max) range.
+const SAUCER_GAP_FLOOR_MIN = 20;  // wave-1 shortest gap between saucers
+const SAUCER_GAP_FLOOR_MAX = 30;  // wave-1 longest gap
+const SAUCER_GAP_CEIL_MIN  = 12;  // full-difficulty shortest gap (≈ shipped v1.1 cadence)
+const SAUCER_GAP_CEIL_MAX  = 16;  // full-difficulty longest gap
+// Saucer between-shot intervals: base [min,max] ranges, multiplied by the fire multiplier.
+const SAUCER_FIRE_INIT  = [0.6, 1.4]; // delay before a saucer's first shot after entering
+const SAUCER_FIRE_BIG   = [0.9, 1.6]; // big saucer reload (fires randomly)
+const SAUCER_FIRE_SMALL = [0.7, 1.1]; // small saucer reload (fires aimed)
+const SAUCER_FIRE_MULT_FLOOR = 1.8;   // wave-1: fire ~1.8× slower (longer between shots)
+const SAUCER_FIRE_MULT_CEIL  = 1.0;   // full difficulty: shipped cadence
+// Small-saucer aim error (rad): wide barely-aimed spray early, tightening to precise late.
+const SAUCER_AIM_ERR_FLOOR = 0.35;    // wave-1 aim error
+const SAUCER_AIM_ERR_CEIL  = 0.09;    // full-difficulty aim error (shipped precision)
+// Small-saucer appearance chance: rare early, common late. Folds in the old >8000-pt gate
+// so there's one wave-driven escalation system instead of two (F10 cleanup).
+const SAUCER_SMALL_CHANCE_FLOOR = 0.15; // wave-1: mostly the harmless random-fire big saucer
+const SAUCER_SMALL_CHANCE_CEIL  = 0.60; // full difficulty: the dangerous aimed 1000-pt saucer common
 
 // ---------- Canvas / scaling ----------
 const canvas = document.getElementById("game");
@@ -314,6 +345,18 @@ const input = {
 // ---------- Helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
 const randSign = () => Math.random() < 0.5 ? -1 : 1;
+
+// Global difficulty ramp (F10). Returns 0 at wave 1 and climbs asymptotically toward 1
+// over many waves — the single curve every wave-driven threat parameter scales off.
+// RAMP_WAVES sets how fast the whole game gets hard; this is the one knob to turn.
+function difficultyFactor(wave) {
+  return 1 - Math.exp(-(wave - 1) / RAMP_WAVES);
+}
+// Interpolate a threat parameter between its easy wave-1 floor and its full-intensity
+// ceiling using the difficulty curve. Every early-game pacing value flows through this.
+function ramp(floor, ceil, wave) {
+  return floor + (ceil - floor) * difficultyFactor(wave);
+}
 
 function wrap(obj) {
   if (obj.x < -60) obj.x += WORLD_W + 120;
@@ -664,9 +707,15 @@ class Saucer {
     this.vx = (this.fromLeft ? 1 : -1) * (small ? 150 : 100);
     this.vy = 0;
     this.dead = false;
-    this.fireTimer = rand(0.6, 1.4);
+    this.fireTimer = this.rollFireTimer(SAUCER_FIRE_INIT);   // first shot delayed harder at low waves (F10)
     this.zigTimer = rand(0.8, 1.8);
     this.travel = 0;
+  }
+  // Between-shot / first-shot delay for a [min,max] base range, slowed by the F10 fire
+  // multiplier: ~1.8× the shipped interval at wave 1, easing to 1.0× at full difficulty.
+  rollFireTimer(range) {
+    const mult = ramp(SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL, game.wave);
+    return rand(range[0], range[1]) * mult;
   }
   update(dt) {
     this.zigTimer -= dt;
@@ -685,13 +734,15 @@ class Saucer {
     if (this.fireTimer <= 0 && !game.ship.dead) {
       let a;
       if (this.small) {
-        a = angleTo(this, game.ship) + rand(-0.09, 0.09); // aimed
+        // aimed, but the error widens toward a barely-aimed spray at low waves (F10)
+        const err = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, game.wave);
+        a = angleTo(this, game.ship) + rand(-err, err);
       } else {
         a = rand(0, TAU); // random
       }
       game.bullets.push(new Bullet(this.x, this.y,
         Math.cos(a) * 380, Math.sin(a) * 380, true));
-      this.fireTimer = this.small ? rand(0.7, 1.1) : rand(0.9, 1.6);
+      this.fireTimer = this.rollFireTimer(this.small ? SAUCER_FIRE_SMALL : SAUCER_FIRE_BIG);
     }
   }
   draw() {
@@ -855,7 +906,7 @@ function startGame() {
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
   game.camera = { x: game.ship.x, y: game.ship.y };
-  game.saucerTimer = rand(10, 18);
+  game.saucerTimer = rand(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX); // first saucer waits the wave-1 floor gap (F10)
   game.satelliteTimer = rand(14, 22);
   nextWave();
 }
@@ -1158,10 +1209,16 @@ function update(dt) {
   // --- Spawning ---
   game.saucerTimer -= dt;
   if (game.saucerTimer <= 0 && game.saucers.length === 0) {
-    const small = game.score > 8000 ? Math.random() < 0.6 : Math.random() < 0.25;
+    // Small (aimed, dangerous) saucer gets more common as difficulty ramps (F10 — folds in
+    // the old score>8000 gate so escalation is wave-driven in one place).
+    const smallChance = ramp(SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL, game.wave);
+    const small = Math.random() < smallChance;
     game.saucers.push(new Saucer(small));
     AudioSys.saucer(true, small);
-    game.saucerTimer = rand(12, 22) - Math.min(6, game.wave);
+    // Longer gaps between saucers early, tightening toward the shipped cadence at full difficulty.
+    const gapMin = ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, game.wave);
+    const gapMax = ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, game.wave);
+    game.saucerTimer = rand(gapMin, gapMax);
   }
 
   game.satelliteTimer -= dt;

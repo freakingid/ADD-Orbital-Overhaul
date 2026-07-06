@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1–F3 + F5 (Phases 1–3) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4); F4 and F6–F10 remain unbuilt.
+**Status:** Design complete for all features below. **F1–F3 + F5 (Phases 1–3) are built**, and **F10's difficulty helper + saucer application shipped in Phase 4 (v1.5)** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13). F4 and F6–F9 remain unbuilt; F10's Hunter-scaling and Debris-density portions are deferred (see F10 below).
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -236,7 +236,18 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 ---
 
 ## F10 — Difficulty Ramp & Early-Game Pacing
-**Status:** 🔴 Not Started
+**Status:** 🟡 In Progress — **the difficulty helper + the saucer application shipped in Phase 4 (v1.5)**; the Hunter-Satellite scaling and the Debris-density retune are deferred (see below). The shipped spec now lives in **GDD §2.6 / §2.13** (with Pillar 6 flipped from planned to shipped in §1).
+
+### Shipped in v1.5 (Phase 4)
+- **`difficultyFactor(wave)`** = `1 − Math.exp(−(wave − 1) / RAMP_WAVES)` (0 at wave 1, → 1 over many waves) and a **`ramp(floor, ceil, wave)`** interpolation helper, both in the Helpers block. `RAMP_WAVES = 8` is the single ramp knob.
+- **Saucers** re-expressed as named floor/ceiling pairs scaled through `ramp`: spawn gap `rand(20,30)s` → `rand(12,16)s`; fire-rate multiplier `1.8×` → `1.0×` (via a new `Saucer.rollFireTimer(range)` on both reload and first-shot); small-saucer aim error `±0.35` → `±0.09` rad; small-saucer appearance chance `15%` → `60%`.
+- **Folded in the old score>8000 small-saucer gate** (per the cleanup note below) — escalation is now purely wave-driven, one system not two. Behavior/shape otherwise unchanged. Headless-tested (`scratchpad/test-f4.js`, 30 assertions).
+
+### Still open (NOT shipped in v1.5)
+- **Hunter Satellite scaling** — built with F4 (Phase 5). Its drift/homing speeds and turn rates become the *ceilings* the existing `difficultyFactor`/`ramp` interpolate up toward; F4 wires into them from the start. The helper is now in place for exactly this.
+- **Debris Satellite density retune** — the joint F3+F10 pass (see F3's "Still open" note). Leans on `GARBAGE_DECAY` for density, not the difficulty curve; still a post-playtest tuning pass, not a number to guess.
+
+---
 
 This feature came out of playtesting: the shipped game is too intense in its opening waves. Hunter Satellites (and their split children) seek too fast from the start, and both saucer types appear too often, fire too often, and aim too accurately for a new player's first few levels. The fix is a **global difficulty-scaling system** that starts everything gentler and ramps up slowly with wave number, so players can enjoy the first several waves before the pressure builds. This is a distinct, cross-cutting feature rather than a set of scattered tweaks, because all the affected systems should scale off one shared, easy-to-tune difficulty curve.
 
@@ -253,7 +264,7 @@ This feature came out of playtesting: the shipped game is too intense in its ope
 - Large-tier drift speed, and every child tier's homing speed *and* turn rate, all scale with `difficultyFactor`. At wave 1, use a gentle floor (proposed ~55–60% of the F4 ceiling speeds/turn rates); ramp toward the full F4 values (the reshaped-Wedge numbers) as waves climb.
 - The *large* Hunter's passive pre-hit drift stays passive at all difficulty levels (Paul confirmed) — only its drift *speed* scales, not its behavior.
 
-**Saucers (existing / GDD 2.6):** Paul's note — "appear too frequently, fire too often, shots too accurate for beginning levels; less frequent, fire less often, aim less accurately at first, ramp over time."
+**Saucers (existing / GDD 2.6):** ✅ **Shipped in v1.5 — spec now in GDD §2.6/§2.13; the detail below is the original design rationale.** Paul's note — "appear too frequently, fire too often, shots too accurate for beginning levels; less frequent, fire less often, aim less accurately at first, ramp over time."
 - *Spawn frequency:* the saucer spawn timer's floor (minimum time between saucers) should be **longer** at low waves and shorten as difficulty climbs. Today it's `rand(12,22) - min(6, wave)` — this needs re-expressing so early waves have noticeably longer gaps (proposed early-game gap ~20–30s, tightening toward the current ~12–16s at high difficulty).
 - *Fire rate:* both saucers' between-shots timers start **slower** (longer gaps) early and tighten with difficulty. Today big = `rand(0.9,1.6)`, small = `rand(0.7,1.1)`; propose early-game multipliers of ~1.8× those intervals at wave 1, easing to 1.0× at full difficulty.
 - *Aim accuracy:* the small saucer's aimed-fire error (today `±0.09 rad`) should be **much wider** early (proposed `±0.35 rad` at wave 1, a barely-aimed spray) tightening to the current `±0.09` at full difficulty. The big saucer already fires randomly, so no accuracy change needed there — though its random fire is already the "easy" case, which is fine.
