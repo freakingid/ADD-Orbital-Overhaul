@@ -27,7 +27,7 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v1.8
+   ASTEROID FIELD DELUXE — v2.0
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
    - Energy shield (hold SHIFT) that deflects debris
    - Killer satellite that splits into homing wedge ships
@@ -81,6 +81,19 @@
    binding was spec'd). Fixed menu/system reads wired now for later phases: A = confirm, B = back
    (reserved for F8's menus), Start = start/pause/unpause (Start toggles pause like P today). Call
    sites are unchanged (still input.left() etc.). Rebinding UI is Phase 8; these are hardcoded defaults.
+   v1.9: Pause menu / options / control rebinding — the first nested menu state machine (pause -> root
+   -> options -> controls), navigable by keyboard OR gamepad. AudioSys refactored to a gain-routing
+   graph (voice -> sfx -> master) so the SFX/Music/Master sliders attenuate real output (Music has no
+   source connected — there is no music track). Live rebinding of the five gameplay actions for both
+   keyboard and gamepad, Return to Defaults, and localStorage persistence of volumes + custom bindings
+   (guarded so a storage failure never crashes).
+   v2.0: Achievements — 15 weekly (a calendar-deterministic 5-wide slice active each ISO week) + 12
+   lifetime (cumulative across games). The Achievements module OBSERVES stats the game already
+   produces (kills by type/tier, dock deliveries, HP thresholds, powerup usage, wave reached,
+   damage-free waves, play time) via light hooks at each event site; unlocks pop a non-blocking toast
+   and are browsable in a viewer (Pause -> Options -> Achievements). Weekly rotation index =
+   (isoYear*52 + isoWeek) % 15; progress + unlock state persist to their own localStorage key. This
+   completes the v2.0 feature set (Phases 1-9).
    ============================================================ */
 
 // ---------- Constants ----------
@@ -219,6 +232,16 @@ const ENGINE_MASS_MULT = 0.5;       // Engine halves the effective towed-mass su
 // stick must travel before it counts as a directional press. Button/axis index enums and the binding
 // table itself live with the Input section (below); they're structural, not balance. Rebinding UI is F8.
 const GP_DEADZONE = 0.25;           // |left-stick axis| must exceed this to register (matches F7 spec)
+
+// Achievements (F9). Weekly achievements rotate on the real-world ISO calendar week so every
+// player worldwide sees the same 5 on the same days; lifetime achievements accumulate across all
+// games. Both persist to their OWN localStorage key (afd_achievements_v1), separate from settings,
+// so a schema change to one never disturbs the other. Definitions/logic live in the Achievements
+// module (after the powerup flow functions); these are the only tunable numbers.
+const ACH_TOAST_TIME   = 4.5;  // sec an unlock toast lingers on screen before fading out
+const ACH_WEEKLY_SHOWN = 5;    // weekly achievements active per calendar week (a 5-wide slice of the pool)
+const ACH_LINEAGE_FULL = 13;   // Hunter kills in one full lineage: 1 large + 3 medium + 9 small (Hunter's Bane)
+const ACH_SAVE_EVERY   = 30;   // sec between periodic lifetime-progress saves (bounds localStorage writes)
 
 // ---------- Canvas / scaling ----------
 const canvas = document.getElementById("game");
@@ -436,6 +459,21 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
     o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.07);
+  },
+
+  achievement() { // an achievement unlocked — a short rising three-note fanfare (distinct from powerup)
+    if (!this.ctx) return;
+    const t = this.now();
+    [523, 659, 784].forEach((f, i) => { // C5 - E5 - G5 major triad
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, t + i * 0.09);
+      g.gain.setValueAtTime(0.11, t + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.2);
+      o.connect(g).connect(this.sfx);
+      o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.22);
+    });
   }
 };
 
@@ -663,7 +701,7 @@ function firstPressedButton() {
 // whole time (update() early-returns on paused), so menu input can never move the ship.
 
 const MENU_ROOT    = ["Continue", "Options", "Quit"];
-const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Controls", "Back"];
+const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Controls", "Achievements", "Back"];
 const VOL_CATS     = ["sfx", "music", "master"]; // parallel to the first three MENU_OPTIONS rows
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -690,6 +728,7 @@ function quitToTitle() {
   game.menu.screen = null; game.menu.rebinding = null;
   game.state = "title";
   AudioSys.thrust(false); AudioSys.saucer(false); // stop any continuous voices
+  Achievements.save();  // persist lifetime progress earned during the abandoned game (F9)
   AudioSys.ui(false);
 }
 function gotoScreen(s, index) {
@@ -713,9 +752,10 @@ function handleMenuKey(k) {
 function menuInput(action) {
   if (game.menu.rebinding) return; // capture mode owns all input; ignore stray nav
   switch (game.menu.screen) {
-    case "root":     menuRoot(action); break;
-    case "options":  menuOptions(action); break;
-    case "controls": menuControls(action); break;
+    case "root":         menuRoot(action); break;
+    case "options":      menuOptions(action); break;
+    case "controls":     menuControls(action); break;
+    case "achievements": menuAchievements(action); break;
   }
 }
 
@@ -744,11 +784,19 @@ function menuOptions(a) {
     }
   }
   else if (a === "confirm") {
-    if (m.index === 3) gotoScreen("controls");     // Controls
-    else if (m.index === 4) gotoScreen("root", 1); // Back -> root, cursor on "Options"
+    if (m.index === 3) gotoScreen("controls");       // Controls
+    else if (m.index === 4) gotoScreen("achievements"); // Achievements viewer (F9)
+    else if (m.index === 5) gotoScreen("root", 1);   // Back -> root, cursor on "Options"
   }
   else if (a === "back") gotoScreen("root", 1);
   else if (a === "pause") closePause();
+}
+
+// Achievements viewer (F9): a read-only list — no rows to select, so nav does nothing and any
+// of confirm/back/pause exits back to Options (cursor left on the "Achievements" row).
+function menuAchievements(a) {
+  if (a === "pause") closePause();
+  else if (a === "confirm" || a === "back") gotoScreen("options", 4);
 }
 
 function menuControls(a) {
@@ -940,7 +988,8 @@ const COLOR = {
   garbageLight: "#b8ffb0",   // low-mass Hunter scrap: a paler, mintier tint so it reads as "lighter / easier to tow" (F4)
   chain: "#8aa0ff",
   dock: "#70ffa0",
-  hp: "#5fe08a"
+  hp: "#5fe08a",
+  ach: "#ffcf5a"            // achievement gold — the unlock toast + earned-achievement highlight (F9)
 };
 
 // Per-type powerup identity (F6): a distinct glow color + a short HUD label per kind. Health
@@ -1024,6 +1073,7 @@ class Ship {
         shoot(this.angle);
       }
       this.cooldown = FIRE_COOLDOWN;
+      game.stats.pacifistStreak = 0; // firing breaks the no-fire delivery streak (Pacifist Tow, F9)
       AudioSys.fire();
     }
 
@@ -1338,7 +1388,9 @@ class Garbage {
     this.spin += this.spinRate * dt;
     wrap(this);
     this.decay -= dt;
-    if (this.decay <= 0) this.dead = true;
+    // Expired uncollected (distinct from a pickup, which sets dead externally): counts against
+    // Waste Not (F9). Pickup never reaches here because the pickup pass sets dead first.
+    if (this.decay <= 0) { this.dead = true; game.stats.garbageDecayed++; }
   }
   draw() {
     // blink faster as decay approaches
@@ -1480,9 +1532,41 @@ class Dock {
 }
 
 // ---------- Game state ----------
+// Fresh per-game achievement stats (F9). One flat bag of counters/flags observed at the points
+// events already happen (kills, deliveries, hits, deliveries, powerups). Reset at startGame; the
+// weekly (single-game) achievements read off this, lifetime ones read Achievements.lifetime.
+function resetGameStats() {
+  return {
+    gameTime: 0,             // sec since this game started (Speed Recycler's 60s window)
+    delivered: 0,            // canisters delivered to the dock this game (Scrap Runner)
+    fullChainVisit: false,   // a single dock visit reached 12 deliveries (Heavy Hauler)
+    bestCombo: 0,            // highest delivery combo reached in one visit (Combo Collector)
+    speedRecycler: false,    // first canister delivered within 60s (Speed Recycler)
+    pacifistStreak: 0,       // consecutive deliveries with no shot fired between them
+    pacifistBest: 0,         // best such streak this game (Pacifist Tow, goal 5)
+    debrisKills: 0,          // Debris Satellites the player destroyed (Satellite Buster)
+    hunterLineageKills: 0,   // kills in the CURRENT Hunter lineage (reset when a fresh core spawns)
+    hunterLineComplete: false,// wiped a full 13-member Hunter line from one spawn (Hunter's Bane)
+    largeHunterKills: 0,     // large Hunter cores destroyed this game (Diamond Cutter)
+    smallSaucerKills: 0,     // small (aimed) saucers destroyed this game (Small Ball)
+    deflects: 0,             // hazards/bullets absorbed by the shield this game (Shield Surfer)
+    healthPicked: 0,         // Health powerups picked up this game (Glass Cannon)
+    powerupsPicked: 0,       // ANY powerups picked up this game (No Powerups Needed)
+    powerUsed: { rapid: false, triple: false, magnet: false, engine: false }, // Powered Up (all four)
+    dmgThisWave: 0,          // hits taken during the wave in progress (perfect-wave detection)
+    noScratchWave3: false,   // completed wave 3 damage-free (No Scratches)
+    closeShave: false,       // survived a Hunter collision under 10 HP (Close Shave)
+    everBelowHalf: false,    // HP ever dropped below 50% this game (Untouchable inverts this)
+    garbageDecayed: 0,       // canisters that expired uncollected this game (Waste Not)
+    gameEnded: false         // set at game over so end-of-game achievements can evaluate
+  };
+}
+
 const game = {
   state: "title",   // title | playing | gameover
   paused: false,    // true iff a pause-menu screen is open (F8)
+  stats: resetGameStats(), // per-game achievement counters/flags (F9)
+  toasts: [],       // active achievement-unlock toasts { name, life } (F9)
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
   // index = cursor for root/options; row/col = cursor for the controls grid;
   // rebinding = { action, device } while capturing a new binding, else null.
@@ -1507,6 +1591,8 @@ function startGame() {
   game.state = "playing";
   game.paused = false;
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null }; // ensure no menu carries in
+  game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
+  game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
   game.wave = 0;
   game.nextRepair = REPAIR_MILESTONE;
@@ -1526,6 +1612,8 @@ function startGame() {
 
 function nextWave() {
   game.wave++;
+  game.stats.dmgThisWave = 0; // fresh damage-free window for the new wave (F9 perfect-wave tracking)
+  Achievements.lifetime.maxWave = Math.max(Achievements.lifetime.maxWave, game.wave); // Century Club / Master of the Field
   game.dock = new Dock(); // recycling dock relocates each wave
   // F3 first-pass balance: trimmed from min(4+wave, 11) to offset the ~8x higher garbage
   // volume from guaranteed 3-per-tier drops. Decay (GARBAGE_DECAY) is the primary density
@@ -1565,7 +1653,7 @@ function boom(x, y, size, color) {
 
 function destroyDebris(a, awardScore = true) {
   a.dead = true;
-  if (awardScore) addScore(DEBRIS_SCORE[a.size]);
+  if (awardScore) { addScore(DEBRIS_SCORE[a.size]); game.stats.debrisKills++; } // Satellite Buster (player kills only)
   boom(a.x, a.y, a.size, COLOR.debris);
   // Every tier's destruction — including the final small-tier kill — emits exactly
   // DEBRIS_GARBAGE canisters (F3), each with an outward kick so they fan out instead
@@ -1593,6 +1681,13 @@ function destroyDebris(a, awardScore = true) {
 function destroyHunter(h, awardScore = true) {
   h.dead = true;
   if (awardScore) addScore(HUNTER_SCORE[h.size]);
+  // Achievement stats (F9): every Hunter death (bullet OR shield-kill) is a player kill. Lineage
+  // count -> Hunter's Bane (a full 13-member line from one spawn); large cores -> Diamond Cutter;
+  // all tiers -> Ghost Protocol (lifetime).
+  game.stats.hunterLineageKills++;
+  if (game.stats.hunterLineageKills >= ACH_LINEAGE_FULL) game.stats.hunterLineComplete = true;
+  if (h.size === 3) game.stats.largeHunterKills++;
+  Achievements.lifetime.hunterKills++;
   boom(h.x, h.y, h.size, COLOR.satellite);
   if (h.size === 1) {
     // Final tier: an easy-to-tow bonus pile of low-mass canisters (mass 0.5, paler tint).
@@ -1654,8 +1749,182 @@ function applyPowerup(type) {
   } else {
     game.powerFx[type] = POWERUP_DURATION; // refresh, not add — same-type pickups extend, never stack
   }
+  // Achievement stats (F9): any pickup counts for "No Powerups Needed"; Health picks gate "Glass
+  // Cannon"; the four drop types feed "Powered Up" (use all four).
+  game.stats.powerupsPicked++;
+  if (type === "health") game.stats.healthPicked++;
+  else game.stats.powerUsed[type] = true;
   game.floaters.push(new FloatText(POWERUP_LABEL[type], game.ship.x, game.ship.y - 22, POWERUP_COLOR[type]));
   AudioSys.powerup();
+}
+
+// ---------- Achievements (F9) ----------
+// The most "touches-everything-a-little" system: it OBSERVES stats the rest of the game already
+// produces (see resetGameStats + the per-system hooks) and never drives gameplay. Two pools:
+//   • WEEKLY  — single-game challenges; only a calendar-deterministic 5-wide slice is active each
+//               ISO week, so every player worldwide sees the same 5 on the same days.
+//   • LIFETIME— cumulative across all games (kills, deliveries, play time, best wave).
+// Each definition is { id, pool, name, desc, goal, cur(s,l), text? }; unlocked when cur >= goal.
+// cur() reads the per-game stats (s = game.stats) and lifetime counters (l = this.lifetime), plus
+// game.wave directly for the "reach wave N" ones. Persistence uses its own localStorage key.
+const Achievements = {
+  STORAGE_KEY: "afd_achievements_v1",
+
+  // 15 weekly achievements (F9 starter pool, in fixed order — the rotation indexes into this array).
+  WEEKLY: [
+    { id: "scrap_runner",     name: "Scrap Runner",     desc: "Deliver 20 canisters to the dock in one game.",        goal: 20, cur: s => s.delivered },
+    { id: "heavy_hauler",     name: "Heavy Hauler",     desc: "Deliver a full 12-canister chain in one dock visit.",  goal: 1,  cur: s => s.fullChainVisit ? 1 : 0 },
+    { id: "glass_cannon",     name: "Glass Cannon",     desc: "Reach wave 5 without picking up a Health powerup.",     goal: 1,  cur: s => (game.wave >= 5 && s.healthPicked === 0) ? 1 : 0 },
+    { id: "satellite_buster", name: "Satellite Buster", desc: "Destroy 15 Debris Satellites in one game.",             goal: 15, cur: s => s.debrisKills },
+    { id: "hunters_bane",     name: "Hunter's Bane",    desc: "Wipe out a whole Hunter line (large → mediums → smalls).", goal: 1, cur: s => s.hunterLineComplete ? 1 : 0 },
+    { id: "pacifist_tow",     name: "Pacifist Tow",     desc: "Deliver 5 canisters in a row without firing.",          goal: 5,  cur: s => s.pacifistBest },
+    { id: "close_shave",      name: "Close Shave",      desc: "Survive a Hunter collision with under 10 HP left.",     goal: 1,  cur: s => s.closeShave ? 1 : 0 },
+    { id: "shield_surfer",    name: "Shield Surfer",    desc: "Deflect 10 hazards with your shield in one game.",      goal: 10, cur: s => s.deflects },
+    { id: "small_ball",       name: "Small Ball",       desc: "Destroy 10 small saucers in one game.",                 goal: 10, cur: s => s.smallSaucerKills },
+    { id: "no_scratches",     name: "No Scratches",     desc: "Complete wave 3 without taking any damage.",            goal: 1,  cur: s => s.noScratchWave3 ? 1 : 0 },
+    { id: "combo_collector",  name: "Combo Collector",  desc: "Reach a delivery combo of 8+ in one dock visit.",       goal: 8,  cur: s => s.bestCombo },
+    { id: "speed_recycler",   name: "Speed Recycler",   desc: "Deliver your first canister within 60 seconds.",        goal: 1,  cur: s => s.speedRecycler ? 1 : 0 },
+    { id: "powered_up",       name: "Powered Up",       desc: "Use all four drop powerups in a single game.",          goal: 4,  cur: s => powerTypesUsed(s) },
+    { id: "diamond_cutter",   name: "Diamond Cutter",   desc: "Destroy 3 large Hunter cores in one game.",             goal: 3,  cur: s => s.largeHunterKills },
+    { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with zero canisters expired.",            goal: 1,  cur: s => (s.gameEnded && s.garbageDecayed === 0) ? 1 : 0 }
+  ],
+
+  // 12 lifetime achievements (F9 starter pool). cur() reads the persisted lifetime counters (l).
+  LIFETIME: [
+    { id: "recycling_magnate", name: "Recycling Magnate", desc: "Deliver 1,000 canisters (all-time).",                 goal: 1000,  cur: (s, l) => l.delivered },
+    { id: "century_club",      name: "Century Club",      desc: "Reach wave 25 in a single game.",                     goal: 25,    cur: (s, l) => l.maxWave },
+    { id: "untouchable",       name: "Untouchable",       desc: "Reach wave 10 without dropping below 50% HP.",        goal: 1,     cur: s => (game.wave >= 10 && !s.everBelowHalf) ? 1 : 0 },
+    { id: "ghost_protocol",    name: "Ghost Protocol",    desc: "Destroy 50 Hunter Satellites (all-time).",            goal: 50,    cur: (s, l) => l.hunterKills },
+    { id: "ton_of_scrap",      name: "Ton of Scrap",      desc: "Earn 10,000 points from dock deliveries (all-time).", goal: 10000, cur: (s, l) => l.deliveryScore },
+    { id: "long_haul",         name: "The Long Haul",     desc: "Deliver a full 12-chain 10 times (all-time).",        goal: 10,    cur: (s, l) => l.fullChains },
+    { id: "iron_hull",         name: "Iron Hull",         desc: "Survive 100 hazard hits (all-time).",                 goal: 100,   cur: (s, l) => l.hitsSurvived },
+    { id: "perfect_wave",      name: "Perfect Wave",      desc: "Clear 10 waves with zero damage (all-time).",         goal: 10,    cur: (s, l) => l.perfectWaves },
+    { id: "saucer_hunter",     name: "Saucer Hunter",     desc: "Destroy 200 saucers (all-time).",                     goal: 200,   cur: (s, l) => l.saucerKills },
+    { id: "marathon_runner",   name: "Marathon Runner",   desc: "Play for 10 hours total.",                            goal: 36000, cur: (s, l) => l.playTime,
+      text: (s, l) => (l.playTime / 3600).toFixed(1) + "/10h" },
+    { id: "master_field",      name: "Master of the Field", desc: "Reach wave 50 in a single game.",                   goal: 50,    cur: (s, l) => l.maxWave },
+    { id: "no_powerups",       name: "No Powerups Needed", desc: "Reach wave 15 without any powerup.",                 goal: 1,     cur: s => (game.wave >= 15 && s.powerupsPicked === 0) ? 1 : 0 }
+  ],
+
+  byId: {},
+  // Cumulative counters that survive across games (persisted). Incremented at each event's site.
+  lifetime: {
+    delivered: 0, deliveryScore: 0, fullChains: 0,
+    hunterKills: 0, saucerKills: 0, hitsSurvived: 0,
+    perfectWaves: 0, playTime: 0, maxWave: 0
+  },
+  weekKey: "",                    // "isoYear-isoWeek" of the currently-active week
+  activeIds: [],                  // the 5 weekly ids active this week (a slice of WEEKLY)
+  weeklyUnlocked: null,           // Set of weekly ids unlocked THIS week (reset when the week rolls over)
+  lifetimeUnlocked: null,         // Set of lifetime ids unlocked ever
+  _saveAccum: ACH_SAVE_EVERY,     // periodic-save countdown
+
+  // --- ISO 8601 week + week-year from a Date, computed in UTC (Monday-based, no DST ambiguity). ---
+  isoWeekYear(date) {
+    // Move to the Thursday of this week: the ISO week-year is the year that Thursday falls in.
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const dayNum = (d.getUTCDay() + 6) % 7;               // Mon=0 … Sun=6
+    d.setUTCDate(d.getUTCDate() - dayNum + 3);            // Thursday of the current week
+    const isoYear = d.getUTCFullYear();
+    const firstThu = new Date(Date.UTC(isoYear, 0, 4));   // Jan 4 is always in ISO week 1
+    const firstDayNum = (firstThu.getUTCDay() + 6) % 7;
+    firstThu.setUTCDate(firstThu.getUTCDate() - firstDayNum + 3); // Thursday of week 1
+    const week = 1 + Math.round((d - firstThu) / (7 * 24 * 3600 * 1000));
+    return { year: isoYear, week };
+  },
+  // Deterministic pool index (F9 formula): (isoYear*52 + isoWeek) mod pool size.
+  poolIndex(year, week) { return ((year * 52 + week) % this.WEEKLY.length + this.WEEKLY.length) % this.WEEKLY.length; },
+  weekKeyFor(date) { const { year, week } = this.isoWeekYear(date); return year + "-" + week; },
+  // The 5 consecutive weekly achievements active for a given date, wrapping around the pool.
+  selectWeekly(date) {
+    const { year, week } = this.isoWeekYear(date);
+    const idx = this.poolIndex(year, week);
+    const out = [];
+    for (let i = 0; i < ACH_WEEKLY_SHOWN; i++) out.push(this.WEEKLY[(idx + i) % this.WEEKLY.length]);
+    return out;
+  },
+  activeWeekly() { return this.activeIds.map(id => this.byId[id]); },
+
+  isUnlocked(ach) {
+    return ach.pool === "weekly" ? this.weeklyUnlocked.has(ach.id) : this.lifetimeUnlocked.has(ach.id);
+  },
+  // Fraction complete (for the viewer's progress readout), clamped to [0,1].
+  fraction(ach) { return Math.max(0, Math.min(1, ach.cur(game.stats, this.lifetime) / ach.goal)); },
+  // "cur/goal" progress label (or a per-achievement custom formatter for e.g. play time).
+  progressText(ach) {
+    if (ach.text) return ach.text(game.stats, this.lifetime);
+    const cur = Math.min(Math.floor(ach.cur(game.stats, this.lifetime)), ach.goal);
+    return cur + "/" + ach.goal;
+  },
+
+  // Check every currently-relevant achievement; unlock any whose predicate has newly become true.
+  // Safe to call every frame — already-unlocked ones short-circuit.
+  evaluate() {
+    const s = game.stats, l = this.lifetime;
+    const check = (ach, set, pool) => {
+      if (set.has(ach.id)) return;
+      if (ach.cur(s, l) >= ach.goal) { set.add(ach.id); this.onUnlock(ach); }
+    };
+    for (const ach of this.activeWeekly()) check(ach, this.weeklyUnlocked, "weekly");
+    for (const ach of this.LIFETIME)       check(ach, this.lifetimeUnlocked, "lifetime");
+  },
+  onUnlock(ach) {
+    game.toasts.push({ name: ach.name, life: ACH_TOAST_TIME });
+    AudioSys.achievement();
+    this.save(); // persist the moment something is earned, so an unlock is never lost
+  },
+
+  // Accumulate play time and periodically flush lifetime progress (bounded storage writes).
+  tick(dt) {
+    this.lifetime.playTime += dt;
+    this._saveAccum -= dt;
+    if (this._saveAccum <= 0) { this._saveAccum = ACH_SAVE_EVERY; this.save(); }
+  },
+
+  // --- Persistence (own key; same guarded pattern as settings — never crash on storage failure). ---
+  save() {
+    const ls = storageOK(); if (!ls) return;
+    try {
+      const data = {
+        lifetime: { ...this.lifetime },
+        lifetimeUnlocked: [...this.lifetimeUnlocked],
+        weekly: { key: this.weekKey, unlocked: [...this.weeklyUnlocked] }
+      };
+      ls.setItem(this.STORAGE_KEY, JSON.stringify(data));
+    } catch (e) { /* quota / privacy mode / disabled — ignore */ }
+  },
+  // Initialise at startup (or, in tests, with an explicit `now`). Loads persisted state, then sets
+  // the active weekly slice for the current calendar week; if the stored week differs from the
+  // current one, weekly unlocks reset (fresh challenges) while lifetime progress is retained.
+  init(now = new Date()) {
+    for (const a of this.WEEKLY)   { a.pool = "weekly";   this.byId[a.id] = a; }
+    for (const a of this.LIFETIME) { a.pool = "lifetime"; this.byId[a.id] = a; }
+    this.weekKey = this.weekKeyFor(now);
+    this.activeIds = this.selectWeekly(now).map(a => a.id);
+    this.lifetimeUnlocked = new Set();
+    this.weeklyUnlocked = new Set();
+    const ls = storageOK();
+    if (ls) {
+      try {
+        const raw = ls.getItem(this.STORAGE_KEY);
+        if (raw) {
+          const data = JSON.parse(raw);
+          if (data.lifetime) for (const k in this.lifetime)
+            if (typeof data.lifetime[k] === "number") this.lifetime[k] = data.lifetime[k];
+          if (Array.isArray(data.lifetimeUnlocked))
+            for (const id of data.lifetimeUnlocked) if (this.byId[id]) this.lifetimeUnlocked.add(id);
+          // Weekly unlocks only carry over within the same calendar week.
+          if (data.weekly && data.weekly.key === this.weekKey && Array.isArray(data.weekly.unlocked))
+            for (const id of data.weekly.unlocked) if (this.byId[id]) this.weeklyUnlocked.add(id);
+        }
+      } catch (e) { /* corrupt / unreadable — start fresh, don't crash */ }
+    }
+  }
+};
+// Count of the four drop-powerup types used this game (Powered Up).
+function powerTypesUsed(s) {
+  return (s.powerUsed.rapid ? 1 : 0) + (s.powerUsed.triple ? 1 : 0) +
+         (s.powerUsed.magnet ? 1 : 0) + (s.powerUsed.engine ? 1 : 0);
 }
 
 // Apply an unshielded hit: subtract HP, knock the ship away from the hazard, and
@@ -1681,6 +1950,12 @@ function damageShip(amount, srcX, srcY) {
   s.vx = Math.cos(a) * KNOCKBACK_SPEED;
   s.vy = Math.sin(a) * KNOCKBACK_SPEED;
   s.invuln = HIT_STUN_DURATION;
+  // Achievement stats (F9): a survived hit. Per-wave damage gates the perfect-wave achievements
+  // (No Scratches / Perfect Wave); cumulative survived hits -> Iron Hull; dropping below 50% HP
+  // ends "Untouchable"'s eligibility for this game.
+  game.stats.dmgThisWave++;
+  Achievements.lifetime.hitsSurvived++;
+  if (s.hp < SHIP_MAX_HP * 0.5) game.stats.everBelowHalf = true;
   for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
   AudioSys.hit();
   return true;
@@ -1694,6 +1969,11 @@ function killShip() { // hull destroyed (0 HP): a true, permanent game over — 
   scatterChain();
   game.state = "gameover";
   AudioSys.saucer(false);
+  // Achievements (F9): a game just ended — flag it so end-of-game checks (Waste Not) can fire,
+  // run a final evaluation, and flush lifetime progress to storage.
+  game.stats.gameEnded = true;
+  Achievements.evaluate();
+  Achievements.save();
 }
 
 // Shield deflection: bounce object away from ship, cost energy
@@ -1707,6 +1987,7 @@ function shieldDeflect(obj) {
   obj.x = game.ship.x + Math.cos(a) * (SHIELD_RADIUS + obj.radius + 2);
   obj.y = game.ship.y + Math.sin(a) * (SHIELD_RADIUS + obj.radius + 2);
   game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
+  game.stats.deflects++;   // Shield Surfer (F9): a hazard bounced off the shield
   AudioSys.shieldPing();
 }
 
@@ -1848,6 +2129,9 @@ function update(dt) {
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
   game.camera.y = game.ship.y;
+  // Achievements (F9): per-game clock (Speed Recycler's 60s window) + lifetime play time & periodic save
+  game.stats.gameTime += dt;
+  Achievements.tick(dt);
   game.debris.forEach(a => a.update(dt));
   game.bullets.forEach(b => b.update(dt));
   game.saucers.forEach(s => s.update(dt));
@@ -1908,6 +2192,17 @@ function update(dt) {
         game.deliveryCount++;
         const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
         addScore(pts);
+        // Achievement stats (F9): per-game delivered count (Scrap Runner) + best combo this visit
+        // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
+        // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
+        game.stats.delivered++;
+        game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
+        game.stats.pacifistStreak++;
+        game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
+        if (game.stats.delivered === 1 && game.stats.gameTime <= 60) game.stats.speedRecycler = true;
+        if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; }
+        Achievements.lifetime.delivered++;
+        Achievements.lifetime.deliveryScore += pts;
         game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
         AudioSys.deliver(game.deliveryCount);
         game.offloadTimer = 0.13;
@@ -1943,6 +2238,7 @@ function update(dt) {
   game.hunterTimer -= dt;
   if (game.hunterTimer <= 0 && game.hunters.length === 0 && game.wave >= 2) {
     game.hunters.push(HunterSatellite.spawnCore());
+    game.stats.hunterLineageKills = 0; // start counting this lineage for Hunter's Bane (F9)
     game.hunterTimer = rand(20, 32);
   }
 
@@ -1968,6 +2264,8 @@ function update(dt) {
         if (!s.dead && dist2(b, s) < s.radius * s.radius) {
           b.dead = true; s.dead = true;
           addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
+          Achievements.lifetime.saucerKills++;                 // Saucer Hunter (F9)
+          if (s.small) game.stats.smallSaucerKills++;          // Small Ball (F9)
           boom(s.x, s.y, 2, COLOR.saucer);
           AudioSys.saucer(false);
           break;
@@ -1989,6 +2287,7 @@ function update(dt) {
           b.dead = true;
           if (game.ship.shieldOn) {
             game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
+            game.stats.deflects++; // Shield Surfer (F9): a hostile bullet blocked by the shield
             AudioSys.shieldPing();
           } else damageShip(DMG_BULLET, b.x, b.y);
         }
@@ -2016,13 +2315,17 @@ function update(dt) {
           // and still split; debris and the large Hunter core bounce off elastically.
           if (h instanceof HunterSatellite && h.size < 3) {
             game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
+            game.stats.deflects++; // Shield Surfer (F9): a homing Hunter killed on the shield
             AudioSys.shieldPing();
             destroyHunter(h);
           } else {
             shieldDeflect(h);
           }
         } else {
-          damageShip(h.damage, h.x, h.y);
+          const applied = damageShip(h.damage, h.x, h.y);
+          // Close Shave (F9): survived a Hunter collision with under 10 HP left (still alive).
+          if (applied && h instanceof HunterSatellite && !game.ship.dead && game.ship.hp < 10)
+            game.stats.closeShave = true;
         }
       }
     }
@@ -2034,6 +2337,9 @@ function update(dt) {
         if (game.ship.shieldOn) {
           s.dead = true;
           addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
+          Achievements.lifetime.saucerKills++;              // Saucer Hunter (F9)
+          if (s.small) game.stats.smallSaucerKills++;       // Small Ball (F9)
+          game.stats.deflects++;                            // Shield Surfer (F9): saucer rammed into the shield
           boom(s.x, s.y, 2, COLOR.saucer);
           AudioSys.saucer(false);
         } else damageShip(s.damage, s.x, s.y);
@@ -2083,11 +2389,21 @@ function update(dt) {
     game.waveClearTimer += dt;
     if (game.waveClearTimer > 2.5) {
       game.waveClearTimer = 0;
+      // Achievements (F9): a wave completed with zero damage taken -> Perfect Wave (lifetime, 10×)
+      // and, if it was wave 3, No Scratches (weekly). game.wave is still the completed wave here
+      // (nextWave increments it), so read it before advancing.
+      if (game.stats.dmgThisWave === 0) {
+        Achievements.lifetime.perfectWaves++;
+        if (game.wave === 3) game.stats.noScratchWave3 = true;
+      }
       nextWave();
     }
   } else {
     game.waveClearTimer = 0;
   }
+
+  // --- Achievements: evaluate every frame (already-unlocked ones short-circuit) ---
+  Achievements.evaluate();
 
   // --- Heartbeat ---
   const density = game.debris.length + game.hunters.length * 2;
@@ -2121,6 +2437,7 @@ function drawMenu() {
   if (s === "root") drawRootMenu();
   else if (s === "options") drawOptionsMenu();
   else if (s === "controls") drawControlsMenu();
+  else if (s === "achievements") drawAchievements();
 }
 
 function menuPanel(w, h, title) {
@@ -2143,7 +2460,7 @@ function drawRootMenu() {
 }
 
 function drawOptionsMenu() {
-  const { x, y } = menuPanel(560, 400, "OPTIONS");
+  const { x, y } = menuPanel(560, 448, "OPTIONS");
   const m = game.menu;
   for (let i = 0; i < 3; i++) { // SFX / Music / Master sliders
     const sel = m.index === i;
@@ -2158,11 +2475,11 @@ function drawOptionsMenu() {
     if (sel) { drawText("◄", bx - 16, cy + 7, 16, COLOR.text); drawText("►", bx + bw + 16, cy + 7, 16, COLOR.text); }
   }
   drawText("(no music track yet — the Music slider is wired for a future one)", VIEW_W / 2, y + 262, 12, COLOR.dim);
-  ["Controls", "Back"].forEach((it, j) => {
+  ["Controls", "Achievements", "Back"].forEach((it, j) => {
     const idx = 3 + j, sel = m.index === idx;
-    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 300 + j * 38, 22, sel ? COLOR.text : COLOR.dim);
+    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 296 + j * 36, 22, sel ? COLOR.text : COLOR.dim);
   });
-  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 380, 12, COLOR.dim);
+  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 428, 12, COLOR.dim);
 }
 
 function drawControlsMenu() {
@@ -2215,6 +2532,52 @@ function axisLabel(a) {
   return "Axis " + a.index;
 }
 
+// ---------- Achievements viewer + unlock toasts (F9) ----------
+// Read-only list reachable from Options -> Achievements. Two columns: this week's 5 (left) and the
+// 12 lifetime (right), each with unlock status + a progress readout. Screen-fixed, drawn by drawMenu.
+function drawAchievements() {
+  ctx.fillStyle = "rgba(4,10,20,0.74)";
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const { x, y } = menuPanel(940, 648, "ACHIEVEMENTS");
+  drawText("WEEKLY SET " + Achievements.weekKey + " — resets each calendar week", VIEW_W / 2, y + 74, 12, COLOR.dim);
+  const colW = 420, xL = x + 34, xR = x + 486, ry0 = y + 130, step = 40;
+  drawText("THIS WEEK", xL, y + 108, 15, COLOR.satellite, "left");
+  drawText("LIFETIME",  xR, y + 108, 15, COLOR.satellite, "left");
+  Achievements.activeWeekly().forEach((a, i) => drawAchRow(a, xL, ry0 + i * step, colW));
+  Achievements.LIFETIME.forEach((a, i) => drawAchRow(a, xR, ry0 + i * step, colW));
+  drawText("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 632, 12, COLOR.dim);
+}
+
+// One achievement row: name + status on the top line, description below. Earned rows glow gold.
+function drawAchRow(ach, x, ry, w) {
+  const done = Achievements.isUnlocked(ach);
+  drawText(ach.name, x, ry, 15, done ? COLOR.ach : COLOR.text, "left");
+  drawText(done ? "✓" : Achievements.progressText(ach), x + w, ry, 14, done ? COLOR.ach : COLOR.dim, "right");
+  drawText(ach.desc, x, ry + 15, 10, COLOR.dim, "left");
+}
+
+// Non-blocking unlock banners at top-center. Fade in then out; stack downward if several land at once.
+function drawToasts() {
+  if (!game.toasts.length) return;
+  const w = 384, h = 52;
+  game.toasts.forEach((t, i) => {
+    const fadeOut = Math.min(1, t.life / 0.6);
+    const fadeIn = Math.min(1, (ACH_TOAST_TIME - t.life) / 0.25);
+    const alpha = Math.max(0, Math.min(fadeOut, fadeIn));
+    const bx = (VIEW_W - w) / 2, by = 76 + i * 62;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "rgba(6,14,26,0.9)";
+    ctx.fillRect(bx, by, w, h);
+    ctx.strokeStyle = COLOR.ach; ctx.lineWidth = 2;
+    ctx.shadowColor = COLOR.ach; ctx.shadowBlur = 12;
+    ctx.strokeRect(bx, by, w, h);
+    ctx.shadowBlur = 0;
+    drawText("★ ACHIEVEMENT UNLOCKED", VIEW_W / 2, by + 20, 12, COLOR.ach);
+    drawText(t.name, VIEW_W / 2, by + 42, 20, COLOR.text);
+    ctx.globalAlpha = 1;
+  });
+}
+
 // Background stars scattered across the whole world (count scales with world area
 // to preserve the original on-screen density). Drawn in screen space, wrap-aware,
 // so the field scrolls seamlessly and never shows a tiling repeat or an edge seam.
@@ -2264,6 +2627,7 @@ function draw() {
     drawText("BEWARE THE HUNTER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.satellite);
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
+    drawText("ACHIEVEMENTS: PAUSE → OPTIONS", VIEW_W/2, VIEW_H/2 + 220, 14, COLOR.ach);
     // decorative drifting debris lives in screen space (its own tiny wrapped field)
     titleDebris.forEach(a => {
       a.update(1/60);
@@ -2345,6 +2709,8 @@ function draw() {
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 90, 22);
   }
+
+  drawToasts(); // achievement-unlock banners, on top of everything (F9)
 }
 
 // title screen decoration
@@ -2355,6 +2721,9 @@ for (let i = 0; i < 5; i++) {
   titleDebris.push(a);
 }
 
+// Load persisted achievements + compute this week's active weekly slice, once at startup (F9).
+Achievements.init();
+
 // ---------- Main loop ----------
 let last = performance.now();
 function loop(now) {
@@ -2363,8 +2732,17 @@ function loop(now) {
   pollGamepad();        // refresh the first-gamepad snapshot once per frame, before anything reads it
   handleGamepadMenu();  // edge-triggered controller menu/system actions (Start/A/B)
   update(dt);
+  updateToasts(dt);     // age out achievement-unlock toasts (independent of pause/state) (F9)
   draw();
   requestAnimationFrame(loop);
+}
+
+// Age achievement toasts. Runs in the main loop (not update) so they animate/expire across every
+// state — during play, at game over, and while paused — not just while the sim is running (F9).
+function updateToasts(dt) {
+  if (!game.toasts.length) return;
+  for (const t of game.toasts) t.life -= dt;
+  game.toasts = game.toasts.filter(t => t.life > 0);
 }
 requestAnimationFrame(loop);
 </script>

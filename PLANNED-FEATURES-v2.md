@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1–F8 (Phases 1–8) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5), F6 Powerups as v1.7 (spec in GDD §2.14), F7 controller support as v1.8 (defaults) + **v1.9 (rebinding UI)** (spec in GDD §2.15 / §2.16), F8 Pause/Options/Rebinding as **v1.9** (spec in GDD §2.16). **F9 (achievements) is the only unbuilt feature**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
+**Status:** **The full v2.0 feature set (F1–F9) is built and shipped as v2.0.** F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5), F6 Powerups as v1.7 (spec in GDD §2.14), F7 controller support as v1.8 (defaults) + **v1.9 (rebinding UI)** (spec in GDD §2.15 / §2.16), F8 Pause/Options/Rebinding as **v1.9** (spec in GDD §2.16), **F9 Achievements as v2.0 (spec in GDD §2.17)**. The **only** thing still open is a tuning pass, not a feature: of F10, the Hunter-scaling half shipped in v1.6 and only the **Debris-density retune** is still deferred (see F10 below).
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -187,9 +187,20 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 ---
 
 ## F9 — Achievements System
-**Status:** 🔴 Not Started
+**Status:** 🟢 Done — shipped in v2.0 (build Phase 9). The full shipped spec now lives in **GDD §2.17** (with §2.9 updated for the new Options → Achievements viewer entry). This section is retained only for the resolved-decisions note below; the original spec/pools/assumptions follow it for the record.
 
-### Spec
+### Resolved decisions (shipped as spec'd, with these calls made)
+- **Weekly rotation exactly as proposed:** pool index = `(isoYear × 52 + isoWeek) % 15` from the real UTC date at launch (ISO week is Monday-based/UTC via a Thursday-of-week rule), 5 consecutive entries wrapping the 15-pool. Deterministic — no randomness. **Weekly-unlock progress resets when the calendar week rolls over** (the stored week key must match the current one to carry over); lifetime progress is always retained. Verified headlessly incl. a year-boundary case (2027-01-01 → ISO 2026-W53) and a wrapping slice.
+- **All 15 weekly + 12 lifetime starter achievements implemented**, each with a real stat hook placed at the event's existing site (observe-at-the-source — no new indirection), per the phase prompt. Per-game counters live in a flat `game.stats` bag (`resetGameStats()`); lifetime counters on `Achievements.lifetime`.
+- **Separate `localStorage` key** (`afd_achievements_v1`, not folded into settings' `afd_settings_v1`) so a schema change to one never disturbs the other — as STATUS.md recommended. Same guarded (`typeof` + try/catch) contract; saved on unlock / game over / Quit / every 30 s. **Real cross-session persistence still needs a browser check outside the artifact sandbox** — carried as a playtest ask.
+- **Notification:** a non-blocking gold toast (`ACH_TOAST_TIME` 4.5 s, fades in/out, stacks) + a distinct `AudioSys.achievement()` fanfare.
+- **Viewer entry point:** **Pause → Options → Achievements** (reuses the tested F8 menu state machine — the lowest-risk integration). The title screen shows a hint pointing there; a first-class title-screen entry remains an easy future add (as STATUS.md predicted).
+- **A few starter achievements are intentionally hard/degenerate** (e.g. Waste Not — "zero canisters expired" — is near-impossible to earn legitimately given the 39–66 canisters a lineage sheds, yet trivially satisfiable by dying before anything decays). Implemented literally per the starter pool; balancing/curating the pools is a post-playtest pass, not this phase's job.
+
+---
+
+### Original spec (retained for the record — shipped spec is GDD §2.17)
+
 - **5 weekly achievements**, drawn from a rotating pool, changing based on the real-world calendar week (ISO week number) so every player worldwide sees the same weekly set on the same days. Once the pool is exhausted, it loops back to the start.
 - **Lifetime achievements** — longer-term, harder, some skill-based and some cumulative/grindy.
 
