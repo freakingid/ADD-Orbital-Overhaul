@@ -238,9 +238,26 @@ resize();
 const AudioSys = {
   ctx: null, thrustNode: null, thrustGain: null,
   saucerOsc: null, saucerGain: null,
+  // Gain routing (F8). vol holds the three slider values (0..1, 1 = unity = pre-F8 loudness);
+  // master/sfx/music are the gain nodes built in init(). Volumes persist even before the audio
+  // graph exists (no user gesture yet) so loadSettings() can set them and init() apply them.
+  vol: { master: 1, sfx: 1, music: 1 },
+  master: null, sfx: null, music: null,
   init() {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Every voice -> sfx bus -> master bus -> speakers. The Options sliders drive these three
+    // gains. music is wired for a future track — NOTHING is connected to its input yet (there is
+    // no music in the game; the slider exists so it's ready), see delivery notes / GDD §2.8.
+    this.master = this.ctx.createGain(); this.master.gain.value = this.vol.master; this.master.connect(this.ctx.destination);
+    this.sfx    = this.ctx.createGain(); this.sfx.gain.value    = this.vol.sfx;    this.sfx.connect(this.master);
+    this.music  = this.ctx.createGain(); this.music.gain.value  = this.vol.music;  this.music.connect(this.master);
+  },
+  // Set a category volume and, if the graph is live, push it to the node immediately (F8 sliders).
+  setVol(cat, v) {
+    this.vol[cat] = v;
+    const node = cat === "master" ? this.master : cat === "sfx" ? this.sfx : this.music;
+    if (node) node.gain.value = v;
   },
   resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
   now() { return this.ctx ? this.ctx.currentTime : 0; },
@@ -255,7 +272,7 @@ const AudioSys = {
     o.frequency.exponentialRampToValueAtTime(160, t + 0.12);
     g.gain.setValueAtTime(0.12, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.15);
   },
 
@@ -276,7 +293,7 @@ const AudioSys = {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0.5, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(filt).connect(g).connect(this.ctx.destination);
+    src.connect(filt).connect(g).connect(this.sfx);
     src.start(t);
   },
 
@@ -293,7 +310,7 @@ const AudioSys = {
       filt.type = "lowpass"; filt.frequency.value = 320;
       const g = this.ctx.createGain();
       g.gain.value = 0.10;
-      src.connect(filt).connect(g).connect(this.ctx.destination);
+      src.connect(filt).connect(g).connect(this.sfx);
       src.start();
       this.thrustNode = src; this.thrustGain = g;
     } else if (!on && this.thrustNode) {
@@ -311,7 +328,7 @@ const AudioSys = {
     o.frequency.value = high ? 110 : 82;
     g.gain.setValueAtTime(0.16, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.13);
   },
 
@@ -328,7 +345,7 @@ const AudioSys = {
       lfoGain.gain.value = small ? 90 : 45;
       lfo.connect(lfoGain).connect(o.frequency);
       g.gain.value = 0.055;
-      o.connect(g).connect(this.ctx.destination);
+      o.connect(g).connect(this.sfx);
       o.start(); lfo.start();
       this.saucerOsc = { o, lfo }; this.saucerGain = g;
     } else if (!on && this.saucerOsc) {
@@ -347,7 +364,7 @@ const AudioSys = {
     o.frequency.exponentialRampToValueAtTime(500, t + 0.18);
     g.gain.setValueAtTime(0.14, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.21);
   },
 
@@ -361,7 +378,7 @@ const AudioSys = {
     o.frequency.exponentialRampToValueAtTime(620, t + 0.08);
     g.gain.setValueAtTime(0.1, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.13);
   },
 
@@ -374,7 +391,7 @@ const AudioSys = {
     o.frequency.value = 440 * Math.pow(1.06, Math.min(count, 20));
     g.gain.setValueAtTime(0.13, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.16);
   },
 
@@ -388,7 +405,7 @@ const AudioSys = {
     o.frequency.exponentialRampToValueAtTime(55, t + 0.18);
     g.gain.setValueAtTime(0.2, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.23);
   },
 
@@ -403,9 +420,22 @@ const AudioSys = {
       const g0 = 0.12;
       g.gain.setValueAtTime(g0, t + i * 0.07);
       g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.14);
-      o.connect(g).connect(this.ctx.destination);
+      o.connect(g).connect(this.sfx);
       o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.15);
     });
+  },
+
+  ui(up) { // short menu blip (F8): up=true = confirm/select (higher), false = move/back/adjust (lower)
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "square";
+    o.frequency.value = up ? 560 : 320;
+    g.gain.setValueAtTime(0.07, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    o.connect(g).connect(this.sfx);
+    o.start(t); o.stop(t + 0.07);
   }
 };
 
@@ -427,6 +457,13 @@ const GP = {
   AXIS_LX: 0, AXIS_LY: 1, AXIS_RX: 2, AXIS_RY: 3   // analog axis indices
 };
 
+// Human-readable names for the Controls screen (F8) — button index -> label.
+const GP_NAME = {
+  0: "A", 1: "B", 2: "X", 3: "Y", 4: "LB", 5: "RB", 6: "LT", 7: "RT",
+  8: "Back", 9: "Start", 10: "L-Stick", 11: "R-Stick",
+  12: "D-Pad ↑", 13: "D-Pad ↓", 14: "D-Pad ←", 15: "D-Pad →"
+};
+
 // The binding table — the single source of truth for what triggers each action, as DATA (not
 // per-action logic) so Phase 8 can render/rebind it directly. Each action lists the keyboard keys
 // (lowercased, matching the keys{} map), the gamepad buttons, and optionally one analog axis
@@ -444,6 +481,21 @@ const bindings = {
   back:    { label: "Back",       fixed: true,  keys: ["escape"],          buttons: [GP.B] },     // reserved for F8 menu screens; no target yet
   pause:   { label: "Pause",      fixed: true,  keys: ["p"],               buttons: [GP.START] }
 };
+
+// The rebindable actions (the fixed:false gameplay ones) and a pristine snapshot of their shipped
+// defaults, captured BEFORE any saved settings are applied (loadSettings runs later). The Controls
+// screen's "Return to Defaults" (F8) restores exactly this. Keep the snapshot deep — mutating a
+// binding must never reach back into it.
+const REBINDABLE = Object.keys(bindings).filter(n => !bindings[n].fixed); // left/right/thrust/fire/shield
+const DEFAULT_BINDINGS = {};
+for (const n of REBINDABLE) {
+  const b = bindings[n];
+  DEFAULT_BINDINGS[n] = {
+    keys: b.keys.slice(),
+    buttons: (b.buttons || []).slice(),
+    axis: b.axis ? { index: b.axis.index, dir: b.axis.dir } : null
+  };
+}
 
 // Snapshot of the first connected gamepad, refreshed once per frame by pollGamepad() (main loop,
 // before update()). buttons/axes are the current frame; prevButtons is last frame, for edge detection.
@@ -494,33 +546,303 @@ const input = {
   shield: () => actionHeld("shield")
 };
 
-// Keyboard edge events (menu/system). The key checks read the SAME binding table as the gamepad path,
-// so there's one place to change what "confirm" or "pause" means. Held-state gameplay keys are just
-// recorded into keys{} here and read later via input.*().
+// Keyboard events. Three input CONTEXTS, checked in priority order so they never fight (F8):
+//   (1) rebind capture  — the pressed key IS the new binding (or Esc cancels). Consumed entirely.
+//   (2) menu open       — keys drive menu navigation only, never the ship.
+//   (3) normal play      — recorded into keys{} for input.*(), plus the confirm/pause edges.
+// Crucially, (1) and (2) return WITHOUT writing keys{}, so a menu keypress (or a captured rebind)
+// can never leak through into ship rotation/thrust.
 window.addEventListener("keydown", e => {
-  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
   const k = e.key.toLowerCase();
-  keys[k] = true;
   AudioSys.init(); AudioSys.resume();
+
+  // (1) Rebind capture — exclusive; the key never reaches gameplay or nav.
+  if (game.menu.rebinding) {
+    e.preventDefault();
+    if (game.menu.rebinding.device === "key") captureKeyRebind(k);
+    else if (k === "escape") { game.menu.rebinding = null; AudioSys.ui(false); } // Esc cancels a pad-capture
+    return;
+  }
+
+  // (2) A menu is open — route to menu navigation, do NOT record gameplay keys.
+  if (menuActive()) {
+    e.preventDefault();
+    handleMenuKey(k);
+    return;
+  }
+
+  // (3) Normal play/title/gameover keyboard input.
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+  keys[k] = true;
   if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover")) startGame();
-  if (bindings.pause.keys.includes(k) && game.state === "playing") game.paused = !game.paused;
+  if (bindings.pause.keys.includes(k) && game.state === "playing") openPause();
 });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
-// Gamepad edge events (menu/system), mirroring the keydown handler. Called once per frame from the
-// main loop right after pollGamepad(). Start = start/pause/unpause; A = confirm (title/gameover only,
-// so it never collides with A = fire during play); B = back is reserved for the F8 menu screens.
+// Gamepad menu/system dispatcher, mirroring the keydown handler's three contexts. Called once per
+// frame from the main loop right after pollGamepad(). Same priority order:
+//   (1) rebind capture (pad) — the first newly-pressed button becomes the binding; nothing else.
+//   (2) menu open            — D-Pad / L-Stick nav, A confirm, B back, Start resume.
+//   (3) normal play          — Start starts/pauses, A confirms on title/gameover (never mid-play).
 function handleGamepadMenu() {
+  // (1) Capturing a binding: exclusive. A pad-capture eats the next button; a key-capture ignores
+  // the pad entirely (so it can't navigate the menu while the player is picking a keyboard key).
+  if (game.menu.rebinding) {
+    if (game.menu.rebinding.device === "pad") {
+      const btn = firstPressedButton();
+      if (btn !== -1) capturePadRebind(btn);
+    }
+    return;
+  }
+
   const pressedStart   = gpPressed(bindings.pause);
   const pressedConfirm = gpPressed(bindings.confirm);
+  const pressedBack    = gpPressed(bindings.back);
   if (pressedStart || pressedConfirm) { AudioSys.init(); AudioSys.resume(); } // best-effort audio unlock
+
+  // (2) A menu is open — everything routes to menu navigation.
+  if (menuActive()) {
+    const nav = menuNavEdges();
+    if (nav.up)    menuInput("up");
+    if (nav.down)  menuInput("down");
+    if (nav.left)  menuInput("left");
+    if (nav.right) menuInput("right");
+    if (pressedConfirm) menuInput("confirm");
+    if (pressedBack)    menuInput("back");
+    if (pressedStart)   menuInput("pause");   // Start fully resumes from any menu screen
+    return;
+  }
+
+  // (3) Not in a menu: title/gameover start, or open the pause menu from play.
   if (pressedStart) {
     if (game.state === "title" || game.state === "gameover") startGame();
-    else if (game.state === "playing") game.paused = !game.paused;
+    else if (game.state === "playing") openPause();
   }
   if (pressedConfirm && (game.state === "title" || game.state === "gameover")) startGame();
-  // gpPressed(bindings.back) — no menu screen to back out of yet (arrives with F8/Phase 8).
 }
+
+// Directional menu nav from the gamepad: D-Pad or Left Stick, edge-detected against a latch so a
+// held direction moves the cursor once (not every frame). Only consulted while a menu is open.
+const menuNav = { up: false, down: false, left: false, right: false };
+function menuDirState() {
+  const b = gamepad.buttons, ax = gamepad.axes, dz = GP_DEADZONE;
+  return {
+    up:    !!b[GP.DPAD_UP]    || (ax[GP.AXIS_LY] < -dz),
+    down:  !!b[GP.DPAD_DOWN]  || (ax[GP.AXIS_LY] >  dz),
+    left:  !!b[GP.DPAD_LEFT]  || (ax[GP.AXIS_LX] < -dz),
+    right: !!b[GP.DPAD_RIGHT] || (ax[GP.AXIS_LX] >  dz)
+  };
+}
+function menuNavEdges() {
+  const now = menuDirState();
+  const edges = {
+    up:    now.up    && !menuNav.up,
+    down:  now.down  && !menuNav.down,
+    left:  now.left  && !menuNav.left,
+    right: now.right && !menuNav.right
+  };
+  Object.assign(menuNav, now);
+  return edges;
+}
+// Prime the latch to the CURRENT direction state so a direction held at the moment a menu opens
+// doesn't fire a phantom first move.
+function resetMenuNav() { Object.assign(menuNav, menuDirState()); }
+// First gamepad button that went down THIS frame (for pad rebind capture); -1 if none.
+function firstPressedButton() {
+  const cur = gamepad.buttons, prev = gamepad.prevButtons;
+  for (let i = 0; i < cur.length; i++) if (cur[i] && !prev[i]) return i;
+  return -1;
+}
+
+// ---------- Menu state machine, Options & Rebinding (F8) ----------
+// The game's first nested menu: playing --(pause)--> menu:root (Continue/Options/Quit) -->
+// menu:options (SFX/Music/Master sliders + Controls) --> menu:controls (rebind + Return to Defaults).
+// game.paused is true iff a menu is open; game.menu.screen names the current screen (null = closed).
+// Both keyboard (keydown -> handleMenuKey) and gamepad (handleGamepadMenu) funnel discrete actions
+// into menuInput(action); the rendering lives near draw() (drawMenu). Gameplay stays frozen the
+// whole time (update() early-returns on paused), so menu input can never move the ship.
+
+const MENU_ROOT    = ["Continue", "Options", "Quit"];
+const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Controls", "Back"];
+const VOL_CATS     = ["sfx", "music", "master"]; // parallel to the first three MENU_OPTIONS rows
+const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+function menuActive() { return game.paused; } // paused <=> a pause-menu screen is open
+
+// --- Open / close / quit ---
+function openPause() {
+  game.paused = true;
+  game.menu.screen = "root"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
+  game.menu.rebinding = null;
+  resetMenuNav();          // don't let a direction held at pause-time fire a phantom move
+  AudioSys.thrust(false);  // kill the thrust loop immediately (update() would too, next frame)
+  AudioSys.ui(true);
+}
+function closePause() {
+  game.paused = false;
+  game.menu.screen = null; game.menu.rebinding = null;
+  game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
+  AudioSys.ui(false);
+}
+function quitToTitle() {
+  game.paused = false;
+  game.menu.screen = null; game.menu.rebinding = null;
+  game.state = "title";
+  AudioSys.thrust(false); AudioSys.saucer(false); // stop any continuous voices
+  AudioSys.ui(false);
+}
+function gotoScreen(s, index) {
+  game.menu.screen = s;
+  game.menu.index = index || 0; game.menu.row = 0; game.menu.col = 0;
+  AudioSys.ui(true);
+}
+
+// --- Keyboard -> menu action mapping (arrows + WASD nav; Enter/Esc/P via the binding table) ---
+function handleMenuKey(k) {
+  if (k === "arrowup" || k === "w") menuInput("up");
+  else if (k === "arrowdown" || k === "s") menuInput("down");
+  else if (k === "arrowleft" || k === "a") menuInput("left");
+  else if (k === "arrowright" || k === "d") menuInput("right");
+  else if (bindings.confirm.keys.includes(k)) menuInput("confirm"); // Enter
+  else if (bindings.back.keys.includes(k)) menuInput("back");       // Esc
+  else if (bindings.pause.keys.includes(k)) menuInput("pause");     // P
+}
+
+// --- The dispatcher: one entry point, both input methods feed it ---
+function menuInput(action) {
+  if (game.menu.rebinding) return; // capture mode owns all input; ignore stray nav
+  switch (game.menu.screen) {
+    case "root":     menuRoot(action); break;
+    case "options":  menuOptions(action); break;
+    case "controls": menuControls(action); break;
+  }
+}
+
+function menuRoot(a) {
+  const m = game.menu, N = MENU_ROOT.length;
+  if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
+  else if (a === "confirm") {
+    if (m.index === 0) closePause();               // Continue
+    else if (m.index === 1) gotoScreen("options"); // Options
+    else if (m.index === 2) quitToTitle();          // Quit
+  }
+  else if (a === "back" || a === "pause") closePause();
+}
+
+function menuOptions(a) {
+  const m = game.menu, N = MENU_OPTIONS.length;
+  if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
+  else if (a === "left" || a === "right") {
+    if (m.index <= 2) { // a volume slider
+      const cat = VOL_CATS[m.index];
+      AudioSys.setVol(cat, clamp01(AudioSys.vol[cat] + (a === "right" ? VOL_STEP : -VOL_STEP)));
+      saveSettings();
+      AudioSys.ui(false);
+    }
+  }
+  else if (a === "confirm") {
+    if (m.index === 3) gotoScreen("controls");     // Controls
+    else if (m.index === 4) gotoScreen("root", 1); // Back -> root, cursor on "Options"
+  }
+  else if (a === "back") gotoScreen("root", 1);
+  else if (a === "pause") closePause();
+}
+
+function menuControls(a) {
+  const m = game.menu;
+  const ACTIONS = REBINDABLE;               // one row per rebindable action, col 0 = kb, col 1 = pad
+  const ROWS = ACTIONS.length + 2;          // + Return to Defaults + Back
+  const defaultsRow = ACTIONS.length, backRow = ACTIONS.length + 1;
+  if (a === "up")   { m.row = (m.row + ROWS - 1) % ROWS; AudioSys.ui(false); }
+  else if (a === "down") { m.row = (m.row + 1) % ROWS; AudioSys.ui(false); }
+  else if (a === "left" || a === "right") {
+    if (m.row < ACTIONS.length) { m.col = 1 - m.col; AudioSys.ui(false); } // toggle kb/pad column
+  }
+  else if (a === "confirm") {
+    if (m.row < ACTIONS.length) startRebind(ACTIONS[m.row], m.col === 0 ? "key" : "pad");
+    else if (m.row === defaultsRow) { returnToDefaults(); AudioSys.ui(true); }
+    else if (m.row === backRow) gotoScreen("options", 3); // back to Options, cursor on "Controls"
+  }
+  else if (a === "back") gotoScreen("options", 3);
+  else if (a === "pause") closePause();
+}
+
+// --- Live rebinding capture ---
+// startRebind arms capture for (action, device); the next key (keydown) or button (handleGamepadMenu)
+// is written into the binding. The captured input is consumed by those handlers BEFORE keys{} or
+// nav, so it can never leak into ship control.
+function startRebind(action, device) {
+  game.menu.rebinding = { action, device };
+  AudioSys.ui(true);
+}
+function captureKeyRebind(k) {
+  if (k === "escape") { game.menu.rebinding = null; AudioSys.ui(false); return; } // cancel
+  const action = game.menu.rebinding.action;
+  bindings[action].keys = [k];   // replace with the single chosen key
+  game.menu.rebinding = null;
+  saveSettings();
+  AudioSys.ui(true);
+}
+function capturePadRebind(btn) {
+  const action = game.menu.rebinding.action;
+  bindings[action].buttons = [btn]; // chosen button replaces the button set...
+  bindings[action].axis = null;     // ...and drops the analog axis so the shown binding matches reality
+  game.menu.rebinding = null;
+  saveSettings();
+  AudioSys.ui(true);
+}
+function returnToDefaults() {
+  for (const name of REBINDABLE) {
+    const d = DEFAULT_BINDINGS[name];
+    bindings[name].keys = d.keys.slice();
+    bindings[name].buttons = d.buttons.slice();
+    bindings[name].axis = d.axis ? { index: d.axis.index, dir: d.axis.dir } : null;
+  }
+  saveSettings();
+}
+
+// --- Persistence (localStorage, guarded). Note: unavailable in the claude.ai artifact sandbox but
+// works as a real local file; a storage failure must never crash the game, so everything is wrapped. ---
+const STORAGE_KEY = "afd_settings_v1";
+function storageOK() {
+  try { return typeof localStorage !== "undefined" ? localStorage : null; } catch (e) { return null; }
+}
+function saveSettings() {
+  const ls = storageOK(); if (!ls) return;
+  try {
+    const data = { vol: { ...AudioSys.vol }, bindings: {} };
+    for (const name of REBINDABLE) {
+      const b = bindings[name];
+      data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
+    }
+    ls.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) { /* quota / privacy mode / disabled — ignore */ }
+}
+function loadSettings() {
+  const ls = storageOK(); if (!ls) return;
+  try {
+    const raw = ls.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data.vol) {
+      for (const c of ["master", "sfx", "music"])
+        if (typeof data.vol[c] === "number") AudioSys.vol[c] = clamp01(data.vol[c]);
+    }
+    if (data.bindings) {
+      for (const name of REBINDABLE) {
+        const b = data.bindings[name];
+        if (!b) continue;
+        if (Array.isArray(b.keys)) bindings[name].keys = b.keys.slice();
+        if (Array.isArray(b.buttons)) bindings[name].buttons = b.buttons.slice();
+        if ("axis" in b) bindings[name].axis = b.axis ? { index: b.axis.index, dir: b.axis.dir } : null;
+      }
+    }
+  } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
+}
+loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
 
 // ---------- Helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -1160,7 +1482,11 @@ class Dock {
 // ---------- Game state ----------
 const game = {
   state: "title",   // title | playing | gameover
-  paused: false,
+  paused: false,    // true iff a pause-menu screen is open (F8)
+  // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
+  // index = cursor for root/options; row/col = cursor for the controls grid;
+  // rebinding = { action, device } while capturing a new binding, else null.
+  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null },
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -1180,6 +1506,7 @@ const game = {
 function startGame() {
   game.state = "playing";
   game.paused = false;
+  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null }; // ensure no menu carries in
   game.score = 0;
   game.wave = 0;
   game.nextRepair = REPAIR_MILESTONE;
@@ -1784,6 +2111,110 @@ function drawText(str, x, y, size, color = COLOR.text, align = "center") {
   ctx.shadowBlur = 0;
 }
 
+// ---------- Pause menu / Options / Controls rendering (F8) ----------
+// Screen-fixed overlays, drawn after the HUD when game.paused. A dimmed backdrop plus a
+// glow-stroked panel keeps the vector aesthetic (Pillar 1). The state lives in game.menu.
+function drawMenu() {
+  ctx.fillStyle = "rgba(4,10,20,0.74)";
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const s = game.menu.screen;
+  if (s === "root") drawRootMenu();
+  else if (s === "options") drawOptionsMenu();
+  else if (s === "controls") drawControlsMenu();
+}
+
+function menuPanel(w, h, title) {
+  const x = (VIEW_W - w) / 2, y = (VIEW_H - h) / 2;
+  ctx.strokeStyle = COLOR.satellite; ctx.lineWidth = 2;
+  ctx.shadowColor = COLOR.satellite; ctx.shadowBlur = 12;
+  ctx.strokeRect(x, y, w, h);
+  ctx.shadowBlur = 0;
+  drawText(title, VIEW_W / 2, y + 46, 32, COLOR.text);
+  return { x, y };
+}
+
+function drawRootMenu() {
+  const { y } = menuPanel(360, 300, "PAUSED");
+  MENU_ROOT.forEach((it, i) => {
+    const sel = i === game.menu.index;
+    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, sel ? COLOR.text : COLOR.dim);
+  });
+  drawText("↑↓ move    ENTER / A select    ESC / START resume", VIEW_W / 2, y + 272, 12, COLOR.dim);
+}
+
+function drawOptionsMenu() {
+  const { x, y } = menuPanel(560, 400, "OPTIONS");
+  const m = game.menu;
+  for (let i = 0; i < 3; i++) { // SFX / Music / Master sliders
+    const sel = m.index === i;
+    const cy = y + 108 + i * 48;
+    drawText(MENU_OPTIONS[i], x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+    const bx = x + 250, bw = 190, bh = 12, by = cy - 3;
+    ctx.strokeStyle = sel ? COLOR.shield : COLOR.dim; ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.fillStyle = sel ? COLOR.shield : COLOR.dim;
+    ctx.fillRect(bx + 1, by + 1, (bw - 2) * AudioSys.vol[VOL_CATS[i]], bh - 2);
+    drawText(Math.round(AudioSys.vol[VOL_CATS[i]] * 100) + "%", bx + bw + 44, cy + 6, 16, sel ? COLOR.text : COLOR.dim, "right");
+    if (sel) { drawText("◄", bx - 16, cy + 7, 16, COLOR.text); drawText("►", bx + bw + 16, cy + 7, 16, COLOR.text); }
+  }
+  drawText("(no music track yet — the Music slider is wired for a future one)", VIEW_W / 2, y + 262, 12, COLOR.dim);
+  ["Controls", "Back"].forEach((it, j) => {
+    const idx = 3 + j, sel = m.index === idx;
+    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 300 + j * 38, 22, sel ? COLOR.text : COLOR.dim);
+  });
+  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 380, 12, COLOR.dim);
+}
+
+function drawControlsMenu() {
+  const { x, y } = menuPanel(760, 470, "CONTROLS");
+  const m = game.menu;
+  drawText("ACTION", x + 36, y + 88, 13, COLOR.dim, "left");
+  drawText("KEYBOARD", x + 250, y + 88, 13, COLOR.dim, "left");
+  drawText("GAMEPAD", x + 490, y + 88, 13, COLOR.dim, "left");
+  REBINDABLE.forEach((name, r) => {
+    const ry = y + 122 + r * 42;
+    const rowSel = m.row === r;
+    drawText(bindings[name].label, x + 36, ry, 17, rowSel ? COLOR.text : COLOR.dim, "left");
+    const capKb = m.rebinding && m.rebinding.action === name && m.rebinding.device === "key";
+    const capGp = m.rebinding && m.rebinding.action === name && m.rebinding.device === "pad";
+    drawBindCell(x + 250, ry, keyLabel(bindings[name]), rowSel && m.col === 0, capKb);
+    drawBindCell(x + 490, ry, padLabel(bindings[name]), rowSel && m.col === 1, capGp);
+  });
+  const dRow = REBINDABLE.length, bRow = dRow + 1;
+  drawText((m.row === dRow ? "▶ " : "   ") + "Return to Defaults", VIEW_W / 2, y + 122 + dRow * 42 + 26, 20, m.row === dRow ? COLOR.text : COLOR.dim);
+  drawText((m.row === bRow ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 122 + bRow * 42 + 26, 20, m.row === bRow ? COLOR.text : COLOR.dim);
+  drawText("↑↓ row    ◄► column    ENTER / A rebind    ESC / B back", VIEW_W / 2, y + 452, 12, COLOR.dim);
+}
+
+// One binding cell on the Controls screen. Highlights when selected; shows "press…" while capturing.
+function drawBindCell(cx, cy, text, sel, capturing) {
+  if (sel) {
+    ctx.strokeStyle = capturing ? COLOR.garbage : COLOR.shield; ctx.lineWidth = 1;
+    ctx.strokeRect(cx - 6, cy - 15, 200, 24);
+  }
+  const label = capturing ? "press…" : (text || "—");
+  drawText(label, cx, cy, 15, capturing ? COLOR.garbage : (sel ? COLOR.text : COLOR.dim), "left");
+}
+
+// Format the current bindings for display.
+function keyLabel(b) {
+  return (b.keys && b.keys.length ? b.keys.map(prettyKey).join(" / ") : "—");
+}
+function prettyKey(k) {
+  const map = { "arrowleft": "←", "arrowright": "→", "arrowup": "↑", "arrowdown": "↓", " ": "SPACE", "shift": "SHIFT", "enter": "ENTER", "escape": "ESC" };
+  return map[k] || k.toUpperCase();
+}
+function padLabel(b) {
+  const parts = (b.buttons || []).map(i => GP_NAME[i] || ("BTN" + i));
+  if (b.axis) parts.push(axisLabel(b.axis));
+  return parts.length ? parts.join(" / ") : "—";
+}
+function axisLabel(a) {
+  if (a.index === GP.AXIS_LX) return a.dir < 0 ? "L-Stick ←" : "L-Stick →";
+  if (a.index === GP.AXIS_LY) return a.dir < 0 ? "L-Stick ↑" : "L-Stick ↓";
+  return "Axis " + a.index;
+}
+
 // Background stars scattered across the whole world (count scales with world area
 // to preserve the original on-screen density). Drawn in screen space, wrap-aware,
 // so the field scrolls seamlessly and never shows a tiling repeat or an edge seam.
@@ -1829,7 +2260,7 @@ function draw() {
     drawText("ASTEROID FIELD", VIEW_W/2, VIEW_H/2 - 120, 64);
     drawText("D E L U X E", VIEW_W/2, VIEW_H/2 - 60, 32, COLOR.satellite);
     drawText("ROTATE: ←→ / A D      THRUST: ↑ / W", VIEW_W/2, VIEW_H/2 + 30, 20, COLOR.dim);
-    drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE: P", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
+    drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE / OPTIONS: P", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
     drawText("BEWARE THE HUNTER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.satellite);
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
@@ -1906,9 +2337,7 @@ function draw() {
   ctx.fillRect(bx + 1, by + 1, (bw - 2) * game.ship.energy, bh - 2);
   drawText("SHIELD", bx - 12, by + 8, 13, COLOR.dim, "right");
 
-  if (game.paused) {
-    drawText("PAUSED", VIEW_W/2, VIEW_H/2, 48);
-  }
+  if (game.paused) drawMenu(); // pause modal / options / controls (F8)
 
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);

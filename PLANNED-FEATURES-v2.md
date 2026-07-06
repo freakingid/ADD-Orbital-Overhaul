@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below. **F1–F6 (Phases 1–6) are built**, and **F7's hardcoded-defaults half shipped in Phase 7 (v1.8)** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5), F6 Powerups as v1.7 (spec in GDD §2.14), F7 default gamepad bindings as v1.8 (spec in GDD §2.15). **F8–F9 remain unbuilt, and F7's rebinding UI is deferred into F8**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
+**Status:** Design complete for all features below. **F1–F8 (Phases 1–8) are built** — F1 shipped as v1.2 (spec in GDD §2.11), F2 as v1.3 (spec in GDD §2.12), F3 + F5 as v1.4 (specs in GDD §2.4 / §2.10 / §3.4), F10's `difficultyFactor`/`ramp` + saucer calming as v1.5 (spec in GDD §2.6 / §2.13), F4 Hunter Satellites as v1.6 (spec in GDD §2.5), F6 Powerups as v1.7 (spec in GDD §2.14), F7 controller support as v1.8 (defaults) + **v1.9 (rebinding UI)** (spec in GDD §2.15 / §2.16), F8 Pause/Options/Rebinding as **v1.9** (spec in GDD §2.16). **F9 (achievements) is the only unbuilt feature**; of F10, the Hunter-scaling half shipped in v1.6 and only the Debris-density retune is still deferred (see F10 below).
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -136,7 +136,7 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 ---
 
 ## F7 — Controller Support
-**Status:** 🟡 In Progress — **the hardcoded default bindings shipped in Phase 7 (v1.8)**; the player-facing rebinding UI is deferred into F8 (Options → Controls), as always planned. The shipped default-bindings spec now lives in **GDD §2.15** (with §2.9 controls updated); this section is retained for the rebinding-UI scope that's still pending and the resolved decisions below.
+**Status:** 🟢 Done — **hardcoded default bindings shipped in Phase 7 (v1.8); the player-facing rebinding UI shipped in Phase 8 (v1.9)** as Options → Controls, exactly as planned. The default-bindings spec lives in **GDD §2.15**; the rebinding UI + persistence is documented with F8 in **GDD §2.16**. Fully shipped — this section is retained only as the historical record of the resolved decisions below.
 
 ### Shipped in v1.8 (Phase 7) — hardcoded defaults
 - The `input` predicate object (`left`/`right`/`thrust`/`fire`/`shield`) now resolves keyboard **or** the first connected gamepad, with **no call-site changes** — the whole game still calls `input.left()` etc. Driven by a data-driven **`bindings`** table (one entry per action: keyboard `keys` / gamepad `buttons` / analog `axis` / a `fixed` rebindable flag), so F8's rebinding UI has a single structure to edit.
@@ -174,23 +174,15 @@ The ~8× garbage-volume increase was met with a **first-pass** rebalance (not a 
 ---
 
 ## F8 — Pause Modal & Options Menu
-**Status:** 🔴 Not Started
+**Status:** 🟢 Done — shipped in **Phase 8 (v1.9)**. The full shipped spec lives in **GDD §2.16** (menu state machine, gain-routing volume sliders, live rebinding, `localStorage` persistence); §2.8 (audio gain routing) and §2.9 (controls) were updated too. This section is retained only for the resolved decisions below.
 
-### Spec
-- **Pause** (keyboard `P`, or gamepad Start) opens a modal with: **Continue**, **Options**, **Quit**.
-- **Options** shows: SFX volume, Music volume, Master volume (sliders), and a **Controls** button.
-- **Controls** screen: rebind keyboard and controller buttons for the four configurable actions (rotate CCW/CW, thrust, fire) — plus shield, per F7's flagged gap — and a **Return to Defaults** button.
-- Fixed (non-configurable) menu navigation: A = confirm, B = back, Start = start/pause/unpause, as specified in F7.
-
-### Assumptions / open questions (best guess — override freely)
-- **"Music volume" implies music exists, but the shipped game has no music** — only synthesized SFX (GDD 2.8). I'm treating this as: add the volume slider and wire it into the audio graph now, but **no music track is in scope for this phase** unless you want one. If you do want music, that's a separate, fairly substantial addition (composition/synthesis approach, looping, adaptive intensity) worth its own discussion rather than folding it silently into this phase.
-- **Master/SFX volume routing:** the current `AudioSys` has independent gain nodes per sound with hardcoded gain values (GDD 3, AudioSys row). This phase needs to route everything through master + category (SFX) gain nodes so the sliders actually do something — a real, if mechanical, refactor of `AudioSys`.
-- **Settings persistence:** volume levels and rebound controls should persist between sessions via `localStorage`. **Caveat carried over from the existing roadmap note:** `localStorage` doesn't work inside the claude.ai artifact preview sandbox, but works fine once this is run as a real local file (which is the expected environment once you're driving development through Claude Code rather than previewing in chat). Worth a quick sanity check the first time this ships.
-- **Quit behavior:** for a browser game, "Quit" most likely means returning to the title screen rather than closing a window/tab (which a webpage can't reliably do anyway). Proposing Quit → title screen, same as reaching game-over today.
-
-### Interactions with existing systems
-- Introduces the game's first real **menu/UI state machine** — until now, `game.state` has only ever been `title` / `playing` / `gameover`, plus a simple `paused` boolean. This phase adds nested menu states (options, controls-rebind) that need their own input handling separate from gameplay input, and needs to coexist with F7's gamepad-vs-keyboard input layer (menus must be navigable by both).
-- The rebinding screen is where F7's controller bindings actually become player-editable — these two features ship in the same phase for that reason (see `IMPLEMENTATION-PHASES.md` Phase 7).
+### Resolved decisions (shipped as spec'd, with these calls made)
+- **Music slider with no music.** As proposed: the Music slider + its gain node are wired into the audio graph, but **nothing is connected to the music node's input — there is no music track.** It changes nothing audible today; it exists so a future track drops in without re-plumbing. Called out plainly in the delivery notes and GDD §2.8 (not a silent placeholder track).
+- **AudioSys gain refactor.** Every voice now connects to an `sfx` bus → `master` bus → destination (was: each sound straight to `ctx.destination`). `setVol(cat,v)` drives the three sliders; `vol {master,sfx,music}` (0..1, 1 = unity = pre-v1.9 loudness) persists even before the graph exists.
+- **Persistence.** Volumes + custom bindings save to `localStorage` (`afd_settings_v1`) on change, load once at startup. All access is `typeof`-guarded + try/caught so the sandbox's missing `localStorage` (or a privacy-mode throw) never crashes the game. **Real-browser persistence still needs a sanity check outside the artifact sandbox** — flagged in STATUS.md.
+- **Quit → title screen** (a webpage can't reliably close its own tab), same as reaching game-over.
+- **Rebinding scope & the gamepad-axis call.** All five F7 gameplay actions (rotate CCW/CW, thrust, fire, shield) are rebindable for both keyboard and gamepad; menu nav (A/B/Start) stays fixed. A **gamepad** rebind captures a *button* and drops that action's analog-stick axis (a stick direction can't be captured, and the displayed binding must match what actually fires); Return to Defaults restores the axis. Documented in GDD §2.16.
+- **Menu vs. gameplay input separation** (the flagged cross-cutting concern): the `keydown` handler and `handleGamepadMenu` each check rebind-capture → menu-open → normal-play in that order, and menu/capture input is consumed before `keys{}` is ever written, so it can't leak into ship control; `update()` stays frozen while paused. Verified headlessly in `scratchpad/test-f8.js`.
 
 ---
 
@@ -298,7 +290,7 @@ This feature came out of playtesting: the shipped game is too intense in its ope
 
 ## Cross-Cutting Technical Concerns
 
-- **`localStorage` caveat (F8, F9):** doesn't work in the claude.ai artifact preview sandbox; works fine as a real local file. Worth an explicit sanity check the first time settings/achievements persistence ships, wrapped in a try/catch regardless (existing roadmap note, GDD Section 4 item 1) so a storage failure never crashes the game.
+- **`localStorage` caveat (F8 ✅ / F9 pending):** doesn't work in the claude.ai artifact preview sandbox; works fine as a real local file. **F8 (v1.9) shipped the first persistence** — all access is `typeof`-guarded + try/caught so a storage failure never crashes (GDD Section 4 item 1 / §2.16). **Still needs an explicit sanity check in a real browser** (settings survive a reload) — carried as a STATUS.md playtest ask. F9 (achievements) will reuse the same guarded pattern.
 - **Garbage volume increase (F3):** the guaranteed-3-per-tier drop model is roughly 8× the current garbage volume per large-satellite lineage. This needs a real balance pass (decay timing, wave spawn counts, on-screen density) once F3 ships — not something to pre-guess with invented numbers.
 - **Entity count & performance (F1 + F3 + F4 combined):** a bigger world, guaranteed 3-way splits at two tiers instead of one 2-way split, and more garbage all raise the simultaneous entity ceiling substantially above the "~80 entities, watch shadowBlur cost" note already in GDD 3.2. Worth a frame-rate check after Phase 4 ships, before building further on top.
-- **Menu/gameplay input separation (F7 + F8):** once menus exist, input handling needs a clean split between "gameplay input" and "menu input" so the two never fight each other (e.g. a rebind screen capturing a keypress shouldn't also rotate the ship if unpaused state leaks through). Worth explicit attention in Phase 7.
+- **Menu/gameplay input separation (F7 + F8) ✅ addressed in v1.9:** the `keydown` handler and `handleGamepadMenu` each resolve three contexts in priority order — **rebind-capture → menu-open → normal-play** — and menu/capture input is consumed *before* `keys{}` is written, so a captured keypress (or any menu nav) can never reach ship control; `update()` also stays frozen while `paused`. Verified in `scratchpad/test-f8.js` (menu key navigates without setting `keys{}`; ship doesn't rotate while paused even with a gameplay key held).
