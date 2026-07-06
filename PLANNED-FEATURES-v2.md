@@ -1,6 +1,6 @@
 # ASTEROID FIELD DELUXE — Planned Features (v2.0 Design)
 
-**Status:** Design complete for all features below; **nothing in this document is built yet.**
+**Status:** Design complete for all features below. **F1 (Phase 1) is built and shipped as v1.2** — its spec has moved to GDD §2.11; F2–F10 remain unbuilt.
 **Companion docs:** `asteroid-field-deluxe-GDD.md` (shipped spec, Section 2 = current truth), `IMPLEMENTATION-PHASES.md` (build order + Claude Code prompts), `STATUS.md` (session log).
 
 **How to use this document:** each feature (F1–F10) has a status tag, a full spec, the assumptions I made where your request was ambiguous (flagged explicitly — override any of these freely), and how it interacts with existing systems. When a feature ships, its spec should move out of here and into GDD Section 2, and this doc should note it as done (or just delete the section — GDD Section 7 Version History is the permanent record).
@@ -29,22 +29,12 @@ Both families read as "satellites" thematically (per your request), but stay vis
 ---
 
 ## F1 — Larger Playing Field & Scrolling Camera
-**Status:** 🔴 Not Started
+**Status:** 🟢 Done — shipped in v1.2 (build Phase 1). The full shipped spec now lives in **GDD §2.11**; this section is retained only for the deferred follow-up below.
 
-### Spec
-- World size increases from the current 1280×720 (which is both the field *and* the screen) to a larger toroidal world — proposed **3840×2160** (3× in each dimension). The world still wraps at its own edges, same torus topology as today, just bigger.
-- The screen becomes a **1280×720 viewport** that scrolls to keep the ship centered. Camera simply tracks the ship's world position every frame (no clamping needed, since the world wraps — there's no "edge" for the camera to bump into).
-- All existing wrap-aware helpers (`dist2`, `angleTo`, `shortDelta`, `wrap`) need to operate against world dimensions (`WORLD_W`/`WORLD_H`), not screen dimensions (`VIEW_W`/`VIEW_H`). Rendering needs a camera-offset translation pass.
-- Off-screen entities still simulate normally (they're in a much bigger world now); only on-screen ones need to be drawn — a visibility cull becomes worthwhile for performance once the world is 9× the area.
+**Built:** a 3840×2160 toroidal world (`WORLD_W/H`) decoupled from the 1280×720 viewport (`VIEW_W/H`); a camera (`game.camera`) that tracks the ship every frame with no clamping (world wraps); all wrap-aware helpers retargeted to world dimensions plus new `wrapOffset`/`wrapPos`; a `draw()` camera transform with wrap-aware per-entity nearest-image rendering + viewport culling (`onScreen`/`drawEntity`); a seamless world-spanning starfield; and ship-relative spawning for waves, the dock, satellites, and saucers (the last two enter from viewport edges relative to the ship — feel unchanged; their behaviour/balance is untouched, that's Phase 4/5). Headless-tested per GDD §5.4 rule 7. See GDD §2.11 and Version History v1.2.
 
-### Assumptions / open questions (best guess — override freely)
-- **World size (3840×2160):** confirmed good by Paul. Easy constant to retune later (`WORLD_W`, `WORLD_H`).
-- **Off-screen threat awareness:** with a 3× bigger world, hazards can approach from outside the visible viewport with no warning. **Confirmed as a deliberately-deferred item** — Paul wants this parked so it isn't forgotten, to be addressed later (a good fit alongside F10's difficulty pacing, since calmer early waves + bigger world make approach-awareness more valuable). Not committed scope for Phase 1; tracked here and in F10's interactions note.
-- **Spawn distribution:** confirmed — spawn new hazards within a radius of the player's *current* world position (not world center), so waves don't spawn entirely off-screen and take forever to matter.
-
-### Interactions with existing systems
-- **Everything.** This is the foundational change — nearly every other system (dock placement, wave spawning, wedge/hunter homing, HUD) implicitly assumes screen space = world space today. This is why it's Phase 1 in the implementation order (see `IMPLEMENTATION-PHASES.md`), even though you listed it in the middle of your notes.
-- The recycling dock (shipped in v1.1) needs to reposition somewhere in the *larger* world, not just the current 1280×720 rect — likely still "somewhere reasonably reachable," worth a max-distance-from-ship-spawn constraint so it's not absurdly far on wave 1.
+### Deferred follow-up (still open — do NOT treat as done)
+- **Off-screen threat awareness:** with the 3× bigger world, hazards can approach from outside the visible viewport with no warning. **Deliberately parked** (confirmed by Paul) so it isn't forgotten — to be addressed later alongside F10's difficulty pacing, since calmer early waves + a bigger world make approach-awareness more valuable. Not built in Phase 1; also tracked in F10's interactions note.
 
 ---
 

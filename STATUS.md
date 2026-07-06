@@ -1,46 +1,53 @@
 # Asteroid Field Deluxe — STATUS
 
-Last updated: 2026-07-05 · Build version: 1.1 shipped / v2.0 in design · Last session: refined the v2.0 plan after playtest feedback — added a difficulty-ramp feature (F10) and confirmed a batch of Paul's design decisions; build plan now 9 phases
+Last updated: 2026-07-05 · Build version: **1.2** (v2.0 Phase 1 of 9 shipped) · Last session: implemented **F1 — larger scrolling world & camera** (world/screen split, camera follow, wrap-aware culled rendering, ship-relative spawns, seamless starfield)
 
 ## Working / verified
 
-Same as before — nothing new has shipped this session. See below for what's now planned.
+**Headless-verified this session (v1.2, `scratchpad/test-f1.js`, 26 assertions):**
+- Camera tracks the ship's world position every frame with zero lag (`game.camera` == ship exactly).
+- World wraps at the **new 3840×2160 boundary** on both X and Y; the ship never renders past `WORLD_*+60`, and folds back near 0 after crossing.
+- The ship crosses the **old 1280×720 boundary without wrapping** (regression guard against a stale wrap boundary).
+- Wave asteroids spawn in the `[SPAWN_MIN_DIST, SPAWN_MAX_DIST]` = [220, 1100] px ring around the ship's *current* position — verified at world center, near-origin, and far-corner (i.e. across the wrap seam). Dock lands within [260, 900] px each wave.
+- Entities keep simulating off-screen with no NaN/blowup; all stay within wrapped world bounds.
+- `draw()` runs without throwing in title / playing / seam-straddling / gameover states.
 
 **Verified headlessly (v1.1, unchanged):**
-- Garbage drops, decay, pickup, tow physics, screen-wrap, dock delivery scoring, chain severing all still hold. See prior STATUS entries / GDD Section 2 for detail.
+- Garbage drops, decay, pickup, tow physics, screen-wrap, dock delivery scoring, chain severing all still hold (chain now wrap-aware against `WORLD_*`; the chain-render path was updated to nearest-image but the physics contract in GDD §3.4 is untouched).
 
-**Not yet verified (needs a real browser):**
-- Same v1.1 items as before (tug feel, serpentine visuals, audio, frame rate under load).
+**Not yet verified (needs a real browser — see playtest asks below):**
+- Camera *feel* (lag/floatiness), starfield seam, entity pop-in at the world edge, satellite/saucer entry distances, and frame rate with the 9× world + culling. Plus all prior v1.1 items (tug feel, serpentine visuals, audio).
 
 ## Known issues
 
-- None confirmed for the shipped v1.1 build. See GDD Section 6 for the watch list.
+- None confirmed. Watch items introduced by F1 are in the playtest asks and the balance notes below; the v1.1 watch list (GDD §6) still applies.
 
 ## Balance notes
 
-- v1.1 balance notes unchanged (see GDD Section 6 / prior STATUS entries).
-- **New for v2.0 planning:** Feature F3 (Debris Satellites) as specified will increase garbage volume roughly 8× per fully-cleared large lineage. `PLANNED-FEATURES-v2.md` flags this as a required rebalance during Phase 3, not something to guess numbers for now.
+- **New spawn-distance knobs (first-pass, tunable):** `SPAWN_MIN_DIST` 220 / `SPAWN_MAX_DIST` 1100 for wave asteroids; `DOCK_MIN_DIST` 260 / `DOCK_MAX_DIST` 900 for the dock. Chosen so a wave is reachable within ~1.5 screens and the dock within ~1.2 screens. If early waves feel sparse or the dock feels too far, these are the levers.
+- **`CULL_MARGIN` 100 px** — generous enough that nothing pops at the viewport edge; lower only if profiling says so.
+- **`STAR_DENSITY` 40** preserves the original per-screen star density (→ ~360 stars across the world). Purely cosmetic.
+- v1.1 balance notes unchanged (see GDD §6 / prior STATUS entries).
+- **Still pending for later phases:** F3 (Debris Satellites) will increase garbage volume ~8× per cleared large lineage — a Phase 3 rebalance, not this session.
 
 ## Next up
 
-**Still planning-only — no code has changed.** The naming resolution is confirmed (Paul verified he'd now seen the existing Hunter/Killer Satellite in-game and wants it evolved into the F4 "Hunter Satellite"), and a round of design decisions is locked in.
+**Phase 2 — Health Points & Knockback (F2).** Replaces discrete lives with a single HP pool (max 250), knockback-on-hit, 1.0 s hit-stun, permanent no-continue game-over; deletes the respawn-clearing logic. Use the Phase 2 prompt in `IMPLEMENTATION-PHASES.md`. Note for that session: F1 left the respawn/lives system intact (respawn now gates on the *world* center being clear and the ship returns to world center) — F2 removes it wholesale, so don't spend effort preserving it.
 
-**Confirmed this session (all now marked in `PLANNED-FEATURES-v2.md`):**
-- Hunter Satellite split children **actively home** (relentless pursuit), NOT passive drift — early-game gentleness comes from the difficulty ramp instead.
-- Max HP **250** for initial testing; damage numbers, hit-stun (1.0s), knockback (250 px/s), +25 HP milestone bonus, permanent no-continue game-over, unchanged shield — all confirmed.
-- World size 3840×2160 confirmed; spawn-within-radius-of-player confirmed; off-screen threat awareness deliberately deferred (parked, not forgotten).
-- New **Feature F10 (Difficulty Ramp)** added to address playtest feedback that early waves are too intense: Hunters and both saucers start gentle and ramp slowly via a shared `difficultyFactor(wave)`. Debris Satellite density can rise to fill the calmer, larger world (joint tuning pass with F3).
-
-**Immediate next step:** start **Phase 1 (Larger World & Scrolling Camera)** in a new Claude Code session, using the prompt in `IMPLEMENTATION-PHASES.md`. Attach/have-present all four docs in the project directory. The build plan is now **9 phases** (difficulty ramp was inserted as Phase 4, pushing Hunter redesign to Phase 5).
+Attach/have present all four docs. GDD §2 is now current truth *including* §2.11 (world/camera).
 
 ## Changed this session
 
-- **Added Feature F10 (Difficulty Ramp & Early-Game Pacing)** to `PLANNED-FEATURES-v2.md`: a shared `difficultyFactor(wave)` curve that scales Hunter speed/turn-rate, saucer spawn/fire/aim, and feeds the Debris Satellite density decision. Includes the "Ease players in" design principle.
-- **Confirmed/locked** F1 (world size, spawn distribution, deferred off-screen awareness), F2 (HP 250, all sub-decisions), and F4 (active homing) per Paul's answers — updated all the relevant "open question" notes from proposals to confirmed.
-- **Reworked `IMPLEMENTATION-PHASES.md` from 8 to 9 phases:** inserted Phase 4 (Difficulty Ramp & Saucer Calming) so the difficulty helper exists before the Hunter redesign wires into it; Hunter Satellites moved to Phase 5; Powerups→6, Gamepad→7, Pause/Options→8, Achievements→9. Fixed all internal cross-references and the dependency diagram; added a deferred-items note (off-screen awareness) to the After section.
-- **Updated `asteroid-field-deluxe-GDD.md`:** added Pillar 6 ("Ease players in", marked planned); added a superseded-pending callout to Section 2.6 (Saucers) for the F10 rebalance.
+- **`asteroids-deluxe.html` → v1.2.** Split world from screen: added `WORLD_W/H` (3840×2160) and `VIEW_W/H` (1280×720) constants; retargeted every wrap-aware helper (`wrap`, `dist2`, `angleTo`, `shortDelta`, `wrapNode`) to `WORLD_*`; added `wrapOffset` (nearest wrapped image vs camera) and `wrapPos` (fold a spawn into the world). Added `game.camera`, updated to the ship's position each frame in `update()`. Rebuilt `draw()`: wrap-aware seamless starfield across world space, a camera translate for world-space entities, per-entity cull + nearest-image render (`onScreen`/`drawEntity`), chain drawn nearest-image, HUD/overlays screen-fixed after `ctx.restore()`, dock chevron now orbits screen-center. Ship-relative spawns for waves and the dock (rings). `resize()`/title/HUD use `VIEW_*`; ship spawns at world center.
+- **Scope decision (flagged):** the killer Satellite and both Saucers spawned at fixed *screen* edges, which a mechanical world-rename would have placed ~2000 px away (unreachable/invisible). I treated their spawn edge as a **viewport** concept and now spawn them just beyond a viewport edge relative to the ship, folded into the world — this preserves their shipped "slide in from off-screen, cross the screen, drift toward the ship" feel with no change to speed/homing/fire/splits. This is a coordinate-system fix intrinsic to F1, **not** the Phase 4 (saucer calming) / Phase 5 (Hunter redesign) behaviour work — those remain untouched. Saucers keep a `baseY` so their vertical zig-zag stays in a screen-height band around their entry height; they still despawn after crossing ~one viewport width.
+- **Headless test** added at `scratchpad/test-f1.js` (evals the real script via stubs, drives `update()`/`draw()`). `node --check` clean; 26/26 assertions pass.
+- **Docs:** GDD — version header + resolution note bumped, new **§2.11 (Larger Scrolling World & Camera)**, §2.7/§2.10 spawn-distance lines updated, Architecture Map rows (Constants, Canvas/scaling, Helpers, game object, update(dt), draw()) updated, Version History v1.2 added. `PLANNED-FEATURES-v2.md` — F1 marked 🟢 Done with spec pointed to GDD §2.11, deferred off-screen-awareness note retained; top status line updated.
 
----
+## Playtest asks (Paul — can't be checked headlessly)
 
-### Prior session (planning kickoff) — retained for history
-- Added `PLANNED-FEATURES-v2.md` (originally F1–F9) and `IMPLEMENTATION-PHASES.md` (originally 8 phases); added companion-doc pointers and superseded callouts (Sections 2.4 Asteroids, 2.5 Killer Satellite/Wedges, 2.7 Lives) to the GDD; resolved the satellite naming collision into two families (Debris Satellites = asteroid reskin, Hunter Satellites = killer-satellite/wedge redesign).
+1. **Camera feel** — does the scroll feel tight and responsive, or laggy/floaty? (It's a hard 1:1 follow with no smoothing; if it feels *too* rigid/jittery we can add a touch of lerp, but that's a deliberate later call.)
+2. **Starfield** — fly to and across a world edge in every direction: any visible seam, tiling repeat, or star "pop"? (Rendered wrap-aware, so there should be none.)
+3. **Entity seam rendering** — when near a world edge with asteroids/wedges around, does anything pop in/out or fail to appear on the wrapped side? (Nearest-image render should keep the far side visible.)
+4. **Satellite & saucer entry** — do they still slide in from just off-screen and reach the ship at a fair distance? Confirm a saucer still crosses the view and exits rather than lingering or never appearing.
+5. **Wave reachability** — do new waves feel reachable (some rocks visible or a short flight away), not stranded across the world? Dock reachable, and does the green chevron point to it correctly when it's off-screen?
+6. **Frame rate** — with the 9× world + culling, confirm no regression late-wave (garbage-heavy) on modest hardware.

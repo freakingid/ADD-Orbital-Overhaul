@@ -1,9 +1,9 @@
 # ASTEROID FIELD DELUXE — Game Design Document & Handoff Guide
 
-**Version:** 1.1 shipped · v2.0 in design (see companion docs below)
+**Version:** 1.2 shipped · v2.0 in progress (Phase 1 of 9 done — see companion docs below)
 **File:** `asteroids-deluxe.html` (single self-contained HTML file)
 **Stack:** Vanilla JavaScript, HTML5 Canvas 2D, Web Audio API. No dependencies, no build step.
-**Logical resolution:** 1280×720, scaled to fit window with letterboxing (CSS scaling, canvas stays 1280×720 internally). *(A larger scrolling world is planned for v2.0 — see companion doc.)*
+**Logical resolution:** 1280×720 viewport (`VIEW_W×VIEW_H`), scaled to fit window with letterboxing (CSS scaling, canvas stays 1280×720 internally). As of v1.2 the simulation runs in a larger **3840×2160 toroidal world** (`WORLD_W×WORLD_H`) that the viewport scrolls across, keeping the ship centered — see §2.11.
 
 **Companion documents (read alongside this one):**
 - **`PLANNED-FEATURES-v2.md`** — full specs, design rationale, and open questions for every feature not yet built. This GDD's Section 2 describes only what's actually shipped; once a v2 feature ships, its spec moves from that doc into this one.
@@ -66,7 +66,7 @@ A faithful-in-spirit knockoff of Atari's *Asteroids Deluxe* (1981), the harder s
 ### 2.7 Waves, Lives, Scoring
 > ⚠️ **Planned for replacement in v2.0** — discrete lives are being replaced by a single Health Points pool with knockback-on-hit. See `PLANNED-FEATURES-v2.md` Feature F2. Not yet built.
 
-- Wave N spawns `min(4 + N, 11)` large asteroids, placed at least 220 px from the ship.
+- Wave N spawns `min(4 + N, 11)` large asteroids, placed in a ring 220–1100 px around the ship's *current* world position (see §2.11).
 - Next wave starts 2.5 s after the field is clear of asteroids, satellites, AND wedges. Free garbage and towed cargo do **not** block wave-clear; both persist into the next wave (the dock relocates).
 - 3 starting lives; extra life every 10,000 points.
 
@@ -87,7 +87,7 @@ A faithful-in-spirit knockoff of Atari's *Asteroids Deluxe* (1981), the harder s
 
 **Chain vulnerability.** Any asteroid, wedge, or satellite body — or any hostile bullet — touching a chain node destroys that canister; **everything aft of it breaks loose** as free garbage (fresh 15 s decay, scatter velocity). Ship death scatters the entire load. Player bullets pass through garbage and chain (they're debris, not targets).
 
-**Recycling dock.** A green octagonal station (radius 44) placed randomly each wave, ≥260 px from the ship's center spawn point. Non-solid — purely a delivery zone. While the ship is within radius+10 and carrying cargo, canisters peel off the **tail** every 0.13 s. Delivery score escalates within a single visit: `50 + 25×(n−1)` for the nth canister (full 12-chain = 2,250). The combo counter resets when the ship leaves the dock's neighborhood (radius+40). Delivery pitch rises per canister; score popups float up.
+**Recycling dock.** A green octagonal station (radius 44) placed randomly each wave, 260–900 px from the ship's *current* world position (see §2.11). Non-solid — purely a delivery zone. While the ship is within radius+10 and carrying cargo, canisters peel off the **tail** every 0.13 s. Delivery score escalates within a single visit: `50 + 25×(n−1)` for the nth canister (full 12-chain = 2,250). The combo counter resets when the ship leaves the dock's neighborhood (radius+40). Delivery pitch rises per canister; score popups float up.
 
 **HUD.** `CARGO n/12` readout (lit when carrying); a green chevron orbiting the ship points toward the dock whenever cargo > 0.
 
@@ -106,6 +106,18 @@ These were deliberate calls, not accidents — future sessions should understand
 - **The shield does not protect the chain.** The shield radius (26) only covers the ship; deflected rocks can and will hit your own cargo. This is intentional — the shield answer and the cargo answer should be in tension, not stacked.
 - **Momentum tug uses pre-constraint stretch** as its force signal (see 3.4). This is a stability decision: spring forces on a hard-constrained chain oscillate; measuring how much the cargo "resisted" the ship this frame and applying only that gives a heavy feel without energy injection.
 
+### 2.11 Larger Scrolling World & Camera (v1.2)
+
+The simulation space and the screen used to be the same 1280×720 rectangle. As of v1.2 they are decoupled: the world is a large torus and the screen is a camera window onto it.
+
+- **World vs viewport.** The world is `WORLD_W × WORLD_H` = **3840×2160** (3× per axis, 9× area) and still wraps at its own edges — same torus topology as before, just bigger. The **viewport** is `VIEW_W × VIEW_H` = **1280×720**, still the canvas size and still CSS-scaled/letterboxed to the window. All world/simulation math (wrap, distance, aiming, chain links) uses `WORLD_W/WORLD_H`; only the canvas, HUD, and title screen use `VIEW_W/VIEW_H`.
+- **Camera.** `game.camera.x/y` tracks the ship's world position every frame — no smoothing, no clamping (the world wraps, so there is no edge for the camera to bump into). The ship is therefore always drawn at the center of the viewport. On respawn the ship returns to world center and the camera snaps with it.
+- **Render pipeline.** `draw()` clears the viewport, draws the starfield, then (for gameplay) translates the context by `(VIEW_W/2 − camera.x, VIEW_H/2 − camera.y)` and draws every world-space entity inside that transform. The HUD (score, lives, cargo readout, dock chevron, wave, shield bar) and the pause/game-over overlays are drawn **after** restoring the untranslated context, so they stay screen-fixed. Each world entity is drawn at its **nearest wrapped image** relative to the camera (`wrapOffset`), so entities on the far side of the world seam still render in the right place when the ship is near a world edge (a single naive translate would drop them off-screen).
+- **Culling.** `onScreen(e, margin)` (wrap-aware) skips drawing any entity more than `CULL_MARGIN` (100 px) outside the viewport. Culled entities still `update()` normally — off-screen hazards keep simulating in the larger world. (Off-screen *threat awareness* — warning the player about hazards approaching from beyond the viewport — is deliberately deferred; see `PLANNED-FEATURES-v2.md` F10.)
+- **Starfield.** Background stars are scattered once across the whole world (count scales with world area to preserve the original on-screen density) and rendered wrap-aware in screen space, so the field scrolls seamlessly with no visible tiling repeat or edge seam.
+- **Ship-relative spawning.** Because a fixed-rect spawn could drop a whole wave unreachably far away in the big world, spawns are now placed relative to the ship's *current* world position: new large asteroids in a ring `[SPAWN_MIN_DIST, SPAWN_MAX_DIST]` = [220, 1100] px; the recycling dock in `[DOCK_MIN_DIST, DOCK_MAX_DIST]` = [260, 900] px. Killer satellites and saucers enter from just beyond a **viewport** edge relative to the ship (offset by `VIEW_W/2`/`VIEW_H/2` + a margin, then folded into the world with `wrapPos`), preserving their shipped "slide in from off-screen, cross the screen" feel; their speeds, homing, fire rates, and split behavior are unchanged (those are Phase 4/5 concerns).
+
+> New tuning constants live in the "Larger world & scrolling camera (v1.2)" block at the top: `CULL_MARGIN`, `SPAWN_MIN_DIST`, `SPAWN_MAX_DIST`, `DOCK_MIN_DIST`, `DOCK_MAX_DIST`, `STAR_DENSITY`, plus `WORLD_W/H` and `VIEW_W/H`.
 
 ---
 
@@ -115,17 +127,17 @@ Everything lives in one `<script>` block. Reading order top to bottom:
 
 | Section | Contents | Notes for modification |
 |---|---|---|
-| **Constants** | All tuning values (SHIP_*, BULLET_*, SHIELD_*, AST_*, scores) + v1.1 block (GARBAGE_*, CHAIN_*, CARGO_*, DOCK_*) | **Change balance here first.** Never hardcode magic numbers deeper in the file. |
-| **Canvas/scaling** | `resize()` — CSS scaling, fixed 1280×720 logical | Same pattern as Atomic Dustbin Dan. All game math uses W/H, never window size. |
+| **Constants** | All tuning values (SHIP_*, BULLET_*, SHIELD_*, AST_*, scores) + v1.1 block (GARBAGE_*, CHAIN_*, CARGO_*, DOCK_*) + v1.2 world block (`WORLD_W/H`, `VIEW_W/H`, `CULL_MARGIN`, `SPAWN_MIN/MAX_DIST`, `DOCK_MIN/MAX_DIST`, `STAR_DENSITY`) | **Change balance here first.** Never hardcode magic numbers deeper in the file. `WORLD_*` = the wrap boundary; `VIEW_*` = the screen — keep the distinction (see §2.11). |
+| **Canvas/scaling** | `resize()` — CSS scaling, fixed 1280×720 logical viewport | Same pattern as Atomic Dustbin Dan. `resize()` uses `VIEW_W/VIEW_H` (screen); all *world* math uses `WORLD_W/WORLD_H`, never window size. |
 | **AudioSys** | Singleton object; all sounds are methods; init on first keypress (autoplay policy). v1.1 adds `pickup()` and `deliver(count)` (pitch climbs with delivery combo) | Continuous sounds (thrust, saucer) are start/stop node pairs. Add new SFX as new methods; follow the `now()` + gain-envelope pattern. |
 | **Input** | `keys{}` map + `input` helper predicates | Add new bindings as predicates in `input`, not by reading `keys` inline. Enter/P handled in keydown directly. |
-| **Helpers** | `rand`, `wrap`, `dist2`, `angleTo`, **`shortDelta`** (v1.1), `glowStroke`, `drawPoly`, `COLOR` | ⚠️ `dist2`, `angleTo`, and `shortDelta` are **wrap-aware** (torus topology). Always use these for distance/aiming/link math — naive `Math.hypot` deltas break near edges. |
+| **Helpers** | `rand`, `wrap`, `dist2`, `angleTo`, **`shortDelta`** (v1.1), **`wrapOffset`/`wrapPos`** (v1.2), `glowStroke`, `drawPoly`, `COLOR` | ⚠️ `wrap`, `dist2`, `angleTo`, `shortDelta` are **wrap-aware** and now operate against `WORLD_W/WORLD_H`. Always use these for distance/aiming/link math — naive `Math.hypot` deltas break near edges. `wrapOffset` gives the nearest wrapped image of a point relative to the camera (rendering); `wrapPos` folds a fresh spawn into `[0,WORLD)`. |
 | **Entity classes** | `Ship`, `Bullet`, `Asteroid`, `Satellite`, `Wedge`, `Saucer`, `Particle`, and (v1.1) `Garbage`, `FloatText`, `Dock` + `drawCanister()` shared renderer | Uniform contract: constructor, `update(dt)`, `draw()`, `dead` flag. Some have `split()`. `Garbage.fromNode(n)` converts a severed chain node back to free garbage. |
-| **game object** | Central state: entity arrays, score/lives/wave, spawn timers. v1.1 adds `garbage`, `chain`, `floaters`, `dock`, `deliveryCount`, `offloadTimer` | Single mutable global. **`game.chain` is NOT a class-entity array** — it holds plain verlet nodes (see 3.4). |
+| **game object** | Central state: entity arrays, score/lives/wave, spawn timers. v1.1 adds `garbage`, `chain`, `floaters`, `dock`, `deliveryCount`, `offloadTimer`. v1.2 adds **`camera` `{x,y}`** | Single mutable global. **`game.chain` is NOT a class-entity array** — it holds plain verlet nodes (see 3.4). `game.camera` is set to the ship's position each frame in `update()`. |
 | **Flow functions** | `startGame`, `nextWave` (now also places the Dock), `addScore`, `boom`, `destroyAsteroid` (now drops garbage), `killShip` (now calls `scatterChain`), `shieldDeflect` | `addScore` handles extra-life logic — always score through it. `boom` = particles + explosion sound. |
 | **Chain physics** (v1.1) | `chainAnchor`, `wrapNode`, `updateChain`, `breakChain(i)`, `scatterChain`, `drawLink`, `drawChain` — located directly after `shieldDeflect` | See 3.4 for the physics contract. `breakChain(i)` destroys node i and converts nodes i+1..end to free garbage — never splice the chain array directly. |
-| **update(dt)** | Respawn → entity updates → **pickup/chain/dock pass** → spawn timers → collision passes → cleanup filters → wave-clear check → heartbeat | Collision order matters (see 3.1). Cleanup uses `.filter(!dead)` — never splice mid-loop. |
-| **draw()** | Starfield → title OR (**dock** → particles → **garbage** → **chain** → rocks → satellites → wedges → saucers → bullets → ship → **floaters** → HUD → overlays) | Draw order = z-order: dock is the floor, floaters sit above the ship. HUD includes shield bar, cargo counter, and dock-pointer chevron. |
+| **update(dt)** | Respawn → ship update → **camera-follow** → entity updates → **pickup/chain/dock pass** → spawn timers → collision passes → cleanup filters → wave-clear check → heartbeat | Collision order matters (see 3.1). `game.camera` is set to the ship's position right after `ship.update` (before spawns, so ship-relative spawns use the current position). Cleanup uses `.filter(!dead)` — never splice mid-loop. |
+| **draw()** | Starfield (wrap-aware, screen space) → title OR [**camera transform** → (**dock** → particles → **garbage** → **chain** → rocks → satellites → wedges → saucers → bullets → ship → **floaters**) → **restore** → HUD → overlays] | Draw order = z-order: dock is the floor, floaters sit above the ship. World entities go inside the camera translate via `drawEntity` (cull + nearest-image); HUD/overlays are screen-fixed, drawn after `ctx.restore()`. HUD includes shield bar, cargo counter, and dock-pointer chevron (which now orbits screen-center). See §2.11. |
 | **Main loop** | rAF loop, dt clamped to 0.05 s | Clamp prevents tunneling after tab-switch. The dt clamp also keeps chain constraints stable — keep it. |
 
 ### 3.1 Collision conventions
@@ -263,7 +275,8 @@ Areas most likely to hide issues, worth checking during playtests:
 
 - **v1.0** — Initial build: ship/asteroids/saucers, shield, killer satellite + homing wedges, waves, synth audio.
 - **v1.1** — Radioactive salvage: garbage drops with decay, verlet tow chain (mass/momentum penalties, momentum tug), chain vulnerability with aft-severing, relocating recycling dock with escalating delivery scores, cargo HUD + dock pointer, pickup/deliver SFX. New constants block; `shortDelta` helper; `Garbage`/`FloatText`/`Dock` classes; chain physics functions after `shieldDeflect`. Headless-tested: pickup, tow, wrap, delivery scoring, severing.
-- **v2.0 (in design, not yet built)** — Planning kicked off for: controller support, pause/options menu with rebindable controls, weapon/health/utility powerups, an achievements system, a larger scrolling world, a Debris Satellite redesign of asteroids, a Hunter Satellite redesign of the killer satellite/wedge system, and HP-based survival replacing lives. Full specs in `PLANNED-FEATURES-v2.md`; build order in `IMPLEMENTATION-PHASES.md`.
+- **v1.2** — *v2.0 Phase 1 (F1): Larger scrolling world & camera.* Simulation space split from the screen: a 3840×2160 toroidal world (`WORLD_W/H`) with a 1280×720 viewport (`VIEW_W/H`) that scrolls to keep the ship centered (`game.camera`). All wrap-aware helpers (`wrap`/`dist2`/`angleTo`/`shortDelta`/`wrapNode`) retargeted to `WORLD_*`; added `wrapOffset`/`wrapPos`. `draw()` gained a camera transform, wrap-aware per-entity nearest-image rendering + viewport culling (`onScreen`/`drawEntity`), and a world-spanning seamless starfield; HUD/overlays drawn screen-fixed after restore. Spawns (wave asteroids, dock) now ship-relative rings; satellites/saucers enter from viewport edges relative to the ship (feel unchanged). New constants: `CULL_MARGIN`, `SPAWN_MIN/MAX_DIST`, `DOCK_MIN/MAX_DIST`, `STAR_DENSITY`. Headless-tested: camera-follow, world-boundary wrap (x & y), no wrap at old 1280 boundary, ship-relative spawn reachability across the seam, draw() crash-free in all states.
+- **v2.0 (in progress)** — Phase 1 (larger scrolling world) shipped as v1.2. Still planned: HP-based survival replacing lives, a Debris Satellite redesign of asteroids, a difficulty ramp, a Hunter Satellite redesign of the killer satellite/wedge system, weapon/health/utility powerups, controller support, pause/options menu with rebindable controls, and an achievements system. Full specs in `PLANNED-FEATURES-v2.md`; build order in `IMPLEMENTATION-PHASES.md`.
 
 ---
 

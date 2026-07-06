@@ -9,7 +9,7 @@
 ## Dependency Order & Rationale
 
 ```
-Phase 1: World & Camera        (foundational — everything else assumes world space)
+Phase 1: World & Camera        ✅ DONE (shipped v1.2) — foundational; everything else assumes world space
    │
 Phase 2: HP & Knockback        (survival core — independent of world size, but should land
    │                             before enemies get more numerous/dangerous in Phase 3/4)
@@ -40,6 +40,8 @@ I've listed this as strictly linear, but **Phase 7 (basic gamepad input) has no 
 ---
 
 ## Phase 1 — Larger World & Scrolling Camera
+
+**Status:** ✅ Done — shipped as v1.2. Spec moved to GDD §2.11; see STATUS.md "Changed this session" and Version History v1.2. The deferred off-screen-threat-awareness item is parked under F1's follow-up note (revisit with F10).
 
 **Builds:** `PLANNED-FEATURES-v2.md` Feature F1.
 **Depends on:** nothing (first phase).
