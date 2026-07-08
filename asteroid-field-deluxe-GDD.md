@@ -6,9 +6,8 @@
 **Logical resolution:** 1280×720 viewport (`VIEW_W×VIEW_H`), scaled to fit window with letterboxing (CSS scaling, canvas stays 1280×720 internally). As of v1.2 the simulation runs in a larger **3840×2160 toroidal world** (`WORLD_W×WORLD_H`) that the viewport scrolls across, keeping the ship centered — see §2.11.
 
 **Companion documents (read alongside this one):**
-- **`PLANNED-FEATURES-v2.md`** — full specs, design rationale, and open questions for every feature not yet built. This GDD's Section 2 describes only what's actually shipped; once a v2 feature ships, its spec moves from that doc into this one.
-- **`IMPLEMENTATION-PHASES.md`** — the v2 feature list broken into ordered, session-sized phases with ready-to-paste Claude Code prompts.
-- **`STATUS.md`** — running session log, same as always.
+- **`STATUS.md`** — running session log + build reality, same as always.
+- **Archived (historical, superseded — see `archive/README.md`):** `archive/PLANNED-FEATURES-v2.md` (the v2.0 feature specs + rationale) and `archive/IMPLEMENTATION-PHASES.md` (the v2.0 phase build plan). Both were retired once all nine v2.0 phases shipped and their specs moved into Section 2 below. They are **not** active specs — this GDD's Section 2 plus `STATUS.md` are authoritative. A future v3.0 cycle would add fresh planning docs at the repo root.
 
 ---
 
@@ -133,7 +132,7 @@ The simulation space and the screen used to be the same 1280×720 rectangle. As 
 - **World vs viewport.** The world is `WORLD_W × WORLD_H` = **3840×2160** (3× per axis, 9× area) and still wraps at its own edges — same torus topology as before, just bigger. The **viewport** is `VIEW_W × VIEW_H` = **1280×720**, still the canvas size and still CSS-scaled/letterboxed to the window. All world/simulation math (wrap, distance, aiming, chain links) uses `WORLD_W/WORLD_H`; only the canvas, HUD, and title screen use `VIEW_W/VIEW_H`.
 - **Camera.** `game.camera.x/y` tracks the ship's world position every frame — no smoothing, no clamping (the world wraps, so there is no edge for the camera to bump into). The ship is therefore always drawn at the center of the viewport. On respawn the ship returns to world center and the camera snaps with it.
 - **Render pipeline.** `draw()` clears the viewport, draws the starfield, then (for gameplay) translates the context by `(VIEW_W/2 − camera.x, VIEW_H/2 − camera.y)` and draws every world-space entity inside that transform. The HUD (score, lives, cargo readout, dock chevron, wave, shield bar) and the pause/game-over overlays are drawn **after** restoring the untranslated context, so they stay screen-fixed. Each world entity is drawn at its **nearest wrapped image** relative to the camera (`wrapOffset`), so entities on the far side of the world seam still render in the right place when the ship is near a world edge (a single naive translate would drop them off-screen).
-- **Culling.** `onScreen(e, margin)` (wrap-aware) skips drawing any entity more than `CULL_MARGIN` (100 px) outside the viewport. Culled entities still `update()` normally — off-screen hazards keep simulating in the larger world. (Off-screen *threat awareness* — warning the player about hazards approaching from beyond the viewport — is deliberately deferred; see `PLANNED-FEATURES-v2.md` F10.)
+- **Culling.** `onScreen(e, margin)` (wrap-aware) skips drawing any entity more than `CULL_MARGIN` (100 px) outside the viewport. Culled entities still `update()` normally — off-screen hazards keep simulating in the larger world. (Off-screen *threat awareness* — warning the player about hazards approaching from beyond the viewport — is deliberately deferred; see `archive/PLANNED-FEATURES-v2.md` F10.)
 - **Starfield.** Background stars are scattered once across the whole world (count scales with world area to preserve the original on-screen density) and rendered wrap-aware in screen space, so the field scrolls seamlessly with no visible tiling repeat or edge seam.
 - **Ship-relative spawning.** Because a fixed-rect spawn could drop a whole wave unreachably far away in the big world, spawns are now placed relative to the ship's *current* world position: new large debris satellites in a ring `[SPAWN_MIN_DIST, SPAWN_MAX_DIST]` = [220, 1100] px; the recycling dock in `[DOCK_MIN_DIST, DOCK_MAX_DIST]` = [260, 900] px. Killer satellites and saucers enter from just beyond a **viewport** edge relative to the ship (offset by `VIEW_W/2`/`VIEW_H/2` + a margin, then folded into the world with `wrapPos`), preserving their shipped "slide in from off-screen, cross the screen" feel; their speeds, homing, fire rates, and split behavior are unchanged (those are Phase 4/5 concerns).
 
@@ -289,7 +288,7 @@ The tow chain is the only physics system in the game that is *not* the standard 
 
 ## 4. Enhancement Roadmap (candidate backlog)
 
-> **This list is now secondary to `PLANNED-FEATURES-v2.md` / `IMPLEMENTATION-PHASES.md`,** which cover a large, committed v2.0 feature set (controller support, HP system, powerups, achievements, a larger scrolling world, and the satellite redesigns) in far more depth. Items below that overlap with v2.0 are marked; the rest remain a candidate backlog for *after* v2.0 ships.
+> **The large v2.0 feature set** (controller support, HP system, powerups, achievements, a larger scrolling world, and the satellite redesigns) **has now shipped** — its specs live in Section 2, and its retired planning docs are in `archive/` (see `archive/README.md`). Items below that overlapped with v2.0 are struck through; the rest remain a candidate backlog for a future (e.g. v3.0) cycle.
 
 Ordered roughly by effort. Each is scoped to fit a single working session.
 
@@ -297,10 +296,10 @@ Ordered roughly by effort. Each is scoped to fit a single working session.
 1. **High-score persistence** — in-memory top-5 table with initials entry on game over. (Note: localStorage does not work in claude.ai artifact preview; fine in a real browser. Gate it with a try/catch.)
 2. **Screen shake + flash** on ship death and satellite kill. Add `game.shake` timer, offset ctx translate in `draw()`.
 3. **Thump-synced pulse** — starfield or border glow pulses with the heartbeat.
-4. ~~**Gamepad support**~~ → superseded and expanded by `PLANNED-FEATURES-v2.md` Feature F7 / `IMPLEMENTATION-PHASES.md` Phase 6.
+4. ~~**Gamepad support**~~ → shipped in v1.8 (v2.0 Feature F7); see §2.15.
 
 **Medium (one full session)**
-5. ~~**Power-up drops**~~ → superseded and expanded by `PLANNED-FEATURES-v2.md` Feature F6 / Phase 5.
+5. ~~**Power-up drops**~~ → shipped in v1.7 (v2.0 Feature F6); see §2.14.
 6. **Debris Satellite variants** — e.g. "dense" units (2 hits, darker stroke), "volatile" units (explode, damaging neighbors in radius). Add a `type` field to `DebrisSatellite`; keep circle collision. A "hot" variant could drop extra canisters. *F3 (Debris Satellites) has now shipped (v1.4) — this would layer on top of it: a per-type branch in `destroyDebris` and the constructor.*
 7. **Boss saucer every 5 waves** — large multi-hit saucer with a visible hull-damage state (drop polygon vertices as it takes hits). Could deliberately target the player's tow chain for extra menace.
 8. **Attract mode** — after 15 s idle on title, run a simple AI demo game (rotate toward nearest rock, thrust away from close threats, fire).
@@ -320,7 +319,7 @@ This mirrors the Atomic Dustbin Dan workflow: each new Claude session gets three
 1. **`asteroids-deluxe.html`** — the current build (always the latest working version).
 2. **This GDD** — or at minimum Sections 1–3 plus whichever Section 4 item is being built.
 3. **`STATUS.md`** — the running status document (template below). Update it at the end of every session.
-4. **For v2.0 work:** also attach `PLANNED-FEATURES-v2.md` and `IMPLEMENTATION-PHASES.md`, and reference the specific phase being built. Claude Code sessions can typically use the phase prompt from `IMPLEMENTATION-PHASES.md` directly as the kickoff message.
+4. **The v2.0 cycle is complete** — its planning docs are archived under `archive/` (historical reference only, not active specs). A future planning cycle (e.g. v3.0) would add fresh planning docs at the repo root and attach the specific phase being built, mirroring how the archived v2.0 docs were used.
 
 ### 5.2 Kickoff prompt template
 
