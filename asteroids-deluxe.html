@@ -242,6 +242,12 @@ const MAGNET_PULL = 360;            // px/sec^2 attraction toward the ship insid
 const MAGNET_DAMP = 0.06;           // per-sec velocity damping inside range so the pull glides, not jitters
 // Engine: lightens the effective towed mass so thrust/top-speed/tug (all fed by chainMass) ease.
 const ENGINE_MASS_MULT = 0.5;       // Engine halves the effective towed-mass sum while active
+// Count-based expiry budgets (v3.0 P5, B-4/B-5). Used only when the matching Difficulty mode is the
+// count variant ("shots"/"pieces"); the timed default (POWERUP_DURATION) ignores these entirely.
+const RAPID_SHOTS   = 40;           // trigger-pulls Rapid Fire lasts in "shots" mode (one pull = one shot)
+const TRIPLE_SHOTS  = 30;           // trigger-pulls Triple Shot lasts in "shots" mode (a 3-fan is ONE pull)
+const MAGNET_PIECES = 20;           // canisters hooked the Magnet lasts in "pieces" mode (counted at the hook)
+const POWERUP_BUDGET = { rapid: RAPID_SHOTS, triple: TRIPLE_SHOTS, magnet: MAGNET_PIECES }; // full budget by type
 
 // Controller / gamepad input (F7). The one tunable knob for controller *feel* — how far an analog
 // stick must travel before it counts as a directional press. Button/axis index enums and the binding
@@ -737,10 +743,18 @@ function firstPressedButton() {
 const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game
 const MENU_ROOT_SYS  = ["Options", "Achievements", "Back"];  // system menu from title/gameover
 function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_ROOT_SYS; }
-const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Controls", "Achievements", "Back"];
+const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Controls", "Achievements", "Difficulty", "Back"];
 const VOL_CATS     = ["sfx", "music", "master"]; // parallel to the first three MENU_OPTIONS rows
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
 const clamp01 = v => Math.max(0, Math.min(1, v));
+
+// Difficulty options (v3.0 P5, B-4/B-5): powerup-expiry modes, persisted additively in afd_settings_v1.
+// Both default to "time" so the shipped timed behaviour is unchanged until a player opts in via the
+// Options -> Difficulty screen. Structured to grow with future difficulty knobs (FLAG B-4-c).
+const settings = {
+  shotPowerupMode: "time", // "time" | "shots"  — governs Rapid Fire + Triple Shot expiry
+  magnetMode:      "time", // "time" | "pieces" — governs Magnet expiry
+};
 
 function menuActive() { return game.paused; } // paused <=> a pause-menu screen is open
 
@@ -791,6 +805,7 @@ function menuInput(action) {
     case "root":         menuRoot(action); break;
     case "options":      menuOptions(action); break;
     case "controls":     menuControls(action); break;
+    case "difficulty":   menuDifficulty(action); break;
     case "achievements": menuAchievements(action); break;
   }
 }
@@ -826,7 +841,8 @@ function menuOptions(a) {
   else if (a === "confirm") {
     if (m.index === 3) gotoScreen("controls");       // Controls
     else if (m.index === 4) { gotoScreen("achievements"); m.achReturn = "options"; } // Achievements viewer (F9)
-    else if (m.index === 5) gotoScreen("root", rootItems().indexOf("Options")); // Back -> root, cursor on "Options"
+    else if (m.index === 5) gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
+    else if (m.index === 6) gotoScreen("root", rootItems().indexOf("Options")); // Back -> root, cursor on "Options"
   }
   else if (a === "back") gotoScreen("root", rootItems().indexOf("Options"));
   else if (a === "pause") closePause();
@@ -842,6 +858,27 @@ function menuAchievements(a) {
     if (game.menu.achReturn === "root") gotoScreen("root", rootItems().indexOf("Achievements"));
     else gotoScreen("options", 4);
   }
+}
+
+// Difficulty screen (v3.0 P5, B-4/B-5): two left/right mode toggles + Back. Left picks the timed
+// default, right picks the count variant, matching the on-screen "Time | Shots/Pieces" layout.
+// Structured to grow with future difficulty knobs (FLAG B-4-c): add a row here + a case in the
+// switch and the renderer picks it up.
+const DIFFICULTY_ROWS = ["shot", "magnet", "back"];
+function menuDifficulty(a) {
+  const m = game.menu, N = DIFFICULTY_ROWS.length;
+  const row = DIFFICULTY_ROWS[m.index];
+  if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
+  else if (a === "left" || a === "right") {
+    if (row === "shot")        { settings.shotPowerupMode = a === "right" ? "shots"  : "time"; saveSettings(); AudioSys.ui(false); }
+    else if (row === "magnet") { settings.magnetMode      = a === "right" ? "pieces" : "time"; saveSettings(); AudioSys.ui(false); }
+  }
+  else if (a === "confirm") {
+    if (row === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Difficulty"));
+  }
+  else if (a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Difficulty"));
+  else if (a === "pause") closePause();
 }
 
 function menuControls(a) {
@@ -906,7 +943,8 @@ function storageOK() {
 function saveSettings() {
   const ls = storageOK(); if (!ls) return;
   try {
-    const data = { vol: { ...AudioSys.vol }, bindings: {} };
+    const data = { vol: { ...AudioSys.vol }, bindings: {},
+      shotPowerupMode: settings.shotPowerupMode, magnetMode: settings.magnetMode }; // v3.0 P5 (additive)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -933,6 +971,10 @@ function loadSettings() {
         if ("axis" in b) bindings[name].axis = b.axis ? { index: b.axis.index, dir: b.axis.dir } : null;
       }
     }
+    // v3.0 P5: difficulty modes are additive fields — tolerate a missing key (older saves) and only
+    // accept a known value, so a corrupt string falls back to the "time" default rather than sticking.
+    if (data.shotPowerupMode === "time" || data.shotPowerupMode === "shots") settings.shotPowerupMode = data.shotPowerupMode;
+    if (data.magnetMode === "time" || data.magnetMode === "pieces") settings.magnetMode = data.magnetMode;
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
@@ -1114,12 +1156,19 @@ class Ship {
       const shoot = a => game.bullets.push(new Bullet(
         this.x + Math.cos(a) * SHIP_RADIUS, this.y + Math.sin(a) * SHIP_RADIUS,
         this.vx + Math.cos(a) * BULLET_SPEED, this.vy + Math.sin(a) * BULLET_SPEED, false));
-      if (game.powerFx.triple > 0) {
+      if (powerActive("triple")) {
         shoot(this.angle - TRIPLE_SPREAD); shoot(this.angle); shoot(this.angle + TRIPLE_SPREAD);
       } else {
         shoot(this.angle);
       }
-      this.cooldown = game.powerFx.rapid > 0 ? RAPID_FIRE_COOLDOWN : FIRE_COOLDOWN;
+      this.cooldown = powerActive("rapid") ? RAPID_FIRE_COOLDOWN : FIRE_COOLDOWN;
+      // Count-based shot expiry (B-4): one trigger-pull spends one from each active shot budget. A
+      // Triple 3-fan is ONE pull; with both active, both budgets tick once and end independently
+      // (FLAG B-4-b). Decrement AFTER the fan/cadence reads so this pull is fully a "rapid/triple" pull.
+      if (settings.shotPowerupMode === "shots") {
+        if (game.powerBudget.rapid  > 0) game.powerBudget.rapid--;
+        if (game.powerBudget.triple > 0) game.powerBudget.triple--;
+      }
       game.stats.pacifistStreak = 0; // firing breaks the no-fire delivery streak (Pacifist Tow, F9)
       AudioSys.fire();
     }
@@ -1624,6 +1673,7 @@ const game = {
   garbage: [], chain: [], floaters: [], dock: null,
   powerups: [],                                        // free-floating Powerup pickups (F6)
   powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // remaining sec per timed effect (0 = inactive)
+  powerBudget: { rapid: 0, triple: 0, magnet: 0 },    // remaining shots/pieces in count mode (P5; Engine is always timed)
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
@@ -1648,6 +1698,7 @@ function startGame() {
   game.garbage = []; game.chain = []; game.floaters = [];
   game.powerups = [];
   game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
+  game.powerBudget = { rapid: 0, triple: 0, magnet: 0 }; // count-mode budgets reset with the run (P5)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
@@ -1762,12 +1813,27 @@ function destroyHunter(h, awardScore = true) {
 }
 
 // ---------- Powerups (F6) ----------
+// Which expiry mode governs a timed effect (v3.0 P5). Rapid + Triple follow shotPowerupMode; Magnet
+// follows magnetMode; Engine is always time-based (never player-configurable). Health is instant.
+function powerMode(type) {
+  if (type === "rapid" || type === "triple") return settings.shotPowerupMode;
+  if (type === "magnet") return settings.magnetMode;
+  return "time";
+}
+// Is a timed effect currently ACTIVE, honouring its expiry mode? In "time" mode it's live while
+// seconds remain (game.powerFx); in a count mode while budget remains (game.powerBudget). Every call
+// site (fire block, maxBullets, chainMass, magnet pull, HUD) reads through this one predicate so the
+// two modes can never diverge.
+function powerActive(type) {
+  return powerMode(type) === "time" ? game.powerFx[type] > 0 : game.powerBudget[type] > 0;
+}
+
 // Effective player-bullet cap. Triple Shot wins over Rapid Fire when both are active because its
 // cap (12) is the higher of the two — the spec's "use the higher cap, don't multiply to 24".
 function maxBullets() {
-  if (game.powerFx.triple > 0) return TRIPLE_MAX_BULLETS; // 12 (also the Rapid+Triple combined cap)
-  if (game.powerFx.rapid > 0)  return RAPID_MAX_BULLETS;  // 8
-  return MAX_BULLETS;                                      // 4
+  if (powerActive("triple")) return TRIPLE_MAX_BULLETS; // 12 (also the Rapid+Triple combined cap)
+  if (powerActive("rapid"))  return RAPID_MAX_BULLETS;  // 8
+  return MAX_BULLETS;                                    // 4
 }
 
 // A modest chance for a small-tier kill (Debris or Hunter) to drop one random weapon/utility
@@ -1793,8 +1859,10 @@ function spawnHealthPowerup() {
 function applyPowerup(type) {
   if (type === "health") {
     game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + POWERUP_HEALTH_AMOUNT);
+  } else if (powerMode(type) === "time") {
+    game.powerFx[type] = POWERUP_DURATION;         // refresh, not add — same-type pickups refresh, never stack
   } else {
-    game.powerFx[type] = POWERUP_DURATION; // refresh, not add — same-type pickups extend, never stack
+    game.powerBudget[type] = POWERUP_BUDGET[type]; // count mode: refresh the shots/pieces budget to full (same rule)
   }
   // Achievement stats (F9): any pickup counts for "No Powerups Needed"; Health picks gate "Glass
   // Cannon"; the four drop types feed "Powered Up" (use all four).
@@ -2058,7 +2126,7 @@ function chainMass() {
   // Engine powerup (F6) temporarily lightens the EFFECTIVE towed mass. chainMass() is the single
   // quantity feeding thrustMul/maxSp (Ship.update) and the momentum-tug massFactor (updateChain),
   // so halving it here eases all three at once — "easier to maneuver even when towing garbage."
-  return game.powerFx.engine > 0 ? m * ENGINE_MASS_MULT : m;
+  return powerActive("engine") ? m * ENGINE_MASS_MULT : m;
 }
 
 function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity survives
@@ -2190,7 +2258,7 @@ function update(dt) {
   // --- Salvage pickup & chain physics ---
   // Magnet (F6): while active, pull free garbage within an extended radius toward the ship (a real
   // attraction force reads better than a bigger invisible circle) AND widen the pickup radius.
-  const magnet = game.powerFx.magnet > 0;
+  const magnet = powerActive("magnet");
   const pickR = magnet ? GARBAGE_PICKUP * MAGNET_PICKUP_MULT : GARBAGE_PICKUP;
   for (const g of game.garbage) {
     g.update(dt);
@@ -2212,6 +2280,9 @@ function update(dt) {
         spin: g.spin, spinRate: g.spinRate, mass: g.mass  // carry towing weight onto the node (F5)
       });
       AudioSys.pickup();
+      // Count-based Magnet expiry (B-5): spend one budget per canister HOOKED — counted at the hook,
+      // not the pull, so a magnet that draws-then-hooks a piece only spends once (FLAG B-5-a).
+      if (magnet && settings.magnetMode === "pieces" && game.powerBudget.magnet > 0) game.powerBudget.magnet--;
     }
   }
   updateChain(dt);
@@ -2484,6 +2555,7 @@ function drawMenu() {
   if (s === "root") drawRootMenu();
   else if (s === "options") drawOptionsMenu();
   else if (s === "controls") drawControlsMenu();
+  else if (s === "difficulty") drawDifficulty();
   else if (s === "achievements") drawAchievements();
 }
 
@@ -2508,7 +2580,7 @@ function drawRootMenu() {
 }
 
 function drawOptionsMenu() {
-  const { x, y } = menuPanel(560, 448, "OPTIONS");
+  const { x, y } = menuPanel(560, 484, "OPTIONS");
   const m = game.menu;
   for (let i = 0; i < 3; i++) { // SFX / Music / Master sliders
     const sel = m.index === i;
@@ -2523,11 +2595,37 @@ function drawOptionsMenu() {
     if (sel) { drawText("◄", bx - 16, cy + 7, 16, COLOR.text); drawText("►", bx + bw + 16, cy + 7, 16, COLOR.text); }
   }
   drawText("(no music track yet — the Music slider is wired for a future one)", VIEW_W / 2, y + 262, 12, COLOR.dim);
-  ["Controls", "Achievements", "Back"].forEach((it, j) => {
+  ["Controls", "Achievements", "Difficulty", "Back"].forEach((it, j) => {
     const idx = 3 + j, sel = m.index === idx;
     drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 296 + j * 36, 22, sel ? COLOR.text : COLOR.dim);
   });
-  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 428, 12, COLOR.dim);
+  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 464, 12, COLOR.dim);
+}
+
+// Difficulty screen renderer (v3.0 P5): two two-option toggle rows + Back. The active side of each
+// toggle is lit (COLOR.text), the other dim; the selected row shows the ◄► adjust chevrons. Mirrors
+// the tested drawOptionsMenu pattern so it inherits the same vector-panel look.
+function drawDifficulty() {
+  const { x, y } = menuPanel(620, 360, "DIFFICULTY");
+  const m = game.menu;
+  const rows = [
+    { label: "Shot powerups expire", value: settings.shotPowerupMode, right: "shots"  },
+    { label: "Magnet expires",       value: settings.magnetMode,       right: "pieces" },
+  ];
+  rows.forEach((r, i) => {
+    const sel = m.index === i, cy = y + 122 + i * 58;
+    drawText(r.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+    const timeOn = r.value === "time";
+    const ox = x + 360, rightLabel = r.right === "shots" ? "Shots" : "Pieces";
+    drawText("Time",     ox,       cy + 6, 18, timeOn ? COLOR.text : COLOR.dim, "left");
+    drawText("|",        ox + 74,  cy + 6, 18, COLOR.dim, "left");
+    drawText(rightLabel, ox + 92,  cy + 6, 18, timeOn ? COLOR.dim : COLOR.text, "left");
+    if (sel) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 178, cy + 7, 16, COLOR.text); }
+  });
+  const backSel = m.index === 2;
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 262, 22, backSel ? COLOR.text : COLOR.dim);
+  drawText("Time = today's 15-second timer.   Shots / Pieces = expire by use, not the clock.", VIEW_W / 2, y + 306, 12, COLOR.dim);
+  drawText("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 336, 12, COLOR.dim);
 }
 
 function drawControlsMenu() {
@@ -2774,19 +2872,23 @@ function draw() {
   const targetsLeft = game.debris.length + game.hunters.length;
   drawText("TARGETS " + targetsLeft, 30, 124, 16,
     targetsLeft ? COLOR.text : COLOR.dim, "left");
-  // active-powerup row (F6): one row per running timed effect — a small type glyph + a
-  // shield-bar-style remaining-duration bar. Health is instant, so it never appears here.
+  // active-powerup row (F6): one row per running effect — a small type glyph + a shield-bar-style
+  // remaining bar. Health is instant, so it never appears here. v3.0 P5: one renderer, two data
+  // sources — in count mode ("shots"/"pieces") the bar reads remaining/budget and a numeric count
+  // labels it; in time mode it's the remaining-duration fraction as before.
   let prow = 150;
   for (const t of POWERUP_DROP_TYPES) {          // rapid / triple / magnet / engine (stable order)
-    const rem = game.powerFx[t];
-    if (rem <= 0) continue;
+    if (!powerActive(t)) continue;
     const c = POWERUP_COLOR[t];
+    const counted = powerMode(t) !== "time";
+    const frac = counted ? game.powerBudget[t] / POWERUP_BUDGET[t] : game.powerFx[t] / POWERUP_DURATION;
     drawPowerupGlyph(t, 40, prow, 9, c);
     const pw = 96, ph = 6, ppx = 58, ppy = prow - 3;
     ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1;
     ctx.strokeRect(ppx, ppy, pw, ph);
     ctx.fillStyle = c;
-    ctx.fillRect(ppx + 1, ppy + 1, (pw - 2) * (rem / POWERUP_DURATION), ph - 2);
+    ctx.fillRect(ppx + 1, ppy + 1, (pw - 2) * clamp01(frac), ph - 2);
+    if (counted) drawText(String(game.powerBudget[t]), ppx + pw + 14, prow + 4, 13, c, "left"); // shots/pieces left
     prow += 20;
   }
   // when hauling, a chevron orbiting screen-center points toward the (maybe off-screen) dock

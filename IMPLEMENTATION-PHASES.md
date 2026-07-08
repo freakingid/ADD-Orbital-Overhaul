@@ -176,7 +176,18 @@ superseded).
 
 ---
 
-## Phase 5 — Difficulty Options screen + powerup expiry modes (B-4, B-5)
+## Phase 5 — Difficulty Options screen + powerup expiry modes (B-4, B-5) — SHIPPED
+
+**SHIPPED — "v3.0 P5: Difficulty Options screen — shot-powerup (time|shots) & magnet (time|pieces)
+expiry modes".** Two additive, `"time"`-defaulting settings in `afd_settings_v1` (`shotPowerupMode`,
+`magnetMode`); count budgets in `game.powerBudget {rapid,triple,magnet}`; a single
+`powerActive(type)`/`powerMode(type)` pair routes every effect-active read (fire block, `maxBullets`,
+`chainMass`, Magnet pull, HUD). Rapid/Triple decrement per trigger-pull (a Triple 3-fan is one pull;
+both budgets tick once per pull and end independently); Magnet per canister hooked (counted at the
+hook). New Options → **Difficulty** screen (`menuDifficulty`/`drawDifficulty`, `DIFFICULTY_ROWS`).
+All four FLAGs resolved as recommended (B-4-a/-b/-c, B-5-a). Authoritative spec now lives in GDD
+§2.14 (powerups) + §2.16 (menu/persistence) + the Architecture Map; headless-verified in
+`scratchpad/test-p5.js` (57 assertions), F8 menu suite green. Original phase prompt kept below for record.
 
 **Goal:** a new **Options → Difficulty** screen with two mode toggles — shot powerups expire by
 **Time | Shots**, Magnet expires by **Time | Pieces** — and the count-based expiry logic behind them.

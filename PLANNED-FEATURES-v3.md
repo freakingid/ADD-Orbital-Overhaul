@@ -364,6 +364,23 @@ browser-only judgement (brightness, density, whether parallax reads as depth).
 
 ## B-4 & B-5. Powerup expiry modes + new "Difficulty" Options screen
 
+> **✅ SHIPPED — v3.0 Phase 5. Spec now lives in GDD §2.14 (powerups) + §2.16 (menu/persistence) + the Architecture Map.**
+> Two additive, `"time"`-defaulting settings in `afd_settings_v1` — `shotPowerupMode` (`"time"`|`"shots"`) and
+> `magnetMode` (`"time"`|`"pieces"`). Count budgets live in `game.powerBudget {rapid,triple,magnet}`; a single
+> `powerActive(type)`/`powerMode(type)` pair routes every effect-active read (fire block, `maxBullets`,
+> `chainMass`, Magnet pull, HUD) so the two modes can't diverge. Rapid/Triple decrement **per trigger-pull**
+> (a Triple 3-fan is one pull; both budgets tick once per pull and end independently); Magnet decrements **per
+> canister hooked** (at the hook, not the pull). Same-type pickup refreshes the budget/timer to full, never
+> stacks. New Options → **Difficulty** screen (`menuDifficulty`/`drawDifficulty`, `DIFFICULTY_ROWS`) with the two
+> toggle rows + Back. Headless-verified in `scratchpad/test-p5.js` (57 assertions); F8 menu suite still green.
+>
+> **All four FLAGs resolved as recommended:** B-4-a (default `"time"`, nothing changes until opted in) ✔;
+> B-4-b (Rapid+Triple both decrement once per pull, each ends independently — a 3-fan is one pull) ✔;
+> B-4-c (screen left structured to grow — add a `DIFFICULTY_ROWS` entry + switch case + renderer row) ✔;
+> B-5-a (count at the hook, so a draw-then-hook spends once — no double-spend) ✔.
+>
+> Historical planning text kept for record:
+
 **Shipped:** the four timed powerups (Rapid, Triple, Magnet, Engine) all expire on
 `POWERUP_DURATION` (15 s), counted down in `update()` (`game.powerFx[k] -= dt`), regardless of use.
 Requests B-4/B-5: let **shot powerups** (Rapid, Triple) expire after a number of **shots**, and the
