@@ -178,6 +178,14 @@ const DOCK_MIN_DIST = 260;      // recycling dock: nearest allowed to the ship
 const DOCK_MAX_DIST = 900;      // recycling dock: farthest from the ship (stay reachable)
 const STAR_DENSITY = 40;        // background stars per viewport-sized area of world
 
+// World-boundary visibility line (v2.1) — a dim dashed rectangle at the wrap seam so the
+// player can see the wrap-around coming. Purely cosmetic (no collision); drawn in world
+// space beneath entities, at the seam's nearest wrapped image relative to the camera.
+const BOUNDARY_DASH  = 16;      // dash segment length (world units)
+const BOUNDARY_GAP   = 24;      // gap between dashes (world units)
+const BOUNDARY_WIDTH = 2;       // stroke width
+const BOUNDARY_GLOW  = 5;       // shadowBlur — kept low so it reads as a boundary, not a hazard
+
 // Difficulty ramp & early-game pacing (F10) — one shared curve scales every wave-driven
 // threat parameter from an easy wave-1 floor up to a full-intensity ceiling (see §2.6/§2.13).
 const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficultyFactor(wave);
@@ -2597,6 +2605,24 @@ function drawStarfield() {
   }
 }
 
+// Dim dashed rectangle at the world edges so the wrap seam is visible as it's approached.
+// Called inside the camera transform. The rectangle is drawn at the world-origin corner's
+// nearest wrapped image relative to the camera (ox/oy), so whichever seam the ship is near
+// — x≈0 or x≈WORLD_W, y≈0 or y≈WORLD_H — renders at the right place and stays continuous
+// as the ship crosses it. Cosmetic only.
+function drawWorldBoundary() {
+  const cam = game.camera;
+  const ox = wrapOffset(0, cam.x, WORLD_W);
+  const oy = wrapOffset(0, cam.y, WORLD_H);
+  ctx.save();
+  ctx.setLineDash([BOUNDARY_DASH, BOUNDARY_GAP]);
+  ctx.beginPath();
+  ctx.rect(ox, oy, WORLD_W, WORLD_H);
+  glowStroke(COLOR.dim, BOUNDARY_WIDTH, BOUNDARY_GLOW);
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 // Is a world-space entity within the viewport (plus a margin)? Wrap-aware.
 function onScreen(e, margin = CULL_MARGIN) {
   const [dx, dy] = shortDelta(game.camera.x, game.camera.y, e.x, e.y);
@@ -2643,6 +2669,7 @@ function draw() {
   // --- World space: translate so the camera (the ship) sits at screen center ---
   ctx.save();
   ctx.translate(VIEW_W/2 - game.camera.x, VIEW_H/2 - game.camera.y);
+  drawWorldBoundary();              // wrap-seam guide, beneath all entities (cosmetic)
   if (game.dock) drawEntity(game.dock);
   game.particles.forEach(drawEntity);
   game.garbage.forEach(drawEntity);
