@@ -42,6 +42,17 @@ done. Flagging up front so the phases don't "add" something that's present:
 
 # PART A — ACHIEVEMENTS OVERHAUL (main item)
 
+> **⏳ PARTIALLY SHIPPED.** **Phase 7 (v3.0) shipped the tier infrastructure + converted the seven
+> flagged lifetime achievements** — §A-1 (tier model, `TIER_NAMES`/`TIER_COLOR`, per-tier unlock),
+> §A-2 (`afd_achievements_v2` + `_v1` migration), the **seven converted rows** of §A-3 (Recycling
+> Magnate, Ghost Protocol, Saucer Hunter, Perfect Wave, Iron Hull, Master of the Field, No Powerups
+> Needed — incl. the new `maxWaveNoPowerup` MAX counter), and the §A-5 The-Long-Haul reword to a
+> fixed ≥12/visit. Spec now lives in **GDD §2.17** + the Architecture Map Achievements row.
+> **Still pending (Phase 8):** the six **new** tiered lifetime/event achievements in §A-3 (rows
+> A-8..A-14 — Sharpshooter, Salvage King, Field Sweeper, Freight Baron, Daredevil, Zen Master, Wave
+> Rider), §A-4 (the per-event fork), §A-6 (the new "Flawless Run" weekly), and the §A-7 rotation
+> recompute to a 16-weekly pool. The prose below is retained as the Phase-8 spec.
+
 ## A-0. What the shipped achievements system is (so the overhaul is precise)
 
 The `Achievements` module (defined after the powerup flow functions) holds two flat arrays,

@@ -1091,6 +1091,13 @@ const COLOR = {
   ach: "#ffcf5a"            // achievement gold — the unlock toast + earned-achievement highlight (F9)
 };
 
+// Tiered-achievement ladders (v3.0 P7): every tiered lifetime achievement climbs bronze -> diamond.
+// The badge colours stay a warm-metal -> cool-white ramp inside the vector-glow discipline (FLAG
+// A-1-a): no teal/green/lime (those are Hunter/Debris/salvage tells) so a tier badge never reads as
+// a new hazard. All six are look-call tunables — swap TIER_COLOR[] freely after a browser playtest.
+const TIER_NAMES = ["Bronze", "Silver", "Gold", "Titanium", "Platinum", "Diamond"];
+const TIER_COLOR = ["#c8823c", "#c0c8d2", "#ffcf5a", "#e8d8b0", "#dfe8f2", "#ffffff"];
+
 // Per-type powerup identity (F6): a distinct glow color + a short HUD label per kind. Health
 // keeps the universal red-cross red; the rest are hued apart for a readable at-a-glance tell.
 const POWERUP_COLOR = {
@@ -1726,6 +1733,11 @@ function nextWave() {
   game.wave++;
   game.stats.dmgThisWave = 0; // fresh damage-free window for the new wave (F9 perfect-wave tracking)
   Achievements.lifetime.maxWave = Math.max(Achievements.lifetime.maxWave, game.wave); // Century Club / Master of the Field
+  // No Powerups Needed (MAX): best wave reached while still powerup-free this game. Frozen for the
+  // rest of the game the moment a powerup is picked (powerupsPicked > 0), so it records the deepest
+  // wave the player reached before ever touching a powerup. (FLAG A-1-b — a MAX counter, not a sum.)
+  if (game.stats.powerupsPicked === 0)
+    Achievements.lifetime.maxWaveNoPowerup = Math.max(Achievements.lifetime.maxWaveNoPowerup, game.wave);
   game.dock = new Dock(); // recycling dock relocates each wave
   // F3 first-pass balance: trimmed from min(4+wave, 11) to offset the ~8x higher garbage
   // volume from guaranteed 3-per-tier drops. Decay (GARBAGE_DECAY) is the primary density
@@ -1897,7 +1909,8 @@ function applyPowerup(type) {
 // cur() reads the per-game stats (s = game.stats) and lifetime counters (l = this.lifetime), plus
 // game.wave directly for the "reach wave N" ones. Persistence uses its own localStorage key.
 const Achievements = {
-  STORAGE_KEY: "afd_achievements_v1",
+  STORAGE_KEY: "afd_achievements_v2",   // v3.0 P7: new shape (lifetimeTiers + non-tiered unlocks + weekly)
+  LEGACY_KEY:  "afd_achievements_v1",   // migrated once (raw counters only) if no v2 save exists yet
 
   // 15 weekly achievements (F9 starter pool, in fixed order — the rotation indexes into this array).
   WEEKLY: [
@@ -1918,21 +1931,29 @@ const Achievements = {
     { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with zero canisters expired.",            goal: 1,  cur: s => (s.gameEnded && s.garbageDecayed === 0) ? 1 : 0 }
   ],
 
-  // 12 lifetime achievements (F9 starter pool). cur() reads the persisted lifetime counters (l).
+  // 12 lifetime achievements. cur() reads the persisted lifetime counters (l) — never mutated here.
+  // Seven of these are now TIERED (v3.0 P7): an optional `tiers:[bronze..diamond]` ascending ladder
+  // replaces the single `goal`; evaluate() unlocks every newly-crossed tier (see evaluate/onUnlock).
+  // Two counter kinds (FLAG A-1-b): SUM (running total, l.X++ at the event) and MAX (personal best,
+  // Math.max at the event) — the tier machinery is identical, only the counter's update rule differs.
+  // A tiered entry carries no `goal`; the viewer shows a tier badge + progress-to-next instead.
   LIFETIME: [
-    { id: "recycling_magnate", name: "Recycling Magnate", desc: "Deliver 1,000 canisters (all-time).",                 goal: 1000,  cur: (s, l) => l.delivered },
+    // --- Tiered (SUM) ---
+    { id: "recycling_magnate", name: "Recycling Magnate", desc: "Deliver canisters to the dock (all-time).",           cur: (s, l) => l.delivered,     tiers: [1000, 5000, 10000, 25000, 50000, 100000] },
+    { id: "ghost_protocol",    name: "Ghost Protocol",    desc: "Destroy Hunter Satellites (all-time).",               cur: (s, l) => l.hunterKills,   tiers: [50, 250, 1000, 2500, 5000, 10000] },
+    { id: "saucer_hunter",     name: "Saucer Hunter",     desc: "Destroy saucers, big and small (all-time).",          cur: (s, l) => l.saucerKills,   tiers: [250, 500, 1000, 2500, 5000, 10000] },
+    { id: "perfect_wave",      name: "Perfect Wave",      desc: "Clear a wave with zero damage (all-time).",           cur: (s, l) => l.perfectWaves,  tiers: [5, 10, 50, 100, 250, 500] },
+    { id: "iron_hull",         name: "Iron Hull",         desc: "Survive hazard hits (all-time).",                     cur: (s, l) => l.hitsSurvived,  tiers: [100, 500, 1000, 2500, 5000, 10000] },
+    // --- Tiered (MAX / personal best across games) ---
+    { id: "master_field",      name: "Master of the Field", desc: "Reach deep waves in a single game (best).",         cur: (s, l) => l.maxWave,          tiers: [5, 10, 25, 50, 75, 100] },
+    { id: "no_powerups",       name: "No Powerups Needed",  desc: "Reach deep waves without ever taking a powerup (best).", cur: (s, l) => l.maxWaveNoPowerup, tiers: [2, 5, 11, 17, 23, 29] },
+    // --- Non-tiered single-goal (unchanged; long_haul reworded to fixed >=12/visit — FLAG A-5-a) ---
     { id: "century_club",      name: "Century Club",      desc: "Reach wave 25 in a single game.",                     goal: 25,    cur: (s, l) => l.maxWave },
     { id: "untouchable",       name: "Untouchable",       desc: "Reach wave 10 without dropping below 50% HP.",        goal: 1,     cur: s => (game.wave >= 10 && !s.everBelowHalf) ? 1 : 0 },
-    { id: "ghost_protocol",    name: "Ghost Protocol",    desc: "Destroy 50 Hunter Satellites (all-time).",            goal: 50,    cur: (s, l) => l.hunterKills },
     { id: "ton_of_scrap",      name: "Ton of Scrap",      desc: "Earn 10,000 points from dock deliveries (all-time).", goal: 10000, cur: (s, l) => l.deliveryScore },
-    { id: "long_haul",         name: "The Long Haul",     desc: "Deliver a full 12-chain 10 times (all-time).",        goal: 10,    cur: (s, l) => l.fullChains },
-    { id: "iron_hull",         name: "Iron Hull",         desc: "Survive 100 hazard hits (all-time).",                 goal: 100,   cur: (s, l) => l.hitsSurvived },
-    { id: "perfect_wave",      name: "Perfect Wave",      desc: "Clear 10 waves with zero damage (all-time).",         goal: 10,    cur: (s, l) => l.perfectWaves },
-    { id: "saucer_hunter",     name: "Saucer Hunter",     desc: "Destroy 200 saucers (all-time).",                     goal: 200,   cur: (s, l) => l.saucerKills },
+    { id: "long_haul",         name: "The Long Haul",     desc: "Deliver 12+ canisters in one dock visit, 10 times.",  goal: 10,    cur: (s, l) => l.fullChains },
     { id: "marathon_runner",   name: "Marathon Runner",   desc: "Play for 10 hours total.",                            goal: 36000, cur: (s, l) => l.playTime,
-      text: (s, l) => (l.playTime / 3600).toFixed(1) + "/10h" },
-    { id: "master_field",      name: "Master of the Field", desc: "Reach wave 50 in a single game.",                   goal: 50,    cur: (s, l) => l.maxWave },
-    { id: "no_powerups",       name: "No Powerups Needed", desc: "Reach wave 15 without any powerup.",                 goal: 1,     cur: s => (game.wave >= 15 && s.powerupsPicked === 0) ? 1 : 0 }
+      text: (s, l) => (l.playTime / 3600).toFixed(1) + "/10h" }
   ],
 
   byId: {},
@@ -1940,12 +1961,14 @@ const Achievements = {
   lifetime: {
     delivered: 0, deliveryScore: 0, fullChains: 0,
     hunterKills: 0, saucerKills: 0, hitsSurvived: 0,
-    perfectWaves: 0, playTime: 0, maxWave: 0
+    perfectWaves: 0, playTime: 0, maxWave: 0,
+    maxWaveNoPowerup: 0             // MAX: best wave reached while powerupsPicked stayed 0 (No Powerups Needed)
   },
   weekKey: "",                    // "isoYear-isoWeek" of the currently-active week
   activeIds: [],                  // the 5 weekly ids active this week (a slice of WEEKLY)
   weeklyUnlocked: null,           // Set of weekly ids unlocked THIS week (reset when the week rolls over)
-  lifetimeUnlocked: null,         // Set of lifetime ids unlocked ever
+  lifetimeUnlocked: null,         // Set of NON-tiered lifetime ids unlocked ever
+  lifetimeTiers: null,            // { tieredId: highestTierIdxReached } — the per-id tier state (v3.0 P7)
   _saveAccum: ACH_SAVE_EVERY,     // periodic-save countdown
 
   // --- ISO 8601 week + week-year from a Date, computed in UTC (Monday-based, no DST ambiguity). ---
@@ -1986,19 +2009,64 @@ const Achievements = {
     return cur + "/" + ach.goal;
   },
 
+  // --- Tiered helpers (v3.0 P7) ---
+  // Highest tier index reached for a tiered id (-1 = not even bronze yet).
+  tierIndex(ach) { return (ach.id in this.lifetimeTiers) ? this.lifetimeTiers[ach.id] : -1; },
+  // The viewer's one-line status for a tiered row: badge + progress to the NEXT tier, e.g.
+  // "Gold · 12,431 → 25,000"; "Diamond ✓ MAX" once the top tier is reached; "— · 431 → 1,000" pre-bronze.
+  tierStatusText(ach) {
+    const val = Math.floor(ach.cur(game.stats, this.lifetime));
+    const idx = this.tierIndex(ach);
+    const badge = idx < 0 ? "—" : TIER_NAMES[idx];
+    if (idx >= ach.tiers.length - 1) return badge + " ✓ MAX";
+    return badge + " · " + fmtCommas(val) + " → " + fmtCommas(ach.tiers[idx + 1]);
+  },
+
   // Check every currently-relevant achievement; unlock any whose predicate has newly become true.
   // Safe to call every frame — already-unlocked ones short-circuit.
   evaluate() {
     const s = game.stats, l = this.lifetime;
-    const check = (ach, set, pool) => {
+    // Non-tiered single-goal path (weekly + non-tiered lifetime): unlock once at cur >= goal.
+    const checkSingle = (ach, set) => {
       if (set.has(ach.id)) return;
       if (ach.cur(s, l) >= ach.goal) { set.add(ach.id); this.onUnlock(ach); }
     };
-    for (const ach of this.activeWeekly()) check(ach, this.weeklyUnlocked, "weekly");
-    for (const ach of this.LIFETIME)       check(ach, this.lifetimeUnlocked, "lifetime");
+    for (const ach of this.activeWeekly()) checkSingle(ach, this.weeklyUnlocked);
+    for (const ach of this.LIFETIME) {
+      if (!ach.tiers) { checkSingle(ach, this.lifetimeUnlocked); continue; }
+      // Tiered path: unlock EVERY newly-crossed tier this pass, ascending (a big jump can cross
+      // several at once -> several toasts, bronze-first). Tiers ascend, so the loop stops at the
+      // first not-yet-met tier. Persist the highest tier index reached per id.
+      const val = ach.cur(s, l);
+      let reached = this.tierIndex(ach);
+      for (let ti = reached + 1; ti < ach.tiers.length && val >= ach.tiers[ti]; ti++) {
+        this.lifetimeTiers[ach.id] = ti;
+        this.onUnlock(ach, ti);
+      }
+    }
   },
-  onUnlock(ach) {
-    game.toasts.push({ name: ach.name, life: ACH_TOAST_TIME });
+  // Silently bring the tier state + non-tiered lifetime unlocks up to what the loaded counters
+  // already justify — NO toasts. Called once after load so a returning player's badges are correct
+  // without a fanfare storm for progress earned in past sessions; evaluate() then only toasts NEW
+  // crossings this session. Idempotent and monotonic (only ever advances a tier, never lowers one).
+  deriveLifetime() {
+    const s = game.stats, l = this.lifetime;
+    for (const ach of this.LIFETIME) {
+      if (ach.tiers) {
+        const val = ach.cur(s, l);
+        let idx = this.tierIndex(ach);
+        for (let ti = idx + 1; ti < ach.tiers.length && val >= ach.tiers[ti]; ti++) idx = ti;
+        if (idx >= 0) this.lifetimeTiers[ach.id] = idx;
+      } else if (ach.cur(s, l) >= ach.goal) {
+        this.lifetimeUnlocked.add(ach.id);
+      }
+    }
+  },
+  // Unlock notification. A tiered unlock passes its tier index so the toast names the tier
+  // ("Recycling Magnate — Gold"); a single-goal unlock omits it. Observe-only: never mutates state.
+  onUnlock(ach, tierIdx) {
+    const label = (tierIdx === undefined) ? ach.name : ach.name + " — " + TIER_NAMES[tierIdx];
+    game.toasts.push({ name: label, life: ACH_TOAST_TIME });
     AudioSys.achievement();
     this.save(); // persist the moment something is earned, so an unlock is never lost
   },
@@ -2016,11 +2084,18 @@ const Achievements = {
     try {
       const data = {
         lifetime: { ...this.lifetime },
-        lifetimeUnlocked: [...this.lifetimeUnlocked],
+        lifetimeTiers: { ...this.lifetimeTiers },        // { tieredId: highestTierIdx }
+        lifetimeUnlocked: [...this.lifetimeUnlocked],     // non-tiered lifetime ids
         weekly: { key: this.weekKey, unlocked: [...this.weeklyUnlocked] }
       };
       ls.setItem(this.STORAGE_KEY, JSON.stringify(data));
     } catch (e) { /* quota / privacy mode / disabled — ignore */ }
+  },
+  // Copy persisted lifetime COUNTERS over the defaults (only known numeric keys — unknown keys and
+  // non-numbers ignored). Shared by the v2 load and the v1 migration; both carry raw counters intact.
+  loadCounters(data) {
+    if (data && data.lifetime) for (const k in this.lifetime)
+      if (typeof data.lifetime[k] === "number") this.lifetime[k] = data.lifetime[k];
   },
   // Initialise at startup (or, in tests, with an explicit `now`). Loads persisted state, then sets
   // the active weekly slice for the current calendar week; if the stored week differs from the
@@ -2032,22 +2107,40 @@ const Achievements = {
     this.activeIds = this.selectWeekly(now).map(a => a.id);
     this.lifetimeUnlocked = new Set();
     this.weeklyUnlocked = new Set();
+    this.lifetimeTiers = {};
     const ls = storageOK();
     if (ls) {
       try {
         const raw = ls.getItem(this.STORAGE_KEY);
         if (raw) {
+          // --- v2 load: counters + tier state + non-tiered unlocks + (same-week) weekly unlocks ---
           const data = JSON.parse(raw);
-          if (data.lifetime) for (const k in this.lifetime)
-            if (typeof data.lifetime[k] === "number") this.lifetime[k] = data.lifetime[k];
+          this.loadCounters(data);
+          if (data.lifetimeTiers && typeof data.lifetimeTiers === "object")
+            for (const id in data.lifetimeTiers) {
+              const a = this.byId[id];
+              if (a && a.tiers && typeof data.lifetimeTiers[id] === "number")
+                // clamp to a valid tier index in case a ladder shrank between builds
+                this.lifetimeTiers[id] = Math.max(0, Math.min(a.tiers.length - 1, data.lifetimeTiers[id]));
+            }
           if (Array.isArray(data.lifetimeUnlocked))
             for (const id of data.lifetimeUnlocked) if (this.byId[id]) this.lifetimeUnlocked.add(id);
           // Weekly unlocks only carry over within the same calendar week.
           if (data.weekly && data.weekly.key === this.weekKey && Array.isArray(data.weekly.unlocked))
             for (const id of data.weekly.unlocked) if (this.byId[id]) this.weeklyUnlocked.add(id);
+        } else {
+          // --- Migration (FLAG A-2 / A-2-a): no v2 save yet. If an old v1 save exists, keep its raw
+          // lifetime COUNTERS and let tiers + non-tiered unlocks re-derive below. The old v1 unlock
+          // SETS (flat lifetime/weekly ids) are intentionally ignored — badges recompute from the
+          // counters; the returning player's current-week weekly unlocks may reset once. ---
+          const legacy = ls.getItem(this.LEGACY_KEY);
+          if (legacy) this.loadCounters(JSON.parse(legacy));
         }
       } catch (e) { /* corrupt / unreadable — start fresh, don't crash */ }
     }
+    // Seed tier badges + non-tiered lifetime unlocks silently from whatever counters loaded, so a
+    // returning/migrated player sees correct badges immediately and evaluate() only toasts NEW gains.
+    this.deriveLifetime();
   }
 };
 // Count of the four drop-powerup types used this game (Powered Up).
@@ -2341,6 +2434,9 @@ function update(dt) {
         game.stats.pacifistStreak++;
         game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
         if (game.stats.delivered === 1 && game.stats.gameTime <= 60) game.stats.speedRecycler = true;
+        // Heavy Hauler (weekly) + The Long Haul (lifetime fullChains): a FIXED >=12-in-one-visit
+        // milestone, deliberately decoupled from the growing game.cargoMax (FLAG A-5-a / B-8-b) —
+        // deliveryCount passes through 12 exactly once per qualifying visit, so this latches once.
         if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; }
         Achievements.lifetime.delivered++;
         Achievements.lifetime.deliveryScore += pts;
@@ -2717,8 +2813,21 @@ function drawAchievements() {
   drawText("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 632, 12, COLOR.dim);
 }
 
-// One achievement row: name + status on the top line, description below. Earned rows glow gold.
+// Thousands-grouped integer, locale-independent (deterministic across environments/tests).
+function fmtCommas(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+
+// One achievement row: name + status on the top line, description below.
+// Tiered lifetime rows show a tier badge + progress-to-next in the tier's colour (v3.0 P7);
+// single-goal rows keep the F9 look — a ✓ when earned (gold) or a cur/goal readout when not.
 function drawAchRow(ach, x, ry, w) {
+  if (ach.tiers) {
+    const idx = Achievements.tierIndex(ach);
+    const col = idx >= 0 ? TIER_COLOR[idx] : COLOR.text;   // badge/name in the current tier's tint
+    drawText(ach.name, x, ry, 15, col, "left");
+    drawText(Achievements.tierStatusText(ach), x + w, ry, 13, idx >= 0 ? col : COLOR.dim, "right");
+    drawText(ach.desc, x, ry + 15, 10, COLOR.dim, "left");
+    return;
+  }
   const done = Achievements.isUnlocked(ach);
   drawText(ach.name, x, ry, 15, done ? COLOR.ach : COLOR.text, "left");
   drawText(done ? "✓" : Achievements.progressText(ach), x + w, ry, 14, done ? COLOR.ach : COLOR.dim, "right");

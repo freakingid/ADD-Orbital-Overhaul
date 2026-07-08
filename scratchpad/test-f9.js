@@ -65,10 +65,10 @@ global.localStorage = {
 };
 
 const returnList = [
-  "startGame", "update", "updateToasts", "game", "AudioSys", "Achievements",
+  "startGame", "update", "updateToasts", "nextWave", "game", "AudioSys", "Achievements",
   "destroyDebris", "destroyHunter", "applyPowerup", "damageShip",
   "DebrisSatellite", "HunterSatellite", "Saucer", "Garbage", "Dock",
-  "SHIP_MAX_HP", "HUNTER_DAMAGE", "DOCK_RADIUS"
+  "SHIP_MAX_HP", "HUNTER_DAMAGE", "DOCK_RADIUS", "TIER_NAMES", "TIER_COLOR", "drawAchievements"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -76,10 +76,10 @@ const factory = new Function(
 );
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
 const {
-  startGame, update, updateToasts, game, AudioSys, Achievements,
+  startGame, update, updateToasts, nextWave, game, AudioSys, Achievements,
   destroyDebris, destroyHunter, applyPowerup, damageShip,
   DebrisSatellite, HunterSatellite, Saucer, Garbage, Dock,
-  SHIP_MAX_HP, HUNTER_DAMAGE, DOCK_RADIUS
+  SHIP_MAX_HP, HUNTER_DAMAGE, DOCK_RADIUS, TIER_NAMES, TIER_COLOR, drawAchievements
 } = A;
 
 let passed = 0, failed = 0;
@@ -93,16 +93,33 @@ function resetAch() {
   for (const k in Achievements.lifetime) Achievements.lifetime[k] = 0;
   Achievements.lifetimeUnlocked = new Set();
   Achievements.weeklyUnlocked = new Set();
+  Achievements.lifetimeTiers = {};                            // fresh tier state (v3.0 P7)
   Achievements.activeIds = Achievements.WEEKLY.map(a => a.id); // make ALL weeklies evaluable for gameplay tests
   Achievements._saveAccum = 1e9;                               // don't let periodic save fire mid-test
   game.toasts = [];
 }
 const wUnlocked = id => Achievements.weeklyUnlocked.has(id);
 const lUnlocked = id => Achievements.lifetimeUnlocked.has(id);
+// Highest tier index reached for a tiered lifetime id (-1 = not even bronze).
+const lTier = id => (id in Achievements.lifetimeTiers) ? Achievements.lifetimeTiers[id] : -1;
 
 console.log(`(config) weekly=${Achievements.WEEKLY.length}  lifetime=${Achievements.LIFETIME.length}  active/week=${Achievements.activeIds.length}`);
 assert(Achievements.WEEKLY.length === 15, "config: 15 weekly achievements");
 assert(Achievements.LIFETIME.length === 12, "config: 12 lifetime achievements");
+// v3.0 P7 tier structure
+const tieredIds = Achievements.LIFETIME.filter(a => a.tiers).map(a => a.id);
+assert(tieredIds.length === 7, "config: exactly 7 tiered lifetime achievements (got " + tieredIds.length + ": " + tieredIds.join(",") + ")");
+assert(["recycling_magnate","ghost_protocol","saucer_hunter","perfect_wave","iron_hull","master_field","no_powerups"].every(id => tieredIds.includes(id)),
+  "config: the 7 converted achievements are the tiered set");
+assert(Achievements.LIFETIME.every(a => !a.tiers || (Array.isArray(a.tiers) && a.tiers.length === 6)), "config: every tier ladder has 6 steps (bronze..diamond)");
+assert(Achievements.LIFETIME.every(a => !a.tiers || a.tiers.every((v, i, arr) => i === 0 || v > arr[i - 1])), "config: tier ladders strictly ascend");
+assert(Achievements.LIFETIME.every(a => !a.tiers || a.goal === undefined), "config: tiered entries carry no single-goal");
+assert(TIER_NAMES.length === 6 && TIER_COLOR.length === 6, "config: 6 tier names + 6 tier colours");
+assert("maxWaveNoPowerup" in Achievements.lifetime, "config: new MAX counter maxWaveNoPowerup exists");
+assert(Achievements.STORAGE_KEY === "afd_achievements_v2", "config: persistence bumped to afd_achievements_v2");
+// The Long Haul reworded to a fixed >=12/visit (still non-tiered, goal 10).
+const longHaul = Achievements.byId["long_haul"];
+assert(!longHaul.tiers && longHaul.goal === 10 && /12\+/.test(longHaul.desc), "config: The Long Haul is fixed >=12/visit, non-tiered");
 
 // =====================================================================
 // (A) ISO-week math + deterministic weekly rotation
@@ -132,6 +149,7 @@ assert(eqArr(sliceW6, ["diamond_cutter", "waste_not", "scrap_runner", "heavy_hau
 // (B) Persistence: weekly resets on a new week, lifetime is retained, same-week round-trips
 // =====================================================================
 console.log("(B) persistence — weekly week-reset + lifetime retained + same-week round-trip");
+global.localStorage.removeItem("afd_achievements_v2");
 global.localStorage.removeItem("afd_achievements_v1");
 Achievements.init(utc(2026, 0, 5)); // week 2026-2
 assert(Achievements.weekKey === "2026-2", "B: init sets weekKey 2026-2");
@@ -153,7 +171,53 @@ Achievements.weeklyUnlocked.add("scrap_runner");
 Achievements.save();
 Achievements.init(utc(2026, 1, 4)); // still ISO week 2026-6
 assert(Achievements.weekKey === "2026-6" && wUnlocked("scrap_runner"), "B: same-week weekly unlock round-trips through storage");
+global.localStorage.removeItem("afd_achievements_v2");
 global.localStorage.removeItem("afd_achievements_v1");
+
+// =====================================================================
+// (B2) v2 tier persistence round-trip + best-effort v1 -> v2 migration
+// =====================================================================
+console.log("(B2) v2 tier round-trip + v1->v2 migration keeps counters, re-derives tiers");
+global.localStorage.removeItem("afd_achievements_v2");
+global.localStorage.removeItem("afd_achievements_v1");
+Achievements.init(utc(2026, 0, 5));
+// Earn tier state + counters, save to v2, reload -> tiers + counters come back intact.
+Achievements.lifetime.delivered = 12000;         // recycling_magnate: bronze,silver,gold
+Achievements.lifetime.hunterKills = 300;         // ghost_protocol: bronze,silver
+Achievements.lifetimeTiers["recycling_magnate"] = 2;
+Achievements.lifetimeTiers["ghost_protocol"] = 1;
+Achievements.save();
+Achievements.lifetime.delivered = 0; Achievements.lifetime.hunterKills = 0; Achievements.lifetimeTiers = {}; // scribble over memory
+Achievements.init(utc(2026, 0, 5));              // same week -> reload from v2
+assert(Achievements.lifetime.delivered === 12000 && Achievements.lifetime.hunterKills === 300, "B2: v2 reload restores lifetime counters");
+assert(lTier("recycling_magnate") === 2 && lTier("ghost_protocol") === 1, "B2: v2 reload restores per-id tier indices");
+// A stored tier below what the counter now justifies is advanced (never lowered) by deriveLifetime.
+Achievements.save();                             // delivered 12000, but pretend a stale low tier was stored
+const v2raw = JSON.parse(global.localStorage.getItem("afd_achievements_v2"));
+v2raw.lifetimeTiers.recycling_magnate = 0;       // corrupt the stored tier down to bronze
+global.localStorage.setItem("afd_achievements_v2", JSON.stringify(v2raw));
+Achievements.init(utc(2026, 0, 5));
+assert(lTier("recycling_magnate") === 2, "B2: deriveLifetime advances a stale-low stored tier up to what the counter earns");
+// Now the migration: only a v1 save present -> keep raw counters, re-derive tiers, ignore old unlock sets.
+global.localStorage.removeItem("afd_achievements_v2");
+global.localStorage.removeItem("afd_achievements_v1");
+global.localStorage.setItem("afd_achievements_v1", JSON.stringify({
+  lifetime: { delivered: 26000, hunterKills: 60, saucerKills: 0, hitsSurvived: 0, perfectWaves: 0, playTime: 0, maxWave: 0, deliveryScore: 0, fullChains: 0 },
+  lifetimeUnlocked: ["recycling_magnate", "ghost_protocol"],  // old flat unlock set — must be IGNORED
+  weekly: { key: "2026-2", unlocked: ["scrap_runner"] }
+}));
+Achievements.init(utc(2026, 0, 5));
+assert(Achievements.lifetime.delivered === 26000 && Achievements.lifetime.hunterKills === 60, "B2: v1->v2 migration keeps the raw lifetime counters");
+assert(lTier("recycling_magnate") === 3 && lTier("ghost_protocol") === 0, "B2: migration re-derives tiers from counters (26k=Titanium, 60=Bronze)");
+// A migrated returning player should NOT get a toast storm: deriveLifetime seeds silently.
+assert(game.toasts.length === 0, "B2: migration seeds tiers SILENTLY (no toast storm for past progress)");
+global.localStorage.removeItem("afd_achievements_v2");
+global.localStorage.removeItem("afd_achievements_v1");
+// Corrupt v2 payload never crashes init (guarded).
+global.localStorage.setItem("afd_achievements_v2", "{not valid json");
+let threw = false; try { Achievements.init(utc(2026, 0, 5)); } catch (e) { threw = true; }
+assert(!threw, "B2: a corrupt v2 payload does not crash init (typeof-guard + try/catch)");
+global.localStorage.removeItem("afd_achievements_v2");
 
 // =====================================================================
 // (C) Real-driven gameplay unlocks at exact thresholds
@@ -233,13 +297,21 @@ assert(wUnlocked("glass_cannon"), "C4: wave 5 with no Health -> Glass Cannon");
 startGame(); resetAch();
 applyPowerup("health"); game.wave = 5; Achievements.evaluate();
 assert(!wUnlocked("glass_cannon"), "C4: a Health pickup disqualifies Glass Cannon");
-// No Powerups Needed (lifetime): wave 15 with zero powerups.
+// No Powerups Needed (lifetime, TIERED MAX on maxWaveNoPowerup): the counter rises via the REAL
+// nextWave() only while powerupsPicked === 0, and freezes for the game the moment a powerup is picked.
 startGame(); resetAch();
-game.wave = 15; Achievements.evaluate();
-assert(lUnlocked("no_powerups"), "C4: wave 15 with no powerups -> No Powerups Needed");
+game.wave = 14; nextWave(); // -> wave 15, powerup-free, so maxWaveNoPowerup = 15
+assert(Achievements.lifetime.maxWaveNoPowerup === 15, "C4: nextWave records maxWaveNoPowerup while powerup-free (got " + Achievements.lifetime.maxWaveNoPowerup + ")");
+Achievements.evaluate();
+assert(lTier("no_powerups") === 2, "C4: wave 15 powerup-free -> No Powerups Needed Gold (tiers 2/5/11/17..; 15 clears 11)");
+// Frozen once a powerup is picked: a later, deeper wave does NOT advance the counter.
 startGame(); resetAch();
-applyPowerup("rapid"); game.wave = 15; Achievements.evaluate();
-assert(!lUnlocked("no_powerups"), "C4: any powerup disqualifies No Powerups Needed");
+game.wave = 4; nextWave();                       // -> wave 5, powerup-free -> maxWaveNoPowerup = 5
+applyPowerup("rapid");                            // powerupsPicked > 0 -> frozen from here
+game.wave = 20; nextWave();                       // -> wave 21, but frozen
+assert(Achievements.lifetime.maxWaveNoPowerup === 5, "C4: maxWaveNoPowerup FROZEN at 5 once a powerup is picked (got " + Achievements.lifetime.maxWaveNoPowerup + ")");
+Achievements.evaluate();
+assert(lTier("no_powerups") === 1, "C4: frozen at wave 5 -> only Silver (tier 1), not higher");
 
 // --- (C5) Hunter lineage (Hunter's Bane) + Diamond Cutter, via real destroyHunter kills ---
 console.log("(C5) Hunter's Bane — a full 13-kill lineage; Diamond Cutter — 3 large cores");
@@ -268,35 +340,83 @@ let guard = 0;
 while (game.wave === 3 && guard++ < 200) update(0.1); // accumulate waveClearTimer past 2.5s -> nextWave
 assert(game.wave === 4, "C6: the empty wave 3 cleared into wave 4");
 assert(game.stats.noScratchWave3 && wUnlocked("no_scratches"), "C6: damage-free wave 3 -> No Scratches");
-assert(Achievements.lifetime.perfectWaves === 10 && lUnlocked("perfect_wave"), "C6: 10th damage-free wave -> Perfect Wave");
+// Perfect Wave is now TIERED [5,10,50,100,250,500]: the 10th perfect wave reaches Silver (tier 1).
+assert(Achievements.lifetime.perfectWaves === 10 && lTier("perfect_wave") === 1, "C6: 10th damage-free wave -> Perfect Wave Silver (tier 1)");
 
-// --- (C7) Lifetime thresholds via the REAL evaluate() predicates (exact boundaries) ---
-console.log("(C7) lifetime thresholds — exact just-below / at-goal boundaries");
+// --- (C7) TIERED lifetime boundaries via the REAL evaluate() (cross bronze not silver; multi-cross) ---
+console.log("(C7) tiered lifetime thresholds — per-tier boundaries + multi-tier jumps");
 startGame(); resetAch();
+
+// Every tiered ladder: threshold-1 leaves you on the prior tier; the exact threshold advances one tier.
+// (For t>0, threshold-1 already sits >= the previous threshold, so a fresh evaluate first climbs to t-1
+// in one pass — which also exercises multi-tier crossing — then the exact value reaches tier t.)
+const tierBoundaries = (id, key, tiers) => {
+  for (let t = 0; t < tiers.length; t++) {
+    resetAch();
+    Achievements.lifetime[key] = tiers[t] - 1; Achievements.evaluate();
+    assert(lTier(id) === t - 1, "C7: " + id + " tier " + t + " NOT reached at threshold-1 (on tier " + lTier(id) + ")");
+    Achievements.lifetime[key] = tiers[t]; Achievements.evaluate();
+    assert(lTier(id) === t, "C7: " + id + " reaches tier " + t + " exactly at its threshold");
+  }
+};
+tierBoundaries("recycling_magnate", "delivered",         [1000, 5000, 10000, 25000, 50000, 100000]);
+tierBoundaries("ghost_protocol",    "hunterKills",       [50, 250, 1000, 2500, 5000, 10000]);
+tierBoundaries("saucer_hunter",     "saucerKills",       [250, 500, 1000, 2500, 5000, 10000]);
+tierBoundaries("perfect_wave",      "perfectWaves",      [5, 10, 50, 100, 250, 500]);
+tierBoundaries("iron_hull",         "hitsSurvived",      [100, 500, 1000, 2500, 5000, 10000]);
+tierBoundaries("master_field",      "maxWave",           [5, 10, 25, 50, 75, 100]);      // MAX counter
+tierBoundaries("no_powerups",       "maxWaveNoPowerup",  [2, 5, 11, 17, 23, 29]);        // MAX counter
+
+// Explicit "cross bronze but NOT silver" single-step:
+resetAch();
+Achievements.lifetime.delivered = 1000; Achievements.evaluate();  // bronze (1000), silver is 5000
+assert(lTier("recycling_magnate") === 0, "C7: exactly-bronze crosses bronze only, not silver");
+assert(game.toasts.length === 1 && /Bronze/.test(game.toasts[0].name), "C7: crossing one tier fires exactly one Bronze toast");
+
+// A single jump crossing MULTIPLE tiers fires one toast per crossed tier, ascending, tier-named:
+resetAch();
+Achievements.lifetime.delivered = 10000; Achievements.evaluate(); // clears 1000, 5000, 10000 at once
+assert(lTier("recycling_magnate") === 2, "C7: a 10,000 jump reaches Gold (tier 2)");
+assert(game.toasts.length === 3, "C7: crossing three tiers in one pass fires three toasts (got " + game.toasts.length + ")");
+assert(/Recycling Magnate — Bronze/.test(game.toasts[0].name) && /— Silver/.test(game.toasts[1].name) && /— Gold/.test(game.toasts[2].name),
+  "C7: multi-tier toasts are ascending and name the tier");
+
+// Master of the Field (tiered maxWave) and Century Club (non-tiered, goal 25) coexist on the same counter.
+resetAch();
+Achievements.lifetime.maxWave = 25; Achievements.evaluate();
+assert(lTier("master_field") === 2 && lUnlocked("century_club"), "C7: maxWave 25 -> Master gold (tier 2) + Century Club unlocked");
+
+// Remaining NON-tiered lifetime single-goal boundaries (unchanged single-goal path).
 const boundary = (name, key, goal) => {
+  resetAch();
   Achievements.lifetime[key] = goal - 1; Achievements.evaluate();
   assert(!lUnlocked(name), "C7: " + name + " not unlocked at goal-1");
   Achievements.lifetime[key] = goal; Achievements.evaluate();
   assert(lUnlocked(name), "C7: " + name + " unlocks exactly at goal");
 };
-boundary("recycling_magnate", "delivered", 1000);
-boundary("ghost_protocol", "hunterKills", 50);
-boundary("ton_of_scrap", "deliveryScore", 10000);
-boundary("iron_hull", "hitsSurvived", 100);
-boundary("saucer_hunter", "saucerKills", 200);
-boundary("marathon_runner", "playTime", 36000);
-// Century Club / Master of the Field share maxWave.
-Achievements.lifetime.maxWave = 25; Achievements.evaluate();
-assert(lUnlocked("century_club") && !lUnlocked("master_field"), "C7: maxWave 25 -> Century Club only");
-Achievements.lifetime.maxWave = 50; Achievements.evaluate();
-assert(lUnlocked("master_field"), "C7: maxWave 50 -> Master of the Field");
+boundary("ton_of_scrap",    "deliveryScore", 10000);
+boundary("marathon_runner", "playTime",      36000);
+boundary("long_haul",       "fullChains",    10);
+boundary("century_club",    "maxWave",       25);
 
-// progressText formatting: play-time shows hours; a plain counter shows cur/goal.
+// Progress-text formatting: tiered rows show "Badge · cur → next" (and "Diamond ✓ MAX" at the top);
+// non-tiered rows still show a hours / cur-of-goal readout.
+resetAch();
+const magnate = Achievements.byId["recycling_magnate"];
+Achievements.lifetime.delivered = 12431; Achievements.evaluate();
+assert(Achievements.tierStatusText(magnate) === "Gold · 12,431 → 25,000",
+  "C7: tiered status reads 'Gold · 12,431 → 25,000' (" + Achievements.tierStatusText(magnate) + ")");
+Achievements.lifetime.delivered = 100000; Achievements.evaluate();
+assert(lTier("recycling_magnate") === 5 && Achievements.tierStatusText(magnate) === "Diamond ✓ MAX",
+  "C7: top tier shows 'Diamond ✓ MAX' (" + Achievements.tierStatusText(magnate) + ")");
+resetAch();
+const magnate2 = Achievements.byId["recycling_magnate"];
+assert(Achievements.tierStatusText(magnate2) === "— · 0 → 1,000", "C7: pre-bronze status reads '— · 0 → 1,000' (" + Achievements.tierStatusText(magnate2) + ")");
 const marathon = Achievements.byId["marathon_runner"];
-Achievements.lifetime.playTime = 3600; Achievements.lifetimeUnlocked.delete("marathon_runner");
+Achievements.lifetime.playTime = 3600;
 assert(Achievements.progressText(marathon) === "1.0/10h", "C7: Marathon progress reads in hours (" + Achievements.progressText(marathon) + ")");
-Achievements.lifetime.delivered = 250;
-assert(Achievements.progressText(Achievements.byId["recycling_magnate"]) === "250/1000", "C7: counter progress reads cur/goal");
+Achievements.lifetime.deliveryScore = 2500;
+assert(Achievements.progressText(Achievements.byId["ton_of_scrap"]) === "2500/10000", "C7: non-tiered counter progress reads cur/goal");
 
 // =====================================================================
 // (D) Toast lifecycle: an unlock queues a banner; updateToasts ages it out
@@ -308,6 +428,26 @@ Achievements.lifetime.hunterKills = 50; Achievements.evaluate(); // force Ghost 
 assert(game.toasts.length >= 1 && typeof game.toasts[game.toasts.length - 1].name === "string", "D: an unlock pushes a named toast");
 updateToasts(999); // long enough to expire every toast
 assert(game.toasts.length === 0, "D: updateToasts ages out expired toasts");
+
+// =====================================================================
+// (E) Viewer renders the tiered + single-goal rows without throwing (ctx is a no-op proxy)
+// =====================================================================
+console.log("(E) drawAchievements renders mixed tiered/single-goal rows crash-free");
+startGame(); resetAch();
+// A spread of tier states across the seven ladders: pre-bronze, mid-ladder, and diamond/MAX.
+Achievements.lifetime.delivered = 0;        // recycling_magnate: pre-bronze -> "— · 0 → 1,000"
+Achievements.lifetime.hunterKills = 12431;  // ghost_protocol: past diamond -> "Diamond ✓ MAX"
+Achievements.lifetime.saucerKills = 1200;   // saucer_hunter: mid -> gold-ish
+Achievements.lifetime.perfectWaves = 10;    // perfect_wave: silver
+Achievements.lifetime.hitsSurvived = 100;   // iron_hull: bronze
+Achievements.lifetime.maxWave = 25;         // master_field: gold + century_club (single-goal)
+Achievements.lifetime.maxWaveNoPowerup = 5; // no_powerups: silver
+Achievements.evaluate();
+let drew = true; try { drawAchievements(); } catch (e) { drew = false; console.error("  draw threw: " + e.message); }
+assert(drew, "E: drawAchievements() renders a mixed tiered/single-goal viewer without throwing");
+// Also render a fully-fresh state (every tiered row pre-bronze).
+resetAch(); drew = true; try { drawAchievements(); } catch (e) { drew = false; }
+assert(drew, "E: drawAchievements() renders an all-pre-bronze viewer without throwing");
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);
