@@ -531,8 +531,12 @@ const bindings = {
   shield:  { label: "Shield",     fixed: false, keys: ["shift"],           buttons: [GP.RT, GP.RB] }, // gap-fill: no controller shield was spec'd (see notes)
   // Menu / system actions (edge-triggered). Fixed per F7 — not exposed to rebinding.
   confirm: { label: "Confirm",    fixed: true,  keys: ["enter"],           buttons: [GP.A] },
-  back:    { label: "Back",       fixed: true,  keys: ["escape"],          buttons: [GP.B] },     // reserved for F8 menu screens; no target yet
-  pause:   { label: "Pause",      fixed: true,  keys: ["p"],               buttons: [GP.START] }
+  // back is context-aware (v3.0 P4): inside a menu it backs out; on title/gameover with no menu, B
+  // opens the system menu (keyboard equivalent is "o", handled inline). ESC is shared with pause below.
+  back:    { label: "Back",       fixed: true,  keys: ["escape"],          buttons: [GP.B] },
+  // pause is ESC (P retired, v3.0 P4 FLAG P4-a): ESC pauses during play; inside a menu the keydown
+  // handler resolves confirm->back->pause in order, so ESC there means "back" (back matches first).
+  pause:   { label: "Pause",      fixed: true,  keys: ["escape"],          buttons: [GP.START] }
 };
 
 // The rebindable actions (the fixed:false gameplay ones) and a pristine snapshot of their shipped
@@ -629,6 +633,9 @@ window.addEventListener("keydown", e => {
   keys[k] = true;
   if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover")) startGame();
   if (bindings.pause.keys.includes(k) && game.state === "playing") openPause();
+  // "O" opens the Options/Achievements system menu from title/gameover (v3.0 P4; replaces the old
+  // P->options path). No game to pause here — openPause() picks the system-menu root off game.state.
+  if (k === "o" && (game.state === "title" || game.state === "gameover")) openPause();
 });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
@@ -651,7 +658,7 @@ function handleGamepadMenu() {
   const pressedStart   = gpPressed(bindings.pause);
   const pressedConfirm = gpPressed(bindings.confirm);
   const pressedBack    = gpPressed(bindings.back);
-  if (pressedStart || pressedConfirm) { AudioSys.init(); AudioSys.resume(); } // best-effort audio unlock
+  if (pressedStart || pressedConfirm || pressedBack) { AudioSys.init(); AudioSys.resume(); } // best-effort audio unlock
 
   // (2) A menu is open — everything routes to menu navigation.
   if (menuActive()) {
@@ -666,12 +673,21 @@ function handleGamepadMenu() {
     return;
   }
 
-  // (3) Not in a menu: title/gameover start, or open the pause menu from play.
+  // (3) Not in a menu: session/system inputs, keyed on state. The else-if chain guarantees a single
+  // frame can't both open a menu AND start a game (FLAG P4-b); priority Start > B > A.
+  //   Start = session toggle : title/gameover -> start a game ; playing -> open pause (resume is the
+  //           menu-branch case above).
+  //   B     = context-aware  : title/gameover with no menu -> open the system menu (mirrors ESC/O).
+  //   A     = confirm        : title/gameover -> start a game (never mid-play, where A is fire).
+  const onTitleOrOver = game.state === "title" || game.state === "gameover";
   if (pressedStart) {
-    if (game.state === "title" || game.state === "gameover") startGame();
-    else if (game.state === "playing") openPause();
+    if (game.state === "playing") openPause();
+    else startGame();
+  } else if (pressedBack && onTitleOrOver) {
+    openPause();
+  } else if (pressedConfirm && onTitleOrOver) {
+    startGame();
   }
-  if (pressedConfirm && (game.state === "title" || game.state === "gameover")) startGame();
 }
 
 // Directional menu nav from the gamepad: D-Pad or Left Stick, edge-detected against a latch so a
@@ -715,7 +731,12 @@ function firstPressedButton() {
 // into menuInput(action); the rendering lives near draw() (drawMenu). Gameplay stays frozen the
 // whole time (update() early-returns on paused), so menu input can never move the ship.
 
-const MENU_ROOT    = ["Continue", "Options", "Quit"];
+// The root screen has two context-dependent layouts (v3.0 P4). Which one is live is decided purely by
+// game.state: pausing mid-game keeps state "playing"; the system menu opened from title/gameover keeps
+// state "title"/"gameover" (update() skips the sim in both, so game.paused is safe in any state).
+const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game
+const MENU_ROOT_SYS  = ["Options", "Achievements", "Back"];  // system menu from title/gameover
+function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_ROOT_SYS; }
 const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Controls", "Achievements", "Back"];
 const VOL_CATS     = ["sfx", "music", "master"]; // parallel to the first three MENU_OPTIONS rows
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
@@ -775,13 +796,17 @@ function menuInput(action) {
 }
 
 function menuRoot(a) {
-  const m = game.menu, N = MENU_ROOT.length;
+  const m = game.menu, items = rootItems(), N = items.length;
   if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
   else if (a === "confirm") {
-    if (m.index === 0) closePause();               // Continue
-    else if (m.index === 1) gotoScreen("options"); // Options
-    else if (m.index === 2) quitToTitle();          // Quit
+    // Dispatch by label so both root layouts (play vs. system) work off one handler.
+    const label = items[m.index];
+    if (label === "Continue")          closePause();
+    else if (label === "Options")      gotoScreen("options");
+    else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "root"; }
+    else if (label === "Quit")         quitToTitle();
+    else if (label === "Back")         closePause(); // system menu: close overlay -> underlying title/gameover
   }
   else if (a === "back" || a === "pause") closePause();
 }
@@ -800,10 +825,10 @@ function menuOptions(a) {
   }
   else if (a === "confirm") {
     if (m.index === 3) gotoScreen("controls");       // Controls
-    else if (m.index === 4) gotoScreen("achievements"); // Achievements viewer (F9)
-    else if (m.index === 5) gotoScreen("root", 1);   // Back -> root, cursor on "Options"
+    else if (m.index === 4) { gotoScreen("achievements"); m.achReturn = "options"; } // Achievements viewer (F9)
+    else if (m.index === 5) gotoScreen("root", rootItems().indexOf("Options")); // Back -> root, cursor on "Options"
   }
-  else if (a === "back") gotoScreen("root", 1);
+  else if (a === "back") gotoScreen("root", rootItems().indexOf("Options"));
   else if (a === "pause") closePause();
 }
 
@@ -811,7 +836,12 @@ function menuOptions(a) {
 // of confirm/back/pause exits back to Options (cursor left on the "Achievements" row).
 function menuAchievements(a) {
   if (a === "pause") closePause();
-  else if (a === "confirm" || a === "back") gotoScreen("options", 4);
+  else if (a === "confirm" || a === "back") {
+    // Return to wherever we came from: the system-menu root (title/gameover) reaches Achievements
+    // directly, whereas play (and system-menu Options) reaches it via the Options screen.
+    if (game.menu.achReturn === "root") gotoScreen("root", rootItems().indexOf("Achievements"));
+    else gotoScreen("options", 4);
+  }
 }
 
 function menuControls(a) {
@@ -1587,7 +1617,7 @@ const game = {
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
   // index = cursor for root/options; row/col = cursor for the controls grid;
   // rebinding = { action, device } while capturing a new binding, else null.
-  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null },
+  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null, achReturn: "options" },
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -1607,7 +1637,7 @@ const game = {
 function startGame() {
   game.state = "playing";
   game.paused = false;
-  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null }; // ensure no menu carries in
+  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, achReturn: "options" }; // ensure no menu carries in
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
@@ -2468,12 +2498,13 @@ function menuPanel(w, h, title) {
 }
 
 function drawRootMenu() {
-  const { y } = menuPanel(360, 300, "PAUSED");
-  MENU_ROOT.forEach((it, i) => {
+  const items = rootItems();
+  const { y } = menuPanel(360, 300, game.state === "playing" ? "PAUSED" : "MENU");
+  items.forEach((it, i) => {
     const sel = i === game.menu.index;
     drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, sel ? COLOR.text : COLOR.dim);
   });
-  drawText("↑↓ move    ENTER / A select    ESC / START resume", VIEW_W / 2, y + 272, 12, COLOR.dim);
+  drawText("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 272, 12, COLOR.dim);
 }
 
 function drawOptionsMenu() {
@@ -2688,11 +2719,11 @@ function draw() {
     drawText("ASTEROID FIELD", VIEW_W/2, VIEW_H/2 - 120, 64);
     drawText("D E L U X E", VIEW_W/2, VIEW_H/2 - 60, 32, COLOR.satellite);
     drawText("ROTATE: ←→ / A D      THRUST: ↑ / W", VIEW_W/2, VIEW_H/2 + 30, 20, COLOR.dim);
-    drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE / OPTIONS: P", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
+    drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE: ESC", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
     drawText("BEWARE THE HUNTER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.satellite);
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
-    drawText("ACHIEVEMENTS: PAUSE → OPTIONS", VIEW_W/2, VIEW_H/2 + 220, 14, COLOR.ach);
+    drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 220, 14, COLOR.ach);
     // decorative drifting debris lives in screen space (its own tiny wrapped field)
     titleDebris.forEach(a => {
       a.update(1/60);
@@ -2702,6 +2733,8 @@ function draw() {
       if (a.y > VIEW_H + 60) a.y -= VIEW_H + 120;
       a.draw();
     });
+    if (game.paused) drawMenu();  // system menu (Options/Achievements) overlays the title (v3.0 P4)
+    drawToasts();                 // keep unlock banners on top even on the title
     return;
   }
 
@@ -2773,14 +2806,17 @@ function draw() {
   ctx.fillRect(bx + 1, by + 1, (bw - 2) * game.ship.energy, bh - 2);
   drawText("SHIELD", bx - 12, by + 8, 13, COLOR.dim, "right");
 
-  if (game.paused) drawMenu(); // pause modal / options / controls (F8)
-
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
     drawText("FINAL SCORE  " + game.score, VIEW_W/2, VIEW_H/2 + 36, 26);
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 90, 22);
+    drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 130, 14, COLOR.ach);
   }
+
+  // Drawn after the gameover text so the system menu overlays it (v3.0 P4); for a mid-game pause the
+  // gameover block is skipped, so this still sits above the HUD as before (F8).
+  if (game.paused) drawMenu(); // pause modal / system menu / options / controls
 
   drawToasts(); // achievement-unlock banners, on top of everything (F9)
 }

@@ -267,7 +267,17 @@ distinct from the lifetime-cumulative Perfect Wave tiers."
 
 ## B-1 & B-2. Pause from any state + ESC-to-pause (and reach Options/Difficulty/Achievements without starting a game)
 
-**Shipped reality:** pause opens **only from `playing`** (`if (bindings.pause.keys.includes(k) &&
+> **✅ SHIPPED — v3.0 Phase 4 (revised). Spec now lives in GDD §2.9 / §2.16 + the Architecture Map Menu row.**
+> The **B-1-a mapping below (Start → menu) was SUPERSEDED by playtest** and did NOT ship. The corrected
+> scheme that shipped: controller **Start is a session toggle** (title/gameover → start a game; playing →
+> open pause; paused → dismiss/resume); the Options/Achievements **system menu** opens from title/gameover
+> via keyboard **"O"** and controller **B** (both context-aware "back" when a menu is open); keyboard **ESC**
+> is the pause key (P retired, FLAG P4-a resolved: retired) and resolves to "back" inside a menu; A/Enter
+> still start a game. FLAG P4-b (a single confirm can't both nav a menu and start a game) is handled by the
+> gamepad else-if chain + the keyboard menu-open early return. The context-aware root and the whole
+> Options/Controls/Achievements sub-tree are reused as described below. Historical planning text kept for record:
+
+**Shipped reality (at planning time):** pause opened **only from `playing`** (`if (bindings.pause.keys.includes(k) &&
 game.state === "playing") openPause()`, and the gamepad path `game.state === "playing" → openPause`).
 `bindings.pause` = `["p"]` / Start; `bindings.back` = `["escape"]` / B; `bindings.confirm` =
 `["enter"]` / A. `MENU_ROOT = ["Continue","Options","Quit"]`. So today the entire Options/Controls/

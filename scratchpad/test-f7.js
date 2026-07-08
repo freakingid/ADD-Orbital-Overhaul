@@ -239,7 +239,8 @@ assert(["left", "right", "thrust", "fire", "shield"].every(a => bindings[a].fixe
 assert(["confirm", "back", "pause"].every(a => bindings[a].fixed === true), "G: menu/system actions are fixed (fixed:true)");
 // keyboard defaults preserved
 assert(bindings.left.keys.includes("arrowleft") && bindings.left.keys.includes("a"), "G: left keyboard keys unchanged");
-assert(bindings.pause.keys.includes("p"), "G: pause keyboard key is still 'p'");
+// v3.0 P4 (FLAG P4-a): "p" retired; ESC is the pause key (shared with back so ESC-in-menu = back).
+assert(bindings.pause.keys.includes("escape") && !bindings.pause.keys.includes("p"), "G: pause keyboard key is ESC ('p' retired)");
 
 // =====================================================================
 // (H) Integration: a gamepad thrust drives the REAL Ship.update via input.thrust()
