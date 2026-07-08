@@ -45,7 +45,7 @@ const returnList = [
   "destroyDebris", "updateChain", "scatterChain", "chainMass",
   "DEBRIS_GARBAGE", "DEBRIS_SCORE",
   "GARBAGE_DECAY", "GARBAGE_SEVER_DECAY", "GARBAGE_PICKUP",
-  "CHAIN_LINK", "CHAIN_MAX", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
+  "CHAIN_LINK", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG",
   "WORLD_W", "WORLD_H"
 ];
@@ -60,7 +60,7 @@ const {
   destroyDebris, updateChain, scatterChain, chainMass,
   DEBRIS_GARBAGE,
   GARBAGE_DECAY, GARBAGE_SEVER_DECAY, GARBAGE_PICKUP,
-  CHAIN_LINK, CHAIN_MAX, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
+  CHAIN_LINK, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG,
   WORLD_W, WORLD_H
 } = A;
@@ -85,6 +85,9 @@ function resetShip(over = {}) {
     dead: false, hp: 250, invuln: 0, shieldOn: false, energy: 1,
     angle: -Math.PI / 2, x: cx, y: cy, vx: 0, vy: 0
   }, over);
+  // Clear any active powerups so a random Engine drop from a prior update() can't halve chainMass
+  // (ENGINE_MASS_MULT) and flake the (D) mass-sum assertions. (Fix owned by the B-8 chain phase.)
+  game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
   game.state = "playing"; game.paused = false;
 }
 function node(x, y, mass) {

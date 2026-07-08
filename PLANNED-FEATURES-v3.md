@@ -496,7 +496,17 @@ one large Debris kill) and across a Hunter spawn; reads 0 exactly when the wave-
 
 ## B-8. Increase max tow cargo (progression), with a physics retune
 
-**Shipped:** `CHAIN_MAX = 12`, read directly at the pickup gate
+> **✅ SHIPPED — v3.0 Phase 6.** Spec now lives in GDD §2.10 + **§2.10.2** (progression) + §3.4 (revalidated
+> stability envelope). Resolved as recommended: cap-growth = **per-delivery** (A-fork-2, +1 per `CARGO_GROW_PER`
+> 30 delivered, `CARGO_BASE` 12 → `CARGO_CAP_MAX` 20); coefficients softened `CARGO_THRUST` 0.10→0.06 /
+> `CARGO_MAXSPD` 0.05→0.03 / `CARGO_MASS` 0.12→0.07 (full 20-chain ≈ old full-12 feel); `CHAIN_ITER` 3→4.
+> **FLAG B-8-a** (Engine): confirmed acceptable — Engine at 20 nodes behaves like plain 10 (headless-asserted).
+> **FLAG B-8-b** (fixed-≥12 "full chain" achievements): the dock full-visit hook still keys on a literal `12`,
+> decoupled from `cargoMax`; the achievements-overhaul phases must keep it fixed. **FLAG B-8-c** (perf): watch
+> `shadowBlur` at 20 nodes in dense late waves — a browser-only playtest ask. **FLAG A-9-a**: ceiling is 20 (not
+> higher), so Salvage King's per-game totals need no nudge from the cap. Original spec below (historical).
+
+**Shipped (pre-B-8):** `CHAIN_MAX = 12`, read directly at the pickup gate
 (`game.chain.length < CHAIN_MAX`) and the HUD (`"CARGO " + game.chain.length + "/" + CHAIN_MAX`).
 The mass penalty scales with `chainMass()` (Σ node.mass): a full 12 of mass-1.0 ⇒ m=12 ⇒ ~45%
 thrust, ~63% top speed. GDD §2.10.1 explicitly warns: *"Beyond ~12 nodes the thrust penalty makes

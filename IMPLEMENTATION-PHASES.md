@@ -228,7 +228,18 @@ Rapid+Triple-both-active budget interaction if it gets fiddly.
 
 ---
 
-## Phase 6 — Tow-capacity progression + chain physics retune (B-8)
+## Phase 6 — Tow-capacity progression + chain physics retune (B-8) — SHIPPED
+
+**SHIPPED — "v3.0 P6: growing tow cap (12→20) with chain mass-penalty retune + stability
+revalidation".** Resolved as recommended: `CHAIN_MAX` → runtime `game.cargoMax` (`CARGO_BASE` 12 →
+`CARGO_CAP_MAX` 20), growth **per-delivery** (+1 per `CARGO_GROW_PER` 30 canisters recycled, A-fork-2)
+with a "TOW +1" float; coefficients softened `CARGO_THRUST` 0.10→0.06 / `CARGO_MAXSPD` 0.05→0.03 /
+`CARGO_MASS` 0.12→0.07 so a full 20-chain ≈ the old full-12 feel (~45% thrust / ~63% top speed);
+`CHAIN_ITER` 3→4 (stress-revalidated at 20 nodes per §3.4 rule 7 — stable at 3, 4 restores margin).
+FLAG B-8-a confirmed (Engine-at-20 ≡ plain-10); B-8-b left as a fixed-≥12 hook for the achievements
+phases; B-8-c (perf at 20 nodes) is a browser playtest ask. Headless: `scratchpad/test-p6.js` (37);
+also fixed the pre-existing `test-f3` Engine-drop flake. Spec in GDD §2.10/§2.10.2/§3.4. Prompt below
+kept for provenance.
 
 **Goal:** the tow cap grows during a run (base 12 → ceiling ~20) and the chain physics are retuned so
 a long chain feels **heavy, not broken**, with constraint stability re-validated at the higher node

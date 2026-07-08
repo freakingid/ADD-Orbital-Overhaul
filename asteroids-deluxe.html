@@ -161,11 +161,23 @@ const GARBAGE_SEVER_DECAY = 10; // sec decay for garbage knocked loose from a se
 const GARBAGE_PICKUP = 18;      // pickup radius from ship center
 
 const CHAIN_LINK = 20;          // px between chain nodes
-const CHAIN_MAX = 12;           // max towed canisters
+const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-8: 3→4 to keep a 20-node chain from sagging; §3.4 rule 7)
+// Tow capacity (B-8): the cap is a runtime value (game.cargoMax) that GROWS during a run from
+// CARGO_BASE toward CARGO_CAP_MAX — capacity is earned by engaging the salvage loop (Pillar 5),
+// not handed out. The old fixed `CHAIN_MAX` (12) is now CARGO_BASE.
+const CARGO_BASE = 12;          // starting tow cap (was CHAIN_MAX)
+const CARGO_CAP_MAX = 20;       // ceiling; the physics retune below targets "full chain here" ≈ old 12-node feel
+const CARGO_GROW_PER = 30;      // +1 cap per this many canisters recycled (delivered) in the current run
 const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
-const CARGO_MASS = 0.12;        // tug mass-factor grows by this per unit of towed mass (F5: mass sum, not count)
-const CARGO_THRUST = 0.10;      // thrust divisor grows by this per unit of towed mass
-const CARGO_MAXSPD = 0.05;      // max-speed divisor grows by this per unit of towed mass
+// Mass-penalty coefficients (B-8 retune). With a 20-node ceiling, the per-node penalty is SOFTENED
+// so a full chain at CARGO_CAP_MAX lands near the old 12-node feel (~45% thrust / ~63% top speed)
+// instead of the "broken" ~33%/50% a naive m=20 gave under the old 0.10/0.05 (§2.10.1). Solved so
+// 1/(1+20·k)=old-12 value: thrust k=0.06 (1/2.2), top-speed k=0.03 (1/1.6). Tug coeff dropped
+// 0.12→0.07 so its 1.4 cap is reached at m≈20 (was m≈12) — the tug scales down in lock-step, so a
+// base 12-chain is genuinely lighter across ALL three penalties, with headroom to grow into.
+const CARGO_MASS = 0.07;        // tug mass-factor grows by this per unit of towed mass (F5: mass sum, not count)
+const CARGO_THRUST = 0.06;      // thrust divisor grows by this per unit of towed mass
+const CARGO_MAXSPD = 0.03;      // max-speed divisor grows by this per unit of towed mass
 
 const DOCK_RADIUS = 44;
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
@@ -1675,6 +1687,7 @@ const game = {
   powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // remaining sec per timed effect (0 = inactive)
   powerBudget: { rapid: 0, triple: 0, magnet: 0 },    // remaining shots/pieces in count mode (P5; Engine is always timed)
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
+  cargoMax: CARGO_BASE,                                // runtime tow cap; grows CARGO_BASE→CARGO_CAP_MAX per canisters delivered (B-8)
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
@@ -1700,6 +1713,7 @@ function startGame() {
   game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
   game.powerBudget = { rapid: 0, triple: 0, magnet: 0 }; // count-mode budgets reset with the run (P5)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
+  game.cargoMax = CARGO_BASE;      // tow cap resets to base each run; grows with deliveries (B-8)
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
   game.camera = { x: game.ship.x, y: game.ship.y };
@@ -2163,7 +2177,8 @@ function updateChain(dt) {
   }
 
   // 3. Relax distance constraints a few passes so the chain follows serpentine
-  for (let iter = 0; iter < 3; iter++) {
+  //    (CHAIN_ITER passes — bumped 3→4 for the longer B-8 chains; §3.4 stability envelope)
+  for (let iter = 0; iter < CHAIN_ITER; iter++) {
     const a = chainAnchor();
     for (let i = 0; i < chain.length; i++) {
       const leader = i === 0 ? a : chain[i - 1];
@@ -2273,7 +2288,7 @@ function update(dt) {
         g.vy = g.vy * damp + (dy / d) * MAGNET_PULL * dt;
       }
     }
-    if (game.chain.length < CHAIN_MAX && dist2(g, game.ship) < pickR * pickR) {
+    if (game.chain.length < game.cargoMax && dist2(g, game.ship) < pickR * pickR) {
       g.dead = true;
       game.chain.push({
         x: g.x, y: g.y, px: g.x, py: g.y,
@@ -2314,6 +2329,14 @@ function update(dt) {
         // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
         // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
         game.stats.delivered++;
+        // Tow-capacity progression (B-8): every CARGO_GROW_PER canisters recycled this run raises
+        // the cap by 1, up to CARGO_CAP_MAX. Keyed off the per-run delivered count (increments by 1
+        // here, so the cap climbs at most one step per canister) — a "TOW +1" float marks each bump.
+        const growCap = Math.min(CARGO_CAP_MAX, CARGO_BASE + Math.floor(game.stats.delivered / CARGO_GROW_PER));
+        if (growCap > game.cargoMax) {
+          game.cargoMax = growCap;
+          game.floaters.push(new FloatText("TOW +1", game.ship.x, game.ship.y - 22, COLOR.dock));
+        }
         game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
         game.stats.pacifistStreak++;
         game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
@@ -2864,7 +2887,7 @@ function draw() {
   ctx.fillStyle = hpFrac > 0.3 ? COLOR.hp : "#ff7060";
   ctx.fillRect(hpx + 1, hpy + 1, (hpw - 2) * hpFrac, hph - 2);
   drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
-  drawText("CARGO " + game.chain.length + "/" + CHAIN_MAX, 30, 104, 16,
+  drawText("CARGO " + game.chain.length + "/" + game.cargoMax, 30, 104, 16,
     game.chain.length ? COLOR.garbage : COLOR.dim, "left");
   // v3.0 P3 (B-7): targets remaining = debris + hunters (the exact wave-clear gate).
   // Can rise mid-wave (a Debris split, or a Hunter lineage arriving on its own timer from
