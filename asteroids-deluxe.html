@@ -111,7 +111,8 @@ const SHIP_RADIUS = 13;
 const BULLET_SPEED = 620;
 const BULLET_LIFE = 1.05;       // seconds
 const MAX_BULLETS = 4;
-const FIRE_COOLDOWN = 0.16;
+const FIRE_COOLDOWN = 0.20;         // base gun cadence
+const RAPID_FIRE_COOLDOWN = 0.09;   // Rapid Fire cadence — genuinely faster, not just a bigger cap (B-6)
 
 const SHIELD_DRAIN = 0.55;      // energy/sec while on
 const SHIELD_RECHARGE = 0.12;   // energy/sec while off
@@ -1074,7 +1075,9 @@ class Ship {
 
     // Fire. The bullet cap flexes with the weapon powerups (F6): Rapid Fire raises it to
     // RAPID_MAX_BULLETS, Triple Shot to TRIPLE_MAX_BULLETS and fires a 3-bullet spread; both
-    // active uses the higher (Triple) cap, not the product (see maxBullets()).
+    // active uses the higher (Triple) cap, not the product (see maxBullets()). Rapid Fire also
+    // speeds up cadence via RAPID_FIRE_COOLDOWN (B-6) — Triple stays on the base cadence, so
+    // Rapid+Triple together is the strongest combo (fires fast AND wide, FLAG B-6-a).
     this.cooldown -= dt;
     if (input.fire() && this.cooldown <= 0 &&
         game.bullets.filter(b => !b.hostile).length < maxBullets()) {
@@ -1086,7 +1089,7 @@ class Ship {
       } else {
         shoot(this.angle);
       }
-      this.cooldown = FIRE_COOLDOWN;
+      this.cooldown = game.powerFx.rapid > 0 ? RAPID_FIRE_COOLDOWN : FIRE_COOLDOWN;
       game.stats.pacifistStreak = 0; // firing breaks the no-fire delivery streak (Pacifist Tow, F9)
       AudioSys.fire();
     }
