@@ -176,7 +176,13 @@ const SPAWN_MIN_DIST = 220;     // new debris satellites: nearest allowed to the
 const SPAWN_MAX_DIST = 1100;    // new debris satellites: farthest from the ship (stay reachable)
 const DOCK_MIN_DIST = 260;      // recycling dock: nearest allowed to the ship
 const DOCK_MAX_DIST = 900;      // recycling dock: farthest from the ship (stay reachable)
-const STAR_DENSITY = 40;        // background stars per viewport-sized area of world
+const STAR_DENSITY = 80;        // background stars per viewport-sized area of world
+const STAR_PARALLAX_FACTOR = 0.5; // near layer's camera-offset fraction (screen-space tiled, not world-fixed)
+const STAR_BRIGHT_MIN = 0.35;   // per-star alpha range, far (world-fixed) layer
+const STAR_BRIGHT_MAX = 1.0;
+const STAR_NEAR_DENSITY = 22;   // near parallax layer: sparse, per viewport-sized screen area
+const STAR_NEAR_BRIGHT_MIN = 0.55; // near layer reads brighter (closer) than the far layer
+const STAR_NEAR_BRIGHT_MAX = 1.0;
 
 // World-boundary visibility line (v2.1) — a dim dashed rectangle at the wrap seam so the
 // player can see the wrap-around coming. Purely cosmetic (no collision); drawn in world
@@ -2592,16 +2598,46 @@ function drawToasts() {
 const STAR_COUNT = Math.round(STAR_DENSITY * (WORLD_W * WORLD_H) / (VIEW_W * VIEW_H));
 const stars = [];
 for (let i = 0; i < STAR_COUNT; i++) {
-  stars.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, s: rand(1, 1.8) });
+  stars.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, s: rand(1, 1.8), a: rand(STAR_BRIGHT_MIN, STAR_BRIGHT_MAX) });
+}
+
+// Near parallax layer — sparse, brighter, tiled in *screen* space (not world-fixed) so it can
+// move at a fraction of the camera offset without needing toroidal wrap math (FLAG B-3-a).
+const STAR_NEAR_TILE_W = VIEW_W;
+const STAR_NEAR_TILE_H = VIEW_H;
+const STAR_NEAR_COUNT = Math.round(STAR_NEAR_DENSITY);
+const starsNear = [];
+for (let i = 0; i < STAR_NEAR_COUNT; i++) {
+  starsNear.push({ x: Math.random() * STAR_NEAR_TILE_W, y: Math.random() * STAR_NEAR_TILE_H, s: rand(1.2, 2.2), a: rand(STAR_NEAR_BRIGHT_MIN, STAR_NEAR_BRIGHT_MAX) });
 }
 
 function drawStarfield() {
-  ctx.fillStyle = "#1a2a40";
   const cam = game.camera;
+
+  // Far layer: world-fixed, 1.0x camera offset, wrap-aware (unchanged reference layer).
   for (const st of stars) {
     const [dx, dy] = shortDelta(cam.x, cam.y, st.x, st.y);
     if (Math.abs(dx) > VIEW_W / 2 || Math.abs(dy) > VIEW_H / 2) continue;
+    ctx.fillStyle = `rgba(120, 160, 210, ${st.a})`;
     ctx.fillRect(dx + VIEW_W / 2, dy + VIEW_H / 2, st.s, st.s);
+  }
+
+  // Near layer: screen-space tiled at a fraction of the camera offset — reads as closer/faster
+  // parallax without being world-fixed, so no seam math is needed (FLAG B-3-a).
+  const px = ((cam.x * STAR_PARALLAX_FACTOR) % STAR_NEAR_TILE_W + STAR_NEAR_TILE_W) % STAR_NEAR_TILE_W;
+  const py = ((cam.y * STAR_PARALLAX_FACTOR) % STAR_NEAR_TILE_H + STAR_NEAR_TILE_H) % STAR_NEAR_TILE_H;
+  for (let ty = -1; ty <= 1; ty++) {
+    for (let tx = -1; tx <= 1; tx++) {
+      const ox = tx * STAR_NEAR_TILE_W - px;
+      const oy = ty * STAR_NEAR_TILE_H - py;
+      if (ox > VIEW_W || ox < -STAR_NEAR_TILE_W || oy > VIEW_H || oy < -STAR_NEAR_TILE_H) continue;
+      for (const st of starsNear) {
+        const sx = st.x + ox, sy = st.y + oy;
+        if (sx < -4 || sx > VIEW_W + 4 || sy < -4 || sy > VIEW_H + 4) continue;
+        ctx.fillStyle = `rgba(160, 195, 235, ${st.a})`;
+        ctx.fillRect(sx, sy, st.s, st.s);
+      }
+    }
   }
 }
 
