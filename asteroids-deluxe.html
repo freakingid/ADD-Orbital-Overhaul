@@ -2735,9 +2735,15 @@ function draw() {
   drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
   drawText("CARGO " + game.chain.length + "/" + CHAIN_MAX, 30, 104, 16,
     game.chain.length ? COLOR.garbage : COLOR.dim, "left");
+  // v3.0 P3 (B-7): targets remaining = debris + hunters (the exact wave-clear gate).
+  // Can rise mid-wave (a Debris split, or a Hunter lineage arriving on its own timer from
+  // wave 2 on) — that's intentional, not a bug; see PLANNED-FEATURES-v3.md B-7-a/b.
+  const targetsLeft = game.debris.length + game.hunters.length;
+  drawText("TARGETS " + targetsLeft, 30, 124, 16,
+    targetsLeft ? COLOR.text : COLOR.dim, "left");
   // active-powerup row (F6): one row per running timed effect — a small type glyph + a
   // shield-bar-style remaining-duration bar. Health is instant, so it never appears here.
-  let prow = 130;
+  let prow = 150;
   for (const t of POWERUP_DROP_TYPES) {          // rapid / triple / magnet / engine (stable order)
     const rem = game.powerFx[t];
     if (rem <= 0) continue;
