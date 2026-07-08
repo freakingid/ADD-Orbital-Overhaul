@@ -1670,6 +1670,7 @@ function resetGameStats() {
     powerUsed: { rapid: false, triple: false, magnet: false, engine: false }, // Powered Up (all four)
     dmgThisWave: 0,          // hits taken during the wave in progress (perfect-wave detection)
     noScratchWave3: false,   // completed wave 3 damage-free (No Scratches)
+    flawlessLateWave: false, // cleared wave 8+ damage-free (Flawless Run weekly, v3.0 P8)
     closeShave: false,       // survived a Hunter collision under 10 HP (Close Shave)
     everBelowHalf: false,    // HP ever dropped below 50% this game (Untouchable inverts this)
     garbageDecayed: 0,       // canisters that expired uncollected this game (Waste Not)
@@ -1777,7 +1778,11 @@ function boom(x, y, size, color) {
 
 function destroyDebris(a, awardScore = true) {
   a.dead = true;
-  if (awardScore) { addScore(DEBRIS_SCORE[a.size]); game.stats.debrisKills++; } // Satellite Buster (player kills only)
+  if (awardScore) {
+    addScore(DEBRIS_SCORE[a.size]); game.stats.debrisKills++; // Satellite Buster (player kills only)
+    // Field Sweeper (lifetime MAX): best Debris destroyed in one game — debrisKills climbs within a run.
+    Achievements.lifetime.bestDebrisGame = Math.max(Achievements.lifetime.bestDebrisGame, game.stats.debrisKills);
+  }
   boom(a.x, a.y, a.size, COLOR.debris);
   // Every tier's destruction — including the final small-tier kill — emits exactly
   // DEBRIS_GARBAGE canisters (F3), each with an outward kick so they fan out instead
@@ -1912,7 +1917,8 @@ const Achievements = {
   STORAGE_KEY: "afd_achievements_v2",   // v3.0 P7: new shape (lifetimeTiers + non-tiered unlocks + weekly)
   LEGACY_KEY:  "afd_achievements_v1",   // migrated once (raw counters only) if no v2 save exists yet
 
-  // 15 weekly achievements (F9 starter pool, in fixed order — the rotation indexes into this array).
+  // 16 weekly achievements (F9 starter pool + v3.0 P8 Flawless Run, in fixed order — the rotation
+  // indexes into this array; poolIndex uses .length so the 5-wide slice self-adjusts to 16).
   WEEKLY: [
     { id: "scrap_runner",     name: "Scrap Runner",     desc: "Deliver 20 canisters to the dock in one game.",        goal: 20, cur: s => s.delivered },
     { id: "heavy_hauler",     name: "Heavy Hauler",     desc: "Deliver a full 12-canister chain in one dock visit.",  goal: 1,  cur: s => s.fullChainVisit ? 1 : 0 },
@@ -1928,11 +1934,14 @@ const Achievements = {
     { id: "speed_recycler",   name: "Speed Recycler",   desc: "Deliver your first canister within 60 seconds.",        goal: 1,  cur: s => s.speedRecycler ? 1 : 0 },
     { id: "powered_up",       name: "Powered Up",       desc: "Use all four drop powerups in a single game.",          goal: 4,  cur: s => powerTypesUsed(s) },
     { id: "diamond_cutter",   name: "Diamond Cutter",   desc: "Destroy 3 large Hunter cores in one game.",             goal: 3,  cur: s => s.largeHunterKills },
-    { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with zero canisters expired.",            goal: 1,  cur: s => (s.gameEnded && s.garbageDecayed === 0) ? 1 : 0 }
+    { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with zero canisters expired.",            goal: 1,  cur: s => (s.gameEnded && s.garbageDecayed === 0) ? 1 : 0 },
+    // v3.0 P8 (FLAG A-6-b): a genuinely weekly-worthy damage-free clear, gated to a LATE wave so it's
+    // distinct from (and harder than) No Scratches (clear wave 3 damage-free). Set in the wave-clear block.
+    { id: "flawless_run",     name: "Flawless Run",     desc: "Clear wave 8 or later without taking any damage.",      goal: 1,  cur: s => s.flawlessLateWave ? 1 : 0 }
   ],
 
-  // 12 lifetime achievements. cur() reads the persisted lifetime counters (l) — never mutated here.
-  // Seven of these are now TIERED (v3.0 P7): an optional `tiers:[bronze..diamond]` ascending ladder
+  // 19 lifetime achievements (v3.0 P8 added 7). cur() reads the persisted lifetime counters (l) — never
+  // mutated here. Fourteen of these are now TIERED: an optional `tiers:[bronze..diamond]` ascending ladder
   // replaces the single `goal`; evaluate() unlocks every newly-crossed tier (see evaluate/onUnlock).
   // Two counter kinds (FLAG A-1-b): SUM (running total, l.X++ at the event) and MAX (personal best,
   // Math.max at the event) — the tier machinery is identical, only the counter's update rule differs.
@@ -1944,9 +1953,17 @@ const Achievements = {
     { id: "saucer_hunter",     name: "Saucer Hunter",     desc: "Destroy saucers, big and small (all-time).",          cur: (s, l) => l.saucerKills,   tiers: [250, 500, 1000, 2500, 5000, 10000] },
     { id: "perfect_wave",      name: "Perfect Wave",      desc: "Clear a wave with zero damage (all-time).",           cur: (s, l) => l.perfectWaves,  tiers: [5, 10, 50, 100, 250, 500] },
     { id: "iron_hull",         name: "Iron Hull",         desc: "Survive hazard hits (all-time).",                     cur: (s, l) => l.hitsSurvived,  tiers: [100, 500, 1000, 2500, 5000, 10000] },
+    // --- Tiered (SUM), new in v3.0 P8 ---
+    { id: "sharpshooter",      name: "Sharpshooter",      desc: "Destroy small saucers (all-time).",                   cur: (s, l) => l.smallSaucerKills, tiers: [100, 500, 1000, 2500, 5000, 7500] }, // diamond lowered 10k->7500 (FLAG A-8-a: don't out-grind Saucer Hunter)
+    { id: "freight_baron",     name: "Freight Baron",     desc: "Deliver a 12+ canister haul in one dock visit (all-time).", cur: (s, l) => l.heavyHaulerEvents, tiers: [1, 10, 50, 150, 400, 1000] }, // per-EVENT (FORK A-fork-1): every >=12 visit counts
+    { id: "zen_master",        name: "Zen Master",        desc: "Complete a 5-in-a-row no-fire haul (all-time).",      cur: (s, l) => l.pacifistTowEvents, tiers: [1, 10, 50, 150, 400, 1000] }, // per-EVENT: every 5-streak haul counts
+    { id: "daredevil",         name: "Daredevil",         desc: "Play a Glass Cannon game — wave 5, no Health (all-time).", cur: (s, l) => l.glassCannonGames, tiers: [1, 5, 20, 50, 125, 300] }, // once/game -> softened ladder (FLAG A-12-a)
+    { id: "wave_rider",        name: "Wave Rider",        desc: "Play a Shield Surfer game — 10 deflects (all-time).", cur: (s, l) => l.shieldSurferGames, tiers: [1, 5, 20, 50, 125, 300] }, // once/game -> softened ladder (FLAG A-12-a)
     // --- Tiered (MAX / personal best across games) ---
     { id: "master_field",      name: "Master of the Field", desc: "Reach deep waves in a single game (best).",         cur: (s, l) => l.maxWave,          tiers: [5, 10, 25, 50, 75, 100] },
     { id: "no_powerups",       name: "No Powerups Needed",  desc: "Reach deep waves without ever taking a powerup (best).", cur: (s, l) => l.maxWaveNoPowerup, tiers: [2, 5, 11, 17, 23, 29] },
+    { id: "salvage_king",      name: "Salvage King",      desc: "Most canisters delivered in one game (best).",        cur: (s, l) => l.bestDeliveredGame, tiers: [10, 20, 40, 75, 125, 200] }, // v3.0 P8 (MAX)
+    { id: "field_sweeper",     name: "Field Sweeper",     desc: "Most Debris destroyed in one game (best).",           cur: (s, l) => l.bestDebrisGame,    tiers: [15, 40, 80, 150, 250, 400] }, // v3.0 P8 (MAX)
     // --- Non-tiered single-goal (unchanged; long_haul reworded to fixed >=12/visit — FLAG A-5-a) ---
     { id: "century_club",      name: "Century Club",      desc: "Reach wave 25 in a single game.",                     goal: 25,    cur: (s, l) => l.maxWave },
     { id: "untouchable",       name: "Untouchable",       desc: "Reach wave 10 without dropping below 50% HP.",        goal: 1,     cur: s => (game.wave >= 10 && !s.everBelowHalf) ? 1 : 0 },
@@ -1962,7 +1979,17 @@ const Achievements = {
     delivered: 0, deliveryScore: 0, fullChains: 0,
     hunterKills: 0, saucerKills: 0, hitsSurvived: 0,
     perfectWaves: 0, playTime: 0, maxWave: 0,
-    maxWaveNoPowerup: 0             // MAX: best wave reached while powerupsPicked stayed 0 (No Powerups Needed)
+    maxWaveNoPowerup: 0,            // MAX: best wave reached while powerupsPicked stayed 0 (No Powerups Needed)
+    // v3.0 P8 new lifetime counters (SUM unless noted). smallSaucerKills is the all-time total (distinct
+    // from the per-game game.stats.smallSaucerKills that Small Ball reads). The four *Events/*Games are
+    // per-EVENT / once-per-game tallies for the new event achievements (FORK A-fork-1: per-event).
+    smallSaucerKills: 0,           // SUM: small saucers destroyed, all-time (Sharpshooter)
+    bestDeliveredGame: 0,          // MAX: most canisters delivered in one game (Salvage King)
+    bestDebrisGame: 0,             // MAX: most Debris destroyed in one game (Field Sweeper)
+    heavyHaulerEvents: 0,          // SUM: dock visits delivering >=12 canisters (Freight Baron, per-EVENT)
+    pacifistTowEvents: 0,          // SUM: hauls whose no-fire delivery streak reached 5 (Zen Master, per-EVENT)
+    glassCannonGames: 0,           // SUM: games reaching wave 5 with no Health picked (Daredevil, once/game)
+    shieldSurferGames: 0           // SUM: games with 10+ shield deflects (Wave Rider, once/game)
   },
   weekKey: "",                    // "isoYear-isoWeek" of the currently-active week
   activeIds: [],                  // the 5 weekly ids active this week (a slice of WEEKLY)
@@ -2194,6 +2221,11 @@ function killShip() { // hull destroyed (0 HP): a true, permanent game over — 
   // Achievements (F9): a game just ended — flag it so end-of-game checks (Waste Not) can fire,
   // run a final evaluation, and flush lifetime progress to storage.
   game.stats.gameEnded = true;
+  // Daredevil / Wave Rider (lifetime, once-per-game — FLAG A-12-a: these conditions are inherently
+  // once-per-game, so per-event ≡ per-game). Read the same per-game state the weekly Glass Cannon /
+  // Shield Surfer read, from their monotonic counters, so this can only tally a genuine event.
+  if (game.wave >= 5 && game.stats.healthPicked === 0) Achievements.lifetime.glassCannonGames++;
+  if (game.stats.deflects >= 10) Achievements.lifetime.shieldSurferGames++;
   Achievements.evaluate();
   Achievements.save();
 }
@@ -2431,13 +2463,21 @@ function update(dt) {
           game.floaters.push(new FloatText("TOW +1", game.ship.x, game.ship.y - 22, COLOR.dock));
         }
         game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
+        // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
+        // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.
+        Achievements.lifetime.bestDeliveredGame = Math.max(Achievements.lifetime.bestDeliveredGame, game.stats.delivered);
         game.stats.pacifistStreak++;
         game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
+        // Zen Master (lifetime, per-EVENT): each haul whose no-fire delivery streak REACHES 5 counts once.
+        // pacifistStreak passes through 5 exactly once per haul (firing resets it to 0), so === 5 latches
+        // once; a longer haul (6,7,…) doesn't re-fire, and a fresh 5-streak after firing is a new event.
+        if (game.stats.pacifistStreak === 5) Achievements.lifetime.pacifistTowEvents++;
         if (game.stats.delivered === 1 && game.stats.gameTime <= 60) game.stats.speedRecycler = true;
-        // Heavy Hauler (weekly) + The Long Haul (lifetime fullChains): a FIXED >=12-in-one-visit
-        // milestone, deliberately decoupled from the growing game.cargoMax (FLAG A-5-a / B-8-b) —
-        // deliveryCount passes through 12 exactly once per qualifying visit, so this latches once.
-        if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; }
+        // Heavy Hauler (weekly) + The Long Haul (lifetime fullChains) + Freight Baron (lifetime, per-EVENT):
+        // a FIXED >=12-in-one-visit milestone, deliberately decoupled from the growing game.cargoMax
+        // (FLAG A-5-a / B-8-b) — deliveryCount passes through 12 exactly once per qualifying visit, so all
+        // three latch once per visit.
+        if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; Achievements.lifetime.heavyHaulerEvents++; }
         Achievements.lifetime.delivered++;
         Achievements.lifetime.deliveryScore += pts;
         game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
@@ -2502,7 +2542,7 @@ function update(dt) {
           b.dead = true; s.dead = true;
           addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
           Achievements.lifetime.saucerKills++;                 // Saucer Hunter (F9)
-          if (s.small) game.stats.smallSaucerKills++;          // Small Ball (F9)
+          if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
           boom(s.x, s.y, 2, COLOR.saucer);
           AudioSys.saucer(false);
           break;
@@ -2575,7 +2615,7 @@ function update(dt) {
           s.dead = true;
           addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
           Achievements.lifetime.saucerKills++;              // Saucer Hunter (F9)
-          if (s.small) game.stats.smallSaucerKills++;       // Small Ball (F9)
+          if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
           game.stats.deflects++;                            // Shield Surfer (F9): saucer rammed into the shield
           boom(s.x, s.y, 2, COLOR.saucer);
           AudioSys.saucer(false);
@@ -2632,6 +2672,10 @@ function update(dt) {
       if (game.stats.dmgThisWave === 0) {
         Achievements.lifetime.perfectWaves++;
         if (game.wave === 3) game.stats.noScratchWave3 = true;
+        // Flawless Run (weekly, P8 / FLAG A-6-b): a damage-free clear of wave 8 or later — a real feat
+        // once the Hunter family + saucers + Debris density are all mid-ramp. game.wave is still the
+        // completed wave here (nextWave increments it below).
+        if (game.wave >= 8) game.stats.flawlessLateWave = true;
       }
       nextWave();
     }
@@ -2797,20 +2841,27 @@ function axisLabel(a) {
   return "Axis " + a.index;
 }
 
-// ---------- Achievements viewer + unlock toasts (F9) ----------
-// Read-only list reachable from Options -> Achievements. Two columns: this week's 5 (left) and the
-// 12 lifetime (right), each with unlock status + a progress readout. Screen-fixed, drawn by drawMenu.
+// ---------- Achievements viewer + unlock toasts (F9; 3-column since v3.0 P8) ----------
+// Read-only list reachable from Options -> Achievements. Three columns: this week's 5 (left) and the
+// lifetime set split across two columns (P8 grew it 12 -> 19, too many for one column), each row with
+// unlock status + a progress readout. Screen-fixed, drawn by drawMenu. Layout widths/split are a pure
+// look-call tunable (colW / xL / xM / xR / the ceil-half split) — see the P8 playtest ask in STATUS.
 function drawAchievements() {
   ctx.fillStyle = "rgba(4,10,20,0.74)";
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  const { x, y } = menuPanel(940, 648, "ACHIEVEMENTS");
+  const { x, y } = menuPanel(1200, 660, "ACHIEVEMENTS");
   drawText("WEEKLY SET " + Achievements.weekKey + " — resets each calendar week", VIEW_W / 2, y + 74, 12, COLOR.dim);
-  const colW = 420, xL = x + 34, xR = x + 486, ry0 = y + 130, step = 40;
-  drawText("THIS WEEK", xL, y + 108, 15, COLOR.satellite, "left");
-  drawText("LIFETIME",  xR, y + 108, 15, COLOR.satellite, "left");
+  const colW = 350, xL = x + 30, xM = x + 430, xR = x + 820, ry0 = y + 130, step = 40;
+  drawText("THIS WEEK",        xL, y + 108, 15, COLOR.satellite, "left");
+  drawText("LIFETIME",         xM, y + 108, 15, COLOR.satellite, "left");
+  drawText("LIFETIME (cont.)", xR, y + 108, 15, COLOR.satellite, "left");
   Achievements.activeWeekly().forEach((a, i) => drawAchRow(a, xL, ry0 + i * step, colW));
-  Achievements.LIFETIME.forEach((a, i) => drawAchRow(a, xR, ry0 + i * step, colW));
-  drawText("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 632, 12, COLOR.dim);
+  const half = Math.ceil(Achievements.LIFETIME.length / 2);   // first half -> middle column, rest -> right
+  Achievements.LIFETIME.forEach((a, i) => {
+    const cx = i < half ? xM : xR, row = i < half ? i : i - half;
+    drawAchRow(a, cx, ry0 + row * step, colW);
+  });
+  drawText("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 644, 12, COLOR.dim);
 }
 
 // Thousands-grouped integer, locale-independent (deterministic across environments/tests).

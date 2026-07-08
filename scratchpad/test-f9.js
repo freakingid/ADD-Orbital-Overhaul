@@ -66,7 +66,7 @@ global.localStorage = {
 
 const returnList = [
   "startGame", "update", "updateToasts", "nextWave", "game", "AudioSys", "Achievements",
-  "destroyDebris", "destroyHunter", "applyPowerup", "damageShip",
+  "destroyDebris", "destroyHunter", "applyPowerup", "damageShip", "killShip",
   "DebrisSatellite", "HunterSatellite", "Saucer", "Garbage", "Dock",
   "SHIP_MAX_HP", "HUNTER_DAMAGE", "DOCK_RADIUS", "TIER_NAMES", "TIER_COLOR", "drawAchievements"
 ];
@@ -77,7 +77,7 @@ const factory = new Function(
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
 const {
   startGame, update, updateToasts, nextWave, game, AudioSys, Achievements,
-  destroyDebris, destroyHunter, applyPowerup, damageShip,
+  destroyDebris, destroyHunter, applyPowerup, damageShip, killShip,
   DebrisSatellite, HunterSatellite, Saucer, Garbage, Dock,
   SHIP_MAX_HP, HUNTER_DAMAGE, DOCK_RADIUS, TIER_NAMES, TIER_COLOR, drawAchievements
 } = A;
@@ -104,18 +104,25 @@ const lUnlocked = id => Achievements.lifetimeUnlocked.has(id);
 const lTier = id => (id in Achievements.lifetimeTiers) ? Achievements.lifetimeTiers[id] : -1;
 
 console.log(`(config) weekly=${Achievements.WEEKLY.length}  lifetime=${Achievements.LIFETIME.length}  active/week=${Achievements.activeIds.length}`);
-assert(Achievements.WEEKLY.length === 15, "config: 15 weekly achievements");
-assert(Achievements.LIFETIME.length === 12, "config: 12 lifetime achievements");
-// v3.0 P7 tier structure
+assert(Achievements.WEEKLY.length === 16, "config: 16 weekly achievements (v3.0 P8 added Flawless Run)");
+assert(Achievements.LIFETIME.length === 19, "config: 19 lifetime achievements (v3.0 P8 added 7)");
+// v3.0 P7 tier structure + P8 new tiered rows: 14 tiered total.
 const tieredIds = Achievements.LIFETIME.filter(a => a.tiers).map(a => a.id);
-assert(tieredIds.length === 7, "config: exactly 7 tiered lifetime achievements (got " + tieredIds.length + ": " + tieredIds.join(",") + ")");
+assert(tieredIds.length === 14, "config: exactly 14 tiered lifetime achievements (got " + tieredIds.length + ": " + tieredIds.join(",") + ")");
 assert(["recycling_magnate","ghost_protocol","saucer_hunter","perfect_wave","iron_hull","master_field","no_powerups"].every(id => tieredIds.includes(id)),
-  "config: the 7 converted achievements are the tiered set");
+  "config: the 7 P7-converted achievements are still tiered");
+assert(["sharpshooter","salvage_king","field_sweeper","freight_baron","daredevil","zen_master","wave_rider"].every(id => tieredIds.includes(id)),
+  "config: the 7 P8 new lifetime achievements are tiered");
 assert(Achievements.LIFETIME.every(a => !a.tiers || (Array.isArray(a.tiers) && a.tiers.length === 6)), "config: every tier ladder has 6 steps (bronze..diamond)");
 assert(Achievements.LIFETIME.every(a => !a.tiers || a.tiers.every((v, i, arr) => i === 0 || v > arr[i - 1])), "config: tier ladders strictly ascend");
 assert(Achievements.LIFETIME.every(a => !a.tiers || a.goal === undefined), "config: tiered entries carry no single-goal");
 assert(TIER_NAMES.length === 6 && TIER_COLOR.length === 6, "config: 6 tier names + 6 tier colours");
 assert("maxWaveNoPowerup" in Achievements.lifetime, "config: new MAX counter maxWaveNoPowerup exists");
+// P8 new lifetime counters all present:
+assert(["smallSaucerKills","bestDeliveredGame","bestDebrisGame","heavyHaulerEvents","pacifistTowEvents","glassCannonGames","shieldSurferGames"]
+  .every(k => k in Achievements.lifetime), "config: all 7 new P8 lifetime counters exist");
+assert("flawlessLateWave" in game.stats, "config: new per-game stat flawlessLateWave exists (Flawless Run)");
+assert(!!Achievements.byId["flawless_run"] && Achievements.byId["flawless_run"].pool === "weekly", "config: Flawless Run is a weekly achievement");
 assert(Achievements.STORAGE_KEY === "afd_achievements_v2", "config: persistence bumped to afd_achievements_v2");
 // The Long Haul reworded to a fixed >=12/visit (still non-tiered, goal 10).
 const longHaul = Achievements.byId["long_haul"];
@@ -132,17 +139,19 @@ assert(wy.year === 2026 && wy.week === 2, "A: 2026-01-05 -> ISO year 2026, week 
 wy = Achievements.isoWeekYear(utc(2027, 0, 1));
 assert(wy.year === 2026 && wy.week === 53, "A: 2027-01-01 -> ISO year 2026, week 53 (got " + wy.year + "-W" + wy.week + ")");
 
-// poolIndex = (2026*52 + 2) % 15 = 9  ->  a 5-wide slice starting at index 9.
-assert(Achievements.poolIndex(2026, 2) === 9, "A: poolIndex(2026,2) === 9");
+// v3.0 P8: pool is 16 now, so the deterministic rotation shifts. poolIndex uses .length, so these
+// expected values are recomputed for length 16 (FLAG A-7-a).
+// poolIndex = (2026*52 + 2) % 16 = 105354 % 16 = 10  ->  a 5-wide slice starting at index 10.
+assert(Achievements.poolIndex(2026, 2) === 10, "A: poolIndex(2026,2) === 10 (pool 16)");
 const sliceW2 = ids(Achievements.selectWeekly(utc(2026, 0, 5)));
-assert(eqArr(sliceW2, ["no_scratches", "combo_collector", "speed_recycler", "powered_up", "diamond_cutter"]),
-  "A: week 2026-W02 selects the expected 5 (idx 9..13): " + sliceW2.join(","));
+assert(eqArr(sliceW2, ["combo_collector", "speed_recycler", "powered_up", "diamond_cutter", "waste_not"]),
+  "A: week 2026-W02 selects the expected 5 (idx 10..14): " + sliceW2.join(","));
 // Determinism: same date -> same slice.
 assert(eqArr(sliceW2, ids(Achievements.selectWeekly(utc(2026, 0, 5)))), "A: selection is deterministic for a fixed date");
-// Wrap-around: (2026*52 + 6) % 15 = 13  ->  slice [13,14,0,1,2] wraps past the end of the pool.
-assert(Achievements.poolIndex(2026, 6) === 13, "A: poolIndex(2026,6) === 13 (a wrapping index)");
+// Wrap-around: (2026*52 + 6) % 16 = 105358 % 16 = 14  ->  slice [14,15,0,1,2] wraps past the end.
+assert(Achievements.poolIndex(2026, 6) === 14, "A: poolIndex(2026,6) === 14 (a wrapping index, pool 16)");
 const sliceW6 = ids(Achievements.selectWeekly(utc(2026, 1, 2))); // Feb 2 2026 (Mon) = ISO W06
-assert(eqArr(sliceW6, ["diamond_cutter", "waste_not", "scrap_runner", "heavy_hauler", "glass_cannon"]),
+assert(eqArr(sliceW6, ["waste_not", "flawless_run", "scrap_runner", "heavy_hauler", "glass_cannon"]),
   "A: week 2026-W06 wraps the pool correctly: " + sliceW6.join(","));
 
 // =====================================================================
@@ -232,6 +241,8 @@ assert(game.stats.debrisKills === 14 && !wUnlocked("satellite_buster"), "C1: 14 
 destroyDebris(new DebrisSatellite(500, 500, 1), true);
 Achievements.evaluate();
 assert(game.stats.debrisKills === 15 && wUnlocked("satellite_buster"), "C1: 15th kill unlocks Satellite Buster");
+// Field Sweeper (lifetime MAX): the real destroyDebris hook tracked the per-game best.
+assert(Achievements.lifetime.bestDebrisGame === 15, "C1: Field Sweeper tracks best Debris destroyed this game (15)");
 // saucer-bullet kills (awardScore=false) do NOT count toward the player's tally
 const before = game.stats.debrisKills;
 destroyDebris(new DebrisSatellite(500, 500, 1), false);
@@ -262,11 +273,13 @@ assert(game.stats.fullChainVisit && wUnlocked("heavy_hauler"), "C2: a full 12-in
 assert(game.stats.bestCombo >= 8 && wUnlocked("combo_collector"), "C2: combo reached 8+ -> Combo Collector");
 assert(game.stats.speedRecycler && wUnlocked("speed_recycler"), "C2: first delivery <60s -> Speed Recycler");
 assert(Achievements.lifetime.fullChains === 1, "C2: The Long Haul lifetime counter incremented once at 12");
+assert(Achievements.lifetime.heavyHaulerEvents === 1, "C2: Freight Baron (per-EVENT) latched once at the 12-in-one-visit milestone");
 assert(Achievements.lifetime.delivered === 12 && Achievements.lifetime.deliveryScore > 0, "C2: lifetime delivered + delivery score accrued");
 // Deliver 8 more to cross 20 total -> Scrap Runner.
 fillChain(8); game.offloadTimer = 0;
 tickDock(9);
 assert(game.stats.delivered === 20 && wUnlocked("scrap_runner"), "C2: 20 total delivered -> Scrap Runner (got " + game.stats.delivered + ")");
+assert(Achievements.lifetime.bestDeliveredGame === 20, "C2: Salvage King tracks best delivered this game (20)");
 
 // --- (C3) Close Shave: survive a Hunter collision under 10 HP (real collision path) ---
 console.log("(C3) Close Shave — survive a Hunter collision under 10 HP (real damageShip via collision)");
@@ -366,6 +379,15 @@ tierBoundaries("perfect_wave",      "perfectWaves",      [5, 10, 50, 100, 250, 5
 tierBoundaries("iron_hull",         "hitsSurvived",      [100, 500, 1000, 2500, 5000, 10000]);
 tierBoundaries("master_field",      "maxWave",           [5, 10, 25, 50, 75, 100]);      // MAX counter
 tierBoundaries("no_powerups",       "maxWaveNoPowerup",  [2, 5, 11, 17, 23, 29]);        // MAX counter
+// v3.0 P8 new tiered ladders (SUM + MAX; the tier machinery is identical, so setting the counter
+// directly exercises evaluate's crossing logic for each).
+tierBoundaries("sharpshooter",      "smallSaucerKills",  [100, 500, 1000, 2500, 5000, 7500]);   // FLAG A-8-a: diamond 7500
+tierBoundaries("freight_baron",     "heavyHaulerEvents", [1, 10, 50, 150, 400, 1000]);          // per-EVENT
+tierBoundaries("zen_master",        "pacifistTowEvents", [1, 10, 50, 150, 400, 1000]);          // per-EVENT
+tierBoundaries("daredevil",         "glassCannonGames",  [1, 5, 20, 50, 125, 300]);             // FLAG A-12-a softened
+tierBoundaries("wave_rider",        "shieldSurferGames", [1, 5, 20, 50, 125, 300]);             // FLAG A-12-a softened
+tierBoundaries("salvage_king",      "bestDeliveredGame", [10, 20, 40, 75, 125, 200]);           // MAX
+tierBoundaries("field_sweeper",     "bestDebrisGame",    [15, 40, 80, 150, 250, 400]);          // MAX
 
 // Explicit "cross bronze but NOT silver" single-step:
 resetAch();
@@ -417,6 +439,76 @@ Achievements.lifetime.playTime = 3600;
 assert(Achievements.progressText(marathon) === "1.0/10h", "C7: Marathon progress reads in hours (" + Achievements.progressText(marathon) + ")");
 Achievements.lifetime.deliveryScore = 2500;
 assert(Achievements.progressText(Achievements.byId["ton_of_scrap"]) === "2500/10000", "C7: non-tiered counter progress reads cur/goal");
+
+// =====================================================================
+// (C8) Event-cadence hooks driven through the REAL dock offload:
+//   Freight Baron (per-visit latch on >=12) + Zen Master (per-haul latch on a 5-streak)
+// =====================================================================
+console.log("(C8) event cadence — Freight Baron once per >=12 visit; Zen Master once per 5-streak haul");
+function parkOnDock() {
+  game.debris = []; game.hunters = []; game.saucers = []; game.bullets = []; game.powerups = []; game.garbage = [];
+  game.saucerTimer = 1e9; game.hunterTimer = 1e9; game.healthTimer = 1e9;
+  game.ship.invuln = 1e9; game.ship.shieldOn = false;
+  game.dock.x = game.ship.x; game.dock.y = game.ship.y;
+}
+// --- Freight Baron: one visit delivering 15 fires exactly once (latched on deliveryCount===12) ---
+startGame(); resetAch(); parkOnDock();
+fillChain(15); game.deliveryCount = 0; game.offloadTimer = 0;
+tickDock(16);
+assert(game.stats.delivered === 15, "C8: 15 delivered in one visit (got " + game.stats.delivered + ")");
+assert(Achievements.lifetime.heavyHaulerEvents === 1, "C8: Freight Baron counts a >=12 visit exactly ONCE (not per canister past 12)");
+assert(Achievements.lifetime.bestDeliveredGame === 15, "C8: Salvage King MAX tracks best delivered this game (15)");
+// A SECOND full visit (fresh deliveryCount) -> Freight Baron increments to 2.
+game.deliveryCount = 0; fillChain(12); game.offloadTimer = 0;
+tickDock(13);
+assert(Achievements.lifetime.heavyHaulerEvents === 2, "C8: a second >=12 visit increments Freight Baron to 2");
+// An UNDER-12 visit does NOT count.
+game.deliveryCount = 0; fillChain(11); game.offloadTimer = 0;
+tickDock(12);
+assert(Achievements.lifetime.heavyHaulerEvents === 2, "C8: an 11-canister visit does not increment Freight Baron");
+
+// --- Zen Master: a 5-in-a-row no-fire haul latches once; a fresh 5-streak after a fire counts again ---
+startGame(); resetAch(); parkOnDock();
+fillChain(7); game.deliveryCount = 0; game.offloadTimer = 0; game.stats.pacifistStreak = 0;
+tickDock(8); // deliver 7 with no firing -> streak passes 5 exactly once
+assert(game.stats.pacifistStreak === 7, "C8: pacifist streak climbed to 7 with no firing (got " + game.stats.pacifistStreak + ")");
+assert(Achievements.lifetime.pacifistTowEvents === 1, "C8: Zen Master counts a 5-streak haul exactly ONCE (not per delivery past 5)");
+game.stats.pacifistStreak = 0; // firing breaks the streak (Ship.update fire block); model the reset directly
+fillChain(5); game.deliveryCount = 0; game.offloadTimer = 0;
+tickDock(6);
+assert(Achievements.lifetime.pacifistTowEvents === 2, "C8: a fresh 5-streak haul after a reset counts again (per-EVENT)");
+
+// =====================================================================
+// (C9) Flawless Run weekly + the once-per-game event counters at game over
+// =====================================================================
+console.log("(C9) Flawless Run — damage-free wave 8 clear (not wave 7); Daredevil/Wave Rider at game over");
+startGame(); resetAch();
+game.wave = 7; game.debris = []; game.hunters = []; game.saucers = []; game.bullets = [];
+game.saucerTimer = 1e9; game.hunterTimer = 1e9; game.healthTimer = 1e9;
+game.ship.invuln = 1e9; game.stats.dmgThisWave = 0; game.waveClearTimer = 0;
+let g9 = 0; while (game.wave === 7 && g9++ < 200) update(0.1);
+assert(game.wave === 8, "C9: empty wave 7 cleared into wave 8");
+assert(!game.stats.flawlessLateWave && !wUnlocked("flawless_run"), "C9: a damage-free wave-7 clear does NOT arm Flawless Run (floor is 8)");
+// nextWave repopulated the field for wave 8 — clear it again so the wave-8 clear can trip.
+game.debris = []; game.hunters = []; game.saucers = []; game.bullets = [];
+game.stats.dmgThisWave = 0; game.waveClearTimer = 0;
+let g9b = 0; while (game.wave === 8 && g9b++ < 200) update(0.1);
+assert(game.wave === 9, "C9: empty wave 8 cleared into wave 9");
+assert(game.stats.flawlessLateWave && wUnlocked("flawless_run"), "C9: a damage-free wave-8 clear -> Flawless Run");
+
+// Daredevil (glassCannonGames) + Wave Rider (shieldSurferGames) tally once at game over from per-game state.
+startGame(); resetAch();
+game.wave = 6; game.stats.healthPicked = 0; game.stats.deflects = 10; // qualifies for BOTH
+killShip();
+assert(Achievements.lifetime.glassCannonGames === 1, "C9: wave-6, no-Health game over -> Daredevil +1");
+assert(Achievements.lifetime.shieldSurferGames === 1, "C9: 10-deflect game over -> Wave Rider +1");
+assert(lTier("daredevil") === 0 && lTier("wave_rider") === 0, "C9: both reached Bronze (tier 0) after one qualifying game");
+// A non-qualifying game (grabbed Health, few deflects) tallies neither.
+startGame(); resetAch();
+game.wave = 8; game.stats.healthPicked = 1; game.stats.deflects = 3;
+killShip();
+assert(Achievements.lifetime.glassCannonGames === 0, "C9: a Health pickup disqualifies Daredevil at game over");
+assert(Achievements.lifetime.shieldSurferGames === 0, "C9: under 10 deflects -> no Wave Rider at game over");
 
 // =====================================================================
 // (D) Toast lifecycle: an unlock queues a banner; updateToasts ages it out

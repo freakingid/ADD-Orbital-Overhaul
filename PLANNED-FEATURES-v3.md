@@ -42,16 +42,18 @@ done. Flagging up front so the phases don't "add" something that's present:
 
 # PART A — ACHIEVEMENTS OVERHAUL (main item)
 
-> **⏳ PARTIALLY SHIPPED.** **Phase 7 (v3.0) shipped the tier infrastructure + converted the seven
-> flagged lifetime achievements** — §A-1 (tier model, `TIER_NAMES`/`TIER_COLOR`, per-tier unlock),
-> §A-2 (`afd_achievements_v2` + `_v1` migration), the **seven converted rows** of §A-3 (Recycling
-> Magnate, Ghost Protocol, Saucer Hunter, Perfect Wave, Iron Hull, Master of the Field, No Powerups
-> Needed — incl. the new `maxWaveNoPowerup` MAX counter), and the §A-5 The-Long-Haul reword to a
-> fixed ≥12/visit. Spec now lives in **GDD §2.17** + the Architecture Map Achievements row.
-> **Still pending (Phase 8):** the six **new** tiered lifetime/event achievements in §A-3 (rows
-> A-8..A-14 — Sharpshooter, Salvage King, Field Sweeper, Freight Baron, Daredevil, Zen Master, Wave
-> Rider), §A-4 (the per-event fork), §A-6 (the new "Flawless Run" weekly), and the §A-7 rotation
-> recompute to a 16-weekly pool. The prose below is retained as the Phase-8 spec.
+> **✅ SHIPPED (v3.0 Phases 7 + 8).** **Phase 7** shipped the tier infrastructure + converted the seven
+> flagged lifetime achievements — §A-1 (tier model, `TIER_NAMES`/`TIER_COLOR`, per-tier unlock),
+> §A-2 (`afd_achievements_v2` + `_v1` migration), the seven converted rows of §A-3, and the §A-5
+> The-Long-Haul reword to a fixed ≥12/visit. **Phase 8** shipped the rest: the seven **new** tiered
+> lifetime/event achievements in §A-3 (rows A-8..A-14 — Sharpshooter, Freight Baron, Zen Master,
+> Daredevil, Wave Rider, Salvage King, Field Sweeper — with FLAG A-8-a's 7,500 diamond and FLAG A-12-a's
+> softened Daredevil/Wave Rider ladders), §A-4 resolved **per-EVENT (FORK A-fork-1)** for Freight
+> Baron/Zen Master (Daredevil/Wave Rider inherently once-per-game), §A-5's audit (Heavy Hauler / Freight
+> Baron / The Long Haul all key the fixed 12), §A-6's new **"Flawless Run"** weekly (clear wave 8+
+> damage-free, FLAG A-6-b), and §A-7's rotation recompute to a **16-weekly pool** (FLAG A-7-a). Headless
+> in `scratchpad/test-f9.js` (169→**277 assertions**). Spec now lives in **GDD §2.17** + the Architecture
+> Map Achievements row. The prose below is retained as the historical spec.
 
 ## A-0. What the shipped achievements system is (so the overhaul is precise)
 
