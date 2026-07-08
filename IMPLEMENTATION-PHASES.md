@@ -113,19 +113,34 @@ wave-clear gate is `debris.length === 0 && hunters.length === 0`.
 
 ---
 
-## Phase 4 — Pause/menu reachable from any state + ESC-to-pause (B-1, B-2)
+## Phase 4 — Pause/menu reachable from any state + ESC-to-pause (B-1, B-2) — SHIPPED
 
-**Goal:** ESC (keyboard) and Start (gamepad) open the pause/menu from **any** state; the
-Options/Controls/Achievements tree becomes reachable from the title/gameover without starting a game,
-via a context-aware root menu. This is the menu foundation P5 builds on.
+**SHIPPED — commit `90ab503` ("v3.0 P4 (revised): pause/menu from any state; corrected controls
+(Start=session toggle, O/B open menu, ESC pause)"), superseding the initial attempt at commit
+`389364a`.** The as-built control scheme: controller **Start = session toggle** (title/gameover →
+start a game; playing → open pause; paused → dismiss/resume — unchanged from the original §2.15
+spec, not a new mapping); keyboard **ESC** pauses during play and resolves to "back" inside a menu;
+keyboard **"O"** and controller **B** open the title/gameover **system menu**
+(`["Options","Achievements","Back"]`), both context-aware as "back" when a menu is already open.
+Authoritative spec now lives in GDD §2.9 / §2.16 / §2.15 + the Architecture Map Menu row; build
+narrative in `STATUS.md` (v3.0 P4 entries).
 
-**Touches:** the `bindings.pause` list; the keyboard open-gate + the gamepad `handleGamepadMenu`
-start/confirm routing; `openPause`/`drawRootMenu`/`menuRoot`; the `game.paused` invariant across
-states; the title-screen hint. **This is the trickiest of the change-set phases** — the correctness
-concern is input-context separation (rebind-capture → menu-open → normal) surviving menu-open in the
-title/gameover states.
+**FLAG P4-a resolved: "P" retired** as a pause key — `bindings.pause.keys` is `["escape"]` only,
+sharing ESC with `bindings.back`. **FLAG P4-b (a single confirm can't both navigate the system menu
+and start a game) held**, guaranteed structurally: the gamepad normal branch is an else-if chain
+(Start > B > A), and both the keyboard and gamepad handlers hit the menu-open context (which returns)
+before the title "press to start" line.
 
-**Ready-to-paste prompt:**
+**Historical note — the original prompt below planned FLAG B-1-a (controller Start remapped to
+open the menu, with "start game" moved fully onto A).** A playtest rejected that mapping; the P4
+run was reset to the clean Phase 3 commit and rebuilt with the corrected scheme above, where Start
+keeps its original session-toggle behavior and **O (keyboard) / B (controller)** — not Start — are
+the new system-menu openers. See `PLANNED-FEATURES-v3.md` §B-1/B-2 for the full as-built writeup and
+the formal withdrawal of B-1-a.
+
+<details>
+<summary>Original ready-to-paste prompt (planning-time; superseded by the as-built scheme above)</summary>
+
 > Read `CLAUDE.md`, `STATUS.md`, and GDD §2.9 + §2.15 + §2.16 (states, gamepad, menu state machine)
 > **carefully** before coding. Implement **v3.0 Phase 4 — pause/menu from any state + ESC-to-pause**
 > per `PLANNED-FEATURES-v3.md` §B-1/§B-2. Today pause opens only from `playing`; the whole
@@ -153,7 +168,11 @@ title/gameover states.
 **Model/effort:** **Opus, high thinking**, with `ultrathink` on the input-context/state-machine
 sub-problem as the prompt flags. This phase's risk is subtle input leakage, not volume.
 
-**Commit:** `v3.0 P4: pause/menu from any state + ESC-to-pause; context-aware root (title→Options/Achievements)`
+</details>
+
+**Commit:** `90ab503` (revised, shipped) — historical original-attempt commit: `389364a`
+(`v3.0 P4: pause/menu from any state + ESC-to-pause; context-aware root (title→Options/Achievements)`,
+superseded).
 
 ---
 
