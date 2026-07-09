@@ -98,7 +98,7 @@
 
 // ---------- Constants ----------
 // The world is a large wrapping torus; the viewport is a camera window onto it.
-const WORLD_W = 3840, WORLD_H = 2160;   // simulation space (the wrap boundary)
+const WORLD_W = 2560, WORLD_H = 1440;   // simulation space (the wrap boundary)
 const VIEW_W = 1280, VIEW_H = 720;      // visible viewport = canvas size
 const TAU = Math.PI * 2;
 
@@ -186,9 +186,9 @@ const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
 const SPAWN_MIN_DIST = 220;     // new debris satellites: nearest allowed to the ship
-const SPAWN_MAX_DIST = 1100;    // new debris satellites: farthest from the ship (stay reachable)
+const SPAWN_MAX_DIST = 640;     // new debris satellites: farthest from the ship (stay reachable; clamped to min(WORLD_W,WORLD_H)/2-60 = 660 for the 2560x1440 world)
 const DOCK_MIN_DIST = 260;      // recycling dock: nearest allowed to the ship
-const DOCK_MAX_DIST = 900;      // recycling dock: farthest from the ship (stay reachable)
+const DOCK_MAX_DIST = 620;      // recycling dock: farthest from the ship (stay reachable; kept below SPAWN_MAX_DIST)
 const STAR_DENSITY = 80;        // background stars per viewport-sized area of world
 const STAR_PARALLAX_FACTOR = 0.5; // near layer's camera-offset fraction (screen-space tiled, not world-fixed)
 const STAR_BRIGHT_MIN = 0.35;   // per-star alpha range, far (world-fixed) layer
