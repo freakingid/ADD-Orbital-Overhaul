@@ -1008,10 +1008,10 @@ function ramp(floor, ceil, wave) {
 }
 
 function wrap(obj) {
-  if (obj.x < -60) obj.x += WORLD_W + 120;
-  if (obj.x > WORLD_W + 60) obj.x -= WORLD_W + 120;
-  if (obj.y < -60) obj.y += WORLD_H + 120;
-  if (obj.y > WORLD_H + 60) obj.y -= WORLD_H + 120;
+  if (obj.x < -60) obj.x += WORLD_W;
+  if (obj.x > WORLD_W + 60) obj.x -= WORLD_W;
+  if (obj.y < -60) obj.y += WORLD_H;
+  if (obj.y > WORLD_H + 60) obj.y -= WORLD_H;
 }
 
 function dist2(a, b) {
@@ -2269,10 +2269,10 @@ function chainMass() {
 }
 
 function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity survives
-  if (n.x < -60) { n.x += WORLD_W + 120; n.px += WORLD_W + 120; }
-  if (n.x > WORLD_W + 60) { n.x -= WORLD_W + 120; n.px -= WORLD_W + 120; }
-  if (n.y < -60) { n.y += WORLD_H + 120; n.py += WORLD_H + 120; }
-  if (n.y > WORLD_H + 60) { n.y -= WORLD_H + 120; n.py -= WORLD_H + 120; }
+  if (n.x < -60) { n.x += WORLD_W; n.px += WORLD_W; }
+  if (n.x > WORLD_W + 60) { n.x -= WORLD_W; n.px -= WORLD_W; }
+  if (n.y < -60) { n.y += WORLD_H; n.py += WORLD_H; }
+  if (n.y > WORLD_H + 60) { n.y -= WORLD_H; n.py -= WORLD_H; }
 }
 
 function updateChain(dt) {
