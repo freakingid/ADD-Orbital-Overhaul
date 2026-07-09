@@ -160,6 +160,19 @@ const GARBAGE_DECAY = 12;       // sec before uncollected garbage decays away (F
 const GARBAGE_SEVER_DECAY = 10; // sec decay for garbage knocked loose from a severed chain (was an inline 15; kept < GARBAGE_DECAY so loose scrap stays the more ephemeral)
 const GARBAGE_PICKUP = 18;      // pickup radius from ship center
 
+// Garbage coalescence (v3.1 P3): uncollected canisters mutually attract and, on contact, fuse into a
+// growing clump; at HUNTER_COALESCE_COUNT pieces the clump collapses into a fresh large Hunter core
+// (neglect breeds danger). A piece stays inert for GARBAGE_COALESCE_DELAY sec after emission so a
+// fresh burst rides its explosion kick APART first — both the attraction AND the merge are gated on
+// it. This is a separate, weaker, always-on force from the Magnet powerup (that pulls garbage→ship);
+// Magnet is the natural anti-coalescence tool (vacuum pieces before they clump). All math wrap-aware.
+const GARBAGE_COALESCE_DELAY = 1.0;    // sec after emission before a piece attracts/merges
+const GARBAGE_MAGNET_RANGE = 140;      // px: garbage↔garbage mutual-attraction range (local by design)
+const GARBAGE_MAGNET_PULL = 40;        // px/s² each active piece accelerates toward a nearby active piece
+const GARBAGE_MERGE_DIST = 12;         // px: two active pieces this close fuse into one clump
+const HUNTER_COALESCE_COUNT = 12;      // pieces fused into one clump -> a new large Hunter core forms
+const GARBAGE_CLUMP_MAXSPD = Infinity; // off-by-default playtest clamp on a piece's coalescence speed
+
 const CHAIN_LINK = 20;          // px between chain nodes
 const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-8: 3→4 to keep a 20-node chain from sagging; §3.4 rule 7)
 // Tow capacity (B-8): the cap is a runtime value (game.cargoMax) that GROWS during a run from
@@ -506,6 +519,22 @@ const AudioSys = {
       g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.2);
       o.connect(g).connect(this.sfx);
       o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.22);
+    });
+  },
+
+  hunterborn() { // a Hunter coalesced from neglected scrap — a low, ominous descending two-tone with
+    if (!this.ctx) return;                      // slight dissonance (~a tritone), darker/longer than explosion
+    const t = this.now();
+    [[196, 138], [139, 98]].forEach(([f0, f1]) => { // two sawtooth voices a dissonant ~√2 apart, both falling
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 0.4);
+      g.gain.setValueAtTime(0.13, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+      o.connect(g).connect(this.sfx);
+      o.start(t); o.stop(t + 0.43);
     });
   }
 };
@@ -1491,6 +1520,12 @@ class Garbage {
     this.decay = decay;
     this.mass = mass;   // towing weight (F5): 1.0 for Debris scrap; lighter scrap tows easier
     this.radius = 7;
+    // Coalescence (v3.1 P3). These constructor defaults are inherited by all three emission sites
+    // AND Garbage.fromNode. `coalesceDelay` counts down in update(); a piece is "active" (attracts +
+    // can merge) once it hits 0. `pieces` is purely the threat trigger — decoupled from `mass`, so a
+    // clump still tows as one normal mass-1.0 node (FORK-2).
+    this.coalesceDelay = GARBAGE_COALESCE_DELAY;
+    this.pieces = 1;
     this.dead = false;
   }
   static fromNode(n, decay = GARBAGE_SEVER_DECAY) { // chain node knocked loose -> free garbage
@@ -1502,6 +1537,7 @@ class Garbage {
     this.x += this.vx * dt; this.y += this.vy * dt;
     this.spin += this.spinRate * dt;
     wrap(this);
+    if (this.coalesceDelay > 0) this.coalesceDelay -= dt; // v3.1 P3: gate attraction/merge for 1 s
     this.decay -= dt;
     // Expired uncollected (distinct from a pickup, which sets dead externally): counts against
     // Waste Not (F9). Pickup never reaches here because the pickup pass sets dead first.
@@ -2275,6 +2311,59 @@ function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity surv
   if (n.y > WORLD_H + 60) { n.y -= WORLD_H; n.py -= WORLD_H; }
 }
 
+// Garbage coalescence pass (v3.1 P3). Runs once per frame from update(), AFTER the garbage
+// pickup/magnet loop and BEFORE updateChain(dt). O(n²) over ACTIVE pieces (cheap at realistic counts
+// — a full lineage tops out ~39 free canisters); every measurement is wrap-aware (dist2/shortDelta),
+// and a piece already marked dead this pass is skipped. Both the attraction and the merge require
+// BOTH pieces active (coalesceDelay <= 0), so a fresh burst disperses for 1 s before it can clump.
+// FORK-1: coalesced Hunters are spawned independent of game.hunterTimer, so neglect can breed several
+// concurrent lineages. Relies on the existing end-of-frame dead-filter for compaction (no new filter).
+function coalesceGarbage(dt) {
+  const gs = game.garbage;
+  for (let i = 0; i < gs.length; i++) {
+    const a = gs[i];
+    if (a.dead || a.coalesceDelay > 0) continue;          // survivor must be alive AND active
+    for (let j = i + 1; j < gs.length; j++) {
+      const b = gs[j];
+      if (b.dead || b.coalesceDelay > 0) continue;        // both pieces must be active
+      const d2 = dist2(a, b);
+      if (d2 >= GARBAGE_MAGNET_RANGE * GARBAGE_MAGNET_RANGE) continue;
+      const [dx, dy] = shortDelta(a.x, a.y, b.x, b.y);     // shortest vector a -> b (wrap-aware)
+      if (d2 < GARBAGE_MERGE_DIST * GARBAGE_MERGE_DIST) {
+        // Merge: survivor inherits the LITERAL vector sum of both velocities and the piece count,
+        // but KEEPS its base mass (FORK-2 — a clump tows as one normal canister). Coalescing is a
+        // DISTINCT fate from decaying, so it must NOT touch game.stats.garbageDecayed (Waste Not).
+        a.vx += b.vx; a.vy += b.vy;
+        a.pieces += b.pieces;
+        b.dead = true;
+        if (a.pieces >= HUNTER_COALESCE_COUNT) {
+          // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
+          a.dead = true;
+          game.hunters.push(new HunterSatellite(a.x, a.y, 3));
+          AudioSys.hunterborn();
+          break;   // survivor is gone — stop pairing it against the rest
+        }
+        continue;  // survivor lives on; keep scanning further pieces against it this pass
+      }
+      // Otherwise: mutual attraction. Each accelerates toward the other by PULL·dt (symmetric).
+      const d = Math.sqrt(d2) || 0.0001;
+      const ax = (dx / d) * GARBAGE_MAGNET_PULL * dt;
+      const ay = (dy / d) * GARBAGE_MAGNET_PULL * dt;
+      a.vx += ax; a.vy += ay;
+      b.vx -= ax; b.vy -= ay;
+      if (GARBAGE_CLUMP_MAXSPD !== Infinity) { // off-by-default playtest clamp
+        clampGarbageSpeed(a); clampGarbageSpeed(b);
+      }
+    }
+  }
+}
+
+// Clamp a coalescing piece's speed to GARBAGE_CLUMP_MAXSPD (only called when the clamp is enabled).
+function clampGarbageSpeed(g) {
+  const s = Math.hypot(g.vx, g.vy);
+  if (s > GARBAGE_CLUMP_MAXSPD) { g.vx = g.vx / s * GARBAGE_CLUMP_MAXSPD; g.vy = g.vy / s * GARBAGE_CLUMP_MAXSPD; }
+}
+
 function updateChain(dt) {
   const chain = game.chain;
   if (chain.length === 0 || game.ship.dead) return;
@@ -2425,6 +2514,7 @@ function update(dt) {
       if (magnet && settings.magnetMode === "pieces" && game.powerBudget.magnet > 0) game.powerBudget.magnet--;
     }
   }
+  coalesceGarbage(dt); // v3.1 P3: neglected scrap clumps; a 12-piece clump becomes a Hunter
   updateChain(dt);
 
   // --- Powerups: field pickups + active-effect countdown (F6) ---
