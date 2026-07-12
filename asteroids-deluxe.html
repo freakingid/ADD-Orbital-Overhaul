@@ -123,7 +123,8 @@ const SHIELD_RADIUS = 26;
 const DEBRIS_SPEEDS = { 3: 70, 2: 110, 1: 160 };  // base drift speed by size
 const DEBRIS_RADII  = { 3: 46, 2: 26, 1: 13 };
 const DEBRIS_SCORE  = { 3: 20, 2: 50, 1: 100 };
-const DEBRIS_GARBAGE = 3;       // canisters emitted at EVERY tier's destruction (F3)
+const DEBRIS_GARBAGE = 4;       // canisters emitted at EVERY tier's destruction (F3). PLAYTEST KNOB:
+                                 // 3->4 in v3.4 P1, compensating field supply for the Hunter-side garbage cut (FORK-1(b)).
 
 const SAUCER_SCORE = { big: 200, small: 1000 };
 
@@ -139,9 +140,11 @@ const HUNTER_SPEED_CEIL = { 3: 70, 2: 120, 1: 175 };  // full-difficulty px/s: l
 const HUNTER_TURN_CEIL  = { 3: 0, 2: 1.6, 1: 2.6 };   // full-difficulty homing turn rate (rad/s); large never turns (passive drift)
 const HUNTER_FLOOR_FRAC = 0.58;   // wave-1 speeds & turn rates = this × ceiling (THE knob for early-game Hunter calm)
 const HUNTER_SCATTER    = 0.6;    // sec a freshly-split homer scatters outward before homing engages
-const HUNTER_GARBAGE       = 3;   // canisters from a large/medium kill (normal mass 1.0)
-const HUNTER_SMALL_GARBAGE = 6;   // canisters from a small kill — a larger burst...
-const HUNTER_SMALL_MASS    = 0.5; // ...of LOW-mass scrap (tows easier — a valuable bonus for finishing a Hunter line)
+// PLAYTEST KNOB (v3.4 P1): canisters per Hunter KILL, by tier — was a flat HUNTER_GARBAGE=3 for
+// both large/medium plus a separate HUNTER_SMALL_GARBAGE=6 for the small tier; now one per-tier
+// table shaped like HUNTER_RADII/HUNTER_SCORE/HUNTER_DAMAGE.
+const HUNTER_GARBAGE       = { 3: 3, 2: 2, 1: 1 };
+const HUNTER_SMALL_MASS    = 0.5; // small-tier canister(s) stay LOW-mass scrap (tows easier — a valuable bonus for finishing a Hunter line)
 
 // Health, damage & knockback (F2) — a single HP pool replaces discrete lives
 const SHIP_MAX_HP = 250;        // full hull integrity at game start; no respawns
@@ -201,7 +204,7 @@ const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-
 // CARGO_BASE toward CARGO_CAP_MAX — capacity is earned by engaging the salvage loop (Pillar 5),
 // not handed out. The old fixed `CHAIN_MAX` (12) is now CARGO_BASE.
 const CARGO_BASE = 12;          // starting tow cap (was CHAIN_MAX)
-const CARGO_CAP_MAX = 20;       // ceiling; the physics retune below targets "full chain here" ≈ old 12-node feel
+const CARGO_CAP_MAX = 24;       // ceiling (v3.4 P1: 20->24); the physics retune below targets "full chain here" ≈ old 12-node feel
 const CARGO_GROW_PER = 30;      // +1 cap per this many canisters recycled (delivered) in the current run
 const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
 // Mass-penalty coefficients (B-8 retune). With a 20-node ceiling, the per-node penalty is SOFTENED
@@ -217,6 +220,8 @@ const CARGO_MAXSPD = 0.03;      // max-speed divisor grows by this per unit of t
 const DOCK_RADIUS = 44;
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
 const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
+const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare literal 0.13). sec between
+                                     // canisters peeling off at the dock.
 
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
@@ -2079,7 +2084,7 @@ function destroyHunter(h, awardScore = true) {
   // deliberately: 9a's single-decay is now the governor holding the field, not emission suppression.
   if (h.size === 1) {
     // Final tier: an easy-to-tow bonus pile of low-mass canisters (mass 0.5, paler tint).
-    for (let i = 0; i < HUNTER_SMALL_GARBAGE; i++) {
+    for (let i = 0; i < HUNTER_GARBAGE[h.size]; i++) {
       const spread = rand(0, TAU), kick = rand(30, 70);
       game.garbage.push(new Garbage(h.x, h.y,
         h.vx * 0.25 + Math.cos(spread) * kick,
@@ -2088,8 +2093,8 @@ function destroyHunter(h, awardScore = true) {
     }
     maybeDropPowerup(h.x, h.y); // finishing off a Hunter line can drop a powerup (F6)
   } else {
-    // Large/medium: 3 normal-mass canisters, then a 3-way split into actively-homing children.
-    for (let i = 0; i < HUNTER_GARBAGE; i++) {
+    // Large/medium: normal-mass canisters (tiered), then a 3-way split into actively-homing children.
+    for (let i = 0; i < HUNTER_GARBAGE[h.size]; i++) {
       const spread = rand(0, TAU), kick = rand(20, 55);
       game.garbage.push(new Garbage(h.x, h.y,
         h.vx * 0.25 + Math.cos(spread) * kick,
@@ -2921,7 +2926,7 @@ function update(dt) {
         Achievements.lifetime.deliveryScore += pts;
         game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
         AudioSys.deliver(game.deliveryCount);
-        game.offloadTimer = 0.13;
+        game.offloadTimer = DOCK_OFFLOAD_INTERVAL;
       }
     } else {
       game.offloadTimer = 0;

@@ -76,7 +76,7 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
   "GARBAGE_DECAY", "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
-  "HUNTER_GARBAGE", "HUNTER_SMALL_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
+  "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "WORLD_W", "WORLD_H"];
 
 const wrapped = new Function(
@@ -88,7 +88,7 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
   destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
   GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
-  HUNTER_GARBAGE, HUNTER_SMALL_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE, WORLD_W, WORLD_H } = G;
+  HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE, WORLD_W, WORLD_H } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -455,9 +455,10 @@ console.log("(16) v3.3 P4 (9a): a loose SINGLE ages out at GARBAGE_DECAY; a CLUM
 }
 
 // =====================================================================
-console.log("(17) v3.3 P4 (9b): a SCRAP-BORN lineage now emits the FULL 66 — same as a timer-spawned one");
+console.log("(17) v3.3 P4 (9b): a SCRAP-BORN lineage now emits the FULL per-tier total — same as a timer-spawned one");
 {
   const cx = 1000, cy = 1000;
+  const LINEAGE_TOTAL = HUNTER_GARBAGE[3] + 3 * HUNTER_GARBAGE[2] + 9 * HUNTER_GARBAGE[1]; // v3.4 P1: 3+6+9=18
   // baseline: a normal (timer-spawned) full lineage, for the score + garbage reference
   beginPlaying();
   game.powerups = [];
@@ -468,9 +469,9 @@ console.log("(17) v3.3 P4 (9b): a SCRAP-BORN lineage now emits the FULL 66 — s
   const normalScore = game.score - scoreBefore0;
   const normalGarbage = game.garbage.length;
   assert(normalKills === 13, `17: a full lineage is 13 kills (got ${normalKills})`);
-  assert(normalGarbage === 66, `17: a timer-spawned lineage drops 66 (got ${normalGarbage})`);
+  assert(normalGarbage === LINEAGE_TOTAL, `17: a timer-spawned lineage drops ${LINEAGE_TOTAL} (got ${normalGarbage})`);
 
-  // A core that WAS scrap-born (v3.2 flagged it; v3.3 P4 deletes the flag): it now drops the full 66 too.
+  // A core that WAS scrap-born (v3.2 flagged it; v3.3 P4 deletes the flag): it now drops the full total too.
   beginPlaying();
   game.powerups = [];
   const scoreBefore1 = game.score;
@@ -484,13 +485,13 @@ console.log("(17) v3.3 P4 (9b): a SCRAP-BORN lineage now emits the FULL 66 — s
   const scrapScore = game.score - scoreBefore1;
 
   assert(scrapKills === 13, `17: the (formerly scrap-born) lineage is also 13 kills (got ${scrapKills})`);
-  assert(game.garbage.length === 66, `17: it now emits the FULL 66 (was 0 under v3.2's bornOfScrap gate; got ${game.garbage.length})`);
+  assert(game.garbage.length === LINEAGE_TOTAL, `17: it now emits the FULL ${LINEAGE_TOTAL} (was 0 under v3.2's bornOfScrap gate; got ${game.garbage.length})`);
   assert(scrapScore === normalScore, `17: score is UNCHANGED vs the timer lineage (${scrapScore} vs ${normalScore})`);
   assert(scrapPowerups === 9, `17: the small tier still drops its powerup — one per 9 small kills (got ${scrapPowerups})`);
 }
 
 // =====================================================================
-console.log("(18) v3.3 P4: a timer-spawned Hunter still emits the full 12 normal + 54 low = 66");
+console.log("(18) v3.4 P1: a timer-spawned Hunter emits per-tier: 3 (large) + 3*2 (medium) + 9*1 (small) = 18");
 {
   beginPlaying();
   const core = new HunterSatellite(1000, 1000, 3);
@@ -499,9 +500,10 @@ console.log("(18) v3.3 P4: a timer-spawned Hunter still emits the full 12 normal
   const total = game.garbage.length;
   const normalMass = game.garbage.filter(g => g.mass === 1.0).length;
   const lowMass = game.garbage.filter(g => g.mass === HUNTER_SMALL_MASS).length;
-  assert(total === 66, `18: a full normal lineage drops 66 canisters (got ${total})`);
-  assert(normalMass === HUNTER_GARBAGE * 4, `18: 12 normal-mass canisters from large + 3 mediums (got ${normalMass})`);
-  assert(lowMass === HUNTER_SMALL_GARBAGE * 9, `18: 54 low-mass canisters from 9 smalls (got ${lowMass})`);
+  const LINEAGE_TOTAL = HUNTER_GARBAGE[3] + 3 * HUNTER_GARBAGE[2] + 9 * HUNTER_GARBAGE[1];
+  assert(total === LINEAGE_TOTAL, `18: a full normal lineage drops ${LINEAGE_TOTAL} canisters (got ${total})`);
+  assert(normalMass === HUNTER_GARBAGE[3] + 3 * HUNTER_GARBAGE[2], `18: normal-mass canisters from large + 3 mediums (got ${normalMass})`);
+  assert(lowMass === 9 * HUNTER_GARBAGE[1], `18: low-mass canisters from 9 smalls (got ${lowMass})`);
 }
 
 // =====================================================================
@@ -511,17 +513,17 @@ console.log("(19) v3.3 P4 (FORK-5): `bornOfScrap` is GONE — split children car
   const core = new HunterSatellite(1000, 1000, 3);
   assert(!("bornOfScrap" in core), "19: a fresh Hunter core has no bornOfScrap field (deleted)");
   game.hunters = []; game.garbage = [];
-  destroyHunter(core); // -> 3 medium children + 3 canisters
+  destroyHunter(core); // -> 3 medium children + HUNTER_GARBAGE[3] canisters
   const meds = game.hunters.slice();
   assert(meds.length === 3 && meds.every(m => m.size === 2 && !("bornOfScrap" in m)),
     "19: the 3 medium children carry NO bornOfScrap field");
-  assert(game.garbage.length === HUNTER_GARBAGE, `19: the large core emitted its ${HUNTER_GARBAGE} canisters (got ${game.garbage.length})`);
+  assert(game.garbage.length === HUNTER_GARBAGE[3], `19: the large core emitted its ${HUNTER_GARBAGE[3]} canisters (got ${game.garbage.length})`);
   game.hunters = []; game.garbage = [];
-  destroyHunter(meds[0]); // -> 3 small grandchildren + 3 canisters
+  destroyHunter(meds[0]); // -> 3 small grandchildren + HUNTER_GARBAGE[2] canisters
   const smalls = game.hunters.slice();
   assert(smalls.length === 3 && smalls.every(s => s.size === 1 && !("bornOfScrap" in s)),
     "19: the 3 small grandchildren carry NO bornOfScrap field either");
-  assert(game.garbage.length === HUNTER_GARBAGE, `19: the medium tier ALSO emitted garbage (got ${game.garbage.length})`);
+  assert(game.garbage.length === HUNTER_GARBAGE[2], `19: the medium tier ALSO emitted garbage (got ${game.garbage.length})`);
 }
 
 // =====================================================================
@@ -534,10 +536,11 @@ console.log("(20) v3.3 P4: a coalesced core carries no bornOfScrap flag and drop
   const born = game.hunters[game.hunters.length - 1];
   assert(born.size === 3 && !("bornOfScrap" in born), "20: the coalesced core is a large core with NO bornOfScrap flag");
   assert(game.stats.hunterCoalesced === 1, "20: one transform -> hunterCoalesced === 1 (still tracked)");
-  // and it drops garbage like any other Hunter (9b): kill its whole lineage -> 66
+  // and it drops garbage like any other Hunter (9b): kill its whole lineage -> per-tier total
+  const LINEAGE_TOTAL = HUNTER_GARBAGE[3] + 3 * HUNTER_GARBAGE[2] + 9 * HUNTER_GARBAGE[1];
   game.hunters = [born]; game.garbage = [];
   killLineage(born);
-  assert(game.garbage.length === 66, `20: the coalesced lineage now drops the full 66 (got ${game.garbage.length})`);
+  assert(game.garbage.length === LINEAGE_TOTAL, `20: the coalesced lineage now drops the full ${LINEAGE_TOTAL} (got ${game.garbage.length})`);
   // a second, independent clump transforms too — the stat keeps counting
   beginPlaying();
   for (let i = 0; i < HUNTER_COALESCE_COUNT; i++) { const g = new Garbage(700, 700, 0, 0); g.coalesceDelay = 0; game.garbage.push(g); }

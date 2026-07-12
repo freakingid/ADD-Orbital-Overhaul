@@ -99,7 +99,7 @@ game.state = "playing"; game.paused = false;
 console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (v3.3 P4: single garbage decays again on GARBAGE_DECAY=${GARBAGE_DECAY})`);
 
 // =====================================================================
-// (A) full lineage: 1 large -> 3 mediums -> 9 smalls = 13 kills, 39 canisters
+// (A) full lineage: 1 large -> 3 mediums -> 9 smalls = 13 kills, 13*DEBRIS_GARBAGE canisters
 // =====================================================================
 console.log("(A) full lineage kill/garbage counts");
 clearField();
@@ -118,8 +118,8 @@ const smallK = sizesKilled.filter(s => s === 1).length;
 assert(kills === 13, `A: lineage produced 13 kills (got ${kills})`);
 assert(largeK === 1 && medK === 3 && smallK === 9,
   `A: tier kill breakdown 1 large / 3 medium / 9 small (got ${largeK}/${medK}/${smallK})`);
-assert(game.garbage.length === 39,
-  `A: exactly 39 canisters from a fully-cleared large lineage (got ${game.garbage.length})`);
+assert(game.garbage.length === 13 * DEBRIS_GARBAGE,
+  `A: exactly ${13 * DEBRIS_GARBAGE} canisters from a fully-cleared large lineage (got ${game.garbage.length})`);
 assert(game.garbage.every(g => g.mass === 1.0),
   "A: every Debris-sourced canister is mass 1.0");
 

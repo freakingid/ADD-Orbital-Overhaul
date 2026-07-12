@@ -5,11 +5,12 @@
 //   node scratchpad/test-f5.js
 //
 // Confirms:
-//  (A) destroying a full Hunter lineage (1 large -> 3 mediums -> 9 smalls) = 13 kills, and
-//      exactly 12 normal-mass (1.0) + 54 low-mass (0.5) = 66 canisters (mass sum 39, the
-//      Debris-equivalent haul), from the real destroyHunter path;
-//  (B) per-tier split + garbage in isolation: large -> 3 mediums + 3x mass-1.0; medium ->
-//      3 smalls + 3x mass-1.0; small -> destroyed (no children) + HUNTER_SMALL_GARBAGE x mass-0.5;
+//  (A) destroying a full Hunter lineage (1 large -> 3 mediums -> 9 smalls) = 13 kills, and (v3.4 P1)
+//      exactly HUNTER_GARBAGE[3] + 3*HUNTER_GARBAGE[2] normal-mass (1.0) + 9*HUNTER_GARBAGE[1]
+//      low-mass (0.5) canisters, per-tier, from the real destroyHunter path;
+//  (B) per-tier split + garbage in isolation: large -> 3 mediums + HUNTER_GARBAGE[3]x mass-1.0;
+//      medium -> 3 smalls + HUNTER_GARBAGE[2]x mass-1.0; small -> destroyed (no children) +
+//      HUNTER_GARBAGE[1]x mass-0.5;
 //  (C) per-tier damage/score tables, the passive-vs-homing split, and spawnCore making a core;
 //  (D) EVERY speed & turn rate wires through difficultyFactor: wave-1 values sit exactly on
 //      the HUNTER_FLOOR_FRAC floor and are meaningfully slower than wave-20 values (all tiers),
@@ -46,7 +47,7 @@ const returnList = [
   "HunterSatellite", "Garbage", "destroyHunter",
   "HUNTER_RADII", "HUNTER_SCORE", "HUNTER_DAMAGE",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC", "HUNTER_SCATTER",
-  "HUNTER_GARBAGE", "HUNTER_SMALL_GARBAGE", "HUNTER_SMALL_MASS",
+  "HUNTER_GARBAGE", "HUNTER_SMALL_MASS",
   "difficultyFactor", "angleTo",
   "WORLD_W", "WORLD_H"
 ];
@@ -60,7 +61,7 @@ const {
   HunterSatellite, Garbage, destroyHunter,
   HUNTER_RADII, HUNTER_SCORE, HUNTER_DAMAGE,
   HUNTER_SPEED_CEIL, HUNTER_TURN_CEIL, HUNTER_FLOOR_FRAC, HUNTER_SCATTER,
-  HUNTER_GARBAGE, HUNTER_SMALL_GARBAGE, HUNTER_SMALL_MASS,
+  HUNTER_GARBAGE, HUNTER_SMALL_MASS,
   difficultyFactor, angleTo,
   WORLD_W, WORLD_H
 } = A;
@@ -93,10 +94,10 @@ function node(x, y, mass) {
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) FLOOR_FRAC=${HUNTER_FLOOR_FRAC}  SMALL_GARBAGE=${HUNTER_SMALL_GARBAGE}@mass${HUNTER_SMALL_MASS}  SPEED_CEIL=${JSON.stringify(HUNTER_SPEED_CEIL)}`);
+console.log(`(config) FLOOR_FRAC=${HUNTER_FLOOR_FRAC}  HUNTER_GARBAGE=${JSON.stringify(HUNTER_GARBAGE)}@mass${HUNTER_SMALL_MASS}(small)  SPEED_CEIL=${JSON.stringify(HUNTER_SPEED_CEIL)}`);
 
 // =====================================================================
-// (A) full Hunter lineage: 13 kills; 12 mass-1.0 + 54 mass-0.5 = 66 canisters
+// (A) full Hunter lineage: 13 kills; per-tier canister counts (v3.4 P1)
 // =====================================================================
 console.log("(A) full lineage kill / tiered-garbage counts");
 clearField();
@@ -118,12 +119,15 @@ assert(largeK === 1 && medK === 3 && smallK === 9,
   `A: tier kill breakdown 1 large / 3 medium / 9 small (got ${largeK}/${medK}/${smallK})`);
 const normalMass = game.garbage.filter(g => g.mass === 1.0).length;
 const lowMass    = game.garbage.filter(g => g.mass === HUNTER_SMALL_MASS).length;
-assert(normalMass === 12, `A: 12 normal-mass canisters (1 large + 3 mediums, 3 each) (got ${normalMass})`);
-assert(lowMass === 9 * HUNTER_SMALL_GARBAGE, `A: ${9 * HUNTER_SMALL_GARBAGE} low-mass canisters (9 smalls x ${HUNTER_SMALL_GARBAGE}) (got ${lowMass})`);
-assert(game.garbage.length === 12 + 9 * HUNTER_SMALL_GARBAGE,
-  `A: total ${12 + 9 * HUNTER_SMALL_GARBAGE} canisters from a full lineage (got ${game.garbage.length})`);
+const expectNormal = HUNTER_GARBAGE[3] + 3 * HUNTER_GARBAGE[2];
+const expectLow = 9 * HUNTER_GARBAGE[1];
+assert(normalMass === expectNormal, `A: ${expectNormal} normal-mass canisters (1 large + 3 mediums) (got ${normalMass})`);
+assert(lowMass === expectLow, `A: ${expectLow} low-mass canisters (9 smalls x ${HUNTER_GARBAGE[1]}) (got ${lowMass})`);
+assert(game.garbage.length === expectNormal + expectLow,
+  `A: total ${expectNormal + expectLow} canisters from a full lineage (got ${game.garbage.length})`);
 const massSum = game.garbage.reduce((s, g) => s + g.mass, 0);
-assert(near(massSum, 39), `A: total towable mass sums to 39 (the Debris-equivalent haul) (got ${massSum})`);
+const expectMass = expectNormal * 1.0 + expectLow * HUNTER_SMALL_MASS;
+assert(near(massSum, expectMass), `A: total towable mass sums to ${expectMass} (got ${massSum})`);
 
 // =====================================================================
 // (B) per-tier split + tiered garbage mass in isolation
@@ -131,23 +135,23 @@ assert(near(massSum, 39), `A: total towable mass sums to 39 (the Debris-equivale
 console.log("(B) per-tier splits + tiered garbage mass");
 clearField();
 destroyHunter(new HunterSatellite(cx, cy, 3, 0));
-assert(game.garbage.length === HUNTER_GARBAGE && game.garbage.every(g => g.mass === 1.0),
-  `B: large drops exactly ${HUNTER_GARBAGE} normal-mass (1.0) canisters (got ${game.garbage.length})`);
+assert(game.garbage.length === HUNTER_GARBAGE[3] && game.garbage.every(g => g.mass === 1.0),
+  `B: large drops exactly ${HUNTER_GARBAGE[3]} normal-mass (1.0) canisters (got ${game.garbage.length})`);
 assert(game.hunters.length === 3 && game.hunters.every(h => h.size === 2 && h.homing),
   "B: large -> 3 actively-homing mediums");
 
 clearField();
 destroyHunter(new HunterSatellite(cx, cy, 2, 0));
-assert(game.garbage.length === HUNTER_GARBAGE && game.garbage.every(g => g.mass === 1.0),
-  `B: medium drops exactly ${HUNTER_GARBAGE} normal-mass (1.0) canisters (got ${game.garbage.length})`);
+assert(game.garbage.length === HUNTER_GARBAGE[2] && game.garbage.every(g => g.mass === 1.0),
+  `B: medium drops exactly ${HUNTER_GARBAGE[2]} normal-mass (1.0) canisters (got ${game.garbage.length})`);
 assert(game.hunters.length === 3 && game.hunters.every(h => h.size === 1 && h.homing),
   "B: medium -> 3 actively-homing smalls");
 
 clearField();
 destroyHunter(new HunterSatellite(cx, cy, 1, 0));
 assert(game.hunters.length === 0, "B: small -> no children (destroyed)");
-assert(game.garbage.length === HUNTER_SMALL_GARBAGE && game.garbage.every(g => g.mass === HUNTER_SMALL_MASS),
-  `B: small drops a burst of ${HUNTER_SMALL_GARBAGE} LOW-mass (${HUNTER_SMALL_MASS}) canisters (got ${game.garbage.length} @ masses [${[...new Set(game.garbage.map(g => g.mass))]}])`);
+assert(game.garbage.length === HUNTER_GARBAGE[1] && game.garbage.every(g => g.mass === HUNTER_SMALL_MASS),
+  `B: small drops a burst of ${HUNTER_GARBAGE[1]} LOW-mass (${HUNTER_SMALL_MASS}) canisters (got ${game.garbage.length} @ masses [${[...new Set(game.garbage.map(g => g.mass))]}])`);
 
 // =====================================================================
 // (C) damage / score tables, passive-vs-homing, spawnCore
@@ -257,8 +261,8 @@ update(DT);
 assert(med.dead, "G: a medium Hunter is destroyed on shield contact");
 assert(game.hunters.length === 3 && game.hunters.every(h => h.size === 1),
   `G: the shield-killed medium still split into 3 smalls (got ${game.hunters.length})`);
-assert(game.garbage.length === HUNTER_GARBAGE && game.garbage.every(g => g.mass === 1.0),
-  "G: shield-kill still emitted the tier's 3 normal-mass canisters");
+assert(game.garbage.length === HUNTER_GARBAGE[2] && game.garbage.every(g => g.mass === 1.0),
+  `G: shield-kill still emitted the tier's ${HUNTER_GARBAGE[2]} normal-mass canisters`);
 assert(game.ship.energy < 1 - 1e-9, `G: the shield-kill cost deflection energy (${game.ship.energy.toFixed(3)} < 1)`);
 assert(game.ship.hp === 250, "G: shielded — no hull damage taken from the contact");
 

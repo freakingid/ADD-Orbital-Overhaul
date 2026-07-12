@@ -1,24 +1,28 @@
 // Headless test for v3.0 Phase 6 (B-8): growing tow cap + chain mass-penalty retune + stability.
-// Follows GDD 5.4 rule 7: stub window/document/rAF, eval the REAL <script> block, then drive the
-// actual game code (no reimplementation).
+// Extended for v3.4 P1 (CARGO_CAP_MAX 20->24). Follows GDD 5.4 rule 7: stub window/document/rAF,
+// eval the REAL <script> block, then drive the actual game code (no reimplementation).
 //
 //   node scratchpad/test-p6.js
 //
 // Confirms:
-//  (A) config: CARGO_BASE=12, CARGO_CAP_MAX=20, CARGO_GROW_PER=30 (positive); CHAIN_ITER>=3;
+//  (A) config: CARGO_BASE=12, CARGO_CAP_MAX=24, CARGO_GROW_PER=30 (positive); CHAIN_ITER>=3;
 //      retuned coefficients CARGO_THRUST=0.06 / CARGO_MAXSPD=0.03 / CARGO_MASS=0.07; the old
 //      CHAIN_MAX constant is gone.
 //  (B) cargoMax starts at CARGO_BASE and, driving REAL dock deliveries through update(), grows by
 //      +1 per CARGO_GROW_PER delivered, is bounded by CARGO_CAP_MAX, and never exceeds it; a bump
 //      pushes a "TOW +1" float; startGame resets it to base.
 //  (C) the pickup gate + HUD read game.cargoMax (not a fixed 12): raising cargoMax lets the chain
-//      exceed 12, and the HUD draw is crash-free.
+//      exceed 12, and the HUD draw is crash-free. A 25th node is refused at the new cap.
 //  (D) the physics retune, MEASURED by driving the real Ship.update: a full chain at CARGO_CAP_MAX
-//      (m=20) lands at ~45% thrust / ~63% top speed (≈ the old 12-node feel); a base-12 chain is
-//      genuinely lighter than the old 12 (headroom to grow); Engine at m=20 behaves like m=10;
-//      the momentum-tug massFactor uses the 0.07 coeff (0.84 at m=12, capped 1.4 at m=20).
-//  (E) chain constraint stability at CARGO_CAP_MAX (20) nodes across hard thrust-flips + a wrap:
-//      no NaN, no explosion, worst-case link stretch stays bounded.
+//      (m=24) lands at ~41% thrust / ~58% top speed (vs 45%/63% at the old m=20); a base-12 chain
+//      is genuinely lighter than the old 12 (headroom to grow); Engine at m=24 behaves like m=12;
+//      the momentum-tug massFactor uses the 0.07 coeff (0.84 at m=12, saturated 1.4 at m=20 and
+//      m=24 alike — min(1.4, m*0.07) already caps at m~=20, so 24 doesn't get worse).
+//  (E) chain constraint stability at CARGO_CAP_MAX (24) nodes across hard thrust-flips + a wrap:
+//      no NaN, no explosion, worst-case link stretch stays bounded (~5px budget on the 20px
+//      CHAIN_LINK; bump CHAIN_ITER if exceeded).
+//  (F) v3.4 P1: DOCK_OFFLOAD_INTERVAL = 0.05 (was a bare literal 0.13); a full CARGO_CAP_MAX-node
+//      chain parked at the dock fully offloads, one canister per interval tick.
 
 "use strict";
 const fs = require("fs");
@@ -43,7 +47,7 @@ const returnList = [
   "updateChain", "chainAnchor", "chainMass",
   "CARGO_BASE", "CARGO_CAP_MAX", "CARGO_GROW_PER",
   "CHAIN_LINK", "CHAIN_ITER", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
-  "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "ENGINE_MASS_MULT",
+  "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "ENGINE_MASS_MULT", "DOCK_OFFLOAD_INTERVAL",
   "shortDelta", "WORLD_W", "WORLD_H"
 ];
 const factory = new Function(
@@ -56,7 +60,7 @@ const {
   updateChain, chainAnchor, chainMass,
   CARGO_BASE, CARGO_CAP_MAX, CARGO_GROW_PER,
   CHAIN_LINK, CHAIN_ITER, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
-  SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, ENGINE_MASS_MULT,
+  SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, ENGINE_MASS_MULT, DOCK_OFFLOAD_INTERVAL,
   shortDelta, WORLD_W, WORLD_H
 } = A;
 
@@ -101,13 +105,14 @@ console.log(`(config) CARGO_THRUST=${CARGO_THRUST} CARGO_MAXSPD=${CARGO_MAXSPD} 
 // =====================================================================
 console.log("(A) constants");
 assert(CARGO_BASE === 12, `A: CARGO_BASE is 12 (got ${CARGO_BASE})`);
-assert(CARGO_CAP_MAX === 20, `A: CARGO_CAP_MAX is 20 (got ${CARGO_CAP_MAX})`);
+assert(CARGO_CAP_MAX === 24, `A: CARGO_CAP_MAX is 24 (got ${CARGO_CAP_MAX})`);
 assert(CARGO_GROW_PER > 0, `A: CARGO_GROW_PER positive (got ${CARGO_GROW_PER})`);
 assert(CHAIN_ITER >= 3, `A: CHAIN_ITER >= 3 (got ${CHAIN_ITER})`);
 assert(near(CARGO_THRUST, 0.06), `A: CARGO_THRUST retuned to 0.06 (got ${CARGO_THRUST})`);
 assert(near(CARGO_MAXSPD, 0.03), `A: CARGO_MAXSPD retuned to 0.03 (got ${CARGO_MAXSPD})`);
 assert(near(CARGO_MASS, 0.07), `A: CARGO_MASS retuned to 0.07 (got ${CARGO_MASS})`);
 assert(CHAIN_MAX_GONE, "A: old fixed CHAIN_MAX constant is gone (replaced by cargoMax/CARGO_BASE)");
+assert(near(DOCK_OFFLOAD_INTERVAL, 0.05), `A: DOCK_OFFLOAD_INTERVAL retuned to 0.05 (got ${DOCK_OFFLOAD_INTERVAL})`);
 
 // =====================================================================
 // (B) growing cap driven through REAL dock deliveries
@@ -128,7 +133,7 @@ game.deliveryCount = 0;
 const capAt = {};                 // delivered-count -> cargoMax observed just after that delivery
 let capBumps = 0;                 // number of frames on which cargoMax increased
 let maxCapSeen = 0;
-for (let d = 1; d <= 250; d++) {
+for (let d = 1; d <= 400; d++) {
   if (game.chain.length === 0) game.chain.push({ x: game.ship.x, y: game.ship.y, px: game.ship.x, py: game.ship.y, spin: 0, spinRate: 0, mass: 1 });
   game.ship.x = cx; game.ship.y = cy; game.ship.vx = 0; game.ship.vy = 0;
   game.dock = { x: cx, y: cy, update() {}, draw() {} };
@@ -139,11 +144,11 @@ for (let d = 1; d <= 250; d++) {
   maxCapSeen = Math.max(maxCapSeen, game.cargoMax);
   if (game.cargoMax > capBefore) capBumps++;
 }
-assert(game.stats.delivered >= 240, `B: drove enough deliveries to reach the ceiling (delivered ${game.stats.delivered})`);
+assert(game.stats.delivered >= 360, `B: drove enough deliveries to reach the ceiling (delivered ${game.stats.delivered})`);
 assert(capAt[29] === 12, "B: cap still 12 at 29 delivered (below first threshold)");
 assert(capAt[30] === 13, `B: cap = 13 at exactly 30 delivered (got ${capAt[30]})`);
 assert(capAt[60] === 14, `B: cap = 14 at 60 delivered (got ${capAt[60]})`);
-assert(capAt[240] === 20, `B: cap = 20 (ceiling) at 240 delivered (got ${capAt[240]})`);
+assert(capAt[360] === 24, `B: cap = 24 (ceiling) at 360 delivered (got ${capAt[360]})`);
 assert(maxCapSeen === CARGO_CAP_MAX, `B: cap never exceeds CARGO_CAP_MAX (max seen ${maxCapSeen})`);
 assert(game.cargoMax === CARGO_CAP_MAX, `B: cargoMax pinned at ceiling after 250 deliveries (got ${game.cargoMax})`);
 assert(capBumps === (CARGO_CAP_MAX - CARGO_BASE), `B: exactly ${CARGO_CAP_MAX - CARGO_BASE} cap increases, one per threshold (got ${capBumps})`);
@@ -186,10 +191,18 @@ update(DT);
 assert(game.chain.length === 13, `C: raising cargoMax to 16 lets the chain grow past 12 (len ${game.chain.length})`);
 // HUD draw crash-free with a >12 chain and a raised cap.
 clearField(); resetShip();
-game.cargoMax = 20; fillChain(20);
+game.cargoMax = CARGO_CAP_MAX; fillChain(CARGO_CAP_MAX);
 let drewOK = true;
 try { draw(); } catch (e) { drewOK = false; console.error("    draw threw: " + e.message); }
-assert(drewOK, "C: draw() crash-free with a 20-node chain / cargoMax 20 HUD");
+assert(drewOK, `C: draw() crash-free with a ${CARGO_CAP_MAX}-node chain / cargoMax ${CARGO_CAP_MAX} HUD`);
+// The cap: at cargoMax=24 (a full 24-node chain), a 25th canister is refused.
+clearField(); resetShip();
+game.cargoMax = CARGO_CAP_MAX;
+fillChain(CARGO_CAP_MAX);
+game.garbage.push({ x: game.ship.x + 2, y: game.ship.y, vx: 0, vy: 0, spin: 0, spinRate: 0,
+  mass: 1, pieces: 1, dead: false, update() {}, draw() {} });
+update(DT);
+assert(game.chain.length === CARGO_CAP_MAX, `C: at cargoMax=${CARGO_CAP_MAX} a 25th canister is refused (len ${game.chain.length})`);
 
 // =====================================================================
 // (D) physics retune — MEASURED by driving the real Ship.update
@@ -221,13 +234,14 @@ function measureMaxSpRatio(nodes, mass = 1.0, engine = false) {
   return (game.ship.vx / drag) / SHIP_MAX_SPEED;
 }
 
-const tm20 = measureThrustMul(20);
-const ms20 = measureMaxSpRatio(20);
-assert(near(tm20, 1 / (1 + 20 * CARGO_THRUST), 2e-3), `D: thrustMul at m=20 matches formula (got ${tm20.toFixed(4)})`);
-assert(near(ms20, 1 / (1 + 20 * CARGO_MAXSPD), 2e-3), `D: top-speed ratio at m=20 matches formula (got ${ms20.toFixed(4)})`);
-// Target: a full 20-chain ≈ the old 12-node feel (~45% thrust / ~63% top speed).
-assert(Math.abs(tm20 - 0.4545) < 0.01, `D: full 20-chain thrust ≈ 45% (old 12-node feel) (got ${(tm20 * 100).toFixed(1)}%)`);
-assert(Math.abs(ms20 - 0.625) < 0.01, `D: full 20-chain top speed ≈ 63% (old 12-node feel) (got ${(ms20 * 100).toFixed(1)}%)`);
+const tm24 = measureThrustMul(CARGO_CAP_MAX);
+const ms24 = measureMaxSpRatio(CARGO_CAP_MAX);
+assert(near(tm24, 1 / (1 + CARGO_CAP_MAX * CARGO_THRUST), 2e-3), `D: thrustMul at m=24 matches formula (got ${tm24.toFixed(4)})`);
+assert(near(ms24, 1 / (1 + CARGO_CAP_MAX * CARGO_MAXSPD), 2e-3), `D: top-speed ratio at m=24 matches formula (got ${ms24.toFixed(4)})`);
+// A bigger hold is SUPPOSED to cost handling: ~41% thrust / ~58% top speed at m=24 (vs ~45%/63% at
+// the old m=20 cap) — not re-solved, per v3.4 P1 spec.
+assert(Math.abs(tm24 - 0.4098) < 0.01, `D: full 24-chain thrust ≈ 41% (got ${(tm24 * 100).toFixed(1)}%)`);
+assert(Math.abs(ms24 - 0.5814) < 0.01, `D: full 24-chain top speed ≈ 58% (got ${(ms24 * 100).toFixed(1)}%)`);
 
 // A base-12 chain is genuinely LIGHTER than the old 12 (headroom to grow into).
 const tm12 = measureThrustMul(12);
@@ -236,14 +250,14 @@ const OLD_TM12 = 1 / (1 + 12 * 0.10), OLD_MS12 = 1 / (1 + 12 * 0.05); // pre-B-8
 assert(tm12 > OLD_TM12 + 0.05, `D: base-12 thrust lighter than old-12 (${(tm12 * 100).toFixed(1)}% vs ${(OLD_TM12 * 100).toFixed(1)}%)`);
 assert(ms12 > OLD_MS12 + 0.05, `D: base-12 top speed lighter than old-12 (${(ms12 * 100).toFixed(1)}% vs ${(OLD_MS12 * 100).toFixed(1)}%)`);
 
-// FLAG B-8-a: Engine (halves effective mass) at m=20 behaves like plain m=10.
-const tm20eng = measureThrustMul(20, 1.0, true);
-const tm10 = measureThrustMul(10);
-assert(near(tm20eng, tm10, 2e-3), `D: Engine at 20 nodes == plain 10 nodes (${tm20eng.toFixed(4)} vs ${tm10.toFixed(4)})`);
-assert(near(tm20eng, 1 / (1 + 10 * CARGO_THRUST), 2e-3), "D: Engine-at-20 matches m=10 formula");
+// FLAG B-8-a: Engine (halves effective mass) at m=24 behaves like plain m=12.
+const tm24eng = measureThrustMul(CARGO_CAP_MAX, 1.0, true);
+const tm12eng = measureThrustMul(CARGO_CAP_MAX / 2);
+assert(near(tm24eng, tm12eng, 2e-3), `D: Engine at 24 nodes == plain 12 nodes (${tm24eng.toFixed(4)} vs ${tm12eng.toFixed(4)})`);
+assert(near(tm24eng, 1 / (1 + (CARGO_CAP_MAX / 2) * CARGO_THRUST), 2e-3), "D: Engine-at-24 matches m=12 formula");
 
-// Momentum-tug massFactor uses the 0.07 coeff: 0.84 at m=12 (uncapped), capped 1.4 at m=20.
-// Measure by driving updateChain with a stretched first link and backing out the applied impulse.
+// Momentum-tug massFactor uses the 0.07 coeff: 0.84 at m=12 (uncapped); the min(1.4, m*0.07)
+// saturates at m~=20, so m=20 and m=24 both land at the same capped 1.4 — 24 doesn't get worse.
 function measureTugMassFactor(nodes) {
   clearField(); resetShip();
   const a = chainAnchor();
@@ -260,13 +274,15 @@ function measureTugMassFactor(nodes) {
 }
 const mf12 = measureTugMassFactor(12);
 const mf20 = measureTugMassFactor(20);
+const mf24 = measureTugMassFactor(CARGO_CAP_MAX);
 assert(near(mf12, 12 * CARGO_MASS, 2e-3), `D: tug massFactor at m=12 = 0.84 (got ${mf12.toFixed(4)})`);
 assert(near(mf20, 1.4, 2e-3), `D: tug massFactor at m=20 capped at 1.4 (got ${mf20.toFixed(4)})`);
+assert(near(mf24, 1.4, 2e-3), `D: tug massFactor at m=24 (new cap) still capped at 1.4, same as m=20 (got ${mf24.toFixed(4)})`);
 
 // =====================================================================
 // (E) stability at CARGO_CAP_MAX nodes: hard thrust-flips + a wrap
 // =====================================================================
-console.log("(E) constraint stability at 20 nodes across thrust-flips + wrap");
+console.log(`(E) constraint stability at ${CARGO_CAP_MAX} nodes across thrust-flips + wrap`);
 clearField(); resetShip();
 fillChain(CARGO_CAP_MAX);
 let nan = false, maxStretch = 0, maxSpeed = 0;
@@ -290,11 +306,31 @@ for (let fr = 0; fr < 900; fr++) {
     maxSpeed = Math.max(maxSpeed, Math.hypot(n.x - n.px, n.y - n.py) / DT);
   }
 }
-console.log(`    (stability) maxLinkStretch=${maxStretch.toFixed(2)}px  maxNodeSpeed=${maxSpeed.toFixed(0)}px/s`);
-assert(!nan, "E: no NaN in any chain node over 900 frames of stress");
-assert(maxStretch < CHAIN_LINK, `E: worst-case link stretch stays below one link length (got ${maxStretch.toFixed(2)}px)`);
+console.log(`    (stability) CHAIN_ITER=${CHAIN_ITER}  nodes=${CARGO_CAP_MAX}  maxLinkStretch=${maxStretch.toFixed(2)}px (of ${CHAIN_LINK}px CHAIN_LINK)  maxNodeSpeed=${maxSpeed.toFixed(0)}px/s`);
+assert(!nan, `E: no NaN in any chain node over 900 frames of stress at ${CARGO_CAP_MAX} nodes`);
+assert(maxStretch < 5, `E: worst-case link stretch stays under the ~5px budget on a ${CHAIN_LINK}px link (got ${maxStretch.toFixed(2)}px, CHAIN_ITER=${CHAIN_ITER})`);
 assert(maxSpeed < 5000, `E: no node velocity explosion (max ${maxSpeed.toFixed(0)} px/s)`);
 assert(game.chain.length === CARGO_CAP_MAX, "E: no nodes lost/duplicated during the stress run");
+
+// =====================================================================
+// (F) dock intake rate: DOCK_OFFLOAD_INTERVAL, driven through REAL update()
+// =====================================================================
+console.log("(F) dock offload rate — a full chain fully offloads at DOCK_OFFLOAD_INTERVAL");
+clearField(); resetShip();
+game.debris = [{ x: cx + 1800, y: cy + 1800, vx: 0, vy: 0, size: 3, radius: 46,
+  damage: 50, dead: false, update() { this.x = cx + 1800; this.y = cy + 1800; }, draw() {} }];
+game.dock = { x: cx, y: cy, update() {}, draw() {} };
+game.deliveryCount = 0; game.offloadTimer = 0;
+fillChain(CARGO_CAP_MAX);
+let ticksToEmpty = 0;
+while (game.chain.length > 0 && ticksToEmpty < 10000) {
+  game.ship.x = cx; game.ship.y = cy; game.ship.vx = 0; game.ship.vy = 0;
+  update(DOCK_OFFLOAD_INTERVAL);
+  ticksToEmpty++;
+}
+assert(game.chain.length === 0, `F: a full ${CARGO_CAP_MAX}-node chain fully offloads (got ${game.chain.length} left)`);
+assert(game.stats.delivered === CARGO_CAP_MAX, `F: exactly ${CARGO_CAP_MAX} canisters delivered (got ${game.stats.delivered})`);
+assert(ticksToEmpty === CARGO_CAP_MAX, `F: one canister peeled off per DOCK_OFFLOAD_INTERVAL tick (got ${ticksToEmpty} ticks for ${CARGO_CAP_MAX} nodes)`);
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);

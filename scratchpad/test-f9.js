@@ -270,7 +270,8 @@ function tickDock(times) {
   for (let i = 0; i < times; i++) {
     game.ship.x = game.dock.x; game.ship.y = game.dock.y; game.ship.vx = 0; game.ship.vy = 0;
     game.waveClearTimer = 0; // keep the empty field from advancing the wave mid-test
-    update(0.13);            // > offload interval (0.13s) so exactly one canister peels off per call
+    update(0.13);            // > DOCK_OFFLOAD_INTERVAL (0.05s, v3.4 P1); the offload gate is a single
+                              // if-check per update() call, so exactly one canister peels off per call
   }
 }
 fillChain(12); game.deliveryCount = 0; game.offloadTimer = 0;
