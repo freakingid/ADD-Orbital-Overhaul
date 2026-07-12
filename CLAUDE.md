@@ -44,7 +44,7 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
 
 ## Documentation layers (don't conflate them)
 
-- `asteroid-field-deluxe-GDD.md` — design **intent** + what's actually
+- `orbital-overhaul-GDD.md` — design **intent** + what's actually
   **shipped**. Section 2 must always describe the current build, never a
   planned one. Sections 1 (Pillars) and 3 (Architecture Map / conventions)
   rarely change; read them before writing code.

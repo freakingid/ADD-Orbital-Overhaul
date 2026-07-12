@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ASTEROID FIELD DELUXE</title>
+<title>ORBITAL OVERHAUL</title>
 <style>
   html, body {
     margin: 0; padding: 0; height: 100%;
@@ -27,7 +27,7 @@
 "use strict";
 
 /* ============================================================
-   ASTEROID FIELD DELUXE — v2.0
+   ORBITAL OVERHAUL — v3.3
    A vector-style arcade shooter in the spirit of Asteroids Deluxe
    - Energy shield (hold SHIFT) that deflects debris
    - Killer satellite that splits into homing wedge ships
@@ -992,6 +992,8 @@ function returnToDefaults() {
 
 // --- Persistence (localStorage, guarded). Note: unavailable in the claude.ai artifact sandbox but
 // works as a real local file; a storage failure must never crash the game, so everything is wrapped. ---
+// v3.3 P1 rename (Orbital Overhaul): the "afd_" prefix is FROZEN. Renaming this key wipes every
+// player's saved settings/bindings on their next load — do not "tidy" it to match the new name.
 const STORAGE_KEY = "afd_settings_v1";
 function storageOK() {
   try { return typeof localStorage !== "undefined" ? localStorage : null; } catch (e) { return null; }
@@ -1129,6 +1131,10 @@ const COLOR = {
   dim: "#3a5a80",
   garbage: "#c8ff50",
   garbageLight: "#b8ffb0",   // low-mass Hunter scrap: a paler, mintier tint so it reads as "lighter / easier to tow" (F4)
+  clumpHot: "#ff5a2a",       // v3.3 P1: a pieces>1 clump lerps toward this as it nears the Hunter
+                             // transform (12 pieces) — a free threat meter. Clear of every other
+                             // hazard hue (ship/debris blue, Hunter teal, dock green, rapid amber,
+                             // health red) — FLAG A-7b, look-call, tune on sight.
   chain: "#8aa0ff",
   dock: "#70ffa0",
   hp: "#5fe08a",
@@ -1530,6 +1536,30 @@ function drawCanister(x, y, angle, alpha, color = COLOR.garbage) {
   ctx.globalAlpha = 1;
 }
 
+// v3.3 P1: generate a clump's cached hull ONCE (constructor + every merge), never per frame. 7-9
+// vertices jittered around `radius` so each clump has a stable, distinctive silhouette instead of
+// the old per-frame mini-canister cluster. Unit-radius-relative jitter, rotated live by this.spin.
+function makeClumpHull(radius) {
+  const n = 7 + Math.floor(rand(0, 3)); // 7-9 vertices
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const theta = (i / n) * TAU + rand(-0.15, 0.15);
+    const r = radius * rand(0.8, 1.15);
+    pts.push([Math.cos(theta) * r, Math.sin(theta) * r]);
+  }
+  return pts;
+}
+
+// Lerp between two "#rrggbb" hex colors, t clamped to [0,1].
+function lerpColor(c1, c2, t) {
+  t = Math.max(0, Math.min(1, t));
+  const a = parseInt(c1.slice(1), 16), b = parseInt(c2.slice(1), 16);
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+}
+
 class Garbage {
   // v3.2 P3: no `decay` param — garbage is permanent (leaves the field only by recycle or coalescence).
   constructor(x, y, vx = 0, vy = 0, mass = 1.0) {
@@ -1547,6 +1577,9 @@ class Garbage {
     this.coalesceDelay = GARBAGE_COALESCE_DELAY;
     this.pieces = 1;
     this.radius = 7 * Math.sqrt(this.pieces);
+    // v3.3 P1: cached clump hull, regenerated only here and at every merge (coalesceGarbage) — NOT
+    // per frame. Unused while pieces === 1 (that branch stays byte-identical to pre-P1 rendering).
+    this.hull = makeClumpHull(this.radius);
     this.dead = false;
   }
   static fromNode(n) { // chain node knocked loose -> free garbage (v3.2 P3: no decay)
@@ -1563,16 +1596,29 @@ class Garbage {
     if (this.coalesceDelay > 0) this.coalesceDelay -= dt;
   }
   draw() {
-    const color = this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
-    // v3.2 P1: render a clump as a CLUSTER of `pieces` mini-canisters at deterministic golden-angle
-    // (phyllotaxis) offsets, the whole wad rotated by this.spin so it tumbles as one body. No stored
-    // per-clump state. pieces === 1 collapses to a single centered canister — byte-identical to today.
-    const cs = Math.cos(this.spin), sn = Math.sin(this.spin);
-    for (let k = 0; k < this.pieces; k++) {
-      const theta = k * 2.39996, rr = 5 * Math.sqrt(k);      // golden angle ≈ 2.39996 rad
-      const ox = Math.cos(theta) * rr, oy = Math.sin(theta) * rr;
-      drawCanister(this.x + ox * cs - oy * sn, this.y + ox * sn + oy * cs, this.spin, 0.9, color);
+    if (this.pieces === 1) {
+      // Byte-identical to pre-v3.3 rendering: a single centered canister.
+      const color = this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
+      drawCanister(this.x, this.y, this.spin, 0.9, color);
+      return;
     }
+    // v3.3 P1: a clump (pieces > 1) renders as ONE closed hull polygon — no inner lines, no mini-
+    // canisters — so it reads as "a target," not "a pile of pickups." The hull is generated once
+    // (constructor / merge) and cached on `this.hull`; here it's only rotated by this.spin and lerp-
+    // tinted from COLOR.garbage toward COLOR.clumpHot as pieces approaches HUNTER_COALESCE_COUNT, a
+    // free threat meter (the clump visibly reddens as it nears the Hunter transform).
+    const color = lerpColor(COLOR.garbage, COLOR.clumpHot, this.pieces / HUNTER_COALESCE_COUNT);
+    ctx.globalAlpha = 0.75 + Math.random() * 0.25; // keep the radioactive flicker
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.spin);
+    ctx.beginPath();
+    ctx.moveTo(this.hull[0][0], this.hull[0][1]);
+    for (let i = 1; i < this.hull.length; i++) ctx.lineTo(this.hull[i][0], this.hull[i][1]);
+    ctx.closePath();
+    glowStroke(color);
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -2001,6 +2047,8 @@ function applyPowerup(type) {
 // cur() reads the per-game stats (s = game.stats) and lifetime counters (l = this.lifetime), plus
 // game.wave directly for the "reach wave N" ones. Persistence uses its own localStorage key.
 const Achievements = {
+  // v3.3 P1 rename (Orbital Overhaul): the "afd_" prefix is FROZEN on both keys below. Renaming
+  // either wipes every player's lifetime achievement tiers on their next load — do not "tidy" them.
   STORAGE_KEY: "afd_achievements_v2",   // v3.0 P7: new shape (lifetimeTiers + non-tiered unlocks + weekly)
   LEGACY_KEY:  "afd_achievements_v1",   // migrated once (raw counters only) if no v2 save exists yet
 
@@ -2396,6 +2444,7 @@ function coalesceGarbage(dt) {
         a.mass = mt;
         a.pieces += b.pieces;
         a.radius = 7 * Math.sqrt(a.pieces);
+        a.hull = makeClumpHull(a.radius); // v3.3 P1: regenerate the cached silhouette at every merge
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
@@ -2878,8 +2927,8 @@ function drawText(str, x, y, size, color = COLOR.text, align = "center") {
 // Screen-fixed overlays, drawn after the HUD when game.paused. A dimmed backdrop plus a
 // glow-stroked panel keeps the vector aesthetic (Pillar 1). The state lives in game.menu.
 function drawMenu() {
-  ctx.fillStyle = "rgba(4,10,20,0.74)";
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.fillStyle = "rgba(4,10,20,0.88)"; // v3.3 P1: backdrop dim raised 0.74->0.88 (look-call) so the
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);   // world recedes further behind an open menu panel.
   const s = game.menu.screen;
   if (s === "root") drawRootMenu();
   else if (s === "options") drawOptionsMenu();
@@ -2890,6 +2939,10 @@ function drawMenu() {
 
 function menuPanel(w, h, title) {
   const x = (VIEW_W - w) / 2, y = (VIEW_H - h) / 2;
+  // v3.3 P1: fill the panel before stroking it (look-call alpha) — previously only stroked, so the
+  // world showed through and menu text was unreadable over a busy background.
+  ctx.fillStyle = "rgba(2,6,14,0.95)";
+  ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = COLOR.satellite; ctx.lineWidth = 2;
   ctx.shadowColor = COLOR.satellite; ctx.shadowBlur = 12;
   ctx.strokeRect(x, y, w, h);
@@ -3013,7 +3066,7 @@ function axisLabel(a) {
 // unlock status + a progress readout. Screen-fixed, drawn by drawMenu. Layout widths/split are a pure
 // look-call tunable (colW / xL / xM / xR / the ceil-half split) — see the P8 playtest ask in STATUS.
 function drawAchievements() {
-  ctx.fillStyle = "rgba(4,10,20,0.74)";
+  ctx.fillStyle = "rgba(4,10,20,0.88)"; // v3.3 P1: matches drawMenu's raised backdrop dim (look-call)
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   const { x, y } = menuPanel(1200, 660, "ACHIEVEMENTS");
   drawText("WEEKLY SET " + Achievements.weekKey + " — resets each calendar week", VIEW_W / 2, y + 74, 12, COLOR.dim);
@@ -3163,8 +3216,8 @@ function draw() {
   drawStarfield();
 
   if (game.state === "title") {
-    drawText("ASTEROID FIELD", VIEW_W/2, VIEW_H/2 - 120, 64);
-    drawText("D E L U X E", VIEW_W/2, VIEW_H/2 - 60, 32, COLOR.satellite);
+    drawText("ORBITAL", VIEW_W/2, VIEW_H/2 - 120, 64);
+    drawText("O V E R H A U L", VIEW_W/2, VIEW_H/2 - 60, 32, COLOR.satellite);
     drawText("ROTATE: ←→ / A D      THRUST: ↑ / W", VIEW_W/2, VIEW_H/2 + 30, 20, COLOR.dim);
     drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE: ESC", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
     drawText("BEWARE THE HUNTER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.satellite);
@@ -3213,19 +3266,24 @@ function draw() {
   ctx.fillStyle = hpFrac > 0.3 ? COLOR.hp : "#ff7060";
   ctx.fillRect(hpx + 1, hpy + 1, (hpw - 2) * hpFrac, hph - 2);
   drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
-  drawText("CARGO " + game.chain.length + "/" + game.cargoMax, 30, 104, 16,
+  // v3.3 P1 (spec §7): "LEVEL" is the player-facing label for game.wave — moved from the dim,
+  // easy-to-miss top-right corner into the left column, lit like the other HUD readouts. game.wave /
+  // nextWave() / difficultyFactor() / every achievement keying off game.wave are UNCHANGED — this is
+  // a display label only ("level" is player-facing vocabulary, "wave" stays the code term).
+  drawText("LEVEL " + game.wave, 30, 104, 22, COLOR.text, "left");
+  drawText("CARGO " + game.chain.length + "/" + game.cargoMax, 30, 126, 16,
     game.chain.length ? COLOR.garbage : COLOR.dim, "left");
   // v3.0 P3 (B-7): targets remaining = debris + hunters (the exact wave-clear gate).
   // Can rise mid-wave (a Debris split, or a Hunter lineage arriving on its own timer from
   // wave 2 on) — that's intentional, not a bug; see PLANNED-FEATURES-v3.md B-7-a/b.
   const targetsLeft = game.debris.length + game.hunters.length;
-  drawText("TARGETS " + targetsLeft, 30, 124, 16,
+  drawText("TARGETS " + targetsLeft, 30, 146, 16,
     targetsLeft ? COLOR.text : COLOR.dim, "left");
   // active-powerup row (F6): one row per running effect — a small type glyph + a shield-bar-style
   // remaining bar. Health is instant, so it never appears here. v3.0 P5: one renderer, two data
   // sources — in count mode ("shots"/"pieces") the bar reads remaining/budget and a numeric count
   // labels it; in time mode it's the remaining-duration fraction as before.
-  let prow = 150;
+  let prow = 172;
   for (const t of POWERUP_DROP_TYPES) {          // rapid / triple / magnet / engine (stable order)
     if (!powerActive(t)) continue;
     const c = POWERUP_COLOR[t];
@@ -3246,8 +3304,6 @@ function draw() {
     drawPoly([[7, 0], [-4, -4], [-4, 4]],
       VIEW_W/2 + Math.cos(a) * 42, VIEW_H/2 + Math.sin(a) * 42, a, COLOR.dock);
   }
-  drawText("WAVE " + game.wave, VIEW_W - 30, 46, 22, COLOR.dim, "right");
-
   // shield energy bar
   const bw = 140, bh = 8, bx = VIEW_W - 30 - bw, by = 60;
   ctx.strokeStyle = COLOR.dim;
