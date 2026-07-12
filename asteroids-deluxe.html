@@ -777,7 +777,14 @@ function buildRetroTrack() {
 function buildAmbientTrack() {
   const STEPS = 16, stepDur = 0.5;
   const bass = mkSteps(STEPS), pulse = mkSteps(STEPS), harmony = mkSteps(STEPS), lead = mkSteps(STEPS);
-  putStep(bass, 0, 40, 16, 1.0); // E2 drone, whole loop
+  // Foundation (tier 1, always on): root/fifth pad swells offset every 2s across the 8s loop, each
+  // overlapping the next's attack as its own release fades — continuously present (no silent gap
+  // between notes), not one isolated blip. This is the ONLY layer a wave-1 player hears (tiers 2-4
+  // are gated by MUSIC_LAYER_THRESHOLD), so it alone must read as "music," not "paused."
+  putStep(bass, 0,  40, 6, 1.0);  // E2
+  putStep(bass, 4,  47, 6, 0.85); // B2 (fifth)
+  putStep(bass, 8,  40, 6, 0.9);  // E2
+  putStep(bass, 12, 47, 6, 0.8);  // B2
   putStep(pulse, 4, 64, 2, 0.7);  // E4 ping
   putStep(pulse, 12, 67, 2, 0.6); // G4 ping
   putStep(harmony, 0, 59, 8, 0.8); // B3 pad
@@ -785,10 +792,12 @@ function buildAmbientTrack() {
   putStep(lead, 6, 71, 2, 0.6);  // B4 twinkle
   putStep(lead, 14, 76, 2, 0.55); // E5 twinkle
   return { stepDur, steps: STEPS, layers: [
-    { name: "bass",    type: "sine",     gain: 0.06,  cutoff: 300, atk: 1.5, rel: 2.5, tier: 1, steps: bass },
-    { name: "pulse",   type: "triangle", gain: 0.035, atk: 0.3,   rel: 0.8,  tier: 2, steps: pulse },
-    { name: "harmony", type: "triangle", gain: 0.04,  cutoff: 800, atk: 1.0, rel: 1.6, tier: 3, steps: harmony },
-    { name: "lead",    type: "sine",     gain: 0.03,  atk: 0.4,   rel: 1.0,  tier: 4, steps: lead },
+    // Gains brought into family with retro (0.075 bass) / tense (0.08 bass) — calmest track, not the
+    // quietest; tiers 2-4 nudged up to match rather than left ~30% below their tense/retro siblings.
+    { name: "bass",    type: "sine",     gain: 0.075, cutoff: 300, atk: 1.0, rel: 2.0, tier: 1, steps: bass },
+    { name: "pulse",   type: "triangle", gain: 0.045, atk: 0.3,   rel: 0.8,  tier: 2, steps: pulse },
+    { name: "harmony", type: "triangle", gain: 0.05,  cutoff: 800, atk: 1.0, rel: 1.6, tier: 3, steps: harmony },
+    { name: "lead",    type: "sine",     gain: 0.045, atk: 0.4,   rel: 1.0,  tier: 4, steps: lead },
   ]};
 }
 
@@ -1087,6 +1096,11 @@ window.addEventListener("keydown", e => {
   // (2) A menu is open — route to menu navigation, do NOT record gameplay keys.
   if (menuActive()) {
     e.preventDefault();
+    // Browser key auto-repeat (~30/sec while held) would otherwise spam menu actions — e.g. spin
+    // the 3-value Music Track row back to its start and re-enter setState() nearly every frame,
+    // restarting the crossfade ramp and pinning the music near-silent. Matches the gamepad path
+    // (handleGamepadMenu -> menuNavEdges()), which is already strictly edge-detected.
+    if (e.repeat) return;
     handleMenuKey(k);
     return;
   }

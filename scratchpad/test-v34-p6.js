@@ -80,7 +80,7 @@ const returnList = [
   "startGame", "update", "game", "AudioSys", "MusicSys", "MUSIC_TRACKS", "MUSIC_TRACK_VALUES",
   "menuActive", "openPause", "closePause", "gotoScreen", "menuInput",
   "settings", "saveSettings", "loadSettings", "STORAGE_KEY",
-  "MENU_OPTIONS", "VOL_CATS", "bindings", "REBINDABLE",
+  "MENU_OPTIONS", "VOL_CATS", "bindings", "REBINDABLE", "keys",
   "nextWave", "difficultyFactor", "RAMP_WAVES", "updateMusic", "musicStateFor", "MUSIC_LAYER_THRESHOLD",
 ];
 const factory = new Function(
@@ -92,9 +92,18 @@ const {
   startGame, update, game, AudioSys, MusicSys, MUSIC_TRACKS, MUSIC_TRACK_VALUES,
   menuActive, openPause, closePause, gotoScreen, menuInput,
   settings, saveSettings, loadSettings, STORAGE_KEY,
-  MENU_OPTIONS, VOL_CATS, bindings, REBINDABLE,
+  MENU_OPTIONS, VOL_CATS, bindings, REBINDABLE, keys,
   nextWave, difficultyFactor, RAMP_WAVES, updateMusic, musicStateFor, MUSIC_LAYER_THRESHOLD,
 } = A;
+
+// Fire a real keydown through the actual window listener(s) registered by the script (both the menu
+// handler at ~L1075 and the Capture-tools handler at ~L4140 — the latter is inert unless
+// game.state==="playing" && !game.paused, so it never interferes with these menu-open tests).
+function keydown(key, repeat) {
+  const e = { key, repeat: !!repeat, preventDefault() {} };
+  (listeners.keydown || []).forEach(f => f(e));
+}
+function clearKeys() { for (const k of Object.keys(keys)) keys[k] = false; }
 
 let passed = 0, failed = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
@@ -498,6 +507,84 @@ for (const name of MUSIC_TRACK_VALUES) {
   assert(trackMax <= NODE_BOUND, `N: ${name} worst-case per-step node creation (${trackMax}) is bounded (<= ${NODE_BOUND})`);
 }
 console.log(`(perf) overall worst-case per-frame node creation at max intensity = ${overallMax}`);
+
+// =====================================================================
+// O) v3.5 P1 — keyboard menu repeat guard: a browser auto-repeat keydown (e.repeat === true) while a
+//    menu is open must NOT drive menuInput; a genuine (non-repeat) keydown still must. Driven through
+//    the REAL window "keydown" listener(s), not by calling handleMenuKey/menuInput directly.
+// =====================================================================
+game.paused = true; game.menu.screen = "options"; game.menu.index = MENU_OPTIONS.indexOf("Music Track");
+game.menu.rebinding = null;
+settings.musicTrack = "tense";
+keydown("d", true);  // repeat
+assert(settings.musicTrack === "tense", "O: a REPEAT keydown on Music Track does not change settings.musicTrack");
+keydown("d", false); // genuine press
+assert(settings.musicTrack === "retro", "O: a non-repeat keydown on Music Track advances it exactly once");
+
+// A volume slider row: repeat does not move AudioSys.vol; a non-repeat press does.
+game.menu.index = MENU_OPTIONS.indexOf("SFX Volume");
+AudioSys.setVol("sfx", 0.5);
+keydown("d", true);
+assert(near(AudioSys.vol.sfx, 0.5), "O: a REPEAT keydown on a volume slider does not move AudioSys.vol");
+keydown("d", false);
+assert(near(AudioSys.vol.sfx, 0.6), "O: a non-repeat keydown on a volume slider moves it exactly one step");
+
+// A Difficulty toggle row: same shape, on the "difficulty" screen.
+game.menu.screen = "difficulty"; game.menu.index = 0; // "shot" row
+settings.shotPowerupMode = "time";
+keydown("d", true);
+assert(settings.shotPowerupMode === "time", "O: a REPEAT keydown on a Difficulty toggle does not flip it");
+keydown("d", false);
+assert(settings.shotPowerupMode === "shots", "O: a non-repeat keydown on a Difficulty toggle flips it exactly once");
+
+// The guard must not leak into normal (non-menu) play: a repeat keydown there still records into
+// keys{}, same as any other keydown — gameplay legitimately wants held-key behavior.
+game.paused = false; game.menu.screen = null; game.state = "playing";
+clearKeys();
+keydown("arrowleft", true); // repeat, but NOT in a menu
+assert(keys["arrowleft"] === true, "O: a repeat keydown during normal play still records into keys{} (guard did not leak into gameplay)");
+
+// =====================================================================
+// P) v3.5 P1 — Ambient's tier-1 (foundation) layer is audibly present, not a near-silent single blip.
+//    Regression guard against the original bug: 1 note per 8s loop while tiers 2-4 are gated off below
+//    wave 3, so a wave-1 player selecting Ambient heard what sounded like "the music stopped."
+// =====================================================================
+function tier1NoteCount(trackName) {
+  const track = MUSIC_TRACKS[trackName];
+  let n = 0;
+  for (const layer of track.layers) {
+    if ((layer.tier || 1) !== 1) continue;
+    for (const c of layer.steps) if (c) n++;
+  }
+  return n;
+}
+// Notes-per-second-of-loop-time, so tracks with very different tempos/loop lengths are compared fairly.
+function tier1Density(trackName) {
+  const track = MUSIC_TRACKS[trackName];
+  return tier1NoteCount(trackName) / (track.steps * track.stepDur);
+}
+const ambNotes = tier1NoteCount("ambient"), ambDensity = tier1Density("ambient");
+const tenseDensity = tier1Density("tense"), retroDensity = tier1Density("retro");
+console.log(`(density) tier-1-only notes/sec: ambient=${ambDensity.toFixed(3)} tense=${tenseDensity.toFixed(3)} retro=${retroDensity.toFixed(3)} (ambient raw count/loop=${ambNotes})`);
+// Regression guard, not a precise target: ambient's tempo is deliberately ~4-8x slower than its
+// siblings (8s loop @ stepDur 0.5 vs. tense's 4s @ 0.125 / retro's 3.2s @ 0.1), so a much lower
+// notes/sec density is expected and correct — the bug was near-ZERO presence, not "slower." Bound
+// chosen generously loose (>= 1/25th of the faster tracks) so it only fires if ambient regresses
+// back toward "effectively nothing," while still requiring a real minimum note count.
+assert(ambNotes >= 4, `P: ambient tier-1 has a real minimum note count over one loop (${ambNotes} >= 4)`);
+assert(ambDensity >= tenseDensity / 25, `P: ambient tier-1 density (${ambDensity.toFixed(3)}/s) is within a sane factor of tense's (${tenseDensity.toFixed(3)}/s)`);
+assert(ambDensity >= retroDensity / 25, `P: ambient tier-1 density (${ambDensity.toFixed(3)}/s) is within a sane factor of retro's (${retroDensity.toFixed(3)}/s)`);
+
+// Ambient's tier-1 notes must be spread across the loop, not clustered in a single cell (the original
+// bug: exactly one note, i.e. one occupied step, for the whole loop).
+{
+  const track = MUSIC_TRACKS.ambient;
+  const bassLayer = track.layers.find(l => (l.tier || 1) === 1);
+  const occupiedSteps = bassLayer.steps.reduce((n, c, i) => c ? n.concat(i) : n, []);
+  assert(occupiedSteps.length >= 2, `P: ambient tier-1 occupies more than one step in the loop (steps: ${occupiedSteps.join(",")})`);
+  const spread = Math.max(...occupiedSteps) - Math.min(...occupiedSteps);
+  assert(spread >= track.steps * 0.5, `P: ambient tier-1 notes are spread across at least half the loop, not clustered (spread=${spread}/${track.steps})`);
+}
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);
