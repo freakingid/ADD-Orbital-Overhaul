@@ -1,4 +1,5 @@
 // Headless test for v3.4 Phase 5 — the low-health warning (looping siren + red directional pointer).
+// Extended in v3.5 P3 (sections H-K) — the siren voice rebuilt into a pulsed, HP-scaled alarm.
 // Follows GDD 5.4 rule 7: stub window/document/rAF (+ fake localStorage), eval the REAL <script>
 // block, then drive the ACTUAL update()/damageShip()/killShip()/quitToTitle()/openPause()/draw()
 // — no reimplementation of the logic under test.
@@ -21,6 +22,15 @@
 //      wrap-aware dist2.
 //  (G) draw() is crash-free in the low-health state with zero/one health powerup, and with the dock
 //      chevron also showing.
+//  (H) [v3.5 P3] the rebuilt voice builds its pulse LFO + harmonic partner without throwing on
+//      lowhp(true), and lowhp(false) nulls every stored handle (this.lowhpOsc/this.lowhpGain/this.lowhpT).
+//  (I) [v3.5 P3] lowhpSet: urgency at hp = LOW_HP_THRESHOLD is ~0 and at hp = 1 is ~1; pulse rate
+//      and gain are monotonically non-decreasing as hp falls; params move via linearRampToValueAtTime
+//      (never a bare .value set); safe no-op when the voice isn't live and when ctx is null.
+//  (J) [v3.5 P3] a real 120-frame update() run at fixed low HP does not rebuild the voice (spies
+//      ctx.createOscillator) — the per-frame lowhpSet call is idempotent on the node graph.
+//  (K) [v3.5 P3] the four (D) teardown assertions above still pass unchanged against the rebuilt
+//      voice — the load-bearing regression guard against a leaked droning oscillator.
 
 "use strict";
 const fs = require("fs");
@@ -32,21 +42,42 @@ const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
 const scriptSrc = m[1];
 
-// ---- Headless environment stubs (mirrors test-p4 / test-p5 / test-f8) ----
-function makeAudioNode() {
-  return new Proxy({
-    gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {} },
-    frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
-    Q: { value: 0 }, type: "sine", buffer: null, loop: false, playbackRate: { value: 1 },
-    connect() { return makeAudioNode(); }
-  }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
+// ---- Headless environment stubs ----
+// A CONCRETE recording Web Audio stub (mirrors test-v34-p6's — needed here, unlike the old Proxy
+// stub, to inspect gain/frequency AudioParam automation calls: v3.5 P3's lowhpSet must move params
+// via linearRampToValueAtTime, never a bare .value set, and section J spies createOscillator to
+// prove the rebuilt voice's per-frame lowhpSet call never rebuilds the node graph).
+let oscCreateCount = 0;
+function makeParam() {
+  const rec = { linearRamps: [], setValues: [], cancels: [], bareSets: [] };
+  const p = {
+    _v: 1, rec,
+    linearRampToValueAtTime(v, t) { rec.linearRamps.push({ v, t }); this._v = v; },
+    exponentialRampToValueAtTime(v, t) { this._v = v; },
+    setTargetAtTime(v) { this._v = v; },
+    setValueAtTime(v, t) { rec.setValues.push({ v, t }); this._v = v; },
+    cancelScheduledValues(t) { rec.cancels.push(t); },
+  };
+  Object.defineProperty(p, "value", { get() { return this._v; }, set(v) { this._v = v; rec.bareSets.push(v); } });
+  return p;
 }
+function makeGain() { return { gain: makeParam(), connect(dest) { return dest; } }; }
+function makeOsc() {
+  oscCreateCount++;
+  return { type: "sine", frequency: makeParam(), connect(dest) { return dest; }, start() {}, stop() {} };
+}
+function makeFilter() { return { type: "lowpass", frequency: makeParam(), Q: makeParam(), connect(dest) { return dest; } }; }
+function makeBufferSource() { return { buffer: null, loop: false, playbackRate: makeParam(), connect(dest) { return dest; }, start() {}, stop() {} }; }
 function FakeAudioContext() {
-  return new Proxy({
-    state: "running", currentTime: 0, sampleRate: 44100, destination: makeAudioNode(),
-    createGain() { return makeAudioNode(); },
-    createBuffer() { return { getChannelData() { return new Float32Array(1); } }; }
-  }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
+  const ctx = { state: "running", currentTime: 0, sampleRate: 44100 };
+  ctx.destination = makeGain();
+  ctx.createGain = () => makeGain();
+  ctx.createOscillator = () => makeOsc();
+  ctx.createBiquadFilter = () => makeFilter();
+  ctx.createBuffer = (ch, len) => ({ getChannelData() { return new Float32Array(len || 1); } });
+  ctx.createBufferSource = () => makeBufferSource();
+  ctx.resume = () => {};
+  return ctx;
 }
 
 const listeners = {};
@@ -96,7 +127,9 @@ const returnList = [
   "applyPowerup", "AudioSys", "Powerup",
   "angleTo", "dist2", "shortDelta", "wrapPos",
   "LOW_HP_THRESHOLD", "COLOR", "VIEW_W", "VIEW_H", "WORLD_W", "WORLD_H",
-  "POWERUP_HEALTH_AMOUNT", "SHIP_MAX_HP", "DMG_SMALL"
+  "POWERUP_HEALTH_AMOUNT", "SHIP_MAX_HP", "DMG_SMALL",
+  "LOWHP_PULSE_RATE_MIN", "LOWHP_PULSE_RATE_MAX", "LOWHP_GAIN_MIN", "LOWHP_GAIN_MAX",
+  "LOWHP_HARMONIC_GAIN_FRAC", "LOWHP_PARAM_RAMP"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -109,7 +142,9 @@ const {
   applyPowerup, AudioSys, Powerup,
   angleTo, dist2, shortDelta, wrapPos,
   LOW_HP_THRESHOLD, COLOR, VIEW_W, VIEW_H, WORLD_W, WORLD_H,
-  POWERUP_HEALTH_AMOUNT, SHIP_MAX_HP, DMG_SMALL
+  POWERUP_HEALTH_AMOUNT, SHIP_MAX_HP, DMG_SMALL,
+  LOWHP_PULSE_RATE_MIN, LOWHP_PULSE_RATE_MAX, LOWHP_GAIN_MIN, LOWHP_GAIN_MAX,
+  LOWHP_HARMONIC_GAIN_FRAC, LOWHP_PARAM_RAMP
 } = A;
 
 let passed = 0, failed = 0;
@@ -293,6 +328,101 @@ game.dock = { x: game.ship.x + 300, y: game.ship.y + 300, radius: 60 };
 recCtx.log.length = 0;
 draw();
 assert(findLowhpChevron().length === 1, "G: chevron drawn (one health powerup) alongside the dock chevron, no throw");
+
+// =====================================================================
+console.log("(H) [v3.5 P3] the rebuilt voice builds pulse LFO + harmonic partner, tears down fully");
+AudioSys.lowhp(false); // clean slate — any prior section may have left the voice live
+assert(AudioSys.lowhpOsc === null, "H: precondition — voice not live before this section");
+AudioSys.lowhp(true);
+assert(AudioSys.lowhpOsc && AudioSys.lowhpOsc.root && AudioSys.lowhpOsc.harm && AudioSys.lowhpOsc.lfo,
+  "H: lowhp(true) builds root + harmonic + lfo oscillators without throwing");
+assert(AudioSys.lowhpGain && AudioSys.lowhpGain.rootLevel && AudioSys.lowhpGain.harmLevel &&
+  AudioSys.lowhpGain.pulseGain && AudioSys.lowhpGain.lfoGain,
+  "H: lowhp(true) builds root/harmonic level gains + the pulse gain + its LFO depth gain");
+assert(AudioSys.lowhpOsc.harm.frequency.value > AudioSys.lowhpOsc.root.frequency.value,
+  "H: the harmonic partner sits above the root (a fifth/octave, not unison)");
+AudioSys.lowhp(false);
+assert(AudioSys.lowhpOsc === null && AudioSys.lowhpGain === null && AudioSys.lowhpT === null,
+  "H: lowhp(false) nulls every stored handle (lowhpOsc/lowhpGain/lowhpT)");
+
+// =====================================================================
+console.log("(I) [v3.5 P3] lowhpSet: HP-scaled urgency, monotonic, ramped (never a bare set), safe no-op");
+// safe no-op: ctx null
+const realCtx = AudioSys.ctx;
+AudioSys.ctx = null;
+let threw = false;
+try { AudioSys.lowhpSet(0.5); } catch (e) { threw = true; }
+assert(!threw, "I: lowhpSet is a safe no-op when ctx is null");
+AudioSys.ctx = realCtx;
+// safe no-op: voice not live
+AudioSys.lowhp(false);
+threw = false;
+try { AudioSys.lowhpSet(0.5); } catch (e) { threw = true; }
+assert(!threw, "I: lowhpSet is a safe no-op when the voice is not live");
+assert(AudioSys.lowhpOsc === null, "I: lowhpSet does not build a voice as a side effect");
+
+// urgency at hp=LOW_HP_THRESHOLD is ~0, at hp=1 is ~1 — driven through the REAL update() edge-detect
+// site, not a direct lowhpSet(t) call, so this exercises the actual t = 1 - hp/LOW_HP_THRESHOLD formula.
+startGame(); isolate();
+game.ship.hp = LOW_HP_THRESHOLD;
+update(DT);
+assert(Math.abs(AudioSys.lowhpT - 0) < 1e-9, `I: urgency at hp=LOW_HP_THRESHOLD is ~0 (got ${AudioSys.lowhpT})`);
+game.ship.hp = 1;
+update(DT);
+assert(AudioSys.lowhpT > 0.98, `I: urgency at hp=1 is ~1 (got ${AudioSys.lowhpT})`);
+
+// monotonic non-decreasing pulse rate + gain as hp falls, moved via linearRampToValueAtTime, never
+// a bare per-frame .value set (checked against the ramp record accumulated AFTER construction, since
+// the initial build legitimately bare-sets starting levels once — same idiom as the P7 tier-1 gate).
+AudioSys.lowhp(false); AudioSys.lowhp(true);
+const lfoFreqParam = AudioSys.lowhpOsc.lfo.frequency;
+const rootGainParam = AudioSys.lowhpGain.rootLevel.gain;
+const harmGainParam = AudioSys.lowhpGain.harmLevel.gain;
+const bareBaseline = { lfo: lfoFreqParam.rec.bareSets.length, root: rootGainParam.rec.bareSets.length, harm: harmGainParam.rec.bareSets.length };
+let lastRate = -1, lastGain = -1;
+for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+  AudioSys.lowhpSet(t);
+  const rate = LOWHP_PULSE_RATE_MIN + (LOWHP_PULSE_RATE_MAX - LOWHP_PULSE_RATE_MIN) * t;
+  const gain = LOWHP_GAIN_MIN + (LOWHP_GAIN_MAX - LOWHP_GAIN_MIN) * t;
+  assert(rate >= lastRate, `I: pulse rate non-decreasing at t=${t}`);
+  assert(gain >= lastGain, `I: gain non-decreasing at t=${t}`);
+  lastRate = rate; lastGain = gain;
+  const lastRamp = lfoFreqParam.rec.linearRamps[lfoFreqParam.rec.linearRamps.length - 1];
+  assert(lastRamp && Math.abs(lastRamp.v - rate) < 1e-9, `I: lfo.frequency ramps to the expected rate at t=${t}`);
+  const lastRootRamp = rootGainParam.rec.linearRamps[rootGainParam.rec.linearRamps.length - 1];
+  assert(lastRootRamp && Math.abs(lastRootRamp.v - gain) < 1e-9, `I: rootLevel.gain ramps to the expected gain at t=${t}`);
+  const lastHarmRamp = harmGainParam.rec.linearRamps[harmGainParam.rec.linearRamps.length - 1];
+  assert(lastHarmRamp && Math.abs(lastHarmRamp.v - gain * LOWHP_HARMONIC_GAIN_FRAC) < 1e-9, `I: harmLevel.gain ramps to gain*LOWHP_HARMONIC_GAIN_FRAC at t=${t}`);
+}
+assert(lfoFreqParam.rec.bareSets.length === bareBaseline.lfo && rootGainParam.rec.bareSets.length === bareBaseline.root &&
+  harmGainParam.rec.bareSets.length === bareBaseline.harm,
+  "I: no bare .value set was added by any lowhpSet call — every move was a linearRampToValueAtTime");
+// idempotent on t: repeating the same t schedules no new ramp
+const ramps1 = lfoFreqParam.rec.linearRamps.length;
+AudioSys.lowhpSet(1);
+assert(lfoFreqParam.rec.linearRamps.length === ramps1, "I: lowhpSet is idempotent — repeating the same t schedules no new ramp");
+
+// =====================================================================
+console.log("(J) [v3.5 P3] a fixed-HP 120-frame update() run does not rebuild the voice");
+// Identity check, not a global oscillator-count spy: other subsystems (the heartbeat, wave-clear
+// re-spawn, a saucer timer) legitimately create their OWN oscillators during a real update() run,
+// which would make a global creation counter flaky/contaminated. Snapshotting the siren's own node
+// references and asserting they're the SAME objects 120 frames later is a direct, uncontaminated
+// proof that the per-frame lowhpSet(t) call never tears down and rebuilds the voice.
+AudioSys.lowhp(false);
+startGame(); isolate();
+game.ship.hp = LOW_HP_THRESHOLD - 10; // engage the siren this frame
+update(DT);
+assert(game.lowHpSiren === true, "J: precondition — siren engaged");
+const before = { root: AudioSys.lowhpOsc.root, harm: AudioSys.lowhpOsc.harm, lfo: AudioSys.lowhpOsc.lfo,
+  rootLevel: AudioSys.lowhpGain.rootLevel, harmLevel: AudioSys.lowhpGain.harmLevel, pulseGain: AudioSys.lowhpGain.pulseGain };
+for (let i = 0; i < 120; i++) { game.ship.hp = LOW_HP_THRESHOLD - 10; update(DT); } // HP pinned — steady low-health state
+assert(game.lowHpSiren === true, "J: siren still engaged after 120 steady frames");
+assert(AudioSys.lowhpOsc.root === before.root && AudioSys.lowhpOsc.harm === before.harm && AudioSys.lowhpOsc.lfo === before.lfo,
+  "J: the same oscillator objects persist across 120 frames — no rebuild");
+assert(AudioSys.lowhpGain.rootLevel === before.rootLevel && AudioSys.lowhpGain.harmLevel === before.harmLevel && AudioSys.lowhpGain.pulseGain === before.pulseGain,
+  "J: the same gain node objects persist across 120 frames — no rebuild");
+AudioSys.lowhp(false); game.lowHpSiren = false;
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);

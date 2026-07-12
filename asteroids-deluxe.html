@@ -158,6 +158,18 @@ const HIT_STUN_DURATION = 1.0;  // sec of hit-stun invulnerability granted after
 const LOW_HP_THRESHOLD = 100;   // PLAYTEST KNOB. HP at or below which the low-health warning
                                 // engages. 100 = 5 small hits / ~3 medium / 2 large — "five
                                 // bad seconds from dead." 40% of SHIP_MAX_HP. (FORK-8, confirmed; v3.4 P5)
+// v3.5 P3 PLAYTEST KNOBS — the low-health voice (AudioSys.lowhp/lowhpSet). Urgency t = 1 -
+// hp/LOW_HP_THRESHOLD (0 at the threshold, ~1 near death) scales pulse rate and gain between
+// these min/max pairs; the harmonic partner tracks the root at a fixed fraction.
+const LOWHP_ROOT_FREQ        = 220;   // Hz — unchanged root pitch of the old constant-tone voice
+const LOWHP_HARMONIC_RATIO   = 1.5;   // a fifth above the root (2.0 would be an octave)
+const LOWHP_HARMONIC_GAIN_FRAC = 0.35; // harmonic partner's level as a fraction of the root's
+const LOWHP_PULSE_RATE_MIN   = 0.9;   // Hz — gentle "hey" pulse at the threshold (t=0)
+const LOWHP_PULSE_RATE_MAX   = 2.4;   // Hz — real alarm pulse near death (t=1)
+const LOWHP_PULSE_DEPTH      = 0.5;   // amplitude-LFO depth/offset — pulseGain swings ~0..1
+const LOWHP_GAIN_MIN         = 0.08;  // peak root gain at t=0 — in thrust's (0.10) neighborhood
+const LOWHP_GAIN_MAX         = 0.13;  // peak root gain at t=1 — pulsing carries most of the urgency
+const LOWHP_PARAM_RAMP       = 0.15;  // s — click-free per-frame param ramp (matches MUSIC_DUCK_RAMP)
 const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonus (was: extra life)
 const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
 const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
@@ -520,29 +532,68 @@ const AudioSys = {
     o.start(t); o.stop(t + 0.21);
   },
 
-  // v3.4 P5: the low-health siren. Same persistent-voice shape as thrust()/saucer() — a stored
-  // oscillator torn down on false — but a GENTLE, SLOW warble (not a klaxon): a low sine LFO-swept
-  // over a low base frequency, quiet gain, so it reads as "you need health," not an alarm to mute.
+  // v3.5 P3: the low-health voice, rebuilt. The old build was a CONSTANT-amplitude 220Hz sine at
+  // gain 0.05 — the quietest voice on the bus, with no harmonics to cut through explosion (0.5) or
+  // thrust (0.10), and constant amplitude, which the ear adapts away the longer it plays (louder
+  // alone would only be more annoying, not more noticeable). Rebuilt as a PULSED cockpit-warning
+  // beep: two static-level oscillators (root + a soft harmonic partner, so it reads as an
+  // instrument panel and survives an explosion) summed into a shared amplitude-LFO gain node (the
+  // pulse). Same persistent-voice shape as thrust()/saucer() — stored nodes built on true, torn
+  // down on false. lowhpSet(t) (below) then ramps the pulse rate + gain from HP urgency; nothing
+  // here reads HP directly.
   lowhp(on) {
     if (!this.ctx) return;
     if (on && !this.lowhpOsc) {
-      const o = this.ctx.createOscillator();
+      const root = this.ctx.createOscillator();
+      const harm = this.ctx.createOscillator();
+      const rootLevel = this.ctx.createGain();
+      const harmLevel = this.ctx.createGain();
+      const pulseGain = this.ctx.createGain();
       const lfo = this.ctx.createOscillator();
       const lfoGain = this.ctx.createGain();
-      const g = this.ctx.createGain();
-      o.type = "sine";
-      o.frequency.value = 220;
-      lfo.frequency.value = 0.6;   // slow warble, ~1 cycle every 1.7s
-      lfoGain.gain.value = 18;
-      lfo.connect(lfoGain).connect(o.frequency);
-      g.gain.value = 0.05;
-      o.connect(g).connect(this.sfx);
-      o.start(); lfo.start();
-      this.lowhpOsc = { o, lfo }; this.lowhpGain = g;
+      root.type = "sine"; root.frequency.value = LOWHP_ROOT_FREQ;
+      harm.type = "sine"; harm.frequency.value = LOWHP_ROOT_FREQ * LOWHP_HARMONIC_RATIO;
+      rootLevel.gain.value = LOWHP_GAIN_MIN;
+      harmLevel.gain.value = LOWHP_GAIN_MIN * LOWHP_HARMONIC_GAIN_FRAC;
+      lfo.type = "sine"; lfo.frequency.value = LOWHP_PULSE_RATE_MIN;
+      lfoGain.gain.value = LOWHP_PULSE_DEPTH;
+      pulseGain.gain.value = LOWHP_PULSE_DEPTH;      // DC offset; lfo swings it ~0..2*depth (~0..1)
+      lfo.connect(lfoGain).connect(pulseGain.gain);
+      root.connect(rootLevel).connect(pulseGain);
+      harm.connect(harmLevel).connect(pulseGain);
+      pulseGain.connect(this.sfx);
+      root.start(); harm.start(); lfo.start();
+      this.lowhpOsc = { root, harm, lfo };
+      this.lowhpGain = { rootLevel, harmLevel, pulseGain, lfoGain };
+      this.lowhpT = null;   // forces lowhpSet's next call to actually ramp (idempotency guard)
     } else if (!on && this.lowhpOsc) {
-      this.lowhpOsc.o.stop(); this.lowhpOsc.lfo.stop();
-      this.lowhpOsc = null; this.lowhpGain = null;
+      this.lowhpOsc.root.stop(); this.lowhpOsc.harm.stop(); this.lowhpOsc.lfo.stop();
+      this.lowhpOsc = null; this.lowhpGain = null; this.lowhpT = null;
     }
+  },
+
+  // v3.5 P3: per-frame HP-urgency scaling for the live low-health voice. t = 1 - hp/LOW_HP_THRESHOLD
+  // (0 at the threshold, ~1 near death) — called every frame the state is engaged from update()'s
+  // single edge-detect site, right alongside the lowhp(true)/(false) calls. Safe no-op when the
+  // voice isn't live or ctx is null. Idempotent on t (same idiom as MusicSys.setDuck/setIntensity)
+  // so a steady-HP frame doesn't reschedule a ramp. Moves params via linearRampToValueAtTime, never
+  // a bare per-frame .value set — that zippers.
+  lowhpSet(t) {
+    if (!this.ctx || !this.lowhpOsc) return;
+    t = Math.max(0, Math.min(1, t || 0));
+    if (t === this.lowhpT) return;
+    this.lowhpT = t;
+    const now = this.now();
+    const rate = LOWHP_PULSE_RATE_MIN + (LOWHP_PULSE_RATE_MAX - LOWHP_PULSE_RATE_MIN) * t;
+    const gain = LOWHP_GAIN_MIN + (LOWHP_GAIN_MAX - LOWHP_GAIN_MIN) * t;
+    const ramp = (param, target) => {
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(param.value, now);
+      param.linearRampToValueAtTime(target, now + LOWHP_PARAM_RAMP);
+    };
+    ramp(this.lowhpOsc.lfo.frequency, rate);
+    ramp(this.lowhpGain.rootLevel.gain, gain);
+    ramp(this.lowhpGain.harmLevel.gain, gain * LOWHP_HARMONIC_GAIN_FRAC);
   },
 
   pickup() {
@@ -3200,6 +3251,9 @@ function update(dt) {
   const lowHp = game.ship.hp <= LOW_HP_THRESHOLD && !game.ship.dead;
   if (lowHp && !game.lowHpSiren) { AudioSys.lowhp(true); game.lowHpSiren = true; }
   else if (!lowHp && game.lowHpSiren) { AudioSys.lowhp(false); game.lowHpSiren = false; }
+  // v3.5 P3: HP-scaled urgency for the pulsed voice — a per-frame call (not edge-detected), safe
+  // no-op via lowhpSet's own guards when the state isn't engaged or the voice isn't live.
+  if (lowHp) AudioSys.lowhpSet(1 - game.ship.hp / LOW_HP_THRESHOLD);
   // Achievements (F9): per-game clock (Speed Recycler's 60s window) + lifetime play time & periodic save
   game.stats.gameTime += dt;
   Achievements.tick(dt);
