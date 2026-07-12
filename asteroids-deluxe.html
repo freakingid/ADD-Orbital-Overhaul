@@ -276,7 +276,9 @@ const SAUCER_SMALL_CHANCE_CEIL  = 0.60; // full difficulty: the dangerous aimed 
 // and is instant; the other four (rapid/triple/magnet/engine) are timed effects that drop from
 // small-tier Debris/Hunter kills. Same-type pickups refresh the timer (no magnitude stacking);
 // different types run independently. Icons/labels/colors live with COLOR (below the helpers).
-const POWERUP_DURATION = 15;        // sec a timed effect (rapid/triple/magnet/engine) stays active
+const POWERUP_DURATION = 15;        // sec a timed effect (rapid/triple/magnet/engine) stays active — SHARED
+const MAGNET_DURATION = POWERUP_DURATION * 2;   // 30 s — Magnet is the one long effect (v3.4 P4). Do NOT
+                                    // fold this back into POWERUP_DURATION, which is shared by the other three.
 const POWERUP_RADIUS = 15;          // pickup icon radius = its collision radius from ship center
 // v3.4 P2: difficulty lever — scales POWERUP_RADIUS from 2x at wave 1 down to the shipped 1x
 // baseline as difficulty ramps. Ships DISABLED (pinned at start=2.0). See DIFFICULTY-LEVERS.md.
@@ -298,9 +300,12 @@ const RAPID_MAX_BULLETS  = 8;       // Rapid Fire bullet cap (2x base MAX_BULLET
 const TRIPLE_MAX_BULLETS = 12;      // Triple Shot bullet cap (3x base) — also the higher-of combined cap
 const TRIPLE_SPREAD = 0.14;         // rad between the 3 Triple Shot bullets (a narrow fan)
 // Magnet: attraction force (reads better than a bigger invisible circle) + a modest pickup-radius bump.
-const MAGNET_RANGE_MULT  = 3;       // garbage within this x GARBAGE_PICKUP is pulled toward the ship (~54 px)
+const MAGNET_RANGE = 380;   // PLAYTEST KNOB. px from ship center. Deliberately > VIEW_H/2 (360) so a piece
+                            // at the very top of the viewport still feels a pull. Replaces MAGNET_RANGE_MULT's
+                            // 54 px — a ~7x buff (v3.4 P4).
 const MAGNET_PICKUP_MULT = 1.6;     // effective pickup radius grows this much while the magnet is active
-const MAGNET_PULL = 360;            // px/sec^2 attraction toward the ship inside the magnet range
+const MAGNET_PULL     = 520;   // PLAYTEST KNOB. px/s^2 at zero distance (was a flat 360)
+const MAGNET_PULL_MIN = 60;    // PLAYTEST KNOB. px/s^2 floor at MAGNET_RANGE — a subtle pull so the top of the screen still visibly moves
 const MAGNET_DAMP = 0.06;           // per-sec velocity damping inside range so the pull glides, not jitters
 // Engine: lightens the effective towed mass so thrust/top-speed/tug (all fed by chainMass) ease.
 const ENGINE_MASS_MULT = 0.5;       // Engine halves the effective towed-mass sum while active
@@ -308,7 +313,7 @@ const ENGINE_MASS_MULT = 0.5;       // Engine halves the effective towed-mass su
 // count variant ("shots"/"pieces"); the timed default (POWERUP_DURATION) ignores these entirely.
 const RAPID_SHOTS   = 40;           // trigger-pulls Rapid Fire lasts in "shots" mode (one pull = one shot)
 const TRIPLE_SHOTS  = 30;           // trigger-pulls Triple Shot lasts in "shots" mode (a 3-fan is ONE pull)
-const MAGNET_PIECES = 20;           // canisters hooked the Magnet lasts in "pieces" mode (counted at the hook)
+const MAGNET_PIECES = 40;           // canisters hooked the Magnet lasts in "pieces" mode (v3.4 P4: 20->40, counted at the hook)
 const POWERUP_BUDGET = { rapid: RAPID_SHOTS, triple: TRIPLE_SHOTS, magnet: MAGNET_PIECES }; // full budget by type
 // Scoop (v3.3 P3) — a PERSISTENT, non-timed ship upgrade, the first of its kind here. It lives on
 // game.scoopLevel (0..SCOOP_MAX_LEVEL), NOT in powerFx/powerBudget, and it only ever decays by TAKING
@@ -2179,6 +2184,13 @@ function powerMode(type) {
   if (type === "magnet") return settings.magnetMode;
   return "time";
 }
+// v3.4 P4: how long a timed effect lasts in "time" mode, by type. Magnet is the one long effect
+// (MAGNET_DURATION, 30 s); the other three share POWERUP_DURATION (15 s). Mirrors powerMode(type).
+// THREE call sites: applyPowerup (sets powerFx) and the HUD active-effect bar's DENOMINATOR (reads it).
+// Miss the HUD one and the magnet bar renders permanently over-full.
+function powerDuration(type) {
+  return type === "magnet" ? MAGNET_DURATION : POWERUP_DURATION;
+}
 // Is a timed effect currently ACTIVE, honouring its expiry mode? In "time" mode it's live while
 // seconds remain (game.powerFx); in a count mode while budget remains (game.powerBudget). Every call
 // site (fire block, maxBullets, chainMass, magnet pull, HUD) reads through this one predicate so the
@@ -2256,7 +2268,7 @@ function applyPowerup(type) {
   if (type === "health") {
     game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + POWERUP_HEALTH_AMOUNT);
   } else if (powerMode(type) === "time") {
-    game.powerFx[type] = POWERUP_DURATION;         // refresh, not add — same-type pickups refresh, never stack
+    game.powerFx[type] = powerDuration(type);      // refresh, not add — same-type pickups refresh, never stack (magnet gets 30 s)
   } else {
     game.powerBudget[type] = POWERUP_BUDGET[type]; // count mode: refresh the shots/pieces budget to full (same rule)
   }
@@ -2853,14 +2865,18 @@ function update(dt) {
   for (const g of game.garbage) {
     g.update(dt);
     if (g.dead || game.ship.dead) continue;
-    if (magnet && g.pieces === 1) {   // v3.2 P1: the Magnet ignores clumps — you can't hook one, so pulling it is just noise
-      const mr = GARBAGE_PICKUP * MAGNET_RANGE_MULT;
-      if (dist2(g, game.ship) < mr * mr) {
-        const [dx, dy] = shortDelta(g.x, g.y, game.ship.x, game.ship.y); // vector toward the ship
+    if (magnet) {   // v3.4 P4: pull ALL garbage — singles AND clumps. The old pieces===1 gate is dead: v3.3's
+                    // 9c made clumps directly scoopable, so pulling one is no longer "just noise".
+      if (dist2(g, game.ship) < MAGNET_RANGE * MAGNET_RANGE) {
+        const [dx, dy] = shortDelta(g.x, g.y, game.ship.x, game.ship.y); // vector toward the ship (wrap-aware)
         const d = Math.hypot(dx, dy) || 0.0001;
+        const t = 1 - (d / MAGNET_RANGE);                                    // 1 at ship, 0 at max range
+        let accel = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * t * t; // quadratic ease: near-field yank, far-field nudge
+        accel /= Math.sqrt(g.mass);     // FORK-6: sqrt, not linear mass. The 0.5 exponent is a PLAYTEST KNOB.
+                                        // A mass-1 single is UNAFFECTED (sqrt(1)=1); a mass-11 clump pulls at ~30%.
         const damp = Math.pow(MAGNET_DAMP, dt);   // light in-range damping so the pull glides (not jitters)
-        g.vx = g.vx * damp + (dx / d) * MAGNET_PULL * dt;
-        g.vy = g.vy * damp + (dy / d) * MAGNET_PULL * dt;
+        g.vx = g.vx * damp + (dx / d) * accel * dt;
+        g.vy = g.vy * damp + (dy / d) * accel * dt;
       }
     }
     // Capture region = the base GARBAGE_PICKUP circle OR the Scoop mouth (v3.3 P3). MAGNET_PICKUP_MULT
@@ -2895,6 +2911,9 @@ function update(dt) {
           });
         }
         AudioSys.pickup();
+        // FLAG-7b (v3.4 P4): a clump scoop under an active pieces-mode Magnet spends `take` budget — else a
+        // 6-piece clump would be free where 6 singles cost 6. Clamped at 0. (Singles spend 1 in the branch above.)
+        if (magnet && settings.magnetMode === "pieces") game.powerBudget.magnet = Math.max(0, game.powerBudget.magnet - take);
         if (take === g.pieces) {
           g.dead = true;  // whole clump fit — total mass conserved onto the chain
         } else {
@@ -3570,7 +3589,7 @@ function draw() {
     if (!powerActive(t)) continue;
     const c = POWERUP_COLOR[t];
     const counted = powerMode(t) !== "time";
-    const frac = counted ? game.powerBudget[t] / POWERUP_BUDGET[t] : game.powerFx[t] / POWERUP_DURATION;
+    const frac = counted ? game.powerBudget[t] / POWERUP_BUDGET[t] : game.powerFx[t] / powerDuration(t);
     drawPowerupGlyph(t, 40, prow, 9, c);
     const pw = 96, ph = 6, ppx = 58, ppy = prow - 3;
     ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1;

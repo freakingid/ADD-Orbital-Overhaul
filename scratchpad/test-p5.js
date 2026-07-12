@@ -74,6 +74,7 @@ const returnList = [
   "settings", "powerActive", "powerMode", "applyPowerup", "saveSettings", "loadSettings",
   "openPause", "closePause", "menuInput", "rootItems", "MENU_OPTIONS", "STORAGE_KEY",
   "RAPID_SHOTS", "TRIPLE_SHOTS", "MAGNET_PIECES", "POWERUP_DURATION", "POWERUP_BUDGET",
+  "MAGNET_DURATION", "powerDuration",
   "RAPID_FIRE_COOLDOWN", "FIRE_COOLDOWN", "AudioSys"
 ];
 const factory = new Function(
@@ -86,6 +87,7 @@ const {
   settings, powerActive, powerMode, applyPowerup, saveSettings, loadSettings,
   openPause, closePause, menuInput, rootItems, MENU_OPTIONS, STORAGE_KEY,
   RAPID_SHOTS, TRIPLE_SHOTS, MAGNET_PIECES, POWERUP_DURATION, POWERUP_BUDGET,
+  MAGNET_DURATION, powerDuration,
   RAPID_FIRE_COOLDOWN, FIRE_COOLDOWN, AudioSys
 } = A;
 
@@ -155,7 +157,7 @@ applyPowerup("engine");
 assert(near(game.powerFx.engine, POWERUP_DURATION), "C: engine uses the timer (always)");
 // magnet time mode: hooking does not spend a budget
 startGame(); isolate(); applyPowerup("magnet");
-assert(near(game.powerFx.magnet, POWERUP_DURATION) && game.powerBudget.magnet === 0, "C: time-mode Magnet sets the timer, not the budget");
+assert(near(game.powerFx.magnet, MAGNET_DURATION) && game.powerBudget.magnet === 0, "C: time-mode Magnet sets the timer (MAGNET_DURATION, v3.4 P4), not the budget");
 hookOne();
 assert(game.powerBudget.magnet === 0 && game.chain.length === 1, "C: hooking in time mode spends no budget (and still hooks)");
 
@@ -295,6 +297,72 @@ settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces";
 applyPowerup("rapid"); applyPowerup("triple"); applyPowerup("magnet"); applyPowerup("engine");
 draw();
 assert(true, "J: drawing the Difficulty screen, Options, and the count-mode HUD did not throw");
+
+// =====================================================================
+// (K) v3.4 P4 — the Magnet gets a DOUBLED duration (30 s), in BOTH expiry modes, without
+//     touching the shared POWERUP_DURATION the other three effects use.
+// =====================================================================
+console.log("(K) v3.4 P4: Magnet duration doubled (30 s) in time AND pieces modes; other effects unchanged");
+// the powerDuration(type) helper mirrors powerMode(type): Magnet is the one long effect.
+assert(MAGNET_DURATION === 30 && MAGNET_DURATION === POWERUP_DURATION * 2, `K: MAGNET_DURATION === 30 === 2*POWERUP_DURATION (got ${MAGNET_DURATION})`);
+assert(POWERUP_DURATION === 15, `K: POWERUP_DURATION still 15 — NOT doubled (got ${POWERUP_DURATION})`);
+assert(powerDuration("magnet") === 30, `K: powerDuration("magnet") === 30 (got ${powerDuration("magnet")})`);
+for (const t of ["rapid", "triple", "engine"]) {
+  assert(powerDuration(t) === 15, `K: powerDuration("${t}") === 15 — the other three keep the shared 15 s (got ${powerDuration(t)})`);
+}
+// time mode: applyPowerup("magnet") sets powerFx to 30, while the other three set 15.
+settings.shotPowerupMode = "time"; settings.magnetMode = "time";
+startGame(); isolate(); applyPowerup("magnet");
+assert(near(game.powerFx.magnet, 30), `K: time-mode applyPowerup("magnet") arms powerFx.magnet to 30 (got ${game.powerFx.magnet})`);
+startGame(); isolate();
+for (const t of ["rapid", "triple", "engine"]) { applyPowerup(t); assert(near(game.powerFx[t], 15), `K: applyPowerup("${t}") still arms to 15 (got ${game.powerFx[t]})`); }
+// pieces mode: the budget doubled for free (POWERUP_BUDGET reads MAGNET_PIECES, now 40).
+assert(MAGNET_PIECES === 40, `K: MAGNET_PIECES === 40 (v3.4 P4: 20->40; got ${MAGNET_PIECES})`);
+assert(POWERUP_BUDGET.magnet === 40, `K: POWERUP_BUDGET.magnet reads MAGNET_PIECES === 40 for free (got ${POWERUP_BUDGET.magnet})`);
+settings.magnetMode = "pieces";
+startGame(); isolate(); applyPowerup("magnet");
+assert(game.powerBudget.magnet === 40 && near(game.powerFx.magnet, 0), `K: pieces-mode applyPowerup("magnet") arms the budget to 40, not the timer (got ${game.powerBudget.magnet})`);
+settings.magnetMode = "time"; // restore
+
+// (K2) The HUD active-effect bar DENOMINATOR uses powerDuration(t), NOT the raw POWERUP_DURATION.
+// Miss that and the magnet bar renders permanently over-full. Drive the REAL draw() through a recording
+// ctx and read the bar's fill width: at powerFx.magnet = 15 (half of 30) the fill must be HALF, not full.
+console.log("(K2) v3.4 P4: the HUD magnet bar denominator is powerDuration(30), not POWERUP_DURATION(15) — real draw()");
+{
+  // A recording 2D context: no-ops everything, but records fillRect(x,y,w,h) calls so we can read the bar.
+  function makeRecordingCtx() {
+    const calls = [];
+    return new Proxy({}, {
+      get(t, p) {
+        if (p === "calls") return calls;
+        if (p === "fillRect") return (...args) => calls.push(args);
+        return (..._a) => {};
+      },
+      set(t, p, v) { t[p] = v; return true; }
+    });
+  }
+  const recCtx = makeRecordingCtx();
+  const recCanvas = { width: 0, height: 0, style: {}, getContext: () => recCtx };
+  const recDoc = { getElementById: () => recCanvas };
+  const B = new Function(
+    "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
+    scriptSrc + "\n;return { startGame, draw, game, settings };"
+  )(windowStub, recDoc, performanceStub, rafStub, navigatorStub, global.localStorage);
+  B.settings.shotPowerupMode = "time"; B.settings.magnetMode = "time";
+  B.startGame();
+  B.game.state = "playing"; B.game.paused = false;
+  // ONLY the magnet is active, at HALF its (doubled) duration -> the bar should read frac 0.5.
+  B.game.powerFx = { rapid: 0, triple: 0, magnet: 15, engine: 0 };
+  B.game.powerBudget = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
+  recCtx.calls.length = 0;
+  B.draw();
+  // The active-effect bar fill is the unique fillRect at x=59 (ppx+1) with height 4 (ph-2); its width is
+  // (pw-2)*clamp01(frac) = 94*frac. frac = powerFx.magnet / powerDuration("magnet") = 15/30 = 0.5 -> 47.
+  // With the bug (denominator POWERUP_DURATION=15) frac would be 1.0 -> width 94 (clamped, over-full).
+  const bar = recCtx.calls.find(a => a.length === 4 && a[0] === 59 && a[3] === 4);
+  assert(!!bar, "K2: found the active-effect bar fill (fillRect at x=59, h=4) with the magnet active");
+  assert(bar && Math.abs(bar[2] - 47) < 0.5, `K2: bar fill width is HALF (47 px = 94*0.5), proving denom 30 not 15 (got ${bar ? bar[2].toFixed(1) : "n/a"})`);
+}
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);

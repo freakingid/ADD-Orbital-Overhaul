@@ -77,6 +77,8 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
   "GARBAGE_DECAY", "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
+  "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_PIECES", "POWERUP_BUDGET",
+  "settings",
   "WORLD_W", "WORLD_H"];
 
 const wrapped = new Function(
@@ -88,7 +90,9 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
   destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
   GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
-  HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE, WORLD_W, WORLD_H } = G;
+  HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
+  MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_PIECES, POWERUP_BUDGET, settings,
+  WORLD_W, WORLD_H } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -319,20 +323,24 @@ console.log("(10) v3.2 P1: two mass-1.0 singles attract EXACTLY as the shipped f
 }
 
 // =====================================================================
-console.log("(11) v3.2 P1: the Magnet powerup does NOT pull a clump, but still pulls a single — via real update()");
+// v3.4 P4 REVERSAL: this assertion was the INVERSE before v3.4 P4 — it asserted a clump feels NO Magnet
+// pull (the v3.2 P1 "you can't hook a clump" gate). v3.3's 9c made clumps directly scoopable, so pulling
+// one is no longer noise; the pieces===1 gate on the pull is gone. The assertion is reversed here (per the
+// phase prompt: rewrite, don't delete), and mass-scaling (§26-§28) is tested below.
+console.log("(11) v3.4 P4: the Magnet now pulls BOTH a clump and a single — via real update() (reversed from v3.2 P1)");
 {
   beginPlaying();
   game.powerFx.magnet = 10; // magnet active (time mode default)
-  const clump = new Garbage(game.ship.x + 40, game.ship.y, 0, 0); // in magnet range, out of pickup range
-  clump.pieces = 2;
+  const clump = new Garbage(game.ship.x + 100, game.ship.y, 0, 0); // in magnet range, well out of pickup range
+  clump.pieces = 4; clump.mass = 4; clump.radius = 7 * Math.sqrt(4);
   game.garbage = [clump];
   update(1 / 60);
-  assert(clump.vx === 0 && clump.vy === 0, "11: a clump (pieces>1) feels no Magnet pull");
-  assert(game.chain.length === 0 && !clump.dead, "11: and it is not hooked");
+  assert(clump.vx < 0, "11: a clump (pieces>1) IS now pulled toward the ship (to its left) — v3.4 P4 reversal");
+  assert(game.chain.length === 0 && !clump.dead, "11: a far clump is pulled but not yet hooked");
 
   beginPlaying();
   game.powerFx.magnet = 10;
-  const single = new Garbage(game.ship.x + 40, game.ship.y, 0, 0); // same spot, one piece
+  const single = new Garbage(game.ship.x + 100, game.ship.y, 0, 0); // same spot, one piece
   game.garbage = [single];
   update(1 / 60);
   assert(single.vx < 0, "11: a pieces=1 canister IS pulled toward the ship (to its left)");
@@ -647,6 +655,116 @@ console.log("(25) v3.3 P4 (9b): 'Waste Not' still keys on hunterCoalesced and st
   assert(wasteNot.cur({ gameEnded: true, hunterCoalesced: 0 }) === 1, "25: fires on a finished game with hunterCoalesced === 0");
   // one Hunter born of neglected scrap -> it does not
   assert(wasteNot.cur({ gameEnded: true, hunterCoalesced: 1 }) === 0, "25: does NOT fire once a Hunter coalesced (keys on hunterCoalesced)");
+}
+
+// =====================================================================
+// v3.4 P4 — the Magnet BUFF: screen-wide range, quadratic falloff, mass-scaled pull, clump budget.
+// These drive the REAL update() pickup loop (magnet active) — no reimplementation of the pull.
+// A lone single/clump placed at ship.x + d (d > 0) has shortDelta(garbage->ship) = (-d, 0), so the
+// per-frame pull sets g.vx = -accel * dt exactly (starting from rest, damping term is 0). Thus the
+// observed acceleration is -g.vx * 60, comparable against the code's exact formula.
+// =====================================================================
+const DT = 1 / 60;
+// Mirror of the shipped pull formula (asteroids-deluxe.html update() magnet block).
+function expAccel(distance, mass) {
+  const t = 1 - distance / MAGNET_RANGE;
+  const a = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * t * t; // quadratic ease
+  return a / Math.sqrt(mass);                                          // FORK-6: sqrt mass
+}
+// Run ONE real update() frame on a single lone piece to the right of the ship; return its resulting vx.
+function pullVx(distance, pcs, mass) {
+  beginPlaying();
+  game.powerFx.magnet = 10;   // time-mode Magnet active
+  settings.magnetMode = "time";
+  const g = new Garbage(game.ship.x + distance, game.ship.y, 0, 0);
+  g.pieces = pcs; g.mass = mass; g.radius = 7 * Math.sqrt(pcs);
+  game.garbage = [g];
+  update(DT);                 // magnet pull runs before the pickup gate, so g.vx is set even if hooked
+  return g.vx;
+}
+
+console.log("(26) v3.4 P4 RANGE: a single at 350 px IS pulled (far past the old 54 px); one at 400 px is NOT");
+{
+  const near350 = pullVx(350, 1, 1);
+  const far400  = pullVx(400, 1, 1);
+  assert(near350 < 0, `26: a single at 350 px is pulled toward the ship (vx=${near350.toFixed(3)} < 0) — inside MAGNET_RANGE 380`);
+  assert(far400 === 0, `26: a single at 400 px is NOT pulled (vx=${far400}) — outside MAGNET_RANGE 380`);
+}
+
+console.log("(27) v3.4 P4 RANGE across a WORLD WRAP seam — the pull must use shortDelta/dist2, not naive math");
+{
+  beginPlaying();
+  settings.magnetMode = "time";
+  game.powerFx.magnet = 10;
+  game.ship.x = WORLD_W - 20; game.ship.y = 1000;   // ship hard against the right seam
+  // garbage at x=330: naive |2540-330| = 2210 px (WAY out of range); wrap distance = 2560-2210 = 350 px (in range).
+  const g = new Garbage(330, game.ship.y, 0, 0);
+  game.garbage = [g];
+  update(DT);
+  assert(g.vx < 0, `27: a piece 350 px away ACROSS the seam is pulled the short way (vx=${g.vx.toFixed(3)} < 0) — naive 2210 px would be out of range`);
+  assert(Math.abs(g.vx - (-expAccel(350, 1) * DT)) < 1e-9, "27: the pull magnitude matches the wrap-distance (350 px) accel, proving shortDelta/dist2 were used");
+}
+
+console.log("(28) v3.4 P4 FALLOFF: ~MAGNET_PULL near, ~MAGNET_PULL_MIN (and >0) at max range, monotonic decreasing");
+{
+  const aNear = -pullVx(3, 1, 1) * 60;      // d≈0
+  const aFar  = -pullVx(379, 1, 1) * 60;    // d≈MAGNET_RANGE (must be < 380 to be in range at all)
+  assert(Math.abs(aNear - MAGNET_PULL) < 10 && aNear <= MAGNET_PULL, `28: accel near the ship ≈ MAGNET_PULL (${aNear.toFixed(1)} ≈ ${MAGNET_PULL})`);
+  assert(Math.abs(aNear - expAccel(3, 1)) < 1e-9, "28: near accel matches the exact quadratic formula");
+  assert(Math.abs(aFar - MAGNET_PULL_MIN) < 0.1 && aFar > 0, `28: accel at max range ≈ MAGNET_PULL_MIN and STRICTLY > 0 (${aFar.toFixed(3)} ≈ ${MAGNET_PULL_MIN})`);
+  const ds = [50, 150, 250, 350];
+  const accels = ds.map(d => -pullVx(d, 1, 1) * 60);
+  let mono = true;
+  for (let i = 1; i < accels.length; i++) if (!(accels[i] < accels[i - 1])) mono = false;
+  assert(mono, `28: accel decreases monotonically with distance (${accels.map(a => a.toFixed(0)).join(" > ")})`);
+}
+
+console.log("(29) v3.4 P4 MASS: a mass-1 single's per-frame vx is BIT-IDENTICAL to the unscaled formula; a mass-9 clump is exactly 1/3");
+{
+  const d = 200;
+  const t = 1 - d / MAGNET_RANGE;
+  const rawAccel = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * t * t; // formula BEFORE the mass divide
+  const expUnscaled = -1 * rawAccel * DT;   // dx/d = -1 (garbage to the right of the ship)
+  const single = pullVx(d, 1, 1);
+  // THE regression assertion that matters most: sqrt(1) === 1, so the mass divide must not perturb a single.
+  assert(single === expUnscaled, `29: a mass-1 single's vx is BIT-IDENTICAL to the unscaled formula (${single} === ${expUnscaled})`);
+  const clump9 = pullVx(d, 9, 9);
+  assert(clump9 === -1 * (rawAccel / Math.sqrt(9)) * DT, "29: a mass-9 clump matches the sqrt-mass formula exactly");
+  assert(Math.abs(clump9 - single / 3) < 1e-12, `29: a mass-9 clump's delta is exactly 1/3 of the same-distance single's (${clump9.toFixed(5)} ≈ ${(single / 3).toFixed(5)})`);
+}
+
+console.log("(30) v3.4 P4 (FLAG-7b): scooping a 6-piece clump under a pieces-mode Magnet spends EXACTLY 6 budget");
+{
+  settings.magnetMode = "pieces";
+  beginPlaying();
+  game.powerBudget.magnet = MAGNET_PIECES; // 40, pieces-mode active
+  game.powerFx.magnet = 0;
+  game.cargoMax = 12; game.chain = [];
+  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0); // ON the ship -> scooped whole
+  clump.pieces = 6; clump.mass = 6; clump.radius = 7 * Math.sqrt(6); clump.coalesceDelay = 0;
+  game.garbage = [clump];
+  update(DT);
+  assert(clump.dead && game.chain.length === 6, `30: the 6-clump is fully scooped onto the chain (${game.chain.length} nodes)`);
+  assert(game.powerBudget.magnet === MAGNET_PIECES - 6, `30: the scoop spent exactly 6 budget — a 6-clump costs the same as 6 singles (got ${game.powerBudget.magnet}, expected ${MAGNET_PIECES - 6})`);
+  settings.magnetMode = "time"; // restore for any later use
+}
+
+console.log("(31) v3.4 P4 regression: coalescence (12-piece -> Hunter) still fires with the Magnet OFF");
+{
+  beginPlaying();
+  settings.magnetMode = "time";
+  game.powerFx.magnet = 0; game.powerBudget.magnet = 0; // Magnet OFF: the pull block is skipped entirely
+  game.ship.x = 200; game.ship.y = 200;                 // far from the clump so nothing is pulled or hooked
+  hunterbornCalls = 0;
+  const before = game.hunters.length;
+  for (let i = 0; i < HUNTER_COALESCE_COUNT; i++) {
+    const g = new Garbage(1800, 1000, 0, 0);
+    g.coalesceDelay = 0;
+    game.garbage.push(g);
+  }
+  update(DT); // real update(): magnet block skipped (off), coalesceGarbage still transforms the 12-clump
+  assert(game.hunters.length === before + 1, `31: one Hunter still born from a 12-clump with the Magnet off (${before} -> ${game.hunters.length})`);
+  assert(hunterbornCalls === 1, "31: the coalescence cue fired exactly once, no Magnet involved");
 }
 
 // =====================================================================

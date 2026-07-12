@@ -48,7 +48,7 @@ const returnList = [
   "destroyDebris", "destroyHunter",
   "POWERUP_DURATION", "POWERUP_HEALTH_AMOUNT", "POWERUP_DROP_TYPES", "POWERUP_DROP_CHANCE",
   "RAPID_MAX_BULLETS", "TRIPLE_MAX_BULLETS", "MAX_BULLETS", "TRIPLE_SPREAD",
-  "ENGINE_MASS_MULT", "MAGNET_RANGE_MULT", "MAGNET_PICKUP_MULT",
+  "ENGINE_MASS_MULT", "MAGNET_RANGE", "MAGNET_PICKUP_MULT", "MAGNET_DURATION",
   "GARBAGE_PICKUP", "SHIP_MAX_HP",
   "dist2", "shortDelta", "WORLD_W", "WORLD_H"
 ];
@@ -64,7 +64,7 @@ const {
   destroyDebris, destroyHunter,
   POWERUP_DURATION, POWERUP_HEALTH_AMOUNT, POWERUP_DROP_TYPES, POWERUP_DROP_CHANCE,
   RAPID_MAX_BULLETS, TRIPLE_MAX_BULLETS, MAX_BULLETS, TRIPLE_SPREAD,
-  ENGINE_MASS_MULT, MAGNET_RANGE_MULT, MAGNET_PICKUP_MULT,
+  ENGINE_MASS_MULT, MAGNET_RANGE, MAGNET_PICKUP_MULT, MAGNET_DURATION,
   GARBAGE_PICKUP, SHIP_MAX_HP,
   dist2, shortDelta, WORLD_W, WORLD_H
 } = A;
@@ -97,7 +97,7 @@ function node(x, y, mass) { return { x, y, px: x, py: y, spin: 0, spinRate: 0, m
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) DURATION=${POWERUP_DURATION}s  DROP_CHANCE=${POWERUP_DROP_CHANCE}  caps 4/${RAPID_MAX_BULLETS}/${TRIPLE_MAX_BULLETS}  ENGINE_MULT=${ENGINE_MASS_MULT}  MAGNET_RANGE=${MAGNET_RANGE_MULT}x`);
+console.log(`(config) DURATION=${POWERUP_DURATION}s  DROP_CHANCE=${POWERUP_DROP_CHANCE}  caps 4/${RAPID_MAX_BULLETS}/${TRIPLE_MAX_BULLETS}  ENGINE_MULT=${ENGINE_MASS_MULT}  MAGNET_RANGE=${MAGNET_RANGE}px`);
 
 // =====================================================================
 // (A) applyPowerup effect magnitudes — one of each type
@@ -116,7 +116,8 @@ assert(game.powerFx.health === undefined || game.powerFx.health === 0, "A: Healt
 for (const t of ["rapid", "triple", "magnet", "engine"]) {
   resetFx();
   applyPowerup(t);
-  assert(near(game.powerFx[t], POWERUP_DURATION), `A: ${t} arms its slot to ${POWERUP_DURATION}s (got ${game.powerFx[t]})`);
+  const expDur = t === "magnet" ? MAGNET_DURATION : POWERUP_DURATION; // v3.4 P4: Magnet is the one 30 s effect
+  assert(near(game.powerFx[t], expDur), `A: ${t} arms its slot to ${expDur}s (got ${game.powerFx[t]})`);
   const others = ["rapid", "triple", "magnet", "engine"].filter(o => o !== t);
   assert(others.every(o => game.powerFx[o] === 0), `A: ${t} does not activate any other effect`);
 }
@@ -206,7 +207,7 @@ assert(near(chainMass(), 1.0), `E: mixed-mass chain halves under Engine (got ${c
 // =====================================================================
 console.log("(F) Magnet pulls nearby garbage toward the ship (and doesn't when inactive)");
 resetShip({ x: cx, y: cy }); resetFx(); clearField(); quietTimers();
-// place a canister at +45px: inside the ~54px attraction range, outside the ~29px magnet pickup
+// place a canister at +45px: well inside the MAGNET_RANGE (380 px, v3.4 P4) attraction range, outside the ~29px magnet pickup
 const startX = cx + 45;
 const g = new Garbage(startX, cy, 0, 0);
 game.garbage.push(g);
