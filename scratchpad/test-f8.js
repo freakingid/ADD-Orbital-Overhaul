@@ -126,7 +126,7 @@ openPause();
 assert(game.paused === true && game.menu.screen === "root" && game.menu.index === 0, "A: pause opens root");
 menuInput("down"); assert(game.menu.index === 1, "A: down -> Options row");
 menuInput("confirm"); assert(game.menu.screen === "options", "A: confirm Options -> options screen");
-game.menu.index = 3; menuInput("confirm"); assert(game.menu.screen === "controls", "A: confirm Controls -> controls screen");
+game.menu.index = MENU_OPTIONS.indexOf("Controls"); menuInput("confirm"); assert(game.menu.screen === "controls", "A: confirm Controls -> controls screen");
 menuInput("back"); assert(game.menu.screen === "options", "A: back -> options");
 menuInput("back"); assert(game.menu.screen === "root", "A: back -> root");
 menuInput("back"); assert(game.paused === false && game.menu.screen === null, "A: back from root resumes the game");

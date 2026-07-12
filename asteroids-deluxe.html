@@ -661,6 +661,187 @@ const AudioSys = {
   }
 };
 
+// ---------- Music (Web Audio synth, lookahead scheduler) ----------
+// MusicSys lives ALONGSIDE AudioSys, not inside it: AudioSys is a flat bag of one-shot voices; music
+// needs a per-frame lookahead scheduler and a track graph, which would pollute that bag. All music
+// output routes into AudioSys.music (the GainNode AudioSys.init() already built and wired to master),
+// so the existing Options "Music Volume" slider governs the whole system with no new plumbing.
+//
+// Signal path:  note gain envelopes -> [per-state trackGain, crossfaded] -> MusicSys.duck -> AudioSys.music
+//
+// Tracks are DATA (step-sequencer tables — see buildTitleTrack / MUSIC_TRACKS), never code. The
+// scheduler consumes a generic { stepDur, steps, layers:[{type,gain,steps:[cell|null]}] } shape, so
+// v3.4 P7 can add the three gameplay tracks as more tables without touching a line of the scheduler.
+const MUSIC_LOOKAHEAD = 0.2;   // s — each frame, schedule any note starting within this window
+const MUSIC_CROSSFADE = 0.6;   // s — track-to-track fade on setState()
+const MUSIC_FADE_OUT  = 1.0;   // s — fade to silence at game over (§9c look-call: quiet beat)
+const MUSIC_DUCK_GAIN = 0.5;   // menu-open music level (§9 ducking spec: 50%)
+const MUSIC_DUCK_RAMP = 0.15;  // s — click-free duck ramp (linearRampToValueAtTime, not a bare set)
+
+const MUSIC_A4 = 440;
+const mfreq = m => MUSIC_A4 * Math.pow(2, (m - 69) / 12); // equal-tempered MIDI note -> Hz
+
+// The title track (§9c): ONE long, patient, EPIC-ADVENTURE loop — slow build, wide intervals, no
+// percussion pulse, no urgency, deliberately unrelated to the gameplay mood set. Not layered by
+// difficulty (there is none on the title screen); it's just a long loop (48 s here) so it doesn't
+// read as a jingle. Built as a step table so it feeds the same scheduler the gameplay tracks will.
+function buildTitleTrack() {
+  const STEPS = 96, stepDur = 0.5;                 // 96 * 0.5 = 48 s loop
+  const mk = () => new Array(STEPS).fill(null);
+  const put = (arr, step, midi, durSteps, g) => { arr[step] = { f: mfreq(midi), dur: durSteps, g: g == null ? 1 : g }; };
+
+  const bass = mk(), padLo = mk(), padMid = mk(), padHi = mk(), lead = mk();
+  // Six 16-step (8 s) harmonic blocks — a patient Aeolian arc in A: i VI III VII iv V.
+  const roots = [45, 41, 48, 43, 50, 40]; // A2 F2 C3 G2 D3 E2 (MIDI)
+  roots.forEach((r, b) => {
+    const s0 = b * 16;
+    put(bass,  s0,      r - 12, 16, 1.0);          // slow octave-below drone, whole block
+    put(padLo, s0,      r,       8, 1.0);          // root, gently re-struck mid-block for motion
+    put(padLo, s0 + 8,  r,       8, 0.8);
+    put(padMid, s0,     r + 7,  16, 0.9);          // open fifth, sustained — the "scale"
+    put(padHi, s0 + 2,  r + 12,  6, 0.6);          // octave shimmer
+    put(padHi, s0 + 10, r + 12,  6, 0.5);
+  });
+  // Lead: a sparse, wide-interval melody that only ENTERS from block 3 (slow build / departure),
+  // climbing high toward the end of the loop. A-minor-pentatonic tones, big leaps.
+  put(lead, 52, 76, 6, 1.0);  // E5
+  put(lead, 60, 72, 6, 0.9);  // C5
+  put(lead, 66, 81, 8, 1.0);  // A5
+  put(lead, 82, 79, 6, 0.9);  // G5
+  put(lead, 90, 84, 6, 1.0);  // C6 — the peak "departure" note before the loop turns over
+
+  return { stepDur, steps: STEPS, layers: [
+    { name: "bass",  type: "sine",     gain: 0.09, cutoff: 220, detune: 0, atk: 1.2, rel: 2.0, steps: bass  },
+    { name: "padLo", type: "triangle", gain: 0.05, cutoff: 900, detune: 7, atk: 0.6, rel: 1.6, steps: padLo },
+    { name: "padMid",type: "triangle", gain: 0.045,cutoff: 900, detune: 7, atk: 0.8, rel: 1.8, steps: padMid },
+    { name: "padHi", type: "sine",     gain: 0.04, cutoff: 0,   detune: 5, atk: 0.5, rel: 1.4, steps: padHi },
+    { name: "lead",  type: "triangle", gain: 0.055,cutoff: 0,   detune: 0, atk: 0.4, rel: 1.2, steps: lead  },
+  ]};
+}
+
+// State -> track. "play" is a SILENT STUB this phase (P7 fills the selected gameplay track); "off"
+// (game over) is silence. Only the title track has content in v3.4 P6.
+const MUSIC_TRACKS = {
+  title: buildTitleTrack(),
+  play:  null,   // v3.4 P7: the difficulty-selected gameplay track
+  off:   null,   // game over / silence
+};
+
+const MusicSys = {
+  duck: null,          // GainNode: track graph -> AudioSys.music; menu ducking rides on its .gain
+  trackGain: null,     // GainNode for the currently-scheduled track; replaced (crossfaded) on setState
+  state: "off",        // current logical state: "title" | "play" | "off"
+  track: null,         // the active step table (MUSIC_TRACKS[state]) or null for silent states
+  step: 0,             // scheduler cursor into track.steps
+  nextStepTime: 0,     // absolute ctx time of the next step to schedule (never in the past)
+  ducked: false,       // last duck target applied — makes setDuck() idempotent under per-frame calls
+  intensity: 0,        // 0..1 — P7 gates gameplay layers on this; unused this phase
+
+  // Lazily build the duck node once the audio graph exists (first user gesture). AudioSys.music is
+  // created in AudioSys.init(); until then every entry point below no-ops via the ctx guard.
+  ensureGraph() {
+    if (this.duck || !AudioSys.ctx || !AudioSys.music) return;
+    this.duck = AudioSys.ctx.createGain();
+    this.duck.gain.value = this.ducked ? MUSIC_DUCK_GAIN : 1.0; // honour a duck requested before the graph existed
+    this.duck.connect(AudioSys.music);
+  },
+
+  // Menu ducking (§9): 0.5 while any pause-menu screen is open, 1.0 otherwise. Called every frame
+  // with menuActive(), so it must be idempotent — only ramp when the target actually flips.
+  setDuck(on) {
+    on = !!on;
+    if (on === this.ducked) return;
+    if (!AudioSys.ctx) { this.ducked = on; return; } // no graph yet — remember it; ensureGraph honours it later
+    this.ensureGraph();          // build the duck node at the CURRENT level first, so the change below is a ramp
+    this.ducked = on;
+    if (!this.duck) return;
+    const t = AudioSys.ctx.currentTime, target = on ? MUSIC_DUCK_GAIN : 1.0;
+    this.duck.gain.cancelScheduledValues(t);
+    this.duck.gain.setValueAtTime(this.duck.gain.value, t);
+    this.duck.gain.linearRampToValueAtTime(target, t + MUSIC_DUCK_RAMP); // RAMP, never a bare .value set
+  },
+
+  // P7 hook: gameplay-track intensity 0..1. A no-op stub this phase (title screen has no difficulty).
+  setIntensity(f) { this.intensity = Math.max(0, Math.min(1, f || 0)); },
+
+  // Crossfade to a new state's track. Fades out + retires the previous track's gain (so already-
+  // scheduled notes ring out and nothing new feeds it), and starts a fresh gain ramping up for the
+  // new track. Silent states ("play" stub / "off") leave trackGain null so the scheduler idles.
+  setState(s) {
+    if (!AudioSys.ctx) return;
+    this.ensureGraph();
+    if (s === this.state) return;
+    const ctx = AudioSys.ctx, t = ctx.currentTime;
+    if (this.trackGain) {                         // fade out and abandon the old track
+      const g = this.trackGain, fade = (s === "off") ? MUSIC_FADE_OUT : MUSIC_CROSSFADE;
+      g.gain.cancelScheduledValues(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.linearRampToValueAtTime(0.0001, t + fade);
+      this.trackGain = null;
+    }
+    this.state = s;
+    this.track = MUSIC_TRACKS[s] || null;
+    this.step = 0;
+    if (this.track && this.duck) {
+      this.nextStepTime = t;                      // start scheduling from now — never in the past
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(1, t + MUSIC_CROSSFADE);
+      g.connect(this.duck);
+      this.trackGain = g;
+    }
+  },
+
+  // The lookahead scheduler: once per frame, schedule every step whose start time falls within the
+  // next MUSIC_LOOKAHEAD window. Web Audio timing only — never setTimeout/setInterval for notes.
+  update() {
+    if (!AudioSys.ctx) return;
+    this.ensureGraph();
+    if (!this.track || !this.trackGain) return;
+    const ctx = AudioSys.ctx, horizon = ctx.currentTime + MUSIC_LOOKAHEAD;
+    let guard = 1024;                             // bound catch-up after a long stall (never dump the loop)
+    while (this.nextStepTime < horizon && guard-- > 0) {
+      this.scheduleStep(this.step, this.nextStepTime);
+      this.nextStepTime += this.track.stepDur;
+      this.step = (this.step + 1) % this.track.steps;
+    }
+  },
+
+  scheduleStep(step, tStep) {
+    const t = Math.max(tStep, AudioSys.ctx.currentTime); // clamp: a stalled frame must not schedule into the past
+    for (const layer of this.track.layers) {
+      const cell = layer.steps[step];
+      if (cell) this.playNote(layer, cell, t);
+    }
+  },
+
+  playNote(layer, cell, t) {
+    const ctx = AudioSys.ctx, dur = cell.dur * this.track.stepDur;
+    const peak = (cell.g == null ? 1 : cell.g) * layer.gain;
+    const atk = Math.min(layer.atk == null ? 0.4 : layer.atk, dur * 0.5);
+    const rel = Math.min(layer.rel == null ? 0.5 : layer.rel, dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + atk);
+    g.gain.setValueAtTime(peak, t + Math.max(atk, dur - rel));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let sink = g;
+    if (layer.cutoff) {
+      const f = ctx.createBiquadFilter();
+      f.type = "lowpass"; f.frequency.value = layer.cutoff;
+      f.connect(g); sink = f;
+    }
+    const freqs = layer.detune ? [cell.f, cell.f * Math.pow(2, layer.detune / 1200)] : [cell.f];
+    for (const fr of freqs) {
+      const o = ctx.createOscillator();
+      o.type = layer.type; o.frequency.value = fr;
+      o.connect(sink);
+      o.start(t); o.stop(t + dur + 0.1);
+    }
+    g.connect(this.trackGain);
+  },
+};
+
 // ---------- Input ----------
 // One input layer serves both keyboard and gamepad. Everything downstream only ever calls
 // input.left()/right()/thrust()/fire()/shield() — it never reads keys{} or the gamepad directly,
@@ -906,8 +1087,12 @@ function firstPressedButton() {
 const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game
 const MENU_ROOT_SYS  = ["Options", "Achievements", "Back"];  // system menu from title/gameover
 function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_ROOT_SYS; }
-const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Controls", "Achievements", "Difficulty", "Back"];
+// v3.4 P6: "Music Track" inserted after "Master Volume". menuOptions()/drawOptionsMenu() dispatch by
+// LABEL (like menuRoot), not by hardcoded index, so adding a row here is purely additive and can't
+// silently shift the Controls/Achievements/Difficulty/Back handlers out from under themselves.
+const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Music Track", "Controls", "Achievements", "Difficulty", "Back"];
 const VOL_CATS     = ["sfx", "music", "master"]; // parallel to the first three MENU_OPTIONS rows
+const VOL_LABELS   = ["SFX Volume", "Music Volume", "Master Volume"]; // the slider rows, by label
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -917,7 +1102,14 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 const settings = {
   shotPowerupMode: "time", // "time" | "shots"  — governs Rapid Fire + Triple Shot expiry
   magnetMode:      "time", // "time" | "pieces" — governs Magnet expiry
+  musicTrack:      "retro",// "tense" | "retro" | "ambient" — selected gameplay track (v3.4 P6; retro default, FORK-9)
 };
+
+// Music-track picker (v3.4 P6). Internal values drive P7's gameplay-track selection; the labels are
+// what the Options row shows. Cycled left/right like a Difficulty toggle. The three tracks are silent
+// stubs this phase — the row is fully wired and persists, P7 puts sound behind the names.
+const MUSIC_TRACK_VALUES = ["tense", "retro", "ambient"];
+const MUSIC_TRACK_LABELS = { tense: "Tense", retro: "Retro", ambient: "Ambient" };
 
 function menuActive() { return game.paused; } // paused <=> a pause-menu screen is open
 
@@ -991,23 +1183,31 @@ function menuRoot(a) {
   else if (a === "back" || a === "pause") closePause();
 }
 
+// v3.4 P6 refactor: dispatch by LABEL (menuRoot is the in-file precedent), not by hardcoded index,
+// so the new "Music Track" row is additive and no index-fragile branch has to shift.
 function menuOptions(a) {
-  const m = game.menu, N = MENU_OPTIONS.length;
+  const m = game.menu, N = MENU_OPTIONS.length, label = MENU_OPTIONS[m.index];
   if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
   else if (a === "left" || a === "right") {
-    if (m.index <= 2) { // a volume slider
-      const cat = VOL_CATS[m.index];
+    const vi = VOL_LABELS.indexOf(label);
+    if (vi >= 0) { // a volume slider
+      const cat = VOL_CATS[vi];
       AudioSys.setVol(cat, clamp01(AudioSys.vol[cat] + (a === "right" ? VOL_STEP : -VOL_STEP)));
+      saveSettings();
+      AudioSys.ui(false);
+    } else if (label === "Music Track") { // cycle the gameplay-track selection (same idiom as Difficulty toggles)
+      const idx = MUSIC_TRACK_VALUES.indexOf(settings.musicTrack), n = MUSIC_TRACK_VALUES.length;
+      settings.musicTrack = MUSIC_TRACK_VALUES[(idx + (a === "right" ? 1 : -1) + n) % n];
       saveSettings();
       AudioSys.ui(false);
     }
   }
   else if (a === "confirm") {
-    if (m.index === 3) gotoScreen("controls");       // Controls
-    else if (m.index === 4) { gotoScreen("achievements"); m.achReturn = "options"; } // Achievements viewer (F9)
-    else if (m.index === 5) gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
-    else if (m.index === 6) gotoScreen("root", rootItems().indexOf("Options")); // Back -> root, cursor on "Options"
+    if (label === "Controls") gotoScreen("controls");
+    else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "options"; } // viewer (F9)
+    else if (label === "Difficulty") gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
+    else if (label === "Back") gotoScreen("root", rootItems().indexOf("Options")); // -> root, cursor on "Options"
   }
   else if (a === "back") gotoScreen("root", rootItems().indexOf("Options"));
   else if (a === "pause") closePause();
@@ -1111,7 +1311,8 @@ function saveSettings() {
   const ls = storageOK(); if (!ls) return;
   try {
     const data = { vol: { ...AudioSys.vol }, bindings: {},
-      shotPowerupMode: settings.shotPowerupMode, magnetMode: settings.magnetMode }; // v3.0 P5 (additive)
+      shotPowerupMode: settings.shotPowerupMode, magnetMode: settings.magnetMode, // v3.0 P5 (additive)
+      musicTrack: settings.musicTrack };                                          // v3.4 P6 (additive)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -1142,6 +1343,8 @@ function loadSettings() {
     // accept a known value, so a corrupt string falls back to the "time" default rather than sticking.
     if (data.shotPowerupMode === "time" || data.shotPowerupMode === "shots") settings.shotPowerupMode = data.shotPowerupMode;
     if (data.magnetMode === "time" || data.magnetMode === "pieces") settings.magnetMode = data.magnetMode;
+    // v3.4 P6: only accept a known track name, so a corrupt/unknown value falls back to the default.
+    if (MUSIC_TRACK_VALUES.includes(data.musicTrack)) settings.musicTrack = data.musicTrack;
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
@@ -3306,27 +3509,42 @@ function drawRootMenu() {
   drawText("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 272, 12, COLOR.dim);
 }
 
+// v3.4 P6: rendered label-driven off MENU_OPTIONS (no hardcoded row indices), so it stays in step
+// with the label-dispatch menuOptions(). Adjustable "value" rows (the three sliders + Music Track)
+// are drawn left-aligned in a top block; the nav rows (Controls…Back) are centered below.
 function drawOptionsMenu() {
-  const { x, y } = menuPanel(560, 484, "OPTIONS");
+  const { x, y } = menuPanel(600, 500, "OPTIONS");
   const m = game.menu;
-  for (let i = 0; i < 3; i++) { // SFX / Music / Master sliders
+  const isValueRow = label => VOL_LABELS.includes(label) || label === "Music Track";
+  let cy = y + 100;
+  MENU_OPTIONS.forEach((label, i) => {
+    if (!isValueRow(label)) return;
     const sel = m.index === i;
-    const cy = y + 108 + i * 48;
-    drawText(MENU_OPTIONS[i], x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
-    const bx = x + 250, bw = 190, bh = 12, by = cy - 3;
-    ctx.strokeStyle = sel ? COLOR.shield : COLOR.dim; ctx.lineWidth = 1;
-    ctx.strokeRect(bx, by, bw, bh);
-    ctx.fillStyle = sel ? COLOR.shield : COLOR.dim;
-    ctx.fillRect(bx + 1, by + 1, (bw - 2) * AudioSys.vol[VOL_CATS[i]], bh - 2);
-    drawText(Math.round(AudioSys.vol[VOL_CATS[i]] * 100) + "%", bx + bw + 44, cy + 6, 16, sel ? COLOR.text : COLOR.dim, "right");
-    if (sel) { drawText("◄", bx - 16, cy + 7, 16, COLOR.text); drawText("►", bx + bw + 16, cy + 7, 16, COLOR.text); }
-  }
-  drawText("(no music track yet — the Music slider is wired for a future one)", VIEW_W / 2, y + 262, 12, COLOR.dim);
-  ["Controls", "Achievements", "Difficulty", "Back"].forEach((it, j) => {
-    const idx = 3 + j, sel = m.index === idx;
-    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 296 + j * 36, 22, sel ? COLOR.text : COLOR.dim);
+    drawText(label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+    const vi = VOL_LABELS.indexOf(label);
+    if (vi >= 0) { // volume slider
+      const bx = x + 270, bw = 190, bh = 12, by = cy - 3;
+      ctx.strokeStyle = sel ? COLOR.shield : COLOR.dim; ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.fillStyle = sel ? COLOR.shield : COLOR.dim;
+      ctx.fillRect(bx + 1, by + 1, (bw - 2) * AudioSys.vol[VOL_CATS[vi]], bh - 2);
+      drawText(Math.round(AudioSys.vol[VOL_CATS[vi]] * 100) + "%", bx + bw + 44, cy + 6, 16, sel ? COLOR.text : COLOR.dim, "right");
+      if (sel) { drawText("◄", bx - 16, cy + 7, 16, COLOR.text); drawText("►", bx + bw + 16, cy + 7, 16, COLOR.text); }
+    } else { // Music Track — a value column mirroring drawDifficulty's toggle layout
+      const ox = x + 270;
+      drawText(MUSIC_TRACK_LABELS[settings.musicTrack], ox, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+      if (sel) { drawText("◄", ox - 20, cy + 7, 16, COLOR.text); drawText("►", ox + 150, cy + 7, 16, COLOR.text); }
+    }
+    cy += 46;
   });
-  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 464, 12, COLOR.dim);
+  cy += 14;
+  MENU_OPTIONS.forEach((label, i) => {
+    if (isValueRow(label)) return;
+    const sel = m.index === i;
+    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, cy + 6, 22, sel ? COLOR.text : COLOR.dim);
+    cy += 38;
+  });
+  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 480, 12, COLOR.dim);
 }
 
 // Difficulty screen renderer (v3.0 P5): two two-option toggle rows + Back. The active side of each
@@ -3724,8 +3942,19 @@ function loop(now) {
   handleGamepadMenu();  // edge-triggered controller menu/system actions (Start/A/B)
   update(dt);
   updateToasts(dt);     // age out achievement-unlock toasts (independent of pause/state) (F9)
+  updateMusic();        // v3.4 P6: drive the music state/duck off game.state + menu, then run the scheduler
   draw();
   requestAnimationFrame(loop);
+}
+
+// v3.4 P6: one place drives the whole music system per frame. State maps game.state -> track ("title"
+// on the title screen, the selected gameplay track while playing, silence at game over); ducking maps
+// menuActive() -> 50%. All three MusicSys calls are ctx-guarded no-ops until the first user gesture.
+function musicStateFor(s) { return s === "playing" ? "play" : s === "title" ? "title" : "off"; }
+function updateMusic() {
+  MusicSys.setState(musicStateFor(game.state));
+  MusicSys.setDuck(menuActive());
+  MusicSys.update();
 }
 
 // Age achievement toasts. Runs in the main loop (not update) so they animate/expire across every

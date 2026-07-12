@@ -72,7 +72,7 @@ const returnList = [
   "startGame", "update", "game", "keys", "input", "bindings", "GP",
   "pollGamepad", "handleGamepadMenu",
   "openPause", "closePause", "menuInput", "menuActive", "rootItems",
-  "MENU_ROOT_PLAY", "MENU_ROOT_SYS", "AudioSys"
+  "MENU_ROOT_PLAY", "MENU_ROOT_SYS", "MENU_OPTIONS", "AudioSys"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -83,7 +83,7 @@ const {
   startGame, update, game, keys, input, bindings, GP,
   pollGamepad, handleGamepadMenu,
   openPause, closePause, menuInput, menuActive, rootItems,
-  MENU_ROOT_PLAY, MENU_ROOT_SYS, AudioSys
+  MENU_ROOT_PLAY, MENU_ROOT_SYS, MENU_OPTIONS, AudioSys
 } = A;
 
 let passed = 0, failed = 0;
@@ -254,7 +254,7 @@ console.log("(I) Achievements back-target resolves by entry path");
 // play path: pause -> Options -> Achievements -> back -> Options
 startGame(); openPause();
 game.menu.index = rootItems().indexOf("Options"); menuInput("confirm"); // -> options
-game.menu.index = 4; menuInput("confirm");                              // -> achievements (from options)
+game.menu.index = MENU_OPTIONS.indexOf("Achievements"); menuInput("confirm"); // -> achievements (from options)
 assert(game.menu.screen === "achievements" && game.menu.achReturn === "options", "I: play path sets achReturn=options");
 menuInput("back");
 assert(game.menu.screen === "options", "I: back from Achievements -> Options (play path)");
