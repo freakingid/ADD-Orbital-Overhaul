@@ -12,6 +12,16 @@ renamed `archive/IMPLEMENTATION-PHASES-v2.md` at the same time.
 
 ---
 
+## Forks — RESOLVED (Paul, this round)
+- FORK-1 Hunter satellite art? NO — the diamond stays the threat tell.
+- FORK-2 Scoop shape? ORIENTED BOX (the mouth), not a circle.
+- FORK-3 scoopHits resets on level gain? NO — only on level loss.
+- FORK-4 Clumps decay? NO — singles only.
+- FORK-5 Delete bornOfScrap? YES — rewrite its assertions to the inverse, don't delete them.
+- FORK-6 Clump-scooping needs scoopLevel >= 1? NO — unconditional.
+
+---
+
 ## 0. Verified state (what the build actually does today)
 
 | Thing | Shipped value / behavior |
