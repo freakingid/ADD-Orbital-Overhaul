@@ -3936,6 +3936,31 @@ function draw() {
   ctx.restore();
 
   // --- HUD (screen space, drawn after restoring the untranslated context) ---
+  // Capture tools (P/O/H — see the block comment above the Capture object) toggle visibility
+  // of this call only; the game keeps simulating/updating regardless of hudVisible.
+  if (Capture.hudVisible) drawHUD();
+
+  if (game.state === "gameover") {
+    drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
+    drawText("FINAL SCORE  " + game.score, VIEW_W/2, VIEW_H/2 + 36, 26);
+    if (Math.floor(performance.now() / 600) % 2 === 0)
+      drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 90, 22);
+    drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 130, 14, COLOR.ach);
+  }
+
+  // Drawn after the gameover text so the system menu overlays it (v3.0 P4); for a mid-game pause the
+  // gameover block is skipped, so this still sits above the HUD as before (F8).
+  if (game.paused) drawMenu(); // pause modal / system menu / options / controls
+
+  drawToasts(); // achievement-unlock banners, on top of everything (F9)
+}
+
+// The persistent in-play overlay — score, hull HP, level, cargo/targets readouts, active-powerup
+// bars, scoop pips, the dock/low-health chevrons, and the shield bar. Deliberately excludes menus,
+// achievement toasts, and the game-over text, which stay in draw() so Capture's H toggle (see the
+// block comment above the Capture object) only ever hides the always-on overlay, never anything
+// modal or transient.
+function drawHUD() {
   drawText(String(game.score).padStart(6, "0"), 30, 46, 30, COLOR.text, "left");
   // hull HP bar (replaces the old life-ship icons; same stroke/fill style as the shield bar)
   const hpw = 140, hph = 8, hpx = 92, hpy = 62;
@@ -4023,20 +4048,6 @@ function draw() {
   ctx.fillStyle = game.ship.energy > 0.25 ? COLOR.shield : "#ff7060";
   ctx.fillRect(bx + 1, by + 1, (bw - 2) * game.ship.energy, bh - 2);
   drawText("SHIELD", bx - 12, by + 8, 13, COLOR.dim, "right");
-
-  if (game.state === "gameover") {
-    drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
-    drawText("FINAL SCORE  " + game.score, VIEW_W/2, VIEW_H/2 + 36, 26);
-    if (Math.floor(performance.now() / 600) % 2 === 0)
-      drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 90, 22);
-    drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 130, 14, COLOR.ach);
-  }
-
-  // Drawn after the gameover text so the system menu overlays it (v3.0 P4); for a mid-game pause the
-  // gameover block is skipped, so this still sits above the HUD as before (F8).
-  if (game.paused) drawMenu(); // pause modal / system menu / options / controls
-
-  drawToasts(); // achievement-unlock banners, on top of everything (F9)
 }
 
 // title screen decoration
@@ -4052,6 +4063,17 @@ Achievements.init();
 
 // ---------- Main loop ----------
 // ---------- Capture tools (screenshots + slow-mo) ----------
+// SHIPPED, PLAYER-FACING FEATURE — not debug scaffolding. Do not strip this on a refactor pass.
+// Keys: P = export the current frame as a PNG (composited onto black; honors hudVisible, so a
+// hidden HUD stays hidden in the export). O = cycle time scale 1x -> 0.5x -> 0.25x -> 1x (slow-mo).
+// H = toggle the HUD overlay on/off (purely visual — draw()-gated via drawHUD()/hudVisible; the
+// game keeps simulating normally either way).
+//
+// Two integration points in loop() (below) are LOAD-BEARING and must be preserved if loop() or
+// draw() is ever restructured:
+//   1. `dt` is multiplied by `Capture.timeScale` — this is what makes O's slow-mo work.
+//   2. `Capture.afterDraw()` is called immediately after `draw()` — this is what lets P capture a
+//      complete, already-composited frame (including whatever hudVisible state is currently active).
 // Active only during live play, so these can never collide with menu navigation
 // or with control rebinding (both of which only happen while paused/in a menu).
 const Capture = {
@@ -4059,6 +4081,7 @@ const Capture = {
   _shot: false,
   _rates: [1, 0.5, 0.25],
   _rateIdx: 0,
+  hudVisible: true,
 
   active() {
     return game.state === "playing" && !game.paused;
@@ -4068,6 +4091,8 @@ const Capture = {
     this._rateIdx = (this._rateIdx + 1) % this._rates.length;
     this.timeScale = this._rates[this._rateIdx];
   },
+
+  toggleHud() { this.hudVisible = !this.hudVisible; },
 
   requestShot() { this._shot = true; },
 
@@ -4103,6 +4128,7 @@ window.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if (k === "p") { Capture.requestShot(); e.preventDefault(); }
   else if (k === "o") { Capture.cycleSlowMo(); e.preventDefault(); }
+  else if (k === "h") { Capture.toggleHud(); e.preventDefault(); }
 });
 
 let last = performance.now();

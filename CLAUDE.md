@@ -164,3 +164,31 @@ actually landed.
 
 When you add or rename a module-equivalent section, update the GDD's
 Architecture Map table **and** `STATUS.md`.
+
+## Capture tools
+
+A **shipped, player-facing** feature (not debug scaffolding) — the `Capture`
+object, defined just above the main loop in `asteroids-deluxe.html`. Do not
+strip or gate these behind a debug flag on a refactor pass.
+
+- **P** — export the current frame as a PNG, composited onto black.
+- **O** — cycle time scale 1x → 0.5x → 0.25x → 1x (slow motion).
+- **H** — toggle the HUD overlay (`drawHUD()`) on/off. Purely visual — the
+  game keeps simulating normally either way. `P` respects this: hiding the
+  HUD before capturing exports a clean frame.
+
+All three keys are inert outside live play (`Capture.active()` gates on
+`game.state === "playing" && !game.paused`), so they can never collide with
+menu navigation or control rebinding.
+
+Two integration points in `loop()` are **load-bearing** — preserve them if
+`loop()` or `draw()` is ever restructured:
+1. `dt` is multiplied by `Capture.timeScale` (drives O's slow-mo).
+2. `Capture.afterDraw()` runs immediately after `draw()` (drives P — the
+   canvas must hold a complete, already-composited frame first).
+
+The HUD itself lives in its own `drawHUD()` function (the persistent in-play
+overlay: score, hull HP, level, cargo/targets, active-powerup bars, scoop
+pips, dock/low-health chevrons, shield bar), called from `draw()` gated on
+`Capture.hudVisible`. Menus, achievement toasts, and the game-over text are
+drawn separately in `draw()` and are unaffected by the H toggle.
