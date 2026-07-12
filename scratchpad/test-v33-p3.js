@@ -1,4 +1,5 @@
 // Headless test for v3.3 Phase 3 — the Scoop powerup + weighted powerup drop economy.
+// Extended in v3.4 Phase 3 for scoop durability (5 hits/level) + the generated size config.
 // Repo convention: stub window/document/rAF/navigator/localStorage, eval the REAL <script> block,
 // then drive the ACTUAL update()/damageShip()/applyPowerup()/maybeDropPowerup — no reimplementation.
 //
@@ -12,9 +13,11 @@
 //      several ship headings AND across the world wrap seam (via the real update() pickup pass).
 //  (3) a canister behind the ship, or laterally outside the mouth, is NOT captured.
 //  (4) at scoopLevel 0 the pickup set is identical to the pre-scoop build (circle only).
-//  (5) two non-lethal hits drop exactly one level, four drop two; hits at level 0 are harmless.
+//  (5) five non-lethal hits drop exactly one level, four drop none, ten drop two; level 0 harmless.
 //  (6) a shielded / i-frame hit (damageShip's early return) does NOT count toward scoopHits.
 //  (7) maybeDropPowerup only ever yields a type in POWERUP_DROP_WEIGHTS, and scoop can drop.
+//  (8) buildScoopSteps: index 0 is 0, index 5 is max, monotonically increasing, curve behavior.
+//  (9) SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W exactly.
 
 "use strict";
 const fs = require("fs");
@@ -44,7 +47,8 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
 const returnList = ["startGame", "update", "game", "Garbage", "applyPowerup", "damageShip",
   "maybeDropPowerup", "POWERUP_DROP_WEIGHTS", "POWERUP_DROP_TYPES", "POWERUP_DECAY",
   "POWERUP_DROP_CHANCE", "SCOOP_MAX_LEVEL", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
-  "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H"];
+  "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H",
+  "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W"];
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
   scriptSrc + `\nreturn { ${returnList.join(", ")} };`);
@@ -52,7 +56,7 @@ const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafS
 const { startGame, update, game, Garbage, applyPowerup, damageShip, maybeDropPowerup,
   POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, POWERUP_DROP_CHANCE, SCOOP_MAX_LEVEL,
   SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_HITS_PER_LEVEL, SCOOP_MAX_BONUS, GARBAGE_PICKUP, SHIP_RADIUS,
-  WORLD_W, WORLD_H } = G;
+  WORLD_W, WORLD_H, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -96,10 +100,12 @@ console.log("(0) constants + drop-table separation");
 assert(POWERUP_DROP_CHANCE === 0.16, `0: POWERUP_DROP_CHANCE 0.10->0.16 (got ${POWERUP_DROP_CHANCE})`);
 assert(POWERUP_DECAY === 26, `0: POWERUP_DECAY 14->26 (got ${POWERUP_DECAY})`);
 assert(SCOOP_MAX_LEVEL === 5, `0: SCOOP_MAX_LEVEL === 5 (got ${SCOOP_MAX_LEVEL})`);
-assert(SCOOP_HITS_PER_LEVEL === 2, `0: SCOOP_HITS_PER_LEVEL === 2 (got ${SCOOP_HITS_PER_LEVEL})`);
+assert(SCOOP_HITS_PER_LEVEL === 5, `0: SCOOP_HITS_PER_LEVEL 2->5 (v3.4 P3 durability, got ${SCOOP_HITS_PER_LEVEL})`);
 assert(SCOOP_WIDTH.length === 6 && SCOOP_DEPTH.length === 6, "0: SCOOP_WIDTH/DEPTH are 6-entry (index = level)");
-assert(SCOOP_WIDTH[0] === 0 && SCOOP_DEPTH[0] === 0, "0: level-0 mouth has zero width & depth (box empty)");
-assert(SCOOP_WIDTH[5] === 54, `0: L5 width 54 = 3x the ship's 18px (got ${SCOOP_WIDTH[5]})`);
+assert(SCOOP_WIDTH[0] === 0 && SCOOP_DEPTH[0] === 0,
+  "0: level-0 mouth has zero width & depth (the load-bearing invariant inScoopBox depends on)");
+assert(SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W,
+  `0: L5 width === maxWidthMult * SHIP_DRAW_W exactly (got ${SCOOP_WIDTH[5]})`);
 assert(typeof SCOOP_MAX_BONUS === "number" && SCOOP_MAX_BONUS > 0, "0: SCOOP_MAX_BONUS is a positive score");
 assert(Array.isArray(POWERUP_DROP_TYPES) && !POWERUP_DROP_TYPES.includes("scoop"),
   "0: POWERUP_DROP_TYPES (the TIMED-effect list) does NOT contain scoop (FLAG A-9)");
@@ -160,15 +166,18 @@ assert(captured(5, 30, 0, 0) && !captured(0, 30, 0, 0),
   "4: the exact mouth capture that works at L5 does not happen at L0");
 
 // =====================================================================
-console.log("(5) scoop decays by damage: 2 hits = -1 level, 4 = -2; level 0 harmless");
+console.log("(5) scoop decays by damage: 5 hits = -1 level, 4 = none, 10 = -2; level 0 harmless");
 {
   beginPlaying();
   const s = placeShip(0, WORLD_W / 2, WORLD_H / 2);
   game.scoopLevel = 3; game.scoopHits = 0;
   const hit = () => { s.invuln = 0; return damageShip(10, s.x + 100, s.y); }; // non-lethal, i-frames cleared
-  hit(); assert(game.scoopLevel === 3 && game.scoopHits === 1, "5: 1 hit -> still level 3, scoopHits 1");
-  hit(); assert(game.scoopLevel === 2 && game.scoopHits === 0, "5: 2 hits -> dropped exactly one level (3->2), tally reset");
-  hit(); hit(); assert(game.scoopLevel === 1, "5: 4 hits total from L3 -> dropped two levels (now 1)");
+  hit(); hit(); hit(); hit();
+  assert(game.scoopLevel === 3 && game.scoopHits === 4, "5: 4 hits -> no level drop yet, tally at 4");
+  hit(); // 5th hit
+  assert(game.scoopLevel === 2 && game.scoopHits === 0, "5: 5 hits -> dropped exactly one level (3->2), tally reset");
+  hit(); hit(); hit(); hit(); hit(); hit(); hit(); hit(); hit(); hit(); // 10 more hits
+  assert(game.scoopLevel === 0, "5: 10 hits total from L2 -> dropped two levels (now 0)");
   // level 0: hits are harmless, no underflow, no crash
   game.scoopLevel = 0; game.scoopHits = 0;
   hit(); hit(); hit();
@@ -204,6 +213,35 @@ console.log("(7) maybeDropPowerup only yields weighted types; scoop can drop");
   assert(seen.has("scoop"), "7: scoop actually drops from the weighted table");
   assert(!seen.has("health"), "7: Health never drops (ambient-only)");
 }
+
+// =====================================================================
+console.log("(8) buildScoopSteps: endpoints, monotonicity, curve behavior");
+{
+  const lin = buildScoopSteps(10, 50, 1.0);
+  assert(lin[0] === 0, `8: index 0 is always 0 (got ${lin[0]})`);
+  assert(lin[5] === 50, `8: index 5 equals max (got ${lin[5]})`);
+  for (let i = 1; i < lin.length; i++) {
+    assert(lin[i] >= lin[i - 1], `8: linear steps are monotonically increasing (i=${i})`);
+  }
+  assert(lin[3] === 10 + (50 - 10) * (2 / 4), `8: curve 1.0 is exactly linear at the midpoint (got ${lin[3]})`);
+
+  const curved = buildScoopSteps(10, 50, 2.0);
+  assert(curved[0] === 0, "8: curve 2.0 index 0 is still 0");
+  assert(curved[5] === 50, "8: curve 2.0 index 5 still equals max");
+  for (let i = 1; i < curved.length; i++) {
+    assert(curved[i] >= curved[i - 1], `8: curve 2.0 steps are monotonically increasing (i=${i})`);
+  }
+  assert(curved[5] - curved[4] > curved[2] - curved[1],
+    "8: curve 2.0 clusters early levels low and makes the last step the biggest");
+}
+
+// =====================================================================
+console.log("(9) SCOOP_WIDTH[5] matches SCOOP_CONFIG exactly; SCOOP_DEPTH sanity");
+assert(SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W,
+  `9: SCOOP_WIDTH[5] === maxWidthMult * SHIP_DRAW_W (got ${SCOOP_WIDTH[5]} vs ${SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W})`);
+assert(SCOOP_DEPTH[5] === SCOOP_CONFIG.maxDepth, `9: SCOOP_DEPTH[5] === maxDepth (got ${SCOOP_DEPTH[5]})`);
+assert(SCOOP_WIDTH[1] === SCOOP_CONFIG.minWidthMult * SHIP_DRAW_W,
+  `9: SCOOP_WIDTH[1] === minWidthMult * SHIP_DRAW_W at curve 1.0 (got ${SCOOP_WIDTH[1]})`);
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);

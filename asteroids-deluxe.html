@@ -316,9 +316,36 @@ const POWERUP_BUDGET = { rapid: RAPID_SHOTS, triple: TRIPLE_SHOTS, magnet: MAGNE
 // ship's facing axis that scoops garbage in ADDITION to the base GARBAGE_PICKUP circle (they're OR'd,
 // so scoopLevel 0 is byte-identical to the pre-scoop build).
 const SCOOP_MAX_LEVEL = 5;
-const SCOOP_WIDTH = [0, 22, 30, 38, 46, 54]; // px full mouth width by level; L5 = 54 = 3x the drawn ship's 18px width (playtest knob)
-const SCOOP_DEPTH = [0, 20, 24, 28, 32, 36]; // px the mouth reaches forward of the ship center by level (playtest knob)
-const SCOOP_HITS_PER_LEVEL = 2;              // non-lethal hits that cost one scoop level (playtest knob)
+const SHIP_DRAW_W = 18;    // the drawn hull's width (see Ship's draw poly) - the unit the scoop is spec'd in
+// v3.4 P3: SCOOP_WIDTH/SCOOP_DEPTH are GENERATED from this config instead of hand-picked, so the mouth's
+// size curve can be tuned with tools/scoop-lab.html instead of eyeballing raw px arrays. Edit these five
+// numbers (from the lab), not the arrays below.
+const SCOOP_CONFIG = {
+  maxWidthMult: 3.0,   // L5 mouth width as a multiple of SHIP_DRAW_W  (SET FROM THE LAB)
+  minWidthMult: 1.2,   // L1 mouth width, same units
+  curve:        1.0,   // step distribution: 1.0 = linear; >1 = weighted toward the LARGE end
+  minDepth:     20,    // px forward of ship center at L1
+  maxDepth:     36,    // px forward of ship center at L5
+};
+// Build a SCOOP_MAX_LEVEL+1-length step table: index 0 is ALWAYS 0 (byte-identical to the pre-scoop
+// build at scoopLevel 0 — see inScoopBox); indices 1..SCOOP_MAX_LEVEL interpolate min->max via `curve`
+// (1.0 linear, >1 weights growth toward the top levels).
+function buildScoopSteps(min, max, curve) {
+  const steps = [0];
+  for (let k = 1; k <= SCOOP_MAX_LEVEL; k++) {
+    steps.push(min + (max - min) * Math.pow((k - 1) / (SCOOP_MAX_LEVEL - 1), curve));
+  }
+  return steps;
+}
+const SCOOP_WIDTH = buildScoopSteps(SCOOP_CONFIG.minWidthMult * SHIP_DRAW_W,
+                                     SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W, SCOOP_CONFIG.curve);
+const SCOOP_DEPTH = buildScoopSteps(SCOOP_CONFIG.minDepth, SCOOP_CONFIG.maxDepth, SCOOP_CONFIG.curve);
+if (SCOOP_WIDTH[0] !== 0 || SCOOP_DEPTH[0] !== 0) throw new Error("SCOOP step 0 must be 0 - inScoopBox depends on it");
+const SCOOP_HITS_PER_LEVEL = 5;              // non-lethal hits that cost one scoop level (playtest knob, v3.4 P3
+                                              // 2->5). At 5 hits/level a level-5 scoop survives 25 non-lethal
+                                              // hits; with SHIP_MAX_HP 250 and DMG_MEDIUM 35 a full-health run
+                                              // only takes ~7 hits total, so the scoop is now effectively sticky
+                                              // once earned. That's the intent, not a bug to "fix."
 const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (mirrors the full-HP REPAIR_FULL_BONUS pattern; tunable)
 const SCOOP_SPILL_KICK = 85;                 // v3.3 P4 (9c): px/s outward kick on the leftover when a clump is PARTIALLY scooped ("the rest floats off and away"); playtest knob (~60-110)
 
