@@ -218,6 +218,9 @@ const CARGO_THRUST = 0.06;      // thrust divisor grows by this per unit of towe
 const CARGO_MAXSPD = 0.03;      // max-speed divisor grows by this per unit of towed mass
 
 const DOCK_RADIUS = 44;
+// v3.4 P2: difficulty lever — scales DOCK_RADIUS from 2x at wave 1 down to the shipped 1x
+// baseline as difficulty ramps. Ships DISABLED (pinned at start=2.0). See DIFFICULTY-LEVERS.md.
+const LEVER_DOCK_SIZE = { enabled: false, start: 2.0, floor: 1.0 };
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
 const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
 const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare literal 0.13). sec between
@@ -275,6 +278,9 @@ const SAUCER_SMALL_CHANCE_CEIL  = 0.60; // full difficulty: the dangerous aimed 
 // different types run independently. Icons/labels/colors live with COLOR (below the helpers).
 const POWERUP_DURATION = 15;        // sec a timed effect (rapid/triple/magnet/engine) stays active
 const POWERUP_RADIUS = 15;          // pickup icon radius = its collision radius from ship center
+// v3.4 P2: difficulty lever — scales POWERUP_RADIUS from 2x at wave 1 down to the shipped 1x
+// baseline as difficulty ramps. Ships DISABLED (pinned at start=2.0). See DIFFICULTY-LEVERS.md.
+const LEVER_POWERUP_SIZE = { enabled: false, start: 2.0, floor: 1.0 };
 const POWERUP_DECAY = 26;           // sec an uncollected powerup lingers before fading (v3.3 P3: 14->26, playtest knob — shot powerups should linger longer)
 const POWERUP_DROP_CHANCE = 0.16;   // chance a small-tier kill drops a powerup (v3.3 P3: 0.10->0.16, playtest knob — drop more often)
 const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine"]; // TIMED effects the HUD/powerActive/powerBudget machinery understands — Health & Scoop are NOT here (see POWERUP_DROP_WEIGHTS)
@@ -1094,6 +1100,16 @@ function ramp(floor, ceil, wave) {
   return floor + (ceil - floor) * difficultyFactor(wave);
 }
 
+// A difficulty lever scales a quantity from `start` (wave 1) toward `floor` (full difficulty)
+// along the SHIPPED difficultyFactor() curve — levers never get their own curve. When
+// `enabled` is false the lever is INERT: the quantity is pinned at `start`, so the lever is
+// built, wired and testable but does not ramp. `floor` is a HARD CLAMP — a lever can never
+// take a quantity below its shipped baseline. See DIFFICULTY-LEVERS.md.
+function leverScale(lever, wave) {
+  const s = lever.enabled ? ramp(lever.start, lever.floor, wave) : lever.start;
+  return Math.max(lever.floor, s);
+}
+
 function wrap(obj) {
   if (obj.x < -60) obj.x += WORLD_W;
   if (obj.x > WORLD_W + 60) obj.x -= WORLD_W;
@@ -1823,7 +1839,7 @@ class Powerup {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.type = type;
-    this.radius = POWERUP_RADIUS;
+    this.radius = POWERUP_RADIUS * leverScale(LEVER_POWERUP_SIZE, game.wave);
     this.spin = rand(0, TAU);
     this.spinRate = rand(-0.8, 0.8);
     this.pulse = rand(0, TAU);
@@ -1877,29 +1893,31 @@ class Dock {
     const d = rand(DOCK_MIN_DIST, DOCK_MAX_DIST);
     const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
     this.x = p.x; this.y = p.y;
-    this.radius = DOCK_RADIUS;
+    this.radius = DOCK_RADIUS * leverScale(LEVER_DOCK_SIZE, game.wave);
     this.spin = 0;
     this.pts = [];
     for (let i = 0; i < 8; i++) {
       const th = (i / 8) * TAU + TAU / 16;
-      this.pts.push([Math.cos(th) * DOCK_RADIUS, Math.sin(th) * DOCK_RADIUS]);
+      this.pts.push([Math.cos(th) * this.radius, Math.sin(th) * this.radius]);
     }
   }
   update(dt) { this.spin += dt * 0.7; }
   draw() {
     drawPoly(this.pts, this.x, this.y, 0, COLOR.dock);
-    // rotating intake vanes
+    // rotating intake vanes — vane inner radius (14) and label offset (22) scale proportionally
+    // with this.radius so they stay correct under the v3.4 P2 dock-size lever.
+    const vaneScale = this.radius / DOCK_RADIUS;
     for (let i = 0; i < 3; i++) {
       const th = this.spin + (i * TAU) / 3;
       ctx.beginPath();
-      ctx.moveTo(this.x + Math.cos(th) * (DOCK_RADIUS - 10),
-                 this.y + Math.sin(th) * (DOCK_RADIUS - 10));
-      ctx.lineTo(this.x + Math.cos(th + 0.25) * 14,
-                 this.y + Math.sin(th + 0.25) * 14);
+      ctx.moveTo(this.x + Math.cos(th) * (this.radius - 10),
+                 this.y + Math.sin(th) * (this.radius - 10));
+      ctx.lineTo(this.x + Math.cos(th + 0.25) * (14 * vaneScale),
+                 this.y + Math.sin(th + 0.25) * (14 * vaneScale));
       glowStroke(COLOR.dock, 1.4, 8);
     }
     const hot = game.chain.length > 0 && Math.floor(performance.now() / 350) % 2 === 0;
-    drawText("RECYCLE", this.x, this.y + DOCK_RADIUS + 22, 14,
+    drawText("RECYCLE", this.x, this.y + this.radius + (22 * vaneScale), 14,
       hot ? COLOR.garbage : COLOR.dim);
   }
 }
@@ -2875,7 +2893,7 @@ function update(dt) {
   for (const p of game.powerups) {
     p.update(dt);
     if (!p.dead && !game.ship.dead) {
-      const r = POWERUP_RADIUS + SHIP_RADIUS;
+      const r = p.radius + SHIP_RADIUS;
       if (dist2(p, game.ship) < r * r) { p.dead = true; applyPowerup(p.type); }
     }
   }
@@ -2886,7 +2904,7 @@ function update(dt) {
   // --- Recycling dock offload ---
   if (game.dock) {
     const nearDock = !game.ship.dead &&
-      dist2(game.ship, game.dock) < (DOCK_RADIUS + 10) * (DOCK_RADIUS + 10);
+      dist2(game.ship, game.dock) < (game.dock.radius + 10) * (game.dock.radius + 10);
     if (nearDock && game.chain.length > 0) {
       game.offloadTimer -= dt;
       if (game.offloadTimer <= 0) {
@@ -2932,7 +2950,7 @@ function update(dt) {
       game.offloadTimer = 0;
       // combo resets once you leave the dock's neighborhood
       if (!game.ship.dead &&
-          dist2(game.ship, game.dock) > (DOCK_RADIUS + 40) * (DOCK_RADIUS + 40)) {
+          dist2(game.ship, game.dock) > (game.dock.radius + 40) * (game.dock.radius + 40)) {
         game.deliveryCount = 0;
       }
     }

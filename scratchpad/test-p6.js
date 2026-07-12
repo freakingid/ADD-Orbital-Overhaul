@@ -48,7 +48,7 @@ const returnList = [
   "CARGO_BASE", "CARGO_CAP_MAX", "CARGO_GROW_PER",
   "CHAIN_LINK", "CHAIN_ITER", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "ENGINE_MASS_MULT", "DOCK_OFFLOAD_INTERVAL",
-  "shortDelta", "WORLD_W", "WORLD_H"
+  "DOCK_RADIUS", "shortDelta", "WORLD_W", "WORLD_H"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -61,7 +61,7 @@ const {
   CARGO_BASE, CARGO_CAP_MAX, CARGO_GROW_PER,
   CHAIN_LINK, CHAIN_ITER, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, ENGINE_MASS_MULT, DOCK_OFFLOAD_INTERVAL,
-  shortDelta, WORLD_W, WORLD_H
+  DOCK_RADIUS, shortDelta, WORLD_W, WORLD_H
 } = A;
 
 // The old fixed constant must be gone (it was replaced by game.cargoMax + CARGO_BASE).
@@ -127,7 +127,7 @@ clearField();
 resetShip();
 game.debris = [{ x: cx + 1800, y: cy + 1800, vx: 0, vy: 0, size: 3, radius: 46,
   damage: 50, dead: false, update() { this.x = cx + 1800; this.y = cy + 1800; }, draw() {} }];
-game.dock = { x: game.ship.x, y: game.ship.y, update() {}, draw() {} };
+game.dock = { x: game.ship.x, y: game.ship.y, radius: DOCK_RADIUS, update() {}, draw() {} };
 game.deliveryCount = 0;
 
 const capAt = {};                 // delivered-count -> cargoMax observed just after that delivery
@@ -136,7 +136,7 @@ let maxCapSeen = 0;
 for (let d = 1; d <= 400; d++) {
   if (game.chain.length === 0) game.chain.push({ x: game.ship.x, y: game.ship.y, px: game.ship.x, py: game.ship.y, spin: 0, spinRate: 0, mass: 1 });
   game.ship.x = cx; game.ship.y = cy; game.ship.vx = 0; game.ship.vy = 0;
-  game.dock = { x: cx, y: cy, update() {}, draw() {} };
+  game.dock = { x: cx, y: cy, radius: DOCK_RADIUS, update() {}, draw() {} };
   game.offloadTimer = 0;          // force a delivery this frame
   const capBefore = game.cargoMax;
   update(DT);
@@ -160,7 +160,7 @@ game.debris = [{ x: cx + 1800, y: cy + 1800, vx: 0, vy: 0, size: 3, radius: 46,
 game.stats.delivered = CARGO_GROW_PER - 1;   // next delivery hits the first threshold
 game.cargoMax = CARGO_BASE;
 game.chain.push({ x: cx, y: cy, px: cx, py: cy, spin: 0, spinRate: 0, mass: 1 });
-game.dock = { x: cx, y: cy, update() {}, draw() {} };
+game.dock = { x: cx, y: cy, radius: DOCK_RADIUS, update() {}, draw() {} };
 game.offloadTimer = 0;
 update(DT);
 assert(game.cargoMax === CARGO_BASE + 1, `B: crossing a threshold bumps the cap (got ${game.cargoMax})`);
@@ -319,7 +319,7 @@ console.log("(F) dock offload rate — a full chain fully offloads at DOCK_OFFLO
 clearField(); resetShip();
 game.debris = [{ x: cx + 1800, y: cy + 1800, vx: 0, vy: 0, size: 3, radius: 46,
   damage: 50, dead: false, update() { this.x = cx + 1800; this.y = cy + 1800; }, draw() {} }];
-game.dock = { x: cx, y: cy, update() {}, draw() {} };
+game.dock = { x: cx, y: cy, radius: DOCK_RADIUS, update() {}, draw() {} };
 game.deliveryCount = 0; game.offloadTimer = 0;
 fillChain(CARGO_CAP_MAX);
 let ticksToEmpty = 0;
