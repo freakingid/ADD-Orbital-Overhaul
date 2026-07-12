@@ -1,5 +1,6 @@
 // Headless test for v3.4 Phase 6 — MusicSys core: lookahead scheduler, menu ducking, title track,
 // and the Options "Music Track" row + label-dispatch refactor.
+// Extended in v3.4 P7 (sections H-N) — the three gameplay tracks + difficulty-gated intensity layers.
 //
 //   node scratchpad/test-v34-p6.js
 //
@@ -80,6 +81,7 @@ const returnList = [
   "menuActive", "openPause", "closePause", "gotoScreen", "menuInput",
   "settings", "saveSettings", "loadSettings", "STORAGE_KEY",
   "MENU_OPTIONS", "VOL_CATS", "bindings", "REBINDABLE",
+  "nextWave", "difficultyFactor", "RAMP_WAVES", "updateMusic", "musicStateFor", "MUSIC_LAYER_THRESHOLD",
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -91,6 +93,7 @@ const {
   menuActive, openPause, closePause, gotoScreen, menuInput,
   settings, saveSettings, loadSettings, STORAGE_KEY,
   MENU_OPTIONS, VOL_CATS, bindings, REBINDABLE,
+  nextWave, difficultyFactor, RAMP_WAVES, updateMusic, musicStateFor, MUSIC_LAYER_THRESHOLD,
 } = A;
 
 let passed = 0, failed = 0;
@@ -326,6 +329,175 @@ lsStore["afd_settings_v1"] = JSON.stringify(noTrack);
 settings.musicTrack = "retro";
 noThrow(() => loadSettings(), "G: loadSettings tolerates a missing musicTrack (older save)");
 assert(settings.musicTrack === "retro", "G: missing musicTrack -> keeps the default");
+
+// =====================================================================
+// H) v3.4 P7 — all three gameplay tracks load, start, stop, and crossfade without throwing.
+// =====================================================================
+MusicSys.setState("off"); AudioSys.ctx.currentTime = 200;
+for (const name of MUSIC_TRACK_VALUES) {
+  noThrow(() => MusicSys.setState(name), `H: setState(${name}) does not throw`);
+  assert(MusicSys.state === name, `H: state is ${name}`);
+  assert(MusicSys.track === MUSIC_TRACKS[name], `H: ${name} track is the ${name} table`);
+  assert(MusicSys.trackGain !== null, `H: ${name} track has a live trackGain`);
+  assert(Array.isArray(MusicSys.layerGates) && MusicSys.layerGates.length === MUSIC_TRACKS[name].layers.length,
+    `H: ${name} built one layerGate per layer`);
+  AudioSys.ctx.currentTime += 1;
+  const prevGain = MusicSys.trackGain;
+  noThrow(() => MusicSys.setState("off"), `H: setState(off) from ${name} does not throw`);
+  assert(prevGain.gain.rec.linearRamps.some(r => near(r.v, 0.0001)), `H: ${name} faded out on stop`);
+  assert(MusicSys.trackGain === null, `H: off leaves no live trackGain after ${name}`);
+  AudioSys.ctx.currentTime += 1;
+}
+// Crossfade directly between two gameplay tracks (no "off" in between).
+MusicSys.setState("tense");
+const tenseGain = MusicSys.trackGain;
+AudioSys.ctx.currentTime += 1;
+noThrow(() => MusicSys.setState("retro"), "H: tense -> retro crossfade does not throw");
+assert(MusicSys.state === "retro", "H: state moved to retro");
+assert(tenseGain.gain.rec.linearRamps.some(r => near(r.v, 0.0001)), "H: old (tense) track faded on crossfade");
+assert(MusicSys.trackGain !== tenseGain, "H: retro has its own new trackGain");
+
+// =====================================================================
+// I) Layer gating: at f = 0.0 / 0.25 / 0.5 / 0.8, exactly 1 / 2 / 3 / 4 layers are audible (gain > 0).
+//    Boundary crossings move via linearRampToValueAtTime — a ramp, never a jump.
+// =====================================================================
+function audibleCount() { return MusicSys.layerGates.filter(lg => lg.node.gain.value > 0).length; }
+MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
+MusicSys.setIntensity(0);           // reset BEFORE the track loads, so it builds at f=0
+MusicSys.setState("retro");
+assert(audibleCount() === 1, `I: f=0 -> exactly 1 layer audible (got ${audibleCount()})`);
+
+const points = [[0.25, 2], [0.5, 3], [0.8, 4]];
+for (const [f, expect] of points) {
+  for (const lg of MusicSys.layerGates) lg.node.gain.rec.linearRamps.length = 0; // isolate this transition
+  AudioSys.ctx.currentTime += 1;
+  MusicSys.setIntensity(f);
+  assert(audibleCount() === expect, `I: f=${f} -> exactly ${expect} layers audible (got ${audibleCount()})`);
+  const anyRamped = MusicSys.layerGates.some(lg => lg.node.gain.rec.linearRamps.length > 0);
+  assert(anyRamped, `I: f=${f} crossing moved at least one gate via a RAMP`);
+  // Tier 1 (foundation) is bare-set once at track construction and never revisited by setIntensity —
+  // that's correct (it's always on), so only tiers 2-4 are checked for "moved by ramp, not a jump."
+  const anyBareJump = MusicSys.layerGates.some(lg =>
+    lg.tier > 1 && lg.node.gain.rec.bareSets.includes(1) && lg.node.gain.rec.linearRamps.length === 0);
+  assert(!anyBareJump, `I: f=${f} — no gated (tier 2-4) layer flipped via a bare .value jump`);
+}
+// Dropping back down ramps layers back off too (not just up).
+for (const lg of MusicSys.layerGates) lg.node.gain.rec.linearRamps.length = 0;
+AudioSys.ctx.currentTime += 1;
+MusicSys.setIntensity(0);
+assert(audibleCount() === 1, "I: dropping f back to 0 mutes back down to 1 audible layer");
+assert(MusicSys.layerGates.some(lg => lg.node.gain.rec.linearRamps.some(r => near(r.v, 0))),
+  "I: the drop back down is also a ramp");
+
+// =====================================================================
+// J) setIntensity is called from the REAL nextWave() and NOT from the per-frame update path.
+// =====================================================================
+startGame(); // resets game.wave to 1 via its own nextWave() call
+let intensityCalls = 0;
+const rawSetIntensity = MusicSys.setIntensity.bind(MusicSys);
+MusicSys.setIntensity = function (f) { intensityCalls++; return rawSetIntensity(f); };
+intensityCalls = 0; // startGame()'s own nextWave() already ran; count only what follows
+for (let i = 0; i < 120; i++) update(1 / 60); // 2s of frames at a fixed wave, no wave clear
+assert(intensityCalls === 0, `J: setIntensity called ${intensityCalls} times over 120 frames at a fixed wave (want 0)`);
+nextWave();
+assert(intensityCalls === 1, `J: nextWave() calls setIntensity exactly once (got ${intensityCalls})`);
+MusicSys.setIntensity = rawSetIntensity;
+
+// =====================================================================
+// K) Tempo/key are IDENTICAL across intensity — scheduleStep never consults intensity; gating is a
+//    downstream gain gate only. Capture the exact (layer, freq) note sequence over one full loop at
+//    f=0 and again at f=1 for every gameplay track and diff them.
+// =====================================================================
+function captureNoteSequence(trackName, intensity) {
+  MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
+  MusicSys.setIntensity(intensity);
+  MusicSys.setState(trackName);
+  const track = MUSIC_TRACKS[trackName];
+  const notes = [];
+  const rawPlayNote = MusicSys.playNote.bind(MusicSys);
+  MusicSys.playNote = function (layer, cell, t, i) { notes.push(layer.name + ":" + cell.f.toFixed(4)); return rawPlayNote(layer, cell, t, i); };
+  const start = AudioSys.ctx.currentTime, dt = 1 / 60, loopLen = track.steps * track.stepDur;
+  for (let t = start; t < start + loopLen + 1; t += dt) { AudioSys.ctx.currentTime = t; MusicSys.update(); }
+  MusicSys.playNote = rawPlayNote;
+  return notes;
+}
+for (const name of MUSIC_TRACK_VALUES) {
+  const lowF = captureNoteSequence(name, 0);
+  const highF = captureNoteSequence(name, 1);
+  assert(lowF.length > 0, `K: ${name} produced note events at f=0`);
+  assert(JSON.stringify(lowF) === JSON.stringify(highF),
+    `K: ${name} note sequence (pitch+layer, every step) is byte-identical at f=0 vs f=1 — the loop thickens, it does not swap`);
+}
+
+// =====================================================================
+// L) Switching tracks via settings.musicTrack crossfades (through updateMusic/musicStateFor) and
+//    leaves exactly one track live.
+// =====================================================================
+assert(musicStateFor("title") === "title", "L: musicStateFor(title) -> title");
+assert(musicStateFor("gameover") === "off", "L: musicStateFor(gameover) -> off");
+settings.musicTrack = "tense";
+assert(musicStateFor("playing") === "tense", "L: musicStateFor(playing) routes through settings.musicTrack");
+
+MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
+game.state = "playing"; game.paused = false;
+settings.musicTrack = "tense";
+updateMusic();
+assert(MusicSys.state === "tense", "L: updateMusic() drives setState via the selected track");
+const liveBefore = MusicSys.trackGain;
+AudioSys.ctx.currentTime += 1;
+settings.musicTrack = "ambient"; // simulate an Options pause-menu change mid-game
+updateMusic();
+assert(MusicSys.state === "ambient", "L: switching settings.musicTrack crossfades to the new track");
+assert(MusicSys.trackGain !== null && MusicSys.trackGain !== liveBefore, "L: exactly one (new) track is live");
+assert(liveBefore.gain.rec.linearRamps.some(r => near(r.v, 0.0001)), "L: the old track faded out, not hard-cut");
+
+// =====================================================================
+// M) The default gameplay track is "retro" on a completely fresh settings load (no saved data).
+// =====================================================================
+{
+  const freshStore = {};
+  const freshLS = {
+    getItem: k => (k in freshStore ? freshStore[k] : null),
+    setItem: (k, v) => { freshStore[k] = String(v); },
+    removeItem: k => { delete freshStore[k]; },
+  };
+  const savedLS = global.localStorage;
+  global.localStorage = freshLS;
+  const freshA = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
+  global.localStorage = savedLS;
+  assert(freshA.settings.musicTrack === "retro", "M: a fresh game instance with no saved settings defaults musicTrack to retro");
+}
+
+// =====================================================================
+// N) Node-creation count per frame (per scheduled step) at max intensity is bounded. All layers are
+//    always scheduled regardless of gating (only the downstream gain gate is intensity-dependent), so
+//    max intensity and f=0 create the same node count — this measures the worst case across a full
+//    loop of each gameplay track.
+// =====================================================================
+const NODE_BOUND = 16; // "a handful" (FLAG-9c) — see reported figures below
+let overallMax = 0;
+for (const name of MUSIC_TRACK_VALUES) {
+  MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
+  MusicSys.setIntensity(1);
+  MusicSys.setState(name);
+  const track = MUSIC_TRACKS[name];
+  const ctx = AudioSys.ctx;
+  const rawGain = ctx.createGain, rawOsc = ctx.createOscillator, rawFilter = ctx.createBiquadFilter;
+  let trackMax = 0;
+  for (let step = 0; step < track.steps; step++) {
+    let count = 0;
+    ctx.createGain = () => { count++; return rawGain(); };
+    ctx.createOscillator = () => { count++; return rawOsc(); };
+    ctx.createBiquadFilter = () => { count++; return rawFilter(); };
+    MusicSys.scheduleStep(step, ctx.currentTime);
+    trackMax = Math.max(trackMax, count);
+  }
+  ctx.createGain = rawGain; ctx.createOscillator = rawOsc; ctx.createBiquadFilter = rawFilter;
+  console.log(`(perf) ${name}: worst-case nodes created for a single scheduled step at max intensity = ${trackMax}`);
+  overallMax = Math.max(overallMax, trackMax);
+  assert(trackMax <= NODE_BOUND, `N: ${name} worst-case per-step node creation (${trackMax}) is bounded (<= ${NODE_BOUND})`);
+}
+console.log(`(perf) overall worst-case per-frame node creation at max intensity = ${overallMax}`);
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);
