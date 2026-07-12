@@ -14,7 +14,8 @@
 //  (4) a merge across the world seam works (wrap-aware dist2/shortDelta), momentum sum preserved.
 //  (5) v3.2 P3: a plain merge leaves game.stats.hunterCoalesced untouched; a 12-piece transform bumps
 //      it by exactly one (the repurposed Waste-Not stat replaces the removed garbageDecayed).
-//  (6) v3.2 P1: a pieces>1 clump CANNOT be hooked; a pieces=1 canister still hooks — via real update().
+//  (6) v3.3 P4 (9c): a pieces=1 canister hooks as one node; a clump in pickup range is now SCOOPED
+//      (reverses the v3.2 P1 "un-hookable" rule) — via real update().
 //  (7) mutual attraction is 1-s-gated too.
 //  (8) v3.2 P1: mass sums across a chain of merges; radius tracks 7*sqrt(pieces).
 //  (9) v3.2 P1: a heavy clump absorbing a fast light piece barely speeds up (momentum-conserving).
@@ -25,13 +26,22 @@
 //      full-delay, mass-conserving, and they don't immediately re-merge; a player bullet passes
 //      THROUGH a pieces=1 canister; a hostile bullet passes through a clump; the emitted pieces are
 //      hookable once in pickup range; shattering doesn't coalesce anything.
-// (16) v3.2 P3: a canister survives an arbitrarily long update() run and never dies of age; the old
-//      garbageDecayed stat is gone from game.stats.
-// (17) v3.2 P3 (FORK-B/B1): a bornOfScrap core killed through its FULL lineage emits ZERO garbage,
-//      while awarding the SAME score and still dropping its small-tier powerup.
-// (18) v3.2 P3: a TIMER-spawned (non-bornOfScrap) Hunter still emits the full 12 normal + 54 low = 66.
-// (19) v3.2 P3: the bornOfScrap flag propagates through BOTH split generations (large -> med -> small).
-// (20) v3.2 P3: game.stats.hunterCoalesced increments exactly once per 12-piece transform.
+// (16) v3.3 P4 (9a): a loose SINGLE ages out at GARBAGE_DECAY; a CLUMP (pieces>1) never decays; the
+//      old garbageDecayed stat is still gone from game.stats.
+// (17) v3.3 P4 (9b, reverses FORK-B/B1): a SCRAP-BORN lineage now emits the FULL 66, same as a
+//      timer-spawned one — same score, still drops its small-tier powerup.
+// (18) v3.3 P4: a timer-spawned Hunter still emits the full 12 normal + 54 low = 66.
+// (19) v3.3 P4 (FORK-5): `bornOfScrap` is GONE from the source — split children carry no such field
+//      and EMIT garbage at both generations.
+// (20) v3.3 P4: a coalesced core carries no bornOfScrap flag and drops garbage like any Hunter;
+//      game.stats.hunterCoalesced still increments exactly once per 12-piece transform.
+// (21) v3.3 P4 (9a): a chain node never decays; GARBAGE_DECAY exceeds GARBAGE_COALESCE_DELAY by a wide margin.
+// (22) v3.3 P4 (9c): scoop a 5-piece clump with 5+ slots free -> exactly 5 nodes at mass=clumpMass/5,
+//      clump dead, total mass conserved onto the chain.
+// (23) v3.3 P4 (9c): scoop a 10-piece clump with 3 slots free -> 3 nodes, a live 7-piece leftover with
+//      re-derived radius/mass, re-armed delay, and an outward velocity away from the ship.
+// (24) v3.3 P4 (9c, FORK-6): clump-scooping works at scoopLevel 0 (base circle) AND through the scoop box.
+// (25) v3.3 P4 (9b): the "Waste Not" achievement still keys on hunterCoalesced and still fires.
 //  Plus: emission sites + fromNode inherit the coalesce defaults.
 
 "use strict";
@@ -62,9 +72,10 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
   setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: k => { delete lsStore[k]; } };
 
 const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
-  "DebrisSatellite", "HunterSatellite", "destroyDebris", "destroyHunter", "shatterClump", "Bullet", "AudioSys",
+  "DebrisSatellite", "HunterSatellite", "destroyDebris", "destroyHunter", "shatterClump", "Bullet", "AudioSys", "Achievements",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
+  "GARBAGE_DECAY", "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
   "HUNTER_GARBAGE", "HUNTER_SMALL_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "WORLD_W", "WORLD_H"];
 
@@ -74,8 +85,9 @@ const wrapped = new Function(
 );
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
-  destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
+  destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
+  GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE, WORLD_W, WORLD_H } = G;
 
 let passed = 0, failed = 0;
@@ -96,11 +108,15 @@ function beginPlaying() {
 
 // =====================================================================
 console.log("(0) config + inheritance: constants sane; emission sites + fromNode inherit defaults");
-assert(GARBAGE_COALESCE_DELAY === 6.0, `0: GARBAGE_COALESCE_DELAY is 6.0 (v3.2 P3 retune 1.0->6.0; got ${GARBAGE_COALESCE_DELAY})`);
+assert(GARBAGE_COALESCE_DELAY === 3.0, `0: GARBAGE_COALESCE_DELAY is 3.0 (v3.3 P4 retune 6.0->3.0; got ${GARBAGE_COALESCE_DELAY})`);
 assert(GARBAGE_MERGE_DIST === 12, `0: GARBAGE_MERGE_DIST is 12 (got ${GARBAGE_MERGE_DIST})`);
 assert(HUNTER_COALESCE_COUNT === 12, `0: HUNTER_COALESCE_COUNT is 12 (got ${HUNTER_COALESCE_COUNT})`);
-assert(GARBAGE_MAGNET_RANGE === 260, `0: GARBAGE_MAGNET_RANGE is 260 (v3.2 P3 retune 140->260; got ${GARBAGE_MAGNET_RANGE})`);
+assert(GARBAGE_MAGNET_RANGE === 180, `0: GARBAGE_MAGNET_RANGE is 180 (v3.3 P4 retune 260->180; got ${GARBAGE_MAGNET_RANGE})`);
 assert(GARBAGE_MAGNET_RANGE > GARBAGE_MERGE_DIST, "0: magnet range exceeds merge distance");
+assert(GARBAGE_DECAY === 22, `0: GARBAGE_DECAY is 22 (v3.3 P4 reintroduced; got ${GARBAGE_DECAY})`);
+// The whole coalescence economy hinges on this relationship: a single must live long ENOUGH past its
+// inert window to find neighbours, or nothing ever clumps. Assert the RELATIONSHIP, not just the values.
+assert(GARBAGE_DECAY > GARBAGE_COALESCE_DELAY * 3, `0: GARBAGE_DECAY exceeds GARBAGE_COALESCE_DELAY by a wide margin (${GARBAGE_DECAY} vs ${GARBAGE_COALESCE_DELAY})`);
 {
   const fresh = new Garbage(100, 100);
   assert(fresh.pieces === 1, "0: a new Garbage starts at pieces === 1");
@@ -215,17 +231,17 @@ console.log("(5) v3.2 P3: a plain merge leaves hunterCoalesced alone; a 12-trans
 }
 
 // =====================================================================
-console.log("(6) a pieces>1 clump CANNOT be hooked; a pieces=1 canister still hooks (v3.2 P1)");
+console.log("(6) v3.3 P4 (9c): a pieces=1 canister hooks as one node; a clump in range is now SCOOPED");
 {
   beginPlaying();
   game.cargoMax = 12; // ample headroom, chain empty
-  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0); // sits on the ship -> would hook if allowed
-  clump.pieces = 5;          // a fused clump
+  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0); // sits on the ship -> now scooped (was un-hookable)
+  clump.pieces = 5; clump.mass = 5; clump.radius = 7 * Math.sqrt(5);
   clump.coalesceDelay = 0;
   game.garbage = [clump];
   assert(clump.pieces === 5, "6: pre-condition — clump has pieces === 5");
   update(1 / 60);
-  assert(game.chain.length === 0 && !clump.dead, "6: a clump (pieces>1) is NOT hooked (the load-bearing rule)");
+  assert(clump.dead && game.chain.length === 5, "6: a clump in pickup range is SCOOPED (reverses v3.2 P1's un-hookable rule)");
 
   beginPlaying();
   game.cargoMax = 12;
@@ -327,11 +343,13 @@ console.log("(12) v3.2 P1: draw() is crash-free at pieces=1 and pieces=11 (clust
 {
   let threw = false;
   try {
-    const one = new Garbage(200, 200); one.draw(); // v3.2 P3: no decay field / blink branch to set up
+    const one = new Garbage(200, 200); one.draw();
+    const fading = new Garbage(250, 250); fading.decay = GARBAGE_FADE * 0.5; fading.draw(); // v3.3 P4: blink branch
+    const dying = new Garbage(260, 260); dying.decay = 0.01; dying.draw();                  // near death
     const wad = new Garbage(300, 300); wad.pieces = 11;
     wad.radius = 7 * Math.sqrt(11); wad.draw();
   } catch (e) { threw = true; console.log("    threw: " + e); }
-  assert(!threw, "12: draw() renders a 1-piece and an 11-piece clump without throwing");
+  assert(!threw, "12: draw() renders a 1-piece, a blinking-out single, and an 11-piece clump without throwing");
 }
 
 // =====================================================================
@@ -384,19 +402,24 @@ console.log("(14) v3.2 P2: a player bullet passes THROUGH a pieces=1 canister; a
   assert(!clump.dead, "14: a hostile bullet passes through a clump (garbage is untouched by saucer fire)");
 }
 
-console.log("(15) v3.2 P2: emitted pieces ARE hookable (pieces===1) once in pickup range — the P1 gate now lets them through");
+console.log("(15) v3.2 P2 survives P4: shatter emits hookable pieces===1 singles (shattered FAR from the ship so 9c's scoop doesn't grab the clump first)");
 {
   beginPlaying();
   game.cargoMax = 12;
-  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0);
+  // Place the clump + bullet well away from the ship so the pickup pass can't scoop the clump before
+  // the bullet shatters it (9c scoops clumps in range now). Shatter = lossless: pieces stay collectible.
+  const fx = game.ship.x + 600, fy = game.ship.y + 400;
+  const clump = new Garbage(fx, fy, 0, 0);
   clump.pieces = 3; clump.radius = 7 * Math.sqrt(3);
-  const bullet = new Bullet(game.ship.x, game.ship.y, 0, 0, false);
+  const bullet = new Bullet(fx, fy, 0, 0, false);
   game.garbage = [clump];
   game.bullets = [bullet];
-  update(1 / 60); // shatters the clump; the 3 singles land at the ship's position, in pickup range
+  update(1 / 60); // shatters the clump into 3 singles at the far location (out of pickup range -> not scooped)
   assert(game.garbage.length === 3 && game.garbage.every(g => g.pieces === 1),
-    "15: the clump shattered into 3 pieces=1 singles at the ship");
-  update(1 / 60); // a further frame lets the pickup pass hook the now-eligible singles
+    "15: the clump shattered into 3 pieces=1 singles");
+  // move the freed singles onto the ship to prove they are individually hookable in pickup range
+  for (const g of game.garbage) { g.x = game.ship.x; g.y = game.ship.y; }
+  update(1 / 60);
   assert(game.chain.length === 3, `15: all 3 shattered singles are hookable in pickup range (chain length ${game.chain.length})`);
 }
 
@@ -411,37 +434,47 @@ function killLineage(core) {
 }
 
 // =====================================================================
-console.log("(16) v3.2 P3: a canister survives an arbitrarily long update() run and never dies of age");
+console.log("(16) v3.3 P4 (9a): a loose SINGLE ages out at GARBAGE_DECAY; a CLUMP never decays");
 {
   beginPlaying();
-  const g = new Garbage(500, 500, 0, 0); // isolated — no neighbours to coalesce with
-  // drive the REAL Garbage.update for ~120 s of frames; the OLD build killed it at GARBAGE_DECAY (12 s)
-  for (let t = 0; t < 120; t += 1 / 60) g.update(1 / 60);
-  assert(!g.dead, "16: a lone canister is still alive after ~120 s (never dies of age)");
-  assert(g.coalesceDelay <= 0, "16: its coalesce delay has long elapsed (active), yet it did not expire");
-  assert(!("garbageDecayed" in game.stats), "16: the old garbageDecayed stat is gone from game.stats");
+  const g = new Garbage(500, 500, 0, 0); // isolated single — no neighbours to coalesce with
+  // drive the REAL Garbage.update just SHORT of GARBAGE_DECAY: still alive
+  for (let t = 0; t < GARBAGE_DECAY - 1; t += 1 / 60) g.update(1 / 60);
+  assert(!g.dead, "16: a lone single is still alive just before GARBAGE_DECAY");
+  // now cross GARBAGE_DECAY: it dies of age
+  for (let t = 0; t < 1.5; t += 1 / 60) g.update(1 / 60);
+  assert(g.dead, "16: a lone single ages out once GARBAGE_DECAY elapses (decay is back, v3.3 P4)");
+
+  // a CLUMP (pieces>1) never decays — drive it far past GARBAGE_DECAY
+  const clump = new Garbage(700, 700, 0, 0);
+  clump.pieces = 4; clump.mass = 4; clump.radius = 7 * Math.sqrt(4);
+  for (let t = 0; t < GARBAGE_DECAY * 3; t += 1 / 60) clump.update(1 / 60);
+  assert(!clump.dead, "16: a clump (pieces>1) never ages out (FORK-4: singles only)");
+
+  assert(!("garbageDecayed" in game.stats), "16: the old garbageDecayed stat is still gone from game.stats");
 }
 
 // =====================================================================
-console.log("(17) v3.2 P3 (FORK-B/B1): a bornOfScrap lineage emits ZERO garbage, same score, still drops its powerup");
+console.log("(17) v3.3 P4 (9b): a SCRAP-BORN lineage now emits the FULL 66 — same as a timer-spawned one");
 {
   const cx = 1000, cy = 1000;
   // baseline: a normal (timer-spawned) full lineage, for the score + garbage reference
   beginPlaying();
   game.powerups = [];
   const scoreBefore0 = game.score;
-  const normalCore = new HunterSatellite(cx, cy, 3); // bornOfScrap defaults false
+  const normalCore = new HunterSatellite(cx, cy, 3);
   game.garbage = [];
   const normalKills = killLineage(normalCore);
   const normalScore = game.score - scoreBefore0;
+  const normalGarbage = game.garbage.length;
   assert(normalKills === 13, `17: a full lineage is 13 kills (got ${normalKills})`);
+  assert(normalGarbage === 66, `17: a timer-spawned lineage drops 66 (got ${normalGarbage})`);
 
-  // bornOfScrap: identical lineage, garbage suppressed at every tier
+  // A core that WAS scrap-born (v3.2 flagged it; v3.3 P4 deletes the flag): it now drops the full 66 too.
   beginPlaying();
   game.powerups = [];
   const scoreBefore1 = game.score;
-  const scrapCore = new HunterSatellite(cx, cy, 3);
-  scrapCore.bornOfScrap = true;
+  const scrapCore = new HunterSatellite(cx, cy, 3); // no bornOfScrap field to set — it's gone (FORK-5)
   game.garbage = [];
   const realRandom = Math.random;
   Math.random = () => 0; // force maybeDropPowerup to always drop, to prove the small-tier powerup path still fires
@@ -450,17 +483,17 @@ console.log("(17) v3.2 P3 (FORK-B/B1): a bornOfScrap lineage emits ZERO garbage,
   finally { Math.random = realRandom; }
   const scrapScore = game.score - scoreBefore1;
 
-  assert(scrapKills === 13, `17: the bornOfScrap lineage is also 13 kills (got ${scrapKills})`);
-  assert(game.garbage.length === 0, `17: a bornOfScrap lineage emits ZERO garbage at any tier (got ${game.garbage.length})`);
-  assert(scrapScore === normalScore, `17: score is UNCHANGED vs the normal lineage (${scrapScore} vs ${normalScore})`);
+  assert(scrapKills === 13, `17: the (formerly scrap-born) lineage is also 13 kills (got ${scrapKills})`);
+  assert(game.garbage.length === 66, `17: it now emits the FULL 66 (was 0 under v3.2's bornOfScrap gate; got ${game.garbage.length})`);
+  assert(scrapScore === normalScore, `17: score is UNCHANGED vs the timer lineage (${scrapScore} vs ${normalScore})`);
   assert(scrapPowerups === 9, `17: the small tier still drops its powerup — one per 9 small kills (got ${scrapPowerups})`);
 }
 
 // =====================================================================
-console.log("(18) v3.2 P3: a timer-spawned (non-bornOfScrap) Hunter still emits the full 12 normal + 54 low = 66");
+console.log("(18) v3.3 P4: a timer-spawned Hunter still emits the full 12 normal + 54 low = 66");
 {
   beginPlaying();
-  const core = new HunterSatellite(1000, 1000, 3); // bornOfScrap false
+  const core = new HunterSatellite(1000, 1000, 3);
   game.garbage = [];
   killLineage(core);
   const total = game.garbage.length;
@@ -472,39 +505,145 @@ console.log("(18) v3.2 P3: a timer-spawned (non-bornOfScrap) Hunter still emits 
 }
 
 // =====================================================================
-console.log("(19) v3.2 P3: the bornOfScrap flag propagates through BOTH split generations");
+console.log("(19) v3.3 P4 (FORK-5): `bornOfScrap` is GONE — split children carry no such field and EMIT garbage");
 {
   beginPlaying();
   const core = new HunterSatellite(1000, 1000, 3);
-  core.bornOfScrap = true;
+  assert(!("bornOfScrap" in core), "19: a fresh Hunter core has no bornOfScrap field (deleted)");
   game.hunters = []; game.garbage = [];
-  destroyHunter(core); // -> 3 medium children
+  destroyHunter(core); // -> 3 medium children + 3 canisters
   const meds = game.hunters.slice();
-  assert(meds.length === 3 && meds.every(m => m.size === 2 && m.bornOfScrap === true),
-    "19: the 3 medium children inherit bornOfScrap === true");
-  game.hunters = [];
-  destroyHunter(meds[0]); // -> 3 small grandchildren
+  assert(meds.length === 3 && meds.every(m => m.size === 2 && !("bornOfScrap" in m)),
+    "19: the 3 medium children carry NO bornOfScrap field");
+  assert(game.garbage.length === HUNTER_GARBAGE, `19: the large core emitted its ${HUNTER_GARBAGE} canisters (got ${game.garbage.length})`);
+  game.hunters = []; game.garbage = [];
+  destroyHunter(meds[0]); // -> 3 small grandchildren + 3 canisters
   const smalls = game.hunters.slice();
-  assert(smalls.length === 3 && smalls.every(s => s.size === 1 && s.bornOfScrap === true),
-    "19: the 3 small grandchildren inherit bornOfScrap === true (both generations survive)");
-  assert(game.garbage.length === 0, "19: and no garbage was emitted at either generation");
+  assert(smalls.length === 3 && smalls.every(s => s.size === 1 && !("bornOfScrap" in s)),
+    "19: the 3 small grandchildren carry NO bornOfScrap field either");
+  assert(game.garbage.length === HUNTER_GARBAGE, `19: the medium tier ALSO emitted garbage (got ${game.garbage.length})`);
 }
 
 // =====================================================================
-console.log("(20) v3.2 P3: a coalescence-born core is tagged bornOfScrap; hunterCoalesced counts transforms");
+console.log("(20) v3.3 P4: a coalesced core carries no bornOfScrap flag and drops garbage; hunterCoalesced still counts");
 {
   beginPlaying();
   assert(game.stats.hunterCoalesced === 0, "20: fresh game starts at hunterCoalesced 0");
   for (let i = 0; i < HUNTER_COALESCE_COUNT; i++) { const g = new Garbage(500, 500, 0, 0); g.coalesceDelay = 0; game.garbage.push(g); }
   coalesceGarbage(1 / 60);
   const born = game.hunters[game.hunters.length - 1];
-  assert(born.size === 3 && born.bornOfScrap === true, "20: the coalesced core is a large core tagged bornOfScrap");
-  assert(game.stats.hunterCoalesced === 1, "20: one transform -> hunterCoalesced === 1");
-  // a second, independent clump transforms too
-  game.garbage = [];
+  assert(born.size === 3 && !("bornOfScrap" in born), "20: the coalesced core is a large core with NO bornOfScrap flag");
+  assert(game.stats.hunterCoalesced === 1, "20: one transform -> hunterCoalesced === 1 (still tracked)");
+  // and it drops garbage like any other Hunter (9b): kill its whole lineage -> 66
+  game.hunters = [born]; game.garbage = [];
+  killLineage(born);
+  assert(game.garbage.length === 66, `20: the coalesced lineage now drops the full 66 (got ${game.garbage.length})`);
+  // a second, independent clump transforms too — the stat keeps counting
+  beginPlaying();
   for (let i = 0; i < HUNTER_COALESCE_COUNT; i++) { const g = new Garbage(700, 700, 0, 0); g.coalesceDelay = 0; game.garbage.push(g); }
   coalesceGarbage(1 / 60);
-  assert(game.stats.hunterCoalesced === 2, "20: a second transform -> hunterCoalesced === 2");
+  assert(game.stats.hunterCoalesced === 1, "20: an independent transform in a fresh game -> hunterCoalesced === 1");
+}
+
+// =====================================================================
+console.log("(21) v3.3 P4 (9a): a chain node never decays (it isn't a Garbage); decay/delay relationship holds");
+{
+  beginPlaying();
+  game.cargoMax = 12;
+  const single = new Garbage(game.ship.x, game.ship.y, 0, 0); // hook a node onto the chain
+  single.coalesceDelay = 0;
+  game.garbage = [single];
+  update(1 / 60);
+  assert(game.chain.length === 1, "21: pre-condition — one node hooked");
+  assert(!("decay" in game.chain[0]), "21: a chain node carries no decay field");
+  // drive many frames far past GARBAGE_DECAY; the chain node has no decay clock and must persist.
+  // Clear ambient hazards each frame (as test-firerate does) so a stray spawn can't scatter the chain
+  // over the long run — this test is about decay, not collision.
+  game.garbage = [];
+  for (let t = 0; t < GARBAGE_DECAY * 2; t += 1 / 60) {
+    game.debris = []; game.hunters = []; game.saucers = []; game.bullets = [];
+    update(1 / 60);
+  }
+  assert(game.chain.length === 1, "21: the chain node never decays (it lives in game.chain, not game.garbage)");
+}
+
+// =====================================================================
+console.log("(22) v3.3 P4 (9c): scoop a 5-piece clump with ample room -> 5 nodes, clump dead, mass conserved");
+{
+  beginPlaying();
+  game.cargoMax = 12; game.chain = [];
+  const clumpMass = 3.7;
+  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0); // on the ship -> inside the base pickup circle
+  clump.pieces = 5; clump.mass = clumpMass; clump.radius = 7 * Math.sqrt(5); clump.coalesceDelay = 0;
+  game.garbage = [clump];
+  update(1 / 60);
+  assert(clump.dead, "22: the whole clump is scooped (take === pieces -> dead)");
+  assert(game.chain.length === 5, `22: exactly 5 chain nodes pushed (got ${game.chain.length})`);
+  assert(game.chain.every(n => Math.abs(n.mass - clumpMass / 5) < 1e-12), `22: each node carries mass clumpMass/5 = ${clumpMass / 5}`);
+  const towed = game.chain.reduce((s, n) => s + n.mass, 0);
+  assert(Math.abs(towed - clumpMass) < 1e-9, `22: total mass is conserved onto the chain (${towed} vs ${clumpMass})`);
+}
+
+// =====================================================================
+console.log("(23) v3.3 P4 (9c): scoop a 10-piece clump with only 3 slots -> 3 nodes + a live 7-piece leftover");
+{
+  beginPlaying();
+  game.chain = [];
+  game.cargoMax = 3; // only 3 free slots -> a PARTIAL, lossy scoop
+  const clumpMass = 10;
+  const clump = new Garbage(game.ship.x + 6, game.ship.y, 0, 0); // just off-ship (still inside the 18px circle) so the outward kick has a defined direction
+  clump.pieces = 10; clump.mass = clumpMass; clump.radius = 7 * Math.sqrt(10); clump.coalesceDelay = 0;
+  const hullBefore = clump.hull;
+  game.garbage = [clump];
+  update(1 / 60);
+  const pMass = clumpMass / 10;
+  assert(game.chain.length === 3, `23: exactly 3 nodes taken (chain filled; got ${game.chain.length})`);
+  assert(game.chain.every(n => Math.abs(n.mass - pMass) < 1e-12), "23: each taken node is at the clump's per-piece mass");
+  assert(!clump.dead && clump.pieces === 7, `23: a live 7-piece leftover remains (got pieces ${clump.pieces}, dead=${clump.dead})`);
+  assert(Math.abs(clump.mass - 7 * pMass) < 1e-12, `23: leftover mass re-derived to 7*pMass (got ${clump.mass})`);
+  assert(Math.abs(clump.radius - 7 * Math.sqrt(7)) < 1e-12, "23: leftover radius re-derived to 7*sqrt(7)");
+  assert(clump.coalesceDelay === GARBAGE_COALESCE_DELAY, "23: leftover's coalesce delay is re-armed");
+  assert(clump.hull !== hullBefore, "23: the cached hull was regenerated for the smaller leftover");
+  assert(Math.hypot(clump.vx, clump.vy) > 0, "23: leftover gets an outward kick (floats off away from the ship)");
+  // the leftover cannot be immediately re-scooped: the chain is full (no room)
+  update(1 / 60);
+  assert(game.chain.length === 3 && !clump.dead, "23: with the chain full the leftover is NOT re-scooped (no cooldown needed)");
+}
+
+// =====================================================================
+console.log("(24) v3.3 P4 (9c, FORK-6): clump-scooping is UNCONDITIONAL — works at scoopLevel 0 (circle) and via the scoop box");
+{
+  // scoopLevel 0: a clump inside the base GARBAGE_PICKUP circle is scooped
+  beginPlaying();
+  game.scoopLevel = 0; game.cargoMax = 12; game.chain = [];
+  const near = new Garbage(game.ship.x, game.ship.y, 0, 0);
+  near.pieces = 4; near.mass = 4; near.radius = 7 * Math.sqrt(4); near.coalesceDelay = 0;
+  game.garbage = [near];
+  update(1 / 60);
+  assert(near.dead && game.chain.length === 4, "24: at scoopLevel 0 a clump in the base circle is scooped (unconditional, no gate)");
+
+  // via the scoop box: a clump OUTSIDE the base circle but inside the mouth, at a level-5 forward reach
+  beginPlaying();
+  game.scoopLevel = 5; game.cargoMax = 12; game.chain = [];
+  game.ship.angle = 0; // facing +x
+  const fwd = SCOOP_DEPTH[5] - 2; // inside the mouth depth, well beyond the 18 px pickup circle
+  const boxed = new Garbage(game.ship.x + fwd, game.ship.y, 0, 0);
+  boxed.pieces = 3; boxed.mass = 3; boxed.radius = 7 * Math.sqrt(3); boxed.coalesceDelay = 0;
+  assert(fwd > GARBAGE_PICKUP, "24: pre-condition — the boxed clump sits outside the base pickup circle");
+  game.garbage = [boxed];
+  update(1 / 60);
+  assert(boxed.dead && game.chain.length === 3, "24: a clump caught only by the scoop box is scooped");
+}
+
+// =====================================================================
+console.log("(25) v3.3 P4 (9b): 'Waste Not' still keys on hunterCoalesced and still fires");
+{
+  const wasteNot = Achievements.byId["waste_not"];
+  assert(!!wasteNot, "25: the waste_not achievement still exists");
+  // finished game, zero coalesced Hunters -> it fires
+  assert(wasteNot.cur({ gameEnded: true, hunterCoalesced: 0 }) === 1, "25: fires on a finished game with hunterCoalesced === 0");
+  // one Hunter born of neglected scrap -> it does not
+  assert(wasteNot.cur({ gameEnded: true, hunterCoalesced: 1 }) === 0, "25: does NOT fire once a Hunter coalesced (keys on hunterCoalesced)");
 }
 
 // =====================================================================

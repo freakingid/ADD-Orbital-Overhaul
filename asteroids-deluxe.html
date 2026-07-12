@@ -157,12 +157,19 @@ const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
 const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
 
 // Radioactive salvage / tow chain / recycling dock
-// v3.2 P3: garbage NO LONGER DECAYS. A canister leaves the field by exactly two doors — RECYCLED
-// (towed to the dock) or CONSUMED INTO A HUNTER (coalescence). The old GARBAGE_DECAY /
-// GARBAGE_SEVER_DECAY timers are gone; salvage is now a standing field object the player must
-// actively manage. Density is held instead by coalescence (which consumes pieces) and
-// shatter-to-harvest (which makes the player WANT them) — see GDD §2.10.1.
+// v3.3 P4 (9a): loose SINGLE canisters decay again (GARBAGE_DECAY) — decay is the GOVERNOR that keeps
+// the field readable now that Hunters always drop garbage (9b) reopens the 12-in/66-out amplifier.
+// This REVERSES the v3.2 P3 "garbage is permanent" rule (Paul signed off). Exits for a single are now
+// three: RECYCLED (towed to the dock), CONSUMED INTO A HUNTER (coalescence), or AGED OUT (decay).
+// A CLUMP (pieces > 1) still never decays — it is a target AND, as of 9c, a scoopable pickup, so
+// aging it out would steal the player's loot and their Hunter-prevention window (FORK-4: singles only).
+// Chain nodes never decay (they're game.chain, not game.garbage). Severed garbage (Garbage.fromNode)
+// inherits this same one GARBAGE_DECAY — the old separate GARBAGE_SEVER_DECAY stays deleted. See §2.10.1.
 const GARBAGE_PICKUP = 18;      // pickup radius from ship center
+const GARBAGE_DECAY = 22;       // PLAYTEST KNOB (v3.3 P4, reintroduced). sec a loose SINGLE lives before it
+                                // ages out; must exceed GARBAGE_COALESCE_DELAY by a wide margin or nothing
+                                // ever clumps. The last ~GARBAGE_FADE sec it blinks as an expiry tell.
+const GARBAGE_FADE = 2.0;       // sec of blink-out before a decaying single dies (look-call)
 
 // Garbage coalescence (v3.1 P3): uncollected canisters mutually attract and, on contact, fuse into a
 // growing clump; at HUNTER_COALESCE_COUNT pieces the clump collapses into a fresh large Hunter core
@@ -170,18 +177,18 @@ const GARBAGE_PICKUP = 18;      // pickup radius from ship center
 // fresh burst rides its explosion kick APART first — both the attraction AND the merge are gated on
 // it. This is a separate, weaker, always-on force from the Magnet powerup (that pulls garbage→ship);
 // Magnet is the natural anti-coalescence tool (vacuum pieces before they clump). All math wrap-aware.
-const GARBAGE_COALESCE_DELAY = 6.0;    // PLAYTEST KNOB (v3.2 P3: 1.0→6.0). sec a fresh piece stays inert
-                                       // before it attracts/merges. At the 20-55 px/s emission kick, 6 s
-                                       // carries same-explosion siblings 120-330 px apart, so a burst
-                                       // drifts APART and later happens upon strangers instead of
-                                       // instantly re-clumping. Phase 2's shatter path reuses this same
-                                       // constant — one knob, not two.
-const GARBAGE_MAGNET_RANGE = 260;      // PLAYTEST KNOB — TUNE THIS FIRST BY FEEL (v3.2 P3: 140→260).
-                                       // px: garbage↔garbage mutual-attraction range. 140 was tuned when
-                                       // garbage lived 12 s and only had to find siblings in a fresh, tight
-                                       // cloud; with permanent garbage, pieces that drift >range apart NEVER
-                                       // find each other and the field silts up with inert junk. Most likely
-                                       // number to be wrong.
+const GARBAGE_COALESCE_DELAY = 3.0;    // PLAYTEST KNOB (v3.3 P4: 6.0→3.0). sec a fresh piece stays inert
+                                       // before it attracts/merges. 6.0 was tuned FOR permanent garbage;
+                                       // with a ~22 s single life (9a), a third of that spent inert means
+                                       // pieces age out before they can ever clump — so it drops back to
+                                       // ~3 s. Still gates BOTH attraction and merge; the shatter path
+                                       // reuses this same constant — one knob, not two.
+const GARBAGE_MAGNET_RANGE = 180;      // PLAYTEST KNOB — TUNE THIS FIRST BY FEEL (v3.3 P4: 260→180).
+                                       // px: garbage↔garbage mutual-attraction range. 260 was raised only
+                                       // because garbage was permanent and had to find far-flung strangers;
+                                       // with singles decaying again (9a) a tighter range clumps a fresh
+                                       // burst without dragging the whole field into one super-clump.
+                                       // Most likely number to be wrong.
 const GARBAGE_MAGNET_PULL = 40;        // px/s² each active piece accelerates toward a nearby active piece
 const GARBAGE_MERGE_DIST = 12;         // px: two active pieces this close fuse into one clump
 const HUNTER_COALESCE_COUNT = 12;      // pieces fused into one clump -> a new large Hunter core forms
@@ -302,6 +309,7 @@ const SCOOP_WIDTH = [0, 22, 30, 38, 46, 54]; // px full mouth width by level; L5
 const SCOOP_DEPTH = [0, 20, 24, 28, 32, 36]; // px the mouth reaches forward of the ship center by level (playtest knob)
 const SCOOP_HITS_PER_LEVEL = 2;              // non-lethal hits that cost one scoop level (playtest knob)
 const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (mirrors the full-HP REPAIR_FULL_BONUS pattern; tunable)
+const SCOOP_SPILL_KICK = 85;                 // v3.3 P4 (9c): px/s outward kick on the leftover when a clump is PARTIALLY scooped ("the rest floats off and away"); playtest knob (~60-110)
 
 // Controller / gamepad input (F7). The one tunable knob for controller *feel* — how far an analog
 // stick must travel before it counts as a directional press. Button/axis index enums and the binding
@@ -1476,10 +1484,9 @@ class HunterSatellite {
     this.radius = HUNTER_RADII[size];
     this.damage = HUNTER_DAMAGE[size];      // contact damage to the ship (F2/F4)
     this.dead = false;
-    // v3.2 P3 (FORK-B/B1): set true only for a core born from coalescing scrap; propagated to its
-    // split children in destroyHunter. A bornOfScrap lineage emits NO garbage when killed (the scrap
-    // was already spent becoming it). Timer-spawned cores keep this false and drop garbage normally.
-    this.bornOfScrap = false;
+    // v3.3 P4 (9b, FORK-5): the `bornOfScrap` flag is GONE. Every Hunter of every origin now drops
+    // garbage at its tier counts — the v3.2 P3 suppression is reversed. 9a's single-decay is the new
+    // governor for the 12-in/66-out amplifier that flag used to close.
     // Wave-scaled from a gentle floor (HUNTER_FLOOR_FRAC × ceiling) up to the full ceiling.
     // game.wave is fixed for a Hunter's lifetime (Hunters block wave-clear), so sample once.
     this.speed    = ramp(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_SPEED_CEIL[size], game.wave);
@@ -1683,13 +1690,15 @@ function lerpColor(c1, c2, t) {
 }
 
 class Garbage {
-  // v3.2 P3: no `decay` param — garbage is permanent (leaves the field only by recycle or coalescence).
+  // v3.3 P4 (9a): a loose SINGLE decays again on GARBAGE_DECAY (see update()). Not a ctor param — every
+  // piece is born a single with a full life; a clump (pieces > 1) simply never counts it down (FORK-4).
   constructor(x, y, vx = 0, vy = 0, mass = 1.0) {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.spin = rand(0, TAU);
     this.spinRate = rand(-1.5, 1.5);
     this.mass = mass;   // towing weight (F5): 1.0 for Debris scrap; lighter scrap tows easier
+    this.decay = GARBAGE_DECAY; // v3.3 P4: single-canister life clock; counts down only while pieces === 1
     // Coalescence (v3.2 P1). These constructor defaults are inherited by all three emission sites
     // AND Garbage.fromNode. `coalesceDelay` counts down in update(); a piece is "active" (attracts +
     // can merge) once it hits 0. `pieces` is the 1..11 threat counter (at 12 the clump transforms).
@@ -1713,15 +1722,28 @@ class Garbage {
     this.x += this.vx * dt; this.y += this.vy * dt;
     this.spin += this.spinRate * dt;
     wrap(this);
-    // v3.2 P3: no decay countdown — a canister never dies of age. It leaves only via a pickup (which
-    // sets dead externally) or by coalescing into a Hunter. `coalesceDelay` still gates attraction/merge.
+    // v3.3 P4 (9a): a loose SINGLE ages out — GARBAGE_DECAY is the density governor. A CLUMP (pieces > 1)
+    // never decays (FORK-4: a clump is a target and a scoopable pickup). Chain nodes aren't Garbage, so
+    // they never reach here. A pickup still sets `dead` externally; coalescence still consumes pieces.
+    if (this.pieces === 1) {
+      this.decay -= dt;
+      if (this.decay <= 0) this.dead = true;
+    }
+    // `coalesceDelay` still gates attraction/merge (see coalesceGarbage).
     if (this.coalesceDelay > 0) this.coalesceDelay -= dt;
   }
   draw() {
     if (this.pieces === 1) {
-      // Byte-identical to pre-v3.3 rendering: a single centered canister.
+      // A single centered canister. v3.3 P4 (9a): in its last GARBAGE_FADE sec it blinks out as an
+      // expiry tell — otherwise byte-identical to the pre-decay single render.
       const color = this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
-      drawCanister(this.x, this.y, this.spin, 0.9, color);
+      let alpha = 0.9;
+      if (this.decay < GARBAGE_FADE) {
+        // fast on/off blink (skip the "off" frames) that fades as death nears
+        if (Math.sin(this.decay * 18) < 0) return;
+        alpha = 0.9 * Math.max(0.2, this.decay / GARBAGE_FADE);
+      }
+      drawCanister(this.x, this.y, this.spin, alpha, color);
       return;
     }
     // v3.3 P1: a clump (pieces > 1) renders as ONE closed hull polygon — no inner lines, no mini-
@@ -2052,15 +2074,12 @@ function destroyHunter(h, awardScore = true) {
   if (h.size === 3) game.stats.largeHunterKills++;
   Achievements.lifetime.hunterKills++;
   boom(h.x, h.y, h.size, COLOR.satellite);
-  // v3.2 P3 (FORK-B / B1): a Hunter BORN OF SCRAP (from coalescence) emits NO garbage at any tier.
-  // 12 pieces coalesced in, 0 pieces back out — otherwise the loop is a 5.5x amplifier (a full
-  // scrap-born lineage would drop 66 canisters) and, with garbage now permanent, that diverges.
-  // Read it in-fiction: that scrap has already been spent — it IS the Hunter now. Score, splits,
-  // damage, and the small-tier powerup drop are all UNCHANGED; only the garbage emission is skipped.
-  const emitGarbage = !h.bornOfScrap;
+  // v3.3 P4 (9b, reverses v3.2 P3's FORK-B/B1): EVERY Hunter drops garbage at its tier counts,
+  // regardless of origin. This reopens the 12-in/66-out amplifier a coalesced lineage represents —
+  // deliberately: 9a's single-decay is now the governor holding the field, not emission suppression.
   if (h.size === 1) {
     // Final tier: an easy-to-tow bonus pile of low-mass canisters (mass 0.5, paler tint).
-    if (emitGarbage) for (let i = 0; i < HUNTER_SMALL_GARBAGE; i++) {
+    for (let i = 0; i < HUNTER_SMALL_GARBAGE; i++) {
       const spread = rand(0, TAU), kick = rand(30, 70);
       game.garbage.push(new Garbage(h.x, h.y,
         h.vx * 0.25 + Math.cos(spread) * kick,
@@ -2070,7 +2089,7 @@ function destroyHunter(h, awardScore = true) {
     maybeDropPowerup(h.x, h.y); // finishing off a Hunter line can drop a powerup (F6)
   } else {
     // Large/medium: 3 normal-mass canisters, then a 3-way split into actively-homing children.
-    if (emitGarbage) for (let i = 0; i < HUNTER_GARBAGE; i++) {
+    for (let i = 0; i < HUNTER_GARBAGE; i++) {
       const spread = rand(0, TAU), kick = rand(20, 55);
       game.garbage.push(new Garbage(h.x, h.y,
         h.vx * 0.25 + Math.cos(spread) * kick,
@@ -2078,9 +2097,7 @@ function destroyHunter(h, awardScore = true) {
     }
     for (let i = 0; i < 3; i++) {
       const scatterAngle = (i / 3) * TAU + rand(-0.3, 0.3);
-      const child = new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle);
-      child.bornOfScrap = h.bornOfScrap; // propagate the flag so the WHOLE lineage stays garbage-free
-      game.hunters.push(child);
+      game.hunters.push(new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle));
     }
   }
 }
@@ -2626,12 +2643,11 @@ function coalesceGarbage(dt) {
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
-          // v3.2 P3 (FORK-B/B1): tag it bornOfScrap so its whole lineage drops NO garbage — the loop
-          // closes (12 pieces in, 0 out) instead of amplifying. hunterCoalesced tracks it for Waste Not.
+          // v3.3 P4 (9b, FORK-5): no bornOfScrap tag anymore — this coalesced core drops garbage like
+          // any other Hunter. hunterCoalesced still counts the transform (it never read the flag) so the
+          // "Waste Not" achievement is untouched.
           a.dead = true;
-          const core = new HunterSatellite(a.x, a.y, 3);
-          core.bornOfScrap = true;
-          game.hunters.push(core);
+          game.hunters.push(new HunterSatellite(a.x, a.y, 3));
           game.stats.hunterCoalesced++;
           AudioSys.hunterborn();
           break;   // survivor is gone — stop pairing it against the rest
@@ -2800,17 +2816,51 @@ function update(dt) {
     // Capture region = the base GARBAGE_PICKUP circle OR the Scoop mouth (v3.3 P3). MAGNET_PICKUP_MULT
     // multiplies the CIRCLE only, and the box is independent, so there's no double-counting; at
     // scoopLevel 0 inScoopBox is always false, so this is byte-identical to the pre-scoop pickup.
-    if (game.chain.length < game.cargoMax && g.pieces === 1 &&
-        (dist2(g, game.ship) < pickR * pickR || inScoopBox(g))) {  // v3.2 P1: a clump (pieces>1) CANNOT be hooked — shoot it apart first
-      g.dead = true;
-      game.chain.push({
-        x: g.x, y: g.y, px: g.x, py: g.y,
-        spin: g.spin, spinRate: g.spinRate, mass: g.mass  // carry towing weight onto the node (F5)
-      });
-      AudioSys.pickup();
-      // Count-based Magnet expiry (B-5): spend one budget per canister HOOKED — counted at the hook,
-      // not the pull, so a magnet that draws-then-hooks a piece only spends once (FLAG B-5-a).
-      if (magnet && settings.magnetMode === "pieces" && game.powerBudget.magnet > 0) game.powerBudget.magnet--;
+    if (game.chain.length < game.cargoMax &&
+        (dist2(g, game.ship) < pickR * pickR || inScoopBox(g))) {
+      if (g.pieces === 1) {
+        // A single hooks onto the chain as one node (unchanged behavior).
+        g.dead = true;
+        game.chain.push({
+          x: g.x, y: g.y, px: g.x, py: g.y,
+          spin: g.spin, spinRate: g.spinRate, mass: g.mass  // carry towing weight onto the node (F5)
+        });
+        AudioSys.pickup();
+        // Count-based Magnet expiry (B-5): spend one budget per canister HOOKED — counted at the hook,
+        // not the pull, so a magnet that draws-then-hooks a piece only spends once (FLAG B-5-a).
+        if (magnet && settings.magnetMode === "pieces" && game.powerBudget.magnet > 0) game.powerBudget.magnet--;
+      } else {
+        // v3.3 P4 (9c, reverses v3.2 P1's "a clump is un-hookable", FORK-6: UNCONDITIONAL, no scoopLevel
+        // gate): scoop as many of the clump's pieces as fit the chain, each becoming its own node at the
+        // clump's per-piece mass. Scooping is LOSSY but instant — a chain-full scoop of a big clump throws
+        // the overflow away (that's the cost that keeps the lossless shatter tool alive). The Magnet still
+        // ignores clumps (its pieces===1 gate above) — the scoop is the clump tool now.
+        const room = game.cargoMax - game.chain.length;  // > 0 (checked in the gate)
+        const take = Math.min(room, g.pieces);
+        const pMass = g.mass / g.pieces;
+        for (let k = 0; k < take; k++) {
+          game.chain.push({
+            x: g.x, y: g.y, px: g.x, py: g.y,
+            spin: g.spin, spinRate: g.spinRate, mass: pMass
+          });
+        }
+        AudioSys.pickup();
+        if (take === g.pieces) {
+          g.dead = true;  // whole clump fit — total mass conserved onto the chain
+        } else {
+          // Leftover floats off: re-derive its size/mass, re-arm the coalesce delay, regenerate the
+          // cached hull, and kick it directly away from the ship so "the rest of the ball floats away".
+          g.pieces -= take;
+          g.mass  -= take * pMass;
+          g.radius = 7 * Math.sqrt(g.pieces);
+          g.coalesceDelay = GARBAGE_COALESCE_DELAY;
+          g.hull = makeClumpHull(g.radius);
+          const [ax, ay] = shortDelta(game.ship.x, game.ship.y, g.x, g.y); // ship -> leftover (wrap-aware)
+          const d = Math.hypot(ax, ay) || 0.0001;
+          g.vx += (ax / d) * SCOOP_SPILL_KICK;
+          g.vy += (ay / d) * SCOOP_SPILL_KICK;
+        }
+      }
     }
   }
   coalesceGarbage(dt); // v3.1 P3: neglected scrap clumps; a 12-piece clump becomes a Hunter
