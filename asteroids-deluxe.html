@@ -874,6 +874,7 @@ const MusicSys = {
   ducked: false,       // last duck target applied — makes setDuck() idempotent under per-frame calls
   intensity: 0,        // 0..1 — difficultyFactor(game.wave), recomputed only on wave change (v3.4 P7)
   layerGates: null,    // v3.4 P7: [{node, tier, target}] parallel to this.track.layers, or null
+  noiseBuf: null,      // v3.5: lazily-built 2s mono white-noise buffer, cached for the `noise:true` layer field
 
   // Lazily build the duck node once the audio graph exists (first user gesture). AudioSys.music is
   // created in AudioSys.init(); until then every entry point below no-ops via the ctx guard.
@@ -988,6 +989,17 @@ const MusicSys = {
     }
   },
 
+  // Lazily build a cached 2s mono white-noise buffer, the same idiom as ensureGraph() lazily
+  // building the duck node. Only touched by the `noise:true` layer field (v3.5 — no shipped
+  // layer sets it yet, so this branch is currently unreachable in the live tracks).
+  ensureNoiseBuf() {
+    if (this.noiseBuf || !AudioSys.ctx) return;
+    const ctx = AudioSys.ctx, n = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    this.noiseBuf = buf;
+  },
+
   playNote(layer, cell, t, layerIndex) {
     const ctx = AudioSys.ctx, dur = cell.dur * this.track.stepDur;
     const peak = (cell.g == null ? 1 : cell.g) * layer.gain;
@@ -1001,15 +1013,33 @@ const MusicSys = {
     let sink = g;
     if (layer.cutoff) {
       const f = ctx.createBiquadFilter();
-      f.type = "lowpass"; f.frequency.value = layer.cutoff;
-      f.connect(g); sink = f;
+      f.type = "lowpass";
+      f.Q.value = layer.q || 1;
+      f.frequency.setValueAtTime(layer.cutoff, t);
+      if (layer.cutoffTo)
+        f.frequency.exponentialRampToValueAtTime(layer.cutoffTo, t + Math.min(layer.cutoffTime || dur, dur));
+      f.connect(sink); sink = f;
     }
-    const freqs = layer.detune ? [cell.f, cell.f * Math.pow(2, layer.detune / 1200)] : [cell.f];
-    for (const fr of freqs) {
-      const o = ctx.createOscillator();
-      o.type = layer.type; o.frequency.value = fr;
-      o.connect(sink);
-      o.start(t); o.stop(t + dur + 0.1);
+    if (layer.hp) {
+      const f = ctx.createBiquadFilter();
+      f.type = "highpass"; f.frequency.value = layer.hp;
+      f.connect(sink); sink = f;
+    }
+    if (layer.noise) {
+      this.ensureNoiseBuf();
+      const s = ctx.createBufferSource();
+      s.buffer = this.noiseBuf; s.connect(sink);
+      s.start(t); s.stop(t + dur + 0.05);
+    } else {
+      const freqs = layer.detune ? [cell.f, cell.f * Math.pow(2, layer.detune / 1200)] : [cell.f];
+      for (const fr of freqs) {
+        const o = ctx.createOscillator();
+        o.type = layer.type; o.frequency.setValueAtTime(fr, t);
+        if (layer.drop)
+          o.frequency.exponentialRampToValueAtTime(Math.max(24, fr * Math.pow(2, -layer.drop / 12)),
+                                                   t + (layer.dropTime || 0.06));
+        o.connect(sink); o.start(t); o.stop(t + dur + 0.1);
+      }
     }
     g.connect(this.layerGates[layerIndex].node); // v3.4 P7: through this layer's intensity gate
   },

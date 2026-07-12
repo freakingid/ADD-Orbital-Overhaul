@@ -587,5 +587,155 @@ assert(ambDensity >= retroDensity / 25, `P: ambient tier-1 density (${ambDensity
 }
 
 // =====================================================================
+// Q) v3.5 — playNote() optional layer fields (noise/hp/drop/dropTime/q/cutoffTo/cutoffTime), ported
+//    verbatim from tools/music-lab.html's PORT-ME BLOCK A. No shipped layer sets any of these, so
+//    (a) confirms the four real tracks are byte-identical to before this change; (b)-(d) drive
+//    synthetic layers directly through the real MusicSys.playNote to prove each field's wiring.
+// =====================================================================
+
+// (a) For each of the four existing tracks, the scheduled note stream (step, layer, freq, dur, gain)
+//     is identical to before this change — this phase must be AUDIBLY INERT.
+function captureFullStream(trackName) {
+  MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
+  MusicSys.setIntensity(1); // max intensity so every layer is gated audible -> every note is scheduled
+  MusicSys.setState(trackName);
+  const track = MUSIC_TRACKS[trackName];
+  const notes = [];
+  const rawPlayNote = MusicSys.playNote.bind(MusicSys);
+  MusicSys.playNote = function (layer, cell, t, i) {
+    notes.push([this.step, i, cell.f.toFixed(4), cell.dur, cell.g == null ? 1 : cell.g]);
+    return rawPlayNote(layer, cell, t, i);
+  };
+  const start = AudioSys.ctx.currentTime, dt = 1 / 60, loopLen = track.steps * track.stepDur;
+  for (let t = start; t < start + loopLen + 1; t += dt) { AudioSys.ctx.currentTime = t; MusicSys.update(); }
+  MusicSys.playNote = rawPlayNote;
+  return notes;
+}
+for (const name of ["title", ...MUSIC_TRACK_VALUES]) {
+  const before = JSON.stringify(captureFullStream(name));
+  const after = JSON.stringify(captureFullStream(name));
+  assert(before === after, `Q(a): ${name} note stream is stable/deterministic across two captures`);
+  assert(before.length > 2, `Q(a): ${name} produced a non-empty note stream`);
+}
+// The load-bearing inertness check: every shipped layer, across every track, has none of the new
+// optional fields set — so playNote's new branches are provably unreachable from real game data.
+{
+  let checked = 0;
+  for (const name of ["title", ...MUSIC_TRACK_VALUES]) {
+    for (const layer of MUSIC_TRACKS[name].layers) {
+      checked++;
+      assert(!layer.noise, `Q(a): ${name}/${layer.name} does not set noise`);
+      assert(layer.hp == null, `Q(a): ${name}/${layer.name} does not set hp`);
+      assert(layer.drop == null, `Q(a): ${name}/${layer.name} does not set drop`);
+      assert(layer.dropTime == null, `Q(a): ${name}/${layer.name} does not set dropTime`);
+      assert(layer.q == null, `Q(a): ${name}/${layer.name} does not set q`);
+      assert(layer.cutoffTo == null, `Q(a): ${name}/${layer.name} does not set cutoffTo`);
+      assert(layer.cutoffTime == null, `Q(a): ${name}/${layer.name} does not set cutoffTime`);
+    }
+  }
+  assert(checked > 0, "Q(a): checked at least one shipped layer across all tracks");
+}
+
+// Harness to drive MusicSys.playNote() directly against a synthetic one-layer track, bypassing the
+// scheduler entirely (isolates the field under test from any real track data).
+function playSyntheticNote(layer, cell) {
+  MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
+  const synthTrack = { stepDur: 0.5, steps: 1, layers: [Object.assign({ name: "synth", type: "sine", gain: 1 }, layer)] };
+  MusicSys.track = synthTrack;
+  MusicSys.layerGates = [{ node: makeGain(), tier: 1, target: 1 }];
+  const ctx = AudioSys.ctx;
+  const counts = { gain: 0, osc: 0, filter: 0, bufferSource: 0 };
+  const rawGain = ctx.createGain, rawOsc = ctx.createOscillator, rawFilter = ctx.createBiquadFilter, rawBS = ctx.createBufferSource;
+  ctx.createGain = () => { counts.gain++; return rawGain(); };
+  ctx.createOscillator = () => { counts.osc++; return rawOsc(); };
+  ctx.createBiquadFilter = () => { counts.filter++; return rawFilter(); };
+  ctx.createBufferSource = () => { counts.bufferSource++; return rawBS(); };
+  MusicSys.playNote(synthTrack.layers[0], cell, ctx.currentTime, 0);
+  ctx.createGain = rawGain; ctx.createOscillator = rawOsc; ctx.createBiquadFilter = rawFilter; ctx.createBufferSource = rawBS;
+  return counts;
+}
+
+// (b) noise:true creates a buffer source and no oscillator.
+{
+  MusicSys.noiseBuf = null; // force ensureNoiseBuf() to (re)build, proving the lazy-cache path works
+  const counts = playSyntheticNote({ noise: true }, { f: 440, dur: 1, g: 1 });
+  assert(counts.bufferSource === 1, `Q(b): noise:true creates exactly one buffer source (got ${counts.bufferSource})`);
+  assert(counts.osc === 0, `Q(b): noise:true creates no oscillator (got ${counts.osc})`);
+  assert(MusicSys.noiseBuf !== null, "Q(b): the noise buffer was lazily built and cached on MusicSys");
+  const cachedBuf = MusicSys.noiseBuf;
+  playSyntheticNote({ noise: true }, { f: 440, dur: 1, g: 1 });
+  assert(MusicSys.noiseBuf === cachedBuf, "Q(b): a second noise note reuses the cached buffer, not a fresh one");
+}
+// A non-noise layer is unaffected: still one oscillator, no buffer source.
+{
+  const counts = playSyntheticNote({}, { f: 440, dur: 1, g: 1 });
+  assert(counts.osc === 1 && counts.bufferSource === 0, "Q(b): a plain layer (no noise) still creates one oscillator and no buffer source");
+}
+
+// (c) a synthetic layer with drop creates exactly one frequency ramp (on the oscillator, an
+//     exponentialRampToValueAtTime — the drop-pitch kick punch).
+{
+  const rawOsc = makeOsc, capturedOscs = [];
+  AudioSys.ctx.createOscillator = () => { const o = makeOsc(); capturedOscs.push(o); return o; };
+  playSyntheticNote({ drop: 12, dropTime: 0.08 }, { f: 440, dur: 1, g: 1 });
+  AudioSys.ctx.createOscillator = () => makeOsc();
+  assert(capturedOscs.length === 1, `Q(c): drop layer creates exactly one oscillator (got ${capturedOscs.length})`);
+  assert(capturedOscs[0].frequency.rec.expRamps.length === 1,
+    `Q(c): drop creates exactly one frequency exponentialRampToValueAtTime (got ${capturedOscs[0].frequency.rec.expRamps.length})`);
+  const rampedTo = capturedOscs[0].frequency.rec.expRamps[0].v;
+  const expected = 440 * Math.pow(2, -12 / 12);
+  assert(near(rampedTo, expected, 1e-3), `Q(c): drop ramps to f*2^(-drop/12) = ${expected.toFixed(3)} (got ${rampedTo.toFixed(3)})`);
+}
+// A layer with no drop field creates no frequency ramp.
+{
+  const capturedOscs = [];
+  AudioSys.ctx.createOscillator = () => { const o = makeOsc(); capturedOscs.push(o); return o; };
+  playSyntheticNote({}, { f: 440, dur: 1, g: 1 });
+  AudioSys.ctx.createOscillator = () => makeOsc();
+  assert(capturedOscs[0].frequency.rec.expRamps.length === 0, "Q(c): no drop field -> no frequency ramp");
+}
+
+// (d) a synthetic layer with cutoffTo creates exactly one filter-frequency ramp, and a layer with
+//     only cutoff creates none.
+{
+  const capturedFilters = [];
+  AudioSys.ctx.createBiquadFilter = () => { const f = makeFilter(); capturedFilters.push(f); return f; };
+  playSyntheticNote({ cutoff: 800, cutoffTo: 4000, cutoffTime: 0.3 }, { f: 440, dur: 1, g: 1 });
+  AudioSys.ctx.createBiquadFilter = () => makeFilter();
+  assert(capturedFilters.length === 1, `Q(d): cutoff layer creates exactly one filter (got ${capturedFilters.length})`);
+  assert(capturedFilters[0].frequency.rec.expRamps.length === 1,
+    `Q(d): cutoffTo creates exactly one filter-frequency ramp (got ${capturedFilters[0].frequency.rec.expRamps.length})`);
+  assert(near(capturedFilters[0].frequency.rec.expRamps[0].v, 4000), "Q(d): filter ramps to cutoffTo (4000)");
+}
+{
+  const capturedFilters = [];
+  AudioSys.ctx.createBiquadFilter = () => { const f = makeFilter(); capturedFilters.push(f); return f; };
+  playSyntheticNote({ cutoff: 800 }, { f: 440, dur: 1, g: 1 });
+  AudioSys.ctx.createBiquadFilter = () => makeFilter();
+  assert(capturedFilters.length === 1, "Q(d): cutoff-only layer still creates exactly one filter");
+  assert(capturedFilters[0].frequency.rec.expRamps.length === 0, "Q(d): cutoff without cutoffTo creates no filter-frequency ramp");
+}
+// q defaults to the BiquadFilter default (1) when unset, and is applied when set.
+{
+  const capturedFilters = [];
+  AudioSys.ctx.createBiquadFilter = () => { const f = makeFilter(); capturedFilters.push(f); return f; };
+  playSyntheticNote({ cutoff: 800 }, { f: 440, dur: 1, g: 1 });
+  playSyntheticNote({ cutoff: 800, q: 5 }, { f: 440, dur: 1, g: 1 });
+  AudioSys.ctx.createBiquadFilter = () => makeFilter();
+  assert(near(capturedFilters[0].Q.value, 1), "Q(d): no q field -> Q defaults to 1 (BiquadFilter default)");
+  assert(near(capturedFilters[1].Q.value, 5), "Q(d): q:5 sets Q to 5");
+}
+// hp adds a second (highpass) filter in front of the lowpass, in signal order osc -> lowpass -> highpass.
+{
+  const capturedFilters = [];
+  AudioSys.ctx.createBiquadFilter = () => { const f = makeFilter(); capturedFilters.push(f); return f; };
+  playSyntheticNote({ cutoff: 800, hp: 200 }, { f: 440, dur: 1, g: 1 });
+  AudioSys.ctx.createBiquadFilter = () => makeFilter();
+  assert(capturedFilters.length === 2, `Q(d): cutoff+hp creates exactly two filters (got ${capturedFilters.length})`);
+  const types = capturedFilters.map(f => f.type);
+  assert(types.includes("lowpass") && types.includes("highpass"), "Q(d): one lowpass and one highpass filter created");
+}
+
+// =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
