@@ -44,7 +44,7 @@ const returnList = [
   "DebrisSatellite", "Garbage",
   "destroyDebris", "updateChain", "scatterChain", "chainMass",
   "DEBRIS_GARBAGE", "DEBRIS_SCORE",
-  "GARBAGE_DECAY", "GARBAGE_SEVER_DECAY", "GARBAGE_PICKUP",
+  "GARBAGE_PICKUP",
   "CHAIN_LINK", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG",
   "WORLD_W", "WORLD_H"
@@ -59,7 +59,7 @@ const {
   DebrisSatellite, Garbage,
   destroyDebris, updateChain, scatterChain, chainMass,
   DEBRIS_GARBAGE,
-  GARBAGE_DECAY, GARBAGE_SEVER_DECAY, GARBAGE_PICKUP,
+  GARBAGE_PICKUP,
   CHAIN_LINK, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG,
   WORLD_W, WORLD_H
@@ -96,7 +96,7 @@ function node(x, y, mass) {
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  GARBAGE_DECAY=${GARBAGE_DECAY}s  GARBAGE_SEVER_DECAY=${GARBAGE_SEVER_DECAY}s`);
+console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (v3.2 P3: garbage no longer decays)`);
 
 // =====================================================================
 // (A) full lineage: 1 large -> 3 mediums -> 9 smalls = 13 kills, 39 canisters
@@ -147,14 +147,14 @@ assert(game.debris.length === 0, "B: small -> no children (destroyed)");
 // =====================================================================
 console.log("(C) mass field: default, fromNode carry, pickup copy, sever preserve");
 assert(new Garbage(cx, cy).mass === 1.0, "C: Garbage default mass is 1.0");
-assert(new Garbage(cx, cy, 0, 0, GARBAGE_DECAY, 0.5).mass === 0.5, "C: Garbage explicit mass is carried");
+assert(new Garbage(cx, cy, 0, 0, 0.5).mass === 0.5, "C: Garbage explicit mass is carried (mass is now the 5th ctor arg; v3.2 P3 dropped decay)");
 assert(Garbage.fromNode({ x: cx, y: cy, mass: 0.5 }).mass === 0.5, "C: fromNode carries node mass (0.5)");
 assert(Garbage.fromNode({ x: cx, y: cy }).mass === 1.0, "C: fromNode on a mass-less node defaults to 1.0");
 
 // pickup copies mass onto the new chain node (drive the real pickup pass)
 clearField();
 resetShip();
-game.garbage.push(new Garbage(game.ship.x + 2, game.ship.y, 0, 0, GARBAGE_DECAY, 0.5));
+game.garbage.push(new Garbage(game.ship.x + 2, game.ship.y, 0, 0, 0.5));
 update(DT);
 assert(game.chain.length === 1, "C: a canister within pickup radius hooked onto the chain");
 assert(game.chain.length === 1 && game.chain[0].mass === 0.5,
@@ -170,8 +170,10 @@ assert(game.chain.length === 0, "C: scatterChain empties the chain");
 const scatMass = game.garbage.map(g => g.mass).sort();
 assert(game.garbage.length === 2 && scatMass[0] === 0.5 && scatMass[1] === 1.0,
   `C: scattered garbage preserves node masses [0.5, 1.0] (got [${scatMass}])`);
-assert(game.garbage.every(g => near(g.decay, GARBAGE_SEVER_DECAY, 1e-9)),
-  `C: severed garbage uses the shorter GARBAGE_SEVER_DECAY (${GARBAGE_SEVER_DECAY}s)`);
+// v3.2 P3: severed scrap no longer gets a (shorter) decay — garbage is permanent. The `decay`
+// field is gone entirely, so severed garbage has no decay to assert.
+assert(game.garbage.every(g => g.decay === undefined),
+  "C: severed garbage carries no decay field (garbage is permanent, v3.2 P3)");
 
 // =====================================================================
 // (D) chain tow physics use the MASS SUM (8x1.0 tows identically to 16x0.5)

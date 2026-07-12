@@ -45,8 +45,9 @@
    v1.4: Asteroids redesigned as Debris Satellites — a broken-satellite silhouette
    with 3-way splits at large/medium (small tier is destroyed). Every tier's
    destruction emits exactly 3 garbage canisters (replacing the old probabilistic
-   single drop), so the field carries far more salvage — GARBAGE_DECAY and the
-   wave spawn count were trimmed to compensate. Garbage and chain nodes gained a
+   single drop), so the field carries far more salvage — garbage decay (since
+   removed in v3.2 P3) and the wave spawn count were trimmed to compensate at the
+   time. Garbage and chain nodes gained a
    `mass` field; chain thrust/top-speed/tug now scale with the chain's total mass
    (sum of node.mass), not its node count.
    v1.5: Global difficulty ramp — difficultyFactor(wave) climbs from ~0 at wave 1
@@ -156,8 +157,11 @@ const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
 const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
 
 // Radioactive salvage / tow chain / recycling dock
-const GARBAGE_DECAY = 12;       // sec before uncollected garbage decays away (F3: shortened from 20 to hold on-screen canister density down against the higher drop volume)
-const GARBAGE_SEVER_DECAY = 10; // sec decay for garbage knocked loose from a severed chain (was an inline 15; kept < GARBAGE_DECAY so loose scrap stays the more ephemeral)
+// v3.2 P3: garbage NO LONGER DECAYS. A canister leaves the field by exactly two doors — RECYCLED
+// (towed to the dock) or CONSUMED INTO A HUNTER (coalescence). The old GARBAGE_DECAY /
+// GARBAGE_SEVER_DECAY timers are gone; salvage is now a standing field object the player must
+// actively manage. Density is held instead by coalescence (which consumes pieces) and
+// shatter-to-harvest (which makes the player WANT them) — see GDD §2.10.1.
 const GARBAGE_PICKUP = 18;      // pickup radius from ship center
 
 // Garbage coalescence (v3.1 P3): uncollected canisters mutually attract and, on contact, fuse into a
@@ -166,8 +170,18 @@ const GARBAGE_PICKUP = 18;      // pickup radius from ship center
 // fresh burst rides its explosion kick APART first — both the attraction AND the merge are gated on
 // it. This is a separate, weaker, always-on force from the Magnet powerup (that pulls garbage→ship);
 // Magnet is the natural anti-coalescence tool (vacuum pieces before they clump). All math wrap-aware.
-const GARBAGE_COALESCE_DELAY = 1.0;    // sec after emission before a piece attracts/merges
-const GARBAGE_MAGNET_RANGE = 140;      // px: garbage↔garbage mutual-attraction range (local by design)
+const GARBAGE_COALESCE_DELAY = 6.0;    // PLAYTEST KNOB (v3.2 P3: 1.0→6.0). sec a fresh piece stays inert
+                                       // before it attracts/merges. At the 20-55 px/s emission kick, 6 s
+                                       // carries same-explosion siblings 120-330 px apart, so a burst
+                                       // drifts APART and later happens upon strangers instead of
+                                       // instantly re-clumping. Phase 2's shatter path reuses this same
+                                       // constant — one knob, not two.
+const GARBAGE_MAGNET_RANGE = 260;      // PLAYTEST KNOB — TUNE THIS FIRST BY FEEL (v3.2 P3: 140→260).
+                                       // px: garbage↔garbage mutual-attraction range. 140 was tuned when
+                                       // garbage lived 12 s and only had to find siblings in a fresh, tight
+                                       // cloud; with permanent garbage, pieces that drift >range apart NEVER
+                                       // find each other and the field silts up with inert junk. Most likely
+                                       // number to be wrong.
 const GARBAGE_MAGNET_PULL = 40;        // px/s² each active piece accelerates toward a nearby active piece
 const GARBAGE_MERGE_DIST = 12;         // px: two active pieces this close fuse into one clump
 const HUNTER_COALESCE_COUNT = 12;      // pieces fused into one clump -> a new large Hunter core forms
@@ -1334,6 +1348,10 @@ class HunterSatellite {
     this.radius = HUNTER_RADII[size];
     this.damage = HUNTER_DAMAGE[size];      // contact damage to the ship (F2/F4)
     this.dead = false;
+    // v3.2 P3 (FORK-B/B1): set true only for a core born from coalescing scrap; propagated to its
+    // split children in destroyHunter. A bornOfScrap lineage emits NO garbage when killed (the scrap
+    // was already spent becoming it). Timer-spawned cores keep this false and drop garbage normally.
+    this.bornOfScrap = false;
     // Wave-scaled from a gentle floor (HUNTER_FLOOR_FRAC × ceiling) up to the full ceiling.
     // game.wave is fixed for a Hunter's lifetime (Hunters block wave-clear), so sample once.
     this.speed    = ramp(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_SPEED_CEIL[size], game.wave);
@@ -1513,12 +1531,12 @@ function drawCanister(x, y, angle, alpha, color = COLOR.garbage) {
 }
 
 class Garbage {
-  constructor(x, y, vx = 0, vy = 0, decay = GARBAGE_DECAY, mass = 1.0) {
+  // v3.2 P3: no `decay` param — garbage is permanent (leaves the field only by recycle or coalescence).
+  constructor(x, y, vx = 0, vy = 0, mass = 1.0) {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.spin = rand(0, TAU);
     this.spinRate = rand(-1.5, 1.5);
-    this.decay = decay;
     this.mass = mass;   // towing weight (F5): 1.0 for Debris scrap; lighter scrap tows easier
     // Coalescence (v3.2 P1). These constructor defaults are inherited by all three emission sites
     // AND Garbage.fromNode. `coalesceDelay` counts down in update(); a piece is "active" (attracts +
@@ -1531,26 +1549,20 @@ class Garbage {
     this.radius = 7 * Math.sqrt(this.pieces);
     this.dead = false;
   }
-  static fromNode(n, decay = GARBAGE_SEVER_DECAY) { // chain node knocked loose -> free garbage
+  static fromNode(n) { // chain node knocked loose -> free garbage (v3.2 P3: no decay)
     const a = rand(0, TAU);
     return new Garbage(n.x, n.y,
-      Math.cos(a) * rand(20, 60), Math.sin(a) * rand(20, 60), decay, n.mass);
+      Math.cos(a) * rand(20, 60), Math.sin(a) * rand(20, 60), n.mass);
   }
   update(dt) {
     this.x += this.vx * dt; this.y += this.vy * dt;
     this.spin += this.spinRate * dt;
     wrap(this);
-    if (this.coalesceDelay > 0) this.coalesceDelay -= dt; // v3.1 P3: gate attraction/merge for 1 s
-    this.decay -= dt;
-    // Expired uncollected (distinct from a pickup, which sets dead externally): counts against
-    // Waste Not (F9). Pickup never reaches here because the pickup pass sets dead first.
-    if (this.decay <= 0) { this.dead = true; game.stats.garbageDecayed++; }
+    // v3.2 P3: no decay countdown — a canister never dies of age. It leaves only via a pickup (which
+    // sets dead externally) or by coalescing into a Hunter. `coalesceDelay` still gates attraction/merge.
+    if (this.coalesceDelay > 0) this.coalesceDelay -= dt;
   }
   draw() {
-    // blink faster as decay approaches
-    const blink = this.decay < 5 &&
-      Math.floor(this.decay * (this.decay < 2 ? 8 : 4)) % 2 === 0;
-    if (blink) return;
     const color = this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
     // v3.2 P1: render a clump as a CLUSTER of `pieces` mini-canisters at deterministic golden-angle
     // (phyllotaxis) offsets, the whole wad rotated by this.spin so it tumbles as one body. No stored
@@ -1721,7 +1733,7 @@ function resetGameStats() {
     flawlessLateWave: false, // cleared wave 8+ damage-free (Flawless Run weekly, v3.0 P8)
     closeShave: false,       // survived a Hunter collision under 10 HP (Close Shave)
     everBelowHalf: false,    // HP ever dropped below 50% this game (Untouchable inverts this)
-    garbageDecayed: 0,       // canisters that expired uncollected this game (Waste Not)
+    hunterCoalesced: 0,      // Hunters born this game from neglected scrap coalescing (Waste Not, v3.2 P3)
     gameEnded: false         // set at game over so end-of-game achievements can evaluate
   };
 }
@@ -1789,8 +1801,8 @@ function nextWave() {
     Achievements.lifetime.maxWaveNoPowerup = Math.max(Achievements.lifetime.maxWaveNoPowerup, game.wave);
   game.dock = new Dock(); // recycling dock relocates each wave
   // F3 first-pass balance: trimmed from min(4+wave, 11) to offset the ~8x higher garbage
-  // volume from guaranteed 3-per-tier drops. Decay (GARBAGE_DECAY) is the primary density
-  // lever; this is the secondary trim. F10 may push this back up for a fuller field.
+  // volume from guaranteed 3-per-tier drops. (v3.2 P3: garbage no longer decays; density is now
+  // held by coalescence + shatter-to-harvest, not a decay timer — see GDD §2.10.1.)
   const count = Math.min(3 + game.wave, 9);
   const speedMul = 1 + (game.wave - 1) * 0.08;
   for (let i = 0; i < count; i++) {
@@ -1866,19 +1878,25 @@ function destroyHunter(h, awardScore = true) {
   if (h.size === 3) game.stats.largeHunterKills++;
   Achievements.lifetime.hunterKills++;
   boom(h.x, h.y, h.size, COLOR.satellite);
+  // v3.2 P3 (FORK-B / B1): a Hunter BORN OF SCRAP (from coalescence) emits NO garbage at any tier.
+  // 12 pieces coalesced in, 0 pieces back out — otherwise the loop is a 5.5x amplifier (a full
+  // scrap-born lineage would drop 66 canisters) and, with garbage now permanent, that diverges.
+  // Read it in-fiction: that scrap has already been spent — it IS the Hunter now. Score, splits,
+  // damage, and the small-tier powerup drop are all UNCHANGED; only the garbage emission is skipped.
+  const emitGarbage = !h.bornOfScrap;
   if (h.size === 1) {
     // Final tier: an easy-to-tow bonus pile of low-mass canisters (mass 0.5, paler tint).
-    for (let i = 0; i < HUNTER_SMALL_GARBAGE; i++) {
+    if (emitGarbage) for (let i = 0; i < HUNTER_SMALL_GARBAGE; i++) {
       const spread = rand(0, TAU), kick = rand(30, 70);
       game.garbage.push(new Garbage(h.x, h.y,
         h.vx * 0.25 + Math.cos(spread) * kick,
         h.vy * 0.25 + Math.sin(spread) * kick,
-        GARBAGE_DECAY, HUNTER_SMALL_MASS));
+        HUNTER_SMALL_MASS));
     }
     maybeDropPowerup(h.x, h.y); // finishing off a Hunter line can drop a powerup (F6)
   } else {
     // Large/medium: 3 normal-mass canisters, then a 3-way split into actively-homing children.
-    for (let i = 0; i < HUNTER_GARBAGE; i++) {
+    if (emitGarbage) for (let i = 0; i < HUNTER_GARBAGE; i++) {
       const spread = rand(0, TAU), kick = rand(20, 55);
       game.garbage.push(new Garbage(h.x, h.y,
         h.vx * 0.25 + Math.cos(spread) * kick,
@@ -1886,7 +1904,9 @@ function destroyHunter(h, awardScore = true) {
     }
     for (let i = 0; i < 3; i++) {
       const scatterAngle = (i / 3) * TAU + rand(-0.3, 0.3);
-      game.hunters.push(new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle));
+      const child = new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle);
+      child.bornOfScrap = h.bornOfScrap; // propagate the flag so the WHOLE lineage stays garbage-free
+      game.hunters.push(child);
     }
   }
 }
@@ -1905,7 +1925,7 @@ function shatterClump(g) {
     game.garbage.push(new Garbage(g.x, g.y,
       g.vx * 0.25 + Math.cos(spread) * kick,
       g.vy * 0.25 + Math.sin(spread) * kick,
-      GARBAGE_DECAY, pieceMass));
+      pieceMass));
   }
   boom(g.x, g.y, 1, COLOR.garbage);
 }
@@ -2001,7 +2021,11 @@ const Achievements = {
     { id: "speed_recycler",   name: "Speed Recycler",   desc: "Deliver your first canister within 60 seconds.",        goal: 1,  cur: s => s.speedRecycler ? 1 : 0 },
     { id: "powered_up",       name: "Powered Up",       desc: "Use all four drop powerups in a single game.",          goal: 4,  cur: s => powerTypesUsed(s) },
     { id: "diamond_cutter",   name: "Diamond Cutter",   desc: "Destroy 3 large Hunter cores in one game.",             goal: 3,  cur: s => s.largeHunterKills },
-    { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with zero canisters expired.",            goal: 1,  cur: s => (s.gameEnded && s.garbageDecayed === 0) ? 1 : 0 },
+    // v3.2 P3: repurposed IN PLACE (id + pool slot kept, so the weekly rotation math is untouched).
+    // Old meaning ("zero canisters expired") auto-unlocked every game once decay was removed; the new
+    // meaning — let no neglected scrap coalesce into a Hunter — is a live challenge with the same spirit
+    // ("don't let your mess pile up"). Still fits "waste not": you wasted no salvage to the coalescence sink.
+    { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with no Hunters born from neglected scrap.", goal: 1, cur: s => (s.gameEnded && s.hunterCoalesced === 0) ? 1 : 0 },
     // v3.0 P8 (FLAG A-6-b): a genuinely weekly-worthy damage-free clear, gated to a LATE wave so it's
     // distinct from (and harder than) No Scratches (clear wave 3 damage-free). Set in the wave-clear block.
     { id: "flawless_run",     name: "Flawless Run",     desc: "Clear wave 8 or later without taking any damage.",      goal: 1,  cur: s => s.flawlessLateWave ? 1 : 0 }
@@ -2364,8 +2388,8 @@ function coalesceGarbage(dt) {
         // Merge (v3.2 P1, reverses FORK-2): survivor's velocity is the MOMENTUM sum (with PRE-merge
         // masses), its `mass` SUMS, its `pieces` counter adds, and its `radius` derives from pieces.
         // Momentum-conserving (not the old literal vector sum) so a heavy clump barely speeds up when
-        // it eats a fast light piece — a wad of junk stays sluggish. Coalescing is a DISTINCT fate
-        // from decaying, so it must NOT touch game.stats.garbageDecayed (Waste Not).
+        // it eats a fast light piece — a wad of junk stays sluggish. (v3.2 P3: garbage no longer decays,
+        // so a merge is simply a merge — no Waste-Not bookkeeping here; that stat now tracks coalescence.)
         const ma = a.mass, mb = b.mass, mt = ma + mb;
         a.vx = (ma * a.vx + mb * b.vx) / mt;
         a.vy = (ma * a.vy + mb * b.vy) / mt;
@@ -2375,8 +2399,13 @@ function coalesceGarbage(dt) {
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
+          // v3.2 P3 (FORK-B/B1): tag it bornOfScrap so its whole lineage drops NO garbage — the loop
+          // closes (12 pieces in, 0 out) instead of amplifying. hunterCoalesced tracks it for Waste Not.
           a.dead = true;
-          game.hunters.push(new HunterSatellite(a.x, a.y, 3));
+          const core = new HunterSatellite(a.x, a.y, 3);
+          core.bornOfScrap = true;
+          game.hunters.push(core);
+          game.stats.hunterCoalesced++;
           AudioSys.hunterborn();
           break;   // survivor is gone — stop pairing it against the rest
         }

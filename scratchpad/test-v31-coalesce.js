@@ -12,7 +12,8 @@
 //  (3) twelve active pieces coalesce to exactly one new Hunter (hunters +1, clump all dead,
 //      AudioSys.hunterborn called exactly once).
 //  (4) a merge across the world seam works (wrap-aware dist2/shortDelta), momentum sum preserved.
-//  (5) merging does NOT bump game.stats.garbageDecayed (coalescing is a distinct fate; Waste Not safe).
+//  (5) v3.2 P3: a plain merge leaves game.stats.hunterCoalesced untouched; a 12-piece transform bumps
+//      it by exactly one (the repurposed Waste-Not stat replaces the removed garbageDecayed).
 //  (6) v3.2 P1: a pieces>1 clump CANNOT be hooked; a pieces=1 canister still hooks — via real update().
 //  (7) mutual attraction is 1-s-gated too.
 //  (8) v3.2 P1: mass sums across a chain of merges; radius tracks 7*sqrt(pieces).
@@ -23,7 +24,14 @@
 // (13) v3.2 P2: a player bullet shatters a pieces=7 clump into exactly 7 live singles, mass-split,
 //      full-delay, mass-conserving, and they don't immediately re-merge; a player bullet passes
 //      THROUGH a pieces=1 canister; a hostile bullet passes through a clump; the emitted pieces are
-//      hookable once in pickup range; shattering doesn't touch garbageDecayed.
+//      hookable once in pickup range; shattering doesn't coalesce anything.
+// (16) v3.2 P3: a canister survives an arbitrarily long update() run and never dies of age; the old
+//      garbageDecayed stat is gone from game.stats.
+// (17) v3.2 P3 (FORK-B/B1): a bornOfScrap core killed through its FULL lineage emits ZERO garbage,
+//      while awarding the SAME score and still dropping its small-tier powerup.
+// (18) v3.2 P3: a TIMER-spawned (non-bornOfScrap) Hunter still emits the full 12 normal + 54 low = 66.
+// (19) v3.2 P3: the bornOfScrap flag propagates through BOTH split generations (large -> med -> small).
+// (20) v3.2 P3: game.stats.hunterCoalesced increments exactly once per 12-piece transform.
 //  Plus: emission sites + fromNode inherit the coalesce defaults.
 
 "use strict";
@@ -54,9 +62,10 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
   setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: k => { delete lsStore[k]; } };
 
 const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
-  "DebrisSatellite", "HunterSatellite", "destroyDebris", "shatterClump", "Bullet", "AudioSys",
+  "DebrisSatellite", "HunterSatellite", "destroyDebris", "destroyHunter", "shatterClump", "Bullet", "AudioSys",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
+  "HUNTER_GARBAGE", "HUNTER_SMALL_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "WORLD_W", "WORLD_H"];
 
 const wrapped = new Function(
@@ -65,8 +74,9 @@ const wrapped = new Function(
 );
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
-  destroyDebris, shatterClump, Bullet, AudioSys, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
-  GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK, WORLD_W, WORLD_H } = G;
+  destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
+  GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
+  HUNTER_GARBAGE, HUNTER_SMALL_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE, WORLD_W, WORLD_H } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -86,9 +96,10 @@ function beginPlaying() {
 
 // =====================================================================
 console.log("(0) config + inheritance: constants sane; emission sites + fromNode inherit defaults");
-assert(GARBAGE_COALESCE_DELAY === 1.0, `0: GARBAGE_COALESCE_DELAY is 1.0 (got ${GARBAGE_COALESCE_DELAY})`);
+assert(GARBAGE_COALESCE_DELAY === 6.0, `0: GARBAGE_COALESCE_DELAY is 6.0 (v3.2 P3 retune 1.0->6.0; got ${GARBAGE_COALESCE_DELAY})`);
 assert(GARBAGE_MERGE_DIST === 12, `0: GARBAGE_MERGE_DIST is 12 (got ${GARBAGE_MERGE_DIST})`);
 assert(HUNTER_COALESCE_COUNT === 12, `0: HUNTER_COALESCE_COUNT is 12 (got ${HUNTER_COALESCE_COUNT})`);
+assert(GARBAGE_MAGNET_RANGE === 260, `0: GARBAGE_MAGNET_RANGE is 260 (v3.2 P3 retune 140->260; got ${GARBAGE_MAGNET_RANGE})`);
 assert(GARBAGE_MAGNET_RANGE > GARBAGE_MERGE_DIST, "0: magnet range exceeds merge distance");
 {
   const fresh = new Garbage(100, 100);
@@ -108,22 +119,24 @@ assert(GARBAGE_MAGNET_RANGE > GARBAGE_MERGE_DIST, "0: magnet range exceeds merge
 }
 
 // =====================================================================
-console.log("(1) a piece can't merge before 1 s, can after — via the real update() countdown");
+console.log("(1) a piece can't merge before the coalesce delay, can after — via the real update() countdown");
 {
   beginPlaying();
   const a = new Garbage(1000, 1000, 0, 0);
   const b = new Garbage(1005, 1000, 0, 0); // 5 px apart (< MERGE_DIST 12), zero velocity so they hold position
   game.garbage = [a, b];
 
-  coalesceGarbage(1 / 60); // both fresh (coalesceDelay 1.0) -> inert
+  coalesceGarbage(1 / 60); // both fresh (full coalesceDelay) -> inert
   assert(!a.dead && !b.dead && a.pieces === 1, "1: fresh pieces do NOT merge (coalesceDelay > 0)");
 
-  a.update(0.6); b.update(0.6); // coalesceDelay now ~0.4 — still inert
+  // advance half the delay (drive the real update countdown; velocity is 0 so they hold position) — still inert
+  a.update(GARBAGE_COALESCE_DELAY * 0.5); b.update(GARBAGE_COALESCE_DELAY * 0.5);
   coalesceGarbage(1 / 60);
-  assert(!a.dead && !b.dead && a.pieces === 1, "1: still inert at 0.6 s elapsed (< 1 s)");
+  assert(!a.dead && !b.dead && a.pieces === 1, "1: still inert at half the coalesce delay");
 
-  a.update(0.6); b.update(0.6); // coalesceDelay now ~-0.2 — active
-  assert(a.coalesceDelay <= 0 && b.coalesceDelay <= 0, "1: both active past 1 s");
+  // advance past the full delay -> active
+  a.update(GARBAGE_COALESCE_DELAY * 0.5 + 0.02); b.update(GARBAGE_COALESCE_DELAY * 0.5 + 0.02);
+  assert(a.coalesceDelay <= 0 && b.coalesceDelay <= 0, "1: both active past the full coalesce delay");
   coalesceGarbage(1 / 60);
   assert((a.dead || b.dead) && (a.pieces === 2 || b.pieces === 2), "1: active pieces in contact merge (pieces -> 2)");
 }
@@ -182,23 +195,23 @@ console.log("(4) a merge across the world seam works (wrap-aware)");
 }
 
 // =====================================================================
-console.log("(5) merging does NOT bump garbageDecayed (Waste Not stays safe)");
+console.log("(5) v3.2 P3: a plain merge leaves hunterCoalesced alone; a 12-transform bumps it by one");
 {
   beginPlaying();
-  const base = game.stats.garbageDecayed;
-  // simple 2-piece merge
+  const base = game.stats.hunterCoalesced;
+  // simple 2-piece merge (not a transform) -> hunterCoalesced unchanged
   const a = new Garbage(1000, 1000, 0, 0), b = new Garbage(1003, 1000, 0, 0);
   a.coalesceDelay = 0; b.coalesceDelay = 0;
   game.garbage = [a, b];
   coalesceGarbage(1 / 60);
-  assert(game.stats.garbageDecayed === base, "5: a plain merge leaves garbageDecayed unchanged");
-  // and the transform-to-Hunter path
+  assert(a.pieces === 2 && game.stats.hunterCoalesced === base, "5: a plain merge leaves hunterCoalesced unchanged");
+  // and the transform-to-Hunter path -> exactly one increment
   game.garbage = [];
   for (let i = 0; i < HUNTER_COALESCE_COUNT; i++) {
     const g = new Garbage(1000, 1000, 0, 0); g.coalesceDelay = 0; game.garbage.push(g);
   }
   coalesceGarbage(1 / 60);
-  assert(game.stats.garbageDecayed === base, "5: coalescing into a Hunter also leaves garbageDecayed unchanged");
+  assert(game.stats.hunterCoalesced === base + 1, "5: coalescing into a Hunter bumps hunterCoalesced by exactly one");
 }
 
 // =====================================================================
@@ -245,7 +258,7 @@ console.log("(8) v3.2 P1: mass SUMS across a chain of merges; radius tracks 7*sq
   beginPlaying();
   // four co-located active pieces (two normal mass-1.0, two half-mass Hunter scrap) collapse in one pass
   const pcs = [new Garbage(1000, 1000, 0, 0), new Garbage(1000, 1000, 0, 0),
-               new Garbage(1000, 1000, 0, 0, undefined, 0.5), new Garbage(1000, 1000, 0, 0, undefined, 0.5)];
+               new Garbage(1000, 1000, 0, 0, 0.5), new Garbage(1000, 1000, 0, 0, 0.5)]; // mass is the 5th ctor arg (v3.2 P3)
   for (const p of pcs) p.coalesceDelay = 0;
   game.garbage = pcs;
   coalesceGarbage(1 / 60);
@@ -314,8 +327,8 @@ console.log("(12) v3.2 P1: draw() is crash-free at pieces=1 and pieces=11 (clust
 {
   let threw = false;
   try {
-    const one = new Garbage(200, 200); one.decay = 999; one.draw();
-    const wad = new Garbage(300, 300); wad.decay = 999; wad.pieces = 11;
+    const one = new Garbage(200, 200); one.draw(); // v3.2 P3: no decay field / blink branch to set up
+    const wad = new Garbage(300, 300); wad.pieces = 11;
     wad.radius = 7 * Math.sqrt(11); wad.draw();
   } catch (e) { threw = true; console.log("    threw: " + e); }
   assert(!threw, "12: draw() renders a 1-piece and an 11-piece clump without throwing");
@@ -331,7 +344,7 @@ console.log("(13) v3.2 P2: a player bullet shatters a pieces=7 clump into exactl
   const bullet = new Bullet(1000, 1000, 0, 0, false); // dead-center, non-hostile
   game.garbage = [clump];
   game.bullets = [bullet];
-  const decayedBefore = game.stats.garbageDecayed;
+  const coalescedBefore = game.stats.hunterCoalesced;
   update(1 / 60);
   assert(bullet.dead, "13: the bullet is consumed by the clump");
   assert(clump.dead, "13: the clump is destroyed");
@@ -343,7 +356,7 @@ console.log("(13) v3.2 P2: a player bullet shatters a pieces=7 clump into exactl
     `13: every emitted piece's mass is clumpMass/7 = ${clumpMass / 7}`);
   const totalMass = game.garbage.reduce((s, g) => s + g.mass, 0);
   assert(Math.abs(totalMass - clumpMass) < 1e-9, `13: total emitted mass conserves clumpMass (${totalMass} vs ${clumpMass})`);
-  assert(game.stats.garbageDecayed === decayedBefore, "13: shattering does not touch garbageDecayed");
+  assert(game.stats.hunterCoalesced === coalescedBefore, "13: shattering a clump does not coalesce anything (hunterCoalesced unchanged)");
 
   // the 7 emitted pieces do NOT immediately re-merge next frame (the delay gate holds)
   const countBefore = game.garbage.length;
@@ -385,6 +398,113 @@ console.log("(15) v3.2 P2: emitted pieces ARE hookable (pieces===1) once in pick
     "15: the clump shattered into 3 pieces=1 singles at the ship");
   update(1 / 60); // a further frame lets the pickup pass hook the now-eligible singles
   assert(game.chain.length === 3, `15: all 3 shattered singles are hookable in pickup range (chain length ${game.chain.length})`);
+}
+
+// Drive a whole Hunter lineage to death through the REAL destroyHunter. destroyHunter pushes each
+// large/medium kill's 3 children onto game.hunters, so a breadth-first drain naturally processes the
+// full 1 + 3 + 9 = 13-member line. Returns the kill count.
+function killLineage(core) {
+  game.hunters = [core];
+  let kills = 0;
+  while (game.hunters.length) { destroyHunter(game.hunters.shift()); kills++; }
+  return kills;
+}
+
+// =====================================================================
+console.log("(16) v3.2 P3: a canister survives an arbitrarily long update() run and never dies of age");
+{
+  beginPlaying();
+  const g = new Garbage(500, 500, 0, 0); // isolated — no neighbours to coalesce with
+  // drive the REAL Garbage.update for ~120 s of frames; the OLD build killed it at GARBAGE_DECAY (12 s)
+  for (let t = 0; t < 120; t += 1 / 60) g.update(1 / 60);
+  assert(!g.dead, "16: a lone canister is still alive after ~120 s (never dies of age)");
+  assert(g.coalesceDelay <= 0, "16: its coalesce delay has long elapsed (active), yet it did not expire");
+  assert(!("garbageDecayed" in game.stats), "16: the old garbageDecayed stat is gone from game.stats");
+}
+
+// =====================================================================
+console.log("(17) v3.2 P3 (FORK-B/B1): a bornOfScrap lineage emits ZERO garbage, same score, still drops its powerup");
+{
+  const cx = 1000, cy = 1000;
+  // baseline: a normal (timer-spawned) full lineage, for the score + garbage reference
+  beginPlaying();
+  game.powerups = [];
+  const scoreBefore0 = game.score;
+  const normalCore = new HunterSatellite(cx, cy, 3); // bornOfScrap defaults false
+  game.garbage = [];
+  const normalKills = killLineage(normalCore);
+  const normalScore = game.score - scoreBefore0;
+  assert(normalKills === 13, `17: a full lineage is 13 kills (got ${normalKills})`);
+
+  // bornOfScrap: identical lineage, garbage suppressed at every tier
+  beginPlaying();
+  game.powerups = [];
+  const scoreBefore1 = game.score;
+  const scrapCore = new HunterSatellite(cx, cy, 3);
+  scrapCore.bornOfScrap = true;
+  game.garbage = [];
+  const realRandom = Math.random;
+  Math.random = () => 0; // force maybeDropPowerup to always drop, to prove the small-tier powerup path still fires
+  let scrapKills, scrapPowerups;
+  try { scrapKills = killLineage(scrapCore); scrapPowerups = game.powerups.length; }
+  finally { Math.random = realRandom; }
+  const scrapScore = game.score - scoreBefore1;
+
+  assert(scrapKills === 13, `17: the bornOfScrap lineage is also 13 kills (got ${scrapKills})`);
+  assert(game.garbage.length === 0, `17: a bornOfScrap lineage emits ZERO garbage at any tier (got ${game.garbage.length})`);
+  assert(scrapScore === normalScore, `17: score is UNCHANGED vs the normal lineage (${scrapScore} vs ${normalScore})`);
+  assert(scrapPowerups === 9, `17: the small tier still drops its powerup — one per 9 small kills (got ${scrapPowerups})`);
+}
+
+// =====================================================================
+console.log("(18) v3.2 P3: a timer-spawned (non-bornOfScrap) Hunter still emits the full 12 normal + 54 low = 66");
+{
+  beginPlaying();
+  const core = new HunterSatellite(1000, 1000, 3); // bornOfScrap false
+  game.garbage = [];
+  killLineage(core);
+  const total = game.garbage.length;
+  const normalMass = game.garbage.filter(g => g.mass === 1.0).length;
+  const lowMass = game.garbage.filter(g => g.mass === HUNTER_SMALL_MASS).length;
+  assert(total === 66, `18: a full normal lineage drops 66 canisters (got ${total})`);
+  assert(normalMass === HUNTER_GARBAGE * 4, `18: 12 normal-mass canisters from large + 3 mediums (got ${normalMass})`);
+  assert(lowMass === HUNTER_SMALL_GARBAGE * 9, `18: 54 low-mass canisters from 9 smalls (got ${lowMass})`);
+}
+
+// =====================================================================
+console.log("(19) v3.2 P3: the bornOfScrap flag propagates through BOTH split generations");
+{
+  beginPlaying();
+  const core = new HunterSatellite(1000, 1000, 3);
+  core.bornOfScrap = true;
+  game.hunters = []; game.garbage = [];
+  destroyHunter(core); // -> 3 medium children
+  const meds = game.hunters.slice();
+  assert(meds.length === 3 && meds.every(m => m.size === 2 && m.bornOfScrap === true),
+    "19: the 3 medium children inherit bornOfScrap === true");
+  game.hunters = [];
+  destroyHunter(meds[0]); // -> 3 small grandchildren
+  const smalls = game.hunters.slice();
+  assert(smalls.length === 3 && smalls.every(s => s.size === 1 && s.bornOfScrap === true),
+    "19: the 3 small grandchildren inherit bornOfScrap === true (both generations survive)");
+  assert(game.garbage.length === 0, "19: and no garbage was emitted at either generation");
+}
+
+// =====================================================================
+console.log("(20) v3.2 P3: a coalescence-born core is tagged bornOfScrap; hunterCoalesced counts transforms");
+{
+  beginPlaying();
+  assert(game.stats.hunterCoalesced === 0, "20: fresh game starts at hunterCoalesced 0");
+  for (let i = 0; i < HUNTER_COALESCE_COUNT; i++) { const g = new Garbage(500, 500, 0, 0); g.coalesceDelay = 0; game.garbage.push(g); }
+  coalesceGarbage(1 / 60);
+  const born = game.hunters[game.hunters.length - 1];
+  assert(born.size === 3 && born.bornOfScrap === true, "20: the coalesced core is a large core tagged bornOfScrap");
+  assert(game.stats.hunterCoalesced === 1, "20: one transform -> hunterCoalesced === 1");
+  // a second, independent clump transforms too
+  game.garbage = [];
+  for (let i = 0; i < HUNTER_COALESCE_COUNT; i++) { const g = new Garbage(700, 700, 0, 0); g.coalesceDelay = 0; game.garbage.push(g); }
+  coalesceGarbage(1 / 60);
+  assert(game.stats.hunterCoalesced === 2, "20: a second transform -> hunterCoalesced === 2");
 }
 
 // =====================================================================

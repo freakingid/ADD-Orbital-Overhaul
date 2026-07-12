@@ -123,6 +123,13 @@ assert(["smallSaucerKills","bestDeliveredGame","bestDebrisGame","heavyHaulerEven
   .every(k => k in Achievements.lifetime), "config: all 7 new P8 lifetime counters exist");
 assert("flawlessLateWave" in game.stats, "config: new per-game stat flawlessLateWave exists (Flawless Run)");
 assert(!!Achievements.byId["flawless_run"] && Achievements.byId["flawless_run"].pool === "weekly", "config: Flawless Run is a weekly achievement");
+// v3.2 P3: garbage no longer decays. The old per-game garbageDecayed stat is gone, replaced by
+// hunterCoalesced; Waste Not is repurposed in place (id + pool slot kept, so the rotation math above is unchanged).
+assert("hunterCoalesced" in game.stats, "config: new per-game stat hunterCoalesced exists (Waste Not, v3.2 P3)");
+assert(!("garbageDecayed" in game.stats), "config: the old garbageDecayed stat is gone (v3.2 P3)");
+const wasteNotDef = Achievements.byId["waste_not"];
+assert(!!wasteNotDef && wasteNotDef.pool === "weekly" && /scrap/i.test(wasteNotDef.desc),
+  "config: Waste Not kept as a weekly, repurposed to the neglected-scrap meaning");
 assert(Achievements.STORAGE_KEY === "afd_achievements_v2", "config: persistence bumped to afd_achievements_v2");
 // The Long Haul reworded to a fixed >=12/visit (still non-tiered, goal 10).
 const longHaul = Achievements.byId["long_haul"];
@@ -355,6 +362,22 @@ assert(game.wave === 4, "C6: the empty wave 3 cleared into wave 4");
 assert(game.stats.noScratchWave3 && wUnlocked("no_scratches"), "C6: damage-free wave 3 -> No Scratches");
 // Perfect Wave is now TIERED [5,10,50,100,250,500]: the 10th perfect wave reaches Silver (tier 1).
 assert(Achievements.lifetime.perfectWaves === 10 && lTier("perfect_wave") === 1, "C6: 10th damage-free wave -> Perfect Wave Silver (tier 1)");
+
+// --- (C6b) Waste Not (v3.2 P3, repurposed): unlock on a game where NO Hunter was born from scrap;
+//          does NOT unlock once even one clump coalesced. Evaluated at game over (needs gameEnded). ---
+console.log("(C6b) Waste Not: zero coalesced Hunters unlocks; one coalesced Hunter does not");
+startGame(); resetAch();
+game.stats.hunterCoalesced = 0;
+Achievements.evaluate();
+assert(!wUnlocked("waste_not"), "C6b: not yet unlocked mid-game (gameEnded still false)");
+game.stats.gameEnded = true; // game over
+Achievements.evaluate();
+assert(wUnlocked("waste_not"), "C6b: a finished game with zero coalesced Hunters unlocks Waste Not");
+// a game where scrap DID coalesce into a Hunter must not unlock it
+startGame(); resetAch();
+game.stats.hunterCoalesced = 1; game.stats.gameEnded = true;
+Achievements.evaluate();
+assert(!wUnlocked("waste_not"), "C6b: a game with one Hunter born from scrap does NOT unlock Waste Not");
 
 // --- (C7) TIERED lifetime boundaries via the REAL evaluate() (cross bronze not silver; multi-cross) ---
 console.log("(C7) tiered lifetime thresholds — per-tier boundaries + multi-tier jumps");
