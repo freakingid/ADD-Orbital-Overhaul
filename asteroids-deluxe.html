@@ -155,6 +155,9 @@ const DMG_BULLET = 15;          // damage from a hostile (saucer) bullet
 const DEBRIS_DAMAGE = { 3: DMG_LARGE, 2: DMG_MEDIUM, 1: DMG_SMALL };
 const KNOCKBACK_SPEED = 250;    // px/sec shove directly away from a hazard on an unshielded hit
 const HIT_STUN_DURATION = 1.0;  // sec of hit-stun invulnerability granted after any non-lethal hit
+const LOW_HP_THRESHOLD = 100;   // PLAYTEST KNOB. HP at or below which the low-health warning
+                                // engages. 100 = 5 small hits / ~3 medium / 2 large — "five
+                                // bad seconds from dead." 40% of SHIP_MAX_HP. (FORK-8, confirmed; v3.4 P5)
 const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonus (was: extra life)
 const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
 const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
@@ -515,6 +518,31 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
     o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.21);
+  },
+
+  // v3.4 P5: the low-health siren. Same persistent-voice shape as thrust()/saucer() — a stored
+  // oscillator torn down on false — but a GENTLE, SLOW warble (not a klaxon): a low sine LFO-swept
+  // over a low base frequency, quiet gain, so it reads as "you need health," not an alarm to mute.
+  lowhp(on) {
+    if (!this.ctx) return;
+    if (on && !this.lowhpOsc) {
+      const o = this.ctx.createOscillator();
+      const lfo = this.ctx.createOscillator();
+      const lfoGain = this.ctx.createGain();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 220;
+      lfo.frequency.value = 0.6;   // slow warble, ~1 cycle every 1.7s
+      lfoGain.gain.value = 18;
+      lfo.connect(lfoGain).connect(o.frequency);
+      g.gain.value = 0.05;
+      o.connect(g).connect(this.sfx);
+      o.start(); lfo.start();
+      this.lowhpOsc = { o, lfo }; this.lowhpGain = g;
+    } else if (!on && this.lowhpOsc) {
+      this.lowhpOsc.o.stop(); this.lowhpOsc.lfo.stop();
+      this.lowhpOsc = null; this.lowhpGain = null;
+    }
   },
 
   pickup() {
@@ -900,6 +928,7 @@ function openPause() {
   game.menu.rebinding = null;
   resetMenuNav();          // don't let a direction held at pause-time fire a phantom move
   AudioSys.thrust(false);  // kill the thrust loop immediately (update() would too, next frame)
+  AudioSys.lowhp(false); game.lowHpSiren = false; // same — the siren must not drone through a pause menu
   AudioSys.ui(true);
 }
 function closePause() {
@@ -913,6 +942,7 @@ function quitToTitle() {
   game.menu.screen = null; game.menu.rebinding = null;
   game.state = "title";
   AudioSys.thrust(false); AudioSys.saucer(false); // stop any continuous voices
+  AudioSys.lowhp(false); game.lowHpSiren = false;
   Achievements.save();  // persist lifetime progress earned during the abandoned game (F9)
   AudioSys.ui(false);
 }
@@ -1227,6 +1257,8 @@ const COLOR = {
   chain: "#8aa0ff",
   dock: "#70ffa0",
   hp: "#5fe08a",
+  lowhp: "#ff4040",         // v3.4 P5: the low-health pointer chevron — distinct from COLOR.hp, from
+                            // clumpHot (#ff5a2a), and from the low-HP bar fill (#ff7060)
   ach: "#ffcf5a"            // achievement gold — the unlock toast + earned-achievement highlight (F9)
 };
 
@@ -2012,7 +2044,10 @@ const game = {
   saucerTimer: 0,
   hunterTimer: 0,
   beatTimer: 0, beatHigh: false, beatInterval: 1.0,
-  waveClearTimer: 0
+  waveClearTimer: 0,
+  lowHpSiren: false   // v3.4 P5: edge-detection latch for AudioSys.lowhp — true iff the siren is
+                      // currently playing, so update() can fire lowhp(true)/(false) exactly once
+                      // per state transition instead of every frame
 };
 
 function startGame() {
@@ -2038,6 +2073,7 @@ function startGame() {
   game.camera = { x: game.ship.x, y: game.ship.y };
   game.saucerTimer = rand(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX); // first saucer waits the wave-1 floor gap (F10)
   game.hunterTimer = rand(14, 22);
+  game.lowHpSiren = false; AudioSys.lowhp(false); // fresh run never carries the siren over (v3.4 P5)
   nextWave();
 }
 
@@ -2610,6 +2646,7 @@ function killShip() { // hull destroyed (0 HP): a true, permanent game over — 
   if (game.ship.dead) return;
   game.ship.dead = true;
   AudioSys.thrust(false);
+  AudioSys.lowhp(false); game.lowHpSiren = false;
   boom(game.ship.x, game.ship.y, 3, COLOR.ship);
   scatterChain();
   game.state = "gameover";
@@ -2846,6 +2883,13 @@ function update(dt) {
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
   game.camera.y = game.ship.y;
+  // Low-health siren (v3.4 P5): the STATE is a pure per-frame read (no stored flag), but the AUDIO
+  // voice is edge-detected off game.lowHpSiren so lowhp(true/false) fires exactly once per
+  // transition, not every frame. Driven from this one site; killShip/quitToTitle/openPause each
+  // tear the voice down directly since they leave "playing" without passing back through here.
+  const lowHp = game.ship.hp <= LOW_HP_THRESHOLD && !game.ship.dead;
+  if (lowHp && !game.lowHpSiren) { AudioSys.lowhp(true); game.lowHpSiren = true; }
+  else if (!lowHp && game.lowHpSiren) { AudioSys.lowhp(false); game.lowHpSiren = false; }
   // Achievements (F9): per-game clock (Speed Recycler's 60s window) + lifetime play time & periodic save
   game.stats.gameTime += dt;
   Achievements.tick(dt);
@@ -3616,6 +3660,25 @@ function draw() {
     const a = angleTo(game.ship, game.dock);
     drawPoly([[7, 0], [-4, -4], [-4, 4]],
       VIEW_W/2 + Math.cos(a) * 42, VIEW_H/2 + Math.sin(a) * 42, a, COLOR.dock);
+  }
+  // v3.4 P5: low-health directional pointer — a second chevron, same shape, at a wider orbit (58 vs
+  // the dock's 42) so both can show at once without overlapping. Points at the NEAREST live health
+  // powerup (wrap-aware nearest-scan, not find-first — correct even if a second ever coexists).
+  // Drawn only in the low-health state AND when a health powerup actually exists on the field;
+  // hidden otherwise, per FLAG-8a (no force-spawn, so the pointer can legitimately have nothing to
+  // point at for up to POWERUP_HEALTH_GAP's 26s).
+  if (game.state === "playing" && !game.ship.dead && game.ship.hp <= LOW_HP_THRESHOLD) {
+    let nearest = null, bestD = Infinity;
+    for (const p of game.powerups) {
+      if (p.dead || p.type !== "health") continue;
+      const d = dist2(game.ship, p);
+      if (d < bestD) { bestD = d; nearest = p; }
+    }
+    if (nearest) {
+      const a = angleTo(game.ship, nearest);
+      drawPoly([[7, 0], [-4, -4], [-4, 4]],
+        VIEW_W/2 + Math.cos(a) * 58, VIEW_H/2 + Math.sin(a) * 58, a, COLOR.lowhp);
+    }
   }
   // shield energy bar
   const bw = 140, bh = 8, bx = VIEW_W - 30 - bw, by = 60;
