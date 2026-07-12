@@ -604,7 +604,7 @@ console.log("(23) v3.3 P4 (9c): scoop a 10-piece clump with only 3 slots -> 3 no
   const clumpMass = 10;
   const clump = new Garbage(game.ship.x + 6, game.ship.y, 0, 0); // just off-ship (still inside the 18px circle) so the outward kick has a defined direction
   clump.pieces = 10; clump.mass = clumpMass; clump.radius = 7 * Math.sqrt(10); clump.coalesceDelay = 0;
-  const hullBefore = clump.hull;
+  assert(!("hull" in clump), "23: no hull field on the pre-scoop clump (v3.5 P2: makeClumpHull removed)");
   game.garbage = [clump];
   update(1 / 60);
   const pMass = clumpMass / 10;
@@ -614,7 +614,7 @@ console.log("(23) v3.3 P4 (9c): scoop a 10-piece clump with only 3 slots -> 3 no
   assert(Math.abs(clump.mass - 7 * pMass) < 1e-12, `23: leftover mass re-derived to 7*pMass (got ${clump.mass})`);
   assert(Math.abs(clump.radius - 7 * Math.sqrt(7)) < 1e-12, "23: leftover radius re-derived to 7*sqrt(7)");
   assert(clump.coalesceDelay === GARBAGE_COALESCE_DELAY, "23: leftover's coalesce delay is re-armed");
-  assert(clump.hull !== hullBefore, "23: the cached hull was regenerated for the smaller leftover");
+  assert(!("hull" in clump), "23: no hull field on the re-derived leftover (v3.5 P2: no cached hull to regenerate)");
   assert(Math.hypot(clump.vx, clump.vy) > 0, "23: leftover gets an outward kick (floats off away from the ship)");
   // the leftover cannot be immediately re-scooped: the chain is full (no room)
   update(1 / 60);

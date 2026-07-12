@@ -2068,30 +2068,18 @@ class Particle {
 
 // Shared renderer for radioactive canisters (free-floating and chained). Low-mass scrap
 // (Hunter small-tier drops) renders in a paler tint so it's visibly the easier-to-tow bonus.
-function drawCanister(x, y, angle, alpha, color = COLOR.garbage) {
+// v3.5 P2: trailing `scale` param (default 1, so the two pre-existing call sites — the single
+// canister and chain nodes — stay byte-identical) lets a garbage clump draw as one larger canister.
+function drawCanister(x, y, angle, alpha, color = COLOR.garbage, scale = 1) {
   ctx.globalAlpha = alpha * (0.75 + Math.random() * 0.25); // radioactive flicker
-  const body = [[7, -5], [7, 5], [-7, 5], [-7, -5]];
+  const body = [[7 * scale, -5 * scale], [7 * scale, 5 * scale], [-7 * scale, 5 * scale], [-7 * scale, -5 * scale]];
   drawPoly(body, x, y, angle, color);
   ctx.save();
   ctx.translate(x, y); ctx.rotate(angle);
-  ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); // hazard stripe
+  ctx.beginPath(); ctx.moveTo(-7 * scale, 0); ctx.lineTo(7 * scale, 0); // hazard stripe
   glowStroke(color, 1, 5);
   ctx.restore();
   ctx.globalAlpha = 1;
-}
-
-// v3.3 P1: generate a clump's cached hull ONCE (constructor + every merge), never per frame. 7-9
-// vertices jittered around `radius` so each clump has a stable, distinctive silhouette instead of
-// the old per-frame mini-canister cluster. Unit-radius-relative jitter, rotated live by this.spin.
-function makeClumpHull(radius) {
-  const n = 7 + Math.floor(rand(0, 3)); // 7-9 vertices
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const theta = (i / n) * TAU + rand(-0.15, 0.15);
-    const r = radius * rand(0.8, 1.15);
-    pts.push([Math.cos(theta) * r, Math.sin(theta) * r]);
-  }
-  return pts;
 }
 
 // Lerp between two "#rrggbb" hex colors, t clamped to [0,1].
@@ -2123,9 +2111,6 @@ class Garbage {
     this.coalesceDelay = GARBAGE_COALESCE_DELAY;
     this.pieces = 1;
     this.radius = 7 * Math.sqrt(this.pieces);
-    // v3.3 P1: cached clump hull, regenerated only here and at every merge (coalesceGarbage) — NOT
-    // per frame. Unused while pieces === 1 (that branch stays byte-identical to pre-P1 rendering).
-    this.hull = makeClumpHull(this.radius);
     this.dead = false;
   }
   static fromNode(n) { // chain node knocked loose -> free garbage (v3.2 P3: no decay)
@@ -2161,23 +2146,15 @@ class Garbage {
       drawCanister(this.x, this.y, this.spin, alpha, color);
       return;
     }
-    // v3.3 P1: a clump (pieces > 1) renders as ONE closed hull polygon — no inner lines, no mini-
-    // canisters — so it reads as "a target," not "a pile of pickups." The hull is generated once
-    // (constructor / merge) and cached on `this.hull`; here it's only rotated by this.spin and lerp-
-    // tinted from COLOR.garbage toward COLOR.clumpHot as pieces approaches HUNTER_COALESCE_COUNT, a
-    // free threat meter (the clump visibly reddens as it nears the Hunter transform).
+    // v3.5 P2 (reverses v3.3 P1): a clump (pieces > 1) draws as ONE ordinary canister scaled up by
+    // sqrt(pieces) (= this.radius / 7) — a larger canister, not a jittered-hull asteroid — so it
+    // reads as "a bigger pickup," not "a hazard." Scaling by radius/7 makes the drawn long half-axis
+    // exactly equal this.radius, so the visual and the (unchanged) collision radius agree by
+    // construction. The lerp from COLOR.garbage toward COLOR.clumpHot as pieces approaches
+    // HUNTER_COALESCE_COUNT is kept as the only tell that a clump is nearing the Hunter transform;
+    // the radioactive alpha flicker comes free from drawCanister.
     const color = lerpColor(COLOR.garbage, COLOR.clumpHot, this.pieces / HUNTER_COALESCE_COUNT);
-    ctx.globalAlpha = 0.75 + Math.random() * 0.25; // keep the radioactive flicker
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.spin);
-    ctx.beginPath();
-    ctx.moveTo(this.hull[0][0], this.hull[0][1]);
-    for (let i = 1; i < this.hull.length; i++) ctx.lineTo(this.hull[i][0], this.hull[i][1]);
-    ctx.closePath();
-    glowStroke(color);
-    ctx.restore();
-    ctx.globalAlpha = 1;
+    drawCanister(this.x, this.y, this.spin, 0.9, color, this.radius / 7);
   }
 }
 
@@ -3072,7 +3049,6 @@ function coalesceGarbage(dt) {
         a.mass = mt;
         a.pieces += b.pieces;
         a.radius = 7 * Math.sqrt(a.pieces);
-        a.hull = makeClumpHull(a.radius); // v3.3 P1: regenerate the cached silhouette at every merge
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
@@ -3295,13 +3271,12 @@ function update(dt) {
         if (take === g.pieces) {
           g.dead = true;  // whole clump fit — total mass conserved onto the chain
         } else {
-          // Leftover floats off: re-derive its size/mass, re-arm the coalesce delay, regenerate the
-          // cached hull, and kick it directly away from the ship so "the rest of the ball floats away".
+          // Leftover floats off: re-derive its size/mass, re-arm the coalesce delay, and kick it
+          // directly away from the ship so "the rest of the ball floats away".
           g.pieces -= take;
           g.mass  -= take * pMass;
           g.radius = 7 * Math.sqrt(g.pieces);
           g.coalesceDelay = GARBAGE_COALESCE_DELAY;
-          g.hull = makeClumpHull(g.radius);
           const [ax, ay] = shortDelta(game.ship.x, game.ship.y, g.x, g.y); // ship -> leftover (wrap-aware)
           const d = Math.hypot(ax, ay) || 0.0001;
           g.vx += (ax / d) * SCOOP_SPILL_KICK;
