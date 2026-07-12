@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<!--
+  tools/music-lab.html — Orbital Overhaul, Changeset 7 design instrument. FINAL.
+
+  The six builders in PORT-ME BLOCK B are the shipping set, one-for-one with MUSIC_TRACKS in the
+  game. Nothing else here is music: BLOCK A is a copy of the scheduler, and everything below it
+  is lab UI. Port BLOCK A's four playNote extensions and BLOCK B's six builders; port nothing else.
+
+  History. Round 2 offered eight candidates across three genres; Paul selected Drift@w2,
+  Derelict@w1, Warehouse@w2, Acid@w5, Zen@w1. Waves 1-2 sit below the tier-2 threshold (f 0.20),
+  so four of the five selections were the TIER-1 LAYERS ONLY; Acid@w5 (f 0.39) also cleared tier 2.
+  Retro and Tense were cut. Acid was auditioned, approved, then cut on reflection — four
+  gameplay tracks, not five.
+
+  Those selections are FROZEN here by DELETING the layers he had gated off. A tier-1 layer's gate
+  sits at exactly 1.0, so deleting the upper layers reproduces the approved mix byte-for-byte —
+  no gains were re-touched. Consequence: no track carries a tier field any more, every layer is
+  always on, and MusicSys.setIntensity() becomes INERT for all of them (exactly as it already is
+  for the shipped title track, whose layers are also untiered). That is a design decision, not an
+  accident — see the GDD note.
+
+  The title track (Beacon) is new, written to the same minimal discipline. It is keyed `title` in
+  MUSIC_TRACKS because musicStateFor() returns the literal string "title" for the title screen.
+
+  Scheduler, layer-gate graph, envelope shape: a FAITHFUL COPY of the shipped MusicSys (v3.5).
+  playNote extensions required by this data, all additive:
+      noise:true                 white-noise buffer source instead of an oscillator
+      hp: <Hz>                   highpass in front of the existing optional lowpass
+      drop / dropTime            pitch fall (kick punch)
+      q / cutoffTo / cutoffTime  resonance + per-note filter envelope
+  Lab-only, NOT to be ported: the per-layer mute node, the loop ribbon, this UI.
+-->
+<meta charset="utf-8">
+<title>Orbital Overhaul — Music Lab (final)</title>
+<style>
+  :root{--bg:#04070c;--panel:#080d15;--line:#16283c;--text:#a8d4ff;--dim:#3a5a80;
+        --hot:#c8ff50;--teal:#6fe8d8;--hp:#ff5a2a;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 20px 40px;background:var(--bg);color:var(--text);
+       font:13px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.02em}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:15px;font-weight:400;letter-spacing:.34em;text-transform:uppercase;
+     color:var(--teal);text-shadow:0 0 10px rgba(111,232,216,.5)}
+  .sub{color:var(--dim);margin:0 0 20px;font-size:11px;letter-spacing:.12em}
+  .cat{margin:16px 0 7px;font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--dim)}
+  .cat span{color:#26405c}
+  .tracks{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+  button.tk{appearance:none;cursor:pointer;padding:11px 9px 9px;text-align:left;background:var(--panel);
+            color:var(--text);border:1px solid var(--line);font:inherit;letter-spacing:.06em;
+            transition:border-color .12s,color .12s}
+  button.tk:hover{border-color:var(--teal);color:#fff}
+  button.tk:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+  button.tk .nm{display:block;text-transform:uppercase;font-size:12px}
+  button.tk .ln{display:block;color:var(--dim);font-size:10px;margin-top:3px}
+  button.tk[aria-pressed="true"]{border-color:var(--hot);color:var(--hot);box-shadow:0 0 14px rgba(200,255,80,.18) inset}
+  button.tk[aria-pressed="true"] .ln{color:#7f9a4a}
+  .bar{display:flex;gap:22px;align-items:center;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--line);
+       background:var(--panel);margin:18px 0 14px}
+  .ctl{display:flex;align-items:center;gap:9px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .ctl b{color:var(--text);font-weight:400;min-width:70px;text-align:right;letter-spacing:.04em;text-transform:none}
+  input[type=range]{width:160px;accent-color:#6fe8d8}
+  button.stop{appearance:none;cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--dim);
+              font:inherit;padding:5px 14px;letter-spacing:.14em;text-transform:uppercase}
+  button.stop:hover{color:var(--hp);border-color:var(--hp)}
+  #blurb{padding:10px 14px;border-left:2px solid var(--teal);color:var(--text);font-size:11px;min-height:18px;margin-bottom:12px}
+  #blurb em{color:var(--dim);font-style:normal}
+  #ribbon{width:100%;height:auto;display:block;border:1px solid var(--line);background:var(--panel)}
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:11px}
+  th{text-align:left;font-weight:400;color:var(--dim);text-transform:uppercase;letter-spacing:.14em;
+     border-bottom:1px solid var(--line);padding:6px 8px;font-size:10px}
+  td{padding:5px 8px;border-bottom:1px solid rgba(22,40,60,.5)}
+  .mute{appearance:none;cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--dim);
+        font:inherit;font-size:10px;padding:2px 9px;letter-spacing:.1em}
+  .mute:hover{border-color:var(--text);color:var(--text)}
+  tr.m td:not(:last-child){color:var(--dim);opacity:.45}
+  .foot{margin-top:20px;padding:10px 14px;border-left:2px solid var(--line);color:var(--dim);font-size:11px;line-height:1.7}
+  .foot b{color:var(--text);font-weight:400}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h1>Music Lab</h1>
+  <p class="sub">ORBITAL OVERHAUL · CHANGESET 7 · FINAL TRACK SET</p>
+
+  <div class="cat">Title screen</div>
+  <div class="tracks" id="grp-title"></div>
+  <div class="cat">Gameplay <span>— picker order: Zen · Derelict · Drift · Warehouse, default Zen</span></div>
+  <div class="tracks" id="grp-play"></div>
+
+  <div class="bar">
+    <label class="ctl">Music vol <input type="range" id="vol" min="0" max="1" step="0.05" value="0.7"><b id="volOut">0.70</b></label>
+    <span class="ctl">Loop <b id="loopOut">—</b></span>
+    <span class="ctl">Layers <b id="layOut">—</b></span>
+    <button class="stop" id="stop">Stop</button>
+  </div>
+
+  <div id="blurb"><em>Every layer is always on. There is no wave slider any more — nothing is gated.</em></div>
+  <svg id="ribbon" viewBox="0 0 960 200" preserveAspectRatio="none" aria-hidden="true"></svg>
+
+  <table id="layers"><thead><tr>
+    <th style="width:26%">Layer</th><th style="width:38%">Voice</th>
+    <th style="width:14%">Gain</th><th style="width:22%"></th>
+  </tr></thead><tbody></tbody></table>
+
+  <div class="foot">
+    <b>Use the mute buttons</b> to sanity-check that nothing here is load-bearing by accident — if a
+    layer can come out without hurting the track, it should come out before this ships.
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ===== PORT-ME BLOCK A — scheduler (faithful copy) + the four playNote extensions ============ */
+const MUSIC_LOOKAHEAD = 0.2, MUSIC_CROSSFADE = 0.6, MUSIC_A4 = 440;
+const mfreq = m => MUSIC_A4 * Math.pow(2, (m - 69) / 12);
+
+const Lab = {
+  ctx:null, music:null, duck:null, trackGain:null, noiseBuf:null,
+  track:null, step:0, nextStepTime:0, layerGates:null, raf:0,
+
+  ensure() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.music = this.ctx.createGain(); this.music.gain.value = 0.7; this.music.connect(this.ctx.destination);
+    this.duck = this.ctx.createGain(); this.duck.connect(this.music);
+    const n = this.ctx.sampleRate * 2, b = this.ctx.createBuffer(1, n, this.ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    this.noiseBuf = b;
+  },
+  setState(track) {
+    this.ensure();
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    const t = this.ctx.currentTime;
+    if (this.trackGain) {
+      const g = this.trackGain;
+      g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.linearRampToValueAtTime(0.0001, t + MUSIC_CROSSFADE);
+      this.trackGain = null;
+    }
+    this.track = track; this.step = 0;
+    if (!track) { this.layerGates = null; return; }
+    this.nextStepTime = t;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(1, t + MUSIC_CROSSFADE);
+    g.connect(this.duck);
+    this.trackGain = g;
+    // Untiered: every gate is built at 1.0 and never ramps. setIntensity() would find nothing to do.
+    this.layerGates = track.layers.map(() => {
+      const node = this.ctx.createGain(); node.gain.value = 1;
+      const mute = this.ctx.createGain(); mute.gain.value = 1;   // LAB ONLY
+      node.connect(mute); mute.connect(g);
+      return { node, mute };
+    });
+  },
+  update() {
+    if (!this.ctx || !this.track || !this.trackGain) return;
+    const horizon = this.ctx.currentTime + MUSIC_LOOKAHEAD;
+    let guard = 1024;
+    while (this.nextStepTime < horizon && guard-- > 0) {
+      const t = Math.max(this.nextStepTime, this.ctx.currentTime), L = this.track.layers;
+      for (let i = 0; i < L.length; i++) { const c = L[i].steps[this.step]; if (c) this.playNote(L[i], c, t, i); }
+      this.nextStepTime += this.track.stepDur;
+      this.step = (this.step + 1) % this.track.steps;
+    }
+  },
+  playNote(layer, cell, t, layerIndex) {
+    const ctx = this.ctx, dur = cell.dur * this.track.stepDur;
+    const peak = (cell.g == null ? 1 : cell.g) * layer.gain;
+    const atk = Math.min(layer.atk == null ? 0.4 : layer.atk, dur * 0.5);
+    const rel = Math.min(layer.rel == null ? 0.5 : layer.rel, dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + atk);
+    g.gain.setValueAtTime(peak, t + Math.max(atk, dur - rel));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let sink = g;
+    if (layer.cutoff) {
+      const f = ctx.createBiquadFilter();
+      f.type = "lowpass";
+      f.Q.value = layer.q || 1;                                   // NEW
+      f.frequency.setValueAtTime(layer.cutoff, t);
+      if (layer.cutoffTo)                                          // NEW
+        f.frequency.exponentialRampToValueAtTime(layer.cutoffTo, t + Math.min(layer.cutoffTime || dur, dur));
+      f.connect(sink); sink = f;
+    }
+    if (layer.hp) {                                               // NEW
+      const f = ctx.createBiquadFilter();
+      f.type = "highpass"; f.frequency.value = layer.hp;
+      f.connect(sink); sink = f;
+    }
+    if (layer.noise) {                                            // NEW
+      const s = ctx.createBufferSource();
+      s.buffer = this.noiseBuf; s.connect(sink);
+      s.start(t); s.stop(t + dur + 0.05);
+    } else {
+      const freqs = layer.detune ? [cell.f, cell.f * Math.pow(2, layer.detune / 1200)] : [cell.f];
+      for (const fr of freqs) {
+        const o = ctx.createOscillator();
+        o.type = layer.type; o.frequency.setValueAtTime(fr, t);
+        if (layer.drop)                                           // NEW
+          o.frequency.exponentialRampToValueAtTime(Math.max(24, fr * Math.pow(2, -layer.drop / 12)),
+                                                   t + (layer.dropTime || 0.06));
+        o.connect(sink); o.start(t); o.stop(t + dur + 0.1);
+      }
+    }
+    g.connect(this.layerGates[layerIndex].node);
+  },
+};
+
+/* ===== PORT-ME BLOCK B — final track tables. No tier fields anywhere: every layer always on. == */
+const mk  = n => new Array(n).fill(null);
+const put = (a, s, m, d, g) => { if (s < a.length) a[s] = { f: mfreq(m), dur: d, g: g == null ? 1 : g }; };
+const hit = (a, s, d, g) => { if (s < a.length) a[s] = { f: 0, dur: d, g: g == null ? 1 : g }; };
+
+/* --- DRIFT (approved @w2) — organ pulse, sub, pad, hymn lead. No percussion. 88 BPM, 21.8 s. */
+function buildDriftTrack() {
+  const BARS = 8, SPB = 16, STEPS = BARS * SPB, stepDur = 0.17;
+  const sub = mk(STEPS), pad = mk(STEPS), org = mk(STEPS), lead = mk(STEPS);
+  const CH  = [[45,60],[41,57],[48,55],[43,59],[45,60],[41,57],[38,57],[40,56]];   // Am F C G Am F Dm E
+  const ARP = [[57,60,64,69],[53,57,60,65],[55,60,64,67],[55,59,62,67],
+               [57,60,64,69],[53,57,60,65],[57,62,65,69],[56,59,64,68]];
+  for (let b = 0; b < BARS; b++) {
+    const s0 = b * SPB, r = CH[b][0], t3 = CH[b][1], a = ARP[b];
+    put(sub, s0, r - 12, 16, 1.0);
+    put(pad, s0, t3, 16, 0.9);
+    for (let i = 0; i < SPB; i++) put(org, s0 + i, a[i % 4], 1, i % 4 === 0 ? 0.95 : 0.62);
+  }
+  for (const [s, m, d] of [[0,69,10],[16,77,10],[32,76,10],[48,74,12],[64,81,10],[80,84,10],[96,83,10],[112,79,14]])
+    put(lead, s, m, d, 0.95);
+  return { stepDur, steps: STEPS, layers: [
+    { name:"organ", type:"square",   cutoff:600, cutoffTo:2200, cutoffTime:0.09, q:5, gain:0.045, atk:0.006, rel:0.09, steps:org },
+    { name:"sub",   type:"sawtooth", cutoff:280, gain:0.070, atk:0.6, rel:1.2, steps:sub },
+    { name:"pad",   type:"sawtooth", cutoff:800, cutoffTo:1600, detune:11, gain:0.048, atk:1.0, rel:1.4, steps:pad },
+    { name:"lead",  type:"triangle", detune:6, gain:0.072, atk:0.35, rel:0.9, steps:lead },
+  ]};
+}
+
+/* --- DERELICT (approved @w1) — hum, two chromatic-mediant pads, a distant ping. No beat, no
+       noise bed. Am → Fm → D♭m → Am. 24 s. */
+function buildDerelictTrack() {
+  const BLOCKS = 4, SPB = 15, STEPS = BLOCKS * SPB, stepDur = 0.4;
+  const hum = mk(STEPS), pR = mk(STEPS), p3 = mk(STEPS), ping = mk(STEPS);
+  const CH = [[45,48],[41,44],[37,40],[45,48]];
+  CH.forEach((c, b) => {
+    const s0 = b * SPB, r = c[0], t3 = c[1];
+    put(hum, s0, r - 24, 15, 1.0);
+    put(pR, s0, r, 10, 1.0);  put(pR, s0 + 8, r, 9, 0.8);
+    put(p3, s0 + 2, t3, 10, 0.85); put(p3, s0 + 9, t3, 8, 0.7);
+  });
+  for (const [s, m] of [[4,84],[12,79],[19,88],[28,81],[37,86],[46,79],[52,91],[58,84]]) put(ping, s, m, 4, 0.75);
+  return { stepDur, steps: STEPS, layers: [
+    { name:"hum",      type:"sawtooth", cutoff:240, cutoffTo:340, detune:13, gain:0.070, atk:1.6, rel:2.2, steps:hum },
+    { name:"padRoot",  type:"sawtooth", cutoff:700, cutoffTo:1500, detune:12, gain:0.052, atk:1.6, rel:2.2, steps:pR },
+    { name:"padThird", type:"sawtooth", cutoff:700, cutoffTo:1500, detune:12, gain:0.044, atk:1.8, rel:2.2, steps:p3 },
+    { name:"ping",     type:"triangle", gain:0.048, atk:0.02, rel:1.6, steps:ping },
+  ]};
+}
+
+/* --- WAREHOUSE (approved @w2) — kick, melodic bass, 16th hat, two 7th-chord stabs. No clap, and
+       deliberately NO melodic hook: in house the groove is the tune. 125 BPM, 23.0 s. */
+function buildWarehouseTrack() {
+  const BARS = 12, SPB = 16, STEPS = BARS * SPB, stepDur = 0.12;
+  const kick = mk(STEPS), hat = mk(STEPS), bass = mk(STEPS), stA = mk(STEPS), stB = mk(STEPS);
+  const CH = [[45,60,64],[45,60,64],[38,60,65],[38,60,65],[41,60,64],[41,60,64],[43,59,62],[43,59,62],
+              [45,60,64],[38,60,65],[41,60,64],[43,59,62]];   // Am7 Dm7 Fmaj7 G ...
+  const WALK = [0, 0, 12, 0, 7, 0, 12, 3];
+  for (let b = 0; b < BARS; b++) {
+    const s0 = b * SPB, c = CH[b], r = c[0];
+    for (const s of [0, 4, 8, 12]) put(kick, s0 + s, 50, 1, 1.0);
+    for (let i = 1; i < SPB; i += 2) hit(hat, s0 + i, 1, i % 4 === 3 ? 0.8 : 0.42);
+    for (let i = 0; i < 8; i++) put(bass, s0 + i * 2 + 1, r + WALK[i], 1, i % 2 === 0 ? 0.95 : 0.75);
+    for (const s of [3, 7, 11, 15]) { put(stA, s0 + s, c[1], 1, 0.9); put(stB, s0 + s, c[2], 1, 0.8); }
+  }
+  return { stepDur, steps: STEPS, layers: [
+    { name:"kick",  type:"triangle", drop:14, dropTime:0.05, gain:0.125, atk:0.002, rel:0.16, steps:kick },
+    { name:"bass",  type:"sawtooth", cutoff:480, cutoffTo:850, cutoffTime:0.06, q:3, gain:0.075, atk:0.006, rel:0.10, steps:bass },
+    { name:"hat",   noise:true, hp:8500, gain:0.018, atk:0.001, rel:0.03, steps:hat },
+    { name:"stabA", type:"sawtooth", cutoff:2600, cutoffTo:900, cutoffTime:0.10, q:5, gain:0.042, atk:0.004, rel:0.13, steps:stA },
+    { name:"stabB", type:"sawtooth", cutoff:2600, cutoffTo:900, cutoffTime:0.10, q:5, gain:0.038, atk:0.004, rel:0.13, steps:stB },
+  ]};
+}
+
+/* --- ZEN (approved @w1) — the old title track's A-aeolian arc at 0.25 s resolution, with the
+       subdued percussion. Shimmer / counter / sparkle deleted. 48 s. */
+function buildZenTrack() {
+  const BLOCKS = 6, SPB = 32, STEPS = BLOCKS * SPB, stepDur = 0.25;
+  const bass = mk(STEPS), padLo = mk(STEPS), padMid = mk(STEPS),
+        kick = mk(STEPS), shk = mk(STEPS), lead = mk(STEPS);
+  const roots = [45, 41, 48, 43, 50, 40];
+  roots.forEach((r, b) => {
+    const s0 = b * SPB;
+    put(bass, s0, r - 12, 32, 1.0);
+    put(padLo, s0, r, 16, 1.0); put(padLo, s0 + 16, r, 16, 0.8);
+    put(padMid, s0, r + 7, 32, 0.9);
+    for (let bar = 0; bar < 4; bar++) {
+      const t0 = s0 + bar * 8;
+      put(kick, t0, 38, 2, bar % 2 === 0 ? 0.9 : 0.65);
+      hit(shk, t0 + 4, 1, 0.5);
+      for (const s of [2, 6]) hit(shk, t0 + s, 1, b < 3 ? 0.26 : 0.38);
+    }
+  });
+  for (const [s, m, d] of [[104,76,10],[120,72,10],[132,81,14],[164,79,10],[180,84,12]]) put(lead, s, m, d, 1.0);
+  return { stepDur, steps: STEPS, layers: [
+    { name:"bass",   type:"sine",     cutoff:220, gain:0.090, atk:1.2, rel:2.0, steps:bass },
+    { name:"padLo",  type:"triangle", cutoff:900, detune:7, gain:0.050, atk:0.6, rel:1.6, steps:padLo },
+    { name:"padMid", type:"triangle", cutoff:900, detune:7, gain:0.045, atk:0.8, rel:1.8, steps:padMid },
+    { name:"kick",   type:"triangle", drop:10, dropTime:0.07, gain:0.055, atk:0.004, rel:0.30, steps:kick },
+    { name:"shaker", noise:true, hp:5200, gain:0.011, atk:0.002, rel:0.07, steps:shk },
+    { name:"lead",   type:"triangle", gain:0.055, atk:0.4, rel:1.2, steps:lead },
+  ]};
+}
+
+/* --- TITLE: BEACON — Drift's engine, turned hopeful. C major, and the melody itself
+       lands the Lydian #4 (F♯5) over a C pedal in bar 6 — the "departure" lift, with no fanfare
+       and no drums. 4 layers. 88 BPM, 21.8 s. */
+function buildBeaconTitle() {
+  const BARS = 8, SPB = 16, STEPS = BARS * SPB, stepDur = 0.17;
+  const sub = mk(STEPS), pad = mk(STEPS), org = mk(STEPS), lead = mk(STEPS);
+  const CH  = [[48,64],[43,59],[45,60],[41,57],[48,64],[48,66],[41,57],[43,59]];  // C G Am F C D/C F G
+  const ARP = [[60,64,67,72],[59,62,67,71],[57,60,64,69],[57,60,65,69],
+               [60,64,67,72],[62,66,69,74],[57,60,65,69],[59,62,67,71]];
+  for (let b = 0; b < BARS; b++) {
+    const s0 = b * SPB, r = CH[b][0], t3 = CH[b][1], a = ARP[b];
+    put(sub, s0, r - 12, 16, 1.0);
+    put(pad, s0, t3, 16, 0.9);
+    for (let i = 0; i < SPB; i++) put(org, s0 + i, a[i % 4], 1, i % 4 === 0 ? 0.95 : 0.6);
+  }
+  for (const [s, m, d] of [[0,72,10],[16,74,10],[32,76,10],[48,77,12],[64,79,10],[80,78,12],[96,76,10],[112,72,14]])
+    put(lead, s, m, d, 0.95);
+  return { stepDur, steps: STEPS, layers: [
+    { name:"arp",  type:"square",   cutoff:800, cutoffTo:2800, cutoffTime:0.09, q:4, gain:0.042, atk:0.006, rel:0.09, steps:org },
+    { name:"sub",  type:"sawtooth", cutoff:300, gain:0.066, atk:0.6, rel:1.2, steps:sub },
+    { name:"pad",  type:"sawtooth", cutoff:900, cutoffTo:1900, detune:10, gain:0.050, atk:1.0, rel:1.4, steps:pad },
+    { name:"lead", type:"triangle", detune:6, gain:0.074, atk:0.30, rel:0.9, steps:lead },
+  ]};
+}
+
+// Keys are the STATE STRINGS. `title` is what musicStateFor() returns on the title screen; the
+// other five are the values of settings.musicTrack, so a track switch is a normal setState().
+const MUSIC_TRACKS = {
+  title:     buildBeaconTitle(),
+  zen:       buildZenTrack(),
+  derelict:  buildDerelictTrack(),
+  drift:     buildDriftTrack(),
+  warehouse: buildWarehouseTrack(),
+};
+// Picker (game): MUSIC_TRACK_VALUES = ["zen","derelict","drift","warehouse"], default "zen".
+
+/* ===== LAB UI — none of this ships ========================================================== */
+const GROUPS = {
+  "grp-title": [
+    ["title", "Beacon", "4 layers · no drums · Lydian lift · 88 BPM"],
+  ],
+  "grp-play": [
+    ["zen",       "Zen",       "6 layers · was your title track"],
+    ["derelict",  "Derelict",  "4 layers · no beat"],
+    ["drift",     "Drift",     "4 layers · no percussion"],
+    ["warehouse", "Warehouse", "5 layers · house"],
+  ],
+};
+const BLURB = {
+  title:    "Drift's engine turned hopeful — same 16th arpeggio under a filter, same absence of drums. The melody itself lands the Lydian ♯4 (F♯5) over a held C in bar 6: the departure, without a fanfare.",
+  zen:      "Exactly what you approved at wave 1. Shimmer, counter-melody and sparkle deleted.",
+  derelict: "Exactly what you approved at wave 1. The noise bed, the third pad, the clanks, the sub and the heartbeat are all gone — hum, two pads, one ping.",
+  drift:    "Exactly what you approved at wave 2. No kick anywhere. The organ figure and the hymn carry it.",
+  warehouse:"Exactly what you approved at wave 2 — including the fact that it has no melody. In house, the groove is the tune.",
+};
+const $ = s => document.querySelector(s);
+let current = null;
+
+for (const [gid, rows] of Object.entries(GROUPS)) {
+  const el = document.getElementById(gid);
+  for (const [key, label, sub] of rows) {
+    const t = MUSIC_TRACKS[key];
+    const b = document.createElement("button");
+    b.className = "tk"; b.setAttribute("aria-pressed", "false"); b.dataset.key = key;
+    b.innerHTML = `<span class="nm">${label}</span><span class="ln">${(t.steps * t.stepDur).toFixed(1)}s · ${sub}</span>`;
+    b.onclick = () => select(key);
+    el.appendChild(b);
+  }
+}
+function select(key) {
+  current = key;
+  for (const b of document.querySelectorAll("button.tk")) b.setAttribute("aria-pressed", String(b.dataset.key === key));
+  const t = MUSIC_TRACKS[key];
+  Lab.setState(t);
+  $("#loopOut").textContent = `${(t.steps * t.stepDur).toFixed(1)}s`;
+  $("#layOut").textContent = String(t.layers.length);
+  $("#blurb").textContent = BLURB[key];
+  drawRibbon(); renderLayers();
+  if (!Lab.raf) tick();
+}
+function tick() { Lab.update(); drawPlayhead(); Lab.raf = requestAnimationFrame(tick); }
+$("#stop").onclick = () => {
+  current = null;
+  for (const b of document.querySelectorAll("button.tk")) b.setAttribute("aria-pressed", "false");
+  Lab.setState(null);
+  if (Lab.raf) { cancelAnimationFrame(Lab.raf); Lab.raf = 0; }
+  $("#ribbon").innerHTML = ""; $("#layers").tBodies[0].innerHTML = "";
+  $("#loopOut").textContent = "—"; $("#layOut").textContent = "—"; $("#blurb").innerHTML = "<em>Stopped.</em>";
+};
+$("#vol").oninput = e => {
+  $("#volOut").textContent = (+e.target.value).toFixed(2);
+  if (Lab.music) Lab.music.gain.value = +e.target.value;
+};
+
+function renderLayers() {
+  const t = MUSIC_TRACKS[current], tb = $("#layers").tBodies[0];
+  tb.innerHTML = "";
+  t.layers.forEach((L, i) => {
+    const muted = Lab.layerGates[i].mute.gain.value < 0.5;
+    const tr = document.createElement("tr");
+    if (muted) tr.className = "m";
+    const v = L.noise ? `noise${L.hp ? " hp" + L.hp : ""}${L.cutoff ? " lp" + L.cutoff : ""}`
+      : `${L.type}${L.drop ? " ↓" + L.drop : ""}${L.detune ? " ±" + L.detune + "¢" : ""}${L.cutoffTo ? " sweep→" + L.cutoffTo : ""}${L.q ? " Q" + L.q : ""}`;
+    tr.innerHTML = `<td>${L.name}</td><td>${v}</td><td>${L.gain.toFixed(3)}</td>
+      <td><button class="mute" data-i="${i}">${muted ? "unmute" : "mute"}</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll(".mute").forEach(btn => btn.onclick = () => {
+    const g = Lab.layerGates[+btn.dataset.i].mute.gain;
+    g.value = g.value < 0.5 ? 1 : 0;
+    renderLayers(); drawRibbon();
+  });
+}
+const NS = "http://www.w3.org/2000/svg";
+function drawRibbon() {
+  const svg = $("#ribbon"), t = MUSIC_TRACKS[current];
+  svg.innerHTML = "";
+  const W = 960, laneH = 22, H = t.layers.length * laneH + 16;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.style.height = H + "px";
+  const grid = Math.max(1, Math.round(2 / t.stepDur));
+  for (let s = 0; s < t.steps; s += grid) {
+    const x = 8 + (s / t.steps) * (W - 16), l = document.createElementNS(NS, "line");
+    l.setAttribute("x1", x); l.setAttribute("x2", x); l.setAttribute("y1", 6); l.setAttribute("y2", H - 6);
+    l.setAttribute("stroke", "#16283c"); svg.appendChild(l);
+  }
+  t.layers.forEach((L, i) => {
+    const y = 10 + i * laneH + laneH / 2;
+    const on = !Lab.layerGates || Lab.layerGates[i].mute.gain.value >= 0.5;
+    for (let s = 0; s < t.steps; s++) {
+      const c = L.steps[s]; if (!c) continue;
+      const x = 8 + (s / t.steps) * (W - 16), h = 4 + (c.g == null ? 1 : c.g) * 7;
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", x); r.setAttribute("y", y - h / 2);
+      r.setAttribute("width", Math.max(1.6, (c.dur / t.steps) * (W - 16) * 0.85));
+      r.setAttribute("height", h);
+      r.setAttribute("fill", on ? "#c8ff50" : "#2b3f56");
+      r.setAttribute("opacity", on ? 0.85 : 0.5);
+      svg.appendChild(r);
+    }
+  });
+  const ph = document.createElementNS(NS, "line");
+  ph.setAttribute("id", "ph"); ph.setAttribute("y1", 4); ph.setAttribute("y2", H - 4);
+  ph.setAttribute("stroke", "#6fe8d8"); ph.setAttribute("stroke-width", "1.5");
+  svg.appendChild(ph);
+}
+function drawPlayhead() {
+  const ph = document.getElementById("ph"); if (!ph || !Lab.track) return;
+  const x = 8 + (Lab.step / Lab.track.steps) * 944;
+  ph.setAttribute("x1", x); ph.setAttribute("x2", x);
+}
+</script>
