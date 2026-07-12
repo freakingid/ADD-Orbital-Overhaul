@@ -1,19 +1,26 @@
-// Headless test for v3.1 Phase 3 — garbage mutual magnetism + coalescence -> Hunter formation.
+// Headless test for garbage coalescence (v3.1 P3 origin) + the v3.2 P1 physical-clump overhaul.
 // Follows the repo test convention: stub window/document/rAF/navigator/localStorage, eval the REAL
 // <script> block, then drive the actual coalesceGarbage()/update()/destroyDebris code against real
 // entities — no reimplementation of the logic under test.
 //
 //   node scratchpad/test-v31-coalesce.js
 //
-// Checks (per the Phase-3 prompt):
+// Checks:
 //  (1) a piece can't merge before 1 s (inactive), can after (active) — via the real update() countdown.
-//  (2) two active pieces in contact merge — survivor velocity == exact vector sum, pieces == 2.
+//  (2) two active pieces in contact merge — survivor velocity == MOMENTUM sum (v3.2 P1; was the vector
+//      sum in v3.1), pieces == 2, mass SUMS, radius derives 7*sqrt(pieces).
 //  (3) twelve active pieces coalesce to exactly one new Hunter (hunters +1, clump all dead,
 //      AudioSys.hunterborn called exactly once).
-//  (4) a merge across the world seam works (wrap-aware dist2/shortDelta).
+//  (4) a merge across the world seam works (wrap-aware dist2/shortDelta), momentum sum preserved.
 //  (5) merging does NOT bump game.stats.garbageDecayed (coalescing is a distinct fate; Waste Not safe).
-//  (6) a pieces>1 clump hooks as a single mass-1.0 chain node (FORK-2), driven through the real update().
-//  Plus: emission sites + fromNode inherit the coalesce defaults; attraction is gated by the 1 s delay.
+//  (6) v3.2 P1: a pieces>1 clump CANNOT be hooked; a pieces=1 canister still hooks — via real update().
+//  (7) mutual attraction is 1-s-gated too.
+//  (8) v3.2 P1: mass sums across a chain of merges; radius tracks 7*sqrt(pieces).
+//  (9) v3.2 P1: a heavy clump absorbing a fast light piece barely speeds up (momentum-conserving).
+// (10) v3.2 P1: two mass-1.0 singles attract EXACTLY as the shipped force (reduction guard — no retune).
+// (11) v3.2 P1: the Magnet powerup won't pull a clump, but still pulls a single — via real update().
+// (12) v3.2 P1: draw() is crash-free at pieces=1 and pieces=11 (cluster render).
+//  Plus: emission sites + fromNode inherit the coalesce defaults.
 
 "use strict";
 const fs = require("fs");
@@ -117,18 +124,24 @@ console.log("(1) a piece can't merge before 1 s, can after — via the real upda
 }
 
 // =====================================================================
-console.log("(2) two active pieces in contact merge — survivor velocity == exact vector sum");
+console.log("(2) two active pieces in contact merge — survivor velocity == MOMENTUM sum (v3.2 P1)");
 {
   beginPlaying();
   const a = new Garbage(1000, 1000, 11, -3);
   const b = new Garbage(1004, 1002, -7, 5); // within MERGE_DIST
   a.coalesceDelay = 0; b.coalesceDelay = 0;
-  const sumVx = a.vx + b.vx, sumVy = a.vy + b.vy;
+  // momentum sum with the PRE-merge masses (both default 1.0 here): v = (mₐvₐ + m_b v_b)/(mₐ+m_b)
+  const ma = a.mass, mb = b.mass, mt = ma + mb;
+  const momVx = (ma * a.vx + mb * b.vx) / mt, momVy = (ma * a.vy + mb * b.vy) / mt;
+  const sumVx = a.vx + b.vx; // the OLD contract, to prove we're no longer doing this
   game.garbage = [a, b];
   coalesceGarbage(1 / 60);
   assert(b.dead && !a.dead, "2: survivor is the earlier piece (a); other marked dead");
   assert(a.pieces === 2, "2: survivor.pieces === 2");
-  assert(a.vx === sumVx && a.vy === sumVy, `2: survivor velocity is the LITERAL vector sum (${a.vx},${a.vy})`);
+  assert(a.mass === mt, `2: survivor.mass SUMS to ${mt} (got ${a.mass})`);
+  assert(a.radius === 7 * Math.sqrt(2), `2: survivor.radius derives 7*sqrt(2) (got ${a.radius})`);
+  assert(a.vx === momVx && a.vy === momVy, `2: survivor velocity is the MOMENTUM sum (${a.vx},${a.vy})`);
+  assert(a.vx !== sumVx, "2: survivor velocity is NOT the old literal vector sum");
 }
 
 // =====================================================================
@@ -156,11 +169,11 @@ console.log("(4) a merge across the world seam works (wrap-aware)");
   const a = new Garbage(5, 700, 2, 0);
   const b = new Garbage(WORLD_W - 3, 700, 1, 0); // wrap-distance to a is 8 px (< MERGE_DIST), naive dist is huge
   a.coalesceDelay = 0; b.coalesceDelay = 0;
-  const sumVx = a.vx + b.vx;
+  const momVx = (a.mass * a.vx + b.mass * b.vx) / (a.mass + b.mass);
   game.garbage = [a, b];
   coalesceGarbage(1 / 60);
   assert(b.dead && a.pieces === 2, "4: pieces straddling the x seam merge (wrap-aware dist2)");
-  assert(a.vx === sumVx, "4: survivor velocity is still the vector sum across the seam");
+  assert(a.vx === momVx, "4: survivor velocity is the momentum sum across the seam");
 }
 
 // =====================================================================
@@ -184,19 +197,26 @@ console.log("(5) merging does NOT bump garbageDecayed (Waste Not stays safe)");
 }
 
 // =====================================================================
-console.log("(6) a pieces>1 clump hooks as a single mass-1.0 chain node (FORK-2), via real update()");
+console.log("(6) a pieces>1 clump CANNOT be hooked; a pieces=1 canister still hooks (v3.2 P1)");
 {
   beginPlaying();
   game.cargoMax = 12; // ample headroom, chain empty
-  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0); // sits on the ship -> guaranteed hook
+  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0); // sits on the ship -> would hook if allowed
   clump.pieces = 5;          // a fused clump
-  clump.mass = 1.0;          // FORK-2: still a normal mass-1.0 canister
   clump.coalesceDelay = 0;
   game.garbage = [clump];
   assert(clump.pieces === 5, "6: pre-condition — clump has pieces === 5");
   update(1 / 60);
-  assert(game.chain.length === 1, "6: the clump hooks as exactly ONE chain node");
-  assert(game.chain[0].mass === 1.0, "6: the hooked node tows as one normal mass-1.0 canister");
+  assert(game.chain.length === 0 && !clump.dead, "6: a clump (pieces>1) is NOT hooked (the load-bearing rule)");
+
+  beginPlaying();
+  game.cargoMax = 12;
+  const single = new Garbage(game.ship.x, game.ship.y, 0, 0); // a lone canister on the ship -> hooks
+  single.coalesceDelay = 0;
+  game.garbage = [single];
+  update(1 / 60);
+  assert(game.chain.length === 1, "6: a pieces=1 canister still hooks as exactly ONE node");
+  assert(game.chain[0].mass === 1.0, "6: the hooked single tows as one mass-1.0 node");
 }
 
 // =====================================================================
@@ -212,6 +232,88 @@ console.log("(7) mutual attraction is gated by the 1 s delay too (not just mergi
   coalesceGarbage(1 / 60); // active -> pulled toward each other, symmetrically
   assert(a.vx > 0 && b.vx < 0, "7: active pieces accelerate toward each other (symmetric pull)");
   assert(Math.abs(a.vx + b.vx) < 1e-9, "7: the pull is symmetric (equal and opposite)");
+}
+
+// =====================================================================
+console.log("(8) v3.2 P1: mass SUMS across a chain of merges; radius tracks 7*sqrt(pieces)");
+{
+  beginPlaying();
+  // four co-located active pieces (two normal mass-1.0, two half-mass Hunter scrap) collapse in one pass
+  const pcs = [new Garbage(1000, 1000, 0, 0), new Garbage(1000, 1000, 0, 0),
+               new Garbage(1000, 1000, 0, 0, undefined, 0.5), new Garbage(1000, 1000, 0, 0, undefined, 0.5)];
+  for (const p of pcs) p.coalesceDelay = 0;
+  game.garbage = pcs;
+  coalesceGarbage(1 / 60);
+  const survivor = pcs[0];
+  assert(!survivor.dead && pcs.slice(1).every(p => p.dead), "8: first piece survives, other three consumed");
+  assert(survivor.pieces === 4, `8: pieces sums across the chain (got ${survivor.pieces})`);
+  assert(survivor.mass === 3.0, `8: mass SUMS across the chain (1+1+0.5+0.5 = 3.0, got ${survivor.mass})`);
+  assert(survivor.radius === 7 * Math.sqrt(4), `8: radius = 7*sqrt(4) = 14 (got ${survivor.radius})`);
+  // spot-check the derivation holds for a lone piece too
+  assert(new Garbage(0, 0).radius === 7, "8: a single piece still reads radius 7 (= 7*sqrt(1))");
+}
+
+// =====================================================================
+console.log("(9) v3.2 P1: a heavy clump absorbing a fast light piece BARELY speeds up (momentum)");
+{
+  beginPlaying();
+  const heavy = new Garbage(1000, 1000, 0, 0); // an anchor at rest...
+  heavy.mass = 10; heavy.pieces = 10; heavy.coalesceDelay = 0;
+  const light = new Garbage(1004, 1000, 100, 0); // ...eats a fast little single
+  light.mass = 1; light.coalesceDelay = 0;
+  game.garbage = [heavy, light];
+  coalesceGarbage(1 / 60);
+  assert(light.dead && heavy.pieces === 11, "9: heavy survives, absorbs the light piece (pieces 10 -> 11)");
+  assert(heavy.mass === 11, "9: mass sums to 11");
+  assert(heavy.vx === 100 / 11, `9: survivor velocity is the momentum sum 100/11 ≈ 9.09 (got ${heavy.vx})`);
+  assert(heavy.vx < 15, "9: a heavy wad barely speeds up eating a 100 px/s piece (not the 100 a vector sum would give)");
+}
+
+// =====================================================================
+console.log("(10) v3.2 P1: two mass-1.0 singles attract EXACTLY as the shipped force (reduction guard)");
+{
+  beginPlaying();
+  const a = new Garbage(1000, 1000, 0, 0);
+  const b = new Garbage(1080, 1000, 0, 0); // 80 px apart, inside MAGNET_RANGE, outside MERGE_DIST
+  a.coalesceDelay = 0; b.coalesceDelay = 0;
+  game.garbage = [a, b];
+  coalesceGarbage(1 / 60);
+  // shipped flat pull: dx/d == 1 here, so the per-frame kick is exactly GARBAGE_MAGNET_PULL * dt
+  const expected = GARBAGE_MAGNET_PULL * (1 / 60);
+  assert(Math.abs(a.vx - expected) < 1e-12, `10: a.vx == the shipped mass-1.0 kick ${expected} (got ${a.vx})`);
+  assert(a.vx === -b.vx, "10: still exactly equal-and-opposite at mass 1.0 (GARBAGE_MAGNET_PULL unretuned)");
+}
+
+// =====================================================================
+console.log("(11) v3.2 P1: the Magnet powerup does NOT pull a clump, but still pulls a single — via real update()");
+{
+  beginPlaying();
+  game.powerFx.magnet = 10; // magnet active (time mode default)
+  const clump = new Garbage(game.ship.x + 40, game.ship.y, 0, 0); // in magnet range, out of pickup range
+  clump.pieces = 2;
+  game.garbage = [clump];
+  update(1 / 60);
+  assert(clump.vx === 0 && clump.vy === 0, "11: a clump (pieces>1) feels no Magnet pull");
+  assert(game.chain.length === 0 && !clump.dead, "11: and it is not hooked");
+
+  beginPlaying();
+  game.powerFx.magnet = 10;
+  const single = new Garbage(game.ship.x + 40, game.ship.y, 0, 0); // same spot, one piece
+  game.garbage = [single];
+  update(1 / 60);
+  assert(single.vx < 0, "11: a pieces=1 canister IS pulled toward the ship (to its left)");
+}
+
+// =====================================================================
+console.log("(12) v3.2 P1: draw() is crash-free at pieces=1 and pieces=11 (cluster render)");
+{
+  let threw = false;
+  try {
+    const one = new Garbage(200, 200); one.decay = 999; one.draw();
+    const wad = new Garbage(300, 300); wad.decay = 999; wad.pieces = 11;
+    wad.radius = 7 * Math.sqrt(11); wad.draw();
+  } catch (e) { threw = true; console.log("    threw: " + e); }
+  assert(!threw, "12: draw() renders a 1-piece and an 11-piece clump without throwing");
 }
 
 // =====================================================================

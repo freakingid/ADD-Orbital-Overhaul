@@ -112,7 +112,7 @@ function firePull() {
 }
 const shotsFired = () => game.bullets.filter(b => !b.hostile).length;
 // A minimal free-garbage stand-in the magnet pass accepts (only fields it reads + a no-op update).
-function fakeCanister(x, y) { return { x, y, vx: 0, vy: 0, dead: false, spin: 0, spinRate: 0, mass: 1, update() {} }; }
+function fakeCanister(x, y) { return { x, y, vx: 0, vy: 0, dead: false, spin: 0, spinRate: 0, mass: 1, pieces: 1, update() {} }; } // pieces:1 — hook now requires a single (v3.2 P1)
 // One magnet hook: fresh empty chain + a canister sitting on the ship -> update() hooks it.
 function hookOne() {
   game.chain.length = 0;

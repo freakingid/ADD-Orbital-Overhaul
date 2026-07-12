@@ -1519,13 +1519,15 @@ class Garbage {
     this.spinRate = rand(-1.5, 1.5);
     this.decay = decay;
     this.mass = mass;   // towing weight (F5): 1.0 for Debris scrap; lighter scrap tows easier
-    this.radius = 7;
-    // Coalescence (v3.1 P3). These constructor defaults are inherited by all three emission sites
+    // Coalescence (v3.2 P1). These constructor defaults are inherited by all three emission sites
     // AND Garbage.fromNode. `coalesceDelay` counts down in update(); a piece is "active" (attracts +
-    // can merge) once it hits 0. `pieces` is purely the threat trigger — decoupled from `mass`, so a
-    // clump still tows as one normal mass-1.0 node (FORK-2).
+    // can merge) once it hits 0. `pieces` is the 1..11 threat counter (at 12 the clump transforms).
+    // v3.2 P1 reverses FORK-2: on merge `mass` now SUMS and `radius` DERIVES from pieces (a clump is
+    // a real, heavy, big, un-hookable body — you must shoot it apart first). radius = 7*sqrt(pieces),
+    // so a single piece still reads 7 (the base canister radius).
     this.coalesceDelay = GARBAGE_COALESCE_DELAY;
     this.pieces = 1;
+    this.radius = 7 * Math.sqrt(this.pieces);
     this.dead = false;
   }
   static fromNode(n, decay = GARBAGE_SEVER_DECAY) { // chain node knocked loose -> free garbage
@@ -1547,8 +1549,17 @@ class Garbage {
     // blink faster as decay approaches
     const blink = this.decay < 5 &&
       Math.floor(this.decay * (this.decay < 2 ? 8 : 4)) % 2 === 0;
-    if (!blink) drawCanister(this.x, this.y, this.spin, 0.9,
-      this.mass < 1 ? COLOR.garbageLight : COLOR.garbage);
+    if (blink) return;
+    const color = this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
+    // v3.2 P1: render a clump as a CLUSTER of `pieces` mini-canisters at deterministic golden-angle
+    // (phyllotaxis) offsets, the whole wad rotated by this.spin so it tumbles as one body. No stored
+    // per-clump state. pieces === 1 collapses to a single centered canister — byte-identical to today.
+    const cs = Math.cos(this.spin), sn = Math.sin(this.spin);
+    for (let k = 0; k < this.pieces; k++) {
+      const theta = k * 2.39996, rr = 5 * Math.sqrt(k);      // golden angle ≈ 2.39996 rad
+      const ox = Math.cos(theta) * rr, oy = Math.sin(theta) * rr;
+      drawCanister(this.x + ox * cs - oy * sn, this.y + ox * sn + oy * cs, this.spin, 0.9, color);
+    }
   }
 }
 
@@ -2330,11 +2341,17 @@ function coalesceGarbage(dt) {
       if (d2 >= GARBAGE_MAGNET_RANGE * GARBAGE_MAGNET_RANGE) continue;
       const [dx, dy] = shortDelta(a.x, a.y, b.x, b.y);     // shortest vector a -> b (wrap-aware)
       if (d2 < GARBAGE_MERGE_DIST * GARBAGE_MERGE_DIST) {
-        // Merge: survivor inherits the LITERAL vector sum of both velocities and the piece count,
-        // but KEEPS its base mass (FORK-2 — a clump tows as one normal canister). Coalescing is a
-        // DISTINCT fate from decaying, so it must NOT touch game.stats.garbageDecayed (Waste Not).
-        a.vx += b.vx; a.vy += b.vy;
+        // Merge (v3.2 P1, reverses FORK-2): survivor's velocity is the MOMENTUM sum (with PRE-merge
+        // masses), its `mass` SUMS, its `pieces` counter adds, and its `radius` derives from pieces.
+        // Momentum-conserving (not the old literal vector sum) so a heavy clump barely speeds up when
+        // it eats a fast light piece — a wad of junk stays sluggish. Coalescing is a DISTINCT fate
+        // from decaying, so it must NOT touch game.stats.garbageDecayed (Waste Not).
+        const ma = a.mass, mb = b.mass, mt = ma + mb;
+        a.vx = (ma * a.vx + mb * b.vx) / mt;
+        a.vy = (ma * a.vy + mb * b.vy) / mt;
+        a.mass = mt;
         a.pieces += b.pieces;
+        a.radius = 7 * Math.sqrt(a.pieces);
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
@@ -2345,12 +2362,14 @@ function coalesceGarbage(dt) {
         }
         continue;  // survivor lives on; keep scanning further pieces against it this pass
       }
-      // Otherwise: mutual attraction. Each accelerates toward the other by PULL·dt (symmetric).
+      // Otherwise: mutual attraction, now MASS-WEIGHTED (v3.2 P1) and gravity-like — each accelerates
+      // toward the other in proportion to the OTHER's mass, so a heavy clump is a slow anchor that
+      // loose singles fall into. Momentum-conserving (m_a·acc_a == m_b·acc_b). Reduces EXACTLY to the
+      // shipped symmetric pull when both masses are 1.0, so GARBAGE_MAGNET_PULL needs no retune.
       const d = Math.sqrt(d2) || 0.0001;
-      const ax = (dx / d) * GARBAGE_MAGNET_PULL * dt;
-      const ay = (dy / d) * GARBAGE_MAGNET_PULL * dt;
-      a.vx += ax; a.vy += ay;
-      b.vx -= ax; b.vy -= ay;
+      const ux = (dx / d) * GARBAGE_MAGNET_PULL * dt, uy = (dy / d) * GARBAGE_MAGNET_PULL * dt;
+      a.vx += ux * b.mass; a.vy += uy * b.mass;
+      b.vx -= ux * a.mass; b.vy -= uy * a.mass;
       if (GARBAGE_CLUMP_MAXSPD !== Infinity) { // off-by-default playtest clamp
         clampGarbageSpeed(a); clampGarbageSpeed(b);
       }
@@ -2492,7 +2511,7 @@ function update(dt) {
   for (const g of game.garbage) {
     g.update(dt);
     if (g.dead || game.ship.dead) continue;
-    if (magnet) {
+    if (magnet && g.pieces === 1) {   // v3.2 P1: the Magnet ignores clumps — you can't hook one, so pulling it is just noise
       const mr = GARBAGE_PICKUP * MAGNET_RANGE_MULT;
       if (dist2(g, game.ship) < mr * mr) {
         const [dx, dy] = shortDelta(g.x, g.y, game.ship.x, game.ship.y); // vector toward the ship
@@ -2502,7 +2521,7 @@ function update(dt) {
         g.vy = g.vy * damp + (dy / d) * MAGNET_PULL * dt;
       }
     }
-    if (game.chain.length < game.cargoMax && dist2(g, game.ship) < pickR * pickR) {
+    if (game.chain.length < game.cargoMax && g.pieces === 1 && dist2(g, game.ship) < pickR * pickR) {  // v3.2 P1: a clump (pieces>1) CANNOT be hooked — shoot it apart first
       g.dead = true;
       game.chain.push({
         x: g.x, y: g.y, px: g.x, py: g.y,

@@ -173,7 +173,7 @@ clearField(); resetShip();
 game.cargoMax = 12;
 fillChain(12);
 game.garbage.push({ x: game.ship.x + 2, y: game.ship.y, vx: 0, vy: 0, spin: 0, spinRate: 0,
-  mass: 1, dead: false, update() {}, draw() {} });
+  mass: 1, pieces: 1, dead: false, update() {}, draw() {} }); // pieces:1 — hook now requires a single (v3.2 P1)
 update(DT);
 assert(game.chain.length === 12, `C: at cargoMax=12 a 13th canister is refused (len ${game.chain.length})`);
 // Raise the cap: now the same field pickup succeeds beyond 12.
@@ -181,7 +181,7 @@ clearField(); resetShip();
 game.cargoMax = 16;
 fillChain(12);
 game.garbage.push({ x: game.ship.x + 2, y: game.ship.y, vx: 0, vy: 0, spin: 0, spinRate: 0,
-  mass: 1, dead: false, update() {}, draw() {} });
+  mass: 1, pieces: 1, dead: false, update() {}, draw() {} }); // pieces:1 — hook now requires a single (v3.2 P1)
 update(DT);
 assert(game.chain.length === 13, `C: raising cargoMax to 16 lets the chain grow past 12 (len ${game.chain.length})`);
 // HUD draw crash-free with a >12 chain and a raised cap.
