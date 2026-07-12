@@ -263,9 +263,13 @@ const SAUCER_SMALL_CHANCE_CEIL  = 0.60; // full difficulty: the dangerous aimed 
 // different types run independently. Icons/labels/colors live with COLOR (below the helpers).
 const POWERUP_DURATION = 15;        // sec a timed effect (rapid/triple/magnet/engine) stays active
 const POWERUP_RADIUS = 15;          // pickup icon radius = its collision radius from ship center
-const POWERUP_DECAY = 14;           // sec an uncollected powerup lingers before fading away
-const POWERUP_DROP_CHANCE = 0.10;   // chance a small-tier kill drops a random weapon/utility powerup (8-12% band)
-const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine"]; // Health is ambient-only, never a drop
+const POWERUP_DECAY = 26;           // sec an uncollected powerup lingers before fading (v3.3 P3: 14->26, playtest knob — shot powerups should linger longer)
+const POWERUP_DROP_CHANCE = 0.16;   // chance a small-tier kill drops a powerup (v3.3 P3: 0.10->0.16, playtest knob — drop more often)
+const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine"]; // TIMED effects the HUD/powerActive/powerBudget machinery understands — Health & Scoop are NOT here (see POWERUP_DROP_WEIGHTS)
+// v3.3 P3: what can actually DROP (weighted), a SEPARATE structure from POWERUP_DROP_TYPES above.
+// Favors the shot powerups; Scoop is droppable but is a persistent, non-timed upgrade, so it is
+// deliberately absent from POWERUP_DROP_TYPES (the timed-effect list). Weights are the playtest knob.
+const POWERUP_DROP_WEIGHTS = { rapid: 3, triple: 3, scoop: 2, magnet: 1, engine: 1 };
 const POWERUP_HEALTH_GAP = [18, 26]; // sec between ambient Health spawns (saucer-like cadence)
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
 const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
@@ -288,6 +292,16 @@ const RAPID_SHOTS   = 40;           // trigger-pulls Rapid Fire lasts in "shots"
 const TRIPLE_SHOTS  = 30;           // trigger-pulls Triple Shot lasts in "shots" mode (a 3-fan is ONE pull)
 const MAGNET_PIECES = 20;           // canisters hooked the Magnet lasts in "pieces" mode (counted at the hook)
 const POWERUP_BUDGET = { rapid: RAPID_SHOTS, triple: TRIPLE_SHOTS, magnet: MAGNET_PIECES }; // full budget by type
+// Scoop (v3.3 P3) — a PERSISTENT, non-timed ship upgrade, the first of its kind here. It lives on
+// game.scoopLevel (0..SCOOP_MAX_LEVEL), NOT in powerFx/powerBudget, and it only ever decays by TAKING
+// HITS (never on a clock). Each level widens/deepens an oriented capture BOX (the "mouth") on the
+// ship's facing axis that scoops garbage in ADDITION to the base GARBAGE_PICKUP circle (they're OR'd,
+// so scoopLevel 0 is byte-identical to the pre-scoop build).
+const SCOOP_MAX_LEVEL = 5;
+const SCOOP_WIDTH = [0, 22, 30, 38, 46, 54]; // px full mouth width by level; L5 = 54 = 3x the drawn ship's 18px width (playtest knob)
+const SCOOP_DEPTH = [0, 20, 24, 28, 32, 36]; // px the mouth reaches forward of the ship center by level (playtest knob)
+const SCOOP_HITS_PER_LEVEL = 2;              // non-lethal hits that cost one scoop level (playtest knob)
+const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (mirrors the full-HP REPAIR_FULL_BONUS pattern; tunable)
 
 // Controller / gamepad input (F7). The one tunable knob for controller *feel* — how far an analog
 // stick must travel before it counts as a directional press. Button/axis index enums and the binding
@@ -551,6 +565,20 @@ const AudioSys = {
       o.connect(g).connect(this.sfx);
       o.start(t); o.stop(t + 0.43);
     });
+  },
+
+  scooploss() { // a scoop level lost to damage — a short, deflating downward blip (distinct from hit/pickup)
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(520, t);
+    o.frequency.exponentialRampToValueAtTime(180, t + 0.18);
+    g.gain.setValueAtTime(0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    o.connect(g).connect(this.sfx);
+    o.start(t); o.stop(t + 0.21);
   }
 };
 
@@ -1155,10 +1183,12 @@ const POWERUP_COLOR = {
   triple: "#ff8adf",   // Triple Shot — magenta
   health: "#ff6b6b",   // Health — red (cross)
   magnet: "#8ab6ff",   // Magnet — blue
-  engine: "#7dffb0"    // Engine — mint green
+  engine: "#7dffb0",   // Engine — mint green
+  scoop:  "#c07bff"    // Scoop — violet (v3.3 P3; no other purple in the palette, so it's an
+                       // unmistakable pickup and never reads as a hazard tell — look-call, tunable)
 };
 const POWERUP_LABEL = {
-  rapid: "RAPID", triple: "TRIPLE", health: "+HP", magnet: "MAGNET", engine: "ENGINE"
+  rapid: "RAPID", triple: "TRIPLE", health: "+HP", magnet: "MAGNET", engine: "ENGINE", scoop: "SCOOP"
 };
 
 // ---------- Entities ----------
@@ -1248,6 +1278,13 @@ class Ship {
     if (this.dead) return;
     const blink = this.invuln > 0 && Math.floor(this.invuln * 10) % 2 === 0;
     if (!blink) {
+      // Scoop mouth (v3.3 P3): two prongs flaring from the nose out to +/-width/2 at the mouth depth,
+      // drawn BEFORE the hull in COLOR.dock green so it reads as a collector's throat. At level 5 the
+      // mouth spans 54 px = 3x the ship's 18 px width. Hidden at level 0.
+      if (game.scoopLevel > 0) {
+        const lvl = game.scoopLevel, hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
+        drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, COLOR.dock, false);
+      }
       const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
       drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);
       if (this.thrusting && Math.random() < 0.8) {
@@ -1742,6 +1779,9 @@ function drawPowerupGlyph(type, x, y, r, color) {
       ctx.moveTo(0, 3);  ctx.lineTo(0, 9);
       ctx.moveTo(4, 3);  ctx.lineTo(3, 8);
       break;
+    case "scoop":  // a widening funnel / collector mouth (v3.3 P3): narrow throat, flaring open forward
+      ctx.moveTo(-8, -7); ctx.lineTo(-3, 4); ctx.lineTo(3, 4); ctx.lineTo(8, -7);
+      break;
   }
   glowStroke(color, 1.6, 8);
   ctx.restore();
@@ -1885,6 +1925,8 @@ const game = {
   powerups: [],                                        // free-floating Powerup pickups (F6)
   powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // remaining sec per timed effect (0 = inactive)
   powerBudget: { rapid: 0, triple: 0, magnet: 0 },    // remaining shots/pieces in count mode (P5; Engine is always timed)
+  scoopLevel: 0,                                       // PERSISTENT scoop upgrade level 0..SCOOP_MAX_LEVEL (v3.3 P3; NOT a timed effect)
+  scoopHits: 0,                                        // running non-lethal-hit tally; every SCOOP_HITS_PER_LEVEL costs a level
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
   cargoMax: CARGO_BASE,                                // runtime tow cap; grows CARGO_BASE→CARGO_CAP_MAX per canisters delivered (B-8)
   deliveryCount: 0, offloadTimer: 0,
@@ -1911,6 +1953,7 @@ function startGame() {
   game.powerups = [];
   game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
   game.powerBudget = { rapid: 0, triple: 0, magnet: 0 }; // count-mode budgets reset with the run (P5)
+  game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.cargoMax = CARGO_BASE;      // tow cap resets to base each run; grows with deliveries (B-8)
   game.deliveryCount = 0; game.offloadTimer = 0;
@@ -2077,6 +2120,21 @@ function powerActive(type) {
   return powerMode(type) === "time" ? game.powerFx[type] > 0 : game.powerBudget[type] > 0;
 }
 
+// The Scoop capture BOX (v3.3 P3, spec §8) — an oriented "mouth" on the ship's facing axis. Rotate the
+// wrap-aware ship->garbage delta into ship-local space (project onto the facing axis and its normal) and
+// test the box: |lateral| <= SCOOP_WIDTH[lvl]/2 AND -SHIP_RADIUS <= forward <= SCOOP_DEPTH[lvl]. At
+// scoopLevel 0 the box is empty (width/depth 0), so pickup falls back to exactly the base circle.
+function inScoopBox(g) {
+  const lvl = game.scoopLevel;
+  if (lvl <= 0) return false;
+  const s = game.ship;
+  const [dx, dy] = shortDelta(s.x, s.y, g.x, g.y); // vector ship -> garbage (wrap-aware)
+  const ca = Math.cos(s.angle), sa = Math.sin(s.angle);
+  const forward =  dx * ca + dy * sa;  // along the ship's facing axis
+  const lateral = -dx * sa + dy * ca;  // perpendicular
+  return Math.abs(lateral) <= SCOOP_WIDTH[lvl] / 2 && forward >= -SHIP_RADIUS && forward <= SCOOP_DEPTH[lvl];
+}
+
 // Effective player-bullet cap. Triple Shot wins over Rapid Fire when both are active because its
 // cap (12) is the higher of the two — the spec's "use the higher cap, don't multiply to 24".
 function maxBullets() {
@@ -2090,7 +2148,12 @@ function maxBullets() {
 // spawns ambiently. The single choke point for both destroy paths.
 function maybeDropPowerup(x, y) {
   if (Math.random() >= POWERUP_DROP_CHANCE) return;
-  const type = POWERUP_DROP_TYPES[Math.floor(Math.random() * POWERUP_DROP_TYPES.length)];
+  // v3.3 P3: weighted roll over POWERUP_DROP_WEIGHTS (favors the shot powerups), NOT a flat pick over
+  // POWERUP_DROP_TYPES — the two structures are deliberately separate (Scoop drops but isn't a timed effect).
+  let total = 0;
+  for (const k in POWERUP_DROP_WEIGHTS) total += POWERUP_DROP_WEIGHTS[k];
+  let r = Math.random() * total, type;
+  for (const k in POWERUP_DROP_WEIGHTS) { r -= POWERUP_DROP_WEIGHTS[k]; if (r < 0) { type = k; break; } }
   const a = rand(0, TAU), kick = rand(20, 50);
   game.powerups.push(new Powerup(x, y, type, Math.cos(a) * kick, Math.sin(a) * kick));
 }
@@ -2106,6 +2169,23 @@ function spawnHealthPowerup() {
 // Collect a powerup. Health is instant (repair, capped). The four timed effects REFRESH their
 // duration (no magnitude stacking); different types run independently. A floater confirms the grab.
 function applyPowerup(type) {
+  if (type === "scoop") {
+    // Scoop is a PERSISTENT, non-timed upgrade (v3.3 P3) — it lives on game.scoopLevel, NOT in
+    // powerFx/powerBudget. Each pickup adds a level; at the cap it pays a small score bonus instead,
+    // mirroring the full-HP Health-milestone pattern. It still counts as a powerup pick (FLAG A-8:
+    // this freezes the maxWaveNoPowerup achievement — accepted, it IS a powerup), but it does NOT
+    // feed powerUsed[] (that gates "Powered Up", the four timed types only).
+    if (game.scoopLevel < SCOOP_MAX_LEVEL) {
+      game.scoopLevel++;
+      game.floaters.push(new FloatText("SCOOP +1", game.ship.x, game.ship.y - 22, POWERUP_COLOR.scoop));
+    } else {
+      addScore(SCOOP_MAX_BONUS);
+      game.floaters.push(new FloatText("SCOOP MAX", game.ship.x, game.ship.y - 22, POWERUP_COLOR.scoop));
+    }
+    game.stats.powerupsPicked++;
+    AudioSys.powerup();
+    return;
+  }
   if (type === "health") {
     game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + POWERUP_HEALTH_AMOUNT);
   } else if (powerMode(type) === "time") {
@@ -2431,6 +2511,19 @@ function damageShip(amount, srcX, srcY) {
   if (s.hp < SHIP_MAX_HP * 0.5) game.stats.everBelowHalf = true;
   for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
   AudioSys.hit();
+  // Scoop decays by DAMAGE, not time (v3.3 P3): every SCOOP_HITS_PER_LEVEL non-lethal hits costs one
+  // scoop level. scoopHits is a running tally — it is NOT reset by a scoop pickup (FORK-3: no), only
+  // when a level is actually lost, and it doesn't accumulate at level 0 (hits there are harmless).
+  // A shielded / i-frame hit early-returned above, so it never reaches here.
+  if (game.scoopLevel > 0) {
+    game.scoopHits++;
+    if (game.scoopHits >= SCOOP_HITS_PER_LEVEL) {
+      game.scoopLevel = Math.max(0, game.scoopLevel - 1);
+      game.scoopHits = 0;
+      game.floaters.push(new FloatText("SCOOP -1", s.x, s.y - 22, POWERUP_COLOR.scoop));
+      AudioSys.scooploss();
+    }
+  }
   return true;
 }
 
@@ -2704,7 +2797,11 @@ function update(dt) {
         g.vy = g.vy * damp + (dy / d) * MAGNET_PULL * dt;
       }
     }
-    if (game.chain.length < game.cargoMax && g.pieces === 1 && dist2(g, game.ship) < pickR * pickR) {  // v3.2 P1: a clump (pieces>1) CANNOT be hooked — shoot it apart first
+    // Capture region = the base GARBAGE_PICKUP circle OR the Scoop mouth (v3.3 P3). MAGNET_PICKUP_MULT
+    // multiplies the CIRCLE only, and the box is independent, so there's no double-counting; at
+    // scoopLevel 0 inScoopBox is always false, so this is byte-identical to the pre-scoop pickup.
+    if (game.chain.length < game.cargoMax && g.pieces === 1 &&
+        (dist2(g, game.ship) < pickR * pickR || inScoopBox(g))) {  // v3.2 P1: a clump (pieces>1) CANNOT be hooked — shoot it apart first
       g.dead = true;
       game.chain.push({
         x: g.x, y: g.y, px: g.x, py: g.y,
@@ -3381,6 +3478,18 @@ function draw() {
     ctx.fillStyle = c;
     ctx.fillRect(ppx + 1, ppy + 1, (pw - 2) * clamp01(frac), ph - 2);
     if (counted) drawText(String(game.powerBudget[t]), ppx + pw + 14, prow + 4, 13, c, "left"); // shots/pieces left
+    prow += 20;
+  }
+  // SCOOP level pips (v3.3 P3) — a PERSISTENT upgrade, NOT a timed bar, so it's deliberately drawn
+  // OUTSIDE the powerActive/POWERUP_DROP_TYPES loop above. Filled pips = current level; hidden at 0.
+  if (game.scoopLevel > 0) {
+    drawText("SCOOP", 40, prow + 4, 13, POWERUP_COLOR.scoop, "left");
+    for (let i = 0; i < SCOOP_MAX_LEVEL; i++) {
+      ctx.beginPath();
+      ctx.arc(108 + i * 16, prow, 4, 0, TAU);
+      if (i < game.scoopLevel) { ctx.fillStyle = POWERUP_COLOR.scoop; ctx.fill(); }
+      else { ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1; ctx.stroke(); }
+    }
     prow += 20;
   }
   // when hauling, a chevron orbiting screen-center points toward the (maybe off-screen) dock
