@@ -106,6 +106,12 @@ function countVolleys(seconds, { rapid = 0, triple = 0 } = {}) {
     if (triple) game.powerFx.triple = triple;
     game.bullets.length = 0;                 // clear each frame so MAX_BULLETS/RAPID/TRIPLE caps
                                               // never gate fire — isolates cooldown-driven cadence
+    // Also clear ambient hazards each frame: this test measures *cooldown-driven* cadence only,
+    // and a wave-1 debris/saucer/hunter drifting into the stationary ship can land a hit whose
+    // hit-stun interrupts firing and drops the volley count — a pre-existing RNG-timing flake
+    // (its rate rides on the shared Math.random sequence, so any unrelated change that consumes
+    // RNG differently shifts it). Isolating the ship keeps section D deterministic.
+    game.debris.length = 0; game.hunters.length = 0; game.saucers.length = 0;
     update(dt);
     if (game.bullets.length > 0) volleys++;
   }

@@ -1289,9 +1289,105 @@ class Bullet {
   }
 }
 
+// SAT_ART (v3.3 P2): authored line-art satellite silhouettes for the Debris Satellites.
+// Each entry is ONE wrecked satellite archetype (a bent panel, a snapped truss, a hanging
+// antenna — this is a debris field, not a working constellation). Coordinates live in UNIT
+// SPACE: every point sits inside the radius-1 circle, so a design scales cleanly to any tier
+// by multiplying by `this.radius`. Drawn through the existing drawPoly — no fills, no new
+// primitive, no external assets (these are ORIGINAL stylized silhouettes authored in code,
+// evoking real archetypes; nothing is traced/imported — the file stays a self-contained
+// GPL-3.0 HTML, FLAG A-7). A polyline is `{ pts, closed }`; `closed` picks drawPoly's mode.
+//   full  — the detailed silhouette, used at the large/medium tiers.
+//   small — a simplified 2-4 stroke variant (body + one feature) for the small tier (r=13),
+//           where a 10+ segment design turns to mush. Legibility gate, tuned by eye (item 4).
+const SAT_ART = [
+  { // 0 — comms bus + twin solar panels (right panel snapped and skewed)
+    full: [
+      { pts: [[-0.20,-0.26],[0.20,-0.26],[0.20,0.26],[-0.20,0.26]], closed: true },        // bus body
+      { pts: [[-0.20,-0.15],[-0.92,-0.15],[-0.92,0.15],[-0.20,0.15]], closed: true },       // left panel (intact)
+      { pts: [[-0.56,-0.15],[-0.56,0.15]], closed: false },                                  // panel spar
+      { pts: [[0.20,-0.13],[0.70,-0.20],[0.78,0.02],[0.20,0.13]], closed: true },            // right panel (bent/snapped)
+      { pts: [[0.00,-0.26],[0.05,-0.60]], closed: false },                                   // antenna whip
+      { pts: [[-0.05,-0.60],[0.16,-0.60]], closed: false }                                   // antenna crossbar
+    ],
+    small: [
+      { pts: [[-0.26,-0.30],[0.26,-0.30],[0.26,0.30],[-0.26,0.30]], closed: true },          // body
+      { pts: [[-0.26,-0.16],[-0.90,-0.16],[-0.90,0.16],[-0.26,0.16]], closed: true }         // one panel
+    ]
+  },
+  { // 1 — dish relay (parabolic dish, one side drooping/cracked)
+    full: [
+      { pts: [[-0.75,0.06],[-0.55,-0.28],[-0.28,-0.45],[0.00,-0.50],[0.30,-0.42],[0.58,-0.22],[0.72,0.18]], closed: false }, // dish rim (asymmetric = damaged)
+      { pts: [[-0.40,-0.30],[0.00,-0.05]], closed: false },                                  // feed strut
+      { pts: [[0.40,-0.28],[0.00,-0.05]], closed: false },                                   // feed strut
+      { pts: [[-0.18,0.05],[0.18,0.05],[0.18,0.46],[-0.18,0.46]], closed: true },             // bus body
+      { pts: [[0.18,0.34],[0.52,0.52]], closed: false }                                       // hanging whip antenna
+    ],
+    small: [
+      { pts: [[-0.60,0.10],[-0.30,-0.40],[0.00,-0.50],[0.30,-0.40],[0.60,0.10]], closed: false }, // dish
+      { pts: [[-0.20,0.10],[0.20,0.10],[0.20,0.50],[-0.20,0.50]], closed: true }              // body
+    ]
+  },
+  { // 2 — boxy Earth-observer with an instrument boom (one panel snapped and hanging)
+    full: [
+      { pts: [[-0.28,-0.34],[0.28,-0.34],[0.28,0.34],[-0.28,0.34]], closed: true },           // body
+      { pts: [[0.28,0.00],[0.90,0.00]], closed: false },                                       // boom
+      { pts: [[0.82,-0.10],[0.98,-0.10],[0.98,0.10],[0.82,0.10]], closed: true },              // instrument at boom tip
+      { pts: [[-0.15,-0.34],[-0.15,-0.82],[0.15,-0.82],[0.15,-0.34]], closed: true },          // dorsal panel (intact)
+      { pts: [[-0.28,0.14],[-0.70,0.34],[-0.66,0.50],[-0.26,0.32]], closed: true }             // snapped panel (hanging)
+    ],
+    small: [
+      { pts: [[-0.30,-0.36],[0.30,-0.36],[0.30,0.36],[-0.30,0.36]], closed: true },            // body
+      { pts: [[0.30,0.00],[0.92,0.00]], closed: false }                                        // boom
+    ]
+  },
+  { // 3 — Sputnik-ish sphere + radial whip antennas (one antenna bent)
+    full: [
+      { pts: [[0.34,0.00],[0.24,0.24],[0.00,0.34],[-0.24,0.24],[-0.34,0.00],[-0.24,-0.24],[0.00,-0.34],[0.24,-0.24]], closed: true }, // sphere (octagon)
+      { pts: [[0.24,-0.24],[0.68,-0.68]], closed: false },                                     // whip
+      { pts: [[-0.24,-0.24],[-0.68,-0.68]], closed: false },                                    // whip
+      { pts: [[0.24,0.24],[0.68,0.68]], closed: false },                                        // whip
+      { pts: [[-0.24,0.24],[-0.58,0.48],[-0.52,0.74]], closed: false }                          // bent whip
+    ],
+    small: [
+      { pts: [[0.32,0.00],[0.16,0.28],[-0.16,0.28],[-0.32,0.00],[-0.16,-0.28],[0.16,-0.28]], closed: true }, // sphere (hexagon)
+      { pts: [[0.16,-0.28],[0.62,-0.62]], closed: false },                                     // whip
+      { pts: [[-0.16,0.28],[-0.62,0.62]], closed: false }                                        // whip
+    ]
+  },
+  { // 4 — cylindrical spent upper stage / booster (dented, flared nozzle)
+    full: [
+      { pts: [[-0.78,-0.22],[0.58,-0.22],[0.78,-0.10],[0.78,0.10],[0.58,0.22],[-0.78,0.22]], closed: true }, // tapered cylinder
+      { pts: [[-0.78,-0.13],[-0.95,-0.20],[-0.95,0.20],[-0.78,0.13]], closed: false },         // nozzle bell
+      { pts: [[-0.30,-0.22],[-0.30,0.22]], closed: false },                                     // structural band
+      { pts: [[0.18,-0.22],[0.18,0.22]], closed: false },                                       // structural band
+      { pts: [[-0.02,-0.22],[0.08,-0.11],[0.20,-0.22]], closed: false }                         // dent (kinked skin)
+    ],
+    small: [
+      { pts: [[-0.80,-0.24],[0.66,-0.24],[0.80,0.00],[0.66,0.24],[-0.80,0.24]], closed: true }, // cylinder
+      { pts: [[-0.80,-0.14],[-0.96,0.00],[-0.80,0.14]], closed: false }                         // nozzle
+    ]
+  },
+  { // 5 — truss / array segment (broken lattice, one rail snapped short)
+    full: [
+      { pts: [[-0.85,-0.20],[0.85,-0.20]], closed: false },                                     // top rail (intact)
+      { pts: [[-0.85,0.20],[0.50,0.20]], closed: false },                                        // bottom rail (snapped short)
+      { pts: [[-0.85,-0.20],[-0.55,0.20],[-0.25,-0.20],[0.05,0.20],[0.35,-0.20],[0.65,0.20]], closed: false }, // lattice zigzag
+      { pts: [[-0.85,-0.20],[-0.85,-0.48],[-0.50,-0.48],[-0.50,-0.20]], closed: true },          // end panel
+      { pts: [[0.85,-0.20],[0.85,0.06]], closed: false }                                         // torn end cap
+    ],
+    small: [
+      { pts: [[-0.85,-0.18],[0.85,-0.18]], closed: false },                                      // top rail
+      { pts: [[-0.85,0.18],[0.85,0.18]], closed: false },                                         // bottom rail
+      { pts: [[-0.85,-0.18],[-0.35,0.18],[0.15,-0.18],[0.65,0.18]], closed: false }               // zigzag
+    ]
+  }
+];
+
 // Debris Satellite (F3): the passive main hazard (formerly Asteroid). Drifts randomly
-// like the old rocks, but reads as wrecked hardware — a broken-satellite silhouette —
-// and splits 3-ways at the large/medium tiers, emitting garbage at every tier.
+// like the old rocks, but reads as wrecked hardware — an authored satellite silhouette
+// (SAT_ART, v3.3 P2) — and splits 3-ways at the large/medium tiers, emitting garbage at
+// every tier.
 class DebrisSatellite {
   constructor(x, y, size, speedMul = 1) {
     this.x = x; this.y = y;
@@ -1302,32 +1398,22 @@ class DebrisSatellite {
     const a = rand(0, TAU);
     this.vx = Math.cos(a) * sp;
     this.vy = Math.sin(a) * sp;
-    this.angle = rand(0, TAU);
-    this.spin = rand(-1.2, 1.2);
+    this.angle = rand(0, TAU);          // random spawn rotation (v3.3 item 5 — preserved by the SAT_ART draw path)
+    this.spin = rand(-1.2, 1.2);        // random tumble (ditto)
     this.dead = false;
-    // Broken-satellite silhouette: an irregular hull polygon (a bit blockier than a
-    // rock) plus 1-2 protruding antenna/panel shards, drawn as open polylines.
-    this.hull = [];
-    const n = 6 + size;                 // large 9 / medium 8 / small 7 vertices
-    for (let i = 0; i < n; i++) {
-      const th = (i / n) * TAU;
-      const r = this.radius * rand(0.65, 1.05);
-      this.hull.push([Math.cos(th) * r, Math.sin(th) * r]);
-    }
-    this.shards = [];
-    const antennas = 1 + (Math.random() < 0.6 ? 1 : 0);  // 1-2 protruding shards
-    for (let k = 0; k < antennas; k++) {
-      const th = rand(0, TAU);
-      const base = [Math.cos(th) * this.radius * 0.8, Math.sin(th) * this.radius * 0.8];
-      const rTip = this.radius * rand(1.35, 1.75);
-      const tip  = [Math.cos(th) * rTip, Math.sin(th) * rTip];
-      this.shards.push([base, tip]);                     // antenna stalk
-      const perp = th + Math.PI / 2, cross = this.radius * 0.22;
-      this.shards.push([                                 // dish/panel crossbar at the tip
-        [tip[0] + Math.cos(perp) * cross, tip[1] + Math.sin(perp) * cross],
-        [tip[0] - Math.cos(perp) * cross, tip[1] - Math.sin(perp) * cross]
-      ]);
-    }
+    // Authored satellite silhouette (v3.3 P2). Pick one archetype per instance (splits
+    // re-roll independently), use the simplified `small` variant at the r=13 small tier,
+    // then bake a per-instance copy scaled to `this.radius` with a small random per-vertex
+    // jitter — the "wrecked/no two alike" look, applied ONCE here, never per frame. All the
+    // draw path does is rotate this by this.angle; nothing anchors art to a fixed "up".
+    const artDef = SAT_ART[Math.floor(rand(0, SAT_ART.length))];
+    const polys = this.size === 1 ? artDef.small : artDef.full;
+    const jit = this.radius * 0.045;    // per-vertex bend/jitter (px); subtle, keeps silhouettes legible
+    this.art = polys.map(pl => ({
+      closed: pl.closed,
+      pts: pl.pts.map(([px, py]) => [px * this.radius + rand(-jit, jit),
+                                     py * this.radius + rand(-jit, jit)])
+    }));
   }
   update(dt) {
     this.x += this.vx * dt; this.y += this.vy * dt;
@@ -1335,8 +1421,7 @@ class DebrisSatellite {
     wrap(this);
   }
   draw() {
-    drawPoly(this.hull, this.x, this.y, this.angle, COLOR.debris);
-    for (const s of this.shards) drawPoly(s, this.x, this.y, this.angle, COLOR.debris, false);
+    for (const pl of this.art) drawPoly(pl.pts, this.x, this.y, this.angle, COLOR.debris, pl.closed);
   }
 }
 
