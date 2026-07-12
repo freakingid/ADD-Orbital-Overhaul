@@ -4051,9 +4051,63 @@ for (let i = 0; i < 5; i++) {
 Achievements.init();
 
 // ---------- Main loop ----------
+// ---------- Capture tools (screenshots + slow-mo) ----------
+// Active only during live play, so these can never collide with menu navigation
+// or with control rebinding (both of which only happen while paused/in a menu).
+const Capture = {
+  timeScale: 1,
+  _shot: false,
+  _rates: [1, 0.5, 0.25],
+  _rateIdx: 0,
+
+  active() {
+    return game.state === "playing" && !game.paused;
+  },
+
+  cycleSlowMo() {
+    this._rateIdx = (this._rateIdx + 1) % this._rates.length;
+    this.timeScale = this._rates[this._rateIdx];
+  },
+
+  requestShot() { this._shot = true; },
+
+  // Called after draw(), so the canvas holds a complete, composited frame.
+  afterDraw() {
+    if (!this._shot) return;
+    this._shot = false;
+
+    // Composite onto solid black. If the canvas has an alpha channel, a raw
+    // toBlob() would export glowing lines over transparency, which reads as
+    // broken in most image viewers.
+    const off = document.createElement("canvas");
+    off.width = canvas.width;
+    off.height = canvas.height;
+    const octx = off.getContext("2d");
+    octx.fillStyle = "#000";
+    octx.fillRect(0, 0, off.width, off.height);
+    octx.drawImage(canvas, 0, 0);
+
+    off.toBlob(blob => {
+      const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `orbital-overhaul-${ts}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }, "image/png");
+  },
+};
+
+window.addEventListener("keydown", e => {
+  if (!Capture.active()) return;
+  const k = e.key.toLowerCase();
+  if (k === "p") { Capture.requestShot(); e.preventDefault(); }
+  else if (k === "o") { Capture.cycleSlowMo(); e.preventDefault(); }
+});
+
 let last = performance.now();
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.min(0.05, (now - last) / 1000) * Capture.timeScale;
   last = now;
   pollGamepad();        // refresh the first-gamepad snapshot once per frame, before anything reads it
   handleGamepadMenu();  // edge-triggered controller menu/system actions (Start/A/B)
@@ -4061,6 +4115,7 @@ function loop(now) {
   updateToasts(dt);     // age out achievement-unlock toasts (independent of pause/state) (F9)
   updateMusic();        // v3.4 P6: drive the music state/duck off game.state + menu, then run the scheduler
   draw();
+  Capture.afterDraw();
   requestAnimationFrame(loop);
 }
 
