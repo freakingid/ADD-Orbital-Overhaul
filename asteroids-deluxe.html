@@ -172,6 +172,7 @@ const GARBAGE_MAGNET_PULL = 40;        // px/s² each active piece accelerates t
 const GARBAGE_MERGE_DIST = 12;         // px: two active pieces this close fuse into one clump
 const HUNTER_COALESCE_COUNT = 12;      // pieces fused into one clump -> a new large Hunter core forms
 const GARBAGE_CLUMP_MAXSPD = Infinity; // off-by-default playtest clamp on a piece's coalescence speed
+const GARBAGE_SHATTER_KICK = [40, 90]; // v3.2 P2: px/s outward kick range for shatterClump's emitted pieces (playtest knob)
 
 const CHAIN_LINK = 20;          // px between chain nodes
 const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-8: 3→4 to keep a 20-node chain from sagging; §3.4 rule 7)
@@ -1890,6 +1891,25 @@ function destroyHunter(h, awardScore = true) {
   }
 }
 
+// Shatter a garbage clump (v3.2 P2): the tool that reopens what Phase 1 made un-hookable. One
+// player bullet on a pieces>1 clump destroys it and emits exactly `pieces` fresh single canisters,
+// each carrying an even split of the clump's mass, a full re-armed coalesceDelay (so the burst
+// disperses before it can start re-clumping), and an outward kick that inherits a fraction of the
+// clump's own drift — same fan-out shape as destroyDebris/destroyHunter. No score: the reward is
+// the hookable canisters themselves.
+function shatterClump(g) {
+  g.dead = true;
+  const pieceMass = g.mass / g.pieces;
+  for (let i = 0; i < g.pieces; i++) {
+    const spread = rand(0, TAU), kick = rand(GARBAGE_SHATTER_KICK[0], GARBAGE_SHATTER_KICK[1]);
+    game.garbage.push(new Garbage(g.x, g.y,
+      g.vx * 0.25 + Math.cos(spread) * kick,
+      g.vy * 0.25 + Math.sin(spread) * kick,
+      GARBAGE_DECAY, pieceMass));
+  }
+  boom(g.x, g.y, 1, COLOR.garbage);
+}
+
 // ---------- Powerups (F6) ----------
 // Which expiry mode governs a timed effect (v3.0 P5). Rapid + Triple follow shotPowerupMode; Magnet
 // follows magnetMode; Engine is always time-based (never player-configurable). Health is instant.
@@ -2663,6 +2683,14 @@ function update(dt) {
           b.dead = true;
           destroyHunter(h);   // score + boom + garbage + 3-way split, all tiers
           break;
+        }
+      }
+      if (b.dead) continue;
+      // v3.2 P2: a clump (pieces>1) is a bullet target — singles are debris, not targets, and
+      // still pass straight through (pieces===1 is excluded here on purpose).
+      for (const g of game.garbage) {
+        if (!g.dead && g.pieces > 1 && dist2(b, g) < g.radius * g.radius) {
+          b.dead = true; shatterClump(g); break;
         }
       }
     } else {

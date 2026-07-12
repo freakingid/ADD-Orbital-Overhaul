@@ -20,6 +20,10 @@
 // (10) v3.2 P1: two mass-1.0 singles attract EXACTLY as the shipped force (reduction guard — no retune).
 // (11) v3.2 P1: the Magnet powerup won't pull a clump, but still pulls a single — via real update().
 // (12) v3.2 P1: draw() is crash-free at pieces=1 and pieces=11 (cluster render).
+// (13) v3.2 P2: a player bullet shatters a pieces=7 clump into exactly 7 live singles, mass-split,
+//      full-delay, mass-conserving, and they don't immediately re-merge; a player bullet passes
+//      THROUGH a pieces=1 canister; a hostile bullet passes through a clump; the emitted pieces are
+//      hookable once in pickup range; shattering doesn't touch garbageDecayed.
 //  Plus: emission sites + fromNode inherit the coalesce defaults.
 
 "use strict";
@@ -50,9 +54,10 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
   setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: k => { delete lsStore[k]; } };
 
 const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
-  "DebrisSatellite", "HunterSatellite", "destroyDebris", "AudioSys",
+  "DebrisSatellite", "HunterSatellite", "destroyDebris", "shatterClump", "Bullet", "AudioSys",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
-  "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "WORLD_W", "WORLD_H"];
+  "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
+  "WORLD_W", "WORLD_H"];
 
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
@@ -60,8 +65,8 @@ const wrapped = new Function(
 );
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
-  destroyDebris, AudioSys, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
-  GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, WORLD_W, WORLD_H } = G;
+  destroyDebris, shatterClump, Bullet, AudioSys, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
+  GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK, WORLD_W, WORLD_H } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -314,6 +319,72 @@ console.log("(12) v3.2 P1: draw() is crash-free at pieces=1 and pieces=11 (clust
     wad.radius = 7 * Math.sqrt(11); wad.draw();
   } catch (e) { threw = true; console.log("    threw: " + e); }
   assert(!threw, "12: draw() renders a 1-piece and an 11-piece clump without throwing");
+}
+
+// =====================================================================
+console.log("(13) v3.2 P2: a player bullet shatters a pieces=7 clump into exactly 7 hookable singles");
+{
+  beginPlaying();
+  const clumpMass = 3.5;
+  const clump = new Garbage(1000, 1000, 6, -2);
+  clump.pieces = 7; clump.mass = clumpMass; clump.radius = 7 * Math.sqrt(7);
+  const bullet = new Bullet(1000, 1000, 0, 0, false); // dead-center, non-hostile
+  game.garbage = [clump];
+  game.bullets = [bullet];
+  const decayedBefore = game.stats.garbageDecayed;
+  update(1 / 60);
+  assert(bullet.dead, "13: the bullet is consumed by the clump");
+  assert(clump.dead, "13: the clump is destroyed");
+  assert(game.garbage.length === 7, `13: exactly 7 fresh singles emitted (got ${game.garbage.length})`);
+  assert(game.garbage.every(g => g.pieces === 1), "13: every emitted piece is pieces === 1");
+  assert(game.garbage.every(g => g.coalesceDelay === GARBAGE_COALESCE_DELAY),
+    "13: every emitted piece has a full, re-armed coalesceDelay");
+  assert(game.garbage.every(g => Math.abs(g.mass - clumpMass / 7) < 1e-12),
+    `13: every emitted piece's mass is clumpMass/7 = ${clumpMass / 7}`);
+  const totalMass = game.garbage.reduce((s, g) => s + g.mass, 0);
+  assert(Math.abs(totalMass - clumpMass) < 1e-9, `13: total emitted mass conserves clumpMass (${totalMass} vs ${clumpMass})`);
+  assert(game.stats.garbageDecayed === decayedBefore, "13: shattering does not touch garbageDecayed");
+
+  // the 7 emitted pieces do NOT immediately re-merge next frame (the delay gate holds)
+  const countBefore = game.garbage.length;
+  update(1 / 60);
+  assert(game.garbage.length === countBefore, "13: the fresh shatter burst does not merge on the very next frame");
+}
+
+console.log("(14) v3.2 P2: a player bullet passes THROUGH a pieces=1 canister; a hostile bullet passes through a clump");
+{
+  beginPlaying();
+  const single = new Garbage(1000, 1000, 0, 0); // pieces === 1 by default
+  const playerBullet = new Bullet(1000, 1000, 0, 0, false);
+  game.garbage = [single];
+  game.bullets = [playerBullet];
+  update(1 / 60);
+  assert(!playerBullet.dead && !single.dead, "14: a player bullet passes through a pieces=1 canister untouched");
+
+  beginPlaying();
+  const clump = new Garbage(1000, 1000, 0, 0);
+  clump.pieces = 6; clump.radius = 7 * Math.sqrt(6);
+  const hostileBullet = new Bullet(1000, 1000, 0, 0, true);
+  game.garbage = [clump];
+  game.bullets = [hostileBullet];
+  update(1 / 60);
+  assert(!clump.dead, "14: a hostile bullet passes through a clump (garbage is untouched by saucer fire)");
+}
+
+console.log("(15) v3.2 P2: emitted pieces ARE hookable (pieces===1) once in pickup range — the P1 gate now lets them through");
+{
+  beginPlaying();
+  game.cargoMax = 12;
+  const clump = new Garbage(game.ship.x, game.ship.y, 0, 0);
+  clump.pieces = 3; clump.radius = 7 * Math.sqrt(3);
+  const bullet = new Bullet(game.ship.x, game.ship.y, 0, 0, false);
+  game.garbage = [clump];
+  game.bullets = [bullet];
+  update(1 / 60); // shatters the clump; the 3 singles land at the ship's position, in pickup range
+  assert(game.garbage.length === 3 && game.garbage.every(g => g.pieces === 1),
+    "15: the clump shattered into 3 pieces=1 singles at the ship");
+  update(1 / 60); // a further frame lets the pickup pass hook the now-eligible singles
+  assert(game.chain.length === 3, `15: all 3 shattered singles are hookable in pickup range (chain length ${game.chain.length})`);
 }
 
 // =====================================================================
