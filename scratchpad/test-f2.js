@@ -174,14 +174,15 @@ place(new DebrisSatellite(0, 0, 3, 1), game.debris); // 50 dmg vs 10 hp -> letha
 update(DT);
 assert(game.ship.hp === 0, "d: HP floored at 0");
 assert(game.ship.dead === true, "d: ship is dead");
-assert(game.state === "gameover", "d: game-over state triggered");
+// v3.6 P5: a lethal hit now enters the "dying" death spectacle first, not straight to "gameover".
+assert(game.state === "dying", "d: enters the 'dying' death spectacle, not straight to game-over");
 assert(game.chain.length === 0, "d: tow chain scattered on death");
 assert(game.garbage.length >= 1, "d: scattered chain became free garbage");
 assert(game.lives === undefined, "d: no lives counter remains on game state");
 assert(game.respawnTimer === undefined, "d: no respawn timer remains on game state");
-for (let i = 0; i < 200; i++) update(DT); // ~3.3s: old code would have respawned by now
+for (let i = 0; i < 200; i++) update(DT); // ~3.3s: past the 2.5s death spectacle; old code would have respawned by now
 assert(game.ship.dead === true, "d: ship stays dead — no respawn attempt after 3s");
-assert(game.state === "gameover", "d: stays in game-over");
+assert(game.state === "gameover", "d: settles into game-over after the death spectacle");
 assert(game.ship.hp === 0, "d: HP never restored by a respawn");
 
 // =====================================================================

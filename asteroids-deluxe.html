@@ -180,6 +180,22 @@ const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonu
 const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
 const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
 
+// v3.6 P5 — the death spectacle. killShip() enters a new "dying" state for DEATH_DURATION seconds
+// instead of freezing straight to "gameover": the field keeps simulating (updateDeath) while an
+// expanding shockwave ring chain-detonates nearby bodies nearest-first (awardScore=false — no score,
+// no achievement counters), the screen shakes, and a white flash washes the first frames. deathT
+// reaching 0 hands off to "gameover". ALL PLAYTEST KNOBS — re-picked once it can be flown, not agonised
+// over here.
+const DEATH_DURATION        = 2.5;  // s the spectacle runs before the GAME OVER screen freezes it
+const DEATH_SHOCKWAVE_SPEED = 700;  // px/s the ring expands from the death point. It is ALSO the
+                                    // detonation front: a body detonates the frame the ring reaches it,
+                                    // so "nearest-first" falls out for free. Reach ≈ SPEED × DURATION.
+const DEATH_SHOCKWAVE_WIDTH = 4;    // px stroke width of the ring at birth (thins/fades as it expands)
+const DEATH_SHAKE_INIT      = 16;   // px initial screen-shake amplitude at the instant of death
+const DEATH_SHAKE_DECAY     = 24;   // px/s linear decay of the shake amplitude toward 0
+const DEATH_FLASH_TIME      = 0.22; // s the white flash takes to fade from full to nothing
+const DEATH_FLASH_ALPHA     = 0.8;  // peak alpha of the frame-one white flash
+
 // Radioactive salvage / tow chain / recycling dock
 // v3.3 P4 (9a): loose SINGLE canisters decay again (GARBAGE_DECAY) — decay is the GOVERNOR that keeps
 // the field readable now that Hunters always drop garbage (9b) reopens the 12-in/66-out amplifier.
@@ -2465,8 +2481,10 @@ function resetGameStats() {
 }
 
 const game = {
-  state: "title",   // title | playing | gameover
+  state: "title",   // title | playing | dying | gameover  ("dying" = the v3.6 P5 death spectacle)
   paused: false,    // true iff a pause-menu screen is open (F8)
+  deathT: 0,        // v3.6 P5: seconds left in the "dying" spectacle (DEATH_DURATION → 0 → "gameover")
+  shake: 0,         // v3.6 P5: current screen-shake amplitude (px), decayed in updateDeath()
   stats: resetGameStats(), // per-game achievement counters/flags (F9)
   toasts: [],       // active achievement-unlock toasts { name, life } (F9)
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
@@ -2499,6 +2517,7 @@ const game = {
 function startGame() {
   game.state = "playing";
   game.paused = false;
+  game.deathT = 0; game.shake = 0;   // v3.6 P5: a fresh run never carries death-spectacle state over
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, achReturn: "options" }; // ensure no menu carries in
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
@@ -2604,14 +2623,21 @@ function destroyDebris(a, awardScore = true) {
 // fan-out mirrors that pattern. Called both when shot and when a homer dies on the shield.
 function destroyHunter(h, awardScore = true) {
   h.dead = true;
-  if (awardScore) addScore(HUNTER_SCORE[h.size]);
-  // Achievement stats (F9): every Hunter death (bullet OR shield-kill) is a player kill. Lineage
-  // count -> Hunter's Bane (a full 13-member line from one spawn); large cores -> Diamond Cutter;
-  // all tiers -> Ghost Protocol (lifetime).
-  game.stats.hunterLineageKills++;
-  if (game.stats.hunterLineageKills >= ACH_LINEAGE_FULL) game.stats.hunterLineComplete = true;
-  if (h.size === 3) game.stats.largeHunterKills++;
-  Achievements.lifetime.hunterKills++;
+  if (awardScore) {
+    addScore(HUNTER_SCORE[h.size]);
+    // Achievement stats (F9): every Hunter death (bullet OR shield-kill) is a player kill. Lineage
+    // count -> Hunter's Bane (a full 13-member line from one spawn); large cores -> Diamond Cutter;
+    // all tiers -> Ghost Protocol (lifetime).
+    // v3.6 P5: these counters are now gated on `awardScore` (mirroring destroyDebris, which already
+    // gated its debrisKills/bestDebrisGame the same way) so the "dying"-state chain detonations —
+    // the ONLY caller that ever passes awardScore=false — move NO score AND NO achievement counters.
+    // Both real gameplay callers (player bullet, shield-kill) pass true, so their behaviour is
+    // unchanged; before this, awardScore=false would have leaked lifetime hunterKills on every death.
+    game.stats.hunterLineageKills++;
+    if (game.stats.hunterLineageKills >= ACH_LINEAGE_FULL) game.stats.hunterLineComplete = true;
+    if (h.size === 3) game.stats.largeHunterKills++;
+    Achievements.lifetime.hunterKills++;
+  }
   boom(h.x, h.y, h.size, COLOR.satellite);
   // v3.3 P4 (9b, reverses v3.2 P3's FORK-B/B1): EVERY Hunter drops garbage at its tier counts,
   // regardless of origin. This reopens the 12-in/66-out amplifier a coalesced lineage represents —
@@ -3114,7 +3140,13 @@ function killShip() { // hull destroyed (0 HP): a true, permanent game over — 
   AudioSys.lowhp(false); game.lowHpSiren = false;
   boom(game.ship.x, game.ship.y, 3, COLOR.ship);
   scatterChain();
-  game.state = "gameover";
+  // v3.6 P5: enter the "dying" spectacle instead of freezing straight to "gameover" — updateDeath()
+  // keeps the field alive for DEATH_DURATION, then flips state to "gameover". Only this state
+  // assignment changed; the boom/scatter/audio teardowns above and the achievement flush below all
+  // stay HERE so achievement timing is byte-identical to before.
+  game.state = "dying";
+  game.deathT = DEATH_DURATION;
+  game.shake = DEATH_SHAKE_INIT;
   AudioSys.saucer(false);
   // Achievements (F9): a game just ended — flag it so end-of-game checks (Waste Not) can fire,
   // run a final evaluation, and flush lifetime progress to storage.
@@ -3337,7 +3369,70 @@ function drawChain() {
 }
 
 // ---------- Update ----------
+// v3.6 P5: the death spectacle. Runs in place of the normal sim while game.state === "dying", so the
+// field doesn't freeze under the GAME OVER text. It keeps the world moving — but takes NO ship input,
+// spawns nothing on the timers, runs no pickup pass and no ship/chain collisions. An expanding
+// shockwave ring (radius = elapsed × DEATH_SHOCKWAVE_SPEED) is the detonation front: any live
+// debris/Hunter it has reached this frame detonates via the real destroy helpers with awardScore=false
+// (nearest-first falls out, since nearer bodies are reached first). awardScore=false means no score
+// and — post the destroyHunter gating fix — no achievement counters move; achievements were already
+// evaluated once, at killShip. At deathT<=0 the spectacle ends and state becomes "gameover" (Phase 6
+// hangs the high-score flow off that seam). The tow chain isn't advanced here: killShip's scatterChain()
+// already emptied it into free garbage, which IS advanced below.
+function updateDeath(dt) {
+  AudioSys.thrust(false);   // the ship is gone — make sure a lingering thrust voice never drones on
+
+  // World stays alive: advance every free-moving body and effect (but not the dead ship).
+  game.debris.forEach(a => a.update(dt));
+  game.hunters.forEach(h => h.update(dt));
+  game.saucers.forEach(s => s.update(dt));
+  game.garbage.forEach(g => g.update(dt));
+  game.particles.forEach(p => p.update(dt));
+  game.floaters.forEach(f => f.update(dt));
+  game.powerups.forEach(p => p.update(dt));
+
+  // Camera holds on the death point (the dead ship no longer moves).
+  game.camera.x = game.ship.x;
+  game.camera.y = game.ship.y;
+
+  // Screen shake decays linearly to 0.
+  game.shake = Math.max(0, game.shake - DEATH_SHAKE_DECAY * dt);
+
+  // Expanding shockwave = the detonation front. Reuse the real destroy helpers (awardScore=false): the
+  // explosion / garbage / split is the spectacle and costs no new code. Wrap-aware distance (dist2).
+  const ringR = (DEATH_DURATION - game.deathT) * DEATH_SHOCKWAVE_SPEED;
+  const ringR2 = ringR * ringR;
+  const center = game.ship;   // death point == the dead ship's frozen position
+  for (const a of game.debris)  if (!a.dead && dist2(center, a) <= ringR2) destroyDebris(a, false);
+  for (const h of game.hunters) if (!h.dead && dist2(center, h) <= ringR2) destroyHunter(h, false);
+
+  // Cleanup — mirror update()'s filter pass so detonated bodies leave the field. No wave-clear, no
+  // heartbeat, no collision passes: those don't run during the death.
+  game.debris    = game.debris.filter(a => !a.dead);
+  game.hunters   = game.hunters.filter(h => !h.dead);
+  game.saucers   = game.saucers.filter(s => !s.dead);
+  game.garbage   = game.garbage.filter(g => !g.dead);
+  game.particles = game.particles.filter(p => !p.dead);
+  game.floaters  = game.floaters.filter(f => !f.dead);
+  game.powerups  = game.powerups.filter(p => !p.dead);
+
+  // Advance the death clock; hand off to the frozen GAME OVER screen when it runs out.
+  game.deathT -= dt;
+  if (game.deathT <= 0) {
+    game.deathT = 0;
+    game.state = "gameover";
+    // --- Phase 6 seam: the "dying" -> "gameover" transition. The top-10 high-score qualify check
+    //     and initials-entry setup (game.entry) hook in HERE and nowhere else. Left clean on purpose. ---
+  }
+}
+
 function update(dt) {
+  // v3.6 P5: the death spectacle runs its own reduced sim. This branch sits BEFORE the general
+  // early-return so "dying" isn't swallowed by the `state !== "playing"` gate below.
+  if (game.state === "dying" && !game.paused) {
+    updateDeath(dt);
+    return;
+  }
   if (game.state !== "playing" || game.paused) {
     AudioSys.thrust(false);
     return;
@@ -4018,6 +4113,20 @@ function drawEntity(e) {
   else e.draw();
 }
 
+// v3.6 P5: the expanding shockwave ring of the death spectacle — a stroked arc (no fill, stays inside
+// GDD §3.2's vector-glow rule), centred on the death point, fading and thinning as it grows. Drawn in
+// world space (inside the camera transform) so it stays pinned to the death location as bodies drift.
+function drawShockwave() {
+  const r = (DEATH_DURATION - game.deathT) * DEATH_SHOCKWAVE_SPEED;
+  if (r <= 0) return;
+  const frac = Math.max(0, game.deathT / DEATH_DURATION); // 1 at the instant of death -> 0 at handoff
+  ctx.globalAlpha = frac;
+  ctx.beginPath();
+  ctx.arc(game.ship.x, game.ship.y, r, 0, TAU);
+  glowStroke(COLOR.ship, DEATH_SHOCKWAVE_WIDTH * frac + 0.5, 16);
+  ctx.globalAlpha = 1;
+}
+
 function draw() {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   drawStarfield();
@@ -4046,8 +4155,13 @@ function draw() {
   }
 
   // --- World space: translate so the camera (the ship) sits at screen center ---
+  // v3.6 P5: a decaying screen-shake offset is added during the death spectacle. game.shake is 0 in
+  // normal play (only set at killShip, decayed in updateDeath), so this is a byte-identical translate
+  // then. Jitter uses Math.random (a pure visual — never the game RNG).
+  const shX = game.shake ? (Math.random() * 2 - 1) * game.shake : 0;
+  const shY = game.shake ? (Math.random() * 2 - 1) * game.shake : 0;
   ctx.save();
-  ctx.translate(VIEW_W/2 - game.camera.x, VIEW_H/2 - game.camera.y);
+  ctx.translate(VIEW_W/2 - game.camera.x + shX, VIEW_H/2 - game.camera.y + shY);
   if (game.dock) drawEntity(game.dock);
   game.particles.forEach(drawEntity);
   game.garbage.forEach(drawEntity);
@@ -4059,7 +4173,21 @@ function draw() {
   game.bullets.forEach(drawEntity);
   game.ship.draw();                 // always at the camera center
   game.floaters.forEach(drawEntity);
+  if (game.state === "dying") drawShockwave();  // v3.6 P5: expanding ring from the death point (world space)
   ctx.restore();
+
+  // v3.6 P5: white flash over the world on the first frames of death — drawn AFTER the world (in
+  // screen space), under the HUD so score/etc. stay legible. Decays from DEATH_FLASH_ALPHA to 0 over
+  // DEATH_FLASH_TIME.
+  if (game.state === "dying") {
+    const flash = Math.max(0, (game.deathT - (DEATH_DURATION - DEATH_FLASH_TIME)) / DEATH_FLASH_TIME);
+    if (flash > 0) {
+      ctx.globalAlpha = flash * DEATH_FLASH_ALPHA;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.globalAlpha = 1;
+    }
+  }
 
   // --- HUD (screen space, drawn after restoring the untranslated context) ---
   // Capture tools (P/O/H — see the block comment above the Capture object) toggle visibility
@@ -4224,6 +4352,13 @@ const Capture = {
     return game.state === "playing" && !game.paused;
   },
 
+  // v3.6 P5 (FLAG-I): P (screenshot) is ALSO allowed during the "dying" death spectacle — plausibly
+  // the single frame most worth capturing. O (slow-mo) and H (HUD toggle) deliberately stay
+  // live-play only: slow-mo would stretch the fixed death window and the HUD toggle is pointless mid-death.
+  canShoot() {
+    return this.active() || game.state === "dying";
+  },
+
   cycleSlowMo() {
     this._rateIdx = (this._rateIdx + 1) % this._rates.length;
     this.timeScale = this._rates[this._rateIdx];
@@ -4261,10 +4396,11 @@ const Capture = {
 };
 
 window.addEventListener("keydown", e => {
-  if (!Capture.active()) return;
   const k = e.key.toLowerCase();
-  if (k === "p") { Capture.requestShot(); e.preventDefault(); }
-  else if (k === "o") { Capture.cycleSlowMo(); e.preventDefault(); }
+  // P works during live play AND the death spectacle (v3.6 P5, FLAG-I); O/H stay live-play only.
+  if (k === "p" && Capture.canShoot()) { Capture.requestShot(); e.preventDefault(); return; }
+  if (!Capture.active()) return;
+  if (k === "o") { Capture.cycleSlowMo(); e.preventDefault(); }
   else if (k === "h") { Capture.toggleHud(); e.preventDefault(); }
 });
 
