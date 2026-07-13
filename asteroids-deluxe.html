@@ -103,7 +103,16 @@ const WORLD_W = 2560, WORLD_H = 1440;   // simulation space (the wrap boundary)
 const VIEW_W = 1280, VIEW_H = 720;      // visible viewport = canvas size
 const TAU = Math.PI * 2;
 
-const SHIP_TURN = 4.2;          // rad/sec
+const SHIP_TURN = 4.2;          // rad/sec — the design-default turn rate (before the player scale)
+// Player rotation-speed preference (CS010 §10b): a multiplier over SHIP_TURN, adjustable on the
+// Controls screen and persisted ADDITIVELY in afd_settings_v1. It is a player PREFERENCE, not a
+// balance change — SHIP_TURN stays the design default. Deliberately NOT reset by the Controls
+// screen's "Return to Defaults" (FLAG-10a — Paul's call: the player returns to 100% manually via
+// the slider). Both turn sites read it through shipTurnRate() so they can never diverge.
+const SHIP_TURN_SCALE_MIN = 0.5;      // 50%
+const SHIP_TURN_SCALE_MAX = 1.5;      // 150%
+const SHIP_TURN_SCALE_STEP = 0.10;    // 10% per ◄/► nudge -> 11 positions (0.5 .. 1.5)
+const SHIP_TURN_SCALE_DEFAULT = 1.0;  // 100% — design default; a corrupt/out-of-range save clamps here
 const SHIP_THRUST = 340;        // px/sec^2
 const SHIP_DRAG = 0.35;         // fraction of velocity lost per second
 const SHIP_MAX_SPEED = 520;
@@ -291,15 +300,29 @@ const CARGO_BASE = 12;          // starting tow cap (was CHAIN_MAX)
 const CARGO_CAP_MAX = 24;       // ceiling (v3.4 P1: 20->24); the physics retune below targets "full chain here" ≈ old 12-node feel
 const CARGO_GROW_PER = 30;      // +1 cap per this many canisters recycled (delivered) in the current run
 const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
-// Mass-penalty coefficients (B-8 retune). With a 20-node ceiling, the per-node penalty is SOFTENED
-// so a full chain at CARGO_CAP_MAX lands near the old 12-node feel (~45% thrust / ~63% top speed)
-// instead of the "broken" ~33%/50% a naive m=20 gave under the old 0.10/0.05 (§2.10.1). Solved so
-// 1/(1+20·k)=old-12 value: thrust k=0.06 (1/2.2), top-speed k=0.03 (1/1.6). Tug coeff dropped
-// 0.12→0.07 so its 1.4 cap is reached at m≈20 (was m≈12) — the tug scales down in lock-step, so a
-// base 12-chain is genuinely lighter across ALL three penalties, with headroom to grow into.
-const CARGO_MASS = 0.07;        // tug mass-factor grows by this per unit of towed mass (F5: mass sum, not count)
-const CARGO_THRUST = 0.06;      // thrust divisor grows by this per unit of towed mass
-const CARGO_MAXSPD = 0.03;      // max-speed divisor grows by this per unit of towed mass
+// Towed-mass penalty coefficients — ALL FOUR ARE PLAYTEST KNOBS (CS010 §3). The complaint they
+// address: a typical mid-sized haul (~6-12 towed mass) didn't "feel heavy." Background: v3.0 P6 grew
+// the tow cap from a fixed 12 to a growing CARGO_BASE 12 -> CARGO_CAP_MAX 24 and softened the three
+// divisors in lock-step so a FULL chain (mass ~24) would land near the old full-12 feel — which left
+// the low-to-mid range far too light. (The old comment here still solved 1/(1+20·k) for a *20*-node
+// ceiling; the ceiling has been 24 since v3.4 P1 — that comment was stale and is corrected here.)
+//
+// The divisor shape 1/(1+m·k) ASYMPTOTES, so raising CARGO_THRUST/CARGO_MAXSPD can never make the
+// mid range bite hard without over-penalizing the full chain. So the CS010 first pass leans on the
+// TUG (CARGO_MASS), which strengthens the mid-range momentum pull-back WITHOUT moving the full-chain
+// endpoint (its 1.4 cap is unchanged — see updateChain), and ships CARGO_TURN as the real structural
+// fix for "inertia" (mass resisting ROTATION), dormant at 0.0 so enabling it is Paul's one-number call.
+// See STATUS.md (CS010 P2) for the before/after and candidate tables.
+const CARGO_MASS = 0.10;        // PLAYTEST KNOB (CS010: 0.07->0.10). Tug mass-factor per unit towed mass
+                                // (F5: mass sum, not count) via min(1.4, m·this): the 1.4 cap is now reached
+                                // at m=14 (was m≈20), so a mid chain feels the momentum tug sooner; full-24 tug unchanged (capped).
+const CARGO_THRUST = 0.07;      // PLAYTEST KNOB (CS010: 0.06->0.07). Thrust divisor per unit towed mass. full-24 accel 40.9%->37.3%
+const CARGO_MAXSPD = 0.035;     // PLAYTEST KNOB (CS010: 0.03->0.035). Max-speed divisor per unit towed mass. full-24 top speed 58.1%->54.3%
+const CARGO_TURN = 0.0;         // PLAYTEST KNOB (CS010 §3, the proposed "inertia" fix — SHIPPED DORMANT).
+                                // Turn-rate divisor per unit towed mass in shipTurnRate(): SHIP_TURN·scale/(1+m·this).
+                                // At 0.0, rotation is UNAFFECTED by cargo (byte-identical to pre-CS010 turn × the player scale).
+                                // Raise it to make a heavy chain resist turning — the missing half of "mass = inertia".
+                                // Candidate values + turn-mult table: STATUS.md (CS010 P2).
 
 const DOCK_RADIUS = 44;
 // v3.4 P2: difficulty lever — scales DOCK_RADIUS from 2x at wave 1 down to the shipped 1x
@@ -1450,6 +1473,7 @@ const settings = {
   shotPowerupMode: "time", // "time" | "shots"  — governs Rapid Fire + Triple Shot expiry
   magnetMode:      "time", // "time" | "pieces" — governs Magnet expiry
   musicTrack:      "zen",  // "zen" | "derelict" | "drift" | "warehouse" — selected gameplay track (v3.5; zen default)
+  shipTurnScale:   SHIP_TURN_SCALE_DEFAULT, // CS010 §10b: player rotation-speed multiplier (0.5..1.5), read by shipTurnRate()
 };
 
 // Music-track picker. Internal values drive gameplay-track selection; the labels are what the Options
@@ -1604,15 +1628,21 @@ function menuDifficulty(a) {
 function menuControls(a) {
   const m = game.menu;
   const ACTIONS = REBINDABLE;               // one row per rebindable action, col 0 = kb, col 1 = pad
-  const ROWS = ACTIONS.length + 2;          // + Return to Defaults + Back
-  const defaultsRow = ACTIONS.length, backRow = ACTIONS.length + 1;
+  // Row order: [rebindable actions...], Ship Rotation slider (§10b), Return to Defaults, Back. Derive
+  // the three trailing indices from ACTIONS.length so inserting the slider row can't desync them (nor
+  // can adding/removing a rebindable action later). drawControlsMenu derives them the same way.
+  const turnRow = ACTIONS.length;
+  const defaultsRow = ACTIONS.length + 1, backRow = ACTIONS.length + 2;
+  const ROWS = ACTIONS.length + 3;          // + Ship Rotation + Return to Defaults + Back
   if (a === "up")   { m.row = (m.row + ROWS - 1) % ROWS; AudioSys.ui(false); }
   else if (a === "down") { m.row = (m.row + 1) % ROWS; AudioSys.ui(false); }
   else if (a === "left" || a === "right") {
-    if (m.row < ACTIONS.length) { m.col = 1 - m.col; AudioSys.ui(false); } // toggle kb/pad column
+    if (m.row < ACTIONS.length) { m.col = 1 - m.col; AudioSys.ui(false); }                          // toggle kb/pad column
+    else if (m.row === turnRow) { adjustShipTurnScale(a === "right" ? 1 : -1); AudioSys.ui(false); } // §10b rotation slider
   }
   else if (a === "confirm") {
     if (m.row < ACTIONS.length) startRebind(ACTIONS[m.row], m.col === 0 ? "key" : "pad");
+    // turnRow has no confirm action — it's a ◄/► slider (Paul: rotation returns to default manually).
     else if (m.row === defaultsRow) { returnToDefaults(); AudioSys.ui(true); }
     else if (m.row === backRow) gotoScreen("options", 3); // back to Options, cursor on "Controls"
   }
@@ -1644,6 +1674,11 @@ function capturePadRebind(btn) {
   saveSettings();
   AudioSys.ui(true);
 }
+// Controls-screen "Return to Defaults": resets rebindable key/pad bindings ONLY.
+// FLAG-10a (CS010 §10b): this deliberately does NOT reset settings.shipTurnScale — Paul asked that the
+// rotation-speed slider return to 100% MANUALLY, not via this button. Do NOT "fix" it to also reset
+// shipTurnScale; that would reverse an explicit design call. (Counter-intuitive because the slider row
+// lives on this same screen, hence this comment.)
 function returnToDefaults() {
   for (const name of REBINDABLE) {
     const d = DEFAULT_BINDINGS[name];
@@ -1651,6 +1686,16 @@ function returnToDefaults() {
     bindings[name].buttons = d.buttons.slice();
     bindings[name].axis = d.axis ? { index: d.axis.index, dir: d.axis.dir } : null;
   }
+  saveSettings();
+}
+
+// CS010 §10b: nudge the rotation-speed preference by one 10% step (dir = +1 for ►, -1 for ◄), clamp to
+// [MIN, MAX], snap to the 0.10 grid to kill float accumulation, then persist. Held ◄/► only nudges once
+// — the menu-open keydown branch early-returns on e.repeat (v3.5 P1 guard) and the gamepad path is
+// edge-detected, so this can never spin.
+function adjustShipTurnScale(dir) {
+  const stepped = Math.round((settings.shipTurnScale + dir * SHIP_TURN_SCALE_STEP) * 10) / 10;
+  settings.shipTurnScale = Math.max(SHIP_TURN_SCALE_MIN, Math.min(SHIP_TURN_SCALE_MAX, stepped));
   saveSettings();
 }
 
@@ -1667,7 +1712,8 @@ function saveSettings() {
   try {
     const data = { vol: { ...AudioSys.vol }, bindings: {},
       shotPowerupMode: settings.shotPowerupMode, magnetMode: settings.magnetMode, // v3.0 P5 (additive)
-      musicTrack: settings.musicTrack };                                          // v3.4 P6 (additive)
+      musicTrack: settings.musicTrack,                                            // v3.4 P6 (additive)
+      shipTurnScale: settings.shipTurnScale };                                    // CS010 §10b (additive)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -1700,6 +1746,15 @@ function loadSettings() {
     if (data.magnetMode === "time" || data.magnetMode === "pieces") settings.magnetMode = data.magnetMode;
     // v3.4 P6: only accept a known track name, so a corrupt/unknown value falls back to the default.
     if (MUSIC_TRACK_VALUES.includes(data.musicTrack)) settings.musicTrack = data.musicTrack;
+    // CS010 §10b: rotation-speed preference is additive — tolerate a missing key (older saves) and
+    // accept only a finite in-range number; anything else (string / NaN-as-null / 99 / 0) snaps to the
+    // 1.0 default rather than sticking. Snap to the 0.10 grid so a hand-edited save can't desync the slider.
+    if (typeof data.shipTurnScale === "number" && isFinite(data.shipTurnScale) &&
+        data.shipTurnScale >= SHIP_TURN_SCALE_MIN && data.shipTurnScale <= SHIP_TURN_SCALE_MAX) {
+      settings.shipTurnScale = Math.round(data.shipTurnScale * 10) / 10;
+    } else {
+      settings.shipTurnScale = SHIP_TURN_SCALE_DEFAULT;
+    }
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
@@ -1864,8 +1919,9 @@ class Ship {
   }
   update(dt) {
     if (this.dead) return;
-    if (input.left())  this.angle -= SHIP_TURN * dt;
-    if (input.right()) this.angle += SHIP_TURN * dt;
+    const turn = shipTurnRate() * dt;   // player rotation scale (§10b) + optional cargo-turn penalty (§3), one source
+    if (input.left())  this.angle -= turn;
+    if (input.right()) this.angle += turn;
 
     this.thrusting = input.thrust();
     // towed cargo makes the ship heavier: weaker thrust, lower top speed. Scales with
@@ -3392,6 +3448,15 @@ function chainMass() {
   return powerActive("engine") ? m * ENGINE_MASS_MULT : m;
 }
 
+// Ship turn rate (CS010 §10b + §3): the ONE place both Ship.update turn sites read, so they can
+// never diverge. Folds in the player's rotation-speed preference (settings.shipTurnScale) AND an
+// optional towed-mass turn penalty (CARGO_TURN). At the shipped CARGO_TURN = 0 this is exactly
+// SHIP_TURN * scale — cargo does not affect rotation, byte-identical to pre-CS010 turn × the slider.
+// CARGO_TURN > 0 makes a heavy chain resist turning (the proposed "inertia" fix; see the constant).
+function shipTurnRate() {
+  return SHIP_TURN * settings.shipTurnScale / (1 + chainMass() * CARGO_TURN);
+}
+
 function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity survives
   if (n.x < -60) { n.x += WORLD_W; n.px += WORLD_W; }
   if (n.x > WORLD_W + 60) { n.x -= WORLD_W; n.px -= WORLD_W; }
@@ -4146,7 +4211,7 @@ function drawDifficulty() {
 }
 
 function drawControlsMenu() {
-  const { x, y } = menuPanel(760, 470, "CONTROLS");
+  const { x, y } = menuPanel(760, 512, "CONTROLS");   // +42px vs. pre-CS010 to seat the Ship Rotation slider row
   const m = game.menu;
   drawText("ACTION", x + 36, y + 88, 13, COLOR.dim, "left");
   drawText("KEYBOARD", x + 250, y + 88, 13, COLOR.dim, "left");
@@ -4160,10 +4225,37 @@ function drawControlsMenu() {
     drawBindCell(x + 250, ry, keyLabel(bindings[name]), rowSel && m.col === 0, capKb);
     drawBindCell(x + 490, ry, padLabel(bindings[name]), rowSel && m.col === 1, capGp);
   });
-  const dRow = REBINDABLE.length, bRow = dRow + 1;
+  // Ship Rotation slider (§10b): a ◄/► value row below the rebind rows. Row index derived from
+  // REBINDABLE.length so it stays in lockstep with menuControls' turnRow (never hardcode it).
+  const turnRow = REBINDABLE.length;
+  drawTurnScaleRow(x, y + 122 + turnRow * 42, m.row === turnRow);
+  const dRow = REBINDABLE.length + 1, bRow = dRow + 1;
   drawText((m.row === dRow ? "▶ " : "   ") + "Return to Defaults", VIEW_W / 2, y + 122 + dRow * 42 + 26, 20, m.row === dRow ? COLOR.text : COLOR.dim);
   drawText((m.row === bRow ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 122 + bRow * 42 + 26, 20, m.row === bRow ? COLOR.text : COLOR.dim);
-  drawText("↑↓ row    ◄► column    ENTER / A rebind    ESC / B back", VIEW_W / 2, y + 452, 12, COLOR.dim);
+  drawText("↑↓ row    ◄► column / rotation    ENTER / A rebind    ESC / B back", VIEW_W / 2, y + 494, 12, COLOR.dim);
+}
+
+// One slider row for the ship-rotation preference on the Controls screen (§10b). Readout is a
+// PERCENTAGE (the raw rad/s means nothing to a player). A gold tick marks the 100% default so "home"
+// is visible WITHOUT moving the slider; the fill + readout also go gold and gain a "(default)" tag
+// when the value sits exactly on 100%. Menu rects are exempt from the HUD no-fills rule — this mirrors
+// the volume slider in drawOptionsMenu.
+function drawTurnScaleRow(x, ry, sel) {
+  drawText("Ship Rotation", x + 36, ry, 17, sel ? COLOR.text : COLOR.dim, "left");
+  const bx = x + 250, bw = 200, bh = 12, by = ry - 11;
+  const span = SHIP_TURN_SCALE_MAX - SHIP_TURN_SCALE_MIN;
+  const frac = (settings.shipTurnScale - SHIP_TURN_SCALE_MIN) / span;
+  const atDefault = Math.abs(settings.shipTurnScale - SHIP_TURN_SCALE_DEFAULT) < 1e-6;
+  ctx.strokeStyle = sel ? COLOR.shield : COLOR.dim; ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillStyle = atDefault ? COLOR.ach : (sel ? COLOR.shield : COLOR.dim);
+  ctx.fillRect(bx + 1, by + 1, (bw - 2) * frac, bh - 2);
+  const tx = bx + bw * ((SHIP_TURN_SCALE_DEFAULT - SHIP_TURN_SCALE_MIN) / span);  // 100% tick — always drawn
+  ctx.strokeStyle = COLOR.ach; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(tx, by - 4); ctx.lineTo(tx, by + bh + 4); ctx.stroke();
+  const pct = Math.round(settings.shipTurnScale * 100) + "%";
+  drawText(atDefault ? pct + "  (default)" : pct, bx + bw + 30, ry, 16, atDefault ? COLOR.ach : (sel ? COLOR.text : COLOR.dim), "left");
+  if (sel) { drawText("◄", bx - 20, ry + 1, 16, COLOR.text); drawText("►", bx + bw + 8, ry + 1, 16, COLOR.text); }
 }
 
 // One binding cell on the Controls screen. Highlights when selected; shows "press…" while capturing.

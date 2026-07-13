@@ -111,9 +111,10 @@ assert(CARGO_BASE === 12, `A: CARGO_BASE is 12 (got ${CARGO_BASE})`);
 assert(CARGO_CAP_MAX === 24, `A: CARGO_CAP_MAX is 24 (got ${CARGO_CAP_MAX})`);
 assert(CARGO_GROW_PER > 0, `A: CARGO_GROW_PER positive (got ${CARGO_GROW_PER})`);
 assert(CHAIN_ITER >= 3, `A: CHAIN_ITER >= 3 (got ${CHAIN_ITER})`);
-assert(near(CARGO_THRUST, 0.06), `A: CARGO_THRUST retuned to 0.06 (got ${CARGO_THRUST})`);
-assert(near(CARGO_MAXSPD, 0.03), `A: CARGO_MAXSPD retuned to 0.03 (got ${CARGO_MAXSPD})`);
-assert(near(CARGO_MASS, 0.07), `A: CARGO_MASS retuned to 0.07 (got ${CARGO_MASS})`);
+// CS010 P2 retune (all playtest knobs): thrust 0.06->0.07, top-speed 0.03->0.035, tug 0.07->0.10.
+assert(near(CARGO_THRUST, 0.07), `A: CARGO_THRUST = 0.07 (CS010; got ${CARGO_THRUST})`);
+assert(near(CARGO_MAXSPD, 0.035), `A: CARGO_MAXSPD = 0.035 (CS010; got ${CARGO_MAXSPD})`);
+assert(near(CARGO_MASS, 0.10), `A: CARGO_MASS = 0.10 (CS010; got ${CARGO_MASS})`);
 assert(CHAIN_MAX_GONE, "A: old fixed CHAIN_MAX constant is gone (replaced by cargoMax/CARGO_BASE)");
 assert(near(DOCK_OFFLOAD_INTERVAL, 0.05), `A: DOCK_OFFLOAD_INTERVAL retuned to 0.05 (got ${DOCK_OFFLOAD_INTERVAL})`);
 
@@ -241,10 +242,11 @@ const tm24 = measureThrustMul(CARGO_CAP_MAX);
 const ms24 = measureMaxSpRatio(CARGO_CAP_MAX);
 assert(near(tm24, 1 / (1 + CARGO_CAP_MAX * CARGO_THRUST), 2e-3), `D: thrustMul at m=24 matches formula (got ${tm24.toFixed(4)})`);
 assert(near(ms24, 1 / (1 + CARGO_CAP_MAX * CARGO_MAXSPD), 2e-3), `D: top-speed ratio at m=24 matches formula (got ${ms24.toFixed(4)})`);
-// A bigger hold is SUPPOSED to cost handling: ~41% thrust / ~58% top speed at m=24 (vs ~45%/63% at
-// the old m=20 cap) — not re-solved, per v3.4 P1 spec.
-assert(Math.abs(tm24 - 0.4098) < 0.01, `D: full 24-chain thrust ≈ 41% (got ${(tm24 * 100).toFixed(1)}%)`);
-assert(Math.abs(ms24 - 0.5814) < 0.01, `D: full 24-chain top speed ≈ 58% (got ${(ms24 * 100).toFixed(1)}%)`);
+// CS010 P2 retune (playtest knobs): the mid haul now bites harder via the tug (CARGO_MASS 0.07->0.10),
+// and thrust/top-speed got a modest firming (0.06->0.07 / 0.03->0.035). Full-24 lands at ~37% thrust /
+// ~54% top speed (was ~41%/~58% under v3.4 P1) — deliberately heavier, still above the "broken" ~33%/50%.
+assert(Math.abs(tm24 - 0.3731) < 0.01, `D: full 24-chain thrust ≈ 37% (got ${(tm24 * 100).toFixed(1)}%)`);
+assert(Math.abs(ms24 - 0.5435) < 0.01, `D: full 24-chain top speed ≈ 54% (got ${(ms24 * 100).toFixed(1)}%)`);
 
 // A base-12 chain is genuinely LIGHTER than the old 12 (headroom to grow into).
 const tm12 = measureThrustMul(12);
@@ -259,8 +261,8 @@ const tm12eng = measureThrustMul(CARGO_CAP_MAX / 2);
 assert(near(tm24eng, tm12eng, 2e-3), `D: Engine at 24 nodes == plain 12 nodes (${tm24eng.toFixed(4)} vs ${tm12eng.toFixed(4)})`);
 assert(near(tm24eng, 1 / (1 + (CARGO_CAP_MAX / 2) * CARGO_THRUST), 2e-3), "D: Engine-at-24 matches m=12 formula");
 
-// Momentum-tug massFactor uses the 0.07 coeff: 0.84 at m=12 (uncapped); the min(1.4, m*0.07)
-// saturates at m~=20, so m=20 and m=24 both land at the same capped 1.4 — 24 doesn't get worse.
+// Momentum-tug massFactor uses the CS010 0.10 coeff: 1.2 at m=12 (uncapped); the min(1.4, m*0.10)
+// saturates at m=14, so m=20 and m=24 both land at the same capped 1.4 — 24 doesn't get worse than 20.
 function measureTugMassFactor(nodes) {
   clearField(); resetShip();
   const a = chainAnchor();
@@ -278,7 +280,7 @@ function measureTugMassFactor(nodes) {
 const mf12 = measureTugMassFactor(12);
 const mf20 = measureTugMassFactor(20);
 const mf24 = measureTugMassFactor(CARGO_CAP_MAX);
-assert(near(mf12, 12 * CARGO_MASS, 2e-3), `D: tug massFactor at m=12 = 0.84 (got ${mf12.toFixed(4)})`);
+assert(near(mf12, 12 * CARGO_MASS, 2e-3), `D: tug massFactor at m=12 = ${(12 * CARGO_MASS).toFixed(2)} uncapped (got ${mf12.toFixed(4)})`);
 assert(near(mf20, 1.4, 2e-3), `D: tug massFactor at m=20 capped at 1.4 (got ${mf20.toFixed(4)})`);
 assert(near(mf24, 1.4, 2e-3), `D: tug massFactor at m=24 (new cap) still capped at 1.4, same as m=20 (got ${mf24.toFixed(4)})`);
 
