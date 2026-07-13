@@ -339,12 +339,14 @@ startGame(); isolate(); applyPowerup("magnet");
 assert(game.powerBudget.magnet === 40 && near(game.powerFx.magnet, 0), `K: pieces-mode applyPowerup("magnet") arms the budget to 40, not the timer (got ${game.powerBudget.magnet})`);
 settings.magnetMode = "time"; // restore
 
-// (K2) The HUD active-effect bar DENOMINATOR uses powerDuration(t), NOT the raw POWERUP_DURATION.
-// Miss that and the magnet bar renders permanently over-full. Drive the REAL draw() through a recording
-// ctx and read the bar's fill width: at powerFx.magnet = 15 (half of 30) the fill must be HALF, not full.
-console.log("(K2) v3.4 P4: the HUD magnet bar denominator is powerDuration(30), not POWERUP_DURATION(15) — real draw()");
+// (K2) CS009 P4 SUPERSEDES v3.4 P4 here: the HUD active-effect FILL BAR is gone — every powerup row is
+// now a ring (drawn via drawRingArc/glowStroke, not fillRect). So the magnet row draws NO bar fill at
+// all. The powerDuration(30)-not-POWERUP_DURATION(15) denominator invariant this block used to guard is
+// now covered by test-cs009-p4.js section A (magnet's value arc must sweep a FULL turn at powerFx=30,
+// not two), which reads the ARC angle instead of a bar width.
+console.log("(K2) CS009 P4: the powerup fill bar is gone — magnet row draws no fillRect (ring superseded it)");
 {
-  // A recording 2D context: no-ops everything, but records fillRect(x,y,w,h) calls so we can read the bar.
+  // A recording 2D context: no-ops everything, but records fillRect(x,y,w,h) calls so we can prove none.
   function makeRecordingCtx() {
     const calls = [];
     return new Proxy({}, {
@@ -366,24 +368,21 @@ console.log("(K2) v3.4 P4: the HUD magnet bar denominator is powerDuration(30), 
   B.settings.shotPowerupMode = "time"; B.settings.magnetMode = "time";
   B.startGame();
   B.game.state = "playing"; B.game.paused = false;
-  // ONLY the magnet is active, at HALF its (doubled) duration -> the bar should read frac 0.5.
+  // ONLY the magnet is active, at HALF its (doubled) duration. Old build: a bar fill at x=59, h=4. Now: none.
   B.game.powerFx = { rapid: 0, triple: 0, magnet: 15, engine: 0 };
   B.game.powerBudget = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
   recCtx.calls.length = 0;
   B.draw();
-  // The active-effect bar fill is the unique fillRect at x=59 (ppx+1) with height 4 (ph-2); its width is
-  // (pw-2)*clamp01(frac) = 94*frac. frac = powerFx.magnet / powerDuration("magnet") = 15/30 = 0.5 -> 47.
-  // With the bug (denominator POWERUP_DURATION=15) frac would be 1.0 -> width 94 (clamped, over-full).
   const bar = recCtx.calls.find(a => a.length === 4 && a[0] === 59 && a[3] === 4);
-  assert(!!bar, "K2: found the active-effect bar fill (fillRect at x=59, h=4) with the magnet active");
-  assert(bar && Math.abs(bar[2] - 47) < 0.5, `K2: bar fill width is HALF (47 px = 94*0.5), proving denom 30 not 15 (got ${bar ? bar[2].toFixed(1) : "n/a"})`);
+  assert(!bar, "K2: no active-effect bar fill (fillRect at x=59, h=4) — the ring replaced it (CS009 P4)");
 }
 
 // =====================================================================
-// (L) v3.6 P4 — HUD rebuild: TARGETS gone, shield in the left column, hull reads distinctly at max,
-// count-mode powerup rows draw no bar (glyph + number only), time-mode rows keep their bar.
+// (L) v3.6 P4 + CS009 P2/P4 — HUD rebuild: TARGETS gone; shield + hull are now the HULL ring (P2, no
+// fill bar / no MAX tag); powerup rows are RINGS (P4) — count-mode draws its budget number, time-mode
+// draws seconds text, and NEITHER draws a fill bar.
 // =====================================================================
-console.log("(L) v3.6 P4: HUD rebuild — TARGETS removed, shield moved, hull-at-max tell, count vs time rows");
+console.log("(L) HUD rebuild — TARGETS removed, hull/shield ring (P2), powerup rings count vs time (P4)");
 {
   // A recording ctx that captures fillRect/fillText calls tagged with the fillStyle active at call time.
   function makeStyledRecordingCtx() {
@@ -441,19 +440,20 @@ console.log("(L) v3.6 P4: HUD rebuild — TARGETS removed, shield moved, hull-at
   assert(!noMaxTag, "L3: no MAX tag when HP is just below max");
   C.game.ship.hp = C.SHIP_MAX_HP;
 
-  // (L4) count-mode powerup row: no bar rect, just the glyph + a plain number.
+  // (L4) count-mode powerup row: CS009 P4 keeps the "no bar, plain number" read, but the row is now a
+  // ring, the number moved to x=64 (was 58), and it's the raw budget with NO "s" suffix. No fillRect
+  // anywhere in the row (the number is fillText via drawText; the ring is a stroked arc).
   C.settings.shotPowerupMode = "shots"; C.settings.magnetMode = "time";
   C.applyPowerup("rapid");
   recCtx.calls.length = 0;
   C.draw();
-  // the count-mode row's number is drawn at x=58 (no bar drawn at ppx=58..154 for this row); the
-  // time-mode bar (when present) draws a strokeRect+fillRect pair at ppx=58 — count mode must not.
-  const rapidCountText = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === String(C.game.powerBudget.rapid) && c.args[1] === 58);
-  assert(!!rapidCountText, "L4: count-mode Rapid row draws the plain remaining-shots number");
+  const rapidCountText = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === String(C.game.powerBudget.rapid) && c.args[1] === 64);
+  assert(!!rapidCountText, "L4: count-mode Rapid row draws the plain remaining-shots number at x=64 (no 's')");
   const rapidBarFill = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 59 && c.args[3] === 4);
-  assert(!rapidBarFill, "L4: count-mode Rapid row draws NO bar rect");
+  assert(!rapidBarFill, "L4: count-mode Rapid row draws NO bar rect (never did; the row is now a ring)");
 
-  // (L5) time-mode powerup row still draws its clamped bar.
+  // (L5) CS009 P4 SUPERSEDES v3.6 P4: a time-mode row no longer draws a fill BAR — it's a ring arc now.
+  // The remaining time reads as "Ns" text (Math.ceil), drawn via drawText (fillText), not a rect.
   C.settings.shotPowerupMode = "time";
   C.startGame();
   C.game.state = "playing"; C.game.paused = false;
@@ -461,7 +461,9 @@ console.log("(L) v3.6 P4: HUD rebuild — TARGETS removed, shield moved, hull-at
   recCtx.calls.length = 0;
   C.draw();
   const rapidTimeBar = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 59 && c.args[3] === 4);
-  assert(!!rapidTimeBar, "L5: time-mode Rapid row still draws its remaining-duration bar");
+  assert(!rapidTimeBar, "L5: time-mode Rapid row draws NO fill bar (replaced by the ring arc, CS009 P4)");
+  const rapidSecsText = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === (Math.ceil(C.game.powerFx.rapid) + "s") && c.args[1] === 64);
+  assert(!!rapidSecsText, "L5: time-mode Rapid row draws its remaining seconds as 'Ns' text at x=64");
 }
 
 // =====================================================================

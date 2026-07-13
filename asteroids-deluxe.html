@@ -4536,30 +4536,63 @@ function drawHUD() {
   drawText("/" + game.cargoMax, HUD_CARGO_CX, HUD_RING_CY + 14, 11, COLOR.dim, "center");
   ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
   drawText("CARGO", HUD_CARGO_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
-  row += 26;   // CS009 P3: CARGO moved out of the left column into the ring, but the powerup rows
-               // below still anchor off `row` — preserve their prior y so this phase doesn't shift them.
+  row += 26;   // CS009 P3/P4: the powerup rows no longer read `row` (P4 stacks them off HUD_FX_BASE_Y),
+               // but the SCOOP-pip block below still does — kept so that block's y is unchanged. SCOOP
+               // relocation to the bottom-left floor (spec §6) is Phase 6, not this phase.
 
-  // active-powerup row (F6): one row per running effect — a small type glyph + a shield-bar-style
-  // remaining bar. Health is instant, so it never appears here. v3.0 P5: one renderer, two data
-  // sources — in count mode ("shots"/"pieces") budgets bank (v3.6 P4) with no ceiling to draw a bar
-  // against, so it's glyph + plain number only; in time mode it's the remaining-duration fraction,
-  // already clamp01'd so a banked surplus is simply invisible (accepted behaviour).
+  // CS009 P4: active-powerup ROWS (F6, spec §5) — the fill bars are gone; each running effect is now a
+  // ring + glyph + label + number, matching the HULL/CARGO ring idiom. Health is instant so it never
+  // appears here; Scoop is persistent (its own pips below). Rows are iterated in the stable
+  // POWERUP_DROP_TYPES order gated by powerActive(t) — that order and that single predicate are
+  // load-bearing (do not inline either), so the row for a given type never moves relative to the others.
+  //
+  // Rows STACK UPWARD from a fixed baseline: row i sits at HUD_FX_BASE_Y - i*HUD_FX_ROW_H, so an
+  // expiring powerup can't make the rows below it jump (the old code stacked downward off a moving
+  // cursor, which did exactly that). Row index 0 is RESERVED for the SCOOP pips (Phase 6 puts them at
+  // the stable floor); the timed powerup rows therefore start at i = 1 and float above it. `slot`
+  // compacts only the ACTIVE types into consecutive rows, so gaps between inactive types leave no holes.
+  let slot = 1;
   for (const t of POWERUP_DROP_TYPES) {          // rapid / triple / magnet / engine (stable order)
     if (!powerActive(t)) continue;
-    const c = POWERUP_COLOR[t];
+    const y = HUD_FX_BASE_Y - slot * HUD_FX_ROW_H;
+    slot++;
+    // v3.0 P5 dual data source: time mode expires on a clock (powerFx sec), count mode on a budget
+    // (powerBudget shots/pieces) chosen per-type from player settings — powerMode(t) is the switch.
     const counted = powerMode(t) !== "time";
-    drawPowerupGlyph(t, 40, row, 9, c);
-    if (counted) {
-      drawText(String(game.powerBudget[t]), 58, row + 4, 16, c, "left"); // shots/pieces left, no bar
-    } else {
+    // TRAP 3 / FORK-5: count mode has no denominator, so it has no value arc — only the dim track (so
+    // the row's SHAPE is identical across modes), the glyph, and the raw budget number. A low-timer
+    // warning is a deadline; a budget of 2 shots is not (FLAG-E), so count mode never state-colors.
+    let color = POWERUP_COLOR[t];
+    const low = !counted && game.powerFx[t] <= HUD_FX_LOW;   // time mode only
+    if (low) color = COLOR.lowhp;                            // ring + label + seconds all shift + pulse
+    // dim full-circle track, always drawn (no glow, drawn direct — drawRingArc is arc-only), so every
+    // row reads as the same object whether it's an arc-bearing timer or a countless budget.
+    ctx.beginPath();
+    ctx.arc(40, y, HUD_FX_RING_R, 0, TAU);
+    ctx.strokeStyle = COLOR.dim; ctx.lineWidth = HUD_RING_TRACK_W; ctx.stroke();
+    // low-timer pulse: reuse Phase 2's exact idiom + HUD_PULSE_HZ. Wraps the value arc, glyph, and text;
+    // restored to 1 immediately after so it can't leak into the next row or the rest of the frame.
+    if (low) ctx.globalAlpha = 0.6 + 0.4 * Math.sin(performance.now() / 1000 * TAU * HUD_PULSE_HZ);
+    if (!counted) {
+      // TRAP 1: the denominator DIFFERS by type — powerDuration(t) is 30 for magnet, 15 for the rest.
+      // Call the function; never POWERUP_DURATION directly, or the magnet ring renders permanently full.
       const frac = game.powerFx[t] / powerDuration(t);
-      const pw = 96, ph = 6, ppx = 58, ppy = row - 3;
-      ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1;
-      ctx.strokeRect(ppx, ppy, pw, ph);
-      ctx.fillStyle = c;
-      ctx.fillRect(ppx + 1, ppy + 1, (pw - 2) * clamp01(frac), ph - 2);
+      // TRAP 2 / FORK-3 A: banking makes powerFx exceed the denominator (a double-banked Rapid = 30s /
+      // 15s = 2.0). Main arc = clamp01(frac); if frac > 1, a second, thinner arc at HUD_FX_RING_R + 4
+      // shows the overcharge (clamp01(frac - 1)) — a full ring with a halo, so the surplus stays legible
+      // instead of pinning the ring at 100% for 15 straight seconds (which reads as broken).
+      drawRingArc(40, y, HUD_FX_RING_R, clamp01(frac), color, 3);
+      if (frac > 1) drawRingArc(40, y, HUD_FX_RING_R + 4, clamp01(frac - 1), color, 2);
     }
-    row += 20;
+    // glyph dead center of the ring — the shipped double-chevron/fan/horseshoe/bell set (L2411), already
+    // the field-pickup icons; the brief's chevron/diamond are superseded. Same call the shipped HUD made.
+    drawPowerupGlyph(t, 40, y, HUD_FX_GLYPH_R, color);
+    // label + number to the right of the ring. In count mode the number is the raw budget (no "s"); in
+    // time mode it's Math.ceil(powerFx) + "s" — CEIL, not round, so a ring reading "1s" hasn't expired.
+    const num = counted ? String(game.powerBudget[t]) : Math.ceil(game.powerFx[t]) + "s";
+    drawText(POWERUP_LABEL[t], 64, y - 4, 13, color, "left");
+    drawText(num, 64, y + 14, 16, color, "left");
+    ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the next row / rest of the frame
   }
   // SCOOP level pips (v3.3 P3) — a PERSISTENT upgrade, NOT a timed bar, so it's deliberately drawn
   // OUTSIDE the powerActive/POWERUP_DROP_TYPES loop above. Filled pips = current level; hidden at 0.
