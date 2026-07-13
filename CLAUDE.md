@@ -53,12 +53,16 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   not attach it to a build session by default; pull it in only when a session
   genuinely needs project history. New phase entries are appended here, not
   back into the GDD.
-- `PLANNED-FEATURES-v2.md` — design **detail for what's not built yet**: full
-  specs, rationale, and flagged assumptions for every pending feature. When a
-  feature ships, its spec moves out of here and into the GDD.
-- `IMPLEMENTATION-PHASES.md` — the build **order**: dependency-ordered phases,
-  each with a ready-to-paste prompt, required testing, and a suggested commit
-  message.
+- `PLANNED-FEATURES-CS###.md` — design **detail for what's not built yet**:
+  full specs, rationale, and flagged assumptions for every pending feature.
+  When a feature ships, its spec moves out of here and into the GDD. Current
+  round filenames are **changeset-numbered** (`CS` + a zero-padded 3-digit
+  index, e.g. `PLANNED-FEATURES-CS009.md`) — this superseded the older
+  `-vX.X` per-version suffix (`PLANNED-FEATURES-v3.6.md` etc.), which stays
+  as-is on already-archived files rather than being retroactively renamed.
+- `IMPLEMENTATION-PHASES-CS###.md` — the build **order**: dependency-ordered
+  phases, each with a ready-to-paste prompt, required testing, and a
+  suggested commit message. Same `CS###` naming convention as above.
 - `CLAUDE.md` (this file) — non-negotiables, conventions, code map.
 - `STATUS.md` — build **reality** + decisions. You maintain it.
 
@@ -100,7 +104,17 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
 - **Rendering goes through `drawPoly` + `glowStroke`.** New visible entities
   define local-space point arrays and reuse these — don't invent a new
   per-entity draw pipeline. Keep the vector-glow look (Pillar 1: no fills
-  except bullets/particles, no sprites, no textures).
+  except bullets/particles, no sprites, no textures). `drawRingArc(x, y, r,
+  frac, color, width, blur)` (CS009 P1) is the ring/arc equivalent for HUD
+  gauges — routes through `glowStroke` the same way, never `closePath()`s,
+  and doesn't clamp `frac` (overshoot handling is the caller's job).
+- **The HUD draws with `glowStroke` like everything else — no `fillRect`,
+  no `strokeRect`.** The CS009 HUD rebuild (P0–P6) replaced every hull/
+  shield/cargo/powerup fill bar with rings via `drawRingArc`. The only
+  fills left anywhere in `drawHUD()` are `drawText` (`fillText`) and the
+  SCOOP pip row's 4px `ctx.fill()` dots (a named, deliberate exception —
+  see the GDD §3.2 no-fills rule). Don't reintroduce a bar/rect for a new
+  HUD element; follow the ring idiom instead.
 - **Route all scoring through `addScore()`.** It also handles the HP-repair
   milestone bonus (post-Phase 2) — bypassing it breaks that logic.
 - **Tracks are DATA. `MusicSys.update()`/`scheduleStep()` and the
@@ -168,7 +182,8 @@ asteroids-deluxe.html
     // Input             keys{} map + input.* predicates; call sites never
     //                   read keys{} directly
     // Helpers           rand, wrap, dist2, angleTo, shortDelta (wrap-aware),
-    //                   glowStroke, drawPoly, COLOR
+    //                   glowStroke, drawPoly, drawRingArc (CS009 P1, the HUD
+    //                   ring/arc primitive), COLOR
     // Entity classes    Ship, Bullet, Asteroid, Satellite, Wedge, Saucer,
     //                   Particle, Garbage, FloatText, Dock — uniform
     //                   contract, see "Entity lifecycle" above
