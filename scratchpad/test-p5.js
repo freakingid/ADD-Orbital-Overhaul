@@ -16,10 +16,15 @@
 //  (E) a Triple 3-fan is ONE pull (3 bullets, budget -1).
 //  (F) Rapid+Triple budgets decrement independently and each ends on its own.
 //  (G) "pieces" mode ends Magnet after EXACTLY MAGNET_PIECES hooks; a draw-then-hook counts once (B-5-a).
-//  (H) same-type pickup REFRESHES the budget to full (never stacks / never exceeds full).
+//  (H) v3.6 P4: same-type pickup BANKS (adds duration/budget on top of what's left, never refreshes);
+//      magnitude (fire cadence) never stacks.
 //  (I) Difficulty screen: reachable via Options, toggles flip + persist, Back returns to Options;
 //      persistence round-trips and tolerates an old save missing the mode keys.
 //  (J) the Difficulty screen + the count-mode HUD draw without throwing.
+//  (K/K2) Magnet's doubled duration and the HUD bar denominator that must track it.
+//  (L) v3.6 P4: HUD rebuild — TARGETS readout gone, shield bar in the left column, hull bar reads
+//      distinctly at max HP, count-mode powerup rows have no bar (glyph + number only), time-mode
+//      rows keep their bar.
 
 "use strict";
 const fs = require("fs");
@@ -219,22 +224,32 @@ const chainWas = (game.chain.length = 0, game.garbage.length = 0, game.garbage.p
 assert(game.powerBudget.magnet === 0, "G: no further budget spend once Magnet is inactive");
 
 // =====================================================================
-console.log("(H) same-type pickup refreshes the budget to full (never stacks)");
+console.log("(H) same-type pickup BANKS (v3.6 P4: adds, doesn't refresh) — magnitude never stacks");
 settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces";
 startGame(); isolate();
 applyPowerup("rapid");
 for (let i = 0; i < 10; i++) firePull();
 assert(game.powerBudget.rapid === RAPID_SHOTS - 10, "H: budget partially spent");
 applyPowerup("rapid");
-assert(game.powerBudget.rapid === RAPID_SHOTS, "H: same-type pickup refreshes Rapid budget to full");
+assert(game.powerBudget.rapid === RAPID_SHOTS - 10 + RAPID_SHOTS, "H: same-type pickup ADDS a full Rapid budget on top of what's left");
 applyPowerup("rapid");
-assert(game.powerBudget.rapid === RAPID_SHOTS, "H: a second refresh does NOT stack beyond full");
+assert(game.powerBudget.rapid === RAPID_SHOTS - 10 + RAPID_SHOTS * 2, "H: a second pickup banks again (no ceiling)");
 startGame(); isolate();
 applyPowerup("magnet");
 for (let i = 0; i < 5; i++) hookOne();
 assert(game.powerBudget.magnet === MAGNET_PIECES - 5, "H: magnet budget partially spent");
 applyPowerup("magnet");
-assert(game.powerBudget.magnet === MAGNET_PIECES, "H: same-type pickup refreshes Magnet budget to full");
+assert(game.powerBudget.magnet === MAGNET_PIECES - 5 + MAGNET_PIECES, "H: same-type pickup ADDS a full Magnet budget on top of what's left");
+// time mode: duration banks too, and magnitude (fire cadence) is unaffected by stacking.
+settings.shotPowerupMode = "time";
+startGame(); isolate();
+applyPowerup("rapid");
+assert(near(game.powerFx.rapid, POWERUP_DURATION), "H: first Rapid pickup arms the timer to POWERUP_DURATION");
+applyPowerup("rapid");
+assert(near(game.powerFx.rapid, POWERUP_DURATION * 2), "H: a second Rapid pickup BANKS — timer is 2x duration, not refreshed to 1x");
+firePull();
+assert(near(game.ship.cooldown, RAPID_FIRE_COOLDOWN), "H: magnitude never stacks — cadence after two Rapids is the same as after one");
+settings.shotPowerupMode = "time"; settings.magnetMode = "time"; // restore defaults for later sections
 
 // =====================================================================
 console.log("(I) Difficulty screen: navigation, toggles, persistence");
@@ -362,6 +377,94 @@ console.log("(K2) v3.4 P4: the HUD magnet bar denominator is powerDuration(30), 
   const bar = recCtx.calls.find(a => a.length === 4 && a[0] === 59 && a[3] === 4);
   assert(!!bar, "K2: found the active-effect bar fill (fillRect at x=59, h=4) with the magnet active");
   assert(bar && Math.abs(bar[2] - 47) < 0.5, `K2: bar fill width is HALF (47 px = 94*0.5), proving denom 30 not 15 (got ${bar ? bar[2].toFixed(1) : "n/a"})`);
+}
+
+// =====================================================================
+// (L) v3.6 P4 — HUD rebuild: TARGETS gone, shield in the left column, hull reads distinctly at max,
+// count-mode powerup rows draw no bar (glyph + number only), time-mode rows keep their bar.
+// =====================================================================
+console.log("(L) v3.6 P4: HUD rebuild — TARGETS removed, shield moved, hull-at-max tell, count vs time rows");
+{
+  // A recording ctx that captures fillRect/fillText calls tagged with the fillStyle active at call time.
+  function makeStyledRecordingCtx() {
+    const calls = [];
+    let fillStyle = null;
+    return new Proxy({}, {
+      get(t, p) {
+        if (p === "calls") return calls;
+        if (p === "fillRect") return (...args) => calls.push({ fn: "fillRect", args, fillStyle });
+        if (p === "fillText") return (...args) => calls.push({ fn: "fillText", args, fillStyle });
+        return (..._a) => {};
+      },
+      set(t, p, v) { if (p === "fillStyle") fillStyle = v; t[p] = v; return true; }
+    });
+  }
+  const recCtx = makeStyledRecordingCtx();
+  const recCanvas = { width: 0, height: 0, style: {}, getContext: () => recCtx };
+  const recDoc = { getElementById: () => recCanvas };
+  const C = new Function(
+    "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
+    scriptSrc + "\n;return { startGame, draw, game, settings, COLOR, applyPowerup, SHIP_MAX_HP };"
+  )(windowStub, recDoc, performanceStub, rafStub, navigatorStub, global.localStorage);
+  C.settings.shotPowerupMode = "time"; C.settings.magnetMode = "time";
+  C.startGame();
+  C.game.state = "playing"; C.game.paused = false;
+
+  // (L1) no TARGETS text anywhere in a plain playing-state draw.
+  recCtx.calls.length = 0;
+  C.draw();
+  const targetsText = recCtx.calls.find(c => c.fn === "fillText" && String(c.args[0]).includes("TARGETS"));
+  assert(!targetsText, "L1: no TARGETS text is drawn");
+
+  // (L2) shield bar moved into the left column: its fill fillRect x must be small (left column),
+  // not out near VIEW_W - 30 - 140 (the old top-right position).
+  const shieldLabel = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === "SHIELD");
+  assert(!!shieldLabel, "L2: SHIELD label is drawn");
+  assert(shieldLabel && shieldLabel.args[1] < 200, `L2: SHIELD label x is in the left column (got ${shieldLabel ? shieldLabel.args[1] : "n/a"})`);
+
+  // (L3) hull bar at max HP renders distinctly (gold COLOR.ach) vs at 99% HP (COLOR.text).
+  C.game.ship.hp = C.SHIP_MAX_HP;
+  recCtx.calls.length = 0;
+  C.draw();
+  // hull bar fill is at x=93 (hpx+1), y=99 (hpy+1 with hpy=row-6, row=104) — distinct from the
+  // shield bar fill directly below it, which shares x=93 but sits at a different y.
+  const hullMaxFill = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 93 && c.args[1] === 99 && c.args[3] === 6);
+  assert(!!hullMaxFill, "L3: found the hull bar fill at max HP");
+  assert(hullMaxFill && hullMaxFill.fillStyle === C.COLOR.ach, `L3: hull bar at max HP fills with COLOR.ach (got ${hullMaxFill ? hullMaxFill.fillStyle : "n/a"})`);
+  const maxTag = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === "MAX");
+  assert(!!maxTag, "L3: a MAX tag is drawn beside the hull bar at full HP");
+
+  C.game.ship.hp = C.SHIP_MAX_HP - 1; // 99%-ish, NOT max
+  recCtx.calls.length = 0;
+  C.draw();
+  const hull99Fill = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 93 && c.args[1] === 99 && c.args[3] === 6);
+  assert(!!hull99Fill, "L3: found the hull bar fill at 99% HP");
+  assert(hull99Fill && hull99Fill.fillStyle === C.COLOR.text, `L3: hull bar just below max fills with COLOR.text, not gold (got ${hull99Fill ? hull99Fill.fillStyle : "n/a"})`);
+  const noMaxTag = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === "MAX");
+  assert(!noMaxTag, "L3: no MAX tag when HP is just below max");
+  C.game.ship.hp = C.SHIP_MAX_HP;
+
+  // (L4) count-mode powerup row: no bar rect, just the glyph + a plain number.
+  C.settings.shotPowerupMode = "shots"; C.settings.magnetMode = "time";
+  C.applyPowerup("rapid");
+  recCtx.calls.length = 0;
+  C.draw();
+  // the count-mode row's number is drawn at x=58 (no bar drawn at ppx=58..154 for this row); the
+  // time-mode bar (when present) draws a strokeRect+fillRect pair at ppx=58 — count mode must not.
+  const rapidCountText = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === String(C.game.powerBudget.rapid) && c.args[1] === 58);
+  assert(!!rapidCountText, "L4: count-mode Rapid row draws the plain remaining-shots number");
+  const rapidBarFill = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 59 && c.args[3] === 4);
+  assert(!rapidBarFill, "L4: count-mode Rapid row draws NO bar rect");
+
+  // (L5) time-mode powerup row still draws its clamped bar.
+  C.settings.shotPowerupMode = "time";
+  C.startGame();
+  C.game.state = "playing"; C.game.paused = false;
+  C.applyPowerup("rapid");
+  recCtx.calls.length = 0;
+  C.draw();
+  const rapidTimeBar = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 59 && c.args[3] === 4);
+  assert(!!rapidTimeBar, "L5: time-mode Rapid row still draws its remaining-duration bar");
 }
 
 // =====================================================================

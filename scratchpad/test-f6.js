@@ -169,20 +169,20 @@ assert(game.bullets.filter(b => !b.hostile).length === 5, "C: Rapid Fire lets th
 keys[" "] = false;
 
 // =====================================================================
-// (D) duration expiry + same-type refresh
+// (D) duration expiry + same-type banking (v3.6 P4: reverses the old refresh rule)
 // =====================================================================
-console.log("(D) duration counts down to 0 (cap resets); same-type pickup refreshes, not stacks");
+console.log("(D) duration counts down to 0 (cap resets); same-type pickup BANKS (adds), not refreshes");
 resetShip(); resetFx(); clearField(); quietTimers();
 game.powerFx.rapid = 0.02;                 // about to expire
 assert(maxBullets() === RAPID_MAX_BULLETS, "D: Rapid active before expiry -> cap 8");
 for (let i = 0; i < 4; i++) update(DT);    // ~0.067s of game time drives the countdown to 0
 assert(game.powerFx.rapid === 0, `D: the effect expired (powerFx.rapid ${game.powerFx.rapid})`);
 assert(maxBullets() === MAX_BULLETS, `D: cap reset to ${MAX_BULLETS} after expiry (got ${maxBullets()})`);
-// refresh: picking the same type back up sets the FULL duration, it doesn't add to what's left
+// bank: picking the same type back up ADDS the full duration to what's left (v3.6 P4)
 resetFx();
 game.powerFx.triple = 3;
 applyPowerup("triple");
-assert(near(game.powerFx.triple, POWERUP_DURATION), `D: same-type pickup REFRESHES to ${POWERUP_DURATION} (not 3+${POWERUP_DURATION}); got ${game.powerFx.triple}`);
+assert(near(game.powerFx.triple, 3 + POWERUP_DURATION), `D: same-type pickup BANKS to 3+${POWERUP_DURATION} (not refreshed to ${POWERUP_DURATION}); got ${game.powerFx.triple}`);
 
 // =====================================================================
 // (E) Engine halves the effective towed mass in chainMass()

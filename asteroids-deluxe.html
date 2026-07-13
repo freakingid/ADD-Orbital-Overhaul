@@ -2744,8 +2744,9 @@ function spawnHealthPowerup() {
   game.powerups.push(new Powerup(p.x, p.y, "health"));
 }
 
-// Collect a powerup. Health is instant (repair, capped). The four timed effects REFRESH their
-// duration (no magnitude stacking); different types run independently. A floater confirms the grab.
+// Collect a powerup. Health is instant (repair, capped). The four timed effects BANK — a same-type
+// pickup ADDS duration/shots rather than refreshing (v3.6 P4); magnitude never stacks (no double fire
+// rate). Different types run independently. A floater confirms the grab.
 function applyPowerup(type) {
   if (type === "scoop") {
     // Scoop is a PERSISTENT, non-timed upgrade (v3.3 P3) — it lives on game.scoopLevel, NOT in
@@ -2767,9 +2768,10 @@ function applyPowerup(type) {
   if (type === "health") {
     game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + POWERUP_HEALTH_AMOUNT);
   } else if (powerMode(type) === "time") {
-    game.powerFx[type] = powerDuration(type);      // refresh, not add — same-type pickups refresh, never stack (magnet gets 30 s)
+    game.powerFx[type] += powerDuration(type);      // BANKS (v3.6 P4, reverses the old refresh rule) —
+                                                      // same-type pickups add duration; magnitude still never stacks
   } else {
-    game.powerBudget[type] = POWERUP_BUDGET[type]; // count mode: refresh the shots/pieces budget to full (same rule)
+    game.powerBudget[type] += POWERUP_BUDGET[type]; // count mode: banks the shots/pieces budget too (same rule)
   }
   // Achievement stats (F9): any pickup counts for "No Powerups Needed"; Health picks gate "Glass
   // Cannon"; the four drop types feed "Powered Up" (use all four).
@@ -4086,58 +4088,77 @@ function draw() {
 // modal or transient.
 function drawHUD() {
   drawText(String(game.score).padStart(6, "0"), 30, 46, 30, COLOR.text, "left");
-  // hull HP bar (replaces the old life-ship icons; same stroke/fill style as the shield bar)
-  const hpw = 140, hph = 8, hpx = 92, hpy = 62;
-  ctx.strokeStyle = COLOR.dim;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(hpx, hpy, hpw, hph);
-  const hpFrac = Math.max(0, game.ship.hp) / SHIP_MAX_HP;
-  ctx.fillStyle = hpFrac > 0.3 ? COLOR.hp : "#ff7060";
-  ctx.fillRect(hpx + 1, hpy + 1, (hpw - 2) * hpFrac, hph - 2);
-  drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
   // v3.3 P1 (spec §7): "LEVEL" is the player-facing label for game.wave — moved from the dim,
   // easy-to-miss top-right corner into the left column, lit like the other HUD readouts. game.wave /
   // nextWave() / difficultyFactor() / every achievement keying off game.wave are UNCHANGED — this is
   // a display label only ("level" is player-facing vocabulary, "wave" stays the code term).
-  drawText("LEVEL " + game.wave, 30, 104, 22, COLOR.text, "left");
-  drawText("CARGO " + game.chain.length + "/" + game.cargoMax, 30, 126, 16,
-    game.chain.length ? COLOR.garbage : COLOR.dim, "left");
-  // v3.0 P3 (B-7): targets remaining = debris + hunters (the exact wave-clear gate).
-  // Can rise mid-wave (a Debris split, or a Hunter lineage arriving on its own timer from
-  // wave 2 on) — that's intentional, not a bug; see PLANNED-FEATURES-v3.md B-7-a/b.
-  const targetsLeft = game.debris.length + game.hunters.length;
-  drawText("TARGETS " + targetsLeft, 30, 146, 16,
-    targetsLeft ? COLOR.text : COLOR.dim, "left");
+  drawText("LEVEL " + game.wave, 30, 62, 22, COLOR.text, "left");
+
+  // v3.6 P4: HUD left column, top to bottom — Score, Level, Hull, Shield, Cargo, Powerups. A local
+  // layout cursor replaces the old bare-literal row offsets.
+  let row = 104;
+
+  // hull HP bar. At max HP a Health pickup would be wasted, so full hull gets an unmistakable gold
+  // fill + MAX tag instead of reading as "just another full bar" (FLAG-E).
+  const hpw = 140, hph = 8, hpx = 92, hpy = row - 6;
+  ctx.strokeStyle = COLOR.dim;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(hpx, hpy, hpw, hph);
+  const hp = Math.max(0, game.ship.hp), hpFrac = hp / SHIP_MAX_HP;
+  const hpMax = game.ship.hp >= SHIP_MAX_HP;
+  ctx.fillStyle = hpMax ? COLOR.ach : (hpFrac > 0.3 ? COLOR.text : "#ff7060");
+  ctx.fillRect(hpx + 1, hpy + 1, (hpw - 2) * hpFrac, hph - 2);
+  drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
+  if (hpMax) drawText("MAX", hpx + hpw + 10, hpy + 8, 13, COLOR.ach, "left");
+  row += 26;
+
+  // shield energy bar — moved out of the top-right corner into the left column, beneath hull (v3.6 P4).
+  const shw = 140, shh = 8, shx = 92, shy = row - 6;
+  ctx.strokeStyle = COLOR.dim;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(shx, shy, shw, shh);
+  ctx.fillStyle = game.ship.energy > 0.25 ? COLOR.text : "#ff7060";
+  ctx.fillRect(shx + 1, shy + 1, (shw - 2) * game.ship.energy, shh - 2);
+  drawText("SHIELD", shx - 12, shy + 8, 13, COLOR.dim, "right");
+  row += 22;
+
+  drawText("CARGO " + game.chain.length + "/" + game.cargoMax, 30, row, 16,
+    game.chain.length ? COLOR.text : COLOR.dim, "left");
+  row += 26;
+
   // active-powerup row (F6): one row per running effect — a small type glyph + a shield-bar-style
   // remaining bar. Health is instant, so it never appears here. v3.0 P5: one renderer, two data
-  // sources — in count mode ("shots"/"pieces") the bar reads remaining/budget and a numeric count
-  // labels it; in time mode it's the remaining-duration fraction as before.
-  let prow = 172;
+  // sources — in count mode ("shots"/"pieces") budgets bank (v3.6 P4) with no ceiling to draw a bar
+  // against, so it's glyph + plain number only; in time mode it's the remaining-duration fraction,
+  // already clamp01'd so a banked surplus is simply invisible (accepted behaviour).
   for (const t of POWERUP_DROP_TYPES) {          // rapid / triple / magnet / engine (stable order)
     if (!powerActive(t)) continue;
     const c = POWERUP_COLOR[t];
     const counted = powerMode(t) !== "time";
-    const frac = counted ? game.powerBudget[t] / POWERUP_BUDGET[t] : game.powerFx[t] / powerDuration(t);
-    drawPowerupGlyph(t, 40, prow, 9, c);
-    const pw = 96, ph = 6, ppx = 58, ppy = prow - 3;
-    ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1;
-    ctx.strokeRect(ppx, ppy, pw, ph);
-    ctx.fillStyle = c;
-    ctx.fillRect(ppx + 1, ppy + 1, (pw - 2) * clamp01(frac), ph - 2);
-    if (counted) drawText(String(game.powerBudget[t]), ppx + pw + 14, prow + 4, 13, c, "left"); // shots/pieces left
-    prow += 20;
+    drawPowerupGlyph(t, 40, row, 9, c);
+    if (counted) {
+      drawText(String(game.powerBudget[t]), 58, row + 4, 16, c, "left"); // shots/pieces left, no bar
+    } else {
+      const frac = game.powerFx[t] / powerDuration(t);
+      const pw = 96, ph = 6, ppx = 58, ppy = row - 3;
+      ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1;
+      ctx.strokeRect(ppx, ppy, pw, ph);
+      ctx.fillStyle = c;
+      ctx.fillRect(ppx + 1, ppy + 1, (pw - 2) * clamp01(frac), ph - 2);
+    }
+    row += 20;
   }
   // SCOOP level pips (v3.3 P3) — a PERSISTENT upgrade, NOT a timed bar, so it's deliberately drawn
   // OUTSIDE the powerActive/POWERUP_DROP_TYPES loop above. Filled pips = current level; hidden at 0.
   if (game.scoopLevel > 0) {
-    drawText("SCOOP", 40, prow + 4, 13, POWERUP_COLOR.scoop, "left");
+    drawText("SCOOP", 40, row + 4, 13, POWERUP_COLOR.scoop, "left");
     for (let i = 0; i < SCOOP_MAX_LEVEL; i++) {
       ctx.beginPath();
-      ctx.arc(108 + i * 16, prow, 4, 0, TAU);
+      ctx.arc(108 + i * 16, row, 4, 0, TAU);
       if (i < game.scoopLevel) { ctx.fillStyle = POWERUP_COLOR.scoop; ctx.fill(); }
       else { ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1; ctx.stroke(); }
     }
-    prow += 20;
+    row += 20;
   }
   // when hauling, a chevron orbiting screen-center points toward the (maybe off-screen) dock
   if (game.chain.length && game.dock && !game.ship.dead) {
@@ -4164,14 +4185,6 @@ function drawHUD() {
         VIEW_W/2 + Math.cos(a) * 58, VIEW_H/2 + Math.sin(a) * 58, a, COLOR.lowhp);
     }
   }
-  // shield energy bar
-  const bw = 140, bh = 8, bx = VIEW_W - 30 - bw, by = 60;
-  ctx.strokeStyle = COLOR.dim;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(bx, by, bw, bh);
-  ctx.fillStyle = game.ship.energy > 0.25 ? COLOR.shield : "#ff7060";
-  ctx.fillRect(bx + 1, by + 1, (bw - 2) * game.ship.energy, bh - 2);
-  drawText("SHIELD", bx - 12, by + 8, 13, COLOR.dim, "right");
 }
 
 // title screen decoration
