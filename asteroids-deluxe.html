@@ -196,6 +196,13 @@ const DEATH_SHAKE_DECAY     = 24;   // px/s linear decay of the shake amplitude 
 const DEATH_FLASH_TIME      = 0.22; // s the white flash takes to fade from full to nothing
 const DEATH_FLASH_ALPHA     = 0.8;  // peak alpha of the frame-one white flash
 
+// v3.6 P6 — top-10 local high scores. SCORES_CHARSET is the initials-entry alphabet (up/down cycles
+// through this one string per slot); SCORES_MAX caps the persisted table. GAME_VERSION is stamped
+// into every record's `build` field (the wire shape's provenance tag — see the HighScores object).
+const SCORES_MAX = 10;
+const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
+const GAME_VERSION = "3.6";
+
 // Radioactive salvage / tow chain / recycling dock
 // v3.3 P4 (9a): loose SINGLE canisters decay again (GARBAGE_DECAY) — decay is the GOVERNOR that keeps
 // the field readable now that Hunters always drop garbage (9b) reopens the 12-in/66-out amplifier.
@@ -1247,11 +1254,31 @@ window.addEventListener("keydown", e => {
   // (3) Normal play/title/gameover keyboard input.
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
   keys[k] = true;
-  if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover")) startGame();
+
+  // v3.6 P6: high-score initials entry (live only on "gameover", armed at the "dying"->"gameover"
+  // seam) intercepts nav/confirm here — and returns, so a confirm that just committed the entry
+  // (clearing game.entry) can't fall through to the startGame() check below in the SAME keypress.
+  // e.repeat guard matches the v3.5 P1 menu-nav fix (a held key must not spin the letter).
+  if (game.entry) {
+    if (!e.repeat) {
+      if (k === "arrowup" || k === "w") entryInput("up");
+      else if (k === "arrowdown" || k === "s") entryInput("down");
+      else if (k === "arrowleft" || k === "a") entryInput("left");
+      else if (k === "arrowright" || k === "d") entryInput("right");
+      else if (bindings.confirm.keys.includes(k)) entryInput("confirm");
+    }
+    return;
+  }
+
+  // THE LOAD-BEARING GUARD (v3.6 P6, §10): without `&& !game.entry`, confirm would restart the run
+  // instead of committing the initials — belt-and-suspenders alongside the early return above, in
+  // case entry-handling is ever restructured.
+  if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover") && !game.entry) startGame();
   if (bindings.pause.keys.includes(k) && game.state === "playing") openPause();
   // "O" opens the Options/Achievements system menu from title/gameover (v3.0 P4; replaces the old
   // P->options path). No game to pause here — openPause() picks the system-menu root off game.state.
-  if (k === "o" && (game.state === "title" || game.state === "gameover")) openPause();
+  // Guarded off during initials entry so O can't pop the menu mid-entry.
+  if (k === "o" && (game.state === "title" || game.state === "gameover") && !game.entry) openPause();
 });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
@@ -1286,6 +1313,20 @@ function handleGamepadMenu() {
     if (pressedConfirm) menuInput("confirm");
     if (pressedBack)    menuInput("back");
     if (pressedStart)   menuInput("pause");   // Start fully resumes from any menu screen
+    return;
+  }
+
+  // (2.5) v3.6 P6: high-score initials entry — same edge-detected latch as real menu nav
+  // (menuNavEdges is already strictly edge-detected; gpPressed(confirm) already excludes held-button
+  // repeats), so a held stick/button can't spin the letter or double-commit. Swallows Start/B too —
+  // nothing should interrupt entry — mirroring the keyboard path's early guard on "o".
+  if (game.entry) {
+    const nav = menuNavEdges();
+    if (nav.up)    entryInput("up");
+    if (nav.down)  entryInput("down");
+    if (nav.left)  entryInput("left");
+    if (nav.right) entryInput("right");
+    if (pressedConfirm) entryInput("confirm");
     return;
   }
 
@@ -1351,7 +1392,7 @@ function firstPressedButton() {
 // game.state: pausing mid-game keeps state "playing"; the system menu opened from title/gameover keeps
 // state "title"/"gameover" (update() skips the sim in both, so game.paused is safe in any state).
 const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game
-const MENU_ROOT_SYS  = ["Options", "Achievements", "Back"];  // system menu from title/gameover
+const MENU_ROOT_SYS  = ["Options", "Achievements", "High Scores", "Back"];  // system menu from title/gameover (v3.6 P6 added "High Scores")
 function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_ROOT_SYS; }
 // v3.4 P6: "Music Track" inserted after "Master Volume". menuOptions()/drawOptionsMenu() dispatch by
 // LABEL (like menuRoot), not by hardcoded index, so adding a row here is purely additive and can't
@@ -1429,6 +1470,7 @@ function menuInput(action) {
     case "controls":     menuControls(action); break;
     case "difficulty":   menuDifficulty(action); break;
     case "achievements": menuAchievements(action); break;
+    case "highscores":   menuHighScores(action); break;
   }
 }
 
@@ -1442,6 +1484,7 @@ function menuRoot(a) {
     if (label === "Continue")          closePause();
     else if (label === "Options")      gotoScreen("options");
     else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "root"; }
+    else if (label === "High Scores")  gotoScreen("highscores"); // v3.6 P6: browsable top-10 table
     else if (label === "Quit")         quitToTitle();
     else if (label === "Back")         closePause(); // system menu: close overlay -> underlying title/gameover
   }
@@ -1488,6 +1531,13 @@ function menuAchievements(a) {
     if (game.menu.achReturn === "root") gotoScreen("root", rootItems().indexOf("Achievements"));
     else gotoScreen("options", 4);
   }
+}
+
+// High Scores viewer (v3.6 P6): read-only top-10 table reachable only from the system-menu root
+// (title/gameover) — mirrors menuAchievements' shape, but has no nested Options path to return to.
+function menuHighScores(a) {
+  if (a === "pause") closePause();
+  else if (a === "confirm" || a === "back") gotoScreen("root", rootItems().indexOf("High Scores"));
 }
 
 // Difficulty screen (v3.0 P5, B-4/B-5): two left/right mode toggles + Back. Left picks the timed
@@ -2485,6 +2535,8 @@ const game = {
   paused: false,    // true iff a pause-menu screen is open (F8)
   deathT: 0,        // v3.6 P5: seconds left in the "dying" spectacle (DEATH_DURATION → 0 → "gameover")
   shake: 0,         // v3.6 P5: current screen-shake amplitude (px), decayed in updateDeath()
+  entry: null,      // v3.6 P6: { initials:[i,i,i], idx } while the initials-entry UI is live on "gameover"
+  lastScoreId: null,// v3.6 P6: id of the just-committed HighScores record, for the table highlight
   stats: resetGameStats(), // per-game achievement counters/flags (F9)
   toasts: [],       // active achievement-unlock toasts { name, life } (F9)
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
@@ -2518,6 +2570,7 @@ function startGame() {
   game.state = "playing";
   game.paused = false;
   game.deathT = 0; game.shake = 0;   // v3.6 P5: a fresh run never carries death-spectacle state over
+  game.entry = null; game.lastScoreId = null; // v3.6 P6: nor any stale initials-entry/highlight state
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, achReturn: "options" }; // ensure no menu carries in
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
@@ -3080,6 +3133,88 @@ const Achievements = {
     this.deriveLifetime();
   }
 };
+
+// ---------- High Scores (v3.6 P6) ----------
+// Local top-10 table, its own localStorage key. The two other keys — settings' STORAGE_KEY
+// ("afd_settings_v1") and Achievements.STORAGE_KEY ("afd_achievements_v2") — are FROZEN and this
+// system never reads or writes either; it reuses only the shared guarded storageOK() helper. Each
+// record is a WIRE shape a future remote leaderboard can accept verbatim, no migration: `id` is a
+// stable client-generated dedupe key, `v` versions the record independently of the store's own `v`,
+// and a `playerId`/`name` field is purely additive whenever login lands. Add fields later; never
+// rename or repurpose one.
+const HighScores = {
+  STORAGE_KEY: "afd_scores_v1",
+  entries: [],
+
+  // Unique id for a fresh record — the future sync dedupe key. crypto.randomUUID isn't guaranteed
+  // (older browsers, non-secure origins), so fall back to a random hex string.
+  makeId() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+    return Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2);
+  },
+  // Would `score` earn a table slot? entries is kept sorted score-desc and capped at SCORES_MAX, so
+  // entries[SCORES_MAX-1] is always the current cutoff once the table is full.
+  qualifies(score) {
+    if (score <= 0) return false;
+    return this.entries.length < SCORES_MAX || score > this.entries[SCORES_MAX - 1].score;
+  },
+  // Build + insert the wire-shape record for a just-committed run, then persist. Returns the record
+  // so the caller can remember its id (the gameover table's fresh-entry highlight).
+  add({ initials, score, wave, delivered }) {
+    const rec = { v: 1, id: this.makeId(), initials, score, wave, delivered, ts: Date.now(), build: GAME_VERSION };
+    this.entries.push(rec);
+    this.entries.sort((a, b) => b.score - a.score);
+    this.entries.length = Math.min(this.entries.length, SCORES_MAX);
+    this.save();
+    return rec;
+  },
+
+  // --- Persistence (own key; same guarded pattern as Settings/Achievements — never crash on storage
+  // failure). ---
+  save() {
+    const ls = storageOK(); if (!ls) return;
+    try { ls.setItem(this.STORAGE_KEY, JSON.stringify({ v: 1, entries: this.entries })); }
+    catch (e) { /* quota / privacy mode / disabled — ignore */ }
+  },
+  load() {
+    const ls = storageOK(); if (!ls) return;
+    try {
+      const raw = ls.getItem(this.STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data && Array.isArray(data.entries)) {
+        this.entries = data.entries.filter(r => r && typeof r.score === "number" && typeof r.initials === "string");
+        this.entries.sort((a, b) => b.score - a.score);
+        this.entries.length = Math.min(this.entries.length, SCORES_MAX);
+      }
+    } catch (e) { /* corrupt / unreadable — start fresh, don't crash */ }
+  }
+};
+HighScores.load();
+
+// Shared dispatcher for BOTH input paths (keyboard's normal branch + gamepad's edge-detected nav)
+// driving the initials entry live on "gameover" (game.entry). Deliberately not routed through
+// menuInput/menuActive — this isn't a paused menu screen, the field keeps rendering behind it.
+function entryInput(action) {
+  const e = game.entry;
+  if (!e) return;
+  if (action === "left")       { e.idx = (e.idx + 2) % 3; AudioSys.ui(false); }
+  else if (action === "right") { e.idx = (e.idx + 1) % 3; AudioSys.ui(false); }
+  else if (action === "up")    { e.initials[e.idx] = (e.initials[e.idx] + 1) % SCORES_CHARSET.length; AudioSys.ui(false); }
+  else if (action === "down")  { e.initials[e.idx] = (e.initials[e.idx] + SCORES_CHARSET.length - 1) % SCORES_CHARSET.length; AudioSys.ui(false); }
+  else if (action === "confirm") commitEntry();
+}
+// Turn the entry's charset indices into the 3-letter record and hand it to HighScores, then clear
+// game.entry so the gameover screen falls through to the (now highlighted) table.
+function commitEntry() {
+  const e = game.entry;
+  const initials = e.initials.map(i => SCORES_CHARSET[i]).join("");
+  const rec = HighScores.add({ initials, score: game.score, wave: game.wave, delivered: game.stats.delivered });
+  game.lastScoreId = rec.id;
+  game.entry = null;
+  AudioSys.ui(true);
+}
+
 // Count of the four drop-powerup types used this game (Powered Up).
 function powerTypesUsed(s) {
   return (s.powerUsed.rapid ? 1 : 0) + (s.powerUsed.triple ? 1 : 0) +
@@ -3421,8 +3556,11 @@ function updateDeath(dt) {
   if (game.deathT <= 0) {
     game.deathT = 0;
     game.state = "gameover";
-    // --- Phase 6 seam: the "dying" -> "gameover" transition. The top-10 high-score qualify check
-    //     and initials-entry setup (game.entry) hook in HERE and nowhere else. Left clean on purpose. ---
+    // v3.6 P6: the "dying" -> "gameover" seam. Arm initials entry iff the run earned a top-10 slot;
+    // otherwise the gameover screen goes straight to the (unhighlighted) table.
+    game.lastScoreId = null;
+    game.entry = HighScores.qualifies(game.score) ? { initials: [0, 0, 0], idx: 0 } : null;
+    if (game.entry) resetMenuNav(); // a stick held through the spectacle mustn't fire a phantom first move
   }
 }
 
@@ -3840,6 +3978,7 @@ function drawMenu() {
   else if (s === "controls") drawControlsMenu();
   else if (s === "difficulty") drawDifficulty();
   else if (s === "achievements") drawAchievements();
+  else if (s === "highscores") drawHighScores();
 }
 
 function menuPanel(w, h, title) {
@@ -4024,6 +4163,56 @@ function drawAchRow(ach, x, ry, w) {
   drawText(ach.desc, x, ry + 15, 10, COLOR.dim, "left");
 }
 
+// ---------- High Scores rendering (v3.6 P6) ----------
+// Shared top-10 table renderer — used by both the gameover screen (fresh entry highlighted in
+// COLOR.ach) and the browsable system-menu "High Scores" screen (highlightId null, nothing lit).
+// Crash-free on an empty, partial, or full HighScores.entries: a missing row just shows a bare dim
+// rank number instead of a record.
+function drawScoreTable(cx, topY, highlightId) {
+  const colRank = cx - 230, colInit = cx - 170, colScore = cx + 10, colWave = cx + 130, colDeliv = cx + 230;
+  drawText("#", colRank, topY, 13, COLOR.dim, "left");
+  drawText("INITIALS", colInit, topY, 13, COLOR.dim, "left");
+  drawText("SCORE", colScore, topY, 13, COLOR.dim, "right");
+  drawText("LEVEL", colWave, topY, 13, COLOR.dim, "right");
+  drawText("DELIVERED", colDeliv, topY, 13, COLOR.dim, "right");
+  for (let i = 0; i < SCORES_MAX; i++) {
+    const r = HighScores.entries[i], ry = topY + 22 + i * 18;
+    if (!r) { drawText((i + 1) + ".", colRank, ry, 13, COLOR.dim, "left"); continue; }
+    const col = r.id === highlightId ? COLOR.ach : COLOR.text;
+    drawText((i + 1) + ".", colRank, ry, 13, col, "left");
+    drawText(r.initials, colInit, ry, 13, col, "left");
+    drawText(fmtCommas(r.score), colScore, ry, 13, col, "right");
+    drawText(String(r.wave), colWave, ry, 13, col, "right");
+    drawText(String(r.delivered), colDeliv, ry, 13, col, "right");
+  }
+}
+
+// Three-slot arcade initials entry, live only while game.entry is set (a top-10-qualifying run at
+// the "dying"->"gameover" seam). Deliberately not a menu screen — game.paused stays false, so the
+// field keeps rendering behind it like the rest of the (unpaused) gameover screen.
+function drawEntrySlots(cy) {
+  drawText("NEW HIGH SCORE — ENTER YOUR INITIALS", VIEW_W / 2, cy - 46, 20, COLOR.ach);
+  const e = game.entry, slotW = 70, x0 = VIEW_W / 2 - slotW;
+  for (let i = 0; i < 3; i++) {
+    const sx = x0 + i * slotW, sel = e.idx === i;
+    const ch = SCORES_CHARSET[e.initials[i]];
+    if (sel) {
+      ctx.strokeStyle = COLOR.shield; ctx.lineWidth = 2;
+      ctx.strokeRect(sx - 24, cy - 30, 48, 56);
+    }
+    drawText(ch === " " ? "_" : ch, sx, cy + 14, 40, sel ? COLOR.text : COLOR.dim);
+  }
+  drawText("↑↓ letter    ←→ move    ENTER confirm", VIEW_W / 2, cy + 60, 12, COLOR.dim);
+}
+
+// Browsable top-10 table reachable from the system menu (title/gameover -> "High Scores"). Read-only,
+// like drawAchievements — reuses drawScoreTable with no highlight.
+function drawHighScores() {
+  const { y } = menuPanel(640, 460, "HIGH SCORES");
+  drawScoreTable(VIEW_W / 2, y + 90, null);
+  drawText("ESC / B / ENTER  return", VIEW_W / 2, y + 420, 12, COLOR.dim);
+}
+
 // Non-blocking unlock banners at top-center. Fade in then out; stack downward if several land at once.
 function drawToasts() {
   if (!game.toasts.length) return;
@@ -4197,9 +4386,16 @@ function draw() {
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
     drawText("FINAL SCORE  " + game.score, VIEW_W/2, VIEW_H/2 + 36, 26);
-    if (Math.floor(performance.now() / 600) % 2 === 0)
-      drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 90, 22);
-    drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 130, 14, COLOR.ach);
+    // v3.6 P6: a qualifying run shows the 3-slot initials entry first; once committed (or immediately,
+    // for a non-qualifying run) the top-10 table takes over, fresh entry highlighted.
+    if (game.entry) {
+      drawEntrySlots(VIEW_H/2 + 110);
+    } else {
+      drawScoreTable(VIEW_W/2, VIEW_H/2 + 60, game.lastScoreId);
+      if (Math.floor(performance.now() / 600) % 2 === 0)
+        drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 280, 22);
+      drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 312, 14, COLOR.ach);
+    }
   }
 
   // Drawn after the gameover text so the system menu overlays it (v3.0 P4); for a mid-game pause the

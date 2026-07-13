@@ -241,6 +241,11 @@ function stepDeath() { update(DT); }
   const frames = Math.ceil(DEATH_DURATION / DT) + 2;
   for (let i = 0; i < frames; i++) stepDeath();
   assert(game.state === "gameover", "E: reached 'gameover'");
+  // v3.6 P6: a qualifying score arms game.entry at the "dying"->"gameover" seam, and confirm there
+  // commits initials instead of starting a game (see test-v36-scores.js §F for that behaviour) — an
+  // orthogonal, later-phase concern. Clear it here so this P5-only assertion (the confirm binding
+  // genuinely still reaches startGame once nothing is intercepting it) stays isolated.
+  game.entry = null;
   keydown(confirmKey);
   assert(game.state === "playing", "E: confirm at 'gameover' DOES start a new game (unchanged site)");
 })();

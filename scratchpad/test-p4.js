@@ -136,10 +136,12 @@ console.log("(C) keyboard O opens the system menu; Back returns");
 game.state = "title"; game.paused = false; game.menu.screen = null; clearKeys();
 keydown("o");
 assert(game.paused && game.menu.screen === "root", "C: O on title -> system menu open");
-assert(eqArr(rootItems(), MENU_ROOT_SYS), "C: system root = [Options,Achievements,Back]");
+assert(eqArr(rootItems(), MENU_ROOT_SYS), "C: system root = [Options,Achievements,High Scores,Back] (v3.6 P6)");
 assert(game.state === "title", "C: opening the system menu did NOT also start a game");
-// navigate to "Back" (index 2) and confirm -> close overlay, back to title
-game.menu.index = 2;
+// navigate to "Back" and confirm -> close overlay, back to title. v3.6 P6 added a "High Scores" row
+// to MENU_ROOT_SYS ahead of "Back" — look it up by label (this file's own convention elsewhere, e.g.
+// section D below) instead of a stale hardcoded index.
+game.menu.index = rootItems().indexOf("Back");
 menuInput("confirm");
 assert(!game.paused && game.menu.screen === null && game.state === "title", "C: Back closes overlay -> underlying title");
 
