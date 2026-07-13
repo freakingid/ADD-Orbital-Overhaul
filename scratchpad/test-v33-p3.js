@@ -23,9 +23,13 @@
 //  (7) dropPowerup only ever yields a type in POWERUP_DROP_WEIGHTS, and scoop can drop.
 //  (8) buildScoopSteps: index 0 is 0, index 5 is max, monotonically increasing, curve behavior.
 //  (9) SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W exactly.
-//  (10) v3.6 P1c: the drawn scoop box's four corners, recovered from a recording ctx via Ship.draw(),
-//       agree with inScoopBox's accept/reject boundary at levels 1..5 (probing just inside/outside
-//       each edge, including the rear -SHIP_RADIUS edge) — the load-bearing box-matches-hitbox proof.
+//  (10) CS010 P1 (was v3.6 P1c's box-matches-hitbox proof — the render no longer matches the full
+//       hitbox, see GDD §2.14.1): the drawn scoop V's three points, recovered from a recording ctx
+//       via Ship.draw(), agree with SCOOP_DEPTH/SCOOP_WIDTH at levels 1..5 (front edge + half-width;
+//       the V's throat sits at the ship's nose, x=16, not at the hitbox's rear edge -SHIP_RADIUS).
+//       inScoopBox's accept/reject boundary itself (probing just inside/outside each edge, including
+//       the rear -SHIP_RADIUS edge the V doesn't draw) is checked directly against the real function,
+//       independent of the render.
 //  (11) v3.6 P3: a full 13-kill Debris lineage drops zero powerups (the old small-tier roll is gone).
 //  (12) v3.6 P3: a full 13-kill Hunter lineage drops exactly one, from the large core (not the smalls).
 //  (13) v3.6 P3: destroySaucer — bullet AND shield-contact paths each drop exactly one powerup whose
@@ -279,30 +283,31 @@ assert(SCOOP_WIDTH[1] === SCOOP_CONFIG.minWidthMult * SHIP_DRAW_W,
   `9: SCOOP_WIDTH[1] === minWidthMult * SHIP_DRAW_W at curve 1.0 (got ${SCOOP_WIDTH[1]})`);
 
 // =====================================================================
-console.log("(10) the drawn scoop box's corners agree with inScoopBox's accept/reject boundary, L1..5");
+console.log("(10) the drawn scoop V's points match SCOOP_DEPTH/WIDTH; inScoopBox's boundary checked directly");
 {
   for (let lvl = 1; lvl <= SCOOP_MAX_LEVEL; lvl++) {
     beginPlaying();
     const s = placeShip(0, WORLD_W / 2, WORLD_H / 2);
     game.scoopLevel = lvl;
-    s.invuln = 0; // not blinking — the box is drawn in the !blink branch
+    s.invuln = 0; // not blinking — the V is drawn in the !blink branch
 
     recordingCtx.calls.length = 0;
     s.draw();
-    // The scoop box is drawn BEFORE the hull (its own moveTo + 3 lineTo) — take only the first 4
-    // path points, i.e. the box, not the hull's that follow.
+    // The scoop V is drawn BEFORE the hull (its own moveTo + 2 lineTo, open — no closePath) — take
+    // only the first 3 path points, i.e. the V, not the hull's that follow.
     const pts = recordingCtx.calls.filter(c => c.op === "moveTo" || c.op === "lineTo")
-      .slice(0, 4).map(c => c.args);
-    assert(pts.length === 4, `10: L${lvl} scoop box draws exactly 4 path points (got ${pts.length})`);
+      .slice(0, 3).map(c => c.args);
+    assert(pts.length === 3, `10: L${lvl} scoop V draws exactly 3 path points (got ${pts.length})`);
     const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-    const drawnFront = Math.max(...xs), drawnRear = Math.min(...xs), drawnHw = Math.max(...ys.map(Math.abs));
-    const expectFront = SCOOP_DEPTH[lvl], expectRear = -SHIP_RADIUS, expectHw = SCOOP_WIDTH[lvl] / 2;
+    const drawnFront = Math.max(...xs), drawnThroat = Math.min(...xs), drawnHw = Math.max(...ys.map(Math.abs));
+    const expectFront = SCOOP_DEPTH[lvl], expectThroat = 16, expectHw = SCOOP_WIDTH[lvl] / 2;
     assert(Math.abs(drawnFront - expectFront) < 1e-9,
       `10: L${lvl} drawn front edge (${drawnFront}) === SCOOP_DEPTH[${lvl}] (${expectFront})`);
-    assert(Math.abs(drawnRear - expectRear) < 1e-9,
-      `10: L${lvl} drawn rear edge (${drawnRear}) === -SHIP_RADIUS (${expectRear})`);
+    assert(Math.abs(drawnThroat - expectThroat) < 1e-9,
+      `10: L${lvl} drawn throat (${drawnThroat}) === ship nose x=16 (${expectThroat})`);
     assert(Math.abs(drawnHw - expectHw) < 1e-9,
       `10: L${lvl} drawn half-width (${drawnHw}) === SCOOP_WIDTH[${lvl}]/2 (${expectHw})`);
+    const expectRear = -SHIP_RADIUS; // NOT drawn by the V (GDD §2.14.1) — inScoopBox still enforces it below
 
     // Probe just inside/outside each of the four edges and cross-check against inScoopBox directly.
     const eps = 0.5;

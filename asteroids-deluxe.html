@@ -1934,29 +1934,15 @@ class Ship {
     if (this.dead) return;
     const blink = this.invuln > 0 && Math.floor(this.invuln * 10) % 2 === 0;
     if (!blink) {
-      // Scoop mouth (v3.3 P3; box render v3.6 P1c): drawn BEFORE the hull in COLOR.dock green so it
-      // reads as a collector's throat. This is the EXACT capture region inScoopBox() tests — a
-      // rectangle from forward=-SHIP_RADIUS (behind the nose) to forward=SCOOP_DEPTH[lvl], within
-      // +/-SCOOP_WIDTH[lvl]/2 laterally — not an approximation, so what's drawn is what captures.
-      // Corners are derived, never hardcoded. Filled translucent (a deliberate exception to GDD
-      // §3.2's no-fills rule — a HUD-ish capture-region affordance, not an entity) with the usual
-      // glowStroke outline on top. Hidden at level 0.
+      // Scoop mouth (v3.3 P3; prong-V render restored CS010 P1 — see GDD §2.14.1 for the box-render
+      // supersession history). Drawn BEFORE the hull in COLOR.dock green so it reads as a collector's
+      // throat: an open V from the ship's nose (16,0) flaring forward to +/-SCOOP_WIDTH[lvl]/2 at
+      // SCOOP_DEPTH[lvl]. This is a TELL for inScoopBox()'s capture region, not a literal outline of
+      // it — the box's rear edge at forward=-SHIP_RADIUS isn't shown. Corners derived, never
+      // hardcoded. No fill. Hidden at level 0.
       if (game.scoopLevel > 0) {
         const lvl = game.scoopLevel, hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
-        const box = [[-SHIP_RADIUS, -hw], [d, -hw], [d, hw], [-SHIP_RADIUS, hw]];
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-        ctx.beginPath();
-        ctx.moveTo(box[0][0], box[0][1]);
-        for (let i = 1; i < box.length; i++) ctx.lineTo(box[i][0], box[i][1]);
-        ctx.closePath();
-        ctx.globalAlpha = 0.15; // look-call knob
-        ctx.fillStyle = COLOR.dock;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        glowStroke(COLOR.dock);
-        ctx.restore();
+        drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, COLOR.dock, false);
       }
       const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
       drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);

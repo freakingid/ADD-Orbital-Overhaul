@@ -244,36 +244,26 @@ function render() {
 
   ctx.clearRect(0, 0, cv.width, cv.height);
 
-  // v3.6 P1c: the mouth is drawn as the EXACT box inScoopBox() tests (forward from -SHIP_RADIUS to
-  // SCOOP_DEPTH[lvl], lateral +/-SCOOP_WIDTH[lvl]/2) — a translucent fill + outline, not the old open
-  // prong-V, so the lab previews what the game actually captures, including the rear edge.
-  function drawScoopBox(lvl, alpha) {
+  // CS010 P1: reverted to the open prong-V (the box fill was v3.6 P1c; see GDD §2.14.1 for the
+  // supersession history). inScoopBox()'s capture math is untouched — this V no longer shows the
+  // mouth's true rear edge at forward=-SHIP_RADIUS, a known/accepted incompleteness of the tell.
+  // Throat at the ship's nose (16,0), flaring forward to +/-hw at depth d. No fill.
+  function drawScoopV(lvl, alpha) {
     const hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
-    const box = [[-SHIP_RADIUS, -hw], [d, -hw], [d, hw], [-SHIP_RADIUS, hw]];
-    ctx.save();
-    ctx.translate(ship.x, ship.y);
-    ctx.rotate(ship.angle);
-    ctx.beginPath();
-    ctx.moveTo(box[0][0], box[0][1]);
-    for (let i = 1; i < box.length; i++) ctx.lineTo(box[i][0], box[i][1]);
-    ctx.closePath();
+    const v = [[d, -hw], [16, 0], [d, hw]];
     const color = lvl === level ? COLOR.dock : COLOR.dim;
-    ctx.globalAlpha = 0.15 * alpha;
-    ctx.fillStyle = color;
-    ctx.fill();
     ctx.globalAlpha = alpha;
-    glowStroke(ctx, color);
+    drawPoly(ctx, v, ship.x, ship.y, ship.angle, color, false);
     ctx.globalAlpha = 1;
-    ctx.restore();
   }
 
   // ghost overlay: nested mouths for every level, dim, so the scaling BETWEEN steps is visible
   if (ghostAll) {
     for (let lvl = 1; lvl <= SCOOP_MAX_LEVEL; lvl++) {
-      drawScoopBox(lvl, lvl === level ? 1.0 : 0.28);
+      drawScoopV(lvl, lvl === level ? 1.0 : 0.28);
     }
   } else if (level > 0) {
-    drawScoopBox(level, 1.0);
+    drawScoopV(level, 1.0);
   }
 
   // ship hull
