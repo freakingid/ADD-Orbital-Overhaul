@@ -312,8 +312,23 @@ const MAGNET_RANGE = 380;   // PLAYTEST KNOB. px from ship center. Deliberately 
                             // 54 px — a ~7x buff (v3.4 P4).
 const MAGNET_PICKUP_MULT = 1.6;     // effective pickup radius grows this much while the magnet is active
 const MAGNET_PULL     = 520;   // PLAYTEST KNOB. px/s^2 at zero distance (was a flat 360)
-const MAGNET_PULL_MIN = 60;    // PLAYTEST KNOB. px/s^2 floor at MAGNET_RANGE — a subtle pull so the top of the screen still visibly moves
-const MAGNET_DAMP = 0.06;           // per-sec velocity damping inside range so the pull glides, not jitters
+const MAGNET_PULL_MIN = 150;   // PLAYTEST KNOB (v3.6 P2a: 60->150). px/s^2 floor at MAGNET_RANGE — governs
+                                // the far field by construction; 60 made the top of the screen nearly inert.
+const MAGNET_FALLOFF_POW = 1.0; // PLAYTEST KNOB (v3.6 P2a: new, was a hardcoded t*t). 1.0 = linear falloff.
+                                 // The old quadratic was a near-field yank; the near field was never weak —
+                                 // the mid-field was. Linear roughly doubles accel at half range.
+const MAGNET_DAMP = 0.35;      // PLAYTEST KNOB (v3.6 P2a: 0.06->0.35). Per-sec velocity retention inside
+                                // range — counter-intuitively, a LARGER value damps LESS (applied as
+                                // Math.pow(MAGNET_DAMP, dt)). At 0.06 a piece lost ~4.6%/frame, which turns
+                                // this pull into a terminal-velocity governor rather than an acceleration:
+                                // solving the steady state (vx' = vx*damp^dt + accel*dt each frame, damp^dt
+                                // constant) gives v_terminal ≈ accel·dt / (1 - MAGNET_DAMP^dt). At 0.06 that
+                                // capped a piece near accel/2.7 — a piece 190px out (accel~175 under the old
+                                // quadratic) topped out near 65 px/s, ~3s to arrive. At 0.35 the retention is
+                                // ~0.983/frame, v_terminal ≈ accel/1.0 — pieces arrive ~2.7x faster for the
+                                // same accel. Biggest single lever here; risks overshoot/orbiting the ship,
+                                // so if pieces jitter around the ship instead of landing, THIS is the knob
+                                // to pull back first — not MAGNET_PULL.
 // Engine: lightens the effective towed mass so thrust/top-speed/tug (all fed by chainMass) ease.
 const ENGINE_MASS_MULT = 0.5;       // Engine halves the effective towed-mass sum while active
 // Count-based expiry budgets (v3.0 P5, B-4/B-5). Used only when the matching Difficulty mode is the
@@ -3329,7 +3344,7 @@ function update(dt) {
         const [dx, dy] = shortDelta(g.x, g.y, game.ship.x, game.ship.y); // vector toward the ship (wrap-aware)
         const d = Math.hypot(dx, dy) || 0.0001;
         const t = 1 - (d / MAGNET_RANGE);                                    // 1 at ship, 0 at max range
-        let accel = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * t * t; // quadratic ease: near-field yank, far-field nudge
+        let accel = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * Math.pow(t, MAGNET_FALLOFF_POW); // v3.6 P2a: falloff exponent hoisted to a constant (was hardcoded t*t)
         accel /= Math.sqrt(g.mass);     // FORK-6: sqrt, not linear mass. The 0.5 exponent is a PLAYTEST KNOB.
                                         // A mass-1 single is UNAFFECTED (sqrt(1)=1); a mass-11 clump pulls at ~30%.
         const damp = Math.pow(MAGNET_DAMP, dt);   // light in-range damping so the pull glides (not jitters)

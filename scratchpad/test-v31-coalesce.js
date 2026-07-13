@@ -77,7 +77,7 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
   "GARBAGE_DECAY", "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
-  "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_PIECES", "POWERUP_BUDGET",
+  "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
   "settings",
   "WORLD_W", "WORLD_H"];
 
@@ -91,7 +91,7 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
   GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
-  MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_PIECES, POWERUP_BUDGET, settings,
+  MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings,
   WORLD_W, WORLD_H } = G;
 
 let passed = 0, failed = 0;
@@ -658,7 +658,9 @@ console.log("(25) v3.3 P4 (9b): 'Waste Not' still keys on hunterCoalesced and st
 }
 
 // =====================================================================
-// v3.4 P4 — the Magnet BUFF: screen-wide range, quadratic falloff, mass-scaled pull, clump budget.
+// v3.4 P4 — the Magnet BUFF: screen-wide range, falloff, mass-scaled pull, clump budget.
+// v3.6 P2a retuned the falloff to linear (MAGNET_FALLOFF_POW 2->1), raised MAGNET_PULL_MIN 60->150,
+// and weakened MAGNET_DAMP 0.06->0.35 (the actual "underpowered" culprit — see asteroids-deluxe.html).
 // These drive the REAL update() pickup loop (magnet active) — no reimplementation of the pull.
 // A lone single/clump placed at ship.x + d (d > 0) has shortDelta(garbage->ship) = (-d, 0), so the
 // per-frame pull sets g.vx = -accel * dt exactly (starting from rest, damping term is 0). Thus the
@@ -668,8 +670,30 @@ const DT = 1 / 60;
 // Mirror of the shipped pull formula (asteroids-deluxe.html update() magnet block).
 function expAccel(distance, mass) {
   const t = 1 - distance / MAGNET_RANGE;
-  const a = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * t * t; // quadratic ease
+  const a = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * Math.pow(t, MAGNET_FALLOFF_POW);
   return a / Math.sqrt(mass);                                          // FORK-6: sqrt mass
+}
+// The v3.3/v3.4-era formula, frozen here as the "old build" comparison baseline (v3.6 P2a shipped a
+// buff, not a rewrite — this pins down exactly what "stronger than before" means).
+const OLD_MAGNET_PULL_MIN = 60, OLD_MAGNET_DAMP = 0.06;
+function oldExpAccel(distance, mass) {
+  const t = 1 - distance / MAGNET_RANGE;
+  const a = OLD_MAGNET_PULL_MIN + (MAGNET_PULL - OLD_MAGNET_PULL_MIN) * t * t; // quadratic ease
+  return a / Math.sqrt(mass);
+}
+// Pure numeric integration of the OLD formula (pull+damp), 1D, mass 1, starting from rest — how long
+// (in seconds) until a piece closes to within `arriveAt` px of the ship. Comparison baseline only;
+// does not touch game code.
+function oldArrivalTime(distance, arriveAt) {
+  let d = distance, v = 0, t = 0;
+  const damp = Math.pow(OLD_MAGNET_DAMP, DT);
+  while (d > arriveAt && t < 30) {
+    const accel = oldExpAccel(d, 1);
+    v = v * damp + accel * DT;
+    d -= v * DT;
+    t += DT;
+  }
+  return t;
 }
 // Run ONE real update() frame on a single lone piece to the right of the ship; return its resulting vx.
 function pullVx(distance, pcs, mass) {
@@ -710,8 +734,8 @@ console.log("(28) v3.4 P4 FALLOFF: ~MAGNET_PULL near, ~MAGNET_PULL_MIN (and >0) 
   const aNear = -pullVx(3, 1, 1) * 60;      // d≈0
   const aFar  = -pullVx(379, 1, 1) * 60;    // d≈MAGNET_RANGE (must be < 380 to be in range at all)
   assert(Math.abs(aNear - MAGNET_PULL) < 10 && aNear <= MAGNET_PULL, `28: accel near the ship ≈ MAGNET_PULL (${aNear.toFixed(1)} ≈ ${MAGNET_PULL})`);
-  assert(Math.abs(aNear - expAccel(3, 1)) < 1e-9, "28: near accel matches the exact quadratic formula");
-  assert(Math.abs(aFar - MAGNET_PULL_MIN) < 0.1 && aFar > 0, `28: accel at max range ≈ MAGNET_PULL_MIN and STRICTLY > 0 (${aFar.toFixed(3)} ≈ ${MAGNET_PULL_MIN})`);
+  assert(Math.abs(aNear - expAccel(3, 1)) < 1e-9, "28: near accel matches the exact falloff formula (MAGNET_FALLOFF_POW-parametrized)");
+  assert(Math.abs(aFar - MAGNET_PULL_MIN) < 2 && aFar > 0, `28: accel at max range ≈ MAGNET_PULL_MIN and STRICTLY > 0 (${aFar.toFixed(3)} ≈ ${MAGNET_PULL_MIN})`);
   const ds = [50, 150, 250, 350];
   const accels = ds.map(d => -pullVx(d, 1, 1) * 60);
   let mono = true;
@@ -723,7 +747,7 @@ console.log("(29) v3.4 P4 MASS: a mass-1 single's per-frame vx is BIT-IDENTICAL 
 {
   const d = 200;
   const t = 1 - d / MAGNET_RANGE;
-  const rawAccel = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * t * t; // formula BEFORE the mass divide
+  const rawAccel = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * Math.pow(t, MAGNET_FALLOFF_POW); // formula BEFORE the mass divide
   const expUnscaled = -1 * rawAccel * DT;   // dx/d = -1 (garbage to the right of the ship)
   const single = pullVx(d, 1, 1);
   // THE regression assertion that matters most: sqrt(1) === 1, so the mass divide must not perturb a single.
@@ -765,6 +789,54 @@ console.log("(31) v3.4 P4 regression: coalescence (12-piece -> Hunter) still fir
   update(DT); // real update(): magnet block skipped (off), coalesceGarbage still transforms the 12-clump
   assert(game.hunters.length === before + 1, `31: one Hunter still born from a 12-clump with the Magnet off (${before} -> ${game.hunters.length})`);
   assert(hunterbornCalls === 1, "31: the coalescence cue fired exactly once, no Magnet involved");
+}
+
+// =====================================================================
+// v3.6 P2a — the Magnet BUFF: MAGNET_FALLOFF_POW hoisted to 1.0 (linear), MAGNET_PULL_MIN 60->150,
+// MAGNET_DAMP 0.06->0.35. MAGNET_PULL and MAGNET_RANGE are UNCHANGED (leave-alone per spec).
+// =====================================================================
+console.log("(32) v3.6 P2a config: falloff is linear, floor raised, damping weakened; MAGNET_RANGE/MAGNET_PULL untouched");
+assert(MAGNET_FALLOFF_POW === 1.0, `32: MAGNET_FALLOFF_POW is 1.0 (linear) (got ${MAGNET_FALLOFF_POW})`);
+assert(MAGNET_PULL_MIN === 150, `32: MAGNET_PULL_MIN is 150 (v3.6 P2a retune 60->150; got ${MAGNET_PULL_MIN})`);
+assert(MAGNET_DAMP === 0.35, `32: MAGNET_DAMP is 0.35 (v3.6 P2a retune 0.06->0.35; got ${MAGNET_DAMP})`);
+assert(MAGNET_RANGE === 380, `32: MAGNET_RANGE is untouched at 380 (got ${MAGNET_RANGE})`);
+assert(MAGNET_PULL === 520, `32: MAGNET_PULL is untouched at 520 (got ${MAGNET_PULL})`);
+
+console.log("(33) v3.6 P2a: the new pull is monotonically stronger than the old build at every in-range distance");
+{
+  const ds = [5, 50, 100, 150, 190, 250, 300, 350, 379];
+  for (const d of ds) {
+    const now = expAccel(d, 1), old = oldExpAccel(d, 1);
+    assert(now > old, `33: at d=${d} the new accel (${now.toFixed(1)}) exceeds the old-build accel (${old.toFixed(1)})`);
+  }
+}
+
+console.log("(34) v3.6 P2a: a mass-1 single at 190 px reaches the ship measurably faster than the old build (real update(), time compared — not the constant)");
+{
+  beginPlaying();
+  settings.magnetMode = "time";
+  game.powerFx.magnet = 10;
+  game.cargoMax = 0;   // block the pickup gate (chain.length(0) < cargoMax(0) is false) so the piece
+                        // keeps traveling all the way in instead of hooking onto the chain mid-flight
+  const g = new Garbage(game.ship.x + 190, game.ship.y, 0, 0);
+  game.garbage = [g];
+  const arriveAt = 20;      // px — "arrived" proxy, well inside GARBAGE_PICKUP's ballpark
+  let frames = 0;
+  const maxFrames = 30 * 60; // 30 s hard cap, matches oldArrivalTime's cap
+  while (Math.hypot(g.x - game.ship.x, g.y - game.ship.y) > arriveAt && frames < maxFrames) {
+    update(DT);
+    frames++;
+  }
+  const newTime = frames * DT;
+  const oldTime = oldArrivalTime(190, arriveAt);
+  assert(frames < maxFrames, `34: the new pull actually arrives within the 30s cap (took ${newTime.toFixed(2)}s)`);
+  assert(newTime < oldTime, `34: new arrival time (${newTime.toFixed(2)}s) is measurably less than the old-build arrival time (${oldTime.toFixed(2)}s)`);
+}
+
+console.log("(35) v3.6 P2a regression: MAGNET_RANGE is unchanged — a piece at 400 px still feels nothing");
+{
+  const far400 = pullVx(400, 1, 1);
+  assert(far400 === 0, `35: a single at 400 px is still NOT pulled (vx=${far400}) — outside MAGNET_RANGE 380, unchanged by the buff`);
 }
 
 // =====================================================================
