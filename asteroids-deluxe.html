@@ -201,7 +201,15 @@ const DEATH_FLASH_ALPHA     = 0.8;  // peak alpha of the frame-one white flash
 // into every record's `build` field (the wire shape's provenance tag — see the HighScores object).
 const SCORES_MAX = 10;
 const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
-const GAME_VERSION = "3.6";
+
+// CS010 P0 — version scheme: Major.Minor.Patch.Changeset (unprefixed — no "v" in the string itself;
+// that's added only where it's displayed, e.g. the title-screen stamp). Major = new mechanics/levels.
+// Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
+// the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
+// segment IS the changeset number (this build shipped in CS010).
+const GAME_VERSION = "1.0.0.10";
+const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
+const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
 // CS009 — HUD rebuild ("Corner Standard": HULL/CARGO rings top-right, powerup rows bottom-left).
 // ALL look-call knobs, tuned in the browser — see PLANNED-FEATURES-CS009.md §2/§3/§5 for the mockup
@@ -4411,6 +4419,9 @@ function draw() {
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
     drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 220, 14, COLOR.ach);
+    // CS010 P0 — build stamp, lower-right corner. Not a design element: small, dim, out of the way.
+    drawText("v" + GAME_VERSION, VIEW_W - VERSION_STAMP_INSET_X, VIEW_H - VERSION_STAMP_INSET_Y,
+              12, COLOR.dim, "right");
     // decorative drifting debris lives in screen space (its own tiny wrapped field)
     titleDebris.forEach(a => {
       a.update(1/60);

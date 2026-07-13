@@ -1,6 +1,6 @@
 # ORBITAL OVERHAUL — Game Design Document & Handoff Guide
 
-**Current build:** v3.6 (shipped) — see `STATUS.md` for build reality.
+**Current build:** CS010 P0 (in-game version stamp: `GAME_VERSION` "1.0.0.10", shown on the title screen) — see `STATUS.md` for build reality.
 **Changelog:** `GDD-VERSION-HISTORY.md`.
 **This document describes what is SHIPPED (§2), not what is planned.**
 
