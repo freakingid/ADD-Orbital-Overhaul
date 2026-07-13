@@ -2591,6 +2591,8 @@ const game = {
   powerups: [],                                        // free-floating Powerup pickups (F6)
   powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // remaining sec per timed effect (0 = inactive)
   powerBudget: { rapid: 0, triple: 0, magnet: 0 },    // remaining shots/pieces in count mode (P5; Engine is always timed)
+  powerBank: { rapid: 0, triple: 0, magnet: 0, engine: 0 },    // CS009 P5: sec of bank-flash left per type (0 = none)
+  powerBankAmt: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // CS009 P5: the "+Ns" badge amount for the current flash
   hudHull: 1,                                          // CS009 P1: eased HUD hull fraction, chases
                                                         // ship.hp/SHIP_MAX_HP so a hit/heal reads as a
                                                         // drain/fill, not a jump. Advanced in update(),
@@ -2632,6 +2634,8 @@ function startGame() {
   game.powerups = [];
   game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
   game.powerBudget = { rapid: 0, triple: 0, magnet: 0 }; // count-mode budgets reset with the run (P5)
+  game.powerBank = { rapid: 0, triple: 0, magnet: 0, engine: 0 };    // bank-flash state resets with the run (P5)
+  game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.cargoMax = CARGO_BASE;      // tow cap resets to base each run; grows with deliveries (B-8)
@@ -2898,9 +2902,19 @@ function applyPowerup(type) {
   if (type === "health") {
     game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + POWERUP_HEALTH_AMOUNT);
   } else if (powerMode(type) === "time") {
+    // CS009 P5: check BEFORE the += — this is what distinguishes a bank (effect already running) from
+    // a fresh pickup (it wasn't). A fresh pickup arms no badge.
+    if (powerActive(type)) {
+      game.powerBank[type] = HUD_BANK_FLASH;
+      game.powerBankAmt[type] = powerDuration(type); // FLAG-F: 30 for magnet, 15 for the rest — never a literal
+    }
     game.powerFx[type] += powerDuration(type);      // BANKS (v3.6 P4, reverses the old refresh rule) —
                                                       // same-type pickups add duration; magnitude still never stacks
   } else {
+    if (powerActive(type)) {
+      game.powerBank[type] = HUD_BANK_FLASH;
+      game.powerBankAmt[type] = POWERUP_BUDGET[type];
+    }
     game.powerBudget[type] += POWERUP_BUDGET[type]; // count mode: banks the shots/pieces budget too (same rule)
   }
   // Achievement stats (F9): any pickup counts for "No Powerups Needed"; Health picks gate "Glass
@@ -3749,6 +3763,9 @@ function update(dt) {
   for (const k in game.powerFx) {
     if (game.powerFx[k] > 0) game.powerFx[k] = Math.max(0, game.powerFx[k] - dt);
   }
+  for (const k in game.powerBank) {
+    if (game.powerBank[k] > 0) game.powerBank[k] = Math.max(0, game.powerBank[k] - dt);
+  }
 
   // --- Recycling dock offload ---
   if (game.dock) {
@@ -4593,6 +4610,18 @@ function drawHUD() {
     drawText(POWERUP_LABEL[t], 64, y - 4, 13, color, "left");
     drawText(num, 64, y + 14, 16, color, "left");
     ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the next row / rest of the frame
+
+    // CS009 P5: bank feedback — a same-type pickup while already active pops the ring 25% and settling,
+    // plus a fading "+Ns" badge to the right of the number, over HUD_BANK_FLASH sec.
+    if (game.powerBank[t] > 0) {
+      const k = game.powerBank[t] / HUD_BANK_FLASH; // 1 -> 0
+      ctx.beginPath();
+      ctx.arc(40, y, HUD_FX_RING_R * (1 + HUD_BANK_POP * k), 0, TAU);
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+      ctx.globalAlpha = k;
+      drawText("+" + game.powerBankAmt[t] + (counted ? "" : "s"), 104, y + 14, 16, COLOR.ach, "left");
+      ctx.globalAlpha = 1;   // ALWAYS restore
+    }
   }
   // SCOOP level pips (v3.3 P3) — a PERSISTENT upgrade, NOT a timed bar, so it's deliberately drawn
   // OUTSIDE the powerActive/POWERUP_DROP_TYPES loop above. Filled pips = current level; hidden at 0.
