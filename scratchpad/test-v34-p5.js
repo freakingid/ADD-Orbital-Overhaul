@@ -7,8 +7,8 @@
 //   node scratchpad/test-v34-p5.js
 //
 // Checks:
-//  (A) constants: LOW_HP_THRESHOLD === 100; COLOR.lowhp is a hex distinct from COLOR.hp,
-//      COLOR.clumpHot, and the low-HP bar fill "#ff7060".
+//  (A) constants: LOW_HP_THRESHOLD === 100; COLOR.lowhp is a hex distinct from COLOR.hp and the
+//      low-HP bar fill "#ff7060" (v3.6 P1a: COLOR.clumpHot deleted, dropped from this check).
 //  (B) the low-health STATE engages at exactly LOW_HP_THRESHOLD (threshold: yes; threshold+1: no).
 //  (C) AudioSys.lowhp edge detection: fires (true) exactly once on the rising edge across several
 //      frames (not every frame), fires (false) exactly once on the falling edge (a Health pickup
@@ -171,7 +171,6 @@ console.log("(A) constants");
 assert(LOW_HP_THRESHOLD === 100, `A: LOW_HP_THRESHOLD === 100 (got ${LOW_HP_THRESHOLD})`);
 assert(typeof COLOR.lowhp === "string" && /^#[0-9a-f]{6}$/i.test(COLOR.lowhp), "A: COLOR.lowhp is a hex color");
 assert(COLOR.lowhp.toLowerCase() !== COLOR.hp.toLowerCase(), "A: COLOR.lowhp distinct from COLOR.hp");
-assert(COLOR.lowhp.toLowerCase() !== COLOR.clumpHot.toLowerCase(), "A: COLOR.lowhp distinct from COLOR.clumpHot");
 assert(COLOR.lowhp.toLowerCase() !== "#ff7060", "A: COLOR.lowhp distinct from the low-HP bar fill (#ff7060)");
 
 // =====================================================================

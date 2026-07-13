@@ -18,6 +18,9 @@
 //  (7) maybeDropPowerup only ever yields a type in POWERUP_DROP_WEIGHTS, and scoop can drop.
 //  (8) buildScoopSteps: index 0 is 0, index 5 is max, monotonically increasing, curve behavior.
 //  (9) SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W exactly.
+//  (10) v3.6 P1c: the drawn scoop box's four corners, recovered from a recording ctx via Ship.draw(),
+//       agree with inScoopBox's accept/reject boundary at levels 1..5 (probing just inside/outside
+//       each edge, including the rear -SHIP_RADIUS edge) — the load-bearing box-matches-hitbox proof.
 
 "use strict";
 const fs = require("fs");
@@ -28,8 +31,22 @@ const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
 const scriptSrc = m[1];
 
-const noopCtx = new Proxy({}, { get() { return () => {}; }, set() { return true; } });
-const canvasStub = { width: 0, height: 0, style: {}, getContext: () => noopCtx };
+// Instrumented 2D context: records moveTo/lineTo calls (path points) so the drawn scoop box's
+// corners can be recovered, no-ops everything else. Same idiom as test-v33-p1.js.
+function makeRecordingCtx() {
+  const calls = [];
+  const recorded = new Set(["moveTo", "lineTo"]);
+  return new Proxy({}, {
+    get(t, p) {
+      if (p === "calls") return calls;
+      if (recorded.has(p)) return (...args) => calls.push({ op: p, args });
+      return (..._args) => {};
+    },
+    set(t, p, v) { t[p] = v; return true; }
+  });
+}
+const recordingCtx = makeRecordingCtx();
+const canvasStub = { width: 0, height: 0, style: {}, getContext: () => recordingCtx };
 const documentStub = { getElementById: () => canvasStub };
 const noAudio = new Proxy({ state: "running", currentTime: 0, sampleRate: 44100,
   destination: {}, createGain: () => noAudio, createBuffer: () => ({ getChannelData: () => new Float32Array(1) }) },
@@ -48,7 +65,7 @@ const returnList = ["startGame", "update", "game", "Garbage", "applyPowerup", "d
   "maybeDropPowerup", "POWERUP_DROP_WEIGHTS", "POWERUP_DROP_TYPES", "POWERUP_DECAY",
   "POWERUP_DROP_CHANCE", "SCOOP_MAX_LEVEL", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
   "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H",
-  "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W"];
+  "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W", "inScoopBox"];
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
   scriptSrc + `\nreturn { ${returnList.join(", ")} };`);
@@ -56,7 +73,7 @@ const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafS
 const { startGame, update, game, Garbage, applyPowerup, damageShip, maybeDropPowerup,
   POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, POWERUP_DROP_CHANCE, SCOOP_MAX_LEVEL,
   SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_HITS_PER_LEVEL, SCOOP_MAX_BONUS, GARBAGE_PICKUP, SHIP_RADIUS,
-  WORLD_W, WORLD_H, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W } = G;
+  WORLD_W, WORLD_H, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -154,8 +171,10 @@ assert(captured(5, 25, 20, 0), "2: L5 mouth captures a canister at forward 25, l
 // =====================================================================
 console.log("(3) misses: behind the ship, or laterally outside the mouth");
 assert(!captured(5, -30, 0, 0), "3: a canister 30px BEHIND the ship is NOT captured");
-assert(!captured(5, 20, 40, 0), "3: a canister at lateral 40 (> L5 half-width 27) is NOT captured");
-assert(!captured(5, 80, 0, 0), "3: a canister forward 80 (beyond depth 36) is NOT captured");
+assert(!captured(5, 20, SCOOP_WIDTH[5] / 2 + 5, 0),
+  `3: a canister just outside L5 half-width (${SCOOP_WIDTH[5] / 2}) is NOT captured`);
+assert(!captured(5, SCOOP_DEPTH[5] + 5, 0, 0),
+  `3: a canister just beyond L5 depth (${SCOOP_DEPTH[5]}) is NOT captured`);
 
 // =====================================================================
 console.log("(4) scoopLevel 0 == pre-scoop build (circle only)");
@@ -242,6 +261,51 @@ assert(SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W,
 assert(SCOOP_DEPTH[5] === SCOOP_CONFIG.maxDepth, `9: SCOOP_DEPTH[5] === maxDepth (got ${SCOOP_DEPTH[5]})`);
 assert(SCOOP_WIDTH[1] === SCOOP_CONFIG.minWidthMult * SHIP_DRAW_W,
   `9: SCOOP_WIDTH[1] === minWidthMult * SHIP_DRAW_W at curve 1.0 (got ${SCOOP_WIDTH[1]})`);
+
+// =====================================================================
+console.log("(10) the drawn scoop box's corners agree with inScoopBox's accept/reject boundary, L1..5");
+{
+  for (let lvl = 1; lvl <= SCOOP_MAX_LEVEL; lvl++) {
+    beginPlaying();
+    const s = placeShip(0, WORLD_W / 2, WORLD_H / 2);
+    game.scoopLevel = lvl;
+    s.invuln = 0; // not blinking — the box is drawn in the !blink branch
+
+    recordingCtx.calls.length = 0;
+    s.draw();
+    // The scoop box is drawn BEFORE the hull (its own moveTo + 3 lineTo) — take only the first 4
+    // path points, i.e. the box, not the hull's that follow.
+    const pts = recordingCtx.calls.filter(c => c.op === "moveTo" || c.op === "lineTo")
+      .slice(0, 4).map(c => c.args);
+    assert(pts.length === 4, `10: L${lvl} scoop box draws exactly 4 path points (got ${pts.length})`);
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const drawnFront = Math.max(...xs), drawnRear = Math.min(...xs), drawnHw = Math.max(...ys.map(Math.abs));
+    const expectFront = SCOOP_DEPTH[lvl], expectRear = -SHIP_RADIUS, expectHw = SCOOP_WIDTH[lvl] / 2;
+    assert(Math.abs(drawnFront - expectFront) < 1e-9,
+      `10: L${lvl} drawn front edge (${drawnFront}) === SCOOP_DEPTH[${lvl}] (${expectFront})`);
+    assert(Math.abs(drawnRear - expectRear) < 1e-9,
+      `10: L${lvl} drawn rear edge (${drawnRear}) === -SHIP_RADIUS (${expectRear})`);
+    assert(Math.abs(drawnHw - expectHw) < 1e-9,
+      `10: L${lvl} drawn half-width (${drawnHw}) === SCOOP_WIDTH[${lvl}]/2 (${expectHw})`);
+
+    // Probe just inside/outside each of the four edges and cross-check against inScoopBox directly.
+    const eps = 0.5;
+    const probes = [
+      { name: "front-inside",  forward: expectFront - eps, lateral: 0,               want: true },
+      { name: "front-outside", forward: expectFront + eps, lateral: 0,               want: false },
+      { name: "rear-inside",   forward: expectRear + eps,  lateral: 0,               want: true },
+      { name: "rear-outside",  forward: expectRear - eps,  lateral: 0,               want: false },
+      { name: "lateral-inside",  forward: 0, lateral: expectHw - eps,                want: true },
+      { name: "lateral-outside", forward: 0, lateral: expectHw + eps,                want: false },
+    ];
+    for (const p of probes) {
+      const g = placeGarbage(p.forward, p.lateral);
+      const got = inScoopBox(g);
+      assert(got === p.want,
+        `10: L${lvl} ${p.name} (forward=${p.forward.toFixed(2)}, lateral=${p.lateral.toFixed(2)}) inScoopBox=${got}, want ${p.want}`);
+    }
+  }
+}
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);

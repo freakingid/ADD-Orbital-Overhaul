@@ -16,7 +16,8 @@
 //  (5) drawCanister's default scale (no trailing arg — the single-canister and chain-node call sites)
 //      draws at the unscaled ±7/±5 extent, byte-identical to pre-P2 rendering — the load-bearing
 //      regression guard for the two untouched call sites.
-//  (6) the clumpHot tint still lerps with pieces (COLOR.clumpHot exists, distinct from COLOR.garbage).
+//  (6) v3.6 P1a: COLOR.clumpHot is gone from the source; a clump's drawn colour follows the SAME
+//      per-piece-mass rule as a single (mass/pieces < 1 -> garbageLight, else garbage) at pieces 2/5/11.
 
 "use strict";
 const fs = require("fs");
@@ -173,27 +174,30 @@ console.log("(5) drawCanister's default scale is the unscaled ±7/±5 extent (by
 }
 
 // =====================================================================
-console.log("(6) COLOR.clumpHot exists, is distinct from COLOR.garbage, and the tint lerps with pieces");
+console.log("(6) v3.6 P1a: no clumpHot; a clump's colour follows per-piece-mass, same rule as a single");
 {
-  assert(typeof COLOR.clumpHot === "string" && /^#[0-9a-f]{6}$/i.test(COLOR.clumpHot),
-    "6: COLOR.clumpHot is a hex color");
-  assert(COLOR.clumpHot !== COLOR.garbage, "6: COLOR.clumpHot is distinct from COLOR.garbage");
+  assert(!("clumpHot" in COLOR), "6: COLOR.clumpHot is gone");
+  assert(!/clumpHot/.test(scriptSrc), "6: 'clumpHot' does not appear anywhere in the source");
 
-  const low = new Garbage(300, 300); low.pieces = 2; low.radius = 7 * Math.sqrt(2); low.spin = 0;
-  const high = new Garbage(300, 300); high.pieces = HUNTER_COALESCE_COUNT - 1;
-  high.radius = 7 * Math.sqrt(high.pieces); high.spin = 0;
+  for (const pieces of [2, 5, 11]) {
+    // mass-per-piece < 1 -> garbageLight
+    const light = new Garbage(300, 300); light.pieces = pieces; light.mass = 0.5 * pieces;
+    light.radius = 7 * Math.sqrt(pieces); light.spin = 0;
+    recordingCtx.calls.length = 0;
+    light.draw();
+    const lightStroke = recordingCtx.calls.filter(c => c.op === "strokeStyle").pop();
+    assert(lightStroke && lightStroke.args[0] === COLOR.garbageLight,
+      `6: pieces=${pieces} mass/piece=0.5 draws COLOR.garbageLight (got ${lightStroke && lightStroke.args[0]})`);
 
-  recordingCtx.calls.length = 0;
-  low.draw();
-  const lowStroke = recordingCtx.calls.filter(c => c.op === "strokeStyle").pop();
-
-  recordingCtx.calls.length = 0;
-  high.draw();
-  const highStroke = recordingCtx.calls.filter(c => c.op === "strokeStyle").pop();
-
-  assert(lowStroke && highStroke, "6: both draws set a strokeStyle");
-  assert(lowStroke.args[0] !== highStroke.args[0],
-    `6: the tint differs between a near-fresh clump (${lowStroke && lowStroke.args[0]}) and a near-Hunter one (${highStroke && highStroke.args[0]})`);
+    // mass-per-piece >= 1 -> garbage
+    const heavy = new Garbage(300, 300); heavy.pieces = pieces; heavy.mass = 1.0 * pieces;
+    heavy.radius = 7 * Math.sqrt(pieces); heavy.spin = 0;
+    recordingCtx.calls.length = 0;
+    heavy.draw();
+    const heavyStroke = recordingCtx.calls.filter(c => c.op === "strokeStyle").pop();
+    assert(heavyStroke && heavyStroke.args[0] === COLOR.garbage,
+      `6: pieces=${pieces} mass/piece=1.0 draws COLOR.garbage (got ${heavyStroke && heavyStroke.args[0]})`);
+  }
 }
 
 // =====================================================================

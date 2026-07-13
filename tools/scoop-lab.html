@@ -152,7 +152,7 @@ const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 const ship = { x: cv.width / 2, y: cv.height / 2, angle: -Math.PI / 2 };
 
-const cfg = { maxWidthMult: 3.0, minWidthMult: 1.2, curve: 1.0, minDepth: 20, maxDepth: 36 };
+const cfg = { maxWidthMult: 5.0, minWidthMult: 1.2, curve: 1.0, minDepth: 20, maxDepth: 60 };
 let level = 5;
 let ghostAll = false;
 
@@ -244,18 +244,36 @@ function render() {
 
   ctx.clearRect(0, 0, cv.width, cv.height);
 
+  // v3.6 P1c: the mouth is drawn as the EXACT box inScoopBox() tests (forward from -SHIP_RADIUS to
+  // SCOOP_DEPTH[lvl], lateral +/-SCOOP_WIDTH[lvl]/2) — a translucent fill + outline, not the old open
+  // prong-V, so the lab previews what the game actually captures, including the rear edge.
+  function drawScoopBox(lvl, alpha) {
+    const hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
+    const box = [[-SHIP_RADIUS, -hw], [d, -hw], [d, hw], [-SHIP_RADIUS, hw]];
+    ctx.save();
+    ctx.translate(ship.x, ship.y);
+    ctx.rotate(ship.angle);
+    ctx.beginPath();
+    ctx.moveTo(box[0][0], box[0][1]);
+    for (let i = 1; i < box.length; i++) ctx.lineTo(box[i][0], box[i][1]);
+    ctx.closePath();
+    const color = lvl === level ? COLOR.dock : COLOR.dim;
+    ctx.globalAlpha = 0.15 * alpha;
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    glowStroke(ctx, color);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // ghost overlay: nested mouths for every level, dim, so the scaling BETWEEN steps is visible
   if (ghostAll) {
     for (let lvl = 1; lvl <= SCOOP_MAX_LEVEL; lvl++) {
-      const hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
-      ctx.globalAlpha = lvl === level ? 1.0 : 0.28;
-      drawPoly(ctx, [[d, -hw], [16, 0], [d, hw]], ship.x, ship.y, ship.angle,
-        lvl === level ? COLOR.dock : COLOR.dim, false);
-      ctx.globalAlpha = 1;
+      drawScoopBox(lvl, lvl === level ? 1.0 : 0.28);
     }
   } else if (level > 0) {
-    const hw = SCOOP_WIDTH[level] / 2, d = SCOOP_DEPTH[level];
-    drawPoly(ctx, [[d, -hw], [16, 0], [d, hw]], ship.x, ship.y, ship.angle, COLOR.dock, false);
+    drawScoopBox(level, 1.0);
   }
 
   // ship hull

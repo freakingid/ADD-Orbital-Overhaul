@@ -255,14 +255,6 @@ const STAR_NEAR_DENSITY = 22;   // near parallax layer: sparse, per viewport-siz
 const STAR_NEAR_BRIGHT_MIN = 0.55; // near layer reads brighter (closer) than the far layer
 const STAR_NEAR_BRIGHT_MAX = 1.0;
 
-// World-boundary visibility line (v2.1) — a dim dashed rectangle at the wrap seam so the
-// player can see the wrap-around coming. Purely cosmetic (no collision); drawn in world
-// space beneath entities, at the seam's nearest wrapped image relative to the camera.
-const BOUNDARY_DASH  = 16;      // dash segment length (world units)
-const BOUNDARY_GAP   = 24;      // gap between dashes (world units)
-const BOUNDARY_WIDTH = 2;       // stroke width
-const BOUNDARY_GLOW  = 5;       // shadowBlur — kept low so it reads as a boundary, not a hazard
-
 // Difficulty ramp & early-game pacing (F10) — one shared curve scales every wave-driven
 // threat parameter from an easy wave-1 floor up to a full-intensity ceiling (see §2.6/§2.13).
 const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficultyFactor(wave);
@@ -341,11 +333,13 @@ const SHIP_DRAW_W = 18;    // the drawn hull's width (see Ship's draw poly) - th
 // size curve can be tuned with tools/scoop-lab.html instead of eyeballing raw px arrays. Edit these five
 // numbers (from the lab), not the arrays below.
 const SCOOP_CONFIG = {
-  maxWidthMult: 3.0,   // L5 mouth width as a multiple of SHIP_DRAW_W  (SET FROM THE LAB)
+  maxWidthMult: 5.0,   // v3.6 P1c: 3.0 -> 5.0 (L5 mouth 54px -> 90px). Playtest starting point, not a
+                        // decision — re-pick in tools/scoop-lab.html.
   minWidthMult: 1.2,   // L1 mouth width, same units
   curve:        1.0,   // step distribution: 1.0 = linear; >1 = weighted toward the LARGE end
   minDepth:     20,    // px forward of ship center at L1
-  maxDepth:     36,    // px forward of ship center at L5
+  maxDepth:     60,    // v3.6 P1c: 36 -> 60, proportional to the width bump. Playtest starting point,
+                        // not a decision — re-pick in tools/scoop-lab.html.
 };
 // Build a SCOOP_MAX_LEVEL+1-length step table: index 0 is ALWAYS 0 (byte-identical to the pre-scoop
 // build at scoopLevel 0 — see inScoopBox); indices 1..SCOOP_MAX_LEVEL interpolate min->max via `curve`
@@ -1684,15 +1678,11 @@ const COLOR = {
   dim: "#3a5a80",
   garbage: "#c8ff50",
   garbageLight: "#b8ffb0",   // low-mass Hunter scrap: a paler, mintier tint so it reads as "lighter / easier to tow" (F4)
-  clumpHot: "#ff5a2a",       // v3.3 P1: a pieces>1 clump lerps toward this as it nears the Hunter
-                             // transform (12 pieces) — a free threat meter. Clear of every other
-                             // hazard hue (ship/debris blue, Hunter teal, dock green, rapid amber,
-                             // health red) — FLAG A-7b, look-call, tune on sight.
   chain: "#8aa0ff",
   dock: "#70ffa0",
   hp: "#5fe08a",
-  lowhp: "#ff4040",         // v3.4 P5: the low-health pointer chevron — distinct from COLOR.hp, from
-                            // clumpHot (#ff5a2a), and from the low-HP bar fill (#ff7060)
+  lowhp: "#ff4040",         // v3.4 P5: the low-health pointer chevron — distinct from COLOR.hp and
+                            // from the low-HP bar fill (#ff7060)
   ach: "#ffcf5a"            // achievement gold — the unlock toast + earned-achievement highlight (F9)
 };
 
@@ -1805,12 +1795,29 @@ class Ship {
     if (this.dead) return;
     const blink = this.invuln > 0 && Math.floor(this.invuln * 10) % 2 === 0;
     if (!blink) {
-      // Scoop mouth (v3.3 P3): two prongs flaring from the nose out to +/-width/2 at the mouth depth,
-      // drawn BEFORE the hull in COLOR.dock green so it reads as a collector's throat. At level 5 the
-      // mouth spans 54 px = 3x the ship's 18 px width. Hidden at level 0.
+      // Scoop mouth (v3.3 P3; box render v3.6 P1c): drawn BEFORE the hull in COLOR.dock green so it
+      // reads as a collector's throat. This is the EXACT capture region inScoopBox() tests — a
+      // rectangle from forward=-SHIP_RADIUS (behind the nose) to forward=SCOOP_DEPTH[lvl], within
+      // +/-SCOOP_WIDTH[lvl]/2 laterally — not an approximation, so what's drawn is what captures.
+      // Corners are derived, never hardcoded. Filled translucent (a deliberate exception to GDD
+      // §3.2's no-fills rule — a HUD-ish capture-region affordance, not an entity) with the usual
+      // glowStroke outline on top. Hidden at level 0.
       if (game.scoopLevel > 0) {
         const lvl = game.scoopLevel, hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
-        drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, COLOR.dock, false);
+        const box = [[-SHIP_RADIUS, -hw], [d, -hw], [d, hw], [-SHIP_RADIUS, hw]];
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        ctx.beginPath();
+        ctx.moveTo(box[0][0], box[0][1]);
+        for (let i = 1; i < box.length; i++) ctx.lineTo(box[i][0], box[i][1]);
+        ctx.closePath();
+        ctx.globalAlpha = 0.15; // look-call knob
+        ctx.fillStyle = COLOR.dock;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        glowStroke(COLOR.dock);
+        ctx.restore();
       }
       const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
       drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);
@@ -2186,16 +2193,6 @@ function drawCanister(x, y, angle, alpha, color = COLOR.garbage, scale = 1) {
   ctx.globalAlpha = 1;
 }
 
-// Lerp between two "#rrggbb" hex colors, t clamped to [0,1].
-function lerpColor(c1, c2, t) {
-  t = Math.max(0, Math.min(1, t));
-  const a = parseInt(c1.slice(1), 16), b = parseInt(c2.slice(1), 16);
-  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
-  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
-  const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
-  return "#" + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
-}
-
 class Garbage {
   // v3.3 P4 (9a): a loose SINGLE decays again on GARBAGE_DECAY (see update()). Not a ctor param — every
   // piece is born a single with a full life; a clump (pieces > 1) simply never counts it down (FORK-4).
@@ -2254,10 +2251,10 @@ class Garbage {
     // sqrt(pieces) (= this.radius / 7) — a larger canister, not a jittered-hull asteroid — so it
     // reads as "a bigger pickup," not "a hazard." Scaling by radius/7 makes the drawn long half-axis
     // exactly equal this.radius, so the visual and the (unchanged) collision radius agree by
-    // construction. The lerp from COLOR.garbage toward COLOR.clumpHot as pieces approaches
-    // HUNTER_COALESCE_COUNT is kept as the only tell that a clump is nearing the Hunter transform;
-    // the radioactive alpha flicker comes free from drawCanister.
-    const color = lerpColor(COLOR.garbage, COLOR.clumpHot, this.pieces / HUNTER_COALESCE_COUNT);
+    // construction. v3.6 P1a: colour now follows the same per-piece-mass rule as a single (the red
+    // proximity-to-Hunter lerp is gone) — size (radius = 7*sqrt(pieces)) is the only remaining tell
+    // that a clump is nearing the Hunter transform.
+    const color = (this.mass / this.pieces) < 1 ? COLOR.garbageLight : COLOR.garbage;
     drawCanister(this.x, this.y, this.spin, 0.9, color, this.radius / 7);
   }
 }
@@ -3951,24 +3948,6 @@ function drawStarfield() {
   }
 }
 
-// Dim dashed rectangle at the world edges so the wrap seam is visible as it's approached.
-// Called inside the camera transform. The rectangle is drawn at the world-origin corner's
-// nearest wrapped image relative to the camera (ox/oy), so whichever seam the ship is near
-// — x≈0 or x≈WORLD_W, y≈0 or y≈WORLD_H — renders at the right place and stays continuous
-// as the ship crosses it. Cosmetic only.
-function drawWorldBoundary() {
-  const cam = game.camera;
-  const ox = wrapOffset(0, cam.x, WORLD_W);
-  const oy = wrapOffset(0, cam.y, WORLD_H);
-  ctx.save();
-  ctx.setLineDash([BOUNDARY_DASH, BOUNDARY_GAP]);
-  ctx.beginPath();
-  ctx.rect(ox, oy, WORLD_W, WORLD_H);
-  glowStroke(COLOR.dim, BOUNDARY_WIDTH, BOUNDARY_GLOW);
-  ctx.setLineDash([]);
-  ctx.restore();
-}
-
 // Is a world-space entity within the viewport (plus a margin)? Wrap-aware.
 function onScreen(e, margin = CULL_MARGIN) {
   const [dx, dy] = shortDelta(game.camera.x, game.camera.y, e.x, e.y);
@@ -4017,7 +3996,6 @@ function draw() {
   // --- World space: translate so the camera (the ship) sits at screen center ---
   ctx.save();
   ctx.translate(VIEW_W/2 - game.camera.x, VIEW_H/2 - game.camera.y);
-  drawWorldBoundary();              // wrap-seam guide, beneath all entities (cosmetic)
   if (game.dock) drawEntity(game.dock);
   game.particles.forEach(drawEntity);
   game.garbage.forEach(drawEntity);
