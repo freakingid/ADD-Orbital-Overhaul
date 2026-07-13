@@ -4502,7 +4502,6 @@ function drawHUD() {
 
   // CS009 P2: the hull + shield fill bars are gone from the left column — they are now the HULL ring in
   // the top-right corner (drawn below). Left column top-to-bottom is now Score, Level, Cargo, Powerups.
-  let row = 104;
 
   // HULL ring (top-right). FORK-1 A: one "ship status" element, two concentric arcs (hull outer,
   // shield inner) around a ship glyph. Everything strokes through drawRingArc/glowStroke — no fills.
@@ -4553,9 +4552,6 @@ function drawHUD() {
   drawText("/" + game.cargoMax, HUD_CARGO_CX, HUD_RING_CY + 14, 11, COLOR.dim, "center");
   ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
   drawText("CARGO", HUD_CARGO_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
-  row += 26;   // CS009 P3/P4: the powerup rows no longer read `row` (P4 stacks them off HUD_FX_BASE_Y),
-               // but the SCOOP-pip block below still does — kept so that block's y is unchanged. SCOOP
-               // relocation to the bottom-left floor (spec §6) is Phase 6, not this phase.
 
   // CS009 P4: active-powerup ROWS (F6, spec §5) — the fill bars are gone; each running effect is now a
   // ring + glyph + label + number, matching the HULL/CARGO ring idiom. Health is instant so it never
@@ -4624,16 +4620,19 @@ function drawHUD() {
     }
   }
   // SCOOP level pips (v3.3 P3) — a PERSISTENT upgrade, NOT a timed bar, so it's deliberately drawn
-  // OUTSIDE the powerActive/POWERUP_DROP_TYPES loop above. Filled pips = current level; hidden at 0.
+  // OUTSIDE the powerActive/POWERUP_DROP_TYPES loop above (game.scoopLevel is not in powerFx/powerBudget
+  // and never expires on a clock). CS009 P6: relocated to row index 0 (y = HUD_FX_BASE_Y), the stable
+  // floor of the bottom-left stack — the persistent upgrade anchors the bottom, timed powerup rows
+  // (slot 1+, above) float above it and can never bump it as they come and go.
   if (game.scoopLevel > 0) {
-    drawText("SCOOP", 40, row + 4, 13, POWERUP_COLOR.scoop, "left");
+    const scoopY = HUD_FX_BASE_Y;
+    drawText("SCOOP", 40, scoopY + 4, 13, POWERUP_COLOR.scoop, "left");
     for (let i = 0; i < SCOOP_MAX_LEVEL; i++) {
       ctx.beginPath();
-      ctx.arc(108 + i * 16, row, 4, 0, TAU);
-      if (i < game.scoopLevel) { ctx.fillStyle = POWERUP_COLOR.scoop; ctx.fill(); }
+      ctx.arc(108 + i * 16, scoopY, 4, 0, TAU);
+      if (i < game.scoopLevel) { ctx.fillStyle = POWERUP_COLOR.scoop; ctx.fill(); }  // FLAG-G: accepted fill, a 4px dot
       else { ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1; ctx.stroke(); }
     }
-    row += 20;
   }
   // when hauling, a chevron orbiting screen-center points toward the (maybe off-screen) dock
   if (game.chain.length && game.dock && !game.ship.dead) {
