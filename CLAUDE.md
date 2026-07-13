@@ -121,6 +121,26 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   hazards (e.g. "don't build Phase 5 content yet," "this changes the chain
   physics contract"). If you hit a risk the prompt didn't flag, note it in
   STATUS.md so the next phase's prompt can account for it.
+- **Three frozen `localStorage` keys — never rename or merge them.**
+  `afd_settings_v1` (options/bindings/difficulty modes/music track),
+  `afd_achievements_v2` (progress + unlocks), and `afd_scores_v1` (v3.6 P6 —
+  the high-score table) are independent stores, each with its own guarded
+  `storageOK()` try/catch load/save path. None of the three reads or writes
+  either of the others. Renaming any of them to match a future product/version
+  bump silently wipes every player's saved data for that key — see GDD §2.16.
+- **`SCOOP_WIDTH[0] !== 0 || SCOOP_DEPTH[0] !== 0` throws at load time — this
+  is a deliberate invariant guard, not test scaffolding.** It's what makes
+  `inScoopBox` return `false` at `scoopLevel` 0, which is what keeps garbage
+  pickup byte-identical to the pre-scoop build. Don't delete it on a
+  "cleanup" pass; if it ever fires, `SCOOP_CONFIG`/`buildScoopSteps` broke the
+  invariant, not the assertion (GDD §2.14.1).
+- **`POWERUP_DROP_TYPES` is the *timed-effect* list, not the drop table.**
+  It's what the HUD active-effect row / `powerActive()` / `powerMode()` /
+  `powerBudget` understand, and it deliberately excludes Health (instant) and
+  Scoop (persistent, not timed). The **drop table** — what can actually roll
+  out of `dropPowerup()` — is the separate `POWERUP_DROP_WEIGHTS`. This
+  distinction has already caused confusion across two changesets (v3.3 P3,
+  v3.6 P3); don't conflate the two structures a third time (GDD §2.14).
 
 ## Code map (target layout — GDD §3 tracks what actually exists)
 
