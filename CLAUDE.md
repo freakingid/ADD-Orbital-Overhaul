@@ -98,6 +98,15 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   except bullets/particles, no sprites, no textures).
 - **Route all scoring through `addScore()`.** It also handles the HP-repair
   milestone bonus (post-Phase 2) — bypassing it breaks that logic.
+- **Tracks are DATA. `MusicSys.update()`/`scheduleStep()` and the
+  `layerGates` gain-gating are not to be modified.** New tracks are new
+  entries in `MUSIC_TRACKS`, built by their own `buildXTrack()` — never a
+  scheduler change. `playNote()`'s voice branch (`type`/`noise`/`hp`/`drop`+
+  `dropTime`/`cutoff`+`cutoffTo`+`cutoffTime`+`q`) is the one extension point
+  (v3.6) if a track needs a synthesis capability the current fields don't
+  cover. `tools/music-lab.html` is the composition/audition instrument —
+  tune and audition there, port verbatim, don't hand-tune gains in the live
+  build.
 - **New enemies follow the established extension points** documented in the
   GDD's Architecture Map (3.3): wire into `startGame` reset, `update()`
   entity update + collision passes + cleanup filter, `draw()` z-order, and
@@ -164,6 +173,25 @@ actually landed.
 
 When you add or rename a module-equivalent section, update the GDD's
 Architecture Map table **and** `STATUS.md`.
+
+## Design instruments (`tools/`)
+
+Standalone HTML files, **not shipped code** — disposable-by-design instruments
+used to pick numbers or compose data before porting the result into
+`asteroids-deluxe.html`. Same no-bundler/no-imports rule as the main file;
+each carries whatever small slice of game logic it needs duplicated in place
+(drift here can only ever produce a bad *preview*, never a bad *build*).
+
+- **`tools/scoop-lab.html`** — the Scoop capture-mouth sizing instrument
+  (§2.14.1 of the GDD). Live sliders over `SCOOP_CONFIG`, a level stepper,
+  and draggable garbage canisters highlighted by the real `inScoopBox` math;
+  answers "how big does this look," not "how does this play."
+- **`tools/music-lab.html`** — the music-track composition/audition
+  instrument and the porting source for every `MUSIC_TRACKS` entry (GDD
+  §2.8/§3 MusicSys row). Runs a faithful copy of `MusicSys`'s scheduler, so
+  what it plays is what the game plays; a track is composed and auditioned
+  there, then its builder function is ported **verbatim** into the main
+  file — never hand-tuned in place. See the MusicSys non-negotiable above.
 
 ## Capture tools
 
