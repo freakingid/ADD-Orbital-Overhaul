@@ -6,6 +6,13 @@
 > Base: `asteroids-deluxe.html` @ `7b20370` (v3.6 P7), 4640 lines. Every line number below is that
 > build's — **re-grep before editing; earlier phases in this changeset will have shifted them.**
 
+> **⚠️ The GDD split is in flight.** `orbital-overhaul-GDD.md` (348K) is being split: §7 Version
+> History and the 14K single-line `**Version:**` preamble move out to a new `GDD-VERSION-HISTORY.md`
+> (~41% of the file). **P7 below is written against the POST-SPLIT repo** — it appends the round entry
+> to `GDD-VERSION-HISTORY.md`, not to GDD §7, and it does not touch a top-of-file version line,
+> because there no longer is one. If for any reason the split has *not* landed by the time P7 runs,
+> stop and say so rather than guessing.
+
 ## Dependency graph
 
 ```
@@ -15,11 +22,17 @@ P1 (constants + drawRingArc + eased hull)  ← everything depends on this
  └─ P4 (powerup rows)  ─┬─ P5 (bank feedback)
                         └─ P6 (SCOOP floor + no-fills sweep)
                                             └─ P7 (docs + archive + filename migration)
+
+[GDD split] ──────────────────────────────────────────────────┘   must land before P7
 ```
 
-**The one hard dependency chain: P1 → P4 → {P5, P6} → P7.** P2 and P3 are independent of each other
-and of P4 once P1 lands; ship them in any order. P5's `+Ns` badge attaches to the powerup row P4
+**The one hard code dependency chain: P1 → P4 → {P5, P6} → P7.** P2 and P3 are independent of each
+other and of P4 once P1 lands; ship them in any order. P5's `+Ns` badge attaches to the powerup row P4
 builds, and P6's stack floor is defined relative to P4's stack. P7 is always last.
+
+**The GDD split is an independent, docs-only prerequisite of P7 only.** It touches no code, so it can
+land before, during, or between any of P1–P6 — but it **must** land before P7, or P7 will append a
+round entry to a §7 that is about to be emptied.
 
 | # | phase | model | effort |
 |---|---|---|---|
@@ -356,38 +369,66 @@ rest of the renderer.
 
 ## Phase 7 — Docs, archive, and the filename-convention migration
 
+**Prerequisite: the GDD split must already have landed.** This phase assumes
+`GDD-VERSION-HISTORY.md` exists and that `orbital-overhaul-GDD.md` has no top-of-file `**Version:**`
+line and an empty §7 stub. **Check that first.** If the split hasn't landed, stop and say so — do not
+improvise a merge.
+
 > **Claude Code prompt — CS009 Phase 7**
 >
 > Read `STATUS.md`. Implement **Phase 7 only** — documentation. No gameplay code changes.
+>
+> **Context to attach:** `orbital-overhaul-GDD.md`, `CLAUDE.md`, `STATUS.md`, and the current
+> `asteroids-deluxe.html`. **Do NOT attach `GDD-VERSION-HISTORY.md`** — it is ~127K of changelog that
+> was deliberately evicted from session context by the GDD split. You will append one entry to it;
+> you do not need to read it to do that.
+>
+> **Step 0 — verify the split landed.** Confirm (a) `GDD-VERSION-HISTORY.md` exists at the repo root,
+> (b) `orbital-overhaul-GDD.md` has **no** `**Version:**` mega-line near the top, and (c) its §7 is a
+> stub pointing at the new file. If any of the three is false, **stop and report** — the doc discipline
+> below assumes all three.
 >
 > 1. **GDD §2** — rewrite the HUD subsection to describe the **shipped** HUD only: two top-right rings
 >    (hull with a concentric shield arc and a ship glyph; cargo with a live count over a runtime cap),
 >    the bottom-left effect stack (SCOOP pips on the floor, timed-powerup rings above), and the two
 >    center chevrons. **Supersede the old bar description in place, preserving the history note** —
->    do not leave a contradiction and do not delete the record that bars ever existed. Record the
->    gold-at-cap idiom explicitly: `COLOR.ach` now means *"this resource is at its cap; more is
->    wasted"* in exactly two places (full hull, full chain).
+>    do not leave a contradiction and do not delete the record that bars ever existed. The HUD claims
+>    live across **§2.7** (score/level), **§2.12** (the hull bar — now a ring), **§2.14** (the powerup
+>    HUD rows + the count/time split), and **§2.10** (cargo); grep each against the live build before
+>    you write, per the standing non-negotiable, and touch only what actually changed.
+>    Record the gold-at-cap idiom explicitly: `COLOR.ach` now means *"this resource is at its cap; more
+>    is wasted"* in exactly two places (full hull, full chain).
 >
-> 2. **CLAUDE.md** — update the code map to add `drawRingArc()` beside `drawPoly`/`glowStroke`, and add
+> 2. **GDD §3.2 (rendering conventions)** — the HUD is now a `glowStroke` client like everything else.
+>    Update the fills-exception paragraph: the surviving HUD fills are `drawText` (which is `fillText`)
+>    and the 4px SCOOP pip dots. The hull/shield/cargo/powerup **`fillRect` bars are gone.**
+>
+> 3. **Append the CS009 round entry to `GDD-VERSION-HISTORY.md`** — NOT to GDD §7, which is now a stub,
+>    and **do not recreate a top-of-file `**Version:**` line in the GDD.** That line was a 14K
+>    single-line changelog and it was deleted on purpose; re-adding it would undo the split. Follow the
+>    existing entry format in the history file (one `- **vX.X** — …` entry per round).
+>
+> 4. **CLAUDE.md** — update the code map to add `drawRingArc()` beside `drawPoly`/`glowStroke`, and add
 >    a non-negotiable: **the HUD draws with `glowStroke` like everything else — no `fillRect`,
 >    no `strokeRect`; the only fills are `drawText` and the SCOOP pips.**
 >
-> 3. **CLAUDE.md "Documentation layers"** (L45-58) — **the filename convention has changed.** Planning
->    docs are now named by **changeset number**, not version number:
->    `PLANNED-FEATURES-CS009.md` / `IMPLEMENTATION-PHASES-CS009.md`, zero-padded to three digits.
->    Update the section to say so, and to reference the CS-numbered files rather than the stale
->    `PLANNED-FEATURES-v2.md` / `IMPLEMENTATION-PHASES.md` names it currently names.
+> 5. **CLAUDE.md "Documentation layers" — VERIFY, don't rewrite.** The GDD split should already have
+>    (a) registered `GDD-VERSION-HISTORY.md` as its own layer, marked *not session context*, and
+>    (b) recorded the changeset-numbered filename convention
+>    (`PLANNED-FEATURES-CS009.md` / `IMPLEMENTATION-PHASES-CS009.md`, zero-padded to three digits,
+>    superseding the old `-vX.X` suffix). **Read the section. If both are already correct, leave it
+>    alone and say so.** Only write if something is missing or wrong. Rewording a correct section for
+>    the sake of touching it is how v3.6 P2 produced a doc entry claiming an edit that never landed.
 >
-> 4. **Archive.** `git mv PLANNED-FEATURES-CS009.md IMPLEMENTATION-PHASES-CS009.md archive/`.
+> 6. **Archive.** `git mv PLANNED-FEATURES-CS009.md IMPLEMENTATION-PHASES-CS009.md archive/`.
 >    **Also:** the root `IMPLEMENTATION-PHASES.md` is a stray — its header says **v3.1**, and
 >    `archive/` has every phases doc from v3.2 through v3.6 but **no v3.1**. It is the missing one.
 >    `git mv IMPLEMENTATION-PHASES.md archive/IMPLEMENTATION-PHASES-v3.1.md` — that cleans the repo
 >    root and closes the archive gap in one move. (Old `-vX.X` files stay as they are; the CS scheme
 >    applies going forward, not retroactively.)
 >
-> Update `STATUS.md` with the CS009 close-out. Commit: `CS009 P7: docs — GDD §2 HUD rewrite, CLAUDE.md no-fills rule + CS-numbered doc convention, archive`
-
----
+> Update `STATUS.md` with the CS009 close-out. Commit:
+> `CS009 P7: docs — GDD §2/§3.2 HUD rewrite, CLAUDE.md no-fills rule, CS009 history entry, archive`
 
 ## Playtest asks this changeset hands back
 
