@@ -48,6 +48,11 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   **shipped**. Section 2 must always describe the current build, never a
   planned one. Sections 1 (Pillars) and 3 (Architecture Map / conventions)
   rarely change; read them before writing code.
+- `GDD-VERSION-HISTORY.md` — the append-only per-phase changelog, split out of
+  the GDD's §7 in CS009 P0 for context economy. **Not session context** — do
+  not attach it to a build session by default; pull it in only when a session
+  genuinely needs project history. New phase entries are appended here, not
+  back into the GDD.
 - `PLANNED-FEATURES-v2.md` — design **detail for what's not built yet**: full
   specs, rationale, and flagged assumptions for every pending feature. When a
   feature ships, its spec moves out of here and into the GDD.
