@@ -140,6 +140,12 @@ const HUNTER_SPEED_CEIL = { 3: 70, 2: 120, 1: 175 };  // full-difficulty px/s: l
 const HUNTER_TURN_CEIL  = { 3: 0, 2: 1.6, 1: 2.6 };   // full-difficulty homing turn rate (rad/s); large never turns (passive drift)
 const HUNTER_FLOOR_FRAC = 0.58;   // wave-1 speeds & turn rates = this × ceiling (THE knob for early-game Hunter calm)
 const HUNTER_SCATTER    = 0.6;    // sec a freshly-split homer scatters outward before homing engages
+// v3.6 P2b: "last stand" — once no Debris remain (game.debris.length === 0), a large core slowly steers
+// toward the ship instead of drifting forever. Both PLAYTEST KNOBS, deliberately under-specified.
+const HUNTER_LAST_STAND_SPEED = 50;    // px/s — slower than a medium homer at ANY wave (medium ranges
+                                       // HUNTER_SPEED_CEIL[2]*HUNTER_FLOOR_FRAC≈70 at wave 1 up to 120 at
+                                       // ceiling); a search-ender, not a second homing tier.
+const HUNTER_LAST_STAND_TURN  = 0.5;   // rad/s — well below HUNTER_TURN_CEIL[2] (1.6); a slow, inevitable turn.
 // PLAYTEST KNOB (v3.4 P1): canisters per Hunter KILL, by tier — was a flat HUNTER_GARBAGE=3 for
 // both large/medium plus a separate HUNTER_SMALL_GARBAGE=6 for the small tier; now one per-tier
 // table shaped like HUNTER_RADII/HUNTER_SCORE/HUNTER_DAMAGE.
@@ -2086,7 +2092,22 @@ class HunterSatellite {
       this.vx = Math.cos(this.heading) * this.speed;
       this.vy = Math.sin(this.heading) * this.speed;
     } else {
-      this.angle += this.spinRate * dt;   // large core tumbles; keeps its fixed spawn-time drift velocity
+      this.angle += this.spinRate * dt;   // large core tumbles; keeps its fixed spawn-time drift velocity...
+      // ...UNLESS it's the last satellite standing (v3.6 P2b): once Debris is cleared, a large core slowly
+      // steers toward the ship — a search-ender for late-wave stalling, not a second homing tier. Do NOT
+      // flip this.homing: shape/inner and draw()'s angle-vs-heading pick are baked off it at construction,
+      // so that would silently swap the diamond for the kite silhouette and freeze the tumble. Evaluated
+      // inline instead of a stored flag — the tumble is the unchanged visual, the steering is the tell.
+      if (game.debris.length === 0 && !game.ship.dead) {
+        const target = angleTo(this, game.ship);          // wrap-aware — a naive angle is ~180° wrong across a seam
+        let diff = target - this.heading;
+        while (diff > Math.PI) diff -= TAU;
+        while (diff < -Math.PI) diff += TAU;
+        const maxTurn = HUNTER_LAST_STAND_TURN * dt;
+        this.heading += Math.max(-maxTurn, Math.min(maxTurn, diff));
+        this.vx = Math.cos(this.heading) * HUNTER_LAST_STAND_SPEED;
+        this.vy = Math.sin(this.heading) * HUNTER_LAST_STAND_SPEED;
+      }
     }
     this.x += this.vx * dt; this.y += this.vy * dt;
     wrap(this);

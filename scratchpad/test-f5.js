@@ -48,6 +48,7 @@ const returnList = [
   "HUNTER_RADII", "HUNTER_SCORE", "HUNTER_DAMAGE",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC", "HUNTER_SCATTER",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS",
+  "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN",
   "difficultyFactor", "angleTo",
   "WORLD_W", "WORLD_H"
 ];
@@ -62,6 +63,7 @@ const {
   HUNTER_RADII, HUNTER_SCORE, HUNTER_DAMAGE,
   HUNTER_SPEED_CEIL, HUNTER_TURN_CEIL, HUNTER_FLOOR_FRAC, HUNTER_SCATTER,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS,
+  HUNTER_LAST_STAND_SPEED, HUNTER_LAST_STAND_TURN,
   difficultyFactor, angleTo,
   WORLD_W, WORLD_H
 } = A;
@@ -277,6 +279,80 @@ update(DT);
 assert(!bigCore.dead && game.hunters.length === 1, "G: the large core is NOT destroyed by the shield (it bounces)");
 assert(Math.hypot(bigCore.vx, bigCore.vy) > 0, "G: the bounced core was shoved away (velocity set by shieldDeflect)");
 keys["shift"] = false;
+
+// =====================================================================
+// (H) v3.6 P2b: large-core "last stand" pursuit once no Debris remain
+// =====================================================================
+console.log("(H) last-stand pursuit: large core steers toward the ship once Debris is cleared");
+resetShip({ x: cx, y: cy });
+game.wave = 3;
+
+// (H1) regression guard: with Debris still on the field, the core's exact spawn-time velocity
+// is untouched across 60 frames — old passive-drift behaviour must be byte-identical.
+{
+  clearField();
+  game.debris.push({}); // any truthy occupant — only .length is read by the pursuit gate
+  const core = new HunterSatellite(cx - 200, cy, 3, 0);
+  const vx0 = core.vx, vy0 = core.vy;
+  for (let i = 0; i < 60; i++) core.update(DT);
+  assert(core.vx === vx0 && core.vy === vy0,
+    `H1: with Debris present, the core's velocity is UNCHANGED after 60 frames (${vx0.toFixed(3)},${vy0.toFixed(3)} vs ${core.vx.toFixed(3)},${core.vy.toFixed(3)})`);
+}
+
+// (H2) once game.debris is empty, the core's heading converges toward the ship over time —
+// including across a world-wrap seam, where a naive (non-wrap) angle would be ~180 deg wrong.
+{
+  clearField(); // game.debris.length === 0
+  // Ship and core placed far apart (~1400 px direct) but on OPPOSITE sides of WORLD_W/2, so the
+  // naive (non-wrap) delta exceeds WORLD_W/2 and the true short path wraps the other way around the
+  // seam — the "naive angle is ~180 deg wrong" case the spec calls out. Kept far apart (not just a
+  // few px across the seam) so the turn radius (HUNTER_LAST_STAND_SPEED/HUNTER_LAST_STAND_TURN =
+  // 100 px) is small relative to the gap, letting the slow turn actually converge instead of
+  // orbiting a target that's closer than its own turn radius.
+  const shipX = WORLD_W - 160, coreX = shipX - 1400;
+  game.ship.x = shipX; game.ship.y = 1000;
+  const core = new HunterSatellite(coreX, 1000, 3, 0);
+  const target = angleTo(core, game.ship);
+  assert(Math.abs(Math.abs(target) - Math.PI) < 0.2, `H2: wrap-aware target heading toward the ship is near +/-PI (short way across the seam), got ${target.toFixed(4)}`);
+  core.heading = 0;      // start pointing the WRONG (naive) way, straight across the middle of the map
+  core.vx = Math.cos(core.heading) * core.speed; core.vy = Math.sin(core.heading) * core.speed;
+  const startDiff = Math.abs(core.heading - target);
+  for (let i = 0; i < 600; i++) core.update(DT);
+  const endDiff = Math.abs(((core.heading - target + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
+  assert(endDiff < startDiff, `H2: heading converges toward the wrap-aware target over time (start diff ${startDiff.toFixed(3)} -> end diff ${endDiff.toFixed(3)})`);
+  assert(endDiff < 0.2, `H2: after 10s the core's heading has essentially locked onto the ship (end diff ${endDiff.toFixed(4)})`);
+  assert(near(Math.hypot(core.vx, core.vy), HUNTER_LAST_STAND_SPEED, 1e-3),
+    `H2: pursuit speed is exactly HUNTER_LAST_STAND_SPEED (got ${Math.hypot(core.vx, core.vy).toFixed(3)}, expected ${HUNTER_LAST_STAND_SPEED})`);
+}
+
+// (H3) pursuit never flips this.homing, and shape/inner (baked off homing at construction) are untouched.
+{
+  clearField();
+  const core = new HunterSatellite(cx - 200, cy, 3, 0);
+  const shape0 = core.shape, inner0 = core.inner;
+  for (let i = 0; i < 120; i++) core.update(DT); // debris empty -> pursuing the whole time
+  assert(core.homing === false, "H3: this.homing stays false while pursuing (never flipped)");
+  assert(core.shape === shape0 && core.inner === inner0, "H3: shape/inner are the SAME references post-pursuit (never reassigned)");
+}
+
+// (H4) a medium/small homer's behaviour is byte-identical whether Debris is present or empty —
+// the pursuit branch only touches the size===3 non-homing else-branch.
+{
+  for (const size of [2, 1]) {
+    game.debris.length = 1; // non-empty
+    const a = new HunterSatellite(cx + 200, cy, size, 0);
+    a.scatter = 0;
+    game.debris.length = 0; // empty
+    const b = new HunterSatellite(cx + 200, cy, size, 0);
+    b.scatter = 0;
+    for (let i = 0; i < 120; i++) {
+      game.debris.length = 1; a.update(DT);
+      game.debris.length = 0; b.update(DT);
+    }
+    assert(a.heading === b.heading && a.vx === b.vx && a.vy === b.vy && a.x === b.x && a.y === b.y,
+      `H4[size ${size}]: homer trajectory is byte-identical regardless of game.debris.length`);
+  }
+}
 
 // ---- Summary ----
 console.log(`\n${passed} passed, ${failed} failed`);
