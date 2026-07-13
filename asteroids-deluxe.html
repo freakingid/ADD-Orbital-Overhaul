@@ -720,7 +720,7 @@ const AudioSys = {
 //
 // Signal path:  note gain envelopes -> [per-state trackGain, crossfaded] -> MusicSys.duck -> AudioSys.music
 //
-// Tracks are DATA (step-sequencer tables — see buildTitleTrack / MUSIC_TRACKS), never code. The
+// Tracks are DATA (step-sequencer tables — see buildBeaconTitle / MUSIC_TRACKS), never code. The
 // scheduler consumes a generic { stepDur, steps, layers:[{type,gain,steps:[cell|null]}] } shape, so
 // v3.4 P7 can add the three gameplay tracks as more tables without touching a line of the scheduler.
 const MUSIC_LOOKAHEAD = 0.2;   // s — each frame, schedule any note starting within this window
@@ -739,129 +739,153 @@ const MUSIC_LAYER_CROSSFADE = 1.5; // s — layer thicken/thin ramp when intensi
 const MUSIC_A4 = 440;
 const mfreq = m => MUSIC_A4 * Math.pow(2, (m - 69) / 12); // equal-tempered MIDI note -> Hz
 
-// The title track (§9c): ONE long, patient, EPIC-ADVENTURE loop — slow build, wide intervals, no
-// percussion pulse, no urgency, deliberately unrelated to the gameplay mood set. Not layered by
-// difficulty (there is none on the title screen); it's just a long loop (48 s here) so it doesn't
-// read as a jingle. Built as a step table so it feeds the same scheduler the gameplay tracks will.
-function buildTitleTrack() {
-  const STEPS = 96, stepDur = 0.5;                 // 96 * 0.5 = 48 s loop
-  const mk = () => new Array(STEPS).fill(null);
-  const put = (arr, step, midi, durSteps, g) => { arr[step] = { f: mfreq(midi), dur: durSteps, g: g == null ? 1 : g }; };
+// v3.5: the five shipping tracks, ported verbatim from tools/music-lab.html's PORT-ME BLOCK B — the
+// design instrument where they were composed and auditioned. Do not re-tune here; music-lab is the
+// source of truth for the note data. Shared step-table helpers (mk/put/hit) also come from BLOCK B.
+// THE FREEZE (v3.5): no track carries a `tier` field. Every setState() gate is therefore built at
+// (layer.tier || 1) === 1 (always on), and setIntensity() skips every tier-1 gate — so the
+// difficulty-gated intensity layering shipped in v3.4 P7 goes DORMANT with no code change. This is
+// deliberate: the composed tiers 2-4 were auditioned and rejected. The machinery stays in place —
+// re-arming it later means adding tier fields to track data and nothing else.
+const mk  = n => new Array(n).fill(null);
+const put = (a, s, m, d, g) => { if (s < a.length) a[s] = { f: mfreq(m), dur: d, g: g == null ? 1 : g }; };
+const hit = (a, s, d, g) => { if (s < a.length) a[s] = { f: 0, dur: d, g: g == null ? 1 : g }; };
 
-  const bass = mk(), padLo = mk(), padMid = mk(), padHi = mk(), lead = mk();
-  // Six 16-step (8 s) harmonic blocks — a patient Aeolian arc in A: i VI III VII iv V.
-  const roots = [45, 41, 48, 43, 50, 40]; // A2 F2 C3 G2 D3 E2 (MIDI)
+/* --- TITLE: BEACON — Drift's engine, turned hopeful. C major, and the melody itself
+       lands the Lydian #4 (F♯5) over a C pedal in bar 6 — the "departure" lift, with no fanfare
+       and no drums. 4 layers. 88 BPM, 21.8 s. */
+function buildBeaconTitle() {
+  const BARS = 8, SPB = 16, STEPS = BARS * SPB, stepDur = 0.17;
+  const sub = mk(STEPS), pad = mk(STEPS), org = mk(STEPS), lead = mk(STEPS);
+  const CH  = [[48,64],[43,59],[45,60],[41,57],[48,64],[48,66],[41,57],[43,59]];  // C G Am F C D/C F G
+  const ARP = [[60,64,67,72],[59,62,67,71],[57,60,64,69],[57,60,65,69],
+               [60,64,67,72],[62,66,69,74],[57,60,65,69],[59,62,67,71]];
+  for (let b = 0; b < BARS; b++) {
+    const s0 = b * SPB, r = CH[b][0], t3 = CH[b][1], a = ARP[b];
+    put(sub, s0, r - 12, 16, 1.0);
+    put(pad, s0, t3, 16, 0.9);
+    for (let i = 0; i < SPB; i++) put(org, s0 + i, a[i % 4], 1, i % 4 === 0 ? 0.95 : 0.6);
+  }
+  for (const [s, m, d] of [[0,72,10],[16,74,10],[32,76,10],[48,77,12],[64,79,10],[80,78,12],[96,76,10],[112,72,14]])
+    put(lead, s, m, d, 0.95);
+  return { stepDur, steps: STEPS, layers: [
+    { name:"arp",  type:"square",   cutoff:800, cutoffTo:2800, cutoffTime:0.09, q:4, gain:0.042, atk:0.006, rel:0.09, steps:org },
+    { name:"sub",  type:"sawtooth", cutoff:300, gain:0.066, atk:0.6, rel:1.2, steps:sub },
+    { name:"pad",  type:"sawtooth", cutoff:900, cutoffTo:1900, detune:10, gain:0.050, atk:1.0, rel:1.4, steps:pad },
+    { name:"lead", type:"triangle", detune:6, gain:0.074, atk:0.30, rel:0.9, steps:lead },
+  ]};
+}
+
+/* --- ZEN (approved @w1) — the old title track's A-aeolian arc at 0.25 s resolution, with the
+       subdued percussion. Shimmer / counter / sparkle deleted. 48 s. */
+function buildZenTrack() {
+  const BLOCKS = 6, SPB = 32, STEPS = BLOCKS * SPB, stepDur = 0.25;
+  const bass = mk(STEPS), padLo = mk(STEPS), padMid = mk(STEPS),
+        kick = mk(STEPS), shk = mk(STEPS), lead = mk(STEPS);
+  const roots = [45, 41, 48, 43, 50, 40];
   roots.forEach((r, b) => {
-    const s0 = b * 16;
-    put(bass,  s0,      r - 12, 16, 1.0);          // slow octave-below drone, whole block
-    put(padLo, s0,      r,       8, 1.0);          // root, gently re-struck mid-block for motion
-    put(padLo, s0 + 8,  r,       8, 0.8);
-    put(padMid, s0,     r + 7,  16, 0.9);          // open fifth, sustained — the "scale"
-    put(padHi, s0 + 2,  r + 12,  6, 0.6);          // octave shimmer
-    put(padHi, s0 + 10, r + 12,  6, 0.5);
+    const s0 = b * SPB;
+    put(bass, s0, r - 12, 32, 1.0);
+    put(padLo, s0, r, 16, 1.0); put(padLo, s0 + 16, r, 16, 0.8);
+    put(padMid, s0, r + 7, 32, 0.9);
+    for (let bar = 0; bar < 4; bar++) {
+      const t0 = s0 + bar * 8;
+      put(kick, t0, 38, 2, bar % 2 === 0 ? 0.9 : 0.65);
+      hit(shk, t0 + 4, 1, 0.5);
+      for (const s of [2, 6]) hit(shk, t0 + s, 1, b < 3 ? 0.26 : 0.38);
+    }
   });
-  // Lead: a sparse, wide-interval melody that only ENTERS from block 3 (slow build / departure),
-  // climbing high toward the end of the loop. A-minor-pentatonic tones, big leaps.
-  put(lead, 52, 76, 6, 1.0);  // E5
-  put(lead, 60, 72, 6, 0.9);  // C5
-  put(lead, 66, 81, 8, 1.0);  // A5
-  put(lead, 82, 79, 6, 0.9);  // G5
-  put(lead, 90, 84, 6, 1.0);  // C6 — the peak "departure" note before the loop turns over
-
+  for (const [s, m, d] of [[104,76,10],[120,72,10],[132,81,14],[164,79,10],[180,84,12]]) put(lead, s, m, d, 1.0);
   return { stepDur, steps: STEPS, layers: [
-    { name: "bass",  type: "sine",     gain: 0.09, cutoff: 220, detune: 0, atk: 1.2, rel: 2.0, steps: bass  },
-    { name: "padLo", type: "triangle", gain: 0.05, cutoff: 900, detune: 7, atk: 0.6, rel: 1.6, steps: padLo },
-    { name: "padMid",type: "triangle", gain: 0.045,cutoff: 900, detune: 7, atk: 0.8, rel: 1.8, steps: padMid },
-    { name: "padHi", type: "sine",     gain: 0.04, cutoff: 0,   detune: 5, atk: 0.5, rel: 1.4, steps: padHi },
-    { name: "lead",  type: "triangle", gain: 0.055,cutoff: 0,   detune: 0, atk: 0.4, rel: 1.2, steps: lead  },
+    { name:"bass",   type:"sine",     cutoff:220, gain:0.090, atk:1.2, rel:2.0, steps:bass },
+    { name:"padLo",  type:"triangle", cutoff:900, detune:7, gain:0.050, atk:0.6, rel:1.6, steps:padLo },
+    { name:"padMid", type:"triangle", cutoff:900, detune:7, gain:0.045, atk:0.8, rel:1.8, steps:padMid },
+    { name:"kick",   type:"triangle", drop:10, dropTime:0.07, gain:0.055, atk:0.004, rel:0.30, steps:kick },
+    { name:"shaker", noise:true, hp:5200, gain:0.011, atk:0.002, rel:0.07, steps:shk },
+    { name:"lead",   type:"triangle", gain:0.055, atk:0.4, rel:1.2, steps:lead },
   ]};
 }
 
-// v3.4 P7: the three gameplay tracks. Shared step-table helpers (title track keeps its own local
-// mk/put — untouched, lower risk than refactoring P6-tested code).
-function mkSteps(n) { return new Array(n).fill(null); }
-function putStep(arr, step, midi, durSteps, g) { arr[step] = { f: mfreq(midi), dur: durSteps, g: g == null ? 1 : g }; }
-
-// tense — driving, minor, insistent. D minor, 120bpm 16th notes (stepDur .125, 32 steps = 4s loop).
-// Layer 1 is a relentless 16th-note bass through a tight lowpass — the "insistent" read; layers 2-4
-// add off-beat arpeggio, chord stabs, and a sparse high lead as intensity climbs.
-function buildTenseTrack() {
-  const STEPS = 32, stepDur = 0.125;
-  const bass = mkSteps(STEPS), pulse = mkSteps(STEPS), harmony = mkSteps(STEPS), lead = mkSteps(STEPS);
-  for (let i = 0; i < STEPS; i++) putStep(bass, i, (i % 8 === 4) ? 33 : 38, 1, (i % 4 === 0) ? 1.0 : 0.65); // D2/A1
-  const arp = [62, 65, 69, 72]; // D4 F4 A4 C5 — D minor arpeggio
-  for (let i = 1; i < STEPS; i += 2) putStep(pulse, i, arp[(i >> 1) % arp.length], 1, 0.7);
-  putStep(harmony, 8, 62, 4, 0.9);  // D4 stab
-  putStep(harmony, 24, 69, 4, 0.9); // A4 stab
-  const mel = [{ s: 16, m: 74 }, { s: 20, m: 70 }, { s: 24, m: 77 }, { s: 28, m: 72 }]; // D5 Bb4 F5 C5
-  for (const n of mel) putStep(lead, n.s, n.m, 2, 0.85);
+/* --- DERELICT (approved @w1) — hum, two chromatic-mediant pads, a distant ping. No beat, no
+       noise bed. Am → Fm → D♭m → Am. 24 s. */
+function buildDerelictTrack() {
+  const BLOCKS = 4, SPB = 15, STEPS = BLOCKS * SPB, stepDur = 0.4;
+  const hum = mk(STEPS), pR = mk(STEPS), p3 = mk(STEPS), ping = mk(STEPS);
+  const CH = [[45,48],[41,44],[37,40],[45,48]];
+  CH.forEach((c, b) => {
+    const s0 = b * SPB, r = c[0], t3 = c[1];
+    put(hum, s0, r - 24, 15, 1.0);
+    put(pR, s0, r, 10, 1.0);  put(pR, s0 + 8, r, 9, 0.8);
+    put(p3, s0 + 2, t3, 10, 0.85); put(p3, s0 + 9, t3, 8, 0.7);
+  });
+  for (const [s, m] of [[4,84],[12,79],[19,88],[28,81],[37,86],[46,79],[52,91],[58,84]]) put(ping, s, m, 4, 0.75);
   return { stepDur, steps: STEPS, layers: [
-    { name: "bass",    type: "sawtooth", gain: 0.08,  cutoff: 500, atk: 0.005, rel: 0.05, tier: 1, steps: bass },
-    { name: "pulse",   type: "triangle", gain: 0.05,  atk: 0.01,  rel: 0.06,  tier: 2, steps: pulse },
-    { name: "harmony", type: "sawtooth", gain: 0.045, atk: 0.05,  rel: 0.3,   tier: 3, steps: harmony },
-    { name: "lead",    type: "square",   gain: 0.05,  atk: 0.02,  rel: 0.15,  tier: 4, steps: lead },
+    { name:"hum",      type:"sawtooth", cutoff:240, cutoffTo:340, detune:13, gain:0.070, atk:1.6, rel:2.2, steps:hum },
+    { name:"padRoot",  type:"sawtooth", cutoff:700, cutoffTo:1500, detune:12, gain:0.052, atk:1.6, rel:2.2, steps:pR },
+    { name:"padThird", type:"sawtooth", cutoff:700, cutoffTo:1500, detune:12, gain:0.044, atk:1.8, rel:2.2, steps:p3 },
+    { name:"ping",     type:"triangle", gain:0.048, atk:0.02, rel:1.6, steps:ping },
   ]};
 }
 
-// retro — square/saw arcade, bright. A major, 32 steps @ stepDur .1 (3.2s loop) — the vector-arcade
-// lineage; matches drawPoly+glowStroke/CRT-palette/synthesized-SFX. No filters — kept bright.
-function buildRetroTrack() {
-  const STEPS = 32, stepDur = 0.1;
-  const bass = mkSteps(STEPS), pulse = mkSteps(STEPS), harmony = mkSteps(STEPS), lead = mkSteps(STEPS);
-  for (let i = 0; i < STEPS; i += 2) putStep(bass, i, (i % 4 === 0) ? 45 : 52, 1, 1.0); // A2/E3, punchy
-  const arp = [57, 61, 64, 69]; // A3 C#4 E4 A4
-  for (let i = 1; i < STEPS; i += 2) putStep(pulse, i, arp[((i - 1) >> 1) % arp.length], 1, 0.7);
-  putStep(harmony, 8, 57, 4, 0.85);  // A3 stab
-  putStep(harmony, 24, 61, 4, 0.85); // C#4 stab
-  const mel = [{ s: 12, m: 69 }, { s: 14, m: 71 }, { s: 16, m: 73 }, { s: 20, m: 76 }, { s: 24, m: 81 }, { s: 28, m: 76 }];
-  for (const n of mel) putStep(lead, n.s, n.m, 2, 0.9);
+/* --- DRIFT (approved @w2) — organ pulse, sub, pad, hymn lead. No percussion. 88 BPM, 21.8 s. */
+function buildDriftTrack() {
+  const BARS = 8, SPB = 16, STEPS = BARS * SPB, stepDur = 0.17;
+  const sub = mk(STEPS), pad = mk(STEPS), org = mk(STEPS), lead = mk(STEPS);
+  const CH  = [[45,60],[41,57],[48,55],[43,59],[45,60],[41,57],[38,57],[40,56]];   // Am F C G Am F Dm E
+  const ARP = [[57,60,64,69],[53,57,60,65],[55,60,64,67],[55,59,62,67],
+               [57,60,64,69],[53,57,60,65],[57,62,65,69],[56,59,64,68]];
+  for (let b = 0; b < BARS; b++) {
+    const s0 = b * SPB, r = CH[b][0], t3 = CH[b][1], a = ARP[b];
+    put(sub, s0, r - 12, 16, 1.0);
+    put(pad, s0, t3, 16, 0.9);
+    for (let i = 0; i < SPB; i++) put(org, s0 + i, a[i % 4], 1, i % 4 === 0 ? 0.95 : 0.62);
+  }
+  for (const [s, m, d] of [[0,69,10],[16,77,10],[32,76,10],[48,74,12],[64,81,10],[80,84,10],[96,83,10],[112,79,14]])
+    put(lead, s, m, d, 0.95);
   return { stepDur, steps: STEPS, layers: [
-    { name: "bass",    type: "square",   gain: 0.075, atk: 0.005, rel: 0.04, tier: 1, steps: bass },
-    { name: "pulse",   type: "sawtooth", gain: 0.045, atk: 0.005, rel: 0.05, tier: 2, steps: pulse },
-    { name: "harmony", type: "square",   gain: 0.05,  atk: 0.03,  rel: 0.25, tier: 3, steps: harmony },
-    { name: "lead",    type: "square",   gain: 0.055, atk: 0.01,  rel: 0.12, tier: 4, steps: lead },
+    { name:"organ", type:"square",   cutoff:600, cutoffTo:2200, cutoffTime:0.09, q:5, gain:0.045, atk:0.006, rel:0.09, steps:org },
+    { name:"sub",   type:"sawtooth", cutoff:280, gain:0.070, atk:0.6, rel:1.2, steps:sub },
+    { name:"pad",   type:"sawtooth", cutoff:800, cutoffTo:1600, detune:11, gain:0.048, atk:1.0, rel:1.4, steps:pad },
+    { name:"lead",  type:"triangle", detune:6, gain:0.072, atk:0.35, rel:0.9, steps:lead },
   ]};
 }
 
-// ambient — slow pads, sparse, spacey. E dorian, 16 steps @ stepDur .5 (8s loop) — the "long haul in
-// the dark" salvage-sim mood. A drone foundation; everything above it stays sparse even at max layer.
-function buildAmbientTrack() {
-  const STEPS = 16, stepDur = 0.5;
-  const bass = mkSteps(STEPS), pulse = mkSteps(STEPS), harmony = mkSteps(STEPS), lead = mkSteps(STEPS);
-  // Foundation (tier 1, always on): root/fifth pad swells offset every 2s across the 8s loop, each
-  // overlapping the next's attack as its own release fades — continuously present (no silent gap
-  // between notes), not one isolated blip. This is the ONLY layer a wave-1 player hears (tiers 2-4
-  // are gated by MUSIC_LAYER_THRESHOLD), so it alone must read as "music," not "paused."
-  putStep(bass, 0,  40, 6, 1.0);  // E2
-  putStep(bass, 4,  47, 6, 0.85); // B2 (fifth)
-  putStep(bass, 8,  40, 6, 0.9);  // E2
-  putStep(bass, 12, 47, 6, 0.8);  // B2
-  putStep(pulse, 4, 64, 2, 0.7);  // E4 ping
-  putStep(pulse, 12, 67, 2, 0.6); // G4 ping
-  putStep(harmony, 0, 59, 8, 0.8); // B3 pad
-  putStep(harmony, 8, 62, 8, 0.7); // D4 pad
-  putStep(lead, 6, 71, 2, 0.6);  // B4 twinkle
-  putStep(lead, 14, 76, 2, 0.55); // E5 twinkle
+/* --- WAREHOUSE (approved @w2) — kick, melodic bass, 16th hat, two 7th-chord stabs. No clap, and
+       deliberately NO melodic hook: in house the groove is the tune. 125 BPM, 23.0 s. */
+function buildWarehouseTrack() {
+  const BARS = 12, SPB = 16, STEPS = BARS * SPB, stepDur = 0.12;
+  const kick = mk(STEPS), hat = mk(STEPS), bass = mk(STEPS), stA = mk(STEPS), stB = mk(STEPS);
+  const CH = [[45,60,64],[45,60,64],[38,60,65],[38,60,65],[41,60,64],[41,60,64],[43,59,62],[43,59,62],
+              [45,60,64],[38,60,65],[41,60,64],[43,59,62]];   // Am7 Dm7 Fmaj7 G ...
+  const WALK = [0, 0, 12, 0, 7, 0, 12, 3];
+  for (let b = 0; b < BARS; b++) {
+    const s0 = b * SPB, c = CH[b], r = c[0];
+    for (const s of [0, 4, 8, 12]) put(kick, s0 + s, 50, 1, 1.0);
+    for (let i = 1; i < SPB; i += 2) hit(hat, s0 + i, 1, i % 4 === 3 ? 0.8 : 0.42);
+    for (let i = 0; i < 8; i++) put(bass, s0 + i * 2 + 1, r + WALK[i], 1, i % 2 === 0 ? 0.95 : 0.75);
+    for (const s of [3, 7, 11, 15]) { put(stA, s0 + s, c[1], 1, 0.9); put(stB, s0 + s, c[2], 1, 0.8); }
+  }
   return { stepDur, steps: STEPS, layers: [
-    // Gains brought into family with retro (0.075 bass) / tense (0.08 bass) — calmest track, not the
-    // quietest; tiers 2-4 nudged up to match rather than left ~30% below their tense/retro siblings.
-    { name: "bass",    type: "sine",     gain: 0.075, cutoff: 300, atk: 1.0, rel: 2.0, tier: 1, steps: bass },
-    { name: "pulse",   type: "triangle", gain: 0.045, atk: 0.3,   rel: 0.8,  tier: 2, steps: pulse },
-    { name: "harmony", type: "triangle", gain: 0.05,  cutoff: 800, atk: 1.0, rel: 1.6, tier: 3, steps: harmony },
-    { name: "lead",    type: "sine",     gain: 0.045, atk: 0.4,   rel: 1.0,  tier: 4, steps: lead },
+    { name:"kick",  type:"triangle", drop:14, dropTime:0.05, gain:0.125, atk:0.002, rel:0.16, steps:kick },
+    { name:"bass",  type:"sawtooth", cutoff:480, cutoffTo:850, cutoffTime:0.06, q:3, gain:0.075, atk:0.006, rel:0.10, steps:bass },
+    { name:"hat",   noise:true, hp:8500, gain:0.018, atk:0.001, rel:0.03, steps:hat },
+    { name:"stabA", type:"sawtooth", cutoff:2600, cutoffTo:900, cutoffTime:0.10, q:5, gain:0.042, atk:0.004, rel:0.13, steps:stA },
+    { name:"stabB", type:"sawtooth", cutoff:2600, cutoffTo:900, cutoffTime:0.10, q:5, gain:0.038, atk:0.004, rel:0.13, steps:stB },
   ]};
 }
 
-// State -> track. "off" (game over) is silence. Title has no tiers (all layers default tier 1 /
-// always on — no difficulty on the title screen). The three gameplay tracks are keyed by NAME
-// (not "play") so musicStateFor() can route settings.musicTrack straight through, and switching
-// tracks becomes a normal setState() crossfade for free — no separate track-switch code path.
+// State -> track. "off" (game over) is silence. No track carries tiers (v3.5 freeze — every layer is
+// always on). The four gameplay tracks are keyed by NAME (not "play") so musicStateFor() can route
+// settings.musicTrack straight through, and switching tracks becomes a normal setState() crossfade
+// for free — no separate track-switch code path. `title` is what musicStateFor() returns on the
+// title screen; the other four are the values of settings.musicTrack.
 const MUSIC_TRACKS = {
-  title:   buildTitleTrack(),
-  tense:   buildTenseTrack(),
-  retro:   buildRetroTrack(),
-  ambient: buildAmbientTrack(),
-  off:     null,   // game over / silence
+  title:     buildBeaconTitle(),
+  zen:       buildZenTrack(),
+  derelict:  buildDerelictTrack(),
+  drift:     buildDriftTrack(),
+  warehouse: buildWarehouseTrack(),
+  off:       null,   // game over / silence
 };
 
 const MusicSys = {
@@ -1310,14 +1334,13 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 const settings = {
   shotPowerupMode: "time", // "time" | "shots"  — governs Rapid Fire + Triple Shot expiry
   magnetMode:      "time", // "time" | "pieces" — governs Magnet expiry
-  musicTrack:      "retro",// "tense" | "retro" | "ambient" — selected gameplay track (v3.4 P6; retro default, FORK-9)
+  musicTrack:      "zen",  // "zen" | "derelict" | "drift" | "warehouse" — selected gameplay track (v3.5; zen default)
 };
 
-// Music-track picker (v3.4 P6). Internal values drive P7's gameplay-track selection; the labels are
-// what the Options row shows. Cycled left/right like a Difficulty toggle. The three tracks are silent
-// stubs this phase — the row is fully wired and persists, P7 puts sound behind the names.
-const MUSIC_TRACK_VALUES = ["tense", "retro", "ambient"];
-const MUSIC_TRACK_LABELS = { tense: "Tense", retro: "Retro", ambient: "Ambient" };
+// Music-track picker. Internal values drive gameplay-track selection; the labels are what the Options
+// row shows. Cycled left/right like a Difficulty toggle. Ordered calm -> hot (v3.5).
+const MUSIC_TRACK_VALUES = ["zen", "derelict", "drift", "warehouse"];
+const MUSIC_TRACK_LABELS = { zen: "Zen", derelict: "Derelict", drift: "Drift", warehouse: "Warehouse" };
 
 function menuActive() { return game.paused; } // paused <=> a pause-menu screen is open
 

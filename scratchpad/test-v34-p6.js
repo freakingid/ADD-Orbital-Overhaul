@@ -1,6 +1,12 @@
-// Headless test for v3.4 Phase 6 — MusicSys core: lookahead scheduler, menu ducking, title track,
-// and the Options "Music Track" row + label-dispatch refactor.
-// Extended in v3.4 P7 (sections H-N) — the three gameplay tracks + difficulty-gated intensity layers.
+// Headless test for the MusicSys core — lookahead scheduler, menu ducking, title track, the Options
+// "Music Track" row + label-dispatch refactor (v3.4 P6), and the intensity-layer machinery (v3.4 P7).
+// v3.5: the five shipping tracks (BeaconTitle/Zen/Derelict/Drift/Warehouse) replaced the old
+// title/tense/retro/ambient set, ported verbatim from tools/music-lab.html. THE FREEZE: no track
+// carries a `tier` field any more, so the v3.4-P7 intensity layering is DORMANT (section I asserts
+// this). Sections rewritten for the new track set: E (title loop len), F/O (4-value picker), G/M
+// (default "zen"; a removed-track save falls back), H/L (new track names), I (freeze), N (5 tracks),
+// P (one-step-gap rule), R (every loop >= 10s). Q's playNote-field wiring stays (the new tracks now
+// USE noise/hp/drop/cutoffTo — Q's old "inertness" assertion was dropped).
 //
 //   node scratchpad/test-v34-p6.js
 //
@@ -257,13 +263,13 @@ assert(contiguous, "E: steps scheduled contiguously (no gaps, no double-scheduli
 let monotonic = true;
 for (let i = 1; i < sched.length; i++) if (sched[i].tStep < sched[i - 1].tStep - 1e-9) { monotonic = false; break; }
 assert(monotonic, "E: scheduled start times are monotonic");
-// Covered the whole loop at least once and wrapped (55 s > 48 s loop).
+// Covered the whole loop at least once and wrapped (55 s window > the ~21.8 s title loop).
 assert(sched.length >= N, `E: scheduled at least a full loop (${sched.length} >= ${N} steps)`);
 const covered = new Set(sched.map(e => e.step));
 assert(covered.size === N, `E: every step index in the loop was scheduled (${covered.size}/${N})`);
-// The title track really is long/patient (45-90 s) and has real note content.
+// The title track is a real loop, not a jingle (>= 10 s; see section R for the all-tracks check).
 const loopSec = N * stepDur;
-assert(loopSec >= 45 && loopSec <= 90, `E: title loop length ${loopSec}s is in the 45-90s target`);
+assert(loopSec >= 10 && loopSec <= 90, `E: title loop length ${loopSec}s is a real loop (>= 10s)`);
 let noteCells = 0;
 for (const layer of track.layers) for (const c of layer.steps) if (c) noteCells++;
 assert(noteCells > 0 && track.layers.length >= 2, "E: title track is a multi-layer table with real notes");
@@ -292,52 +298,72 @@ for (const [label, cat] of [["SFX Volume", "sfx"], ["Music Volume", "music"], ["
   openOptionsAt(label); menuInput("left");  menuInput("left"); assert(AudioSys.vol[cat] < 0.5, `F: '${label}' left lowers ${cat}`);
 }
 
-// Music Track row cycles through all three values and wraps, both directions.
-settings.musicTrack = "tense";
+// (f) Music Track row cycles through all FOUR values and wraps, both directions (calm -> hot).
+settings.musicTrack = "zen";
 openOptionsAt("Music Track");
-menuInput("right"); assert(settings.musicTrack === "retro",   "F: Music Track right: tense -> retro");
-menuInput("right"); assert(settings.musicTrack === "ambient", "F: Music Track right: retro -> ambient");
-menuInput("right"); assert(settings.musicTrack === "tense",   "F: Music Track right wraps: ambient -> tense");
-menuInput("left");  assert(settings.musicTrack === "ambient", "F: Music Track left wraps: tense -> ambient");
+menuInput("right"); assert(settings.musicTrack === "derelict",  "F: Music Track right: zen -> derelict");
+menuInput("right"); assert(settings.musicTrack === "drift",     "F: Music Track right: derelict -> drift");
+menuInput("right"); assert(settings.musicTrack === "warehouse", "F: Music Track right: drift -> warehouse");
+menuInput("right"); assert(settings.musicTrack === "zen",       "F: Music Track right wraps: warehouse -> zen");
+menuInput("left");  assert(settings.musicTrack === "warehouse", "F: Music Track left wraps: zen -> warehouse");
+menuInput("left");  assert(settings.musicTrack === "drift",     "F: Music Track left: warehouse -> drift");
 // It never lands on a value outside the known set.
 const seen = new Set();
-for (let i = 0; i < 12; i++) { openOptionsAt("Music Track"); menuInput("right"); seen.add(settings.musicTrack); }
-assert([...seen].every(v => MUSIC_TRACK_VALUES.includes(v)) && seen.size === 3, "F: Music Track only ever cycles known values");
+for (let i = 0; i < 16; i++) { openOptionsAt("Music Track"); menuInput("right"); seen.add(settings.musicTrack); }
+assert([...seen].every(v => MUSIC_TRACK_VALUES.includes(v)) && seen.size === 4, "F: Music Track only ever cycles the 4 known values");
 
 // =====================================================================
 // G) Persistence — afd_settings_v1 round-trips EVERY pre-existing field + the new musicTrack.
 // =====================================================================
 AudioSys.vol.master = 0.3; AudioSys.vol.sfx = 0.7; AudioSys.vol.music = 0.4;
-settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces"; settings.musicTrack = "ambient";
+settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces"; settings.musicTrack = "warehouse";
 bindings.fire.keys = ["z"]; // a pre-existing rebind field
 saveSettings();
 assert("afd_settings_v1" in lsStore, "G: saved under the FROZEN key afd_settings_v1");
 assert(STORAGE_KEY === "afd_settings_v1", "G: STORAGE_KEY constant is afd_settings_v1");
 const stored = JSON.parse(lsStore["afd_settings_v1"]);
-assert(stored.musicTrack === "ambient", "G: musicTrack serialized");
+assert(stored.musicTrack === "warehouse", "G: musicTrack serialized");
 assert(stored.shotPowerupMode === "shots" && stored.magnetMode === "pieces", "G: v3.0 P5 fields serialized (regression)");
 
 // Corrupt in-memory, then load: every field must come back.
 AudioSys.vol.master = 1; AudioSys.vol.sfx = 1; AudioSys.vol.music = 1;
-settings.shotPowerupMode = "time"; settings.magnetMode = "time"; settings.musicTrack = "tense";
+settings.shotPowerupMode = "time"; settings.magnetMode = "time"; settings.musicTrack = "zen";
 bindings.fire.keys = ["x"];
 loadSettings();
 assert(near(AudioSys.vol.master, 0.3) && near(AudioSys.vol.sfx, 0.7) && near(AudioSys.vol.music, 0.4), "G: volumes round-trip");
 assert(settings.shotPowerupMode === "shots" && settings.magnetMode === "pieces", "G: difficulty modes round-trip (regression)");
-assert(settings.musicTrack === "ambient", "G: musicTrack round-trips");
+assert(settings.musicTrack === "warehouse", "G: musicTrack round-trips");
 assert(bindings.fire.keys[0] === "z", "G: rebindings round-trip (regression)");
 
 // A corrupt/unknown musicTrack falls back to the default without throwing (additive-load pattern).
 lsStore["afd_settings_v1"] = JSON.stringify({ ...stored, musicTrack: "bogus-track" });
-settings.musicTrack = "retro"; // simulate the shipped default already in place
+settings.musicTrack = "zen"; // simulate the shipped default already in place
 noThrow(() => loadSettings(), "G: loadSettings tolerates a corrupt musicTrack");
-assert(settings.musicTrack === "retro", "G: corrupt musicTrack ignored -> keeps the default");
+assert(settings.musicTrack === "zen", "G: corrupt musicTrack ignored -> keeps the default");
 // A missing musicTrack key (older save) is likewise tolerated.
 const noTrack = { ...stored }; delete noTrack.musicTrack;
 lsStore["afd_settings_v1"] = JSON.stringify(noTrack);
-settings.musicTrack = "retro";
+settings.musicTrack = "zen";
 noThrow(() => loadSettings(), "G: loadSettings tolerates a missing musicTrack (older save)");
-assert(settings.musicTrack === "retro", "G: missing musicTrack -> keeps the default");
+assert(settings.musicTrack === "zen", "G: missing musicTrack -> keeps the default");
+
+// (e) THE PERSISTENCE CONSEQUENCE: a save written by an OLD build holding musicTrack:"retro" (a track
+// that no longer exists) loads cleanly on a FRESH instance and falls back to the new default "zen".
+// afd_settings_v1 stays frozen — no key rename, no crash. Exercised through a real construction so
+// the startup loadSettings() (which only accepts a value in MUSIC_TRACK_VALUES) runs against it.
+for (const removed of ["retro", "tense", "ambient"]) {
+  const store = { "afd_settings_v1": JSON.stringify({ shotPowerupMode: "shots", magnetMode: "pieces", musicTrack: removed }) };
+  const ls = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
+  const savedLS = global.localStorage; global.localStorage = ls;
+  let freshA;
+  noThrow(() => { freshA = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub); },
+    `G(e): a save holding removed track "${removed}" loads without throwing`);
+  global.localStorage = savedLS;
+  assert(freshA.settings.musicTrack === "zen", `G(e): removed track "${removed}" falls back to the default "zen"`);
+  // The rest of the (still-valid) save is honored — proving it was a track-value rejection, not a whole-save reject.
+  assert(freshA.settings.shotPowerupMode === "shots" && freshA.settings.magnetMode === "pieces",
+    `G(e): the still-valid fields of the "${removed}" save loaded normally`);
+}
 
 // =====================================================================
 // H) v3.4 P7 — all three gameplay tracks load, start, stop, and crossfade without throwing.
@@ -358,45 +384,44 @@ for (const name of MUSIC_TRACK_VALUES) {
   AudioSys.ctx.currentTime += 1;
 }
 // Crossfade directly between two gameplay tracks (no "off" in between).
-MusicSys.setState("tense");
-const tenseGain = MusicSys.trackGain;
+MusicSys.setState("zen");
+const zenGain = MusicSys.trackGain;
 AudioSys.ctx.currentTime += 1;
-noThrow(() => MusicSys.setState("retro"), "H: tense -> retro crossfade does not throw");
-assert(MusicSys.state === "retro", "H: state moved to retro");
-assert(tenseGain.gain.rec.linearRamps.some(r => near(r.v, 0.0001)), "H: old (tense) track faded on crossfade");
-assert(MusicSys.trackGain !== tenseGain, "H: retro has its own new trackGain");
+noThrow(() => MusicSys.setState("derelict"), "H: zen -> derelict crossfade does not throw");
+assert(MusicSys.state === "derelict", "H: state moved to derelict");
+assert(zenGain.gain.rec.linearRamps.some(r => near(r.v, 0.0001)), "H: old (zen) track faded on crossfade");
+assert(MusicSys.trackGain !== zenGain, "H: derelict has its own new trackGain");
 
 // =====================================================================
-// I) Layer gating: at f = 0.0 / 0.25 / 0.5 / 0.8, exactly 1 / 2 / 3 / 4 layers are audible (gain > 0).
-//    Boundary crossings move via linearRampToValueAtTime — a ramp, never a jump.
+// I) THE FREEZE (v3.5, requirement (c)): no track carries a `tier` field, so every gate is built at
+//    (layer.tier || 1) === 1 (always on) and setIntensity() skips every tier-1 gate — it walks the
+//    list and does nothing. The v3.4-P7 difficulty-gated intensity layering is DORMANT with no code
+//    change. Assert that dormancy directly: all layers audible at every intensity, no gate ever ramps.
 // =====================================================================
 function audibleCount() { return MusicSys.layerGates.filter(lg => lg.node.gain.value > 0).length; }
-MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
-MusicSys.setIntensity(0);           // reset BEFORE the track loads, so it builds at f=0
-MusicSys.setState("retro");
-assert(audibleCount() === 1, `I: f=0 -> exactly 1 layer audible (got ${audibleCount()})`);
-
-const points = [[0.25, 2], [0.5, 3], [0.8, 4]];
-for (const [f, expect] of points) {
-  for (const lg of MusicSys.layerGates) lg.node.gain.rec.linearRamps.length = 0; // isolate this transition
-  AudioSys.ctx.currentTime += 1;
-  MusicSys.setIntensity(f);
-  assert(audibleCount() === expect, `I: f=${f} -> exactly ${expect} layers audible (got ${audibleCount()})`);
-  const anyRamped = MusicSys.layerGates.some(lg => lg.node.gain.rec.linearRamps.length > 0);
-  assert(anyRamped, `I: f=${f} crossing moved at least one gate via a RAMP`);
-  // Tier 1 (foundation) is bare-set once at track construction and never revisited by setIntensity —
-  // that's correct (it's always on), so only tiers 2-4 are checked for "moved by ramp, not a jump."
-  const anyBareJump = MusicSys.layerGates.some(lg =>
-    lg.tier > 1 && lg.node.gain.rec.bareSets.includes(1) && lg.node.gain.rec.linearRamps.length === 0);
-  assert(!anyBareJump, `I: f=${f} — no gated (tier 2-4) layer flipped via a bare .value jump`);
+// (c) NO layer in ANY track carries a tier field.
+for (const name of Object.keys(MUSIC_TRACKS)) {
+  const track = MUSIC_TRACKS[name];
+  if (!track) continue; // "off" is null
+  for (const layer of track.layers)
+    assert(!("tier" in layer), `I(c): ${name}/${layer.name} carries NO tier field (the freeze)`);
 }
-// Dropping back down ramps layers back off too (not just up).
+MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
+MusicSys.setIntensity(0);           // reset BEFORE the track loads
+MusicSys.setState("drift");
+assert(MusicSys.layerGates.every(lg => lg.tier === 1), "I: every built gate is tier 1 (layer.tier || 1)");
+const allOn = MusicSys.layerGates.length;
+assert(audibleCount() === allOn, `I: at f=0 every layer is already audible (${allOn}) — foundation-only tracks`);
+// Sweep intensity across every old threshold and back down. Audible count never changes, and because
+// setIntensity `continue`s past every tier-1 gate, NO gate is ever ramped.
 for (const lg of MusicSys.layerGates) lg.node.gain.rec.linearRamps.length = 0;
-AudioSys.ctx.currentTime += 1;
-MusicSys.setIntensity(0);
-assert(audibleCount() === 1, "I: dropping f back to 0 mutes back down to 1 audible layer");
-assert(MusicSys.layerGates.some(lg => lg.node.gain.rec.linearRamps.some(r => near(r.v, 0))),
-  "I: the drop back down is also a ramp");
+for (const f of [0, 0.25, 0.5, 0.8, 1, 0.3, 0]) {
+  AudioSys.ctx.currentTime += 0.5;
+  MusicSys.setIntensity(f);
+  assert(audibleCount() === allOn, `I: f=${f} still leaves all ${allOn} layers audible (intensity layering dormant)`);
+}
+assert(MusicSys.layerGates.every(lg => lg.node.gain.rec.linearRamps.length === 0),
+  "I: setIntensity ramped NO gate across a full 0->1->0 sweep — the machinery walks and does nothing (freeze)");
 
 // =====================================================================
 // J) setIntensity is called from the REAL nextWave() and NOT from the per-frame update path.
@@ -444,24 +469,24 @@ for (const name of MUSIC_TRACK_VALUES) {
 // =====================================================================
 assert(musicStateFor("title") === "title", "L: musicStateFor(title) -> title");
 assert(musicStateFor("gameover") === "off", "L: musicStateFor(gameover) -> off");
-settings.musicTrack = "tense";
-assert(musicStateFor("playing") === "tense", "L: musicStateFor(playing) routes through settings.musicTrack");
+settings.musicTrack = "drift";
+assert(musicStateFor("playing") === "drift", "L: musicStateFor(playing) routes through settings.musicTrack");
 
 MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
 game.state = "playing"; game.paused = false;
-settings.musicTrack = "tense";
+settings.musicTrack = "drift";
 updateMusic();
-assert(MusicSys.state === "tense", "L: updateMusic() drives setState via the selected track");
+assert(MusicSys.state === "drift", "L: updateMusic() drives setState via the selected track");
 const liveBefore = MusicSys.trackGain;
 AudioSys.ctx.currentTime += 1;
-settings.musicTrack = "ambient"; // simulate an Options pause-menu change mid-game
+settings.musicTrack = "warehouse"; // simulate an Options pause-menu change mid-game
 updateMusic();
-assert(MusicSys.state === "ambient", "L: switching settings.musicTrack crossfades to the new track");
+assert(MusicSys.state === "warehouse", "L: switching settings.musicTrack crossfades to the new track");
 assert(MusicSys.trackGain !== null && MusicSys.trackGain !== liveBefore, "L: exactly one (new) track is live");
 assert(liveBefore.gain.rec.linearRamps.some(r => near(r.v, 0.0001)), "L: the old track faded out, not hard-cut");
 
 // =====================================================================
-// M) The default gameplay track is "retro" on a completely fresh settings load (no saved data).
+// M) The default gameplay track is "zen" (v3.5) on a completely fresh settings load (no saved data).
 // =====================================================================
 {
   const freshStore = {};
@@ -474,18 +499,18 @@ assert(liveBefore.gain.rec.linearRamps.some(r => near(r.v, 0.0001)), "L: the old
   global.localStorage = freshLS;
   const freshA = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
   global.localStorage = savedLS;
-  assert(freshA.settings.musicTrack === "retro", "M: a fresh game instance with no saved settings defaults musicTrack to retro");
+  assert(freshA.settings.musicTrack === "zen", "M: a fresh game instance with no saved settings defaults musicTrack to zen");
 }
 
 // =====================================================================
-// N) Node-creation count per frame (per scheduled step) at max intensity is bounded. All layers are
-//    always scheduled regardless of gating (only the downstream gain gate is intensity-dependent), so
-//    max intensity and f=0 create the same node count — this measures the worst case across a full
-//    loop of each gameplay track.
+// N) (d) Worst-case node creation for a single scheduled step, across ALL FIVE tracks (title + the
+//    four gameplay tracks), is bounded. Every layer is always scheduled (gating is a downstream gain
+//    gate, and it's frozen anyway), so this is the true worst case regardless of intensity. Measured
+//    worst case across the five tracks: 13 (zen step 0: bass+padLo+padMid+kick = 3+4+4+2 nodes).
 // =====================================================================
-const NODE_BOUND = 16; // "a handful" (FLAG-9c) — see reported figures below
+const NODE_BOUND = 16; // "a handful" — measured worst case is 13; see reported figures below
 let overallMax = 0;
-for (const name of MUSIC_TRACK_VALUES) {
+for (const name of ["title", ...MUSIC_TRACK_VALUES]) {
   MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
   MusicSys.setIntensity(1);
   MusicSys.setState(name);
@@ -515,11 +540,11 @@ console.log(`(perf) overall worst-case per-frame node creation at max intensity 
 // =====================================================================
 game.paused = true; game.menu.screen = "options"; game.menu.index = MENU_OPTIONS.indexOf("Music Track");
 game.menu.rebinding = null;
-settings.musicTrack = "tense";
+settings.musicTrack = "zen";
 keydown("d", true);  // repeat
-assert(settings.musicTrack === "tense", "O: a REPEAT keydown on Music Track does not change settings.musicTrack");
+assert(settings.musicTrack === "zen", "O: a REPEAT keydown on Music Track does not change settings.musicTrack");
 keydown("d", false); // genuine press
-assert(settings.musicTrack === "retro", "O: a non-repeat keydown on Music Track advances it exactly once");
+assert(settings.musicTrack === "derelict", "O: a non-repeat keydown on Music Track advances it exactly once");
 
 // A volume slider row: repeat does not move AudioSys.vol; a non-repeat press does.
 game.menu.index = MENU_OPTIONS.indexOf("SFX Volume");
@@ -545,56 +570,55 @@ keydown("arrowleft", true); // repeat, but NOT in a menu
 assert(keys["arrowleft"] === true, "O: a repeat keydown during normal play still records into keys{} (guard did not leak into gameplay)");
 
 // =====================================================================
-// P) v3.5 P1 — Ambient's tier-1 (foundation) layer is audibly present, not a near-silent single blip.
-//    Regression guard against the original bug: 1 note per 8s loop while tiers 2-4 are gated off below
-//    wave 3, so a wave-1 player selecting Ambient heard what sounded like "the music stopped."
+// P) (b) No track has a gap longer than ONE step where nothing across ANY layer is sounding. A single
+//    one-step rest (e.g. a 16th rest inside Warehouse's groove) is music, not a hole — so the rule is
+//    "max ONE consecutive silent step," NOT "no gap at all." The old ambient bug was multi-second
+//    holes. Coverage is checked circularly (the loop repeats, so a run may span the seam). A note at
+//    step s with duration d (in steps) is counted as sounding across steps s .. s+d-1 (mod STEPS).
 // =====================================================================
-function tier1NoteCount(trackName) {
-  const track = MUSIC_TRACKS[trackName];
-  let n = 0;
+for (const name of Object.keys(MUSIC_TRACKS)) {
+  const track = MUSIC_TRACKS[name];
+  if (!track) continue; // "off" is null
+  const N = track.steps;
+  const sounding = new Array(N).fill(false);
   for (const layer of track.layers) {
-    if ((layer.tier || 1) !== 1) continue;
-    for (const c of layer.steps) if (c) n++;
+    for (let s = 0; s < N; s++) {
+      const cell = layer.steps[s];
+      if (!cell) continue;
+      const dur = Math.max(1, Math.round(cell.dur));
+      for (let k = 0; k < dur; k++) sounding[(s + k) % N] = true;
+    }
   }
-  return n;
-}
-// Notes-per-second-of-loop-time, so tracks with very different tempos/loop lengths are compared fairly.
-function tier1Density(trackName) {
-  const track = MUSIC_TRACKS[trackName];
-  return tier1NoteCount(trackName) / (track.steps * track.stepDur);
-}
-const ambNotes = tier1NoteCount("ambient"), ambDensity = tier1Density("ambient");
-const tenseDensity = tier1Density("tense"), retroDensity = tier1Density("retro");
-console.log(`(density) tier-1-only notes/sec: ambient=${ambDensity.toFixed(3)} tense=${tenseDensity.toFixed(3)} retro=${retroDensity.toFixed(3)} (ambient raw count/loop=${ambNotes})`);
-// Regression guard, not a precise target: ambient's tempo is deliberately ~4-8x slower than its
-// siblings (8s loop @ stepDur 0.5 vs. tense's 4s @ 0.125 / retro's 3.2s @ 0.1), so a much lower
-// notes/sec density is expected and correct — the bug was near-ZERO presence, not "slower." Bound
-// chosen generously loose (>= 1/25th of the faster tracks) so it only fires if ambient regresses
-// back toward "effectively nothing," while still requiring a real minimum note count.
-assert(ambNotes >= 4, `P: ambient tier-1 has a real minimum note count over one loop (${ambNotes} >= 4)`);
-assert(ambDensity >= tenseDensity / 25, `P: ambient tier-1 density (${ambDensity.toFixed(3)}/s) is within a sane factor of tense's (${tenseDensity.toFixed(3)}/s)`);
-assert(ambDensity >= retroDensity / 25, `P: ambient tier-1 density (${ambDensity.toFixed(3)}/s) is within a sane factor of retro's (${retroDensity.toFixed(3)}/s)`);
-
-// Ambient's tier-1 notes must be spread across the loop, not clustered in a single cell (the original
-// bug: exactly one note, i.e. one occupied step, for the whole loop).
-{
-  const track = MUSIC_TRACKS.ambient;
-  const bassLayer = track.layers.find(l => (l.tier || 1) === 1);
-  const occupiedSteps = bassLayer.steps.reduce((n, c, i) => c ? n.concat(i) : n, []);
-  assert(occupiedSteps.length >= 2, `P: ambient tier-1 occupies more than one step in the loop (steps: ${occupiedSteps.join(",")})`);
-  const spread = Math.max(...occupiedSteps) - Math.min(...occupiedSteps);
-  assert(spread >= track.steps * 0.5, `P: ambient tier-1 notes are spread across at least half the loop, not clustered (spread=${spread}/${track.steps})`);
+  // Longest run of consecutive silent steps, scanned over 2N so a seam-spanning run is caught whole.
+  let worst = 0, run = 0;
+  for (let i = 0; i < N * 2; i++) { if (!sounding[i % N]) { run++; if (run > worst) worst = run; } else run = 0; }
+  worst = Math.min(worst, N); // a hypothetically all-silent track caps at N (never happens here)
+  console.log(`(gap) ${name}: longest silent run = ${worst} step(s) over ${N} steps`);
+  assert(worst <= 1, `P(b): ${name} has no gap longer than one step where nothing sounds (worst run = ${worst})`);
 }
 
 // =====================================================================
-// Q) v3.5 — playNote() optional layer fields (noise/hp/drop/dropTime/q/cutoffTo/cutoffTime), ported
-//    verbatim from tools/music-lab.html's PORT-ME BLOCK A. No shipped layer sets any of these, so
-//    (a) confirms the four real tracks are byte-identical to before this change; (b)-(d) drive
-//    synthetic layers directly through the real MusicSys.playNote to prove each field's wiring.
+// R) (a) Every track's loop is at least 10 s long — a real loop, never a jingle.
+// =====================================================================
+for (const name of Object.keys(MUSIC_TRACKS)) {
+  const track = MUSIC_TRACKS[name];
+  if (!track) continue; // "off" is null
+  const sec = track.steps * track.stepDur;
+  console.log(`(loop) ${name}: ${sec.toFixed(2)}s (${track.steps} steps @ ${track.stepDur}s)`);
+  assert(sec >= 10, `R(a): ${name} loop is >= 10s (${sec.toFixed(2)}s)`);
+}
+
+// =====================================================================
+// Q) playNote() optional layer fields (noise/hp/drop/dropTime/q/cutoffTo/cutoffTime), whose wiring
+//    landed in v3.5 P1 (BLOCK A). The v3.5 tracks now genuinely USE these (zen/warehouse noise+hp,
+//    kick drop, every filtered pad cutoffTo/q), so the old "no shipped layer sets these" inertness
+//    assertion is gone. (a) confirms each real track schedules a deterministic, non-empty note stream;
+//    (b)-(d) drive synthetic layers directly through the real MusicSys.playNote to prove each field's
+//    wiring in isolation.
 // =====================================================================
 
-// (a) For each of the four existing tracks, the scheduled note stream (step, layer, freq, dur, gain)
-//     is identical to before this change — this phase must be AUDIBLY INERT.
+// (a) For each shipping track, the scheduled note stream (step, layer, freq, dur, gain) is
+//     deterministic (identical across two captures) and non-empty.
 function captureFullStream(trackName) {
   MusicSys.setState("off"); AudioSys.ctx.currentTime += 1;
   MusicSys.setIntensity(1); // max intensity so every layer is gated audible -> every note is scheduled
@@ -617,23 +641,15 @@ for (const name of ["title", ...MUSIC_TRACK_VALUES]) {
   assert(before === after, `Q(a): ${name} note stream is stable/deterministic across two captures`);
   assert(before.length > 2, `Q(a): ${name} produced a non-empty note stream`);
 }
-// The load-bearing inertness check: every shipped layer, across every track, has none of the new
-// optional fields set — so playNote's new branches are provably unreachable from real game data.
+// The v3.5 tracks DO exercise playNote's optional branches — confirm at least one shipped layer sets
+// each of noise / hp / drop / cutoffTo across the real track data (the inverse of the old inertness
+// check: these branches are now reachable from real game data, and (b)-(d) below verify their wiring).
 {
-  let checked = 0;
-  for (const name of ["title", ...MUSIC_TRACK_VALUES]) {
-    for (const layer of MUSIC_TRACKS[name].layers) {
-      checked++;
-      assert(!layer.noise, `Q(a): ${name}/${layer.name} does not set noise`);
-      assert(layer.hp == null, `Q(a): ${name}/${layer.name} does not set hp`);
-      assert(layer.drop == null, `Q(a): ${name}/${layer.name} does not set drop`);
-      assert(layer.dropTime == null, `Q(a): ${name}/${layer.name} does not set dropTime`);
-      assert(layer.q == null, `Q(a): ${name}/${layer.name} does not set q`);
-      assert(layer.cutoffTo == null, `Q(a): ${name}/${layer.name} does not set cutoffTo`);
-      assert(layer.cutoffTime == null, `Q(a): ${name}/${layer.name} does not set cutoffTime`);
-    }
-  }
-  assert(checked > 0, "Q(a): checked at least one shipped layer across all tracks");
+  const allLayers = ["title", ...MUSIC_TRACK_VALUES].flatMap(n => MUSIC_TRACKS[n].layers);
+  assert(allLayers.some(l => l.noise), "Q(a): some shipped layer uses noise:true (zen shaker / warehouse hat)");
+  assert(allLayers.some(l => l.hp != null), "Q(a): some shipped layer sets hp (highpass on the noise voices)");
+  assert(allLayers.some(l => l.drop != null), "Q(a): some shipped layer sets drop (the kick punch)");
+  assert(allLayers.some(l => l.cutoffTo != null), "Q(a): some shipped layer sets cutoffTo (filter-envelope pads/stabs)");
 }
 
 // Harness to drive MusicSys.playNote() directly against a synthetic one-layer track, bypassing the
