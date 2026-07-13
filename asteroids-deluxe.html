@@ -203,6 +203,34 @@ const SCORES_MAX = 10;
 const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 const GAME_VERSION = "3.6";
 
+// CS009 — HUD rebuild ("Corner Standard": HULL/CARGO rings top-right, powerup rows bottom-left).
+// ALL look-call knobs, tuned in the browser — see PLANNED-FEATURES-CS009.md §2/§3/§5 for the mockup
+// this was derived from. No literals in draw code; every size/timing value here has a name.
+const HUD_RING_R = 30;          // outer radius of the HULL/CARGO rings
+const HUD_RING_W = 4;           // stroke width of the value arc
+const HUD_RING_TRACK_W = 2;     // stroke width of the full-circle track underneath the arc (no glow)
+const HUD_RING_BLUR = 12;       // glowStroke blur radius for ring arcs
+const HUD_HULL_CX = 1156;       // HULL ring center x
+const HUD_CARGO_CX = 1232;      // CARGO ring center x (76px right of HULL — 16px air between edges)
+const HUD_RING_CY = 74;         // both rings share this center y
+const HUD_RING_LABEL_Y = 122;   // y of the "HULL"/"CARGO" text labels beneath the rings
+const HUD_SHIELD_R_GAP = 9;     // shield arc radius = HUD_RING_R - this (concentric, inside HULL ring)
+const HUD_FX_BASE_Y = 640;      // baseline y powerup rows stack upward from (row 0 = bottom)
+const HUD_FX_ROW_H = 40;        // vertical spacing between stacked powerup rows
+const HUD_FX_RING_R = 16;       // radius of each powerup row's ring
+const HUD_FX_GLYPH_R = 9;       // radius of the glyph drawn inside a powerup row's ring
+const HUD_FX_LOW = 3;           // sec remaining at/under which a timed powerup row shows the low warning
+const HUD_PULSE_HZ = 1.2;       // pulse rate for critical/max/full-cargo states — constant, bound to
+                                 // nothing else (the audio siren already ramps its own rate with HP)
+const HUD_EASE = 0.002;         // per-sec retention the eased hull fraction chases the true value with
+                                 // (Math.pow(HUD_EASE, dt) idiom — see MAGNET_DAMP, L352 — counter-
+                                 // intuitively, a LARGER constant here means LESS damping/faster chase).
+                                 // ~0.35s to close 95% of the gap.
+const HUD_BANK_FLASH = 0.6;     // sec a "+Ns" bank badge / ring pop stays visible after a banked pickup
+const HUD_BANK_POP = 0.25;      // fractional radius pop (25%) a powerup ring gets on a bank, settling
+                                 // back to normal over HUD_BANK_FLASH
+const HUD_CAP_FLASH = 0.5;      // sec — reserved flash duration for a cap-related HUD feedback event
+
 // Radioactive salvage / tow chain / recycling dock
 // v3.3 P4 (9a): loose SINGLE canisters decay again (GARBAGE_DECAY) — decay is the GOVERNOR that keeps
 // the field readable now that Hunters always drop garbage (9b) reopens the 12-in/66-out amplifier.
@@ -1756,6 +1784,15 @@ function drawPoly(points, x, y, angle, color, closed = true) {
   ctx.restore();
 }
 
+// A HUD ring arc: from 12 o'clock, clockwise, sweeping `frac` of a full turn. `frac` is NOT clamped
+// here — callers clamp (banking can exceed 1.0, see the overcharge arc). Track-only when frac <= 0.
+function drawRingArc(x, y, r, frac, color, width = HUD_RING_W, blur = HUD_RING_BLUR) {
+  if (frac <= 0) return;
+  ctx.beginPath();
+  ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
+  glowStroke(color, width, blur);   // never closePath() — an arc, not a poly
+}
+
 const COLOR = {
   ship: "#9fd8ff",
   bullet: "#ffffff",
@@ -2550,6 +2587,10 @@ const game = {
   powerups: [],                                        // free-floating Powerup pickups (F6)
   powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // remaining sec per timed effect (0 = inactive)
   powerBudget: { rapid: 0, triple: 0, magnet: 0 },    // remaining shots/pieces in count mode (P5; Engine is always timed)
+  hudHull: 1,                                          // CS009 P1: eased HUD hull fraction, chases
+                                                        // ship.hp/SHIP_MAX_HP so a hit/heal reads as a
+                                                        // drain/fill, not a jump. Advanced in update(),
+                                                        // NOT drawHUD() — see the update() call site.
   scoopLevel: 0,                                       // PERSISTENT scoop upgrade level 0..SCOOP_MAX_LEVEL (v3.3 P3; NOT a timed effect)
   scoopHits: 0,                                        // running non-lethal-hit tally; every SCOOP_HITS_PER_LEVEL costs a level
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
@@ -2588,6 +2629,7 @@ function startGame() {
   game.cargoMax = CARGO_BASE;      // tow cap resets to base each run; grows with deliveries (B-8)
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
+  game.hudHull = game.ship.hp / SHIP_MAX_HP;   // CS009 P1: no drain animation on a fresh run
   game.camera = { x: game.ship.x, y: game.ship.y };
   game.saucerTimer = rand(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX); // first saucer waits the wave-1 floor gap (F10)
   game.hunterTimer = rand(14, 22);
@@ -3577,6 +3619,11 @@ function update(dt) {
   }
 
   game.ship.update(dt);
+  // CS009 P1: eased HUD hull fraction — chases the true value so a hit/heal reads as a drain/fill,
+  // not a jump. Lives HERE, not in drawHUD(), because drawHUD() is gated by Capture.hudVisible: an
+  // ease running only while drawn would freeze while the HUD is toggled off with H and then snap on
+  // re-show. Math.pow(HUD_EASE, dt) is the shipped MAGNET_DAMP idiom — frame-rate independent.
+  game.hudHull += (game.ship.hp / SHIP_MAX_HP - game.hudHull) * (1 - Math.pow(HUD_EASE, dt));
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
   game.camera.y = game.ship.y;
