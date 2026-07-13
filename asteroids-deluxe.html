@@ -2599,6 +2599,10 @@ const game = {
   scoopHits: 0,                                        // running non-lethal-hit tally; every SCOOP_HITS_PER_LEVEL costs a level
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
   cargoMax: CARGO_BASE,                                // runtime tow cap; grows CARGO_BASE→CARGO_CAP_MAX per canisters delivered (B-8)
+  cargoFlash: 0,                                       // CS009 P3: >0 for HUD_CAP_FLASH sec after a cap-up —
+                                                        // a cap-up SHRINKS the CARGO ring's fraction (same chain,
+                                                        // bigger denominator), so without this flash it reads as
+                                                        // a bug instead of a promotion. Decayed in update().
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
@@ -2631,6 +2635,7 @@ function startGame() {
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.cargoMax = CARGO_BASE;      // tow cap resets to base each run; grows with deliveries (B-8)
+  game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
   game.hudHull = game.ship.hp / SHIP_MAX_HP;   // CS009 P1: no drain animation on a fresh run
@@ -3628,6 +3633,10 @@ function update(dt) {
   // ease running only while drawn would freeze while the HUD is toggled off with H and then snap on
   // re-show. Math.pow(HUD_EASE, dt) is the shipped MAGNET_DAMP idiom — frame-rate independent.
   game.hudHull += (game.ship.hp / SHIP_MAX_HP - game.hudHull) * (1 - Math.pow(HUD_EASE, dt));
+  // CS009 P3: linear decay of the CARGO ring's cap-up flash — lives here (not drawHUD()) for the same
+  // Capture.hudVisible reason as hudHull above: a decay that only ran while drawn would freeze while
+  // hidden and pop back on re-show.
+  if (game.cargoFlash > 0) game.cargoFlash = Math.max(0, game.cargoFlash - dt);
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
   game.camera.y = game.ship.y;
@@ -3763,6 +3772,11 @@ function update(dt) {
         if (growCap > game.cargoMax) {
           game.cargoMax = growCap;
           game.floaters.push(new FloatText("TOW +1", game.ship.x, game.ship.y - 22, COLOR.dock));
+          // CS009 P3 (FORK-2 A): a cap-up SHRINKS the CARGO ring (same chain, bigger denominator) —
+          // arm the flash so the ring reads gold+thick for HUD_CAP_FLASH sec, and drop the reward
+          // text at the dock (where it was earned), not the ship.
+          game.cargoFlash = HUD_CAP_FLASH;
+          game.floaters.push(new FloatText("+1 CAP", game.dock.x, game.dock.y - 22, COLOR.ach));
         }
         game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
         // v3.6 P3 (Source 3, FORK-2): the recycle hub emits one powerup per visit, the first time
@@ -4500,9 +4514,30 @@ function drawHUD() {
   ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
   drawText("HULL", HUD_HULL_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
 
-  drawText("CARGO " + game.chain.length + "/" + game.cargoMax, 30, row, 16,
-    game.chain.length ? COLOR.text : COLOR.dim, "left");
-  row += 26;
+  // CARGO ring (top-right, beside HULL). FORK-2 A: game.cargoMax is NOT a constant — it grows
+  // CARGO_BASE->CARGO_CAP_MAX at runtime (+1 per CARGO_GROW_PER delivered), so the fraction and the
+  // "/N" label both read it live every frame; never cache it, never substitute a literal.
+  const cargoFull = game.chain.length >= game.cargoMax;
+  // Full-cap or a fresh cap-up both mean gold — same idiom as the HULL ring's MAX state: gold means
+  // exactly one thing across the whole HUD, "this resource is at its cap; more is wasted."
+  const cargoGold = cargoFull || game.cargoFlash > 0;
+  const cargoColor = cargoGold ? COLOR.ach : COLOR.text;
+  const cargoRingW = game.cargoFlash > 0 ? HUD_RING_W + 2 : HUD_RING_W;
+  ctx.beginPath();
+  ctx.arc(HUD_CARGO_CX, HUD_RING_CY, HUD_RING_R, 0, TAU);
+  ctx.strokeStyle = COLOR.dim; ctx.lineWidth = HUD_RING_TRACK_W; ctx.stroke();
+  if (cargoGold) {
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(performance.now() / 1000 * TAU * HUD_PULSE_HZ);
+  }
+  drawRingArc(HUD_CARGO_CX, HUD_RING_CY, HUD_RING_R, clamp01(game.chain.length / game.cargoMax),
+    cargoColor, cargoRingW);
+  drawText(String(game.chain.length), HUD_CARGO_CX, HUD_RING_CY - 4, 20,
+    game.chain.length ? COLOR.text : COLOR.dim, "center");
+  drawText("/" + game.cargoMax, HUD_CARGO_CX, HUD_RING_CY + 14, 11, COLOR.dim, "center");
+  ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
+  drawText("CARGO", HUD_CARGO_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
+  row += 26;   // CS009 P3: CARGO moved out of the left column into the ring, but the powerup rows
+               // below still anchor off `row` — preserve their prior y so this phase doesn't shift them.
 
   // active-powerup row (F6): one row per running effect — a small type glyph + a shield-bar-style
   // remaining bar. Health is instant, so it never appears here. v3.0 P5: one renderer, two data
