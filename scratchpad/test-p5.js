@@ -416,30 +416,27 @@ console.log("(L) v3.6 P4: HUD rebuild — TARGETS removed, shield moved, hull-at
   const targetsText = recCtx.calls.find(c => c.fn === "fillText" && String(c.args[0]).includes("TARGETS"));
   assert(!targetsText, "L1: no TARGETS text is drawn");
 
-  // (L2) shield bar moved into the left column: its fill fillRect x must be small (left column),
-  // not out near VIEW_W - 30 - 140 (the old top-right position).
+  // (L2) CS009 P2 SUPERSEDES v3.6 P4 here: the SHIELD fill bar is gone — shield energy is now the
+  // unlabeled concentric inner arc of the HULL ring (FORK-1 A). No "SHIELD" text label survives.
   const shieldLabel = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === "SHIELD");
-  assert(!!shieldLabel, "L2: SHIELD label is drawn");
-  assert(shieldLabel && shieldLabel.args[1] < 200, `L2: SHIELD label x is in the left column (got ${shieldLabel ? shieldLabel.args[1] : "n/a"})`);
+  assert(!shieldLabel, "L2: SHIELD fill bar + label are gone (shield is now the HULL ring's inner arc)");
 
-  // (L3) hull bar at max HP renders distinctly (gold COLOR.ach) vs at 99% HP (COLOR.text).
+  // (L3) CS009 P2: the hull fill bar and its "MAX" text tag are gone — replaced by the HULL ring, whose
+  // gold arc (not a text tag) is the full-hull tell. No fillRect hull bar and no "MAX" fillText at any HP.
   C.game.ship.hp = C.SHIP_MAX_HP;
   recCtx.calls.length = 0;
   C.draw();
-  // hull bar fill is at x=93 (hpx+1), y=99 (hpy+1 with hpy=row-6, row=104) — distinct from the
-  // shield bar fill directly below it, which shares x=93 but sits at a different y.
+  // the old hull bar fill lived at x=93 (hpx+1), y=99 (hpy+1, row=104); assert nothing draws there now.
   const hullMaxFill = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 93 && c.args[1] === 99 && c.args[3] === 6);
-  assert(!!hullMaxFill, "L3: found the hull bar fill at max HP");
-  assert(hullMaxFill && hullMaxFill.fillStyle === C.COLOR.ach, `L3: hull bar at max HP fills with COLOR.ach (got ${hullMaxFill ? hullMaxFill.fillStyle : "n/a"})`);
+  assert(!hullMaxFill, "L3: no hull fill bar at max HP (replaced by the HULL ring arc)");
   const maxTag = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === "MAX");
-  assert(!!maxTag, "L3: a MAX tag is drawn beside the hull bar at full HP");
+  assert(!maxTag, "L3: no MAX text tag at full HP (the gold ring carries the FLAG-E meaning now)");
 
   C.game.ship.hp = C.SHIP_MAX_HP - 1; // 99%-ish, NOT max
   recCtx.calls.length = 0;
   C.draw();
   const hull99Fill = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 93 && c.args[1] === 99 && c.args[3] === 6);
-  assert(!!hull99Fill, "L3: found the hull bar fill at 99% HP");
-  assert(hull99Fill && hull99Fill.fillStyle === C.COLOR.text, `L3: hull bar just below max fills with COLOR.text, not gold (got ${hull99Fill ? hull99Fill.fillStyle : "n/a"})`);
+  assert(!hull99Fill, "L3: no hull fill bar just below max HP either");
   const noMaxTag = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === "MAX");
   assert(!noMaxTag, "L3: no MAX tag when HP is just below max");
   C.game.ship.hp = C.SHIP_MAX_HP;

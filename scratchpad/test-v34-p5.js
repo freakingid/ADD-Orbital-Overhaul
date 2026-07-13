@@ -250,13 +250,17 @@ function findLowhpChevron() {
   const log = recCtx.log;
   let cur = null, results = [];
   for (const entry of log) {
-    if (entry[0] === "save") cur = { translate: null, rotate: null, colors: [] };
+    if (entry[0] === "save") cur = { translate: null, rotate: null, colors: [], lineTos: 0 };
     else if (entry[0] === "translate" && cur) cur.translate = [entry[1], entry[2]];
     else if (entry[0] === "rotate" && cur) cur.rotate = entry[1];
+    else if (entry[0] === "lineTo" && cur) cur.lineTos++;
     else if (entry[0] === "strokeStyle" && cur) cur.colors.push(entry[1]);
     else if (entry[0] === "restore" && cur) { results.push(cur); cur = null; }
   }
-  return results.filter(r => r.colors.includes(COLOR.lowhp));
+  // The chevron is a 3-vertex triangle (moveTo + 2 lineTo). Filter on vertex count as well as color
+  // so the CS009 P2 HULL-ring ship glyph — a 4-vertex poly (3 lineTo) that also strokes COLOR.lowhp
+  // when the hull is critical — is not mistaken for a second chevron.
+  return results.filter(r => r.colors.includes(COLOR.lowhp) && r.lineTos === 2);
 }
 
 startGame(); isolate();

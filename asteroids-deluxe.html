@@ -215,6 +215,10 @@ const HUD_CARGO_CX = 1232;      // CARGO ring center x (76px right of HULL — 1
 const HUD_RING_CY = 74;         // both rings share this center y
 const HUD_RING_LABEL_Y = 122;   // y of the "HULL"/"CARGO" text labels beneath the rings
 const HUD_SHIELD_R_GAP = 9;     // shield arc radius = HUD_RING_R - this (concentric, inside HULL ring)
+// The HULL ring's center glyph — the player's own ship, so the ring is unmistakably theirs. This is the
+// L1949 hull poly [[16,0],[-11,-9],[-6,0],[-11,9]] scaled to 55% (drawPoly takes no scale, and scaling
+// the context would scale the glow blur too — CS009 P2, spec §3). Drawn nose-up via angle -Math.PI/2.
+const HUD_SHIP_GLYPH = [[8.8, 0], [-6.05, -4.95], [-3.3, 0], [-6.05, 4.95]];
 const HUD_FX_BASE_Y = 640;      // baseline y powerup rows stack upward from (row 0 = bottom)
 const HUD_FX_ROW_H = 40;        // vertical spacing between stacked powerup rows
 const HUD_FX_RING_R = 16;       // radius of each powerup row's ring
@@ -4465,33 +4469,36 @@ function drawHUD() {
   // a display label only ("level" is player-facing vocabulary, "wave" stays the code term).
   drawText("LEVEL " + game.wave, 30, 62, 22, COLOR.text, "left");
 
-  // v3.6 P4: HUD left column, top to bottom — Score, Level, Hull, Shield, Cargo, Powerups. A local
-  // layout cursor replaces the old bare-literal row offsets.
+  // CS009 P2: the hull + shield fill bars are gone from the left column — they are now the HULL ring in
+  // the top-right corner (drawn below). Left column top-to-bottom is now Score, Level, Cargo, Powerups.
   let row = 104;
 
-  // hull HP bar. At max HP a Health pickup would be wasted, so full hull gets an unmistakable gold
-  // fill + MAX tag instead of reading as "just another full bar" (FLAG-E).
-  const hpw = 140, hph = 8, hpx = 92, hpy = row - 6;
-  ctx.strokeStyle = COLOR.dim;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(hpx, hpy, hpw, hph);
-  const hp = Math.max(0, game.ship.hp), hpFrac = hp / SHIP_MAX_HP;
-  const hpMax = game.ship.hp >= SHIP_MAX_HP;
-  ctx.fillStyle = hpMax ? COLOR.ach : (hpFrac > 0.3 ? COLOR.text : "#ff7060");
-  ctx.fillRect(hpx + 1, hpy + 1, (hpw - 2) * hpFrac, hph - 2);
-  drawText("HULL", hpx - 12, hpy + 8, 13, COLOR.dim, "right");
-  if (hpMax) drawText("MAX", hpx + hpw + 10, hpy + 8, 13, COLOR.ach, "left");
-  row += 26;
-
-  // shield energy bar — moved out of the top-right corner into the left column, beneath hull (v3.6 P4).
-  const shw = 140, shh = 8, shx = 92, shy = row - 6;
-  ctx.strokeStyle = COLOR.dim;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(shx, shy, shw, shh);
-  ctx.fillStyle = game.ship.energy > 0.25 ? COLOR.text : "#ff7060";
-  ctx.fillRect(shx + 1, shy + 1, (shw - 2) * game.ship.energy, shh - 2);
-  drawText("SHIELD", shx - 12, shy + 8, 13, COLOR.dim, "right");
-  row += 22;
+  // HULL ring (top-right). FORK-1 A: one "ship status" element, two concentric arcs (hull outer,
+  // shield inner) around a ship glyph. Everything strokes through drawRingArc/glowStroke — no fills.
+  // STATE is read from the TRUE game.ship.hp so the color flips the instant a hit lands; the hull ARC
+  // reads the eased game.hudHull so the fill drains/fills ~0.35s behind, reading as a drain, not a jump.
+  // Precedence MAX > Critical > Normal (mutually exclusive). The shield arc is NEVER state-colored —
+  // it is a separate resource and must not get swept into a hull warning.
+  const hpMax = game.ship.hp >= SHIP_MAX_HP;                 // full hull → a Health pickup is wasted (FLAG-E)
+  const hpCrit = game.ship.hp <= LOW_HP_THRESHOLD;           // same threshold as the siren + low-HP chevron
+  const hullColor = hpMax ? COLOR.ach : (hpCrit ? COLOR.lowhp : COLOR.hp);
+  // full-circle track, no glow (drawn direct, not via drawRingArc — that helper is arc-only).
+  ctx.beginPath();
+  ctx.arc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R, 0, TAU);
+  ctx.strokeStyle = COLOR.dim; ctx.lineWidth = HUD_RING_TRACK_W; ctx.stroke();
+  // shield arc: concentric, inside the hull ring, thinner, own color, NOT eased (energy is already
+  // continuous) and NOT pulsed — drawn at full alpha before the pulse is applied below.
+  drawRingArc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R - HUD_SHIELD_R_GAP,
+    game.ship.energy, COLOR.shield, HUD_RING_TRACK_W + 1);
+  // hull arc + ship glyph share the state color and pulse together, only when Critical (constant rate —
+  // the audio siren carries the urgency ramp, so binding the pulse to HP too would read as a wobble).
+  if (hpCrit && !hpMax) {
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(performance.now() / 1000 * TAU * HUD_PULSE_HZ);
+  }
+  drawRingArc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R, clamp01(game.hudHull), hullColor, HUD_RING_W);
+  drawPoly(HUD_SHIP_GLYPH, HUD_HULL_CX, HUD_RING_CY, -Math.PI / 2, hullColor);
+  ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
+  drawText("HULL", HUD_HULL_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
 
   drawText("CARGO " + game.chain.length + "/" + game.cargoMax, 30, row, 16,
     game.chain.length ? COLOR.text : COLOR.dim, "left");
