@@ -23,6 +23,9 @@
 //      CHAIN_LINK; bump CHAIN_ITER if exceeded).
 //  (F) v3.4 P1: DOCK_OFFLOAD_INTERVAL = 0.05 (was a bare literal 0.13); a full CARGO_CAP_MAX-node
 //      chain parked at the dock fully offloads, one canister per interval tick.
+//  (G) v3.6 P3 (Source 3, FORK-2): the recycle hub emits exactly one powerup on the delivery that
+//      passes deliveryCount through 10 (a 9-canister visit emits none; the 11th/12th emit no more),
+//      launched from the dock's own position at DOCK_POWERUP_SPEED, plus a floater marking it.
 
 "use strict";
 const fs = require("fs");
@@ -48,7 +51,7 @@ const returnList = [
   "CARGO_BASE", "CARGO_CAP_MAX", "CARGO_GROW_PER",
   "CHAIN_LINK", "CHAIN_ITER", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "ENGINE_MASS_MULT", "DOCK_OFFLOAD_INTERVAL",
-  "DOCK_RADIUS", "shortDelta", "WORLD_W", "WORLD_H"
+  "DOCK_RADIUS", "DOCK_POWERUP_SPEED", "shortDelta", "WORLD_W", "WORLD_H"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -61,7 +64,7 @@ const {
   CARGO_BASE, CARGO_CAP_MAX, CARGO_GROW_PER,
   CHAIN_LINK, CHAIN_ITER, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, ENGINE_MASS_MULT, DOCK_OFFLOAD_INTERVAL,
-  DOCK_RADIUS, shortDelta, WORLD_W, WORLD_H
+  DOCK_RADIUS, DOCK_POWERUP_SPEED, shortDelta, WORLD_W, WORLD_H
 } = A;
 
 // The old fixed constant must be gone (it was replaced by game.cargoMax + CARGO_BASE).
@@ -331,6 +334,55 @@ while (game.chain.length > 0 && ticksToEmpty < 10000) {
 assert(game.chain.length === 0, `F: a full ${CARGO_CAP_MAX}-node chain fully offloads (got ${game.chain.length} left)`);
 assert(game.stats.delivered === CARGO_CAP_MAX, `F: exactly ${CARGO_CAP_MAX} canisters delivered (got ${game.stats.delivered})`);
 assert(ticksToEmpty === CARGO_CAP_MAX, `F: one canister peeled off per DOCK_OFFLOAD_INTERVAL tick (got ${ticksToEmpty} ticks for ${CARGO_CAP_MAX} nodes)`);
+
+// =====================================================================
+// (G) v3.6 P3 (Source 3, FORK-2): recycle-hub powerup emission, per visit
+// =====================================================================
+console.log("(G) recycle hub emits exactly one powerup per visit, on deliveryCount===10");
+
+// Deliver `n` canisters in one visit (forcing an offload each frame) and report what happened.
+// The ship parks just inside the "nearDock" cutoff (DOCK_RADIUS+10 = 54px) but well outside the
+// powerup pickup radius (43px — POWERUP_RADIUS is pinned at LEVER_POWERUP_SIZE's disabled 2x, per
+// asteroids-deluxe.html's leverScale — NOT the raw 15px constant), so a hub powerup launched FROM
+// the dock's center isn't standing inside the ship's own pickup radius the instant it spawns (that
+// would auto-collect it before this test could observe the emission at all — an artifact of a
+// stationary test ship, not a game bug). The ship is moved to its resting spot BEFORE fillChain
+// builds the chain (fillChain reads the ship's CURRENT position/facing via chainAnchor()) so the
+// tow-chain constraint starts unstretched — moving the ship after the chain exists would yank it
+// right back via the real chain-tug physics.
+function deliverN(n) {
+  clearField(); resetShip();
+  game.ship.x = cx + DOCK_RADIUS + 9; game.ship.y = cy; game.ship.vx = 0; game.ship.vy = 0;
+  game.debris = [{ x: cx + 1800, y: cy + 1800, vx: 0, vy: 0, size: 3, radius: 46,
+    damage: 50, dead: false, update() { this.x = cx + 1800; this.y = cy + 1800; }, draw() {} }];
+  game.dock = { x: cx, y: cy, radius: DOCK_RADIUS, update() {}, draw() {} };
+  game.deliveryCount = 0;
+  fillChain(n);
+  for (let i = 0; i < n; i++) {
+    game.offloadTimer = 0;
+    update(DT);
+  }
+  return game.powerups.slice();
+}
+
+const drops9 = deliverN(9);
+assert(drops9.length === 0, `G: a 9-canister visit emits no hub powerup (got ${drops9.length})`);
+
+const drops10 = deliverN(10);
+assert(drops10.length === 1, `G: a 10-canister visit emits exactly one hub powerup (got ${drops10.length})`);
+assert(near(drops10[0].x, cx) && near(drops10[0].y, cy), "G: the hub powerup launches from the dock's position");
+assert(near(Math.hypot(drops10[0].vx, drops10[0].vy), DOCK_POWERUP_SPEED, 1e-6),
+  `G: the hub powerup launches at DOCK_POWERUP_SPEED (got ${Math.hypot(drops10[0].vx, drops10[0].vy).toFixed(2)})`);
+assert(game.floaters.some(f => (f.text || "").length > 0 && f.x === cx && f.y === cy - 22),
+  "G: a floater marks the hub emission at the dock");
+
+const drops12 = deliverN(12);
+assert(drops12.length === 1, `G: an 11th/12th canister in the SAME visit emits no more (still ${drops12.length})`);
+
+// startGame resets ambient state cleanly for the next visit-count test (deliveryCount already
+// reset per-visit by deliverN; this just confirms no cross-visit leakage of the latch).
+const drops10Again = deliverN(10);
+assert(drops10Again.length === 1, "G: a fresh 10-canister visit emits its own single hub powerup (no carry-over)");
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);

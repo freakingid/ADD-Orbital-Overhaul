@@ -486,7 +486,7 @@ console.log("(17) v3.3 P4 (9b): a SCRAP-BORN lineage now emits the FULL per-tier
   const scrapCore = new HunterSatellite(cx, cy, 3); // no bornOfScrap field to set — it's gone (FORK-5)
   game.garbage = [];
   const realRandom = Math.random;
-  Math.random = () => 0; // force maybeDropPowerup to always drop, to prove the small-tier powerup path still fires
+  Math.random = () => 0; // pins the dropPowerup weighted type-roll (v3.6 P3: the drop itself is unconditional now)
   let scrapKills, scrapPowerups;
   try { scrapKills = killLineage(scrapCore); scrapPowerups = game.powerups.length; }
   finally { Math.random = realRandom; }
@@ -495,7 +495,8 @@ console.log("(17) v3.3 P4 (9b): a SCRAP-BORN lineage now emits the FULL per-tier
   assert(scrapKills === 13, `17: the (formerly scrap-born) lineage is also 13 kills (got ${scrapKills})`);
   assert(game.garbage.length === LINEAGE_TOTAL, `17: it now emits the FULL ${LINEAGE_TOTAL} (was 0 under v3.2's bornOfScrap gate; got ${game.garbage.length})`);
   assert(scrapScore === normalScore, `17: score is UNCHANGED vs the timer lineage (${scrapScore} vs ${normalScore})`);
-  assert(scrapPowerups === 9, `17: the small tier still drops its powerup — one per 9 small kills (got ${scrapPowerups})`);
+  // v3.6 P3: small-tier kills no longer drop anything — only the large core does, exactly once per lineage.
+  assert(scrapPowerups === 1, `17: the lineage drops exactly one powerup, from the large core (got ${scrapPowerups})`);
 }
 
 // =====================================================================

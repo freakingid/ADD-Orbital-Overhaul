@@ -15,7 +15,7 @@
 //  (E) Engine halves the EFFECTIVE towed mass fed to chainMass() (thrust/top-speed/tug);
 //  (F) Magnet moves free garbage toward the ship over a few frames (real pull, not teleport),
 //      and does NOT when inactive;
-//  (G) drops come only from small-tier Debris/Hunter kills, never large, and never Health.
+//  (G) Health is never in the drop-pool type list (full drop economy is owned by test-v33-p3.js).
 
 "use strict";
 const fs = require("fs");
@@ -43,10 +43,9 @@ const navigatorStub = { getGamepads: () => [] };
 
 const returnList = [
   "startGame", "update", "game", "keys",
-  "Powerup", "Garbage", "DebrisSatellite", "HunterSatellite",
-  "applyPowerup", "maybeDropPowerup", "maxBullets", "chainMass",
-  "destroyDebris", "destroyHunter",
-  "POWERUP_DURATION", "POWERUP_HEALTH_AMOUNT", "POWERUP_DROP_TYPES", "POWERUP_DROP_CHANCE",
+  "Powerup", "Garbage",
+  "applyPowerup", "maxBullets", "chainMass",
+  "POWERUP_DURATION", "POWERUP_HEALTH_AMOUNT", "POWERUP_DROP_TYPES",
   "RAPID_MAX_BULLETS", "TRIPLE_MAX_BULLETS", "MAX_BULLETS", "TRIPLE_SPREAD",
   "ENGINE_MASS_MULT", "MAGNET_RANGE", "MAGNET_PICKUP_MULT", "MAGNET_DURATION",
   "GARBAGE_PICKUP", "SHIP_MAX_HP",
@@ -59,10 +58,9 @@ const factory = new Function(
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
 const {
   startGame, update, game, keys,
-  Powerup, Garbage, DebrisSatellite, HunterSatellite,
-  applyPowerup, maybeDropPowerup, maxBullets, chainMass,
-  destroyDebris, destroyHunter,
-  POWERUP_DURATION, POWERUP_HEALTH_AMOUNT, POWERUP_DROP_TYPES, POWERUP_DROP_CHANCE,
+  Powerup, Garbage,
+  applyPowerup, maxBullets, chainMass,
+  POWERUP_DURATION, POWERUP_HEALTH_AMOUNT, POWERUP_DROP_TYPES,
   RAPID_MAX_BULLETS, TRIPLE_MAX_BULLETS, MAX_BULLETS, TRIPLE_SPREAD,
   ENGINE_MASS_MULT, MAGNET_RANGE, MAGNET_PICKUP_MULT, MAGNET_DURATION,
   GARBAGE_PICKUP, SHIP_MAX_HP,
@@ -97,7 +95,7 @@ function node(x, y, mass) { return { x, y, px: x, py: y, spin: 0, spinRate: 0, m
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) DURATION=${POWERUP_DURATION}s  DROP_CHANCE=${POWERUP_DROP_CHANCE}  caps 4/${RAPID_MAX_BULLETS}/${TRIPLE_MAX_BULLETS}  ENGINE_MULT=${ENGINE_MASS_MULT}  MAGNET_RANGE=${MAGNET_RANGE}px`);
+console.log(`(config) DURATION=${POWERUP_DURATION}s  caps 4/${RAPID_MAX_BULLETS}/${TRIPLE_MAX_BULLETS}  ENGINE_MULT=${ENGINE_MASS_MULT}  MAGNET_RANGE=${MAGNET_RANGE}px`);
 
 // =====================================================================
 // (A) applyPowerup effect magnitudes — one of each type
@@ -232,39 +230,12 @@ assert(near(d2Before, d2After, 0.5) && near(g2.vx, 0) && near(g2.vy, 0),
   `F: with no Magnet the at-rest canister doesn't drift (${d2Before.toFixed(1)} -> ${d2After.toFixed(1)} px, v=(${g2.vx.toFixed(2)},${g2.vy.toFixed(2)}))`);
 
 // =====================================================================
-// (G) drops only from small-tier kills; never Health
+// (G) drop economy — OWNED by scratchpad/test-v33-p3.js (v3.6 P3: three deterministic sources
+// replaced the small-tier-kill chance roll this file used to test here). Kept minimal: just the
+// invariant that never changes regardless of which sources are active.
 // =====================================================================
-console.log("(G) drops come from small-tier kills only, and never Health");
+console.log("(G) Health is never in the drop-pool type list (ambient-only; full drop economy: test-v33-p3.js)");
 assert(!POWERUP_DROP_TYPES.includes("health"), "G: Health is not in the drop pool (it's ambient-only)");
-const realRandom = Math.random;
-
-// forced drop: a small-tier Debris kill drops exactly one weapon/utility powerup
-Math.random = () => 0.03;   // < POWERUP_DROP_CHANCE -> always drops; also picks index 0 ("rapid")
-resetShip(); resetFx(); clearField(); game.wave = 3;
-destroyDebris(new DebrisSatellite(cx, cy, 1), false);   // small tier
-assert(game.powerups.length === 1 && POWERUP_DROP_TYPES.includes(game.powerups[0].type),
-  `G: a small Debris kill dropped one drop-pool powerup (got ${game.powerups.length}, type ${game.powerups[0] && game.powerups[0].type})`);
-
-// forced drop: a small-tier Hunter kill also drops
-clearField();
-destroyHunter(new HunterSatellite(cx, cy, 1, 0), false); // small tier
-assert(game.powerups.length === 1 && POWERUP_DROP_TYPES.includes(game.powerups[0].type),
-  `G: a small Hunter kill dropped one drop-pool powerup (got ${game.powerups.length})`);
-
-// even with the roll forced to "always drop", a LARGE kill drops nothing (only small tier rolls)
-clearField();
-destroyDebris(new DebrisSatellite(cx, cy, 3), false);    // large tier -> splits, no drop
-assert(game.powerups.length === 0, `G: a large Debris kill never drops a powerup (got ${game.powerups.length})`);
-clearField();
-destroyHunter(new HunterSatellite(cx, cy, 3, 0), false); // large tier -> splits, no drop
-assert(game.powerups.length === 0, `G: a large Hunter kill never drops a powerup (got ${game.powerups.length})`);
-
-// forced NO drop: below the chance, a small kill drops nothing
-Math.random = () => 0.99;   // >= POWERUP_DROP_CHANCE -> never drops
-clearField();
-destroyDebris(new DebrisSatellite(cx, cy, 1), false);
-assert(game.powerups.length === 0, `G: below the drop chance a small kill drops nothing (got ${game.powerups.length})`);
-Math.random = realRandom;
 
 // ---- Summary ----
 console.log(`\n${passed} passed, ${failed} failed`);

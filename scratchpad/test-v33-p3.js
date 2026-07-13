@@ -1,13 +1,18 @@
 // Headless test for v3.3 Phase 3 — the Scoop powerup + weighted powerup drop economy.
 // Extended in v3.4 Phase 3 for scoop durability (5 hits/level) + the generated size config.
+// Extended in v3.6 Phase 3: the drop economy itself was replaced — no more per-kill chance roll.
+// This file OWNS the drop economy (POWERUP_DROP_WEIGHTS roll + the three emitters' invariants);
+// scratchpad/test-p6.js owns the dock-hub emission's per-visit latch specifically.
 // Repo convention: stub window/document/rAF/navigator/localStorage, eval the REAL <script> block,
-// then drive the ACTUAL update()/damageShip()/applyPowerup()/maybeDropPowerup — no reimplementation.
+// then drive the ACTUAL update()/damageShip()/applyPowerup()/dropPowerup/destroySaucer/destroyHunter/
+// destroyDebris — no reimplementation.
 //
 //   node scratchpad/test-v33-p3.js
 //
 // Checks:
-//  (0) constants: POWERUP_DROP_CHANCE 0.16, POWERUP_DECAY 26; scoop constants sane; POWERUP_DROP_TYPES
-//      still the 4 TIMED types (no "scoop"); POWERUP_DROP_WEIGHTS is the separate weighted table.
+//  (0) constants: POWERUP_DROP_CHANCE is GONE from the source; POWERUP_DECAY 26; scoop constants
+//      sane; POWERUP_DROP_TYPES still the 4 TIMED types (no "scoop"); POWERUP_DROP_WEIGHTS is the
+//      separate weighted table, still includes "scoop".
 //  (1) applyPowerup("scoop") climbs 0->5 and caps; the 6th pick pays SCOOP_MAX_BONUS instead.
 //  (2) the scoop BOX captures a canister that is OUTSIDE GARBAGE_PICKUP but inside the mouth, at
 //      several ship headings AND across the world wrap seam (via the real update() pickup pass).
@@ -15,12 +20,18 @@
 //  (4) at scoopLevel 0 the pickup set is identical to the pre-scoop build (circle only).
 //  (5) five non-lethal hits drop exactly one level, four drop none, ten drop two; level 0 harmless.
 //  (6) a shielded / i-frame hit (damageShip's early return) does NOT count toward scoopHits.
-//  (7) maybeDropPowerup only ever yields a type in POWERUP_DROP_WEIGHTS, and scoop can drop.
+//  (7) dropPowerup only ever yields a type in POWERUP_DROP_WEIGHTS, and scoop can drop.
 //  (8) buildScoopSteps: index 0 is 0, index 5 is max, monotonically increasing, curve behavior.
 //  (9) SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W exactly.
 //  (10) v3.6 P1c: the drawn scoop box's four corners, recovered from a recording ctx via Ship.draw(),
 //       agree with inScoopBox's accept/reject boundary at levels 1..5 (probing just inside/outside
 //       each edge, including the rear -SHIP_RADIUS edge) — the load-bearing box-matches-hitbox proof.
+//  (11) v3.6 P3: a full 13-kill Debris lineage drops zero powerups (the old small-tier roll is gone).
+//  (12) v3.6 P3: a full 13-kill Hunter lineage drops exactly one, from the large core (not the smalls).
+//  (13) v3.6 P3: destroySaucer — bullet AND shield-contact paths each drop exactly one powerup whose
+//       vx/vy equal the saucer's at death (no scaling), and both still award the same score/achievement
+//       counters as the pre-extraction copy-pasted code did (regression guard on the extraction).
+//  (14) v3.6 P3: Powerup drag is gone — a drop's speed is unchanged 5 real seconds after launch.
 
 "use strict";
 const fs = require("fs");
@@ -62,18 +73,23 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
   setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: k => { delete lsStore[k]; } };
 
 const returnList = ["startGame", "update", "game", "Garbage", "applyPowerup", "damageShip",
-  "maybeDropPowerup", "POWERUP_DROP_WEIGHTS", "POWERUP_DROP_TYPES", "POWERUP_DECAY",
-  "POWERUP_DROP_CHANCE", "SCOOP_MAX_LEVEL", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
+  "dropPowerup", "destroySaucer", "destroyHunter", "destroyDebris",
+  "DebrisSatellite", "HunterSatellite", "Saucer", "Achievements",
+  "POWERUP_DROP_WEIGHTS", "POWERUP_DROP_TYPES", "POWERUP_DECAY",
+  "SCOOP_MAX_LEVEL", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
   "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H",
   "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W", "inScoopBox"];
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
   scriptSrc + `\nreturn { ${returnList.join(", ")} };`);
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
-const { startGame, update, game, Garbage, applyPowerup, damageShip, maybeDropPowerup,
-  POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, POWERUP_DROP_CHANCE, SCOOP_MAX_LEVEL,
+const { startGame, update, game, Garbage, applyPowerup, damageShip,
+  dropPowerup, destroySaucer, destroyHunter, destroyDebris,
+  DebrisSatellite, HunterSatellite, Saucer, Achievements,
+  POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, SCOOP_MAX_LEVEL,
   SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_HITS_PER_LEVEL, SCOOP_MAX_BONUS, GARBAGE_PICKUP, SHIP_RADIUS,
   WORLD_W, WORLD_H, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox } = G;
+const scriptHasPowerupDropChance = /const\s+POWERUP_DROP_CHANCE\b/.test(scriptSrc);
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -114,7 +130,7 @@ function captured(level, forward, lateral, angle = 0, sx = WORLD_W / 2, sy = WOR
 
 // =====================================================================
 console.log("(0) constants + drop-table separation");
-assert(POWERUP_DROP_CHANCE === 0.16, `0: POWERUP_DROP_CHANCE 0.10->0.16 (got ${POWERUP_DROP_CHANCE})`);
+assert(!scriptHasPowerupDropChance, "0: POWERUP_DROP_CHANCE is gone from the source (v3.6 P3: no chance gate left)");
 assert(POWERUP_DECAY === 26, `0: POWERUP_DECAY 14->26 (got ${POWERUP_DECAY})`);
 assert(SCOOP_MAX_LEVEL === 5, `0: SCOOP_MAX_LEVEL === 5 (got ${SCOOP_MAX_LEVEL})`);
 assert(SCOOP_HITS_PER_LEVEL === 5, `0: SCOOP_HITS_PER_LEVEL 2->5 (v3.4 P3 durability, got ${SCOOP_HITS_PER_LEVEL})`);
@@ -220,14 +236,14 @@ console.log("(6) a shielded / i-frame hit does NOT count toward scoopHits");
 }
 
 // =====================================================================
-console.log("(7) maybeDropPowerup only yields weighted types; scoop can drop");
+console.log("(7) dropPowerup only yields weighted types; scoop can drop; always drops (no chance gate)");
 {
   beginPlaying();
   game.powerups = [];
   const allowed = new Set(Object.keys(POWERUP_DROP_WEIGHTS));
-  for (let i = 0; i < 2000; i++) maybeDropPowerup(100, 100);
+  for (let i = 0; i < 2000; i++) dropPowerup(100, 100);
   const seen = new Set(game.powerups.map(p => p.type));
-  assert(game.powerups.length > 0, "7: over 2000 rolls at least some powerups dropped");
+  assert(game.powerups.length === 2000, `7: dropPowerup has no chance gate — every call drops (got ${game.powerups.length}/2000)`);
   assert([...seen].every(t => allowed.has(t)), `7: every dropped type is in POWERUP_DROP_WEIGHTS (saw ${[...seen].join(",")})`);
   assert(seen.has("scoop"), "7: scoop actually drops from the weighted table");
   assert(!seen.has("health"), "7: Health never drops (ambient-only)");
@@ -305,6 +321,109 @@ console.log("(10) the drawn scoop box's corners agree with inScoopBox's accept/r
         `10: L${lvl} ${p.name} (forward=${p.forward.toFixed(2)}, lateral=${p.lateral.toFixed(2)}) inScoopBox=${got}, want ${p.want}`);
     }
   }
+}
+
+// destroyDebris/destroyHunter push their splits directly onto game.debris/game.hunters, so
+// draining that array (not a separate reimplementation) walks the whole lineage via the real code.
+function drainLineage(list, destroyFn) {
+  let kills = 0;
+  while (list.length) { destroyFn(list.shift(), false); kills++; }
+  return kills;
+}
+
+// =====================================================================
+console.log("(11) v3.6 P3: a full Debris lineage drops ZERO powerups (small-tier roll is gone)");
+{
+  beginPlaying();
+  game.powerups = []; game.debris = [];
+  const core = new DebrisSatellite(1000, 1000, 3);
+  game.debris.push(core);
+  const kills = drainLineage(game.debris, destroyDebris);
+  assert(kills === 13, `11: a full Debris lineage is 13 kills (1 + 3 + 9) (got ${kills})`);
+  assert(game.powerups.length === 0, `11: zero powerups dropped across the whole lineage (got ${game.powerups.length})`);
+}
+
+// =====================================================================
+console.log("(12) v3.6 P3: a full Hunter lineage drops EXACTLY ONE, from the large core");
+{
+  beginPlaying();
+  game.powerups = []; game.hunters = [];
+  const core = new HunterSatellite(1000, 1000, 3);
+  const coreVx = core.vx, coreVy = core.vy;
+  game.hunters.push(core);
+  const kills = drainLineage(game.hunters, destroyHunter);
+  assert(kills === 13, `12: a full Hunter lineage is 13 kills (1 + 3 + 9) (got ${kills})`);
+  assert(game.powerups.length === 1, `12: exactly one powerup dropped across the whole lineage (got ${game.powerups.length})`);
+  assert(game.powerups[0].vx === coreVx && game.powerups[0].vy === coreVy,
+    `12: the drop inherits the LARGE core's own velocity exactly (got vx=${game.powerups[0].vx},vy=${game.powerups[0].vy}, want vx=${coreVx},vy=${coreVy})`);
+}
+
+// =====================================================================
+console.log("(13) v3.6 P3: destroySaucer — bullet path and shield path each drop exactly one, on the saucer's own vector");
+{
+  const SAUCER_SCORE = { big: 200, small: 1000 }; // mirrors the source constant (kept private to this test)
+  for (const small of [false, true]) {
+    // --- simulate the bullet-branch call site: just destroySaucer(s) ---
+    beginPlaying();
+    game.powerups = [];
+    game.score = 0;
+    game.stats.smallSaucerKills = 0;
+    Achievements.lifetime.saucerKills = 0;
+    Achievements.lifetime.smallSaucerKills = 0;
+    const sBullet = new Saucer(small);
+    const bvx = sBullet.vx, bvy = sBullet.vy;
+    destroySaucer(sBullet);
+    assert(sBullet.dead, `13: (bullet, small=${small}) saucer is dead after destroySaucer`);
+    assert(game.powerups.length === 1, `13: (bullet, small=${small}) exactly one powerup dropped (got ${game.powerups.length})`);
+    assert(game.powerups[0].vx === bvx && game.powerups[0].vy === bvy,
+      `13: (bullet, small=${small}) drop inherits the saucer's vx/vy exactly`);
+    assert(game.score === SAUCER_SCORE[small ? "small" : "big"],
+      `13: (bullet, small=${small}) score matches SAUCER_SCORE (got ${game.score})`);
+    assert(Achievements.lifetime.saucerKills === 1, `13: (bullet, small=${small}) saucerKills bumped once`);
+    if (small) assert(game.stats.smallSaucerKills === 1 && Achievements.lifetime.smallSaucerKills === 1,
+      "13: (bullet) small-saucer counters bumped for a small saucer");
+
+    // --- simulate the shield-branch call site: game.stats.deflects++ then destroySaucer(s) ---
+    beginPlaying();
+    game.powerups = [];
+    game.score = 0;
+    game.stats.deflects = 0;
+    game.stats.smallSaucerKills = 0;
+    Achievements.lifetime.saucerKills = 0;
+    Achievements.lifetime.smallSaucerKills = 0;
+    const sShield = new Saucer(small);
+    const svx = sShield.vx, svy = sShield.vy;
+    game.stats.deflects++;
+    destroySaucer(sShield);
+    assert(sShield.dead, `13: (shield, small=${small}) saucer is dead after destroySaucer`);
+    assert(game.powerups.length === 1, `13: (shield, small=${small}) exactly one powerup dropped (got ${game.powerups.length})`);
+    assert(game.powerups[0].vx === svx && game.powerups[0].vy === svy,
+      `13: (shield, small=${small}) drop inherits the saucer's vx/vy exactly`);
+    assert(game.score === SAUCER_SCORE[small ? "small" : "big"],
+      `13: (shield, small=${small}) score matches the bullet path's score (got ${game.score})`);
+    assert(Achievements.lifetime.saucerKills === 1, `13: (shield, small=${small}) saucerKills bumped once, same as the bullet path`);
+    assert(game.stats.deflects === 1, `13: (shield, small=${small}) deflects still bumped (shield-specific, not in destroySaucer)`);
+  }
+}
+
+// =====================================================================
+console.log("(14) v3.6 P3: Powerup drag is gone — a drop's speed is unchanged 5s after launch");
+{
+  beginPlaying();
+  game.powerups = [];
+  dropPowerup(500, 500, 90, -40);
+  const p = game.powerups[0];
+  const speedBefore = Math.hypot(p.vx, p.vy);
+  for (let t = 0; t < 5; t += 1 / 60) p.update(1 / 60);
+  const speedAfter = Math.hypot(p.vx, p.vy);
+  assert(Math.abs(speedAfter - speedBefore) < 1e-9,
+    `14: no drag — speed unchanged after 5s (before ${speedBefore.toFixed(3)}, after ${speedAfter.toFixed(3)})`);
+  // ambient Health (spawns at rest, vx=vy=0) is unaffected either way — ensure it stays at rest too
+  const before = game.powerups.length;
+  game.powerups.push(new (Object.getPrototypeOf(p).constructor)(600, 600, "health"));
+  const h = game.powerups[before];
+  for (let t = 0; t < 5; t += 1 / 60) h.update(1 / 60);
+  assert(h.vx === 0 && h.vy === 0, "14: ambient Health (spawned at rest) stays at rest — byte-identical with drag removed");
 }
 
 // =====================================================================

@@ -68,8 +68,8 @@
    (and split), the core bounces; Hunters still sever the tow chain.
    v1.7: Powerups — five free-floating pickups (each a distinct vector-glow icon). Health spawns
    ambiently on a saucer-like timer and instantly repairs +25 HP (capped); Rapid Fire, Triple Shot,
-   Magnet and Engine drop from small-tier Debris/Hunter kills at POWERUP_DROP_CHANCE and last
-   POWERUP_DURATION seconds. Rapid Fire doubles the bullet cap (4->8); Triple Shot fires a 3-bullet
+   Magnet and Engine drop from small-tier Debris/Hunter kills at a per-kill chance and last
+   POWERUP_DURATION seconds (drop rule superseded by three deterministic sources, v3.6 P3). Rapid Fire doubles the bullet cap (4->8); Triple Shot fires a 3-bullet
    spread and triples the cap (4->12) — both active uses the higher cap (12), not 24. Magnet pulls
    free garbage toward the ship inside an extended radius (and widens the pickup radius); Engine
    halves the effective towed-mass sum (chainMass) so thrust/top-speed/tug all lighten. Same-type
@@ -246,6 +246,8 @@ const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
 const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
 const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare literal 0.13). sec between
                                      // canisters peeling off at the dock.
+const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of the hub's per-visit
+                                     // powerup drop, random direction from the dock's own position.
 
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
@@ -286,8 +288,9 @@ const SAUCER_SMALL_CHANCE_FLOOR = 0.15; // wave-1: mostly the harmless random-fi
 const SAUCER_SMALL_CHANCE_CEIL  = 0.60; // full difficulty: the dangerous aimed 1000-pt saucer common
 
 // Powerups (F6) — five free-floating pickups. Health spawns ambiently on a saucer-like timer
-// and is instant; the other four (rapid/triple/magnet/engine) are timed effects that drop from
-// small-tier Debris/Hunter kills. Same-type pickups refresh the timer (no magnitude stacking);
+// and is instant; the other four (rapid/triple/magnet/engine) are timed effects, dropped by
+// three deterministic sources (v3.6 P3): every UFO kill, every large Hunter kill, and the
+// recycle hub every 10th canister. Same-type pickups refresh the timer (no magnitude stacking);
 // different types run independently. Icons/labels/colors live with COLOR (below the helpers).
 const POWERUP_DURATION = 15;        // sec a timed effect (rapid/triple/magnet/engine) stays active — SHARED
 const MAGNET_DURATION = POWERUP_DURATION * 2;   // 30 s — Magnet is the one long effect (v3.4 P4). Do NOT
@@ -297,11 +300,11 @@ const POWERUP_RADIUS = 15;          // pickup icon radius = its collision radius
 // baseline as difficulty ramps. Ships DISABLED (pinned at start=2.0). See DIFFICULTY-LEVERS.md.
 const LEVER_POWERUP_SIZE = { enabled: false, start: 2.0, floor: 1.0 };
 const POWERUP_DECAY = 26;           // sec an uncollected powerup lingers before fading (v3.3 P3: 14->26, playtest knob — shot powerups should linger longer)
-const POWERUP_DROP_CHANCE = 0.16;   // chance a small-tier kill drops a powerup (v3.3 P3: 0.10->0.16, playtest knob — drop more often)
 const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine"]; // TIMED effects the HUD/powerActive/powerBudget machinery understands — Health & Scoop are NOT here (see POWERUP_DROP_WEIGHTS)
 // v3.3 P3: what can actually DROP (weighted), a SEPARATE structure from POWERUP_DROP_TYPES above.
 // Favors the shot powerups; Scoop is droppable but is a persistent, non-timed upgrade, so it is
 // deliberately absent from POWERUP_DROP_TYPES (the timed-effect list). Weights are the playtest knob.
+// v3.6 P3: this is now the type-roll table for THREE unconditional emitters (dropPowerup) — see below.
 const POWERUP_DROP_WEIGHTS = { rapid: 3, triple: 3, scoop: 2, magnet: 1, engine: 1 };
 const POWERUP_HEALTH_GAP = [18, 26]; // sec between ambient Health spawns (saucer-like cadence)
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
@@ -2356,7 +2359,6 @@ class Powerup {
   }
   update(dt) {
     this.x += this.vx * dt; this.y += this.vy * dt;
-    this.vx *= Math.pow(0.4, dt); this.vy *= Math.pow(0.4, dt); // drop kick settles quickly
     this.spin += this.spinRate * dt;
     this.pulse += dt * 4;
     wrap(this);
@@ -2594,8 +2596,6 @@ function destroyDebris(a, awardScore = true) {
     for (let i = 0; i < 3; i++) {
       game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speedMul));
     }
-  } else {
-    maybeDropPowerup(a.x, a.y); // finishing off a lineage's smallest tier can drop a powerup (F6)
   }
 }
 
@@ -2625,7 +2625,6 @@ function destroyHunter(h, awardScore = true) {
         h.vy * 0.25 + Math.sin(spread) * kick,
         HUNTER_SMALL_MASS));
     }
-    maybeDropPowerup(h.x, h.y); // finishing off a Hunter line can drop a powerup (F6)
   } else {
     // Large/medium: normal-mass canisters (tiered), then a 3-way split into actively-homing children.
     for (let i = 0; i < HUNTER_GARBAGE[h.size]; i++) {
@@ -2638,7 +2637,24 @@ function destroyHunter(h, awardScore = true) {
       const scatterAngle = (i / 3) * TAU + rand(-0.3, 0.3);
       game.hunters.push(new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle));
     }
+    // v3.6 P3 (Source 2): the large core — not its medium/small children — always drops one
+    // powerup on its own velocity, as if spitting out its cargo along its spawn-time drift.
+    if (h.size === 3) dropPowerup(h.x, h.y, h.vx, h.vy);
   }
+}
+
+// Destroy a Saucer: score + achievement counters + boom + sound, then always drop one powerup
+// on the saucer's own velocity (v3.6 P3, Source 1 — every UFO, large or small). The single choke
+// point for both saucer-kill sites (player bullet, shield body contact), which were previously
+// copy-pasted.
+function destroySaucer(s) {
+  s.dead = true;
+  addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
+  Achievements.lifetime.saucerKills++;                 // Saucer Hunter (F9)
+  if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
+  boom(s.x, s.y, 2, COLOR.saucer);
+  AudioSys.saucer(false);
+  dropPowerup(s.x, s.y, s.vx, s.vy);
 }
 
 // Shatter a garbage clump (v3.2 P2): the tool that reopens what Phase 1 made un-hookable. One
@@ -2706,19 +2722,18 @@ function maxBullets() {
   return MAX_BULLETS;                                    // 4
 }
 
-// A modest chance for a small-tier kill (Debris or Hunter) to drop one random weapon/utility
-// powerup, tying powerup access to finishing off a lineage. Health is NOT in this pool — it
-// spawns ambiently. The single choke point for both destroy paths.
-function maybeDropPowerup(x, y) {
-  if (Math.random() >= POWERUP_DROP_CHANCE) return;
-  // v3.3 P3: weighted roll over POWERUP_DROP_WEIGHTS (favors the shot powerups), NOT a flat pick over
+// v3.6 P3: unconditionally roll a random weapon/utility powerup and launch it on the given
+// vector. No chance gate here — the three emitters (destroySaucer, destroyHunter's large core,
+// the recycle hub) each decide WHEN to call this; this only decides WHAT drops. Health is NOT in
+// this pool — it spawns ambiently via spawnHealthPowerup.
+function dropPowerup(x, y, vx = 0, vy = 0) {
+  // weighted roll over POWERUP_DROP_WEIGHTS (favors the shot powerups), NOT a flat pick over
   // POWERUP_DROP_TYPES — the two structures are deliberately separate (Scoop drops but isn't a timed effect).
   let total = 0;
   for (const k in POWERUP_DROP_WEIGHTS) total += POWERUP_DROP_WEIGHTS[k];
   let r = Math.random() * total, type;
   for (const k in POWERUP_DROP_WEIGHTS) { r -= POWERUP_DROP_WEIGHTS[k]; if (r < 0) { type = k; break; } }
-  const a = rand(0, TAU), kick = rand(20, 50);
-  game.powerups.push(new Powerup(x, y, type, Math.cos(a) * kick, Math.sin(a) * kick));
+  game.powerups.push(new Powerup(x, y, type, vx, vy));
 }
 
 // Ambient Health powerup — floats into the field in a reachable ring around the ship, one at a
@@ -3464,6 +3479,15 @@ function update(dt) {
           game.floaters.push(new FloatText("TOW +1", game.ship.x, game.ship.y - 22, COLOR.dock));
         }
         game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
+        // v3.6 P3 (Source 3, FORK-2): the recycle hub emits one powerup per visit, the first time
+        // a visit's deliveryCount passes through 10 — same "exactly once per visit" idiom as the
+        // deliveryCount===12 Heavy Hauler latch just below. Launched from the dock's own position
+        // on a fresh random vector so it clears the dock's footprint before it's collectable.
+        if (game.deliveryCount === 10) {
+          const a = rand(0, TAU);
+          dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED);
+          game.floaters.push(new FloatText("SALVAGE BONUS", game.dock.x, game.dock.y - 22, COLOR.dock));
+        }
         // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
         // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.
         Achievements.lifetime.bestDeliveredGame = Math.max(Achievements.lifetime.bestDeliveredGame, game.stats.delivered);
@@ -3540,12 +3564,7 @@ function update(dt) {
       if (b.dead) continue;
       for (const s of game.saucers) {
         if (!s.dead && dist2(b, s) < s.radius * s.radius) {
-          b.dead = true; s.dead = true;
-          addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
-          Achievements.lifetime.saucerKills++;                 // Saucer Hunter (F9)
-          if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
-          boom(s.x, s.y, 2, COLOR.saucer);
-          AudioSys.saucer(false);
+          b.dead = true; destroySaucer(s);
           break;
         }
       }
@@ -3621,13 +3640,8 @@ function update(dt) {
       const r = (game.ship.shieldOn ? SHIELD_RADIUS : SHIP_RADIUS) + s.radius;
       if (dist2(s, game.ship) < r * r) {
         if (game.ship.shieldOn) {
-          s.dead = true;
-          addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
-          Achievements.lifetime.saucerKills++;              // Saucer Hunter (F9)
-          if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
           game.stats.deflects++;                            // Shield Surfer (F9): saucer rammed into the shield
-          boom(s.x, s.y, 2, COLOR.saucer);
-          AudioSys.saucer(false);
+          destroySaucer(s);
         } else damageShip(s.damage, s.x, s.y);
       }
     }
