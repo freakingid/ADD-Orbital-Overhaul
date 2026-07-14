@@ -19,7 +19,8 @@
 //  (H) the gamepad path reaches the same entryInput() dispatcher (edge-detected nav + confirm).
 //  (I) draw() is crash-free with an empty table, a partial table, a full table with the fresh entry
 //      highlighted, the initials-entry slots, and the browsable High Scores menu screen.
-//  (J) "High Scores" is wired into MENU_ROOT_SYS and reachable/returnable from the system menu.
+//  (J) "High Scores" is nested under Options (CS010 P4, §8b) and reachable/returnable from BOTH the
+//      system menu (via Options) and the pause menu mid-game; it is NOT in MENU_ROOT_SYS.
 
 "use strict";
 const fs = require("fs");
@@ -79,7 +80,7 @@ const returnList = [
   "Achievements", "HighScores", "entryInput", "commitEntry",
   "SCORES_MAX", "SCORES_CHARSET", "GAME_VERSION", "DEATH_DURATION",
   "bindings", "GP", "GP_DEADZONE", "pollGamepad", "handleGamepadMenu",
-  "openPause", "closePause", "menuInput", "rootItems", "MENU_ROOT_SYS", "AudioSys"
+  "openPause", "closePause", "menuInput", "rootItems", "MENU_ROOT_SYS", "MENU_OPTIONS", "AudioSys"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -91,7 +92,7 @@ const {
   Achievements, HighScores, entryInput, commitEntry,
   SCORES_MAX, SCORES_CHARSET, GAME_VERSION, DEATH_DURATION,
   bindings, GP, GP_DEADZONE, pollGamepad, handleGamepadMenu,
-  openPause, closePause, menuInput, rootItems, MENU_ROOT_SYS, AudioSys
+  openPause, closePause, menuInput, rootItems, MENU_ROOT_SYS, MENU_OPTIONS, AudioSys
 } = A;
 
 let passed = 0, failed = 0;
@@ -306,21 +307,35 @@ function freshDeath(score, wave, delivered) {
   assert(ok, "I: draw() never threw across any of the above");
 })();
 
-// ================= (J) "High Scores" wired into MENU_ROOT_SYS + system menu =========================
+// ================= (J) "High Scores" nested under Options (CS010 P4, §8b) ============================
 (function sectionJ() {
-  console.log("(J) 'High Scores' is browsable from the system menu root");
-  assert(MENU_ROOT_SYS.includes("High Scores"), "J: MENU_ROOT_SYS carries a High Scores row");
+  console.log("(J) 'High Scores' is browsable from Options, reachable from both entry paths");
+  assert(!MENU_ROOT_SYS.includes("High Scores"), "J: MENU_ROOT_SYS no longer carries a High Scores row (FORK-4)");
+  assert(MENU_OPTIONS.includes("High Scores"), "J: MENU_OPTIONS carries a High Scores row");
 
+  // Path 1: system menu (title/gameover) -> Options -> High Scores -> back -> Options.
   startGame(); game.state = "title"; game.paused = false;
   openPause(); // system menu from title
-  assert(game.paused && rootItems().includes("High Scores"), "J: system root includes High Scores");
-  game.menu.index = rootItems().indexOf("High Scores");
+  assert(game.paused && rootItems().includes("Options"), "J: system root includes Options");
+  game.menu.index = rootItems().indexOf("Options");
+  menuInput("confirm");
+  assert(game.menu.screen === "options", "J: system root -> Options");
+  game.menu.index = MENU_OPTIONS.indexOf("High Scores");
   menuInput("confirm");
   assert(game.menu.screen === "highscores", "J: confirm on High Scores opens the highscores screen");
   menuInput("back");
-  assert(game.menu.screen === "root" && rootItems()[game.menu.index] === "High Scores", "J: back returns to root, cursor on High Scores");
+  assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "High Scores", "J: back returns to Options, cursor on High Scores");
   closePause();
   assert(!game.paused, "J: closePause() exits the system menu");
+
+  // Path 2: pause menu mid-game -> Options -> High Scores -> back -> Options — the whole point of §8b.
+  startGame(); openPause(); // pause menu (play root: Continue/Options/Quit)
+  game.menu.index = rootItems().indexOf("Options"); menuInput("confirm");
+  game.menu.index = MENU_OPTIONS.indexOf("High Scores"); menuInput("confirm");
+  assert(game.menu.screen === "highscores", "J: pause path -> Options -> High Scores also opens the screen");
+  menuInput("back");
+  assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "High Scores", "J: pause path back -> Options, cursor on High Scores");
+  closePause();
 })();
 
 // ---- summary ----

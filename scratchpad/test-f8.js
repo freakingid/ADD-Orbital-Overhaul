@@ -81,7 +81,7 @@ const returnList = [
   "pollGamepad", "handleGamepadMenu",
   "openPause", "closePause", "menuInput", "menuActive",
   "returnToDefaults", "saveSettings", "loadSettings",
-  "DEFAULT_BINDINGS", "REBINDABLE", "MENU_OPTIONS", "VOL_CATS", "AudioSys"
+  "DEFAULT_BINDINGS", "REBINDABLE", "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "AudioSys"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -93,7 +93,7 @@ const {
   pollGamepad, handleGamepadMenu,
   openPause, closePause, menuInput, menuActive,
   returnToDefaults, saveSettings, loadSettings,
-  DEFAULT_BINDINGS, REBINDABLE, MENU_OPTIONS, VOL_CATS, AudioSys
+  DEFAULT_BINDINGS, REBINDABLE, MENU_OPTIONS, SOUND_ROWS, VOL_CATS, AudioSys
 } = A;
 
 let passed = 0, failed = 0;
@@ -135,20 +135,26 @@ menuInput("back"); assert(game.paused === false && game.menu.screen === null, "A
 // (B) Volume sliders drive AudioSys.vol AND the gain nodes, clamped [0,1]
 // =====================================================================
 console.log("(B) volume sliders + gain-node routing + clamping");
-openPause(); menuInput("down"); menuInput("confirm"); // -> options, index 0 = SFX
-assert(game.menu.index === 0 && MENU_OPTIONS[0] === "SFX Volume", "B: on SFX slider");
+// CS010 P4: the sliders moved off Options onto a nested "Sound / Music" screen (SOUND_ROWS).
+openPause(); menuInput("down"); menuInput("confirm"); // -> options, index 0 = "Sound / Music"
+assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Sound / Music", "B: on Sound/Music row");
+menuInput("confirm"); // -> sound, index 0 = SFX
+assert(game.menu.screen === "sound" && game.menu.index === 0 && SOUND_ROWS[0] === "SFX Volume", "B: on SFX slider");
 const sfxBefore = AudioSys.vol.sfx;
 menuInput("left");
 assert(near(AudioSys.vol.sfx, sfxBefore - 0.1), "B: left lowers SFX by one step");
 assert(near(AudioSys.sfx.gain.value, AudioSys.vol.sfx), "B: SFX gain NODE tracks the value (routing works)");
 for (let i = 0; i < 20; i++) menuInput("left");
 assert(near(AudioSys.vol.sfx, 0), "B: SFX clamps at 0 (no negative volume)");
-game.menu.index = 2; // Master
+game.menu.index = SOUND_ROWS.indexOf("Master Volume");
 for (let i = 0; i < 20; i++) menuInput("right");
 assert(near(AudioSys.vol.master, 1), "B: Master clamps at 1 (unity, no gain > 1)");
 assert(near(AudioSys.master.gain.value, 1), "B: Master gain NODE tracks the value");
 menuInput("left");
 assert(near(AudioSys.vol.master, 0.9) && near(AudioSys.master.gain.value, 0.9), "B: Master left -> 0.9 on value + node");
+menuInput("back"); // Sound/Music -> Options, cursor on "Sound / Music"
+assert(game.menu.screen === "options", "B: back from Sound/Music -> Options");
+// (game.paused stays true here — section C below sets game.menu.screen directly, same as before CS010 P4)
 // restore volumes to full so later assertions start clean
 AudioSys.setVol("sfx", 1); AudioSys.setVol("master", 1); AudioSys.setVol("music", 1);
 

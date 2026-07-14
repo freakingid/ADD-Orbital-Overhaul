@@ -1,0 +1,264 @@
+// Headless test for CS010 Phase 4 — menu restructure: the "Sound / Music" sub-dialog (§9), High
+// Scores nested under Options (§8b, FORK-4), and the final MENU_OPTIONS order (§10a).
+//
+//   node scratchpad/test-cs010-p4.js
+//
+// Follows the standing rule (GDD 5.4): stub window/document/rAF/navigator/localStorage, eval the REAL
+// <script> block, and drive the ACTUAL functions (menuInput/openPause/closePause/rootItems/…) — never
+// reimplement menu logic. This is a RELOCATION, not a redesign, so the risk is entirely index
+// fragility (FLAG-8b) — every navigation assertion below checks the LANDING LABEL, not a raw index,
+// so the test survives the next reorder. Sections:
+//  (A) node --check on the extracted <script>.
+//  (B) config: MENU_ROOT_SYS/MENU_OPTIONS/SOUND_ROWS shapes; "High Scores" is OUT of MENU_ROOT_SYS
+//      and IN MENU_OPTIONS; no gotoScreen("options", <numeric literal>) call survives in source.
+//  (C) root -> Options -> Sound/Music -> Back.
+//  (D) Options -> High Scores -> Back, from BOTH the system-menu-root entry path AND the pause-menu
+//      entry path (the whole point of §8b — a single Options nesting reaches both contexts).
+//  (E) Options -> Controls -> Back, and P2's Ship Rotation row on Controls still works (not clobbered).
+//  (F) Options -> Achievements -> Back, from BOTH entry paths (achReturn still tracks two).
+//  (G) Options -> Difficulty -> Back.
+//  (H) Sound/Music screen: the three volume sliders + Music Track cycler still work, label-dispatched,
+//      persisted via saveSettings(); Back returns to Options.
+
+"use strict";
+const fs = require("fs");
+const path = require("path");
+const { execSync } = require("child_process");
+
+const repoRoot = path.join(__dirname, "..");
+const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const extractScript = html => {
+  const m = html.match(/<script>([\s\S]*?)<\/script>/);
+  if (!m) throw new Error("Could not find <script> block");
+  return m[1];
+};
+const currentSrc = extractScript(fs.readFileSync(htmlPath, "utf8"));
+
+const noopCtx = new Proxy({}, { get: () => () => {} });
+const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => noopCtx };
+const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
+
+function makeAudioNode() {
+  return new Proxy({
+    gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {}, setTargetAtTime() {} },
+    frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} },
+    Q: { value: 0 }, type: "sine", buffer: null, loop: false, playbackRate: { value: 1 },
+    connect() { return makeAudioNode(); }, start() {}, stop() {}
+  }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
+}
+function FakeAudioContext() {
+  return new Proxy({
+    state: "running", currentTime: 0, sampleRate: 44100, destination: makeAudioNode(),
+    createGain() { return makeAudioNode(); },
+    createBuffer() { return { getChannelData() { return new Float32Array(1); } }; }
+  }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
+}
+
+const RETURN = [
+  "startGame", "game", "menuInput", "openPause", "closePause", "rootItems", "gotoScreen",
+  "MENU_ROOT_SYS", "MENU_ROOT_PLAY", "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "VOL_LABELS",
+  "REBINDABLE", "AudioSys", "settings", "MUSIC_TRACK_VALUES"
+];
+
+function buildInstance(lsStore) {
+  lsStore = lsStore || {};
+  const listeners = {};
+  const windowStub = {
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+    innerWidth: 1280, innerHeight: 720, AudioContext: FakeAudioContext, webkitAudioContext: FakeAudioContext
+  };
+  const localStorageStub = {
+    getItem: k => (k in lsStore ? lsStore[k] : null),
+    setItem: (k, v) => { lsStore[k] = String(v); },
+    removeItem: k => { delete lsStore[k]; }
+  };
+  const factory = new Function(
+    "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
+    currentSrc + "\n;return { " + RETURN.join(", ") + " };"
+  );
+  return factory(windowStub, documentStub, { now: () => Date.now() }, () => 0, { getGamepads: () => [] }, localStorageStub);
+}
+
+let passed = 0, failed = 0;
+function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
+const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
+
+// ================= (A) syntax =====================
+(function () {
+  console.log("(A) node --check on the extracted <script>");
+  const tmp = path.join(require("os").tmpdir(), "cs010-p4-extracted.js");
+  fs.writeFileSync(tmp, currentSrc);
+  try { execSync(`node --check "${tmp}"`, { stdio: "pipe" }); passed++; }
+  catch (e) { failed++; console.error("  FAIL: syntax: " + e.stderr.toString()); }
+})();
+
+// ================= (B) config shapes + no surviving hardcoded indices =====================
+(function () {
+  console.log("(B) MENU_ROOT_SYS / MENU_OPTIONS / SOUND_ROWS shapes; no hardcoded gotoScreen index");
+  const A = buildInstance();
+  assert(!A.MENU_ROOT_SYS.includes("High Scores"), "B: MENU_ROOT_SYS no longer carries High Scores (FORK-4)");
+  assert(A.MENU_ROOT_SYS.includes("Options") && A.MENU_ROOT_SYS.includes("Achievements") && A.MENU_ROOT_SYS.includes("Back"),
+    "B: MENU_ROOT_SYS still carries Options/Achievements/Back");
+  const expectedOptions = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
+  assert(JSON.stringify(A.MENU_OPTIONS) === JSON.stringify(expectedOptions),
+    `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a); got ${JSON.stringify(A.MENU_OPTIONS)}`);
+  const expectedSound = ["SFX Volume", "Music Volume", "Master Volume", "Music Track", "Back"];
+  assert(JSON.stringify(A.SOUND_ROWS) === JSON.stringify(expectedSound),
+    `B: SOUND_ROWS === ${JSON.stringify(expectedSound)}; got ${JSON.stringify(A.SOUND_ROWS)}`);
+  assert(JSON.stringify(A.VOL_LABELS) === JSON.stringify(["SFX Volume", "Music Volume", "Master Volume"]),
+    "B: VOL_LABELS unchanged, still paired with VOL_CATS");
+  assert(JSON.stringify(A.VOL_CATS) === JSON.stringify(["sfx", "music", "master"]), "B: VOL_CATS unchanged");
+
+  // FLAG-8b: no gotoScreen("options", <numeric literal>) call anywhere in the live source — every
+  // call site must resolve the index via MENU_OPTIONS.indexOf(...) instead.
+  const hardcoded = currentSrc.match(/gotoScreen\(\s*"options"\s*,\s*-?\d+\s*\)/g);
+  assert(!hardcoded, `B: no hardcoded gotoScreen("options", N) survives in source; found: ${JSON.stringify(hardcoded)}`);
+  // Also: no gotoScreen call anywhere passes a bare negative-literal index (the -1/indexOf(-1) trap).
+  const negativeLiteral = currentSrc.match(/gotoScreen\([^)]*,\s*-\d+\s*\)/g);
+  assert(!negativeLiteral, `B: no gotoScreen(...) call passes a negative literal index; found: ${JSON.stringify(negativeLiteral)}`);
+})();
+
+// ================= (C) root -> Options -> Sound/Music -> Back =====================
+(function () {
+  console.log("(C) root -> Options -> Sound/Music -> Back");
+  const A = buildInstance();
+  A.startGame(); A.game.state = "title"; A.game.paused = false;
+  A.openPause();
+  A.game.menu.index = A.rootItems().indexOf("Options");
+  A.menuInput("confirm");
+  assert(A.game.menu.screen === "options", "C: root -> Options");
+  A.game.menu.index = A.MENU_OPTIONS.indexOf("Sound / Music");
+  A.menuInput("confirm");
+  assert(A.game.menu.screen === "sound" && A.SOUND_ROWS[A.game.menu.index] === "SFX Volume",
+    "C: Options -> Sound/Music, cursor on first row");
+  A.menuInput("back");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Sound / Music",
+    "C: Sound/Music back -> Options, cursor on Sound / Music");
+  A.closePause();
+})();
+
+// ================= (D) Options -> High Scores -> Back, both entry paths =====================
+(function () {
+  console.log("(D) Options -> High Scores -> Back (system-menu path AND pause-menu path)");
+  const A = buildInstance();
+
+  // System-menu path: title/gameover -> Options -> High Scores.
+  A.startGame(); A.game.state = "title"; A.game.paused = false;
+  A.openPause();
+  A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
+  A.game.menu.index = A.MENU_OPTIONS.indexOf("High Scores"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "highscores", "D: system-menu path: Options -> High Scores opens the screen");
+  A.menuInput("back");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "High Scores",
+    "D: system-menu path: back -> Options, cursor on High Scores");
+  A.closePause();
+
+  // Pause-menu path (mid-game): Continue/Options/Quit root -> Options -> High Scores. This reachability
+  // is the entire point of §8b — the root-only entry never allowed this.
+  A.startGame(); A.openPause();
+  assert(A.rootItems().includes("Options") && !A.rootItems().includes("High Scores"),
+    "D: pause-menu root has Options, no direct High Scores row");
+  A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
+  A.game.menu.index = A.MENU_OPTIONS.indexOf("High Scores"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "highscores", "D: pause-menu path: Options -> High Scores opens the screen");
+  A.menuInput("back");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "High Scores",
+    "D: pause-menu path: back -> Options, cursor on High Scores");
+  A.closePause();
+})();
+
+// ================= (E) Options -> Controls -> Back; P2's rotation row survives =====================
+(function () {
+  console.log("(E) Options -> Controls -> Back; Ship Rotation row (P2) not clobbered");
+  const A = buildInstance();
+  A.startGame(); A.openPause();
+  A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
+  A.game.menu.index = A.MENU_OPTIONS.indexOf("Controls"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "controls", "E: Options -> Controls");
+  const turnRow = A.REBINDABLE.length; // menuControls derives this the same way
+  A.game.menu.row = turnRow;
+  const before = A.settings.shipTurnScale;
+  A.menuInput("right");
+  assert(A.settings.shipTurnScale > before, "E: Ship Rotation row still adjustable on Controls (P2 row intact)");
+  const backRow = A.REBINDABLE.length + 2;
+  A.game.menu.row = backRow;
+  A.menuInput("confirm");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Controls",
+    "E: Controls back -> Options, cursor on Controls");
+  A.closePause();
+})();
+
+// ================= (F) Options -> Achievements -> Back, both entry paths (achReturn) =====================
+(function () {
+  console.log("(F) Options -> Achievements -> Back, from BOTH the system root AND Options");
+  const A = buildInstance();
+
+  // Direct from the system root (title/gameover).
+  A.startGame(); A.game.state = "title"; A.game.paused = false;
+  A.openPause();
+  A.game.menu.index = A.rootItems().indexOf("Achievements"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "achievements" && A.game.menu.achReturn === "root", "F: root -> Achievements sets achReturn=root");
+  A.menuInput("back");
+  assert(A.game.menu.screen === "root" && A.rootItems()[A.game.menu.index] === "Achievements",
+    "F: back from Achievements (root entry) -> root, cursor on Achievements");
+  A.closePause();
+
+  // Via Options (play path).
+  A.startGame(); A.openPause();
+  A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
+  A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "achievements" && A.game.menu.achReturn === "options", "F: Options -> Achievements sets achReturn=options");
+  A.menuInput("back");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Achievements",
+    "F: back from Achievements (options entry) -> Options, cursor on Achievements");
+  A.closePause();
+})();
+
+// ================= (G) Options -> Difficulty -> Back =====================
+(function () {
+  console.log("(G) Options -> Difficulty -> Back");
+  const A = buildInstance();
+  A.startGame(); A.openPause();
+  A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
+  A.game.menu.index = A.MENU_OPTIONS.indexOf("Difficulty"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "difficulty", "G: Options -> Difficulty");
+  A.menuInput("back");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Difficulty",
+    "G: Difficulty back -> Options, cursor on Difficulty");
+  A.closePause();
+})();
+
+// ================= (H) Sound/Music screen: sliders + track cycler + persistence =====================
+(function () {
+  console.log("(H) Sound/Music sliders + Music Track cycler work, label-dispatched, persisted");
+  const lsStore = {};
+  const A = buildInstance(lsStore);
+  A.AudioSys.init();
+  A.startGame(); A.openPause();
+  A.game.menu.screen = "sound";
+
+  for (const [label, cat] of [["SFX Volume", "sfx"], ["Music Volume", "music"], ["Master Volume", "master"]]) {
+    A.AudioSys.setVol(cat, 0.5);
+    A.game.menu.index = A.SOUND_ROWS.indexOf(label);
+    A.menuInput("right");
+    assert(near(A.AudioSys.vol[cat], 0.6), `H: '${label}' right raises ${cat} by VOL_STEP`);
+  }
+
+  A.settings.musicTrack = "zen";
+  A.game.menu.index = A.SOUND_ROWS.indexOf("Music Track");
+  A.menuInput("right");
+  assert(A.settings.musicTrack === "derelict", "H: Music Track right cycles zen -> derelict");
+
+  // Persistence still round-trips through afd_settings_v1 (unchanged by the relocation).
+  const raw = JSON.parse(lsStore["afd_settings_v1"]);
+  assert(near(raw.vol.sfx, 0.6) && raw.musicTrack === "derelict", "H: Sound/Music values persist into afd_settings_v1");
+
+  A.game.menu.index = A.SOUND_ROWS.indexOf("Back");
+  A.menuInput("confirm");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Sound / Music",
+    "H: Sound/Music Back -> Options, cursor on Sound / Music");
+  A.closePause();
+})();
+
+console.log(`\ntest-cs010-p4: ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

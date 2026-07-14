@@ -1485,13 +1485,19 @@ function firstPressedButton() {
 // game.state: pausing mid-game keeps state "playing"; the system menu opened from title/gameover keeps
 // state "title"/"gameover" (update() skips the sim in both, so game.paused is safe in any state).
 const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game
-const MENU_ROOT_SYS  = ["Options", "Achievements", "High Scores", "Back"];  // system menu from title/gameover (v3.6 P6 added "High Scores")
+// CS010 P4 (FORK-4): "High Scores" REMOVED — nested under Options instead (§8b), so it's reachable
+// from both this system menu AND the pause menu, which the root-only entry never was.
+const MENU_ROOT_SYS  = ["Options", "Achievements", "Back"];  // system menu from title/gameover
 function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_ROOT_SYS; }
-// v3.4 P6: "Music Track" inserted after "Master Volume". menuOptions()/drawOptionsMenu() dispatch by
-// LABEL (like menuRoot), not by hardcoded index, so adding a row here is purely additive and can't
-// silently shift the Controls/Achievements/Difficulty/Back handlers out from under themselves.
-const MENU_OPTIONS = ["SFX Volume", "Music Volume", "Master Volume", "Music Track", "Controls", "Achievements", "Difficulty", "Back"];
-const VOL_CATS     = ["sfx", "music", "master"]; // parallel to the first three MENU_OPTIONS rows
+// menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
+// adding a row here is purely additive and can't silently shift the other handlers out from under
+// themselves. CS010 P4 (§9/§10a): the three volume sliders + Music Track moved OFF this screen onto
+// the new "Sound / Music" sub-screen (SOUND_ROWS below); "High Scores" (§8b) moved IN, nested here.
+const MENU_OPTIONS = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
+// CS010 P4 (§9): the Sound/Music sub-screen's rows, same template as DIFFICULTY_ROWS. P9 will add a
+// Voice Volume row here (§11c) — purely additive, don't build it yet.
+const SOUND_ROWS   = ["SFX Volume", "Music Volume", "Master Volume", "Music Track", "Back"];
+const VOL_CATS     = ["sfx", "music", "master"]; // parallel to VOL_LABELS (NOT to any MENU_OPTIONS/SOUND_ROWS position)
 const VOL_LABELS   = ["SFX Volume", "Music Volume", "Master Volume"]; // the slider rows, by label
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -1563,6 +1569,7 @@ function menuInput(action) {
   switch (game.menu.screen) {
     case "root":         menuRoot(action); break;
     case "options":      menuOptions(action); break;
+    case "sound":        menuSound(action); break;
     case "controls":     menuControls(action); break;
     case "difficulty":   menuDifficulty(action); break;
     case "achievements": menuAchievements(action); break;
@@ -1580,17 +1587,37 @@ function menuRoot(a) {
     if (label === "Continue")          closePause();
     else if (label === "Options")      gotoScreen("options");
     else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "root"; }
-    else if (label === "High Scores")  gotoScreen("highscores"); // v3.6 P6: browsable top-10 table
     else if (label === "Quit")         quitToTitle();
     else if (label === "Back")         closePause(); // system menu: close overlay -> underlying title/gameover
   }
   else if (a === "back" || a === "pause") closePause();
 }
 
-// v3.4 P6 refactor: dispatch by LABEL (menuRoot is the in-file precedent), not by hardcoded index,
-// so the new "Music Track" row is additive and no index-fragile branch has to shift.
+// Dispatch by LABEL (the menuRoot precedent), not by hardcoded index, so a new row is additive and
+// no index-fragile branch has to shift. CS010 P4 (§8b/§9/§10a): now a pure nav list — the volume
+// sliders + Music Track moved to "sound" (below), and "High Scores" (§8b) was nested in here.
 function menuOptions(a) {
   const m = game.menu, N = MENU_OPTIONS.length, label = MENU_OPTIONS[m.index];
+  if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
+  else if (a === "confirm") {
+    if (label === "Sound / Music") gotoScreen("sound"); // CS010 P4 §9
+    else if (label === "Controls") gotoScreen("controls");
+    else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "options"; } // viewer (F9)
+    else if (label === "High Scores") gotoScreen("highscores"); // CS010 P4 §8b: nested under Options
+    else if (label === "Difficulty") gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
+    else if (label === "Back") gotoScreen("root", rootItems().indexOf("Options")); // -> root, cursor on "Options"
+  }
+  else if (a === "back") gotoScreen("root", rootItems().indexOf("Options"));
+  else if (a === "pause") closePause();
+}
+
+// Sound / Music sub-screen (CS010 P4, §9): the three volume sliders + Music Track cycler, relocated
+// off Options — a relocation, not a redesign, so it's the SAME control style. Follows the
+// menuDifficulty/menuOptions label-dispatch template exactly; VOL_LABELS/VOL_CATS stay a paired
+// lookup (not tied to any row's position on THIS screen either).
+function menuSound(a) {
+  const m = game.menu, N = SOUND_ROWS.length, label = SOUND_ROWS[m.index];
   if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
   else if (a === "left" || a === "right") {
@@ -1608,12 +1635,9 @@ function menuOptions(a) {
     }
   }
   else if (a === "confirm") {
-    if (label === "Controls") gotoScreen("controls");
-    else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "options"; } // viewer (F9)
-    else if (label === "Difficulty") gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
-    else if (label === "Back") gotoScreen("root", rootItems().indexOf("Options")); // -> root, cursor on "Options"
+    if (label === "Back") gotoScreen("options", MENU_OPTIONS.indexOf("Sound / Music"));
   }
-  else if (a === "back") gotoScreen("root", rootItems().indexOf("Options"));
+  else if (a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Sound / Music"));
   else if (a === "pause") closePause();
 }
 
@@ -1625,15 +1649,16 @@ function menuAchievements(a) {
     // Return to wherever we came from: the system-menu root (title/gameover) reaches Achievements
     // directly, whereas play (and system-menu Options) reaches it via the Options screen.
     if (game.menu.achReturn === "root") gotoScreen("root", rootItems().indexOf("Achievements"));
-    else gotoScreen("options", 4);
+    else gotoScreen("options", MENU_OPTIONS.indexOf("Achievements"));
   }
 }
 
-// High Scores viewer (v3.6 P6): read-only top-10 table reachable only from the system-menu root
-// (title/gameover) — mirrors menuAchievements' shape, but has no nested Options path to return to.
+// High Scores viewer: read-only top-10 table, nested under Options (CS010 P4 §8b) — reachable from
+// BOTH the system menu (title/gameover, via Options) and the pause menu mid-game, unlike the old
+// root-only entry. One entry point -> one back-destination; no achReturn-style tracker needed.
 function menuHighScores(a) {
   if (a === "pause") closePause();
-  else if (a === "confirm" || a === "back") gotoScreen("root", rootItems().indexOf("High Scores"));
+  else if (a === "confirm" || a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("High Scores"));
 }
 
 // Difficulty screen (v3.0 P5, B-4/B-5): two left/right mode toggles + Back. Left picks the timed
@@ -1676,9 +1701,9 @@ function menuControls(a) {
     if (m.row < ACTIONS.length) startRebind(ACTIONS[m.row], m.col === 0 ? "key" : "pad");
     // turnRow has no confirm action — it's a ◄/► slider (Paul: rotation returns to default manually).
     else if (m.row === defaultsRow) { returnToDefaults(); AudioSys.ui(true); }
-    else if (m.row === backRow) gotoScreen("options", 3); // back to Options, cursor on "Controls"
+    else if (m.row === backRow) gotoScreen("options", MENU_OPTIONS.indexOf("Controls")); // back to Options, cursor on "Controls"
   }
-  else if (a === "back") gotoScreen("options", 3);
+  else if (a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Controls"));
   else if (a === "pause") closePause();
 }
 
@@ -4188,6 +4213,7 @@ function drawMenu() {
   const s = game.menu.screen;
   if (s === "root") drawRootMenu();
   else if (s === "options") drawOptionsMenu();
+  else if (s === "sound") drawSound();
   else if (s === "controls") drawControlsMenu();
   else if (s === "difficulty") drawDifficulty();
   else if (s === "achievements") drawAchievements();
@@ -4218,16 +4244,28 @@ function drawRootMenu() {
   drawText("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 272, 12, COLOR.dim);
 }
 
-// v3.4 P6: rendered label-driven off MENU_OPTIONS (no hardcoded row indices), so it stays in step
-// with the label-dispatch menuOptions(). Adjustable "value" rows (the three sliders + Music Track)
-// are drawn left-aligned in a top block; the nav rows (Controls…Back) are centered below.
+// CS010 P4 (§9/§10a): now a pure nav list (Sound / Music, Controls, Achievements, High Scores,
+// Difficulty, Back) — the value rows (volume sliders + Music Track) moved to drawSound() below, so
+// this mirrors drawRootMenu's plain centered-list layout instead of the old split value/nav layout.
 function drawOptionsMenu() {
-  const { x, y } = menuPanel(600, 500, "OPTIONS");
+  const { y } = menuPanel(600, 420, "OPTIONS");
   const m = game.menu;
-  const isValueRow = label => VOL_LABELS.includes(label) || label === "Music Track";
-  let cy = y + 100;
   MENU_OPTIONS.forEach((label, i) => {
-    if (!isValueRow(label)) return;
+    const sel = m.index === i;
+    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, y + 118 + i * 42, 22, sel ? COLOR.text : COLOR.dim);
+  });
+  drawText("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 400, 12, COLOR.dim);
+}
+
+// Sound / Music sub-screen (CS010 P4, §9) — a relocation of the three volume sliders + Music Track
+// cycler off Options, same control style. Follows drawOptionsMenu's pre-CS010-P4 value-row layout
+// (left-aligned label + slider/value), dispatched off SOUND_ROWS by label, plus a centered Back row.
+function drawSound() {
+  const { x, y } = menuPanel(600, 460, "SOUND / MUSIC");
+  const m = game.menu;
+  let cy = y + 100;
+  SOUND_ROWS.forEach((label, i) => {
+    if (label === "Back") return;
     const sel = m.index === i;
     drawText(label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
     const vi = VOL_LABELS.indexOf(label);
@@ -4247,13 +4285,9 @@ function drawOptionsMenu() {
     cy += 46;
   });
   cy += 14;
-  MENU_OPTIONS.forEach((label, i) => {
-    if (isValueRow(label)) return;
-    const sel = m.index === i;
-    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, cy + 6, 22, sel ? COLOR.text : COLOR.dim);
-    cy += 38;
-  });
-  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 480, 12, COLOR.dim);
+  const backSel = m.index === SOUND_ROWS.indexOf("Back");
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.dim);
+  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 440, 12, COLOR.dim);
 }
 
 // Difficulty screen renderer (v3.0 P5): two two-option toggle rows + Back. The active side of each
@@ -4445,8 +4479,9 @@ function drawEntrySlots(cy) {
   drawText("↑↓ letter    ←→ move    ENTER confirm", VIEW_W / 2, cy + 60, 12, COLOR.dim);
 }
 
-// Browsable top-10 table reachable from the system menu (title/gameover -> "High Scores"). Read-only,
-// like drawAchievements — reuses drawScoreTable with no highlight.
+// Browsable top-10 table, nested under Options (CS010 P4 §8b) — reachable from both the system menu
+// (title/gameover -> Options -> High Scores) and the pause menu mid-game. Read-only, like
+// drawAchievements — reuses drawScoreTable with no highlight.
 function drawHighScores() {
   const { y } = menuPanel(640, 460, "HIGH SCORES");
   drawScoreTable(VIEW_W / 2, y + 90, null);

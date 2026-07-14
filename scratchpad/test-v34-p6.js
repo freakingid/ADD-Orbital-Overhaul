@@ -86,7 +86,7 @@ const returnList = [
   "startGame", "update", "game", "AudioSys", "MusicSys", "MUSIC_TRACKS", "MUSIC_TRACK_VALUES",
   "menuActive", "openPause", "closePause", "gotoScreen", "menuInput",
   "settings", "saveSettings", "loadSettings", "STORAGE_KEY",
-  "MENU_OPTIONS", "VOL_CATS", "bindings", "REBINDABLE", "keys",
+  "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "bindings", "REBINDABLE", "keys",
   "nextWave", "difficultyFactor", "RAMP_WAVES", "updateMusic", "musicStateFor", "MUSIC_LAYER_THRESHOLD",
 ];
 const factory = new Function(
@@ -98,7 +98,7 @@ const {
   startGame, update, game, AudioSys, MusicSys, MUSIC_TRACKS, MUSIC_TRACK_VALUES,
   menuActive, openPause, closePause, gotoScreen, menuInput,
   settings, saveSettings, loadSettings, STORAGE_KEY,
-  MENU_OPTIONS, VOL_CATS, bindings, REBINDABLE, keys,
+  MENU_OPTIONS, SOUND_ROWS, VOL_CATS, bindings, REBINDABLE, keys,
   nextWave, difficultyFactor, RAMP_WAVES, updateMusic, musicStateFor, MUSIC_LAYER_THRESHOLD,
 } = A;
 
@@ -285,7 +285,14 @@ function openOptionsAt(label) {
   game.menu.index = MENU_OPTIONS.indexOf(label);
   game.menu.rebinding = null;
 }
+// CS010 P4: the volume sliders + Music Track moved off Options onto the nested "sound" screen.
+function openSoundAt(label) {
+  game.paused = true; game.menu.screen = "sound";
+  game.menu.index = SOUND_ROWS.indexOf(label);
+  game.menu.rebinding = null;
+}
 // Nav rows -> their screens.
+openOptionsAt("Sound / Music"); menuInput("confirm"); assert(game.menu.screen === "sound",        "F: Options row 'Sound / Music' -> sound");
 openOptionsAt("Controls");     menuInput("confirm"); assert(game.menu.screen === "controls",    "F: Options row 'Controls' -> controls");
 openOptionsAt("Achievements"); menuInput("confirm"); assert(game.menu.screen === "achievements", "F: Options row 'Achievements' -> achievements");
 openOptionsAt("Difficulty");   menuInput("confirm"); assert(game.menu.screen === "difficulty",   "F: Options row 'Difficulty' -> difficulty");
@@ -294,13 +301,13 @@ openOptionsAt("Back");         menuInput("confirm"); assert(game.menu.screen ===
 // The three volume sliders still nudge the routed gains (label-dispatched, not index-dispatched).
 for (const [label, cat] of [["SFX Volume", "sfx"], ["Music Volume", "music"], ["Master Volume", "master"]]) {
   AudioSys.setVol(cat, 0.5);
-  openOptionsAt(label); menuInput("right"); assert(AudioSys.vol[cat] > 0.5, `F: '${label}' right raises ${cat}`);
-  openOptionsAt(label); menuInput("left");  menuInput("left"); assert(AudioSys.vol[cat] < 0.5, `F: '${label}' left lowers ${cat}`);
+  openSoundAt(label); menuInput("right"); assert(AudioSys.vol[cat] > 0.5, `F: '${label}' right raises ${cat}`);
+  openSoundAt(label); menuInput("left");  menuInput("left"); assert(AudioSys.vol[cat] < 0.5, `F: '${label}' left lowers ${cat}`);
 }
 
 // (f) Music Track row cycles through all FOUR values and wraps, both directions (calm -> hot).
 settings.musicTrack = "zen";
-openOptionsAt("Music Track");
+openSoundAt("Music Track");
 menuInput("right"); assert(settings.musicTrack === "derelict",  "F: Music Track right: zen -> derelict");
 menuInput("right"); assert(settings.musicTrack === "drift",     "F: Music Track right: derelict -> drift");
 menuInput("right"); assert(settings.musicTrack === "warehouse", "F: Music Track right: drift -> warehouse");
@@ -309,8 +316,11 @@ menuInput("left");  assert(settings.musicTrack === "warehouse", "F: Music Track 
 menuInput("left");  assert(settings.musicTrack === "drift",     "F: Music Track left: warehouse -> drift");
 // It never lands on a value outside the known set.
 const seen = new Set();
-for (let i = 0; i < 16; i++) { openOptionsAt("Music Track"); menuInput("right"); seen.add(settings.musicTrack); }
+for (let i = 0; i < 16; i++) { openSoundAt("Music Track"); menuInput("right"); seen.add(settings.musicTrack); }
 assert([...seen].every(v => MUSIC_TRACK_VALUES.includes(v)) && seen.size === 4, "F: Music Track only ever cycles the 4 known values");
+// Sound screen's own Back row returns to Options, cursor on "Sound / Music".
+openSoundAt("Back"); menuInput("confirm");
+assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Sound / Music", "F: Sound 'Back' -> Options, cursor on Sound/Music");
 
 // =====================================================================
 // G) Persistence — afd_settings_v1 round-trips EVERY pre-existing field + the new musicTrack.
@@ -538,7 +548,7 @@ console.log(`(perf) overall worst-case per-frame node creation at max intensity 
 //    menu is open must NOT drive menuInput; a genuine (non-repeat) keydown still must. Driven through
 //    the REAL window "keydown" listener(s), not by calling handleMenuKey/menuInput directly.
 // =====================================================================
-game.paused = true; game.menu.screen = "options"; game.menu.index = MENU_OPTIONS.indexOf("Music Track");
+game.paused = true; game.menu.screen = "sound"; game.menu.index = SOUND_ROWS.indexOf("Music Track");
 game.menu.rebinding = null;
 settings.musicTrack = "zen";
 keydown("d", true);  // repeat
@@ -547,7 +557,7 @@ keydown("d", false); // genuine press
 assert(settings.musicTrack === "derelict", "O: a non-repeat keydown on Music Track advances it exactly once");
 
 // A volume slider row: repeat does not move AudioSys.vol; a non-repeat press does.
-game.menu.index = MENU_OPTIONS.indexOf("SFX Volume");
+game.menu.index = SOUND_ROWS.indexOf("SFX Volume");
 AudioSys.setVol("sfx", 0.5);
 keydown("d", true);
 assert(near(AudioSys.vol.sfx, 0.5), "O: a REPEAT keydown on a volume slider does not move AudioSys.vol");
