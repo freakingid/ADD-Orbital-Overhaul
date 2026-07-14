@@ -961,20 +961,29 @@ function buildDerelictTrack() {
   ]};
 }
 
-/* --- DRIFT (approved @w2) — organ pulse, sub, pad, hymn lead. No percussion. 88 BPM, 21.8 s. */
+/* --- DRIFT (approved @w2; B-section added CS010 P6) — organ pulse, sub, pad, hymn lead. No
+       percussion. 88 BPM. 16 bars now, A→B: bars 0-7 are the original Am F C G Am F Dm E; bars
+       8-15 are a brighter C-major turn (C G Am Em F C Dm E) with the arp an octave up and a fuller
+       lead — the chorus lift, resolving on E back into the A section. 43.5 s. */
 function buildDriftTrack() {
-  const BARS = 8, SPB = 16, STEPS = BARS * SPB, stepDur = 0.17;
+  const BARS = 16, SPB = 16, STEPS = BARS * SPB, stepDur = 0.17;
   const sub = mk(STEPS), pad = mk(STEPS), org = mk(STEPS), lead = mk(STEPS);
-  const CH  = [[45,60],[41,57],[48,55],[43,59],[45,60],[41,57],[38,57],[40,56]];   // Am F C G Am F Dm E
-  const ARP = [[57,60,64,69],[53,57,60,65],[55,60,64,67],[55,59,62,67],
-               [57,60,64,69],[53,57,60,65],[57,62,65,69],[56,59,64,68]];
+  const CH  = [[45,60],[41,57],[48,55],[43,59],[45,60],[41,57],[38,57],[40,56],   // A: Am F C G Am F Dm E
+               [48,64],[43,62],[45,64],[40,59],[41,60],[48,64],[38,57],[40,56]];  // B: C G Am Em F C Dm E
+  const ARP = [[57,60,64,69],[53,57,60,65],[55,60,64,67],[55,59,62,67],           // A arp
+               [57,60,64,69],[53,57,60,65],[57,62,65,69],[56,59,64,68],
+               [60,64,67,72],[55,59,62,67],[57,60,64,69],[52,55,59,64],           // B arp — an octave up
+               [53,57,60,65],[60,64,67,72],[50,53,57,62],[52,56,59,64]];
   for (let b = 0; b < BARS; b++) {
     const s0 = b * SPB, r = CH[b][0], t3 = CH[b][1], a = ARP[b];
     put(sub, s0, r - 12, 16, 1.0);
     put(pad, s0, t3, 16, 0.9);
     for (let i = 0; i < SPB; i++) put(org, s0 + i, a[i % 4], 1, i % 4 === 0 ? 0.95 : 0.62);
   }
-  for (const [s, m, d] of [[0,69,10],[16,77,10],[32,76,10],[48,74,12],[64,81,10],[80,84,10],[96,83,10],[112,79,14]])
+  // A: the original hymn (bars 0-7). B: a fuller melodic hook rising to C6 in bar 13, then resolving.
+  for (const [s, m, d] of [[0,69,10],[16,77,10],[32,76,10],[48,74,12],[64,81,10],[80,84,10],[96,83,10],[112,79,14],
+                           [128,72,8],[136,76,8],[144,79,10],[160,81,8],[168,79,8],[176,76,10],
+                           [192,77,8],[200,81,8],[208,84,12],[224,81,10],[240,80,8],[248,76,10]])
     put(lead, s, m, d, 0.95);
   return { stepDur, steps: STEPS, layers: [
     { name:"organ", type:"square",   cutoff:600, cutoffTo:2200, cutoffTime:0.09, q:5, gain:0.045, atk:0.006, rel:0.09, steps:org },
@@ -984,20 +993,38 @@ function buildDriftTrack() {
   ]};
 }
 
-/* --- WAREHOUSE (approved @w2) — kick, melodic bass, 16th hat, two 7th-chord stabs. No clap, and
-       deliberately NO melodic hook: in house the groove is the tune. 125 BPM, 23.0 s. */
+/* --- WAREHOUSE (approved @w2; B-section added CS010 P6) — kick, melodic bass, 16th hat, two
+       7th-chord stabs, and now a HOOK. 125 BPM. 16 bars, an 8-bar Am7 Dm7 Fmaj7 G vamp played
+       twice: bars 0-7 are groove only (A), bars 8-15 add the sawtooth-pluck hook riff (B). The hook
+       was cut from the round-2 track for being too present as a *constant* element — which is exactly
+       what makes it a chorus payload. It sits on the offbeats (steps 2/6/10/14) so it never collides
+       with kick/bass/hat/stabs and never lifts the per-step node count. 30.7 s. */
 function buildWarehouseTrack() {
-  const BARS = 12, SPB = 16, STEPS = BARS * SPB, stepDur = 0.12;
-  const kick = mk(STEPS), hat = mk(STEPS), bass = mk(STEPS), stA = mk(STEPS), stB = mk(STEPS);
-  const CH = [[45,60,64],[45,60,64],[38,60,65],[38,60,65],[41,60,64],[41,60,64],[43,59,62],[43,59,62],
-              [45,60,64],[38,60,65],[41,60,64],[43,59,62]];   // Am7 Dm7 Fmaj7 G ...
+  const BARS = 16, SPB = 16, STEPS = BARS * SPB, stepDur = 0.12;
+  const kick = mk(STEPS), hat = mk(STEPS), bass = mk(STEPS), stA = mk(STEPS), stB = mk(STEPS), hook = mk(STEPS);
+  const CH = [[45,60,64],[45,60,64],[38,60,65],[38,60,65],[41,60,64],[41,60,64],[43,59,62],[43,59,62]]; // Am7 Dm7 Fmaj7 G
   const WALK = [0, 0, 12, 0, 7, 0, 12, 3];
   for (let b = 0; b < BARS; b++) {
-    const s0 = b * SPB, c = CH[b], r = c[0];
+    const s0 = b * SPB, c = CH[b % 8], r = c[0];
     for (const s of [0, 4, 8, 12]) put(kick, s0 + s, 50, 1, 1.0);
     for (let i = 1; i < SPB; i += 2) hit(hat, s0 + i, 1, i % 4 === 3 ? 0.8 : 0.42);
     for (let i = 0; i < 8; i++) put(bass, s0 + i * 2 + 1, r + WALK[i], 1, i % 2 === 0 ? 0.95 : 0.75);
     for (const s of [3, 7, 11, 15]) { put(stA, s0 + s, c[1], 1, 0.9); put(stB, s0 + s, c[2], 1, 0.8); }
+  }
+  // The restored hook — B section only (bars 8-15). Per-bar offbeat riff, lifting to C6 in bar 12.
+  const HOOK_BARS = [
+    [[2,69],[6,72],[10,76],[14,72]],   // Am7
+    [[2,74],[6,72],[10,69]],           // Am7
+    [[2,74],[6,77],[10,81],[14,77]],   // Dm7
+    [[2,76],[6,74],[10,69]],           // Dm7
+    [[2,72],[6,77],[10,81],[14,84]],   // Fmaj7 — lift
+    [[2,81],[6,77],[10,72]],           // Fmaj7
+    [[2,74],[6,79],[10,83],[14,79]],   // G
+    [[2,74],[6,71],[10,67]],           // G — descend, resolve to A
+  ];
+  for (let b = 0; b < 8; b++) {
+    const s0 = (8 + b) * SPB;
+    for (const [s, m] of HOOK_BARS[b]) put(hook, s0 + s, m, 2, 0.85);
   }
   return { stepDur, steps: STEPS, layers: [
     { name:"kick",  type:"triangle", drop:14, dropTime:0.05, gain:0.125, atk:0.002, rel:0.16, steps:kick },
@@ -1005,6 +1032,7 @@ function buildWarehouseTrack() {
     { name:"hat",   noise:true, hp:8500, gain:0.018, atk:0.001, rel:0.03, steps:hat },
     { name:"stabA", type:"sawtooth", cutoff:2600, cutoffTo:900, cutoffTime:0.10, q:5, gain:0.042, atk:0.004, rel:0.13, steps:stA },
     { name:"stabB", type:"sawtooth", cutoff:2600, cutoffTo:900, cutoffTime:0.10, q:5, gain:0.038, atk:0.004, rel:0.13, steps:stB },
+    { name:"hook",  type:"sawtooth", cutoff:1200, cutoffTo:2800, cutoffTime:0.05, q:4, gain:0.052, atk:0.004, rel:0.13, steps:hook },
   ]};
 }
 
