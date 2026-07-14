@@ -111,10 +111,15 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
 - **The HUD draws with `glowStroke` like everything else — no `fillRect`,
   no `strokeRect`.** The CS009 HUD rebuild (P0–P6) replaced every hull/
   shield/cargo/powerup fill bar with rings via `drawRingArc`. The only
-  fills left anywhere in `drawHUD()` are `drawText` (`fillText`) and the
-  SCOOP pip row's 4px `ctx.fill()` dots (a named, deliberate exception —
-  see the GDD §3.2 no-fills rule). Don't reintroduce a bar/rect for a new
-  HUD element; follow the ring idiom instead.
+  fills left anywhere in `drawHUD()` are `drawText` (`fillText`), the
+  SCOOP pip row's 4px `ctx.fill()` dots, and — as of CS010 P3 — the
+  low-health corner glow's four `createRadialGradient` corner fills, each
+  a named, deliberate exception (see the GDD §3.2 no-fills rule: three
+  named exceptions, membership changed across CS010 but count unchanged).
+  The corner glow is a fill *by design* — a peripheral, edgeless alarm,
+  not a `glowStroke` arc — so it doesn't count as reintroducing a bar.
+  Don't reintroduce a bar/rect for a new HUD element; follow the ring
+  idiom instead.
 - **Route all scoring through `addScore()`.** It also handles the HP-repair
   milestone bonus (post-Phase 2) — bypassing it breaks that logic.
 - **Tracks are DATA. `MusicSys.update()`/`scheduleStep()` and the

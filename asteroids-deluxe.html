@@ -185,6 +185,28 @@ const LOWHP_PULSE_DEPTH      = 0.5;   // amplitude-LFO depth/offset — pulseGai
 const LOWHP_GAIN_MIN         = 0.08;  // peak root gain at t=0 — in thrust's (0.10) neighborhood
 const LOWHP_GAIN_MAX         = 0.13;  // peak root gain at t=1 — pulsing carries most of the urgency
 const LOWHP_PARAM_RAMP       = 0.15;  // s — click-free per-frame param ramp (matches MUSIC_DUCK_RAMP)
+// CS010 P3: the ONE shared low-health pulse-rate formula (Hz), ramped by HP urgency t = 1 -
+// hp/LOW_HP_THRESHOLD (0 at the threshold → 1 near death). Read by BOTH AudioSys.lowhpSet (the siren's
+// LFO) AND update()'s game.lowHpPhase accumulator (the critical-hull ring + corner-glow pulse), so the
+// audio alarm and the two visual alarms are ONE instrument driven by ONE interpolation — never two that
+// can drift. Pure linear interp, deliberately NOT clamped here (callers pass an in-range t; lowhpSet
+// clamps first). RATE IS SHARED BY TRIGGER, NOT BY WIDGET: only elements keyed on LOW_HP_THRESHOLD use
+// this; cargo-gold and the powerup low-timer keep the flat HUD_PULSE_HZ (a distinct rate is how the ear
+// and eye tell a hull alarm apart from a timer running out).
+function lowhpPulseRate(t) { return LOWHP_PULSE_RATE_MIN + (LOWHP_PULSE_RATE_MAX - LOWHP_PULSE_RATE_MIN) * t; }
+// CS010 P3 §5 — the low-health CORNER GLOW + RELIEF POP knobs. The glow is a NAMED GDD §3.2
+// fills-exception (FORK-3 = FILL, Paul signed off; see drawHUD's block comment for the why): a
+// peripheral-vision alarm is low-frequency, large-area and EDGELESS by definition — that is what makes
+// it readable out of the corner of the eye without competing with the two red rings for focus, and it
+// costs no shadowBlur. Intensity scales with BOTH the HP-urgency t (brighter near death) and the shared
+// pulse (game.lowHpPhase), so near death it is BRIGHTER, not merely FASTER. All PLAYTEST KNOBS — sized by
+// eye in a browser (STATUS.md carries the ask: which values, and does the synced ring/glow/siren read as
+// one alarm).
+const LOWHP_GLOW_ALPHA_MIN = 0.10;  // peak corner-glow alpha at the threshold (t=0) — a soft breath
+const LOWHP_GLOW_ALPHA_MAX = 0.26;  // peak corner-glow alpha near death (t=1) — brighter, not just faster
+const LOWHP_GLOW_RADIUS     = 280;  // px reach of each corner's radial gradient (FRAME the screen, don't fill it — two corners are occupied by the HULL/CARGO rings)
+const LOWHP_GLOW_RGB        = "255,64,64";  // corner-glow color channels — mirrors COLOR.lowhp (#ff4040); kept as a triple so a radial-gradient stop can carry the pulsing alpha
+const LOWHP_RELIEF_FLASH    = 0.5;  // sec — the geometry-only hull-ring "exhale" when low-health CLEARS with the ship alive (§5 relief cue, FLAG-CS010-a). HUD_CAP_FLASH's neighbourhood.
 const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonus (was: extra life)
 const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
 const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
@@ -241,8 +263,16 @@ const HUD_FX_ROW_H = 40;        // vertical spacing between stacked powerup rows
 const HUD_FX_RING_R = 16;       // radius of each powerup row's ring
 const HUD_FX_GLYPH_R = 9;       // radius of the glyph drawn inside a powerup row's ring
 const HUD_FX_LOW = 3;           // sec remaining at/under which a timed powerup row shows the low warning
-const HUD_PULSE_HZ = 1.2;       // pulse rate for critical/max/full-cargo states — constant, bound to
-                                 // nothing else (the audio siren already ramps its own rate with HP)
+const HUD_PULSE_HZ = 1.2;       // CS010 P3: the FLAT pulse rate for NON-HP alarms ONLY — the cargo-gold
+                                 // ring and the powerup low-timer row. Anything keyed on LOW_HP_THRESHOLD
+                                 // (the critical-hull ring, the corner glow, the audio siren) instead
+                                 // pulses at lowhpPulseRate(t) via game.lowHpPhase, so those three are ONE
+                                 // HP-ramped instrument. A distinct flat rate is CORRECT here, not a
+                                 // compromise: it's how the player tells a hull alarm from a timer running
+                                 // out. (Pre-CS010 all three were flat, on CS009's "the siren already ramps,
+                                 // so the visual deliberately doesn't" reasoning; §5 reverses that for the
+                                 // hull ring — Paul signed off — and keeps it for these two. NOTE: max-hull
+                                 // is gold-only, NOT pulsed, so it's not on this list.)
 const HUD_EASE = 0.002;         // per-sec retention the eased hull fraction chases the true value with
                                  // (Math.pow(HUD_EASE, dt) idiom — see MAGNET_DAMP, L352 — counter-
                                  // intuitively, a LARGER constant here means LESS damping/faster chase).
@@ -688,7 +718,7 @@ const AudioSys = {
     if (t === this.lowhpT) return;
     this.lowhpT = t;
     const now = this.now();
-    const rate = LOWHP_PULSE_RATE_MIN + (LOWHP_PULSE_RATE_MAX - LOWHP_PULSE_RATE_MIN) * t;
+    const rate = lowhpPulseRate(t);   // CS010 P3: the shared rate formula — same one game.lowHpPhase reads, so siren + hull ring + glow can't drift
     const gain = LOWHP_GAIN_MIN + (LOWHP_GAIN_MAX - LOWHP_GAIN_MIN) * t;
     const ramp = (param, target) => {
       param.cancelScheduledValues(now);
@@ -1491,6 +1521,7 @@ function openPause() {
   resetMenuNav();          // don't let a direction held at pause-time fire a phantom move
   AudioSys.thrust(false);  // kill the thrust loop immediately (update() would too, next frame)
   AudioSys.lowhp(false); game.lowHpSiren = false; // same — the siren must not drone through a pause menu
+  game.hpReliefFlash = 0; // CS010 P3: a stale relief exhale must not survive a pause (the siren latch is torn down directly here, bypassing the falling-edge branch)
   AudioSys.ui(true);
 }
 function closePause() {
@@ -1505,6 +1536,7 @@ function quitToTitle() {
   game.state = "title";
   AudioSys.thrust(false); AudioSys.saucer(false); // stop any continuous voices
   AudioSys.lowhp(false); game.lowHpSiren = false;
+  game.hpReliefFlash = 0; // CS010 P3: no stale relief exhale survives a quit-to-title
   Achievements.save();  // persist lifetime progress earned during the abandoned game (F9)
   AudioSys.ui(false);
 }
@@ -2662,9 +2694,23 @@ const game = {
   hunterTimer: 0,
   beatTimer: 0, beatHigh: false, beatInterval: 1.0,
   waveClearTimer: 0,
-  lowHpSiren: false   // v3.4 P5: edge-detection latch for AudioSys.lowhp — true iff the siren is
+  lowHpSiren: false,  // v3.4 P5: edge-detection latch for AudioSys.lowhp — true iff the siren is
                       // currently playing, so update() can fire lowhp(true)/(false) exactly once
                       // per state transition instead of every frame
+  // CS010 P3: the low-health pulse PHASE ACCUMULATOR. Advanced by 2π·lowhpPulseRate(t)·dt in update()
+  // while engaged; read as Math.sin(game.lowHpPhase) by BOTH the critical-hull ring pulse AND the corner
+  // glow, so they lock to each other and (via the shared rate helper) to the siren — one alarm. An
+  // ACCUMULATOR, not omega·clock, is mandatory: omega is HP-dependent, and omega·clock would SNAP the
+  // phase (~30 rad on a 0.5 rad/s rate delta at t=60s) every time HP changes, visibly stuttering the
+  // pulse. Reset to 0 on disengage + startGame; FREEZES while paused (update early-returns), which is
+  // correct — openPause tears the siren down anyway, matching CS009's hudHull/cargoFlash placement.
+  lowHpPhase: 0,
+  // CS010 P3: >0 for LOWHP_RELIEF_FLASH sec after low-health CLEARS with the ship alive — the visual
+  // relief cue (§5, FLAG-CS010-a): a geometry-only (radius+width) NON-pulsing "exhale" on the hull ring.
+  // Armed on the falling edge ONLY IF !ship.dead (dying ALSO drives the low-health state false, so the
+  // guard stops a cheerful pop firing at the moment of death). Decayed in update() beside cargoFlash;
+  // zeroed at every direct siren teardown (pause/quit/start/death) so no stale exhale survives.
+  hpReliefFlash: 0
 };
 
 function startGame() {
@@ -2697,6 +2743,8 @@ function startGame() {
   game.saucerTimer = rand(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX); // first saucer waits the wave-1 floor gap (F10)
   game.hunterTimer = rand(14, 22);
   game.lowHpSiren = false; AudioSys.lowhp(false); // fresh run never carries the siren over (v3.4 P5)
+  game.lowHpPhase = 0;      // CS010 P3: the pulse accumulator starts a fresh run at 0
+  game.hpReliefFlash = 0;   // CS010 P3: no stale relief exhale carries into a fresh run
   nextWave();
 }
 
@@ -3388,6 +3436,7 @@ function killShip() { // hull destroyed (0 HP): a true, permanent game over — 
   game.ship.dead = true;
   AudioSys.thrust(false);
   AudioSys.lowhp(false); game.lowHpSiren = false;
+  game.hpReliefFlash = 0; // CS010 P3: death is not relief — never arm/leave a "you're okay now" exhale on the frame the ship dies
   boom(game.ship.x, game.ship.y, 3, COLOR.ship);
   scatterChain();
   // v3.6 P5: enter the "dying" spectacle instead of freezing straight to "gameover" — updateDeath()
@@ -3710,19 +3759,42 @@ function update(dt) {
   // Capture.hudVisible reason as hudHull above: a decay that only ran while drawn would freeze while
   // hidden and pop back on re-show.
   if (game.cargoFlash > 0) game.cargoFlash = Math.max(0, game.cargoFlash - dt);
+  // CS010 P3: linear decay of the low-health relief "exhale" — lives HERE (not drawHUD()) for the same
+  // Capture.hudVisible reason as hudHull/cargoFlash above: a decay that only ran while drawn would freeze
+  // while the HUD is hidden with H and pop back on re-show.
+  if (game.hpReliefFlash > 0) game.hpReliefFlash = Math.max(0, game.hpReliefFlash - dt);
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
   game.camera.y = game.ship.y;
-  // Low-health siren (v3.4 P5): the STATE is a pure per-frame read (no stored flag), but the AUDIO
-  // voice is edge-detected off game.lowHpSiren so lowhp(true/false) fires exactly once per
-  // transition, not every frame. Driven from this one site; killShip/quitToTitle/openPause each
-  // tear the voice down directly since they leave "playing" without passing back through here.
+  // Low-health alarm (v3.4 P5; CS010 P3): the STATE is a pure per-frame read (no stored flag), but the
+  // AUDIO voice is edge-detected off game.lowHpSiren so lowhp(true/false) fires exactly once per
+  // transition, not every frame. Driven from this one site; killShip/quitToTitle/openPause each tear the
+  // voice down directly since they leave "playing" without passing back through here.
   const lowHp = game.ship.hp <= LOW_HP_THRESHOLD && !game.ship.dead;
   if (lowHp && !game.lowHpSiren) { AudioSys.lowhp(true); game.lowHpSiren = true; }
-  else if (!lowHp && game.lowHpSiren) { AudioSys.lowhp(false); game.lowHpSiren = false; }
-  // v3.5 P3: HP-scaled urgency for the pulsed voice — a per-frame call (not edge-detected), safe
-  // no-op via lowhpSet's own guards when the state isn't engaged or the voice isn't live.
-  if (lowHp) AudioSys.lowhpSet(1 - game.ship.hp / LOW_HP_THRESHOLD);
+  else if (!lowHp && game.lowHpSiren) {
+    // Falling edge — disengage. Reset the pulse phase, then arm the relief exhale ONLY IF THE SHIP IS
+    // ALIVE (CS010 P3, §5, FLAG-CS010-a). THE GUARD IS LOAD-BEARING: `lowHp` also goes false when the
+    // ship DIES (the `!dead` term), so this branch is the moment of death too — without `!ship.dead` the
+    // hull ring would play a cheerful "you're okay now" pop at the instant the player is killed. (Today
+    // killShip zeroes game.lowHpSiren directly and the dying state early-returns before this site, so the
+    // edge isn't even reached at death — but that is incidental; guard explicitly.)
+    AudioSys.lowhp(false); game.lowHpSiren = false;
+    game.lowHpPhase = 0;
+    if (!game.ship.dead) game.hpReliefFlash = LOWHP_RELIEF_FLASH;   // relief, not death
+  }
+  // v3.5 P3: HP-scaled urgency for the pulsed voice — a per-frame call (not edge-detected), safe no-op
+  // via lowhpSet's own guards when the state isn't engaged or the voice isn't live. CS010 P3: the SAME t
+  // and the SAME lowhpPulseRate(t) also advance game.lowHpPhase, the shared accumulator the critical-hull
+  // ring and the corner glow read via Math.sin — so siren, ring and glow are ONE alarm at ONE HP-ramped
+  // rate. Integrating the phase (not phase = omega·clock) keeps it CONTINUOUS when the HP-dependent rate
+  // changes mid-alarm; mod TAU keeps the accumulator bounded. Living here means it FREEZES while paused —
+  // correct and deliberate (openPause tears the siren down; same rationale as hudHull/cargoFlash above).
+  if (lowHp) {
+    const t = 1 - game.ship.hp / LOW_HP_THRESHOLD;
+    AudioSys.lowhpSet(t);
+    game.lowHpPhase = (game.lowHpPhase + TAU * lowhpPulseRate(t) * dt) % TAU;
+  }
   // Achievements (F9): per-game clock (Speed Recycler's 60s window) + lifetime play time & periodic save
   game.stats.gameTime += dt;
   Achievements.tick(dt);
@@ -4582,6 +4654,34 @@ function draw() {
 // block comment above the Capture object) only ever hides the always-on overlay, never anything
 // modal or transient.
 function drawHUD() {
+  // CS010 P3 — low-health CORNER GLOW (§5, FORK-3 = FILL; a NAMED GDD §3.2 fills-exception, Paul signed
+  // off). A peripheral-vision alarm: four radial-gradient corner fills in the low-health red. It engages
+  // on the EXACT SAME predicate as the siren (game.lowHpSiren) and pulses IN PHASE with the critical-hull
+  // ring and the siren — all read game.lowHpPhase, one instrument. It NEVER reads a Web Audio LFO value:
+  // the phase is a game-side accumulator, so the glow renders even with audio unavailable (ctx null, no
+  // user gesture yet). WHY A FILL, not a glowStroke arc: a corner-of-the-eye alarm is low-frequency,
+  // large-area and EDGELESS by definition — that is what makes it readable without competing for focus.
+  // A glowStroke arc is a LINE (high-frequency, small-area) that would read as a THIRD red HUD element
+  // beside the two red rings — the very noise this phase exists to remove — and it is more expensive
+  // (glowStroke is shadowBlur, the renderer's hot spot; four blurred arcs would burn it in the busiest
+  // frames). Drawn FIRST so the HUD readouts paint crisply over it. Lives in drawHUD() so Capture's H key
+  // hides it and P exports a clean frame. Intensity scales with t (BRIGHTER near death) AND the shared
+  // pulse — never merely faster. Alpha rides the gradient stop, so this block NEVER touches globalAlpha
+  // (it can't leak). Two corners (top-right rings, bottom-left powerup rows) are occupied; the radius is
+  // sized to FRAME rather than fight — a PLAYTEST KNOB (STATUS.md).
+  if (game.lowHpSiren) {
+    const gt = clamp01(1 - game.ship.hp / LOW_HP_THRESHOLD);            // HP urgency, the same t the siren uses
+    const gpulse = 0.6 + 0.4 * Math.sin(game.lowHpPhase);              // shared phase → locked to the hull ring + siren
+    const peak = (LOWHP_GLOW_ALPHA_MIN + (LOWHP_GLOW_ALPHA_MAX - LOWHP_GLOW_ALPHA_MIN) * gt) * gpulse;
+    const R = LOWHP_GLOW_RADIUS;
+    for (const c of [[0, 0], [VIEW_W, 0], [0, VIEW_H], [VIEW_W, VIEW_H]]) {
+      const grad = ctx.createRadialGradient(c[0], c[1], 0, c[0], c[1], R);
+      grad.addColorStop(0, `rgba(${LOWHP_GLOW_RGB},${peak})`);
+      grad.addColorStop(1, `rgba(${LOWHP_GLOW_RGB},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(Math.max(0, c[0] - R), Math.max(0, c[1] - R), R, R);
+    }
+  }
   drawText(String(game.score).padStart(6, "0"), 30, 46, 30, COLOR.text, "left");
   // v3.3 P1 (spec §7): "LEVEL" is the player-facing label for game.wave — moved from the dim,
   // easy-to-miss top-right corner into the left column, lit like the other HUD readouts. game.wave /
@@ -4609,12 +4709,28 @@ function drawHUD() {
   // continuous) and NOT pulsed — drawn at full alpha before the pulse is applied below.
   drawRingArc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R - HUD_SHIELD_R_GAP,
     game.ship.energy, COLOR.shield, HUD_RING_TRACK_W + 1);
-  // hull arc + ship glyph share the state color and pulse together, only when Critical (constant rate —
-  // the audio siren carries the urgency ramp, so binding the pulse to HP too would read as a wobble).
+  // hull arc + ship glyph pulse together, only when Critical. CS010 P3: the pulse now reads the SHARED
+  // game.lowHpPhase accumulator (rate = lowhpPulseRate(t), advanced in update()), so the hull ring, the
+  // corner glow and the audio siren are ONE alarm at ONE HP-ramped rate. This REVERSES CS009's deliberate
+  // flat-rate choice (Paul signed off): CS009 kept the visual flat because the siren already ramped, but
+  // two red pulses beating in and out of phase is the noise §5 exists to remove. HUD_PULSE_HZ still drives
+  // the NON-HP pulses (cargo-gold, powerup low-timer); only elements keyed on LOW_HP_THRESHOLD read the
+  // ramped rate. While paused the phase freezes, so this shows a static alpha — correct (see update()).
   if (hpCrit && !hpMax) {
-    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(performance.now() / 1000 * TAU * HUD_PULSE_HZ);
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(game.lowHpPhase);
   }
-  drawRingArc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R, clamp01(game.hudHull), hullColor, HUD_RING_W);
+  // CS010 P3: relief EXHALE — a geometry-only (radius + width) NON-pulsing pop on the hull VALUE arc when
+  // low-health just cleared with the ship alive, decaying to normal over LOWHP_RELIEF_FLASH. The alarm WAS
+  // the pulse; the relief is its absence plus one clean exhale. Color is deliberately UNTOUCHED: hpCrit is
+  // already false here, so hullColor is back to COLOR.hp (and the hpMax gold case still wins) — geometry
+  // composes with that precedence chain for free, adds no new color semantics, and never touches
+  // globalAlpha (so it can't leak). Idioms reused verbatim: HUD_BANK_POP's fractional-radius pop and the
+  // cargo cap-up's +2 width bump. The dim track stays at HUD_RING_R, so the arc visibly swells past it and
+  // settles back.
+  const reliefK = game.hpReliefFlash > 0 ? game.hpReliefFlash / LOWHP_RELIEF_FLASH : 0;
+  const hullArcR = HUD_RING_R * (1 + HUD_BANK_POP * reliefK);
+  const hullArcW = HUD_RING_W + 2 * reliefK;
+  drawRingArc(HUD_HULL_CX, HUD_RING_CY, hullArcR, clamp01(game.hudHull), hullColor, hullArcW);
   drawPoly(HUD_SHIP_GLYPH, HUD_HULL_CX, HUD_RING_CY, -Math.PI / 2, hullColor);
   ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
   drawText("HULL", HUD_HULL_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
