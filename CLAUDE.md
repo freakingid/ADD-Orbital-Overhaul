@@ -131,6 +131,23 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   cover. `tools/music-lab.html` is the composition/audition instrument —
   tune and audition there, port verbatim, don't hand-tune gains in the live
   build.
+- **`VoiceSys` (Dan's speech, CS010 P9) is a separate module alongside
+  AudioSys/MusicSys — never fold it into AudioSys**, which is a flat bag of
+  one-shot voices that must not grow a sequencer (MusicSys set this precedent).
+  Three non-negotiables: **(1) Lines are DATA.** `VOICE_LINES` is keyed by
+  event, each event an ARRAY of `{text,phon}` alternatives — adding a line is a
+  one-line data edit, never a code change; selection is a plain random pick. A
+  new line's `phon` is composed in `tools/voice-lab.html` and pasted in; the
+  acoustic engine (`PH`, `buildUtterance`/`buildPitch`, `_render`) is ported
+  **verbatim** from that lab like MusicSys/music-lab — don't re-tune it in the
+  build. (The lab's g2p text→ARPAbet layer is deliberately NOT ported — its
+  output is already the baked `phon` strings.) **(2) Route "did an effect end?"
+  through `powerActive(type)`, never `powerFx`** — the latter silently misses
+  the count modes (shots/pieces). **(3) Superseded lines DROP, never queue** —
+  a queue has Dan narrating events that finished ten seconds ago. Every entry
+  point is `if (!AudioSys.ctx) return;`-guarded (headless-safe). The low-health
+  voice has its OWN latch (`game.lowHpVoiced`) that menus do NOT tear down —
+  distinct from the siren latch — so Dan doesn't re-announce on every unpause.
 - **New enemies follow the established extension points** documented in the
   GDD's Architecture Map (3.3): wire into `startGame` reset, `update()`
   entity update + collision passes + cleanup filter, `draw()` z-order, and

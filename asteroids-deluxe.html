@@ -539,8 +539,8 @@ const AudioSys = {
   // Gain routing (F8). vol holds the three slider values (0..1, 1 = unity = pre-F8 loudness);
   // master/sfx/music are the gain nodes built in init(). Volumes persist even before the audio
   // graph exists (no user gesture yet) so loadSettings() can set them and init() apply them.
-  vol: { master: 1, sfx: 1, music: 1 },
-  master: null, sfx: null, music: null,
+  vol: { master: 1, sfx: 1, music: 1, voice: 1 }, // CS010 P9: `voice` is Dan's speech bus (VoiceSys)
+  master: null, sfx: null, music: null, voice: null,
   init() {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -550,11 +550,15 @@ const AudioSys = {
     this.master = this.ctx.createGain(); this.master.gain.value = this.vol.master; this.master.connect(this.ctx.destination);
     this.sfx    = this.ctx.createGain(); this.sfx.gain.value    = this.vol.sfx;    this.sfx.connect(this.master);
     this.music  = this.ctx.createGain(); this.music.gain.value  = this.vol.music;  this.music.connect(this.master);
+    // CS010 P9: Dan's speech bus, mirroring sfx/music. VoiceSys builds its radio chain onto this node.
+    this.voice  = this.ctx.createGain(); this.voice.gain.value  = this.vol.voice;  this.voice.connect(this.master);
   },
   // Set a category volume and, if the graph is live, push it to the node immediately (F8 sliders).
   setVol(cat, v) {
     this.vol[cat] = v;
-    const node = cat === "master" ? this.master : cat === "sfx" ? this.sfx : this.music;
+    // CS010 P9: the bus nodes are named by category, so a lookup can't silently misroute a new bus —
+    // the old master/sfx/music ternary would have written setVol("voice",…) to the MUSIC gain.
+    const node = this[cat];
     if (node) node.gain.value = v;
   },
   resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
@@ -1268,6 +1272,527 @@ const MusicSys = {
   },
 };
 
+// ---------- Voice (Dan — Klatt-style formant synth, CS010 P9) ----------
+// Ported from tools/voice-lab.html (FLAG-11a signed off). The ACOUSTIC ENGINE below (PH table,
+// parsePhonTokens / buildUtterance / buildPitch, and VoiceSys._render's scheduler) is PORT-ME BLOCK A,
+// VERBATIM — same standing rule as MusicSys/music-lab: audition in the lab, port the engine unchanged.
+// The lab's g2p text→ARPAbet authoring layer (WORDS dictionary + rule guesser) is DELIBERATELY not
+// ported: it only derives phon strings from typed text, and every shipping line's phon is already
+// baked into VOICE_LINES below — so g2p is dead code here. It stays in the lab, which is where a NEW
+// line's phon is composed before its {text,phon} pair is pasted into VOICE_LINES (a one-line data edit).
+//
+// PH — ARPAbet phoneme table. Classes: v vowel, g glide/liquid, n nasal, f fricative, p stop,
+//   a affricate, h aspirate. f:[F1,F2,F3] Hz; stops/frics carry LOCUS targets (the b/d/g cue).
+const PH = {
+  IY:{c:"v",f:[270,2290,3010],d:120}, IH:{c:"v",f:[390,1990,2550],d:100},
+  EH:{c:"v",f:[530,1840,2480],d:110}, AE:{c:"v",f:[660,1720,2410],d:130},
+  AA:{c:"v",f:[730,1090,2440],d:130}, AO:{c:"v",f:[570,840,2410],d:130},
+  AH:{c:"v",f:[640,1190,2390],d:88},  UH:{c:"v",f:[440,1020,2240],d:95},
+  UW:{c:"v",f:[300,870,2240],d:120},  ER:{c:"v",f:[490,1350,1690],d:110},
+  EY:{c:"v",f:[530,1840,2480],f2nd:[330,2200,2900],d:150},
+  AY:{c:"v",f:[730,1090,2440],f2nd:[330,2200,2900],d:170},
+  OY:{c:"v",f:[570,840,2410], f2nd:[330,2200,2900],d:175},
+  AW:{c:"v",f:[730,1090,2440],f2nd:[430,1020,2240],d:170},
+  OW:{c:"v",f:[570,900,2410], f2nd:[330,870,2240], d:140},
+  W:{c:"g",f:[290,610,2150],d:65},  Y:{c:"g",f:[270,2290,3010],d:60},
+  R:{c:"g",f:[420,1300,1600],d:75}, L:{c:"g",f:[360,1300,2700],d:70},
+  M:{c:"n",f:[250,950,2200],d:70},  N:{c:"n",f:[250,1650,2600],d:70},
+  NG:{c:"n",f:[250,2000,2600],d:85},
+  S:{c:"f",f:[320,1700,2600],fric:{cf:5800,q:0.9,g:0.55},d:110},
+  SH:{c:"f",f:[320,1900,2500],fric:{cf:2900,q:1.1,g:0.50},d:110},
+  F:{c:"f",f:[340,1100,2400],fric:{cf:1400,q:0.25,g:0.13},d:95},
+  TH:{c:"f",f:[320,1500,2500],fric:{cf:5200,q:0.4,g:0.12},d:90},
+  Z:{c:"f",f:[320,1700,2600],fric:{cf:5800,q:0.9,g:0.35},d:95,v:0.4},
+  ZH:{c:"f",f:[320,1900,2500],fric:{cf:2900,q:1.1,g:0.32},d:90,v:0.4},
+  V:{c:"f",f:[340,1100,2400],fric:{cf:1400,q:0.25,g:0.10},d:60,v:0.5},
+  DH:{c:"f",f:[340,1500,2500],fric:{cf:4800,q:0.4,g:0.08},d:50,v:0.5},
+  HH:{c:"h",d:75},
+  P:{c:"p",f:[400,900,2300], burst:{cf:900,q:0.6,g:0.50}, clo:70,asp:60},
+  B:{c:"p",f:[400,900,2300], burst:{cf:900,q:0.6,g:0.35}, clo:60,asp:0,v:0.12},
+  T:{c:"p",f:[400,1750,2700],burst:{cf:4200,q:0.7,g:0.60},clo:70,asp:65},
+  D:{c:"p",f:[400,1750,2700],burst:{cf:4200,q:0.7,g:0.40},clo:55,asp:0,v:0.12},
+  K:{c:"p",f:[400,1900,2500],burst:{cf:1900,q:1.6,g:0.60},clo:75,asp:70,velar:true},
+  G:{c:"p",f:[400,1900,2500],burst:{cf:1900,q:1.6,g:0.42},clo:60,asp:0,v:0.12,velar:true},
+  CH:{c:"a",f:[400,1900,2500],fric:{cf:2900,q:1.1,g:0.55},clo:60,fdur:90},
+  JH:{c:"a",f:[400,1900,2500],fric:{cf:2900,q:1.1,g:0.40},clo:45,fdur:70,v:0.4},
+};
+
+// Utterance compiler — PURE (no Web Audio): phoneme string -> {segs, frics, asps, pitch, dur}.
+function parsePhonTokens(str) {
+  const toks = [], errs = [];
+  for (const t of String(str).trim().split(/\s+/)) {
+    if (!t || t === "/") continue;
+    if (t === "," || t === ".") { toks.push({ pause: t }); continue; }
+    const m = t.match(/^([A-Z]+)([012])?$/);
+    const ph = m && PH[m[1]];
+    if (!ph) { errs.push(t); continue; }
+    toks.push({ base: m[1], ph, stress: m[2] === "1" });
+  }
+  return { toks, errs };
+}
+
+function buildUtterance(phonStr, P) {
+  const { toks, errs } = parsePhonTokens(phonStr);
+  const segs = [], frics = [], asps = [];
+  const rate = P.rate, cd = P.consDur;
+  const scaleF = f => [f[0] * P.f1Scale, f[1] * P.f2Scale, f[2] * P.f3Scale];
+  // lookahead: next token with formant targets — for HH borrowing and the velar F2 locus
+  const nextF = i => {
+    for (let k = i + 1; k < toks.length; k++) {
+      const p = toks[k].ph;
+      if (p && p.f && "vgn".includes(p.c)) return p.f;
+    }
+    return [500, 1500, 2500];
+  };
+  let t = 0.06, voiceDelay = 0;
+  for (let i = 0; i < toks.length; i++) {
+    const tk = toks[i];
+    if (tk.pause) {
+      const d = (tk.pause === "," ? 0.16 : 0.30) / rate;
+      segs.push({ t0: t, dur: d, label: tk.pause, F: null, amp: 0 });
+      t += d; voiceDelay = 0; continue;
+    }
+    const ph = tk.ph, cls = ph.c;
+    if (cls === "v" || cls === "g" || cls === "n") {
+      let d = ph.d / 1000 * (tk.stress ? 1.28 : 1) / rate;
+      if (cls === "v") {          // phrase-final lengthening
+        let fin = true;
+        for (let k = i + 1; k < toks.length; k++) {
+          if (toks[k].pause) break;
+          if (toks[k].ph && toks[k].ph.c === "v") { fin = false; break; }
+        }
+        if (fin) d *= 1.18;
+      }
+      segs.push({ t0: t, dur: d, label: tk.base + (tk.stress ? "1" : ""),
+        F: scaleF(ph.f), F2nd: ph.f2nd ? scaleF(ph.f2nd) : null,
+        amp: cls === "v" ? 1 : cls === "g" ? 0.85 : 0.6,
+        hiDamp: cls === "n" ? 0.35 : 1, trans: 0.05,
+        voiceDelay, stress: !!tk.stress, vowel: cls === "v" });
+      t += d; voiceDelay = 0;
+    } else if (cls === "f") {
+      const d = ph.d / 1000 * cd / rate;
+      segs.push({ t0: t, dur: d, label: tk.base, F: scaleF(ph.f), amp: ph.v || 0, trans: 0.04, voiceDelay });
+      frics.push({ t, dur: d, cf: ph.fric.cf, q: ph.fric.q, g: ph.fric.g * P.fricGain, burst: false });
+      t += d; voiceDelay = 0;
+    } else if (cls === "h") {
+      const d = ph.d / 1000 * cd / rate;
+      segs.push({ t0: t, dur: d, label: tk.base, F: scaleF(nextF(i)), amp: 0, trans: 0.05 });
+      asps.push({ t, dur: d, g: 0.5 });
+      t += d; voiceDelay = 0;
+    } else if (cls === "p") {
+      const clo = ph.clo / 1000 * cd / rate;
+      const F = ph.f.slice();
+      if (ph.velar) F[1] = nextF(i)[1] > 1400 ? 2300 : 1300;   // front vs back velar locus
+      segs.push({ t0: t, dur: clo, label: tk.base, F: scaleF(F), amp: ph.v || 0, trans: 0.035, voiceDelay });
+      t += clo;
+      frics.push({ t, dur: 0.018, cf: ph.burst.cf, q: ph.burst.q, g: ph.burst.g * P.burstGain, burst: true });
+      if (ph.asp) {               // VOT: aspiration, and the next vowel's voicing onset waits
+        const ad = ph.asp / 1000 * cd / rate;
+        asps.push({ t: t + 0.008, dur: ad, g: 0.45 });
+        voiceDelay = ad * 0.75;
+      } else voiceDelay = 0.01;
+    } else if (cls === "a") {     // affricate: closure + frication tail
+      const clo = ph.clo / 1000 * cd / rate, fd = ph.fdur / 1000 * cd / rate;
+      segs.push({ t0: t, dur: clo, label: tk.base, F: scaleF(ph.f), amp: ph.v ? 0.12 : 0, trans: 0.035, voiceDelay });
+      t += clo;
+      segs.push({ t0: t, dur: fd, label: "", F: scaleF(ph.f), amp: ph.v || 0, trans: 0.03 });
+      frics.push({ t, dur: fd, cf: ph.fric.cf, q: ph.fric.q, g: ph.fric.g * P.fricGain, burst: false });
+      t += fd; voiceDelay = 0;
+    }
+  }
+  const dur = t + 0.12;
+  return { segs, frics, asps, dur, errs, pitch: buildPitch(segs, dur, P) };
+}
+
+// F0 contour: declination + accents on stressed vowels + a phrase-final fall.
+function buildPitch(segs, dur, P) {
+  const base = P.basePitch, pts = [];
+  if (P.contour === "flat") return [[0, base], [dur, base]];
+  const lively = P.contour === "lively";
+  const dS = base * (lively ? 1.06 : 1.10), dE = base * (lively ? 1.00 : 0.92);
+  const baseAt = tt => dS + (dE - dS) * (tt / dur);
+  const accent = Math.pow(2, (P.pitchRange * (lively ? 1.4 : 1)) / 12);
+  pts.push([0, baseAt(0)]);
+  for (const s of segs) {
+    if (!s.stress || !s.vowel) continue;
+    const pk = s.t0 + s.dur * 0.35;
+    pts.push([pk - 0.09, baseAt(pk - 0.09)], [pk, baseAt(pk) * accent], [pk + 0.13, baseAt(pk + 0.13)]);
+  }
+  const fallT = Math.max(0, dur - 0.20);
+  pts.push([fallT, baseAt(fallT)], [dur, base * Math.pow(2, -P.finalFall / 12)]);
+  pts.sort((a, b) => a[0] - b[0]);
+  const out = []; let last = -1;
+  for (const p of pts) { if (p[0] - last < 0.03) continue; out.push([Math.max(0, p[0]), Math.max(40, p[1])]); last = p[0]; }
+  return out;
+}
+
+// PORT-ME BLOCK B — synthesis params + the shipping lines, VERBATIM from the lab dump (Paul's phrasing).
+// LINES ARE DATA: VOICE_LINES is keyed by EVENT, each holding an ARRAY of alternatives; adding a line
+// later (Paul wants variety) is a ONE-LINE edit here. Selection is a PLAIN RANDOM PICK (§11d), not a bag.
+const VOICE_PARAMS = {
+  basePitch: 112,
+  pitchRange: 4,
+  finalFall: 5,
+  contour: "declarative",
+  rate: 0.95,
+  wobble: 0.6,
+  srcType: "pulse",
+  richness: 0.85,
+  breath: 0.12,
+  f1Scale: 1,
+  f2Scale: 1,
+  f3Scale: 1,
+  bwScale: 1,
+  fricGain: 1,
+  burstGain: 1,
+  consDur: 1,
+  radio: {
+    on: true,
+    hp: 320,
+    lp: 3200,
+    drive: 2.5,
+    static: 0.018
+  }
+};
+
+const VOICE_LINES = {
+  health_low: [
+    { text: "Aw, man, we are taking a beating.",
+      phon: "AO1 , M AE1 N , W IY / AA1 R / T EY1 K IH NG / AH / B IY1 T IH NG ." },
+    { text: "Hull integrity is critical.",
+      phon: "HH AH1 L / IH N T EH1 G R IH T IY / IH Z / K R IH1 T IH K AH L ." },
+    { text: "Somebody patch that hole.",
+      phon: "S AH1 M B AA D IY / P AE1 CH / DH AE1 T / HH OW1 L ." },
+  ],
+  health_relief: [
+    { text: "We're okay for now.",
+      phon: "W IH1 R / OW K EY1 / F ER / N AW1 ." },
+    { text: "Crisis averted.",
+      phon: "K R AY1 S IH S / AH V ER1 T IH D ." },
+    { text: "Nothing a little Duct Tape can't handle.",
+      phon: "N AH1 TH IH NG / AH / L IH1 T AH L / D AH1 K T / T EY1 P / K AE1 N T / HH AE1 N D AH L ." },
+  ],
+  health_full: [
+    { text: "Like a brand new ship.",
+      phon: "L AY1 K / AH / B R AE1 N D / N UW1 / SH IH1 P ." },
+    { text: "It doesn't get any better than this.",
+      phon: "IH T / D AH1 Z AH N T / G EH1 T / EH1 N IY / B EH1 T ER / DH AH N / DH IH1 S ." },
+    { text: "Not a scratch on it.",
+      phon: "N AA1 T / AH / S K R AE1 CH / AA1 N / IH T ." },
+  ],
+  collect_triple: [
+    { text: "We got a triple shot.",
+      phon: "W IY / G AA1 T / AH / T R IH1 P AH L / SH AA1 T ." },
+  ],
+  collect_rapid: [
+    { text: "Rapid shot acquired.",
+      phon: "R AE1 P IH D / SH AA1 T / AH K W AY1 ER D ." },
+  ],
+  collect_scoop: [
+    { text: "A bigger pooper scooper.",
+      phon: "AH / B IH1 G ER / P UW1 P ER / S K UW1 P ER ." },
+  ],
+  collect_magnet: [
+    { text: "Now we're more attractive.",
+      phon: "N AW1 / W IH1 R / M AO1 R / AH T R AE1 K T IH V ." },
+  ],
+  collect_engine: [
+    { text: "A few more horsepower.",
+      phon: "AH / F Y UW1 / M AO1 R / HH AO1 R S P AW ER ." },
+  ],
+  expire_triple: [
+    { text: "Triple shot is gone.",
+      phon: "T R IH1 P AH L / SH AA1 T / IH Z / G AO1 N ." },
+  ],
+  expire_rapid: [
+    { text: "Rapid shot is gone.",
+      phon: "R AE1 P IH D / SH AA1 T / IH Z / G AO1 N ." },
+  ],
+  expire_scoop: [
+    { text: "Garbage scoop got smaller.",
+      phon: "G AA1 R B IH JH / S K UW1 P / G AA1 T / S M AO1 L ER ." },
+  ],
+  expire_magnet: [
+    { text: "Magnet power is gone.",
+      phon: "M AE1 G N IH T / P AW1 ER / IH Z / G AO1 N ." },
+  ],
+  expire_engine: [
+    { text: "Engine's a little less peppy.",
+      phon: "EH1 N JH IH N Z / AH / L IH1 T AH L / L EH1 S / P EH1 P IY ." },
+  ],
+  dock_5: [
+    { text: "There's at least 5 good pieces in there.",
+      phon: "DH EH1 R Z / AE T / L IY1 S T / F AY1 V / G UH1 D / P IY1 S IH Z / IH N / DH EH1 R ." },
+  ],
+  dock_10: [
+    { text: "That's somewhere around a dozen.",
+      phon: "DH AE1 T S / S AH1 M W EH R / AH R AW1 N D / AH / D AH1 Z AH N ." },
+  ],
+  dock_15: [
+    { text: "Special delivery.",
+      phon: "S P EH1 SH AH L / D IH L IH1 V ER IY ." },
+  ],
+  dock_20: [
+    { text: "I'm not sure I can count that high.",
+      phon: "AY1 M / N AA1 T / SH UH1 R / AY1 / K AE N / K AW1 N T / DH AE1 T / HH AY1 ." },
+  ],
+  cargo_full: [
+    { text: "Truck is full, let's go.",
+      phon: "T R AH1 K / IH Z / F UH1 L , L EH1 T S / G OW1 ." },
+  ],
+};
+
+// §11e cooldown/priority — PLAYTEST KNOBS. VOICE_COOLDOWN: no line starts while one plays, or within
+// this many seconds of the last one ENDING. VOICE_PRIORITY (default 1): a higher-priority line PRE-EMPTS
+// a lower one that is currently playing; an equal/lower one is DROPPED (never queued — a queue would have
+// Dan narrating events that finished ten seconds ago). 3 = hull critical, 2 = health milestones, 1 = rest.
+const VOICE_COOLDOWN = 1.2;
+const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2 };
+
+// VoiceSys — Dan's speech. A SEPARATE module alongside AudioSys/MusicSys (NOT folded into AudioSys, a
+// flat bag of one-shots): it owns a small sequencer + a radio-processing chain that feeds AudioSys.voice
+// (the volume bus). Every entry point no-ops when AudioSys.ctx is null (the headless-safe guard idiom).
+const VoiceSys = {
+  voiceBus: null, dry: null, rIn: null, rLP: null, rShaper: null, rComp: null, rGain: null,
+  staticGain: null, noiseBuf: null,
+  cur: null,               // the currently-playing utterance's source handles, or null
+  busyUntil: -Infinity,    // AudioSys-clock time the current utterance ends; also the cooldown anchor.
+                           // -Infinity = "nothing has ever played" so the FIRST line (and any line in the
+                           // AudioContext's first VOICE_COOLDOWN seconds) isn't swallowed by a phantom gap.
+  curPriority: -Infinity,  // priority of the line occupying the channel (for pre-emption)
+
+  // Build the noise bed + radio chain once the audio graph exists (first user gesture). Idempotent;
+  // no-ops until AudioSys.init() has created AudioSys.voice. Mirrors MusicSys.ensureGraph().
+  ensure() {
+    if (this.voiceBus || !AudioSys.ctx || !AudioSys.voice) return;
+    const ctx = AudioSys.ctx;
+    const n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    this.noiseBuf = b;
+    // voice bus forks: dry path / radio path (default (a), radio on) — both land on AudioSys.voice
+    this.voiceBus = ctx.createGain();
+    this.dry = ctx.createGain(); this.voiceBus.connect(this.dry); this.dry.connect(AudioSys.voice);
+    this.rIn = ctx.createBiquadFilter(); this.rIn.type = "highpass";
+    this.rLP = ctx.createBiquadFilter(); this.rLP.type = "lowpass";
+    this.rShaper = ctx.createWaveShaper();
+    this.rComp = ctx.createDynamicsCompressor();
+    this.rComp.threshold.value = -28; this.rComp.ratio.value = 8;
+    this.rComp.attack.value = 0.003; this.rComp.release.value = 0.12;
+    this.rGain = ctx.createGain();
+    this.voiceBus.connect(this.rIn); this.rIn.connect(this.rLP); this.rLP.connect(this.rShaper);
+    this.rShaper.connect(this.rComp); this.rComp.connect(this.rGain); this.rGain.connect(AudioSys.voice);
+    // squelch-gated static bed, colored through the same radio chain
+    const st = ctx.createBufferSource(); st.buffer = this.noiseBuf; st.loop = true;
+    const sf = ctx.createBiquadFilter(); sf.type = "bandpass"; sf.frequency.value = 1700; sf.Q.value = 0.4;
+    this.staticGain = ctx.createGain(); this.staticGain.gain.value = 0;
+    st.connect(sf); sf.connect(this.staticGain); this.staticGain.connect(this.rIn);
+    st.start();
+    this.applyRadio();
+  },
+
+  applyRadio() {
+    if (!AudioSys.ctx || !this.rIn) return;
+    const R = VOICE_PARAMS.radio;
+    this.rIn.frequency.value = R.hp;
+    this.rLP.frequency.value = R.lp;
+    const k = Math.max(1.001, R.drive), N = 1024, curve = new Float32Array(N), th = Math.tanh(k);
+    for (let i = 0; i < N; i++) { const x = i / (N - 1) * 2 - 1; curve[i] = Math.tanh(k * x) / th; }
+    this.rShaper.curve = curve;
+    this.dry.gain.value = R.on ? 0 : 1;
+    this.rGain.gain.value = R.on ? 1.4 : 0;
+  },
+
+  // Stop the current utterance immediately (pre-emption / reset). Ramps the static bed down.
+  _stop() {
+    if (this.cur) {
+      for (const s of this.cur.sources) { try { s.onended = null; s.stop(); } catch (e) {} }
+      try { this.cur.utterG.disconnect(); } catch (e) {}
+      this.cur = null;
+    }
+    if (AudioSys.ctx && this.staticGain) {
+      const now = AudioSys.ctx.currentTime, g = this.staticGain.gain;
+      g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); g.linearRampToValueAtTime(0, now + 0.05);
+    }
+  },
+
+  // Fresh run: silence Dan and clear the cooldown/priority so a new game never inherits a stale gate.
+  reset() { this._stop(); this.busyUntil = -Infinity; this.curPriority = -Infinity; },
+
+  // Speak a random alternative for `event`, subject to §11e cooldown/priority. Returns the chosen line
+  // (or null if dropped/unavailable). Total no-op when audio is unavailable (AudioSys.ctx null).
+  say(event) {
+    if (!AudioSys.ctx) return null;
+    const lines = VOICE_LINES[event];
+    if (!lines || !lines.length) return null;
+    this.ensure();
+    const now = AudioSys.now();
+    const p = VOICE_PRIORITY[event] || 1;
+    if (now < this.busyUntil) {              // a line is on the channel right now
+      if (p <= this.curPriority) return null; // equal/lower → DROP (never queue)
+      // higher → fall through: _render() stops the current line and takes the channel
+    } else if (now < this.busyUntil + VOICE_COOLDOWN) {
+      return null;                            // inside the post-line cooldown gap
+    }
+    const line = lines[(Math.random() * lines.length) | 0];
+    const utt = this._render(line.phon);
+    this.curPriority = p;
+    this.busyUntil = now + 0.10 + (utt ? utt.dur : 0); // t0 = now + 0.10 (see _render); + utterance length
+    return line;
+  },
+
+  // Recycle-at-dock tiers (§11f / FORK-5 b): map pieces-delivered-this-visit to a line. 1–4 says nothing.
+  dockDelivery(n) {
+    const ev = n >= 20 ? "dock_20" : n >= 15 ? "dock_15" : n >= 10 ? "dock_10" : n >= 5 ? "dock_5" : null;
+    if (ev) return this.say(ev);
+    return null;
+  },
+
+  // The render scheduler — PORT-ME BLOCK A, verbatim from the lab's VL.speak(), retargeted onto
+  // AudioSys.ctx / AudioSys.voice (via this.voiceBus). Builds one utterance's Web Audio graph and
+  // returns the compiled utterance (with .dur). Do not re-tune here — tune in the lab, re-port.
+  _render(phonStr) {
+    this.ensure();
+    if (!AudioSys.ctx) return null;
+    const ctx = AudioSys.ctx;
+    if (ctx.state === "suspended") ctx.resume();
+    this._stop();
+    const utt = buildUtterance(phonStr, VOICE_PARAMS);
+    if (!utt.segs.length) return utt;
+    const t0 = ctx.currentTime + 0.10;
+
+    // glottal source — custom pulse (richness = spectral tilt) or a native wave
+    const osc = ctx.createOscillator();
+    if (VOICE_PARAMS.srcType === "pulse") {
+      const NH = 48, re = new Float32Array(NH + 1), im = new Float32Array(NH + 1);
+      for (let h = 1; h <= NH; h++) im[h] = 1 / Math.pow(h, VOICE_PARAMS.richness);
+      osc.setPeriodicWave(ctx.createPeriodicWave(re, im));
+    } else osc.type = VOICE_PARAMS.srcType;
+    const lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 5.1;
+    const lfoG = ctx.createGain(); lfoG.gain.value = VOICE_PARAMS.wobble;
+    lfo.connect(lfoG); lfoG.connect(osc.frequency);
+
+    const vGain = ctx.createGain(); vGain.gain.value = 0;      // voicing envelope
+    const srcMix = ctx.createGain();
+    osc.connect(vGain); vGain.connect(srcMix);
+    const aspSrc = ctx.createBufferSource(); aspSrc.buffer = this.noiseBuf; aspSrc.loop = true;
+    const aspG = ctx.createGain(); aspG.gain.value = 0;        // aspiration/breath -> formants
+    aspSrc.connect(aspG); aspG.connect(srcMix);
+
+    // parallel formant bank: F1 direct, F2-F4 via hiBus (nasal murmur damps the highs)
+    const utterG = ctx.createGain();
+    const hiBus = ctx.createGain(); hiBus.connect(utterG);
+    const FQ = [7, 10, 12, 14], FG = [0.9, 1.0, 0.7, 0.32], filts = [];
+    for (let i = 0; i < 4; i++) {
+      const f = ctx.createBiquadFilter(); f.type = "bandpass";
+      f.Q.value = FQ[i] / VOICE_PARAMS.bwScale;
+      const g = ctx.createGain(); g.gain.value = FG[i];
+      srcMix.connect(f); f.connect(g); g.connect(i === 0 ? utterG : hiBus);
+      filts.push(f);
+    }
+    filts[3].frequency.value = 3300;                            // fixed F4, naturalness only
+
+    // frication path — bypasses the formant bank (Klatt parallel path)
+    const fricSrc = ctx.createBufferSource(); fricSrc.buffer = this.noiseBuf; fricSrc.loop = true;
+    const fricF = ctx.createBiquadFilter(); fricF.type = "bandpass";
+    const fricG = ctx.createGain(); fricG.gain.value = 0;
+    fricSrc.connect(fricF); fricF.connect(fricG); fricG.connect(utterG);
+    utterG.connect(this.voiceBus);
+
+    // ---- schedule: formants ramp THROUGH targets (pin previous, then ramp — the b/d/g cue)
+    const prevF = [null, null, null];
+    let prevAmp = 0, prevDamp = 1, prevBreath = 0;
+    for (const s of utt.segs) {
+      const at = t0 + s.t0;
+      if (s.F) {
+        const tr = Math.min(s.trans || 0.05, Math.max(0.015, s.dur * 0.6));
+        for (let i = 0; i < 3; i++) {
+          const p = filts[i].frequency;
+          if (prevF[i] === null) p.setValueAtTime(s.F[i], at);
+          else { p.setValueAtTime(prevF[i], at); p.linearRampToValueAtTime(s.F[i], at + tr); }
+          prevF[i] = s.F[i];
+          if (s.F2nd) {           // diphthong: hold, then glide to the second target
+            p.setValueAtTime(s.F[i], at + s.dur * 0.45);
+            p.linearRampToValueAtTime(s.F2nd[i], at + s.dur);
+            prevF[i] = s.F2nd[i];
+          }
+        }
+      }
+      const vAt = at + (s.voiceDelay || 0);
+      vGain.gain.setValueAtTime(prevAmp, vAt);
+      vGain.gain.linearRampToValueAtTime(s.amp, vAt + 0.016);
+      prevAmp = s.amp;
+      const damp = s.hiDamp == null ? 1 : s.hiDamp;
+      if (damp !== prevDamp) {
+        hiBus.gain.setValueAtTime(prevDamp, at);
+        hiBus.gain.linearRampToValueAtTime(damp, at + 0.02);
+        prevDamp = damp;
+      }
+      const breath = s.amp > 0.3 ? VOICE_PARAMS.breath * 0.4 : 0;   // breathiness rides voicing
+      if (breath !== prevBreath) {
+        aspG.gain.setValueAtTime(prevBreath, vAt);
+        aspG.gain.linearRampToValueAtTime(breath, vAt + 0.02);
+        prevBreath = breath;
+      }
+    }
+    const tEnd = t0 + utt.dur;
+    vGain.gain.setValueAtTime(prevAmp, tEnd - 0.06);
+    vGain.gain.linearRampToValueAtTime(0, tEnd);
+
+    // aspiration events (HH, voiceless-stop VOT) — override the breath baseline
+    for (const a of utt.asps) {
+      const at = t0 + a.t;
+      aspG.gain.setValueAtTime(a.g, at);
+      aspG.gain.linearRampToValueAtTime(0.001, at + a.dur);
+    }
+    // frication: typed noise — instant-attack exponential-decay bursts, shaped fricatives
+    for (const fr of utt.frics) {
+      const at = t0 + fr.t;
+      fricF.frequency.setValueAtTime(fr.cf, at);
+      fricF.Q.setValueAtTime(fr.q, at);
+      if (fr.burst) {
+        fricG.gain.setValueAtTime(fr.g, at);
+        fricG.gain.exponentialRampToValueAtTime(0.0001, at + fr.dur);
+        fricG.gain.setValueAtTime(0, at + fr.dur + 0.001);
+      } else {
+        fricG.gain.setValueAtTime(0, at);
+        fricG.gain.linearRampToValueAtTime(fr.g, at + 0.015);
+        fricG.gain.setValueAtTime(fr.g, at + Math.max(0.02, fr.dur - 0.02));
+        fricG.gain.linearRampToValueAtTime(0, at + fr.dur);
+      }
+    }
+    // pitch contour
+    const fp = osc.frequency;
+    fp.setValueAtTime(utt.pitch[0][1], t0 + utt.pitch[0][0]);
+    for (let i = 1; i < utt.pitch.length; i++)
+      fp.linearRampToValueAtTime(utt.pitch[i][1], t0 + utt.pitch[i][0]);
+
+    // utterance master envelope (belt-and-braces declick)
+    utterG.gain.setValueAtTime(0, ctx.currentTime);
+    utterG.gain.setValueAtTime(1, t0 - 0.02);
+    utterG.gain.setValueAtTime(1, tEnd + 0.02);
+    utterG.gain.linearRampToValueAtTime(0, tEnd + 0.12);
+
+    // radio squelch: static bed keys up just before the voice, clicks off after
+    if (VOICE_PARAMS.radio.on) {
+      const g = this.staticGain.gain, lvl = VOICE_PARAMS.radio.static;
+      g.cancelScheduledValues(ctx.currentTime);
+      g.setValueAtTime(0, ctx.currentTime);
+      g.setValueAtTime(lvl * 6, t0 - 0.07);
+      g.linearRampToValueAtTime(lvl, t0 - 0.03);
+      g.setValueAtTime(lvl, tEnd + 0.05);
+      g.setValueAtTime(lvl * 5, tEnd + 0.07);
+      g.linearRampToValueAtTime(0, tEnd + 0.11);
+    }
+
+    const sources = [osc, lfo, aspSrc, fricSrc];
+    for (const s of sources) s.start(ctx.currentTime);
+    for (const s of sources) s.stop(tEnd + 0.3);
+    osc.onended = () => { if (this.cur && this.cur.osc === osc) this.cur = null; };
+    this.cur = { sources, utterG, osc };
+    return utt;
+  },
+};
+
 // ---------- Input ----------
 // One input layer serves both keyboard and gamepad. Everything downstream only ever calls
 // input.left()/right()/thrust()/fire()/shield() — it never reads keys{} or the gamepad directly,
@@ -1559,11 +2084,12 @@ function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_R
 // themselves. CS010 P4 (§9/§10a): the three volume sliders + Music Track moved OFF this screen onto
 // the new "Sound / Music" sub-screen (SOUND_ROWS below); "High Scores" (§8b) moved IN, nested here.
 const MENU_OPTIONS = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
-// CS010 P4 (§9): the Sound/Music sub-screen's rows, same template as DIFFICULTY_ROWS. P9 will add a
-// Voice Volume row here (§11c) — purely additive, don't build it yet.
-const SOUND_ROWS   = ["SFX Volume", "Music Volume", "Master Volume", "Music Track", "Back"];
-const VOL_CATS     = ["sfx", "music", "master"]; // parallel to VOL_LABELS (NOT to any MENU_OPTIONS/SOUND_ROWS position)
-const VOL_LABELS   = ["SFX Volume", "Music Volume", "Master Volume"]; // the slider rows, by label
+// CS010 P4 (§9): the Sound/Music sub-screen's rows, same template as DIFFICULTY_ROWS. CS010 P9 (§11c)
+// added the Voice Volume slider — SOUND_ROWS + VOL_LABELS + VOL_CATS grow together so the parallel
+// label→category lookup stays paired.
+const SOUND_ROWS   = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume", "Music Track", "Back"];
+const VOL_CATS     = ["sfx", "music", "master", "voice"]; // parallel to VOL_LABELS (NOT to any MENU_OPTIONS/SOUND_ROWS position)
+const VOL_LABELS   = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume"]; // the slider rows, by label
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -1850,7 +2376,9 @@ function loadSettings() {
     if (!raw) return;
     const data = JSON.parse(raw);
     if (data.vol) {
-      for (const c of ["master", "sfx", "music"])
+      // CS010 P9: derive the categories from vol's own keys (now incl. "voice") so a newly-added bus
+      // persists automatically — a hardcoded list would silently drop voice volume on every load.
+      for (const c of Object.keys(AudioSys.vol))
         if (typeof data.vol[c] === "number") AudioSys.vol[c] = clamp01(data.vol[c]);
     }
     if (data.bindings) {
@@ -2787,6 +3315,18 @@ const game = {
   lowHpSiren: false,  // v3.4 P5: edge-detection latch for AudioSys.lowhp — true iff the siren is
                       // currently playing, so update() can fire lowhp(true)/(false) exactly once
                       // per state transition instead of every frame
+  // CS010 P9: Dan's OWN low-health latch — answers "has Dan already said 'hull critical' for THIS
+  // episode?", a DIFFERENT question from lowHpSiren's "is the tone playing?". It must NOT be torn down
+  // by openPause/quitToTitle (which reset lowHpSiren so the rising edge re-fires the SIREN on unpause);
+  // otherwise Dan re-announces every single unpause. Cleared ONLY on the genuine falling edge + startGame.
+  lowHpVoiced: false,
+  // CS010 P9: edge-detect latch for the hull-FULL voice (hp >= max). Starts TRUE (the ship spawns full,
+  // so no "brand new ship" line at wave start); flips false when hp drops below max, so a heal back to
+  // full — from the Health powerup OR addScore()'s repair milestone — fires the line exactly once.
+  hpFullVoice: true,
+  // CS010 P9: previous powerActive() state per timed type, for the powerup-EXPIRED voice's falling edge.
+  // Keyed through powerActive() (not powerFx) so it correctly covers count modes too.
+  powerVoiced: { rapid: false, triple: false, magnet: false, engine: false },
   // CS010 P3: the low-health pulse PHASE ACCUMULATOR. Advanced by 2π·lowhpPulseRate(t)·dt in update()
   // while engaged; read as Math.sin(game.lowHpPhase) by BOTH the critical-hull ring pulse AND the corner
   // glow, so they lock to each other and (via the shared rate helper) to the siren — one alarm. An
@@ -2835,6 +3375,12 @@ function startGame() {
   game.lowHpSiren = false; AudioSys.lowhp(false); // fresh run never carries the siren over (v3.4 P5)
   game.lowHpPhase = 0;      // CS010 P3: the pulse accumulator starts a fresh run at 0
   game.hpReliefFlash = 0;   // CS010 P3: no stale relief exhale carries into a fresh run
+  // CS010 P9: Dan's latches. lowHpVoiced false (not yet at low HP); hpFullVoice TRUE (spawns full — no
+  // "brand new ship" at wave start); powerVoiced all false. reset() clears any in-flight line + cooldown.
+  game.lowHpVoiced = false;
+  game.hpFullVoice = true;
+  game.powerVoiced = { rapid: false, triple: false, magnet: false, engine: false };
+  VoiceSys.reset();
   nextWave();
 }
 
@@ -3085,6 +3631,7 @@ function applyPowerup(type) {
     }
     game.stats.powerupsPicked++;
     AudioSys.powerup();
+    VoiceSys.say("collect_scoop"); // CS010 P9: scoop is the early-return branch — hook the line HERE
     return;
   }
   if (type === "health") {
@@ -3112,6 +3659,10 @@ function applyPowerup(type) {
   else game.stats.powerUsed[type] = true;
   game.floaters.push(new FloatText(POWERUP_LABEL[type], game.ship.x, game.ship.y - 22, POWERUP_COLOR[type]));
   AudioSys.powerup();
+  // CS010 P9: the four timed types announce their pickup (Health has no collect line — it speaks via the
+  // hull-full latch instead). A same-type BANK re-pickup re-fires collect_<type>; the §11e cooldown drops
+  // the second line if it lands inside the window (a decided, acceptable behavior — see STATUS.md).
+  if (type !== "health") VoiceSys.say("collect_" + type);
 }
 
 // ---------- Achievements (F9) ----------
@@ -3516,6 +4067,7 @@ function damageShip(amount, srcX, srcY) {
       game.scoopHits = 0;
       game.floaters.push(new FloatText("SCOOP -1", s.x, s.y - 22, POWERUP_COLOR.scoop));
       AudioSys.scooploss();
+      VoiceSys.say("expire_scoop"); // CS010 P9: scoop decays by DAMAGE, not time — Dan reports it here
     }
   }
   return true;
@@ -3861,7 +4413,13 @@ function update(dt) {
   // transition, not every frame. Driven from this one site; killShip/quitToTitle/openPause each tear the
   // voice down directly since they leave "playing" without passing back through here.
   const lowHp = game.ship.hp <= LOW_HP_THRESHOLD && !game.ship.dead;
-  if (lowHp && !game.lowHpSiren) { AudioSys.lowhp(true); game.lowHpSiren = true; }
+  if (lowHp && !game.lowHpSiren) {
+    AudioSys.lowhp(true); game.lowHpSiren = true;
+    // CS010 P9: Dan announces the crisis on the GENUINE rising edge only. The SIREN latch re-arms on
+    // every unpause (openPause/quitToTitle tear it down), so gating the voice on lowHpVoiced — which
+    // those menus DON'T touch — is what stops Dan re-announcing "Hull integrity is critical." per unpause.
+    if (!game.lowHpVoiced) { VoiceSys.say("health_low"); game.lowHpVoiced = true; }
+  }
   else if (!lowHp && game.lowHpSiren) {
     // Falling edge — disengage. Reset the pulse phase, then arm the relief exhale ONLY IF THE SHIP IS
     // ALIVE (CS010 P3, §5, FLAG-CS010-a). THE GUARD IS LOAD-BEARING: `lowHp` also goes false when the
@@ -3871,8 +4429,21 @@ function update(dt) {
     // edge isn't even reached at death — but that is incidental; guard explicitly.)
     AudioSys.lowhp(false); game.lowHpSiren = false;
     game.lowHpPhase = 0;
-    if (!game.ship.dead) game.hpReliefFlash = LOWHP_RELIEF_FLASH;   // relief, not death
+    if (!game.ship.dead) {
+      game.hpReliefFlash = LOWHP_RELIEF_FLASH;   // relief, not death
+      // CS010 P9: Dan's relief line is ADDITIVE to P3's visual exhale (both carry the falling edge —
+      // parity with the four onset tells). Guarded on !ship.dead like the flash: death isn't relief.
+      VoiceSys.say("health_relief");
+    }
+    game.lowHpVoiced = false;   // CS010 P9: the crisis is over — re-arm Dan for the NEXT low-HP episode
   }
+  // CS010 P9: hull-FULL voice. Edge-detected on hp >= max (matching the HUD's hpMax, not === ) so it
+  // fires ONCE per heal-to-full and never every frame while healthy — and, living here in update(),
+  // catches healing from ANY source (Health powerup AND addScore()'s repair milestone) for free. The
+  // latch starts true at spawn (see startGame) so a fresh full-HP run doesn't blurt "brand new ship".
+  const hpFull = game.ship.hp >= SHIP_MAX_HP && !game.ship.dead;
+  if (hpFull && !game.hpFullVoice) { VoiceSys.say("health_full"); game.hpFullVoice = true; }
+  else if (!hpFull) game.hpFullVoice = false;
   // v3.5 P3: HP-scaled urgency for the pulsed voice — a per-frame call (not edge-detected), safe no-op
   // via lowhpSet's own guards when the state isn't engaged or the voice isn't live. CS010 P3: the SAME t
   // and the SAME lowhpPulseRate(t) also advance game.lowHpPhase, the shared accumulator the critical-hull
@@ -3968,6 +4539,11 @@ function update(dt) {
           g.vy += (ay / d) * SCOOP_SPILL_KICK;
         }
       }
+      // CS010 P9: "Truck is full, let's go." fires on the pickup where the chain BECOMES full — after the
+      // single/clump branches so BOTH paths trip it, and inside the capture branch so only a real hook
+      // counts. cargoMax is the RUNTIME cap (grows 12→24), so "full" is a moving target; the pickup gate
+      // above blocks further hooks once full, so this trips exactly once and re-arms after a delivery.
+      if (game.chain.length === game.cargoMax) VoiceSys.say("cargo_full");
     }
   }
   coalesceGarbage(dt); // v3.1 P3: neglected scrap clumps; a 12-piece clump becomes a Hunter
@@ -3983,6 +4559,15 @@ function update(dt) {
   }
   for (const k in game.powerFx) {
     if (game.powerFx[k] > 0) game.powerFx[k] = Math.max(0, game.powerFx[k] - dt);
+  }
+  // CS010 P9: powerup-EXPIRED voice — the falling edge of powerActive(t) per timed type. Routed through
+  // powerActive() (never powerFx directly) so it correctly catches BOTH time mode (clock ran out) AND
+  // count mode (shots/pieces budget hit 0) — hooking powerFx would silently miss the count modes. Runs
+  // after the powerFx decay and after this frame's budget spends, so powerActive() is current.
+  for (const t of POWERUP_DROP_TYPES) {
+    const active = powerActive(t);
+    if (!active && game.powerVoiced[t]) VoiceSys.say("expire_" + t);
+    game.powerVoiced[t] = active;
   }
   for (const k in game.powerBank) {
     if (game.powerBank[k] > 0) game.powerBank[k] = Math.max(0, game.powerBank[k] - dt);
@@ -4045,6 +4630,11 @@ function update(dt) {
         Achievements.lifetime.deliveryScore += pts;
         game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
         AudioSys.deliver(game.deliveryCount);
+        // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
+        // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
+        // THE LATCH, no flag needed) and deliveryCount is intact at this instant. 1–4 pieces says nothing.
+        // breakChain()/scatterChain() also zero deliveryCount but never reach here, so they stay silent.
+        if (game.chain.length === 0) VoiceSys.dockDelivery(game.deliveryCount);
         game.offloadTimer = DOCK_OFFLOAD_INTERVAL;
       }
     } else {
@@ -4326,7 +4916,7 @@ function drawOptionsMenu() {
 // cycler off Options, same control style. Follows drawOptionsMenu's pre-CS010-P4 value-row layout
 // (left-aligned label + slider/value), dispatched off SOUND_ROWS by label, plus a centered Back row.
 function drawSound() {
-  const { x, y } = menuPanel(600, 460, "SOUND / MUSIC");
+  const { x, y } = menuPanel(600, 510, "SOUND / MUSIC"); // CS010 P9: +50px for the Voice Volume row
   const m = game.menu;
   let cy = y + 100;
   SOUND_ROWS.forEach((label, i) => {
@@ -4352,7 +4942,7 @@ function drawSound() {
   cy += 14;
   const backSel = m.index === SOUND_ROWS.indexOf("Back");
   drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.dim);
-  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 440, 12, COLOR.dim);
+  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 490, 12, COLOR.dim);
 }
 
 // Difficulty screen renderer (v3.0 P5): two two-option toggle rows + Back. The active side of each

@@ -64,10 +64,11 @@ function makeParam() {
 function makeGain() { return { gain: makeParam(), connect(dest) { return dest; } }; }
 function makeOsc() {
   oscCreateCount++;
-  return { type: "sine", frequency: makeParam(), connect(dest) { return dest; }, start() {}, stop() {} };
+  // CS010 P9: setPeriodicWave + onended added — the VoiceSys glottal source sets both.
+  return { type: "sine", frequency: makeParam(), onended: null, connect(dest) { return dest; }, start() {}, stop() {}, setPeriodicWave() {}, disconnect() {} };
 }
-function makeFilter() { return { type: "lowpass", frequency: makeParam(), Q: makeParam(), connect(dest) { return dest; } }; }
-function makeBufferSource() { return { buffer: null, loop: false, playbackRate: makeParam(), connect(dest) { return dest; }, start() {}, stop() {} }; }
+function makeFilter() { return { type: "lowpass", frequency: makeParam(), Q: makeParam(), connect(dest) { return dest; }, disconnect() {} }; }
+function makeBufferSource() { return { buffer: null, loop: false, playbackRate: makeParam(), connect(dest) { return dest; }, start() {}, stop() {}, disconnect() {} }; }
 function FakeAudioContext() {
   const ctx = { state: "running", currentTime: 0, sampleRate: 44100 };
   ctx.destination = makeGain();
@@ -76,6 +77,10 @@ function FakeAudioContext() {
   ctx.createBiquadFilter = () => makeFilter();
   ctx.createBuffer = (ch, len) => ({ getChannelData() { return new Float32Array(len || 1); } });
   ctx.createBufferSource = () => makeBufferSource();
+  // CS010 P9: the VoiceSys radio chain adds these node factories to the audio graph.
+  ctx.createWaveShaper = () => ({ curve: null, connect(dest) { return dest; }, disconnect() {} });
+  ctx.createDynamicsCompressor = () => ({ threshold: makeParam(), ratio: makeParam(), attack: makeParam(), release: makeParam(), connect(dest) { return dest; }, disconnect() {} });
+  ctx.createPeriodicWave = () => ({});
   ctx.resume = () => {};
   return ctx;
 }

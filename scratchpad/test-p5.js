@@ -43,9 +43,10 @@ const documentStub = { getElementById: () => canvasStub };
 
 function makeAudioNode() {
   return new Proxy({
-    gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {} },
-    frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
-    Q: { value: 0 }, type: "sine", buffer: null, loop: false, playbackRate: { value: 1 },
+    gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} },
+    frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} },
+    Q: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} }, // CS010 P9
+    type: "sine", buffer: null, loop: false, playbackRate: { value: 1 }, curve: null, onended: null,
     connect() { return makeAudioNode(); }
   }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
 }

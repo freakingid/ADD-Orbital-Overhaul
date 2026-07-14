@@ -102,12 +102,13 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   const expectedOptions = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
   assert(JSON.stringify(A.MENU_OPTIONS) === JSON.stringify(expectedOptions),
     `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a); got ${JSON.stringify(A.MENU_OPTIONS)}`);
-  const expectedSound = ["SFX Volume", "Music Volume", "Master Volume", "Music Track", "Back"];
+  // CS010 P9 added the "Voice Volume" slider row — SOUND_ROWS/VOL_LABELS/VOL_CATS grew together.
+  const expectedSound = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume", "Music Track", "Back"];
   assert(JSON.stringify(A.SOUND_ROWS) === JSON.stringify(expectedSound),
     `B: SOUND_ROWS === ${JSON.stringify(expectedSound)}; got ${JSON.stringify(A.SOUND_ROWS)}`);
-  assert(JSON.stringify(A.VOL_LABELS) === JSON.stringify(["SFX Volume", "Music Volume", "Master Volume"]),
-    "B: VOL_LABELS unchanged, still paired with VOL_CATS");
-  assert(JSON.stringify(A.VOL_CATS) === JSON.stringify(["sfx", "music", "master"]), "B: VOL_CATS unchanged");
+  assert(JSON.stringify(A.VOL_LABELS) === JSON.stringify(["SFX Volume", "Music Volume", "Master Volume", "Voice Volume"]),
+    "B: VOL_LABELS grew with Voice Volume, still paired with VOL_CATS");
+  assert(JSON.stringify(A.VOL_CATS) === JSON.stringify(["sfx", "music", "master", "voice"]), "B: VOL_CATS grew with voice");
 
   // FLAG-8b: no gotoScreen("options", <numeric literal>) call anywhere in the live source — every
   // call site must resolve the index via MENU_OPTIONS.indexOf(...) instead.

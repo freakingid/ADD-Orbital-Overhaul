@@ -30,8 +30,9 @@ function makeAudioNode() {
   return new Proxy({
     gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} },
     frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} },
-    Q: { value: 0 }, type: "sine", buffer: null, loop: false, playbackRate: { value: 1 },
-    connect() { return makeAudioNode(); }
+    Q: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} }, // CS010 P9: VoiceSys engine automates Q
+    type: "sine", buffer: null, loop: false, playbackRate: { value: 1 }, curve: null, onended: null,
+    connect() { return makeAudioNode(); }, disconnect() {}, start() {}, stop() {}, setPeriodicWave() {}
   }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
 }
 function FakeAudioContext() {
