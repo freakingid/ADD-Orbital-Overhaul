@@ -82,7 +82,7 @@
   <h1>Music Lab</h1>
   <p class="sub">ORBITAL OVERHAUL · CHANGESET 7 · FINAL TRACK SET</p>
 
-  <div class="cat">Title screen</div>
+  <div class="cat">Contextual <span>— not gameplay-picker tracks</span></div>
   <div class="tracks" id="grp-title"></div>
   <div class="cat">Gameplay <span>— picker order: Zen · Derelict · Drift · Warehouse, default Zen</span></div>
   <div class="tracks" id="grp-play"></div>
@@ -364,21 +364,59 @@ function buildBeaconTitle() {
   ]};
 }
 
-// Keys are the STATE STRINGS. `title` is what musicStateFor() returns on the title screen; the
-// other five are the values of settings.musicTrack, so a track switch is a normal setState().
+/* --- HIGH SCORE: FANFARE (CS010 P7) — the celebration cue for the High Scores screen. Bright C
+       major, an anthemic I–V–vi–IV lifted upward: a 16th bell arpeggio, a soft four-on-the-floor
+       kick, a light shaker, and a triumphant triangle lead that climbs to E6 at the peak and
+       resolves back into C. Plays ONLY while the High Scores screen is open — musicStateFor()
+       returns "highscore" there; it is CONTEXTUAL like `title`, not a value of settings.musicTrack,
+       so it is absent from MUSIC_TRACK_VALUES. 100 BPM. 8 bars, 19.2 s. */
+function buildHighScoreTrack() {
+  const BARS = 8, SPB = 16, STEPS = BARS * SPB, stepDur = 0.15;
+  const sub = mk(STEPS), pad = mk(STEPS), bell = mk(STEPS), lead = mk(STEPS), kick = mk(STEPS), shk = mk(STEPS);
+  const CH  = [[48,64],[43,59],[45,60],[41,57],[48,64],[43,62],[41,57],[43,59]]; // C G Am F C G F G
+  const ARP = [[60,64,67,72],[59,62,67,71],[57,60,64,69],[60,65,69,72],
+               [60,64,67,72],[62,67,71,74],[60,65,69,72],[59,62,67,71]];
+  for (let b = 0; b < BARS; b++) {
+    const s0 = b * SPB, r = CH[b][0], t3 = CH[b][1], a = ARP[b];
+    put(sub, s0, r - 12, 16, 1.0);
+    put(pad, s0, t3, 16, 0.9);
+    for (let i = 0; i < SPB; i++) put(bell, s0 + i, a[i % 4], 1, i % 4 === 0 ? 0.95 : 0.6);
+    for (const s of [0, 4, 8, 12]) put(kick, s0 + s, 48, 1, s === 0 ? 1.0 : 0.8);
+    for (const s of [2, 6, 10, 14]) hit(shk, s0 + s, 1, 0.4);
+  }
+  // The fanfare lead — every onset sits OFF the bar downbeat (steps ≡ 2 or 10 mod 16), so it never
+  // stacks with sub+pad+kick; the loop's worst-case per-step node count stays on the downbeat (12).
+  for (const [s, m, d] of [[2,76,6],[10,79,6],[18,81,8],[26,79,6],[34,84,10],[50,81,8],
+                           [66,79,8],[74,83,8],[82,88,12],[98,84,8],[106,81,8],[114,79,8],[122,76,10]])
+    put(lead, s, m, d, 0.95);
+  return { stepDur, steps: STEPS, layers: [
+    { name:"bell", type:"square",   cutoff:900, cutoffTo:3200, cutoffTime:0.08, q:4, gain:0.040, atk:0.005, rel:0.10, steps:bell },
+    { name:"sub",  type:"sawtooth", cutoff:320, gain:0.068, atk:0.4, rel:1.0, steps:sub },
+    { name:"pad",  type:"sawtooth", cutoff:1000, cutoffTo:2000, detune:11, gain:0.048, atk:0.5, rel:1.2, steps:pad },
+    { name:"lead", type:"triangle", detune:7, gain:0.078, atk:0.02, rel:0.8, steps:lead },
+    { name:"kick", type:"triangle", drop:12, dropTime:0.06, gain:0.070, atk:0.003, rel:0.22, steps:kick },
+    { name:"shk",  noise:true, hp:6000, gain:0.014, atk:0.002, rel:0.06, steps:shk },
+  ]};
+}
+
+// Keys are the STATE STRINGS. `title` and `highscore` are CONTEXTUAL — what musicStateFor() returns
+// on the title / High Scores screens; the four gameplay names between them are the values of
+// settings.musicTrack, so a gameplay-track switch is a normal setState().
 const MUSIC_TRACKS = {
   title:     buildBeaconTitle(),
   zen:       buildZenTrack(),
   derelict:  buildDerelictTrack(),
   drift:     buildDriftTrack(),
   warehouse: buildWarehouseTrack(),
+  highscore: buildHighScoreTrack(),
 };
 // Picker (game): MUSIC_TRACK_VALUES = ["zen","derelict","drift","warehouse"], default "zen".
 
 /* ===== LAB UI — none of this ships ========================================================== */
 const GROUPS = {
   "grp-title": [
-    ["title", "Beacon", "4 layers · no drums · Lydian lift · 88 BPM"],
+    ["title",     "Beacon",  "4 layers · no drums · Lydian lift · 88 BPM"],
+    ["highscore", "Fanfare",  "6 layers · High Scores screen · C major · 100 BPM"],
   ],
   "grp-play": [
     ["zen",       "Zen",       "6 layers · was your title track"],
@@ -389,6 +427,7 @@ const GROUPS = {
 };
 const BLURB = {
   title:    "Drift's engine turned hopeful — same 16th arpeggio under a filter, same absence of drums. The melody itself lands the Lydian ♯4 (F♯5) over a held C in bar 6: the departure, without a fanfare.",
+  highscore:"The celebration cue for the High Scores screen (CS010 P7). Bright C major, an anthemic I–V–vi–IV: a 16th bell arpeggio, a soft four-on-the-floor kick and shaker, and a triumphant lead climbing to E6 before resolving back to C. Contextual, like the title track — never a gameplay-picker option.",
   zen:      "Exactly what you approved at wave 1. Shimmer, counter-melody and sparkle deleted.",
   derelict: "Exactly what you approved at wave 1. The noise bed, the third pad, the clanks, the sub and the heartbeat are all gone — hum, two pads, one ping.",
   drift:    "The wave-2 hymn, now with a B-section (CS010 P6): 16 bars, A→B. Bars 8-15 turn to C major with the arp an octave up and a fuller lead — a chorus lift resolving on E back into A. No kick anywhere; the organ figure and the hymn carry it.",
