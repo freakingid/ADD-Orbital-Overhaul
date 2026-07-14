@@ -237,6 +237,15 @@ each carries whatever small slice of game logic it needs duplicated in place
   what it plays is what the game plays; a track is composed and auditioned
   there, then its builder function is ported **verbatim** into the main
   file — never hand-tuned in place. See the MusicSys non-negotiable above.
+- **`tools/voice-lab.html`** — the formant-synthesis instrument for Dan's
+  voice (CS010 §11a; **FLAG-11a-gated** — nothing ports until Paul has heard
+  it in the lab and signed off). A Klatt-style Web Audio synth: glottal
+  source → parallel formant bank, ARPAbet phoneme sequencing with consonant
+  locus transitions and VOT, a hand dictionary covering all 24 shipping
+  lines (each line's phoneme string is hand-editable), and a default-on
+  "radio" character chain (spec fallback (a)) as an A/B toggle. Its Dump
+  panel emits paste-ready `VOICE_PARAMS` + `VOICE_LINES` — the porting
+  source for the future `VoiceSys` (CS010 P9), engine and data verbatim.
 
 ## Capture tools
 

@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<!--
+  tools/voice-lab.html — Orbital Overhaul, Changeset 10 design instrument (CS010 P8).
+
+  THE PORTING SOURCE for Dan's synthesized voice (PLANNED-FEATURES-CS010.md §11a). Nothing here
+  is in the game build; NOTHING enters asteroids-deluxe.html until Paul has heard this lab and
+  signed off (FLAG-11a). Same house rules as scoop-lab/music-lab: standalone file, no bundler,
+  no imports, carries its own slice of logic.
+
+  WHAT IT IS: a Klatt-style formant synthesizer in Web Audio. A glottal source (custom
+  PeriodicWave on a pitch contour) runs through a PARALLEL bank of bandpass filters at formant
+  frequencies F1-F4, sequenced across an editable ARPAbet phoneme string; fricatives and stop
+  bursts are shaped noise on a separate path that bypasses the formant bank (Klatt's parallel
+  frication path); aspiration (/h/, voiceless-stop VOT) is noise THROUGH the formant bank so it
+  takes vowel coloring.
+
+  WHY IT CAN BE INTELLIGIBLE AT ALL — the four load-bearing decisions:
+    1. Formants RAMP through per-consonant LOCUS targets (b/d/g live in where F2 comes from,
+       not in the burst). Stepped formants are the classic unintelligible robot.
+    2. Stops are closure -> typed burst -> aspiration with DELAYED voicing onset (VOT).
+       /p t k/ vs /b d g/ is timing, not loudness.
+    3. Fricative noise is spectrally typed (/s/ ~5.8k strong, /sh/ ~2.9k, /f th/ weak+diffuse)
+       and bypasses the formant bank.
+    4. The 24 shipping lines use a HAND dictionary (verbatim-corpus words), not rule G2P.
+       Rules exist only as a fallback for freeform typing, and the derived string is EDITABLE.
+
+  THE RADIO CHAIN (fallback (a), built in as a default-ON toggle): highpass ~320 -> lowpass
+  ~3200 -> soft clip -> compressor, plus a squelch-gated static bed. Band-limiting concentrates
+  energy where intelligibility lives (telephone speech works for the same reason), so Dan on a
+  crackly radio is expected to be MORE intelligible than the clean synth, and it fits the fiction.
+
+  PORT-ME BLOCK A — the engine: phoneme table, dictionary, g2p, buildUtterance, the render
+                    scheduler. Becomes VoiceSys in CS010 P9, verbatim.
+  PORT-ME BLOCK B — VOICE_LINES (the 24 lines, Paul's phrasing VERBATIM) + VOICE_PARAMS
+                    (whatever the Dump panel says when Paul signs off).
+  Everything below those blocks is lab UI and does not ship.
+-->
+<meta charset="utf-8">
+<title>Orbital Overhaul — Voice Lab (Dan)</title>
+<style>
+  :root{--bg:#04070c;--panel:#080d15;--line:#16283c;--text:#a8d4ff;--dim:#3a5a80;
+        --hot:#c8ff50;--teal:#6fe8d8;--hp:#ff5a2a;--gold:#ffcf5a;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 20px 40px;background:var(--bg);color:var(--text);
+       font:13px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.02em}
+  .wrap{max-width:1160px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:15px;font-weight:400;letter-spacing:.34em;text-transform:uppercase;
+     color:var(--teal);text-shadow:0 0 10px rgba(111,232,216,.5)}
+  .sub{color:var(--dim);margin:0 0 18px;font-size:11px;letter-spacing:.12em}
+  .cat{margin:16px 0 7px;font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--dim)}
+  .cat span{color:#26405c;text-transform:none;letter-spacing:.04em}
+  .lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:7px}
+  button.ln{appearance:none;cursor:pointer;padding:8px 9px;text-align:left;background:var(--panel);
+            color:var(--text);border:1px solid var(--line);font:inherit;font-size:11px;
+            letter-spacing:.03em;transition:border-color .12s,color .12s}
+  button.ln:hover{border-color:var(--teal);color:#fff}
+  button.ln[aria-pressed="true"]{border-color:var(--hot);color:var(--hot);
+            box-shadow:0 0 14px rgba(200,255,80,.15) inset}
+  button.ln.edited::after{content:" ✎";color:var(--gold)}
+  .bar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:11px 14px;
+       border:1px solid var(--line);background:var(--panel);margin:16px 0 12px}
+  .ctl{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.1em;
+       text-transform:uppercase;color:var(--dim)}
+  .ctl b{color:var(--text);font-weight:400;letter-spacing:.04em;text-transform:none}
+  input[type=range]{width:140px;accent-color:#6fe8d8}
+  button.act{appearance:none;cursor:pointer;background:transparent;border:1px solid var(--line);
+             color:var(--text);font:inherit;padding:5px 14px;letter-spacing:.14em;text-transform:uppercase}
+  button.act:hover{color:var(--hot);border-color:var(--hot)}
+  button.act.warn:hover{color:var(--hp);border-color:var(--hp)}
+  label.field{display:block;margin:10px 0 2px;color:var(--dim);font-size:11px;
+              letter-spacing:.14em;text-transform:uppercase}
+  input[type=text],textarea{width:100%;background:#0a1220;color:var(--text);border:1px solid var(--line);
+     padding:7px 9px;font:inherit;letter-spacing:.03em}
+  textarea{resize:vertical;min-height:52px;color:var(--hot)}
+  .hint{color:var(--dim);font-size:11px;margin:4px 0 0;min-height:16px}
+  .hint em{color:var(--gold);font-style:normal}
+  #tl{width:100%;height:auto;display:block;border:1px solid var(--line);background:var(--panel);margin:14px 0 4px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin-top:14px}
+  .pnl{border:1px solid var(--line);background:var(--panel);padding:10px 12px 12px}
+  .pnl h3{margin:0 0 8px;font-size:10px;font-weight:400;letter-spacing:.24em;
+          text-transform:uppercase;color:var(--teal)}
+  .row{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .row label{flex:0 0 148px;color:var(--dim);font-size:11px}
+  .row input[type=range]{flex:1 1 auto;width:auto}
+  .row .val{flex:0 0 52px;text-align:right;color:var(--hot);font-variant-numeric:tabular-nums;font-size:11px}
+  .row select{background:#0a1220;color:var(--text);border:1px solid var(--line);font:inherit;font-size:11px;padding:3px}
+  .row input[type=checkbox]{accent-color:#c8ff50}
+  pre#dump{background:#0a1220;border:1px solid var(--line);padding:10px;font-size:10px;
+           line-height:1.45;white-space:pre-wrap;word-break:break-word;max-height:340px;overflow-y:auto}
+  #copyBtn{margin-top:6px}
+  #copyBtn.copied{border-color:var(--gold);color:var(--gold)}
+  .foot{margin-top:20px;padding:10px 14px;border-left:2px solid var(--line);color:var(--dim);
+        font-size:11px;line-height:1.7}
+  .foot b{color:var(--text);font-weight:400}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h1>Voice Lab</h1>
+  <p class="sub">ORBITAL OVERHAUL · CS010 P8 · DAN'S VOICE — FORMANT SYNTHESIS · NOTHING SHIPS WITHOUT SIGN-OFF</p>
+
+  <div id="lineGroups"></div>
+
+  <div class="bar">
+    <button class="act" id="speakBtn">Speak</button>
+    <button class="act warn" id="stopBtn">Stop</button>
+    <button class="act" id="playAllBtn">Play all 24</button>
+    <label class="ctl">Vol <input type="range" id="vol" min="0" max="1" step="0.05" value="0.8"><b id="volOut">0.80</b></label>
+    <span class="ctl">Status <b id="status">idle</b></span>
+  </div>
+
+  <label class="field" for="text">Text</label>
+  <input type="text" id="text" spellcheck="false" placeholder="Type a phrase and press Enter…">
+  <label class="field" for="phon">Phonemes — ARPAbet, editable. Stress: digit 1 on a vowel. “/” = word gap (visual only), “,”/“.” = pauses.</label>
+  <textarea id="phon" spellcheck="false" rows="2"></textarea>
+  <div class="hint" id="phonHint"></div>
+  <div class="bar" style="margin-top:10px">
+    <button class="act" id="rederiveBtn">Re-derive phonemes from text</button>
+    <span class="ctl" style="text-transform:none">editing the box while a line is loaded saves the fix to that line (✎)</span>
+  </div>
+
+  <canvas id="tl" width="1120" height="240"></canvas>
+  <div class="hint">F1/F2/F3 tracks (log Hz) · grey = closure/silence · hatched band = frication/burst · labels = phonemes · teal line = playhead</div>
+
+  <div class="grid" id="panels"></div>
+
+  <div class="cat">Dump <span>— the porting source: paste-ready VOICE_PARAMS + VOICE_LINES (includes every ✎ hand-fix)</span></div>
+  <pre id="dump"></pre>
+  <button class="act" id="copyBtn">Copy dump</button>
+
+  <div class="foot">
+    <b>What this is:</b> a Klatt-style parallel formant synth. It will read as a talking machine,
+    not a person — the honest target is early-DECtalk/Votrax clarity, and the <b>Radio</b> chain
+    (default on) is fallback (a) from the spec: Dan on a crackly comms channel. A/B it with the
+    checkbox. <b>Workflow:</b> click a line → listen → hand-fix its phonemes if a word smears →
+    tune sliders → Copy dump. The dump is what P9 ports verbatim.
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ===== PORT-ME BLOCK A — the engine. Becomes VoiceSys in CS010 P9, verbatim. =================== */
+
+/* Phoneme table — ARPAbet. Classes: v vowel, g glide/liquid, n nasal, f fricative, p stop,
+   a affricate, h aspirate. f:[F1,F2,F3] Hz (Peterson&Barney-ish male; stops/frics carry LOCUS
+   targets — where the formants ramp FROM/TO, the b/d/g cue). f2nd = diphthong second target.
+   d = intrinsic duration ms. v = voicing level (voiced frics/stop voice bars). fric = noise
+   spec {cf,q,g}. Stops: clo closure ms, burst spec, asp aspiration ms (VOT — /p t k/ delay the
+   next vowel's voicing onset). velar: F2 locus depends on the next vowel's frontness. */
+const PH = {
+  IY:{c:"v",f:[270,2290,3010],d:120}, IH:{c:"v",f:[390,1990,2550],d:100},
+  EH:{c:"v",f:[530,1840,2480],d:110}, AE:{c:"v",f:[660,1720,2410],d:130},
+  AA:{c:"v",f:[730,1090,2440],d:130}, AO:{c:"v",f:[570,840,2410],d:130},
+  AH:{c:"v",f:[640,1190,2390],d:88},  UH:{c:"v",f:[440,1020,2240],d:95},
+  UW:{c:"v",f:[300,870,2240],d:120},  ER:{c:"v",f:[490,1350,1690],d:110},
+  EY:{c:"v",f:[530,1840,2480],f2nd:[330,2200,2900],d:150},
+  AY:{c:"v",f:[730,1090,2440],f2nd:[330,2200,2900],d:170},
+  OY:{c:"v",f:[570,840,2410], f2nd:[330,2200,2900],d:175},
+  AW:{c:"v",f:[730,1090,2440],f2nd:[430,1020,2240],d:170},
+  OW:{c:"v",f:[570,900,2410], f2nd:[330,870,2240], d:140},
+  W:{c:"g",f:[290,610,2150],d:65},  Y:{c:"g",f:[270,2290,3010],d:60},
+  R:{c:"g",f:[420,1300,1600],d:75}, L:{c:"g",f:[360,1300,2700],d:70},
+  M:{c:"n",f:[250,950,2200],d:70},  N:{c:"n",f:[250,1650,2600],d:70},
+  NG:{c:"n",f:[250,2000,2600],d:85},
+  S:{c:"f",f:[320,1700,2600],fric:{cf:5800,q:0.9,g:0.55},d:110},
+  SH:{c:"f",f:[320,1900,2500],fric:{cf:2900,q:1.1,g:0.50},d:110},
+  F:{c:"f",f:[340,1100,2400],fric:{cf:1400,q:0.25,g:0.13},d:95},
+  TH:{c:"f",f:[320,1500,2500],fric:{cf:5200,q:0.4,g:0.12},d:90},
+  Z:{c:"f",f:[320,1700,2600],fric:{cf:5800,q:0.9,g:0.35},d:95,v:0.4},
+  ZH:{c:"f",f:[320,1900,2500],fric:{cf:2900,q:1.1,g:0.32},d:90,v:0.4},
+  V:{c:"f",f:[340,1100,2400],fric:{cf:1400,q:0.25,g:0.10},d:60,v:0.5},
+  DH:{c:"f",f:[340,1500,2500],fric:{cf:4800,q:0.4,g:0.08},d:50,v:0.5},
+  HH:{c:"h",d:75},
+  P:{c:"p",f:[400,900,2300], burst:{cf:900,q:0.6,g:0.50}, clo:70,asp:60},
+  B:{c:"p",f:[400,900,2300], burst:{cf:900,q:0.6,g:0.35}, clo:60,asp:0,v:0.12},
+  T:{c:"p",f:[400,1750,2700],burst:{cf:4200,q:0.7,g:0.60},clo:70,asp:65},
+  D:{c:"p",f:[400,1750,2700],burst:{cf:4200,q:0.7,g:0.40},clo:55,asp:0,v:0.12},
+  K:{c:"p",f:[400,1900,2500],burst:{cf:1900,q:1.6,g:0.60},clo:75,asp:70,velar:true},
+  G:{c:"p",f:[400,1900,2500],burst:{cf:1900,q:1.6,g:0.42},clo:60,asp:0,v:0.12,velar:true},
+  CH:{c:"a",f:[400,1900,2500],fric:{cf:2900,q:1.1,g:0.55},clo:60,fdur:90},
+  JH:{c:"a",f:[400,1900,2500],fric:{cf:2900,q:1.1,g:0.40},clo:45,fdur:70,v:0.4},
+};
+
+/* Hand dictionary — every word in the 24 shipping lines (Paul's phrasing, §11f), transcribed by
+   hand; this is why the corpus never falls through to the rule guesser. Plus a few comms-chatter
+   words for freeform typing. Stress digit 1 marks the accented vowel (longer + pitch accent). */
+const WORDS = {
+  "aw":"AO1","man":"M AE1 N","we":"W IY","are":"AA1 R","taking":"T EY1 K IH NG","a":"AH",
+  "beating":"B IY1 T IH NG","hull":"HH AH1 L","integrity":"IH N T EH1 G R IH T IY","is":"IH Z",
+  "critical":"K R IH1 T IH K AH L","somebody":"S AH1 M B AA D IY","patch":"P AE1 CH",
+  "that":"DH AE1 T","hole":"HH OW1 L","we're":"W IH1 R","okay":"OW K EY1","for":"F ER",
+  "now":"N AW1","crisis":"K R AY1 S IH S","averted":"AH V ER1 T IH D","nothing":"N AH1 TH IH NG",
+  "little":"L IH1 T AH L","duct":"D AH1 K T","tape":"T EY1 P","can't":"K AE1 N T",
+  "handle":"HH AE1 N D AH L","like":"L AY1 K","brand":"B R AE1 N D","new":"N UW1",
+  "ship":"SH IH1 P","it":"IH T","doesn't":"D AH1 Z AH N T","get":"G EH1 T","any":"EH1 N IY",
+  "better":"B EH1 T ER","than":"DH AH N","this":"DH IH1 S","not":"N AA1 T",
+  "scratch":"S K R AE1 CH","on":"AA1 N","got":"G AA1 T","triple":"T R IH1 P AH L",
+  "shot":"SH AA1 T","rapid":"R AE1 P IH D","acquired":"AH K W AY1 ER D","bigger":"B IH1 G ER",
+  "pooper":"P UW1 P ER","scooper":"S K UW1 P ER","more":"M AO1 R",
+  "attractive":"AH T R AE1 K T IH V","few":"F Y UW1","horsepower":"HH AO1 R S P AW ER",
+  "gone":"G AO1 N","garbage":"G AA1 R B IH JH","scoop":"S K UW1 P","smaller":"S M AO1 L ER",
+  "magnet":"M AE1 G N IH T","power":"P AW1 ER","engine's":"EH1 N JH IH N Z","less":"L EH1 S",
+  "peppy":"P EH1 P IY","there's":"DH EH1 R Z","at":"AE T","least":"L IY1 S T",
+  "5":"F AY1 V","five":"F AY1 V","good":"G UH1 D","pieces":"P IY1 S IH Z","in":"IH N",
+  "there":"DH EH1 R","that's":"DH AE1 T S","somewhere":"S AH1 M W EH R",
+  "around":"AH R AW1 N D","dozen":"D AH1 Z AH N","special":"S P EH1 SH AH L",
+  "delivery":"D IH L IH1 V ER IY","i'm":"AY1 M","sure":"SH UH1 R","i":"AY1","can":"K AE N",
+  "count":"K AW1 N T","high":"HH AY1","truck":"T R AH1 K","full":"F UH1 L",
+  "let's":"L EH1 T S","go":"G OW1",
+  "the":"DH AH","to":"T UW","and":"AE N D","of":"AH V","you":"Y UW1","oh":"OW1",
+  "hey":"HH EY1","roger":"R AA1 JH ER","copy":"K AA1 P IY","over":"OW1 V ER","out":"AW1 T",
+  "dan":"D AE1 N","captain":"K AE1 P T IH N","it's":"IH T S","its":"IH T S","dock":"D AA1 K",
+};
+
+/* Rule fallback for words NOT in the dictionary — deliberately naive; its output is a GUESS,
+   flagged in the UI, and the fix is Paul editing the phoneme box (which is the whole point of
+   making it editable). Ordered digraph rules, then single letters with a magic-e check. */
+const G2P_DIGRAPHS = [
+  ["tch","CH"],["ch","CH"],["sh","SH"],["th","TH"],["ph","F"],["wh","W"],["ck","K"],
+  ["ng","NG"],["qu","K W"],["igh","AY"],["ee","IY"],["ea","IY"],["oo","UW"],["ou","AW"],
+  ["ow","AW"],["ai","EY"],["ay","EY"],["oa","OW"],["oi","OY"],["oy","OY"],["au","AO"],
+  ["aw","AO"],["ar","AA R"],["or","AO R"],["er","ER"],["ir","ER"],["ur","ER"],
+];
+const G2P_SINGLE = {a:"AE",e:"EH",i:"IH",o:"AA",u:"AH",b:"B",c:"K",d:"D",f:"F",g:"G",h:"HH",
+  j:"JH",k:"K",l:"L",m:"M",n:"N",p:"P",q:"K",r:"R",s:"S",t:"T",v:"V",w:"W",x:"K S",y:"Y",z:"Z"};
+const G2P_MAGIC = {a:"EY",e:"IY",i:"AY",o:"OW",u:"UW"};
+
+function guessWord(w) {
+  let out = [], i = 0, sawVowel = false;
+  const vow = "aeiou";
+  while (i < w.length) {
+    let hit = null;
+    for (const [d, ph] of G2P_DIGRAPHS)
+      if (w.startsWith(d, i)) { hit = [d.length, ph]; break; }
+    if (hit) { out.push(hit[1]); i += hit[0]; sawVowel = true; continue; }
+    const ch = w[i];
+    // magic-e: vowel + single consonant + final e -> long vowel, drop the e
+    if (vow.includes(ch) && i + 2 < w.length && !vow.includes(w[i+1]) &&
+        w[i+2] === "e" && i + 3 === w.length) {
+      out.push(G2P_MAGIC[ch], G2P_SINGLE[w[i+1]] || "");
+      i = w.length; sawVowel = true; continue;
+    }
+    if (ch === "e" && i === w.length - 1 && sawVowel) { i++; continue; }  // silent final e
+    if (ch === "y" && i === w.length - 1) { out.push("IY"); i++; continue; }
+    if (ch === "c" && "ei".includes(w[i+1] || "")) { out.push("S"); i++; continue; }
+    if (ch === "g" && "ei".includes(w[i+1] || "")) { out.push("JH"); i++; continue; }
+    if (w[i+1] === ch) { i++; continue; }                                  // double letter
+    const ph = G2P_SINGLE[ch];
+    if (ph) { out.push(ph); if (vow.includes(ch)) sawVowel = true; }
+    i++;
+  }
+  // stress the first vowel
+  const toks = out.join(" ").split(/\s+/).filter(Boolean);
+  for (let k = 0; k < toks.length; k++)
+    if (PH[toks[k]] && PH[toks[k]].c === "v") { toks[k] += "1"; break; }
+  return toks.join(" ");
+}
+
+/* Text -> phoneme string. Words join with "/" (visual only), sentence punctuation becomes
+   pause tokens "," / ".". Returns the derived string + which words were rule-guessed. */
+function g2p(text) {
+  const unknown = [];
+  const words = text.toLowerCase().replace(/[—–-]/g, " ").split(/\s+/).filter(Boolean);
+  const parts = [];
+  for (const raw of words) {
+    const m = raw.match(/^([a-z0-9']+)([,.!?]*)$/) || [null, raw.replace(/[^a-z0-9']/g, ""), ""];
+    const w = m[1], punc = m[2] || "";
+    if (w) {
+      if (WORDS[w]) parts.push(WORDS[w]);
+      else { unknown.push(w); parts.push(guessWord(w)); }
+    }
+    if (punc.includes(",")) parts.push(",");
+    if (/[.!?]/.test(punc)) parts.push(".");
+  }
+  // join words with the visual separator, but never around pause tokens
+  const phon = parts.reduce((acc, p) => {
+    if (!acc) return p;
+    if (p === "," || p === ".") return acc + " " + p;
+    if (acc.endsWith(",") || acc.endsWith(".")) return acc + " " + p;
+    return acc + " / " + p;
+  }, "");
+  return { phon, unknown };
+}
+
+/* Utterance compiler — PURE (no Web Audio): phoneme string -> {segs, frics, asps, pitch, dur}.
+   Kept separate from the render scheduler so it can be headless-tested and so the timeline
+   canvas can draw without an AudioContext. All times in seconds relative to utterance start. */
+function parsePhonTokens(str) {
+  const toks = [], errs = [];
+  for (const t of String(str).trim().split(/\s+/)) {
+    if (!t || t === "/") continue;
+    if (t === "," || t === ".") { toks.push({ pause: t }); continue; }
+    const m = t.match(/^([A-Z]+)([012])?$/);
+    const ph = m && PH[m[1]];
+    if (!ph) { errs.push(t); continue; }
+    toks.push({ base: m[1], ph, stress: m[2] === "1" });
+  }
+  return { toks, errs };
+}
+
+function buildUtterance(phonStr, P) {
+  const { toks, errs } = parsePhonTokens(phonStr);
+  const segs = [], frics = [], asps = [];
+  const rate = P.rate, cd = P.consDur;
+  const scaleF = f => [f[0] * P.f1Scale, f[1] * P.f2Scale, f[2] * P.f3Scale];
+  // lookahead: next token with formant targets — for HH borrowing and the velar F2 locus
+  const nextF = i => {
+    for (let k = i + 1; k < toks.length; k++) {
+      const p = toks[k].ph;
+      if (p && p.f && "vgn".includes(p.c)) return p.f;
+    }
+    return [500, 1500, 2500];
+  };
+  let t = 0.06, voiceDelay = 0;
+  for (let i = 0; i < toks.length; i++) {
+    const tk = toks[i];
+    if (tk.pause) {
+      const d = (tk.pause === "," ? 0.16 : 0.30) / rate;
+      segs.push({ t0: t, dur: d, label: tk.pause, F: null, amp: 0 });
+      t += d; voiceDelay = 0; continue;
+    }
+    const ph = tk.ph, cls = ph.c;
+    if (cls === "v" || cls === "g" || cls === "n") {
+      let d = ph.d / 1000 * (tk.stress ? 1.28 : 1) / rate;
+      if (cls === "v") {          // phrase-final lengthening
+        let fin = true;
+        for (let k = i + 1; k < toks.length; k++) {
+          if (toks[k].pause) break;
+          if (toks[k].ph && toks[k].ph.c === "v") { fin = false; break; }
+        }
+        if (fin) d *= 1.18;
+      }
+      segs.push({ t0: t, dur: d, label: tk.base + (tk.stress ? "1" : ""),
+        F: scaleF(ph.f), F2nd: ph.f2nd ? scaleF(ph.f2nd) : null,
+        amp: cls === "v" ? 1 : cls === "g" ? 0.85 : 0.6,
+        hiDamp: cls === "n" ? 0.35 : 1, trans: 0.05,
+        voiceDelay, stress: !!tk.stress, vowel: cls === "v" });
+      t += d; voiceDelay = 0;
+    } else if (cls === "f") {
+      const d = ph.d / 1000 * cd / rate;
+      segs.push({ t0: t, dur: d, label: tk.base, F: scaleF(ph.f), amp: ph.v || 0, trans: 0.04, voiceDelay });
+      frics.push({ t, dur: d, cf: ph.fric.cf, q: ph.fric.q, g: ph.fric.g * P.fricGain, burst: false });
+      t += d; voiceDelay = 0;
+    } else if (cls === "h") {
+      const d = ph.d / 1000 * cd / rate;
+      segs.push({ t0: t, dur: d, label: tk.base, F: scaleF(nextF(i)), amp: 0, trans: 0.05 });
+      asps.push({ t, dur: d, g: 0.5 });
+      t += d; voiceDelay = 0;
+    } else if (cls === "p") {
+      const clo = ph.clo / 1000 * cd / rate;
+      const F = ph.f.slice();
+      if (ph.velar) F[1] = nextF(i)[1] > 1400 ? 2300 : 1300;   // front vs back velar locus
+      segs.push({ t0: t, dur: clo, label: tk.base, F: scaleF(F), amp: ph.v || 0, trans: 0.035, voiceDelay });
+      t += clo;
+      frics.push({ t, dur: 0.018, cf: ph.burst.cf, q: ph.burst.q, g: ph.burst.g * P.burstGain, burst: true });
+      if (ph.asp) {               // VOT: aspiration, and the next vowel's voicing onset waits
+        const ad = ph.asp / 1000 * cd / rate;
+        asps.push({ t: t + 0.008, dur: ad, g: 0.45 });
+        voiceDelay = ad * 0.75;
+      } else voiceDelay = 0.01;
+    } else if (cls === "a") {     // affricate: closure + frication tail
+      const clo = ph.clo / 1000 * cd / rate, fd = ph.fdur / 1000 * cd / rate;
+      segs.push({ t0: t, dur: clo, label: tk.base, F: scaleF(ph.f), amp: ph.v ? 0.12 : 0, trans: 0.035, voiceDelay });
+      t += clo;
+      segs.push({ t0: t, dur: fd, label: "", F: scaleF(ph.f), amp: ph.v || 0, trans: 0.03 });
+      frics.push({ t, dur: fd, cf: ph.fric.cf, q: ph.fric.q, g: ph.fric.g * P.fricGain, burst: false });
+      t += fd; voiceDelay = 0;
+    }
+  }
+  const dur = t + 0.12;
+  return { segs, frics, asps, dur, errs, pitch: buildPitch(segs, dur, P) };
+}
+
+/* F0 contour: declination + accents on stressed vowels + a phrase-final fall. "flat" is the
+   monotone robot (a legitimate character option); "lively" widens the accents. */
+function buildPitch(segs, dur, P) {
+  const base = P.basePitch, pts = [];
+  if (P.contour === "flat") return [[0, base], [dur, base]];
+  const lively = P.contour === "lively";
+  const dS = base * (lively ? 1.06 : 1.10), dE = base * (lively ? 1.00 : 0.92);
+  const baseAt = tt => dS + (dE - dS) * (tt / dur);
+  const accent = Math.pow(2, (P.pitchRange * (lively ? 1.4 : 1)) / 12);
+  pts.push([0, baseAt(0)]);
+  for (const s of segs) {
+    if (!s.stress || !s.vowel) continue;
+    const pk = s.t0 + s.dur * 0.35;
+    pts.push([pk - 0.09, baseAt(pk - 0.09)], [pk, baseAt(pk) * accent], [pk + 0.13, baseAt(pk + 0.13)]);
+  }
+  const fallT = Math.max(0, dur - 0.20);
+  pts.push([fallT, baseAt(fallT)], [dur, base * Math.pow(2, -P.finalFall / 12)]);
+  pts.sort((a, b) => a[0] - b[0]);
+  const out = []; let last = -1;
+  for (const p of pts) { if (p[0] - last < 0.03) continue; out.push([Math.max(0, p[0]), Math.max(40, p[1])]); last = p[0]; }
+  return out;
+}
+
+/* The render scheduler. In P9 this object becomes VoiceSys (renamed), its bus moves onto
+   AudioSys (voice -> master), and every entry point gains the if(!ctx)return guard idiom. */
+const VL = {
+  ctx: null, master: null, voiceBus: null, dry: null,
+  rIn: null, rLP: null, rShaper: null, rComp: null, rGain: null,
+  staticGain: null, noiseBuf: null,
+  cur: null, utt: null, utterStart: 0, onend: null,
+
+  ensure() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = this.ctx;
+    this.master = ctx.createGain(); this.master.gain.value = 0.8; this.master.connect(ctx.destination);
+    const n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    this.noiseBuf = b;
+    // voice bus forks: dry path / radio path (fallback (a) — gains toggle which one is live)
+    this.voiceBus = ctx.createGain();
+    this.dry = ctx.createGain(); this.voiceBus.connect(this.dry); this.dry.connect(this.master);
+    this.rIn = ctx.createBiquadFilter(); this.rIn.type = "highpass";
+    this.rLP = ctx.createBiquadFilter(); this.rLP.type = "lowpass";
+    this.rShaper = ctx.createWaveShaper();
+    this.rComp = ctx.createDynamicsCompressor();
+    this.rComp.threshold.value = -28; this.rComp.ratio.value = 8;
+    this.rComp.attack.value = 0.003; this.rComp.release.value = 0.12;
+    this.rGain = ctx.createGain();
+    this.voiceBus.connect(this.rIn); this.rIn.connect(this.rLP); this.rLP.connect(this.rShaper);
+    this.rShaper.connect(this.rComp); this.rComp.connect(this.rGain); this.rGain.connect(this.master);
+    // squelch-gated static bed, colored through the same radio chain
+    const st = ctx.createBufferSource(); st.buffer = this.noiseBuf; st.loop = true;
+    const sf = ctx.createBiquadFilter(); sf.type = "bandpass"; sf.frequency.value = 1700; sf.Q.value = 0.4;
+    this.staticGain = ctx.createGain(); this.staticGain.gain.value = 0;
+    st.connect(sf); sf.connect(this.staticGain); this.staticGain.connect(this.rIn);
+    st.start();
+    this.applyRadio();
+  },
+
+  applyRadio() {
+    if (!this.ctx) return;
+    const R = P.radio;
+    this.rIn.frequency.value = R.hp;
+    this.rLP.frequency.value = R.lp;
+    const k = Math.max(1.001, R.drive), N = 1024, curve = new Float32Array(N), th = Math.tanh(k);
+    for (let i = 0; i < N; i++) { const x = i / (N - 1) * 2 - 1; curve[i] = Math.tanh(k * x) / th; }
+    this.rShaper.curve = curve;
+    this.dry.gain.value = R.on ? 0 : 1;
+    this.rGain.gain.value = R.on ? 1.4 : 0;
+  },
+
+  stop() {
+    if (this.cur) {
+      for (const s of this.cur.sources) { try { s.onended = null; s.stop(); } catch (e) {} }
+      try { this.cur.utterG.disconnect(); } catch (e) {}
+      this.cur = null; this.utt = null;
+    }
+    if (this.ctx) {
+      const now = this.ctx.currentTime, g = this.staticGain.gain;
+      g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); g.linearRampToValueAtTime(0, now + 0.05);
+    }
+  },
+
+  speak(phonStr) {
+    this.ensure();
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    this.stop();
+    const utt = buildUtterance(phonStr, P);
+    if (!utt.segs.length) return utt;
+    const ctx = this.ctx, t0 = ctx.currentTime + 0.10;
+
+    // glottal source — custom pulse (richness = spectral tilt) or a native wave
+    const osc = ctx.createOscillator();
+    if (P.srcType === "pulse") {
+      const NH = 48, re = new Float32Array(NH + 1), im = new Float32Array(NH + 1);
+      for (let h = 1; h <= NH; h++) im[h] = 1 / Math.pow(h, P.richness);
+      osc.setPeriodicWave(ctx.createPeriodicWave(re, im));
+    } else osc.type = P.srcType;
+    const lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 5.1;
+    const lfoG = ctx.createGain(); lfoG.gain.value = P.wobble;
+    lfo.connect(lfoG); lfoG.connect(osc.frequency);
+
+    const vGain = ctx.createGain(); vGain.gain.value = 0;      // voicing envelope
+    const srcMix = ctx.createGain();
+    osc.connect(vGain); vGain.connect(srcMix);
+    const aspSrc = ctx.createBufferSource(); aspSrc.buffer = this.noiseBuf; aspSrc.loop = true;
+    const aspG = ctx.createGain(); aspG.gain.value = 0;        // aspiration/breath -> formants
+    aspSrc.connect(aspG); aspG.connect(srcMix);
+
+    // parallel formant bank: F1 direct, F2-F4 via hiBus (nasal murmur damps the highs)
+    const utterG = ctx.createGain();
+    const hiBus = ctx.createGain(); hiBus.connect(utterG);
+    const FQ = [7, 10, 12, 14], FG = [0.9, 1.0, 0.7, 0.32], filts = [];
+    for (let i = 0; i < 4; i++) {
+      const f = ctx.createBiquadFilter(); f.type = "bandpass";
+      f.Q.value = FQ[i] / P.bwScale;
+      const g = ctx.createGain(); g.gain.value = FG[i];
+      srcMix.connect(f); f.connect(g); g.connect(i === 0 ? utterG : hiBus);
+      filts.push(f);
+    }
+    filts[3].frequency.value = 3300;                            // fixed F4, naturalness only
+
+    // frication path — bypasses the formant bank (Klatt parallel path)
+    const fricSrc = ctx.createBufferSource(); fricSrc.buffer = this.noiseBuf; fricSrc.loop = true;
+    const fricF = ctx.createBiquadFilter(); fricF.type = "bandpass";
+    const fricG = ctx.createGain(); fricG.gain.value = 0;
+    fricSrc.connect(fricF); fricF.connect(fricG); fricG.connect(utterG);
+    utterG.connect(this.voiceBus);
+
+    // ---- schedule: formants ramp THROUGH targets (pin previous, then ramp — the b/d/g cue)
+    const prevF = [null, null, null];
+    let prevAmp = 0, prevDamp = 1, prevBreath = 0;
+    for (const s of utt.segs) {
+      const at = t0 + s.t0;
+      if (s.F) {
+        const tr = Math.min(s.trans || 0.05, Math.max(0.015, s.dur * 0.6));
+        for (let i = 0; i < 3; i++) {
+          const p = filts[i].frequency;
+          if (prevF[i] === null) p.setValueAtTime(s.F[i], at);
+          else { p.setValueAtTime(prevF[i], at); p.linearRampToValueAtTime(s.F[i], at + tr); }
+          prevF[i] = s.F[i];
+          if (s.F2nd) {           // diphthong: hold, then glide to the second target
+            p.setValueAtTime(s.F[i], at + s.dur * 0.45);
+            p.linearRampToValueAtTime(s.F2nd[i], at + s.dur);
+            prevF[i] = s.F2nd[i];
+          }
+        }
+      }
+      const vAt = at + (s.voiceDelay || 0);
+      vGain.gain.setValueAtTime(prevAmp, vAt);
+      vGain.gain.linearRampToValueAtTime(s.amp, vAt + 0.016);
+      prevAmp = s.amp;
+      const damp = s.hiDamp == null ? 1 : s.hiDamp;
+      if (damp !== prevDamp) {
+        hiBus.gain.setValueAtTime(prevDamp, at);
+        hiBus.gain.linearRampToValueAtTime(damp, at + 0.02);
+        prevDamp = damp;
+      }
+      const breath = s.amp > 0.3 ? P.breath * 0.4 : 0;          // breathiness rides voicing
+      if (breath !== prevBreath) {
+        aspG.gain.setValueAtTime(prevBreath, vAt);
+        aspG.gain.linearRampToValueAtTime(breath, vAt + 0.02);
+        prevBreath = breath;
+      }
+    }
+    const tEnd = t0 + utt.dur;
+    vGain.gain.setValueAtTime(prevAmp, tEnd - 0.06);
+    vGain.gain.linearRampToValueAtTime(0, tEnd);
+
+    // aspiration events (HH, voiceless-stop VOT) — override the breath baseline
+    for (const a of utt.asps) {
+      const at = t0 + a.t;
+      aspG.gain.setValueAtTime(a.g, at);
+      aspG.gain.linearRampToValueAtTime(0.001, at + a.dur);
+    }
+    // frication: typed noise — instant-attack exponential-decay bursts, shaped fricatives
+    for (const fr of utt.frics) {
+      const at = t0 + fr.t;
+      fricF.frequency.setValueAtTime(fr.cf, at);
+      fricF.Q.setValueAtTime(fr.q, at);
+      if (fr.burst) {
+        fricG.gain.setValueAtTime(fr.g, at);
+        fricG.gain.exponentialRampToValueAtTime(0.0001, at + fr.dur);
+        fricG.gain.setValueAtTime(0, at + fr.dur + 0.001);
+      } else {
+        fricG.gain.setValueAtTime(0, at);
+        fricG.gain.linearRampToValueAtTime(fr.g, at + 0.015);
+        fricG.gain.setValueAtTime(fr.g, at + Math.max(0.02, fr.dur - 0.02));
+        fricG.gain.linearRampToValueAtTime(0, at + fr.dur);
+      }
+    }
+    // pitch contour
+    const fp = osc.frequency;
+    fp.setValueAtTime(utt.pitch[0][1], t0 + utt.pitch[0][0]);
+    for (let i = 1; i < utt.pitch.length; i++)
+      fp.linearRampToValueAtTime(utt.pitch[i][1], t0 + utt.pitch[i][0]);
+
+    // utterance master envelope (belt-and-braces declick)
+    utterG.gain.setValueAtTime(0, ctx.currentTime);
+    utterG.gain.setValueAtTime(1, t0 - 0.02);
+    utterG.gain.setValueAtTime(1, tEnd + 0.02);
+    utterG.gain.linearRampToValueAtTime(0, tEnd + 0.12);
+
+    // radio squelch: static bed keys up just before the voice, clicks off after
+    if (P.radio.on) {
+      const g = this.staticGain.gain, lvl = P.radio.static;
+      g.cancelScheduledValues(ctx.currentTime);
+      g.setValueAtTime(0, ctx.currentTime);
+      g.setValueAtTime(lvl * 6, t0 - 0.07);
+      g.linearRampToValueAtTime(lvl, t0 - 0.03);
+      g.setValueAtTime(lvl, tEnd + 0.05);
+      g.setValueAtTime(lvl * 5, tEnd + 0.07);
+      g.linearRampToValueAtTime(0, tEnd + 0.11);
+    }
+
+    const sources = [osc, lfo, aspSrc, fricSrc];
+    for (const s of sources) s.start(ctx.currentTime);
+    for (const s of sources) s.stop(tEnd + 0.3);
+    osc.onended = () => { if (this.cur && this.cur.osc === osc) { this.cur = null; this.utt = null; if (this.onend) this.onend(); } };
+    this.cur = { sources, utterG, osc };
+    this.utt = utt; this.utterStart = t0;
+    return utt;
+  },
+};
+/* ===== end PORT-ME BLOCK A ==================================================================== */
+
+/* ===== PORT-ME BLOCK B — VOICE_PARAMS working copy + the 24 shipping lines (§11f — the phase prompt says 25; its own enumeration totals 24). ============ */
+/* Paul's phrasing, VERBATIM — do not editorialize the text. Event keys match §11f's triggers;
+   every event holds an ARRAY (§11b: adding a line later is a one-line data edit). The `phon`
+   for each line is derived from the hand dictionary at load, then holds any ✎ hand-fix; the
+   Dump panel emits the whole table paste-ready. */
+const P = {
+  basePitch: 112, pitchRange: 4, finalFall: 5, contour: "declarative",
+  rate: 0.95, wobble: 0.6,
+  srcType: "pulse", richness: 0.85, breath: 0.12,
+  f1Scale: 1.0, f2Scale: 1.0, f3Scale: 1.0, bwScale: 1.0,
+  fricGain: 1.0, burstGain: 1.0, consDur: 1.0,
+  radio: { on: true, hp: 320, lp: 3200, drive: 2.5, static: 0.018 },
+};
+
+const LINES = [
+  { ev: "health_low", cat: "Health low", text: "Aw, man, we are taking a beating." },
+  { ev: "health_low", cat: "Health low", text: "Hull integrity is critical." },
+  { ev: "health_low", cat: "Health low", text: "Somebody patch that hole." },
+  { ev: "health_relief", cat: "Health relief", text: "We're okay for now." },
+  { ev: "health_relief", cat: "Health relief", text: "Crisis averted." },
+  { ev: "health_relief", cat: "Health relief", text: "Nothing a little Duct Tape can't handle." },
+  { ev: "health_full", cat: "Health full", text: "Like a brand new ship." },
+  { ev: "health_full", cat: "Health full", text: "It doesn't get any better than this." },
+  { ev: "health_full", cat: "Health full", text: "Not a scratch on it." },
+  { ev: "collect_triple", cat: "Powerup collected", text: "We got a triple shot." },
+  { ev: "collect_rapid", cat: "Powerup collected", text: "Rapid shot acquired." },
+  { ev: "collect_scoop", cat: "Powerup collected", text: "A bigger pooper scooper." },
+  { ev: "collect_magnet", cat: "Powerup collected", text: "Now we're more attractive." },
+  { ev: "collect_engine", cat: "Powerup collected", text: "A few more horsepower." },
+  { ev: "expire_triple", cat: "Powerup expired", text: "Triple shot is gone." },
+  { ev: "expire_rapid", cat: "Powerup expired", text: "Rapid shot is gone." },
+  { ev: "expire_scoop", cat: "Powerup expired", text: "Garbage scoop got smaller." },
+  { ev: "expire_magnet", cat: "Powerup expired", text: "Magnet power is gone." },
+  { ev: "expire_engine", cat: "Powerup expired", text: "Engine's a little less peppy." },
+  { ev: "dock_5", cat: "Dock delivery", text: "There's at least 5 good pieces in there." },
+  { ev: "dock_10", cat: "Dock delivery", text: "That's somewhere around a dozen." },
+  { ev: "dock_15", cat: "Dock delivery", text: "Special delivery." },
+  { ev: "dock_20", cat: "Dock delivery", text: "I'm not sure I can count that high." },
+  { ev: "cargo_full", cat: "Towing capacity full", text: "Truck is full, let's go." },
+];
+/* ===== end PORT-ME BLOCK B ==================================================================== */
+
+/* ===== LAB UI — none of this ships ============================================================ */
+const $ = s => document.querySelector(s);
+const getP = k => k.split(".").reduce((o, p) => o[p], P);
+const setP = (k, v) => { const ps = k.split("."), last = ps.pop(); ps.reduce((o, p) => o[p], P)[last] = v; };
+
+for (const L of LINES) { L.orig = g2p(L.text).phon; L.phon = L.orig; }
+let curLine = -1, playAllToken = 0;
+
+/* line buttons, grouped by category */
+{
+  const host = document.getElementById("lineGroups");
+  let lastCat = null, grid = null;
+  LINES.forEach((L, i) => {
+    if (L.cat !== lastCat) {
+      const c = document.createElement("div");
+      c.className = "cat";
+      c.innerHTML = L.cat + ' <span>— ' + L.ev + (L.cat === "Dock delivery" ? "…" : "") + "</span>";
+      host.appendChild(c);
+      grid = document.createElement("div"); grid.className = "lines"; host.appendChild(grid);
+      lastCat = L.cat;
+    }
+    const b = document.createElement("button");
+    b.className = "ln"; b.setAttribute("aria-pressed", "false"); b.dataset.i = i;
+    b.textContent = L.text;
+    b.onclick = () => { playAllToken++; loadLine(i); speakCurrent(); };
+    grid.appendChild(b);
+  });
+}
+function markButtons() {
+  document.querySelectorAll("button.ln").forEach(b => {
+    const i = +b.dataset.i;
+    b.setAttribute("aria-pressed", String(i === curLine));
+    b.classList.toggle("edited", LINES[i].phon !== LINES[i].orig);
+  });
+}
+function loadLine(i) {
+  curLine = i;
+  $("#text").value = LINES[i].text;
+  $("#phon").value = LINES[i].phon;
+  $("#phonHint").textContent = "";
+  markButtons();
+}
+
+/* parameter panels */
+const PANELS = [
+  ["Pitch & pacing", [
+    { k: "basePitch", label: "Base pitch (Hz)", min: 70, max: 220, step: 1 },
+    { k: "pitchRange", label: "Accent size (st)", min: 0, max: 10, step: 0.5 },
+    { k: "finalFall", label: "Final fall (st)", min: 0, max: 10, step: 0.5 },
+    { k: "rate", label: "Rate (×)", min: 0.5, max: 1.8, step: 0.05 },
+    { k: "wobble", label: "Wobble (Hz)", min: 0, max: 8, step: 0.1 },
+    { k: "contour", label: "Contour", options: ["declarative", "flat", "lively"] },
+  ]],
+  ["Glottal source", [
+    { k: "srcType", label: "Waveform", options: ["pulse", "sawtooth", "square"] },
+    { k: "richness", label: "Richness (pulse tilt)", min: 0.3, max: 2, step: 0.05 },
+    { k: "breath", label: "Breathiness", min: 0, max: 0.5, step: 0.01 },
+  ]],
+  ["Formants", [
+    { k: "f1Scale", label: "F1 scale", min: 0.7, max: 1.4, step: 0.01 },
+    { k: "f2Scale", label: "F2 scale", min: 0.7, max: 1.4, step: 0.01 },
+    { k: "f3Scale", label: "F3 scale", min: 0.7, max: 1.4, step: 0.01 },
+    { k: "bwScale", label: "Bandwidth scale", min: 0.5, max: 2.5, step: 0.05 },
+  ]],
+  ["Consonants", [
+    { k: "fricGain", label: "Frication level", min: 0, max: 2, step: 0.05 },
+    { k: "burstGain", label: "Burst level", min: 0, max: 2, step: 0.05 },
+    { k: "consDur", label: "Consonant time (×)", min: 0.6, max: 1.6, step: 0.05 },
+  ]],
+  ["Radio — Dan on comms (fallback a)", [
+    { k: "radio.on", label: "Radio chain", checkbox: true },
+    { k: "radio.hp", label: "Highpass (Hz)", min: 150, max: 600, step: 10 },
+    { k: "radio.lp", label: "Lowpass (Hz)", min: 1800, max: 5000, step: 50 },
+    { k: "radio.drive", label: "Drive (soft clip)", min: 1, max: 8, step: 0.1 },
+    { k: "radio.static", label: "Static level", min: 0, max: 0.08, step: 0.002 },
+  ]],
+];
+{
+  const host = document.getElementById("panels");
+  for (const [title, defs] of PANELS) {
+    const pnl = document.createElement("div");
+    pnl.className = "pnl";
+    pnl.innerHTML = "<h3>" + title + "</h3>";
+    for (const d of defs) {
+      const row = document.createElement("div"); row.className = "row";
+      const lab = document.createElement("label"); lab.textContent = d.label; row.appendChild(lab);
+      if (d.options) {
+        const sel = document.createElement("select");
+        for (const o of d.options) { const op = document.createElement("option"); op.value = op.textContent = o; sel.appendChild(op); }
+        sel.value = getP(d.k);
+        sel.onchange = () => { setP(d.k, sel.value); refreshDump(); };
+        row.appendChild(sel);
+      } else if (d.checkbox) {
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!getP(d.k);
+        cb.onchange = () => { setP(d.k, cb.checked); VL.applyRadio(); refreshDump(); };
+        row.appendChild(cb);
+      } else {
+        const r = document.createElement("input"); r.type = "range";
+        r.min = d.min; r.max = d.max; r.step = d.step; r.value = getP(d.k);
+        const val = document.createElement("span"); val.className = "val";
+        const show = () => { val.textContent = (+getP(d.k)).toFixed(d.step >= 1 ? 0 : d.step >= 0.05 ? 2 : 3); };
+        r.oninput = () => { setP(d.k, +r.value); show(); if (d.k.startsWith("radio.")) VL.applyRadio(); refreshDump(); };
+        show();
+        row.appendChild(r); row.appendChild(val);
+      }
+      pnl.appendChild(row);
+    }
+    host.appendChild(pnl);
+  }
+}
+
+/* speak plumbing */
+function speakCurrent() {
+  const utt = VL.speak($("#phon").value);
+  if (utt.errs && utt.errs.length)
+    $("#phonHint").innerHTML = "unknown phoneme tokens (skipped): <em>" + utt.errs.join(" ") + "</em>";
+  $("#status").textContent = "playing " + utt.dur.toFixed(1) + "s";
+  drawTimeline(utt);
+  if (!tlRaf) tlTick();
+}
+VL.onend = () => { $("#status").textContent = "idle"; };  // play-all's next() overwrites this
+
+$("#speakBtn").onclick = () => { playAllToken++; speakCurrent(); };
+$("#stopBtn").onclick = () => { playAllToken++; VL.stop(); $("#status").textContent = "idle"; };
+$("#playAllBtn").onclick = () => {
+  playAllToken++;
+  const token = playAllToken;
+  let i = 0;
+  const next = () => {
+    if (token !== playAllToken || i >= LINES.length) return;
+    loadLine(i);
+    const utt = VL.speak(LINES[i].phon);
+    $("#status").textContent = "playing " + (i + 1) + "/" + LINES.length;
+    drawTimeline(utt); if (!tlRaf) tlTick();
+    i++;
+    setTimeout(next, utt.dur * 1000 + 450);
+  };
+  next();
+};
+$("#vol").oninput = e => {
+  $("#volOut").textContent = (+e.target.value).toFixed(2);
+  if (VL.master) VL.master.gain.value = +e.target.value;
+};
+
+$("#text").addEventListener("input", () => {
+  curLine = -1; markButtons();
+  const d = g2p($("#text").value);
+  $("#phon").value = d.phon;
+  $("#phonHint").innerHTML = d.unknown.length
+    ? "rule-guessed (not in dictionary — fix by hand): <em>" + d.unknown.join(", ") + "</em>" : "";
+});
+$("#text").addEventListener("keydown", e => { if (e.key === "Enter") { playAllToken++; speakCurrent(); } });
+$("#phon").addEventListener("input", () => {
+  if (curLine >= 0) { LINES[curLine].phon = $("#phon").value.trim(); markButtons(); refreshDump(); }
+});
+$("#rederiveBtn").onclick = () => {
+  const d = g2p($("#text").value);
+  $("#phon").value = d.phon;
+  if (curLine >= 0) { LINES[curLine].phon = d.phon; markButtons(); refreshDump(); }
+  $("#phonHint").innerHTML = d.unknown.length
+    ? "rule-guessed (not in dictionary — fix by hand): <em>" + d.unknown.join(", ") + "</em>" : "";
+};
+
+/* timeline: formant tracks (log Hz), frication bands, pitch, labels, playhead */
+let tlRaf = 0;
+function drawTimeline(utt) {
+  const cvs = document.getElementById("tl"), c = cvs.getContext("2d");
+  const W = cvs.width, H = cvs.height;
+  c.clearRect(0, 0, W, H);
+  if (!utt || !utt.segs.length) return;
+  const L = 40, R = W - 10, T = 8, B = H - 24;
+  const x = t => L + (t / utt.dur) * (R - L);
+  const y = f => T + (1 - Math.log(Math.max(f, 81) / 80) / Math.log(8000 / 80)) * (B - T);
+  c.font = "9px ui-monospace,monospace"; c.textBaseline = "middle";
+  for (const f of [125, 250, 500, 1000, 2000, 4000]) {
+    c.strokeStyle = "#101c2c"; c.beginPath(); c.moveTo(L, y(f)); c.lineTo(R, y(f)); c.stroke();
+    c.fillStyle = "#26405c"; c.textAlign = "right"; c.fillText(f >= 1000 ? f / 1000 + "k" : f, L - 4, y(f));
+  }
+  for (const fr of utt.frics) {                       // frication bands
+    const half = fr.cf / (2 * Math.max(fr.q, 0.2));
+    const yTop = y(Math.min(fr.cf + half, 7900)), yBot = y(Math.max(fr.cf - half, 90));
+    c.fillStyle = fr.burst ? "rgba(255,207,90,.5)" : "rgba(255,207,90,.22)";
+    c.fillRect(x(fr.t), yTop, Math.max(2, x(fr.t + fr.dur) - x(fr.t)), yBot - yTop);
+  }
+  const FC = ["#6fe8d8", "#c8ff50", "#a8d4ff"];       // F1 F2 F3 polylines
+  for (let i = 0; i < 3; i++) {
+    c.strokeStyle = FC[i]; c.lineWidth = 1.4; c.beginPath();
+    let started = false;
+    for (const s of utt.segs) {
+      if (!s.F) { started = false; continue; }
+      const xa = x(s.t0 + Math.min(s.trans || 0.05, s.dur * 0.6)), xb = x(s.t0 + s.dur);
+      const fa = s.F[i], fb = s.F2nd ? s.F2nd[i] : s.F[i];
+      if (!started) { c.moveTo(x(s.t0), y(fa)); started = true; }
+      c.lineTo(xa, y(fa)); c.lineTo(xb, y(fb));
+    }
+    c.stroke();
+  }
+  c.strokeStyle = "rgba(255,90,42,.7)"; c.lineWidth = 1; c.beginPath();   // pitch (own scale, lower band)
+  const yp = f => B - 4 - ((f - 50) / 250) * 46;
+  utt.pitch.forEach((p, i) => { const px = x(p[0]), py = yp(p[1]); i ? c.lineTo(px, py) : c.moveTo(px, py); });
+  c.stroke();
+  c.fillStyle = "#3a5a80"; c.textAlign = "center"; c.textBaseline = "alphabetic";
+  let flip = false;
+  for (const s of utt.segs) {                          // phoneme labels, two alternating rows
+    if (!s.label) continue;
+    c.fillText(s.label, x(s.t0 + s.dur / 2), H - (flip ? 4 : 13));
+    flip = !flip;
+  }
+  if (VL.ctx && VL.cur && VL.utt === utt) {            // playhead
+    const t = VL.ctx.currentTime - VL.utterStart;
+    if (t >= 0 && t <= utt.dur) {
+      c.strokeStyle = "#6fe8d8"; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(x(t), T); c.lineTo(x(t), B); c.stroke();
+    }
+  }
+}
+function tlTick() {
+  if (VL.cur && VL.utt) { drawTimeline(VL.utt); tlRaf = requestAnimationFrame(tlTick); }
+  else tlRaf = 0;
+}
+
+/* dump — the porting source */
+function refreshDump() {
+  const byEv = {};
+  for (const Ln of LINES) (byEv[Ln.ev] = byEv[Ln.ev] || []).push(Ln);
+  let s = "// tools/voice-lab.html dump — CS010 P8. Port into asteroids-deluxe.html in P9,\n" +
+          "// ONLY after Paul's sign-off (FLAG-11a). Engine = PORT-ME BLOCK A, verbatim.\n";
+  s += "const VOICE_PARAMS = " +
+       JSON.stringify(P, null, 2).replace(/"([A-Za-z_$][\w$]*)":/g, "$1:") + ";\n\n";
+  s += "const VOICE_LINES = {\n";
+  for (const k of Object.keys(byEv)) {
+    s += "  " + k + ": [\n";
+    for (const Ln of byEv[k])
+      s += "    { text: " + JSON.stringify(Ln.text) + ",\n      phon: " + JSON.stringify(Ln.phon) + " },\n";
+    s += "  ],\n";
+  }
+  s += "};";
+  $("#dump").textContent = s;
+}
+$("#copyBtn").onclick = () => {
+  const done = () => {
+    const b = $("#copyBtn");
+    b.classList.add("copied"); b.textContent = "Copied!";
+    setTimeout(() => { b.classList.remove("copied"); b.textContent = "Copy dump"; }, 1200);
+  };
+  const text = $("#dump").textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+  else done();
+};
+
+refreshDump();
+loadLine(0);
+</script>
