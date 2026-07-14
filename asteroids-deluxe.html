@@ -4442,22 +4442,30 @@ function drawAchRow(ach, x, ry, w) {
 // COLOR.ach) and the browsable system-menu "High Scores" screen (highlightId null, nothing lit).
 // Crash-free on an empty, partial, or full HighScores.entries: a missing row just shows a bare dim
 // rank number instead of a record.
-function drawScoreTable(cx, topY, highlightId) {
-  const colRank = cx - 230, colInit = cx - 170, colScore = cx + 10, colWave = cx + 130, colDeliv = cx + 230;
-  drawText("#", colRank, topY, 13, COLOR.dim, "left");
-  drawText("INITIALS", colInit, topY, 13, COLOR.dim, "left");
-  drawText("SCORE", colScore, topY, 13, COLOR.dim, "right");
-  drawText("LEVEL", colWave, topY, 13, COLOR.dim, "right");
-  drawText("DELIVERED", colDeliv, topY, 13, COLOR.dim, "right");
+// `scale` (CS010 P5, §8a) multiplies every font size, the row pitch/header offset, AND the column
+// x-offsets (bigger glyphs need wider columns). Defaults to 1 (the gameover caller, unchanged: its
+// layout is already tight against "PRESS ENTER TO PLAY AGAIN"/the O-hint below it, and the fresh
+// entry is already highlighted gold there, so it doesn't need the bigger type to stand out). The
+// browsable screen (drawHighScores) passes 1.8 — don't unify the two callers, the gameover table
+// has no room to grow without re-flowing that screen (a separate, un-scoped job — see STATUS.md).
+function drawScoreTable(cx, topY, highlightId, scale = 1) {
+  const colRank = cx - 230 * scale, colInit = cx - 170 * scale, colScore = cx + 10 * scale,
+        colWave = cx + 130 * scale, colDeliv = cx + 230 * scale;
+  const fontHeader = 13 * scale, fontRow = 13 * scale, rowPitch = 18 * scale, headerOffset = 22 * scale;
+  drawText("#", colRank, topY, fontHeader, COLOR.dim, "left");
+  drawText("INITIALS", colInit, topY, fontHeader, COLOR.dim, "left");
+  drawText("SCORE", colScore, topY, fontHeader, COLOR.dim, "right");
+  drawText("LEVEL", colWave, topY, fontHeader, COLOR.dim, "right");
+  drawText("DELIVERED", colDeliv, topY, fontHeader, COLOR.dim, "right");
   for (let i = 0; i < SCORES_MAX; i++) {
-    const r = HighScores.entries[i], ry = topY + 22 + i * 18;
-    if (!r) { drawText((i + 1) + ".", colRank, ry, 13, COLOR.dim, "left"); continue; }
+    const r = HighScores.entries[i], ry = topY + headerOffset + i * rowPitch;
+    if (!r) { drawText((i + 1) + ".", colRank, ry, fontRow, COLOR.dim, "left"); continue; }
     const col = r.id === highlightId ? COLOR.ach : COLOR.text;
-    drawText((i + 1) + ".", colRank, ry, 13, col, "left");
-    drawText(r.initials, colInit, ry, 13, col, "left");
-    drawText(fmtCommas(r.score), colScore, ry, 13, col, "right");
-    drawText(String(r.wave), colWave, ry, 13, col, "right");
-    drawText(String(r.delivered), colDeliv, ry, 13, col, "right");
+    drawText((i + 1) + ".", colRank, ry, fontRow, col, "left");
+    drawText(r.initials, colInit, ry, fontRow, col, "left");
+    drawText(fmtCommas(r.score), colScore, ry, fontRow, col, "right");
+    drawText(String(r.wave), colWave, ry, fontRow, col, "right");
+    drawText(String(r.delivered), colDeliv, ry, fontRow, col, "right");
   }
 }
 
@@ -4482,10 +4490,16 @@ function drawEntrySlots(cy) {
 // Browsable top-10 table, nested under Options (CS010 P4 §8b) — reachable from both the system menu
 // (title/gameover -> Options -> High Scores) and the pause menu mid-game. Read-only, like
 // drawAchievements — reuses drawScoreTable with no highlight.
+// CS010 P5 (§8a): rendered at HS_TABLE_SCALE (180%) — this screen, unlike the gameover table, has no
+// competing content below it, so the panel grows to fit rather than shrinking the type. Panel/offsets
+// below are hand-computed for the 1.8 scale (header 22*1.8=39.6, pitch 18*1.8=32.4, 10 rows -> last
+// row baseline at topY+331.2); if HS_TABLE_SCALE ever changes, re-derive topY/footer/panel h by hand.
+const HS_TABLE_SCALE = 1.8;
 function drawHighScores() {
-  const { y } = menuPanel(640, 460, "HIGH SCORES");
-  drawScoreTable(VIEW_W / 2, y + 90, null);
-  drawText("ESC / B / ENTER  return", VIEW_W / 2, y + 420, 12, COLOR.dim);
+  const { y } = menuPanel(1000, 560, "HIGH SCORES");
+  const topY = y + 120;
+  drawScoreTable(VIEW_W / 2, topY, null, HS_TABLE_SCALE);
+  drawText("ESC / B / ENTER  return", VIEW_W / 2, y + 497, 12, COLOR.dim);
 }
 
 // Non-blocking unlock banners at top-center. Fade in then out; stack downward if several land at once.
