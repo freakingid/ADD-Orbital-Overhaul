@@ -105,7 +105,7 @@ const lTier = id => (id in Achievements.lifetimeTiers) ? Achievements.lifetimeTi
 
 console.log(`(config) weekly=${Achievements.WEEKLY.length}  lifetime=${Achievements.LIFETIME.length}  active/week=${Achievements.activeIds.length}`);
 assert(Achievements.WEEKLY.length === 16, "config: 16 weekly achievements (v3.0 P8 added Flawless Run)");
-assert(Achievements.LIFETIME.length === 19, "config: 19 lifetime achievements (v3.0 P8 added 7)");
+assert(Achievements.LIFETIME.length === 20, "config: 20 lifetime achievements (v3.0 P8 added 7; CS012 P3 added max_haul)");
 // v3.0 P7 tier structure + P8 new tiered rows: 14 tiered total.
 const tieredIds = Achievements.LIFETIME.filter(a => a.tiers).map(a => a.id);
 assert(tieredIds.length === 14, "config: exactly 14 tiered lifetime achievements (got " + tieredIds.length + ": " + tieredIds.join(",") + ")");

@@ -3396,8 +3396,8 @@ class Powerup {
 }
 
 class FloatText {
-  constructor(text, x, y, color) {
-    this.text = text; this.x = x; this.y = y; this.color = color;
+  constructor(text, x, y, color, size = 16) {
+    this.text = text; this.x = x; this.y = y; this.color = color; this.size = size;
     this.life = 1.1; this.dead = false;
   }
   update(dt) {
@@ -3407,7 +3407,7 @@ class FloatText {
   }
   draw() {
     ctx.globalAlpha = Math.max(0, this.life / 1.1);
-    drawText(this.text, this.x, this.y, 16, this.color);
+    drawText(this.text, this.x, this.y, this.size, this.color);
     ctx.globalAlpha = 1;
   }
 }
@@ -3457,6 +3457,7 @@ function resetGameStats() {
     gameTime: 0,             // sec since this game started (Speed Recycler's 60s window)
     delivered: 0,            // canisters delivered to the dock this game (Scrap Runner)
     fullChainVisit: false,   // a single dock visit reached 12 deliveries (Heavy Hauler)
+    maxChainVisit: false,    // a single dock visit reached CARGO_CAP_MAX (24) deliveries (Maxed Out, CS012 P3)
     bestCombo: 0,            // highest delivery combo reached in one visit (Combo Collector)
     speedRecycler: false,    // first canister delivered within 60s (Speed Recycler)
     pacifistStreak: 0,       // consecutive deliveries with no shot fired between them
@@ -3923,7 +3924,7 @@ const Achievements = {
     { id: "flawless_run",     name: "Flawless Run",     desc: "Clear wave 8 or later without taking any damage.",      goal: 1,  cur: s => s.flawlessLateWave ? 1 : 0 }
   ],
 
-  // 19 lifetime achievements (v3.0 P8 added 7). cur() reads the persisted lifetime counters (l) — never
+  // 20 lifetime achievements (v3.0 P8 added 7; CS012 P3 added max_haul). cur() reads the persisted lifetime counters (l) — never
   // mutated here. Fourteen of these are now TIERED: an optional `tiers:[bronze..diamond]` ascending ladder
   // replaces the single `goal`; evaluate() unlocks every newly-crossed tier (see evaluate/onUnlock).
   // Two counter kinds (FLAG A-1-b): SUM (running total, l.X++ at the event) and MAX (personal best,
@@ -3952,6 +3953,8 @@ const Achievements = {
     { id: "untouchable",       name: "Untouchable",       desc: "Reach wave 10 without dropping below 50% HP.",        goal: 1,     cur: s => (game.wave >= 10 && !s.everBelowHalf) ? 1 : 0 },
     { id: "ton_of_scrap",      name: "Ton of Scrap",      desc: "Earn 10,000 points from dock deliveries (all-time).", goal: 10000, cur: (s, l) => l.deliveryScore },
     { id: "long_haul",         name: "The Long Haul",     desc: "Deliver 12+ canisters in one dock visit, 10 times.",  goal: 10,    cur: (s, l) => l.fullChains },
+    // CS012 P3 (FORK-CS012-B a): placeholder id/name/desc — Paul to finalize before ship.
+    { id: "max_haul",          name: "Maxed Out",         desc: "Deliver a full 24-canister chain in one dock visit.", goal: 1,     cur: s => s.maxChainVisit ? 1 : 0 },
     { id: "marathon_runner",   name: "Marathon Runner",   desc: "Play for 10 hours total.",                            goal: 36000, cur: (s, l) => l.playTime,
       text: (s, l) => (l.playTime / 3600).toFixed(1) + "/10h" }
   ],
@@ -4844,6 +4847,14 @@ function update(dt) {
         // (FLAG A-5-a / B-8-b) — deliveryCount passes through 12 exactly once per qualifying visit, so all
         // three latch once per visit.
         if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; Achievements.lifetime.heavyHaulerEvents++; }
+        // Maxed Out (lifetime, CS012 P3): deliveryCount passes through CARGO_CAP_MAX exactly once per
+        // qualifying visit (same "passes through" latch idiom as the ===12 check above). Celebration
+        // (floater + gold ring pulse) fires at this same instant — no voice line (deferred, FORK-CS012-B b).
+        if (game.deliveryCount === CARGO_CAP_MAX) {
+          game.stats.maxChainVisit = true;
+          game.floaters.push(new FloatText("MAX HAUL", game.dock.x, game.dock.y - 22, COLOR.ach, 24));
+          game.cargoFlash = HUD_CAP_FLASH;
+        }
         Achievements.lifetime.delivered++;
         Achievements.lifetime.deliveryScore += pts;
         game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
