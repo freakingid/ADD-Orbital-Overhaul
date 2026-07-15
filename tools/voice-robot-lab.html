@@ -92,6 +92,32 @@
 <script>
 "use strict";
 
+/* ===== PASTE-READY: level/number vocab + chain_broken lines (for Paul's audition, not yet ported) ==
+   Verified against this lab's parsePhonTokens — zero unknown-token errors.
+
+LEVEL_PHON = "L EH1 V AH L";
+
+NUM_PHON = {
+  zero:"Z IH1 R OW", one:"W AH1 N", two:"T UW1", three:"TH R IY1", four:"F AO1 R",
+  five:"F AY1 V", six:"S IH1 K S", seven:"S EH1 V AH N", eight:"EY1 T", nine:"N AY1 N",
+  ten:"T EH1 N", eleven:"IH L EH1 V AH N", twelve:"T W EH1 L V",
+  thirteen:"TH ER T IY1 N", fourteen:"F AO R T IY1 N", fifteen:"F IH F T IY1 N",
+  sixteen:"S IH K S T IY1 N", seventeen:"S EH V AH N T IY1 N", eighteen:"EY T IY1 N",
+  nineteen:"N AY N T IY1 N",
+  twenty:"T W EH1 N T IY", thirty:"TH ER1 T IY", forty:"F AO1 R T IY",
+  fifty:"F IH1 F T IY", sixty:"S IH1 K S T IY", seventy:"S EH1 V AH N T IY",
+  eighty:"EY1 T IY", ninety:"N AY1 N T IY",
+};
+
+VOICE_LINES.chain_broken = [
+  { text:"Junk is gone!", phon:"JH AH1 NG K / IH Z / G AO1 N ." },
+  { text:"Lost my scrap!", phon:"L AO1 S T / M AY1 / S K R AE1 P ." },
+  { text:"Trash is loose!", phon:"T R AE1 SH / IH Z / L UW1 S ." },
+  { text:"There goes the garbage!", phon:"DH EH1 R / G OW1 Z / DH AH / G AA1 R B IH JH ." },
+  { text:"There goes my junk!", phon:"DH EH1 R / G OW1 Z / M AY1 / JH AH1 NG K ." },
+];
+==================================================================================================== */
+
 /* ===== PORT-ME BLOCK A — the engine. Becomes VoiceSys in CS010 P9, verbatim. =================== */
 
 /* Phoneme table — ARPAbet. Classes: v vowel, g glide/liquid, n nasal, f fricative, p stop,
@@ -163,6 +189,18 @@ const WORDS = {
   "the":"DH AH","to":"T UW","and":"AE N D","of":"AH V","you":"Y UW1","oh":"OW1",
   "hey":"HH EY1","roger":"R AA1 JH ER","copy":"K AA1 P IY","over":"OW1 V ER","out":"AW1 T",
   "dan":"D AE1 N","captain":"K AE1 P T IH N","it's":"IH T S","its":"IH T S","dock":"D AA1 K",
+  "level":"L EH1 V AH L",
+  "zero":"Z IH1 R OW","one":"W AH1 N","two":"T UW1","three":"TH R IY1","four":"F AO1 R",
+  "six":"S IH1 K S","seven":"S EH1 V AH N","eight":"EY1 T","nine":"N AY1 N",
+  "ten":"T EH1 N","eleven":"IH L EH1 V AH N","twelve":"T W EH1 L V",
+  "thirteen":"TH ER T IY1 N","fourteen":"F AO R T IY1 N","fifteen":"F IH F T IY1 N",
+  "sixteen":"S IH K S T IY1 N","seventeen":"S EH V AH N T IY1 N","eighteen":"EY T IY1 N",
+  "nineteen":"N AY N T IY1 N",
+  "twenty":"T W EH1 N T IY","thirty":"TH ER1 T IY","forty":"F AO1 R T IY",
+  "fifty":"F IH1 F T IY","sixty":"S IH1 K S T IY","seventy":"S EH1 V AH N T IY",
+  "eighty":"EY1 T IY","ninety":"N AY1 N T IY",
+  "junk":"JH AH1 NG K","lost":"L AO1 S T","my":"M AY1","scrap":"S K R AE1 P",
+  "trash":"T R AE1 SH","loose":"L UW1 S","goes":"G OW1 Z",
 };
 
 /* Rule fallback for words NOT in the dictionary — deliberately naive; its output is a GUESS,
