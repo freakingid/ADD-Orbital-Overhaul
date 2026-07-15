@@ -2191,8 +2191,9 @@ function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_R
 const MENU_OPTIONS = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
 // CS010 P4 (§9): the Sound/Music sub-screen's rows, same template as DIFFICULTY_ROWS. CS010 P9 (§11c)
 // added the Voice Volume slider — SOUND_ROWS + VOL_LABELS + VOL_CATS grow together so the parallel
-// label→category lookup stays paired.
-const SOUND_ROWS   = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume", "Music Track", "Back"];
+// label→category lookup stays paired. CS011 P3 added "Voice" (style picker) + "Captions" (toggle),
+// both dispatched by label in menuSound/drawSound like the existing Music Track cycler.
+const SOUND_ROWS   = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume", "Voice", "Captions", "Music Track", "Back"];
 const VOL_CATS     = ["sfx", "music", "master", "voice"]; // parallel to VOL_LABELS (NOT to any MENU_OPTIONS/SOUND_ROWS position)
 const VOL_LABELS   = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume"]; // the slider rows, by label
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
@@ -2218,6 +2219,9 @@ function voiceEnabled() { return settings.voiceStyle !== "off"; }
 // row shows. Cycled left/right like a Difficulty toggle. Ordered calm -> hot (v3.5).
 const MUSIC_TRACK_VALUES = ["zen", "derelict", "drift", "warehouse"];
 const MUSIC_TRACK_LABELS = { zen: "Zen", derelict: "Derelict", drift: "Drift", warehouse: "Warehouse" };
+
+// CS011 P3: display labels for the Voice-style picker, parallel to VOICE_STYLE_VALUES.
+const VOICE_STYLE_LABELS = { off: "Off", comms: "Comms", comms_f: "Comms ♀", flat: "Monotone", flat_f: "Monotone ♀", vintage: "Computer", vintage_f: "Computer ♀" };
 
 function menuActive() { return game.paused; } // paused <=> a pause-menu screen is open
 
@@ -2333,6 +2337,16 @@ function menuSound(a) {
     } else if (label === "Music Track") { // cycle the gameplay-track selection (same idiom as Difficulty toggles)
       const idx = MUSIC_TRACK_VALUES.indexOf(settings.musicTrack), n = MUSIC_TRACK_VALUES.length;
       settings.musicTrack = MUSIC_TRACK_VALUES[(idx + (a === "right" ? 1 : -1) + n) % n];
+      saveSettings();
+      AudioSys.ui(false);
+    } else if (label === "Voice") { // cycle Dan's voice style (same idiom as Music Track)
+      const idx = VOICE_STYLE_VALUES.indexOf(settings.voiceStyle), n = VOICE_STYLE_VALUES.length;
+      settings.voiceStyle = VOICE_STYLE_VALUES[(idx + (a === "right" ? 1 : -1) + n) % n];
+      VoiceSys.setStyle(settings.voiceStyle);
+      saveSettings();
+      AudioSys.ui(false);
+    } else if (label === "Captions") { // toggle on-screen captions
+      settings.captions = !settings.captions;
       saveSettings();
       AudioSys.ui(false);
     }
@@ -2473,7 +2487,8 @@ function saveSettings() {
     const data = { vol: { ...AudioSys.vol }, bindings: {},
       shotPowerupMode: settings.shotPowerupMode, magnetMode: settings.magnetMode, // v3.0 P5 (additive)
       musicTrack: settings.musicTrack,                                            // v3.4 P6 (additive)
-      shipTurnScale: settings.shipTurnScale };                                    // CS010 §10b (additive)
+      shipTurnScale: settings.shipTurnScale,                                      // CS010 §10b (additive)
+      voiceStyle: settings.voiceStyle, captions: settings.captions };             // CS011 P3 (additive)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -2517,6 +2532,12 @@ function loadSettings() {
     } else {
       settings.shipTurnScale = SHIP_TURN_SCALE_DEFAULT;
     }
+    // CS011 P3: voice style + captions are additive fields — tolerate a missing/corrupt value by
+    // leaving the runtime default in place rather than snapping to a wrong fallback. Captions in
+    // particular must stay true (the default) unless a real boolean was saved — no else-branch.
+    if (VOICE_STYLE_VALUES.includes(data.voiceStyle)) settings.voiceStyle = data.voiceStyle;
+    VoiceSys.setStyle(settings.voiceStyle);
+    if (typeof data.captions === "boolean") settings.captions = data.captions;
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
@@ -5048,7 +5069,7 @@ function drawOptionsMenu() {
 // cycler off Options, same control style. Follows drawOptionsMenu's pre-CS010-P4 value-row layout
 // (left-aligned label + slider/value), dispatched off SOUND_ROWS by label, plus a centered Back row.
 function drawSound() {
-  const { x, y } = menuPanel(600, 510, "SOUND / MUSIC"); // CS010 P9: +50px for the Voice Volume row
+  const { x, y } = menuPanel(600, 602, "SOUND / MUSIC"); // CS011 P3: +92px for the Voice picker + Captions rows
   const m = game.menu;
   let cy = y + 100;
   SOUND_ROWS.forEach((label, i) => {
@@ -5064,9 +5085,13 @@ function drawSound() {
       ctx.fillRect(bx + 1, by + 1, (bw - 2) * AudioSys.vol[VOL_CATS[vi]], bh - 2);
       drawText(Math.round(AudioSys.vol[VOL_CATS[vi]] * 100) + "%", bx + bw + 44, cy + 6, 16, sel ? COLOR.text : COLOR.dim, "right");
       if (sel) { drawText("◄", bx - 16, cy + 7, 16, COLOR.text); drawText("►", bx + bw + 16, cy + 7, 16, COLOR.text); }
-    } else { // Music Track — a value column mirroring drawDifficulty's toggle layout
+    } else { // value-column rows — a single dispatch mirroring drawDifficulty's toggle layout
       const ox = x + 270;
-      drawText(MUSIC_TRACK_LABELS[settings.musicTrack], ox, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+      let val;
+      if (label === "Music Track")   val = MUSIC_TRACK_LABELS[settings.musicTrack];
+      else if (label === "Voice")    val = VOICE_STYLE_LABELS[settings.voiceStyle];
+      else if (label === "Captions") val = settings.captions ? "On" : "Off";
+      drawText(val, ox, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
       if (sel) { drawText("◄", ox - 20, cy + 7, 16, COLOR.text); drawText("►", ox + 150, cy + 7, 16, COLOR.text); }
     }
     cy += 46;
@@ -5074,7 +5099,7 @@ function drawSound() {
   cy += 14;
   const backSel = m.index === SOUND_ROWS.indexOf("Back");
   drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.dim);
-  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 490, 12, COLOR.dim);
+  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 582, 12, COLOR.dim);
 }
 
 // Difficulty screen renderer (v3.0 P5): two two-option toggle rows + Back. The active side of each

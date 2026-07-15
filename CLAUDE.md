@@ -196,7 +196,9 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   physics contract"). If you hit a risk the prompt didn't flag, note it in
   STATUS.md so the next phase's prompt can account for it.
 - **Three frozen `localStorage` keys — never rename or merge them.**
-  `afd_settings_v1` (options/bindings/difficulty modes/music track),
+  `afd_settings_v1` (options/bindings/difficulty modes/music track; CS011 P3
+  added `voiceStyle`/`captions` additively — same known-value-else-default
+  rule as every other field on this key),
   `afd_achievements_v2` (progress + unlocks), and `afd_scores_v1` (v3.6 P6 —
   the high-score table) are independent stores, each with its own guarded
   `storageOK()` try/catch load/save path. None of the three reads or writes
