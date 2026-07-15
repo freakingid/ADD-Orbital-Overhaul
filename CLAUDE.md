@@ -240,7 +240,11 @@ asteroids-deluxe.html
     //                   modules alongside it (never inside). VoiceSys data
     //                   tables: VOICE_STYLES (6 selectable robot voices) +
     //                   VOICE_STYLE_VALUES (Off-first id list), VOICE_PARAMS
-    //                   (let: the active style), VOICE_LINES (event→phrases)
+    //                   (let: the active style), VOICE_LINES (event→phrases),
+    //                   LEVEL_PHON/NUM_PHON/DIGIT_WORD (CS011 P4, level
+    //                   announcement phon, ported verbatim from
+    //                   tools/voice-robot-lab.html) + numberToWords(n)/
+    //                   levelPhon(n) (pure helpers) + VoiceSys.sayLevel(n)
     // Input             keys{} map + input.* predicates; call sites never
     //                   read keys{} directly
     // Helpers           rand, wrap, dist2, angleTo, shortDelta (wrap-aware),

@@ -1582,12 +1582,52 @@ const VOICE_LINES = {
   ],
 };
 
+// CS011 P4 — level announcement. LEVEL_PHON/NUM_PHON are ported VERBATIM from
+// tools/voice-robot-lab.html's P0 audited output (do not re-compose phon here).
+const LEVEL_PHON = "L EH1 V AH L";
+const NUM_PHON = {
+  zero: "Z IH1 R OW", one: "W AH1 N", two: "T UW1", three: "TH R IY1", four: "F AO1 R",
+  five: "F AY1 V", six: "S IH1 K S", seven: "S EH1 V AH N", eight: "EY1 T", nine: "N AY1 N",
+  ten: "T EH1 N", eleven: "IH L EH1 V AH N", twelve: "T W EH1 L V",
+  thirteen: "TH ER T IY1 N", fourteen: "F AO R T IY1 N", fifteen: "F IH F T IY1 N",
+  sixteen: "S IH K S T IY1 N", seventeen: "S EH V AH N T IY1 N", eighteen: "EY T IY1 N",
+  nineteen: "N AY N T IY1 N",
+  twenty: "T W EH1 N T IY", thirty: "TH ER1 T IY", forty: "F AO1 R T IY",
+  fifty: "F IH1 F T IY", sixty: "S IH1 K S T IY", seventy: "S EH1 V AH N T IY",
+  eighty: "EY1 T IY", ninety: "N AY1 N T IY",
+};
+const DIGIT_WORD = {
+  "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+  "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+};
+
+// Pure: n -> word tokens ("twenty-three" -> ["twenty","three"]). n < 20 is a single ones/teens
+// word; otherwise a tens word plus an ones word only if there's a remainder.
+function numberToWords(n) {
+  if (n < 20) return [numberToWords.ONES[n]];
+  const tens = numberToWords.TENS[(n / 10) | 0];
+  const ones = n % 10;
+  return ones ? [tens, numberToWords.ONES[ones]] : [tens];
+}
+numberToWords.ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+  "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+  "eighteen", "nineteen"];
+numberToWords.TENS = [null, null, "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
+  "eighty", "ninety"];
+
+// Pure: n -> full phon string for "Level n". n <= 99 speaks natural words; n >= 100 falls back
+// to digit-by-digit (no "level two hundred" composition — out of scope, see phase doc FLAG).
+function levelPhon(n) {
+  if (n <= 99) return LEVEL_PHON + " / " + numberToWords(n).map(w => NUM_PHON[w]).join(" / ");
+  return LEVEL_PHON + " / " + String(n).split("").map(d => NUM_PHON[DIGIT_WORD[d]]).join(" / ");
+}
+
 // §11e cooldown/priority — PLAYTEST KNOBS. VOICE_COOLDOWN: no line starts while one plays, or within
 // this many seconds of the last one ENDING. VOICE_PRIORITY (default 1): a higher-priority line PRE-EMPTS
 // a lower one that is currently playing; an equal/lower one is DROPPED (never queued — a queue would have
 // Dan narrating events that finished ten seconds ago). 3 = hull critical, 2 = health milestones, 1 = rest.
 const VOICE_COOLDOWN = 1.2;
-const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2 };
+const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2 };
 
 // CS011 P2 — on-screen caption look/timing knobs (LOOK-CALL). The caption is Dan's VISIBLE echo, shown
 // whenever settings.captions is on — even with voice audio OFF — and gated by the SAME cooldown/priority
@@ -1710,6 +1750,12 @@ const VoiceSys = {
     if (!lines || !lines.length) return null;
     const line = lines[(Math.random() * lines.length) | 0];
     return this._emit(line, VOICE_PRIORITY[event] || 1);
+  },
+
+  // CS011 P4: announce the wave number. Speaks natural words via levelPhon(); the caption (shown
+  // by _emit) shows the numeral ("Level 23") since it's built from `line.text`, not `line.phon`.
+  sayLevel(n) {
+    return this._emit({ text: "Level " + n, phon: levelPhon(n) }, VOICE_PRIORITY.level);
   },
 
   // The voice CHANNEL (CS011 P2): run the §11e cooldown/priority gate for one already-chosen `line` at
@@ -3525,6 +3571,7 @@ function startGame() {
 
 function nextWave() {
   game.wave++;
+  VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
   // v3.4 P7: intensity recomputed ONLY on wave change, never per-frame — keeps updateMusic()'s
   // per-frame path clean. Runs at wave 1 too (startGame calls nextWave()), so a fresh run starts
   // pinned to difficultyFactor(1) === 0 (foundation layer only) before any track has even loaded.

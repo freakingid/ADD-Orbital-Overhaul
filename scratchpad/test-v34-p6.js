@@ -42,13 +42,20 @@ function makeParam() {
   return p;
 }
 const startedOscs = [];
-function makeGain() { const g = { gain: makeParam(), connect(dest) { return dest; } }; return g; }
+function makeGain() { const g = { gain: makeParam(), connect(dest) { return dest; }, disconnect() {} }; return g; }
 function makeOsc() {
   return { type: "sine", frequency: makeParam(), connect(dest) { return dest; },
-    start(t) { startedOscs.push(t); }, stop() {} };
+    start(t) { startedOscs.push(t); }, stop() {}, setPeriodicWave() {}, onended: null };
 }
 function makeFilter() { return { type: "lowpass", frequency: makeParam(), Q: makeParam(), connect(dest) { return dest; } }; }
-function makeBufferSource() { return { buffer: null, loop: false, playbackRate: makeParam(), connect(dest) { return dest; }, start() {}, stop() {} }; }
+function makeBufferSource() { return { buffer: null, loop: false, playbackRate: makeParam(), connect(dest) { return dest; }, start() {}, stop() {}, onended: null }; }
+// CS011 P4: VoiceSys.ensure()/_schedule() now run on every startGame() (sayLevel(1)), so this ctx
+// needs the radio-chain + formant-synth node types too, not just Gain/Osc/Filter/BufferSource.
+function makeShaper() { return { curve: null, connect(dest) { return dest; } }; }
+function makeCompressor() {
+  return { threshold: makeParam(), ratio: makeParam(), attack: makeParam(), release: makeParam(),
+    connect(dest) { return dest; } };
+}
 function makeCtx() {
   const ctx = { state: "running", currentTime: 0, sampleRate: 44100 };
   ctx.destination = makeGain();
@@ -57,6 +64,9 @@ function makeCtx() {
   ctx.createBiquadFilter = () => makeFilter();
   ctx.createBuffer = (ch, len) => ({ getChannelData() { return new Float32Array(len || 1); } });
   ctx.createBufferSource = () => makeBufferSource();
+  ctx.createWaveShaper = () => makeShaper();
+  ctx.createDynamicsCompressor = () => makeCompressor();
+  ctx.createPeriodicWave = () => ({});
   ctx.resume = () => {};
   return ctx;
 }

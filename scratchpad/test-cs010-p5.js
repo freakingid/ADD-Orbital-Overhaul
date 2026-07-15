@@ -74,9 +74,12 @@ function buildInstance() {
   function makeAudioNode() {
     return new Proxy({
       gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} },
-      frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} },
-      Q: { value: 0 }, type: "sine", buffer: null, loop: false, playbackRate: { value: 1 },
-      connect() { return makeAudioNode(); }, start() {}, stop() {}
+      frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} },
+      Q: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} },
+      threshold: { value: 0, setValueAtTime() {} }, ratio: { value: 1, setValueAtTime() {} },
+      attack: { value: 0, setValueAtTime() {} }, release: { value: 0, setValueAtTime() {} },
+      type: "sine", buffer: null, loop: false, curve: null, playbackRate: { value: 1 },
+      connect() { return makeAudioNode(); }, disconnect() {}, start() {}, stop() {}, setPeriodicWave() {}
     }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
   }
   function FakeAudioContext() {
