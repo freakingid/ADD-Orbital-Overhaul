@@ -151,7 +151,8 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   event, each event an ARRAY of `{text,phon}` alternatives — adding a line is a
   one-line data edit, never a code change; selection is a plain random pick. A
   new line's `phon` is composed in `tools/voice-lab.html` and pasted in; the
-  acoustic engine (`PH`, `buildUtterance`/`buildPitch`, `_render`) is ported
+  acoustic engine (`PH`, `buildUtterance`/`buildPitch`, `_schedule` — the
+  scheduler, called `_render` before the CS011 P2 split) is ported
   **verbatim** from that lab like MusicSys/music-lab — don't re-tune it in the
   build. (The lab's g2p text→ARPAbet layer is deliberately NOT ported — its
   output is already the baked `phon` strings.) **As of CS011, the port-verbatim
@@ -169,6 +170,17 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   point is `if (!AudioSys.ctx) return;`-guarded (headless-safe). The low-health
   voice has its OWN latch (`game.lowHpVoiced`) that menus do NOT tear down —
   distinct from the siren latch — so Dan doesn't re-announce on every unpause.
+  **(4) One gate, two outputs (CS011 P2).** `say()` is split into `_emit(line,p)`
+  (resolves the ONE cooldown/priority gate, then shows the caption if
+  `settings.captions` and speaks if the global `voiceEnabled()`) and
+  `_schedule(utt)` (the former `_render` scheduler, now taking a pre-built
+  utterance — `buildUtterance` moved up into `_emit`). Keep the gate arithmetic
+  byte-identical if you touch it: captions and audio must stay driven by the
+  SAME `_emit` gate, so a caption obeys drop-not-queue exactly like the audio —
+  but captions are INDEPENDENT of voice volume and of the Off style (voice Off
+  still captions). `drawCaption()` is a SIBLING of `drawHUD()` (not inside it —
+  captions survive the `H` capture toggle) and self-gates on
+  `game.state === "playing" && !game.paused && game.caption.life > 0`.
 - **New enemies follow the established extension points** documented in the
   GDD's Architecture Map (3.3): wire into `startGame` reset, `update()`
   entity update + collision passes + cleanup filter, `draw()` z-order, and

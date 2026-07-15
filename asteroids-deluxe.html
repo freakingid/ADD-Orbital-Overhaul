@@ -1274,7 +1274,7 @@ const MusicSys = {
 
 // ---------- Voice (Dan — Klatt-style formant synth, CS010 P9) ----------
 // Ported from tools/voice-lab.html (FLAG-11a signed off). The ACOUSTIC ENGINE below (PH table,
-// parsePhonTokens / buildUtterance / buildPitch, and VoiceSys._render's scheduler) is PORT-ME BLOCK A,
+// parsePhonTokens / buildUtterance / buildPitch, and VoiceSys._schedule's scheduler) is PORT-ME BLOCK A,
 // VERBATIM — same standing rule as MusicSys/music-lab: audition in the lab, port the engine unchanged.
 // The lab's g2p text→ARPAbet authoring layer (WORDS dictionary + rule guesser) is DELIBERATELY not
 // ported: it only derives phon strings from typed text, and every shipping line's phon is already
@@ -1488,7 +1488,7 @@ const VOICE_STYLES = {
 };
 
 // VOICE_PARAMS is a LIVE binding (let, not const): VoiceSys.setStyle() re-points it at a VOICE_STYLES entry
-// and every consumer (buildUtterance, applyRadio, applyRing, _render) reads it fresh. It starts at the
+// and every consumer (buildUtterance, applyRadio, applyRing, _schedule) reads it fresh. It starts at the
 // shipped default (comms). "off" NEVER reassigns it, so the engine always has a valid full object to read.
 let VOICE_PARAMS = VOICE_STYLES.comms;
 const VOICE_STYLE_VALUES = ["off", "comms", "comms_f", "flat", "flat_f", "vintage", "vintage_f"];
@@ -1588,6 +1588,13 @@ const VOICE_LINES = {
 // Dan narrating events that finished ten seconds ago). 3 = hull critical, 2 = health milestones, 1 = rest.
 const VOICE_COOLDOWN = 1.2;
 const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2 };
+
+// CS011 P2 — on-screen caption look/timing knobs (LOOK-CALL). The caption is Dan's VISIBLE echo, shown
+// whenever settings.captions is on — even with voice audio OFF — and gated by the SAME cooldown/priority
+// as the audio, so a dropped line is never captioned late. LINGER: seconds a fully-shown caption holds
+// after the utterance ends. FADE: seconds of linear alpha fade-out at the end of its life. Y: px up from
+// the viewport bottom. SIZE: font px. All four are pure presentation, tuned by eye, no gameplay effect.
+const CAPTION_LINGER = 1.5, CAPTION_FADE = 0.4, CAPTION_Y = 64, CAPTION_SIZE = 20;
 
 // VoiceSys — Dan's speech. A SEPARATE module alongside AudioSys/MusicSys (NOT folded into AudioSys, a
 // flat bag of one-shots): it owns a small sequencer + a radio-processing chain that feeds AudioSys.voice
@@ -1695,26 +1702,47 @@ const VoiceSys = {
   reset() { this._stop(); this.busyUntil = -Infinity; this.curPriority = -Infinity; },
 
   // Speak a random alternative for `event`, subject to §11e cooldown/priority. Returns the chosen line
-  // (or null if dropped/unavailable). Total no-op when audio is unavailable (AudioSys.ctx null).
+  // (or null if dropped/unavailable). Selection is a plain random pick; the gate + caption + scheduling
+  // all live in _emit, so an event maps to a line here and the channel logic is shared with any future
+  // direct caller (e.g. CS011's coming sayLevel()).
   say(event) {
-    if (!AudioSys.ctx) return null;
     const lines = VOICE_LINES[event];
     if (!lines || !lines.length) return null;
+    const line = lines[(Math.random() * lines.length) | 0];
+    return this._emit(line, VOICE_PRIORITY[event] || 1);
+  },
+
+  // The voice CHANNEL (CS011 P2): run the §11e cooldown/priority gate for one already-chosen `line` at
+  // priority `p`, and for a line that PASSES, show its caption (if settings.captions) and speak it (if a
+  // voice style is selected). Captions and audio are INDEPENDENT outputs that SHARE this one gate, so a
+  // caption obeys the same drop-not-queue rule as the audio — a superseded/in-cooldown line is dropped,
+  // never shown late. The gate arithmetic (busyUntil/curPriority + VOICE_COOLDOWN) is BYTE-IDENTICAL to
+  // the pre-split say(): buildUtterance moved up here from _schedule (so a captions-only run can read
+  // utt.dur without building an audio graph), and busyUntil/curPriority advance whenever a line passes —
+  // even in captions-only mode (voice OFF) — so the channel stays consistent. Returns the line, or null
+  // if dropped / no ctx. NOTE: gates on the global voiceEnabled() helper (not a VoiceSys method).
+  _emit(line, p) {
+    if (!AudioSys.ctx) return null;
     this.ensure();
     const now = AudioSys.now();
-    const p = VOICE_PRIORITY[event] || 1;
     if (now < this.busyUntil) {              // a line is on the channel right now
       if (p <= this.curPriority) return null; // equal/lower → DROP (never queue)
-      // higher → fall through: _render() stops the current line and takes the channel
+      // higher → fall through: _schedule() stops the current line and takes the channel
     } else if (now < this.busyUntil + VOICE_COOLDOWN) {
       return null;                            // inside the post-line cooldown gap
     }
-    const line = lines[(Math.random() * lines.length) | 0];
-    const utt = this._render(line.phon);
+    const utt = buildUtterance(line.phon, VOICE_PARAMS);
+    if (settings.captions) this.showCaption(line.text, utt.dur);
+    if (voiceEnabled()) this._schedule(utt);
     this.curPriority = p;
-    this.busyUntil = now + 0.10 + (utt ? utt.dur : 0); // t0 = now + 0.10 (see _render); + utterance length
+    this.busyUntil = now + 0.10 + utt.dur;   // t0 = now + 0.10 (see _schedule); + utterance length
     return line;
   },
+
+  // Overwrite (never queue) the on-screen caption with `text`, timed to utterance length `dur`. life =
+  // the audio's 0.10 s t0 lead + the speech + CAPTION_LINGER; drawCaption() renders it, fading over the
+  // last CAPTION_FADE seconds. Reassigns game.caption wholesale so a superseding line replaces the old.
+  showCaption(text, dur) { game.caption = { text, dur, life: 0.10 + dur + CAPTION_LINGER }; },
 
   // Recycle-at-dock tiers (§11f / FORK-5 b): map pieces-delivered-this-visit to a line. 1–4 says nothing.
   dockDelivery(n) {
@@ -1724,15 +1752,16 @@ const VoiceSys = {
   },
 
   // The render scheduler — PORT-ME BLOCK A, verbatim from the lab's VL.speak(), retargeted onto
-  // AudioSys.ctx / AudioSys.voice (via this.voiceBus). Builds one utterance's Web Audio graph and
-  // returns the compiled utterance (with .dur). Do not re-tune here — tune in the lab, re-port.
-  _render(phonStr) {
+  // AudioSys.ctx / AudioSys.voice (via this.voiceBus). Schedules a PRE-BUILT utterance (`utt`) as a Web
+  // Audio graph and returns it. buildUtterance() now runs one level up in _emit() (CS011 P2 — the ONLY
+  // line lifted out of this block, so a captions-only run can read utt.dur without building any audio).
+  // Do not re-tune here — tune in the lab, re-port.
+  _schedule(utt) {
     this.ensure();
     if (!AudioSys.ctx) return null;
     const ctx = AudioSys.ctx;
     if (ctx.state === "suspended") ctx.resume();
     this._stop();
-    const utt = buildUtterance(phonStr, VOICE_PARAMS);
     if (!utt.segs.length) return utt;
     const t0 = ctx.currentTime + 0.10;
 
@@ -2216,6 +2245,7 @@ function quitToTitle() {
   AudioSys.thrust(false); AudioSys.saucer(false); // stop any continuous voices
   AudioSys.lowhp(false); game.lowHpSiren = false;
   game.hpReliefFlash = 0; // CS010 P3: no stale relief exhale survives a quit-to-title
+  game.caption.life = 0;  // CS011 P2: no stale voice caption lingers into the title
   Achievements.save();  // persist lifetime progress earned during the abandoned game (F9)
   AudioSys.ui(false);
 }
@@ -3422,7 +3452,12 @@ const game = {
   // Armed on the falling edge ONLY IF !ship.dead (dying ALSO drives the low-health state false, so the
   // guard stops a cheerful pop firing at the moment of death). Decayed in update() beside cargoFlash;
   // zeroed at every direct siren teardown (pause/quit/start/death) so no stale exhale survives.
-  hpReliefFlash: 0
+  hpReliefFlash: 0,
+  // CS011 P2: the on-screen caption of Dan's current line — the voice channel's VISIBLE echo. text = the
+  // line text; dur = its utterance length (from buildUtterance); life = seconds left to display, set to
+  // 0.10 + dur + CAPTION_LINGER by showCaption() and decayed in update()'s playing body. drawCaption()
+  // renders it while life > 0 (fading over the last CAPTION_FADE s). Overwritten wholesale per line.
+  caption: { text: "", life: 0, dur: 0 }
 };
 
 function startGame() {
@@ -3462,6 +3497,7 @@ function startGame() {
   game.lowHpVoiced = false;
   game.hpFullVoice = true;
   game.powerVoiced = { rapid: false, triple: false, magnet: false, engine: false };
+  game.caption = { text: "", life: 0, dur: 0 }; // CS011 P2: no stale caption carries into a fresh run
   VoiceSys.reset();
   nextWave();
 }
@@ -4547,6 +4583,7 @@ function update(dt) {
   game.hunters.forEach(h => h.update(dt));
   game.particles.forEach(p => p.update(dt));
   game.floaters.forEach(f => f.update(dt));
+  game.caption.life -= dt; // CS011 P2: age Dan's on-screen caption (drawCaption gates on life > 0)
   if (game.dock) game.dock.update(dt);
 
   // --- Salvage pickup & chain physics ---
@@ -4939,6 +4976,19 @@ function drawText(str, x, y, size, color = COLOR.text, align = "center") {
   ctx.shadowBlur = 8;
   ctx.fillText(str, x, y);
   ctx.shadowBlur = 0;
+}
+
+// CS011 P2: Dan's on-screen caption — the voice channel's visible echo (settings.captions), centered near
+// the viewport bottom. In-play only (never over a menu / gameover / the title). Independent of Capture's H
+// HUD toggle by design (accessibility text, not a HUD readout) — a SIBLING of drawHUD() in draw(), not
+// inside it. Fades over the last CAPTION_FADE s via ctx.globalAlpha (drawText leaves globalAlpha alone).
+function drawCaption() {
+  if (game.state === "playing" && !game.paused && game.caption.life > 0) {
+    const a = game.caption.life < CAPTION_FADE ? game.caption.life / CAPTION_FADE : 1;
+    ctx.globalAlpha = a;
+    drawText(game.caption.text, VIEW_W/2, VIEW_H - CAPTION_Y, CAPTION_SIZE, COLOR.text, "center");
+    ctx.globalAlpha = 1;
+  }
 }
 
 // ---------- Pause menu / Options / Controls rendering (F8) ----------
@@ -5411,6 +5461,7 @@ function draw() {
   // Capture tools (P/O/H — see the block comment above the Capture object) toggle visibility
   // of this call only; the game keeps simulating/updating regardless of hudVisible.
   if (Capture.hudVisible) drawHUD();
+  drawCaption(); // CS011 P2: sibling of drawHUD (NOT inside it) — captions show regardless of the H toggle
 
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
