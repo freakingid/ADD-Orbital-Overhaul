@@ -154,7 +154,15 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   acoustic engine (`PH`, `buildUtterance`/`buildPitch`, `_render`) is ported
   **verbatim** from that lab like MusicSys/music-lab — don't re-tune it in the
   build. (The lab's g2p text→ARPAbet layer is deliberately NOT ported — its
-  output is already the baked `phon` strings.) **(2) Route "did an effect end?"
+  output is already the baked `phon` strings.) **As of CS011, the port-verbatim
+  rule also covers the `VOICE_STYLES` table and the ring-modulation stage,
+  sourced from `tools/voice-robot-lab.html` (the second voice instrument) — its
+  presets are `Object.assign` diffs, so each shipped style is expanded to a FULL
+  `VOICE_PARAMS`-shaped object (unstated fields from the lab's base `P`) before
+  pasting; the lab's flanger/crush stages do NOT ship. `VOICE_PARAMS` is now a
+  `let`-bound active style re-pointed by `setStyle(id)`, not a fixed `const` —
+  every consumer reads it live; `"off"` never reassigns it. Don't re-tune a
+  style value in the build.** **(2) Route "did an effect end?"
   through `powerActive(type)`, never `powerFx`** — the latter silently misses
   the count modes (shots/pieces). **(3) Superseded lines DROP, never queue** —
   a queue has Dan narrating events that finished ten seconds ago. Every entry
@@ -214,7 +222,11 @@ asteroids-deluxe.html
     //                   window size
     // AudioSys          singleton; every sound is a method; init on first
     //                   keypress (autoplay policy); continuous sounds are
-    //                   start/stop node pairs
+    //                   start/stop node pairs. MusicSys + VoiceSys are separate
+    //                   modules alongside it (never inside). VoiceSys data
+    //                   tables: VOICE_STYLES (6 selectable robot voices) +
+    //                   VOICE_STYLE_VALUES (Off-first id list), VOICE_PARAMS
+    //                   (let: the active style), VOICE_LINES (event→phrases)
     // Input             keys{} map + input.* predicates; call sites never
     //                   read keys{} directly
     // Helpers           rand, wrap, dist2, angleTo, shortDelta (wrap-aware),

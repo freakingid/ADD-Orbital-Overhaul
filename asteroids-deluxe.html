@@ -1426,35 +1426,75 @@ function buildPitch(segs, dur, P) {
   return out;
 }
 
-// PORT-ME BLOCK B — synthesis params + the shipping lines, VERBATIM from the lab dump (Paul's phrasing).
-// LINES ARE DATA: VOICE_LINES is keyed by EVENT, each holding an ARRAY of alternatives; adding a line
-// later (Paul wants variety) is a ONE-LINE edit here. Selection is a PLAIN RANDOM PICK (§11d), not a bag.
-const VOICE_PARAMS = {
-  basePitch: 112,
-  pitchRange: 4,
-  finalFall: 5,
-  contour: "declarative",
-  rate: 0.95,
-  wobble: 0.6,
-  srcType: "pulse",
-  richness: 0.85,
-  breath: 0.12,
-  f1Scale: 1,
-  f2Scale: 1,
-  f3Scale: 1,
-  bwScale: 1,
-  fricGain: 1,
-  burstGain: 1,
-  consDur: 1,
-  radio: {
-    on: true,
-    hp: 320,
-    lp: 3200,
-    drive: 2.5,
-    static: 0.018
+// PORT-ME BLOCK B — synthesis params + the shipping lines, VERBATIM from the lab dumps (Paul's phrasing).
+// VOICE_STYLES (CS011) is the selectable-voice table: six FULL VOICE_PARAMS-shaped objects, each with an
+// added top-level ring:{on,freq,mix}. Ported from tools/voice-robot-lab.html PRESETS — the "Comms robot
+// (announcer)", "Flat monotone" and "Vintage computer (DECtalk)" pairs (♂ then ♀). Those lab presets are
+// Object.assign DIFFS over the lab's base P, so every field a diff did NOT restate — pitchRange, finalFall,
+// srcType, richness, breath, bwScale, fricGain, burstGain, and the unstated radio fields — is expanded here
+// from that base P (pitchRange 4, finalFall 5, srcType "pulse", richness 0.85, breath 0.12, bwScale 1.0,
+// fricGain 1.0, burstGain 1.0; radio hp 320 / lp 3200 / drive 2.5 / static 0.018) so buildUtterance never
+// reads undefined. The lab's robot.ring is flattened to `ring`; robot.flange and robot.crush do NOT ship
+// and are dropped. Do not re-tune any value — this is a verbatim port.
+const VOICE_STYLES = {
+  comms: {
+    basePitch: 115, pitchRange: 4, finalFall: 5, contour: "flat",
+    rate: 0.95, wobble: 0, srcType: "pulse", richness: 0.85, breath: 0.12,
+    f1Scale: 1.0, f2Scale: 1.0, f3Scale: 1.0, bwScale: 1.0,
+    fricGain: 1.0, burstGain: 1.0, consDur: 1.0,
+    radio: { on: true, hp: 320, lp: 3400, drive: 2.0, static: 0.018 },
+    ring:  { on: true, freq: 55, mix: 0.25 }
+  },
+  comms_f: {
+    basePitch: 190, pitchRange: 4, finalFall: 5, contour: "flat",
+    rate: 0.95, wobble: 0, srcType: "pulse", richness: 0.85, breath: 0.12,
+    f1Scale: 1.14, f2Scale: 1.18, f3Scale: 1.16, bwScale: 1.0,
+    fricGain: 1.0, burstGain: 1.0, consDur: 1.0,
+    radio: { on: true, hp: 320, lp: 3400, drive: 2.0, static: 0.018 },
+    ring:  { on: true, freq: 55, mix: 0.25 }
+  },
+  flat: {
+    basePitch: 108, pitchRange: 4, finalFall: 5, contour: "flat",
+    rate: 0.9, wobble: 0, srcType: "pulse", richness: 0.85, breath: 0.12,
+    f1Scale: 1.0, f2Scale: 1.0, f3Scale: 1.0, bwScale: 1.0,
+    fricGain: 1.0, burstGain: 1.0, consDur: 1.15,
+    radio: { on: true, hp: 320, lp: 3200, drive: 2.5, static: 0.018 },
+    ring:  { on: false, freq: 40, mix: 0.5 }
+  },
+  flat_f: {
+    basePitch: 190, pitchRange: 4, finalFall: 5, contour: "flat",
+    rate: 0.9, wobble: 0, srcType: "pulse", richness: 0.85, breath: 0.12,
+    f1Scale: 1.14, f2Scale: 1.18, f3Scale: 1.16, bwScale: 1.0,
+    fricGain: 1.0, burstGain: 1.0, consDur: 1.15,
+    radio: { on: true, hp: 320, lp: 3200, drive: 2.5, static: 0.018 },
+    ring:  { on: false, freq: 40, mix: 0.5 }
+  },
+  vintage: {
+    basePitch: 120, pitchRange: 4, finalFall: 5, contour: "flat",
+    rate: 1.0, wobble: 0, srcType: "pulse", richness: 0.85, breath: 0.12,
+    f1Scale: 1.0, f2Scale: 1.0, f3Scale: 1.0, bwScale: 1.0,
+    fricGain: 1.0, burstGain: 1.0, consDur: 1.0,
+    radio: { on: false, hp: 320, lp: 3200, drive: 2.5, static: 0.018 },
+    ring:  { on: false, freq: 40, mix: 0.5 }
+  },
+  vintage_f: {
+    basePitch: 200, pitchRange: 4, finalFall: 5, contour: "flat",
+    rate: 1.0, wobble: 0, srcType: "pulse", richness: 0.85, breath: 0.12,
+    f1Scale: 1.14, f2Scale: 1.18, f3Scale: 1.16, bwScale: 1.0,
+    fricGain: 1.0, burstGain: 1.0, consDur: 1.0,
+    radio: { on: false, hp: 320, lp: 3200, drive: 2.5, static: 0.018 },
+    ring:  { on: false, freq: 40, mix: 0.5 }
   }
 };
 
+// VOICE_PARAMS is a LIVE binding (let, not const): VoiceSys.setStyle() re-points it at a VOICE_STYLES entry
+// and every consumer (buildUtterance, applyRadio, applyRing, _render) reads it fresh. It starts at the
+// shipped default (comms). "off" NEVER reassigns it, so the engine always has a valid full object to read.
+let VOICE_PARAMS = VOICE_STYLES.comms;
+const VOICE_STYLE_VALUES = ["off", "comms", "comms_f", "flat", "flat_f", "vintage", "vintage_f"];
+
+// LINES ARE DATA: VOICE_LINES is keyed by EVENT, each holding an ARRAY of alternatives; adding a line
+// later (Paul wants variety) is a ONE-LINE edit here. Selection is a PLAIN RANDOM PICK (§11d), not a bag.
 const VOICE_LINES = {
   health_low: [
     { text: "Aw, man, we are taking a beating.",
@@ -1554,6 +1594,7 @@ const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2 };
 // (the volume bus). Every entry point no-ops when AudioSys.ctx is null (the headless-safe guard idiom).
 const VoiceSys = {
   voiceBus: null, dry: null, rIn: null, rLP: null, rShaper: null, rComp: null, rGain: null,
+  ringCarrier: null, ringMult: null, ringWet: null, ringDry: null, ringOut: null, // CS011 ring-mod stage
   staticGain: null, noiseBuf: null,
   cur: null,               // the currently-playing utterance's source handles, or null
   busyUntil: -Infinity,    // AudioSys-clock time the current utterance ends; also the cooldown anchor.
@@ -1569,9 +1610,21 @@ const VoiceSys = {
     const n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     this.noiseBuf = b;
-    // voice bus forks: dry path / radio path (default (a), radio on) — both land on AudioSys.voice
+    // voice bus -> ring-modulation stage (CS011) -> dry / radio fan-out. The ring stage sits BETWEEN the
+    // bus and the dry+radio split so a robot voice (ring on) and a plain one (ring off) share one graph.
     this.voiceBus = ctx.createGain();
-    this.dry = ctx.createGain(); this.voiceBus.connect(this.dry); this.dry.connect(AudioSys.voice);
+    // ring mod: out = signal * carrier (carrier drives a 0-baseline gain, i.e. multiply), mixed with dry.
+    // Ring off (applyRing → wet 0 / dry 1) makes ringOut a transparent pass-through of voiceBus, so a
+    // non-ring style behaves exactly as the pre-CS011 direct voiceBus->{dry,rIn} fan-out did.
+    this.ringCarrier = ctx.createOscillator(); this.ringCarrier.type = "sine";
+    this.ringMult = ctx.createGain(); this.ringMult.gain.value = 0; this.ringCarrier.connect(this.ringMult.gain);
+    this.voiceBus.connect(this.ringMult);
+    this.ringWet = ctx.createGain(); this.ringDry = ctx.createGain();
+    this.ringMult.connect(this.ringWet); this.voiceBus.connect(this.ringDry);
+    this.ringOut = ctx.createGain(); this.ringWet.connect(this.ringOut); this.ringDry.connect(this.ringOut);
+    this.ringCarrier.start();
+    // fan-out now taps ringOut (not voiceBus): dry path / radio path — both land on AudioSys.voice
+    this.dry = ctx.createGain(); this.ringOut.connect(this.dry); this.dry.connect(AudioSys.voice);
     this.rIn = ctx.createBiquadFilter(); this.rIn.type = "highpass";
     this.rLP = ctx.createBiquadFilter(); this.rLP.type = "lowpass";
     this.rShaper = ctx.createWaveShaper();
@@ -1579,15 +1632,16 @@ const VoiceSys = {
     this.rComp.threshold.value = -28; this.rComp.ratio.value = 8;
     this.rComp.attack.value = 0.003; this.rComp.release.value = 0.12;
     this.rGain = ctx.createGain();
-    this.voiceBus.connect(this.rIn); this.rIn.connect(this.rLP); this.rLP.connect(this.rShaper);
+    this.ringOut.connect(this.rIn); this.rIn.connect(this.rLP); this.rLP.connect(this.rShaper);
     this.rShaper.connect(this.rComp); this.rComp.connect(this.rGain); this.rGain.connect(AudioSys.voice);
-    // squelch-gated static bed, colored through the same radio chain
+    // squelch-gated static bed, colored through the same radio chain (feeds rIn DIRECTLY, not via the ring)
     const st = ctx.createBufferSource(); st.buffer = this.noiseBuf; st.loop = true;
     const sf = ctx.createBiquadFilter(); sf.type = "bandpass"; sf.frequency.value = 1700; sf.Q.value = 0.4;
     this.staticGain = ctx.createGain(); this.staticGain.gain.value = 0;
     st.connect(sf); sf.connect(this.staticGain); this.staticGain.connect(this.rIn);
     st.start();
     this.applyRadio();
+    this.applyRing();
   },
 
   applyRadio() {
@@ -1600,6 +1654,28 @@ const VoiceSys = {
     this.rShaper.curve = curve;
     this.dry.gain.value = R.on ? 0 : 1;
     this.rGain.gain.value = R.on ? 1.4 : 0;
+  },
+
+  // CS011: apply the current style's ring-modulation settings to the ring stage built in ensure(). Off
+  // styles set wet 0 / dry 1 (transparent). freq is set unconditionally — the carrier always runs, so it
+  // must never receive undefined (every VOICE_STYLES entry carries a full ring:{on,freq,mix}).
+  applyRing() {
+    if (!AudioSys.ctx || !this.ringOut) return;
+    const R = VOICE_PARAMS.ring;
+    this.ringCarrier.frequency.value = R.freq;
+    this.ringWet.gain.value = R.on ? R.mix : 0;
+    this.ringDry.gain.value = R.on ? (1 - R.mix) : 1;
+  },
+
+  // CS011: switch Dan's voice to a VOICE_STYLES entry (re-points the live VOICE_PARAMS) and re-apply the
+  // radio + ring graph. "off" is NOT a style: it never reassigns VOICE_PARAMS (buildUtterance and the
+  // graph must always have a valid full object), because silencing is handled by voiceEnabled()/say()
+  // gating, not by tearing down the params. An unknown id is ignored (params/graph left as they are).
+  setStyle(id) {
+    if (id === "off") return;
+    if (VOICE_STYLES[id]) VOICE_PARAMS = VOICE_STYLES[id];
+    this.applyRadio();
+    this.applyRing();
   },
 
   // Stop the current utterance immediately (pre-emption / reset). Ramps the static bed down.
@@ -2101,7 +2177,13 @@ const settings = {
   magnetMode:      "time", // "time" | "pieces" — governs Magnet expiry
   musicTrack:      "zen",  // "zen" | "derelict" | "drift" | "warehouse" — selected gameplay track (v3.5; zen default)
   shipTurnScale:   SHIP_TURN_SCALE_DEFAULT, // CS010 §10b: player rotation-speed multiplier (0.5..1.5), read by shipTurnRate()
+  voiceStyle:      "comms", // CS011: selected Dan voice — "off" or a VOICE_STYLE_VALUES id. NOT persisted yet (later phase).
+  captions:        true,    // CS011: show on-screen captions of Dan's lines. NOT persisted yet (later phase).
 };
+
+// CS011: Dan speaks only when a real voice style is selected. voiceStyle "off" mutes him without disturbing
+// VOICE_PARAMS (which keeps the last real style so the acoustic engine always has a valid full object).
+function voiceEnabled() { return settings.voiceStyle !== "off"; }
 
 // Music-track picker. Internal values drive gameplay-track selection; the labels are what the Options
 // row shows. Cycled left/right like a Difficulty toggle. Ordered calm -> hot (v3.5).

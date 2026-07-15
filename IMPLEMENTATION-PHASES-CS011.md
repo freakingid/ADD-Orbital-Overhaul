@@ -117,9 +117,17 @@ build. Each is resolved as a best-guess with the reasoning inline; none reopens 
   (`maxWave` is unbounded), so the fallback must not drop a digit.
 
 **Model policy (per Paul's guidance + spec §13):** Opus 4.8 for the two load-bearing refactors (P1 style
-system + ring, P2 `_emit` split + caption path); Sonnet 5 / high for the mechanical/data phases (P0 lab,
-P3 UI+persistence, P4 level, P5 chain_broken). `ultrathink` keyword where a phase names the tricky part.
-Avoid `opusplan`/`ultracode` (surgical single-file workflow).
+system + ring, P2 `_emit` split + caption path); Sonnet 5 for the mechanical/data phases (P0 lab,
+P3 UI+persistence, P4 level, P5 chain_broken). Avoid `opusplan`/`ultracode` (surgical single-file workflow).
+
+**How to apply these in Claude Code (they are session settings, not mid-prompt):** each phase is its own
+session, so set the model *before* pasting the prompt — `/model opus` for P1/P2, `/model sonnet` for
+P0/P3/P4/P5. **Effort needs no separate command:** every model here defaults to `high`, so `/model <alias>`
+already puts you at the phase's target. The active level shows next to the spinner ("with high effort") —
+if it ever reads otherwise, `/effort high` corrects it (or `/effort xhigh` to push the hardest sub-problem).
+**The only per-turn lever is the `ultrathink` keyword**, a literal word in the message — it is already baked
+into the P1 and P2 prompt blocks below, so pasting them as-is triggers it. (`think`/`think hard` are *not*
+keywords — they're ignored as plain text; `ultrathink` is the one that works.)
 
 ---
 
@@ -190,7 +198,7 @@ ZERO unknown-token errors (every symbol is in the PH table). Do NOT invent phone
 Do not commit — I audition each line by ear in the lab before anything ports.
 ```
 
-**Model/effort:** Sonnet 5 / high. Mechanical dictionary work; the lab's g2p seeds it, Paul verifies by ear.
+**Session setup:** `/model sonnet` (Sonnet 5; effort defaults to `high`). Mechanical dictionary work; the lab's g2p seeds it, Paul verifies by ear. No `ultrathink` in the prompt (not needed).
 
 **Test expectations (lab-side, no headless harness):** every new phon parses through the lab's
 `parsePhonTokens` with **zero** `errs`; playing each in the lab is intelligible (Paul's ear is the gate).
@@ -243,8 +251,12 @@ Dan audibly changes character (the retired declarative default is gone).
 **Untouched:** MusicSys/AudioSys buses; the `_render` scheduler body (only the `dry`/`rIn` source edges move);
 `_stop`/`reset` (ring nodes are persistent chain nodes, not per-utterance).
 
-**Paste-ready Claude Code prompt:**
+**Paste-ready Claude Code prompt** (contains the `ultrathink` keyword — leave it in):
 ```
+ultrathink — the two tricky parts are the ring re-point (moving the voiceBus->dry/rIn fan-out behind the new
+ring stage without breaking the graph) and the diff->full-object expansion in step 1 (FLAG-A). Reason
+carefully on those before editing.
+
 Read CLAUDE.md + STATUS.md first. Single-file game, file://-runnable, surgical str_replace edits, no auto-push.
 
 Re-grep to confirm anchors (they drift): VOICE_PARAMS (const, ~L1432), VoiceSys.ensure (~L1566, the voiceBus
@@ -293,7 +305,9 @@ stays null so applyRadio/applyRing/setStyle's graph calls no-op). Assert:
 Don't push. Give me the commit message.
 ```
 
-**Model/effort:** **Opus 4.8 / high** (`ultrathink` on the ring re-point + the diff→full-object expansion).
+**Session setup:** `/model opus` (Opus 4.8; effort defaults to `high` — confirm "with high effort" in the
+readout). The `ultrathink` keyword is already inside the prompt block, aimed at the ring re-point and the
+diff→full-object expansion.
 
 **Test expectations:** as embedded above — 6 full styles, finite `dur` for every style (FLAG-A guard),
 `setStyle` param resolution, `voiceEnabled` off-state. All headless, `ctx` null.
@@ -359,8 +373,12 @@ volume and of Off**, while audio only plays when `voiceEnabled()`. Add the scree
 **Untouched:** the gate arithmetic (drop/pre-empt) is identical — it now drives both caption and audio, so
 captions supersede/pre-empt consistently even with audio off. `_stop`/`reset` unchanged.
 
-**Paste-ready Claude Code prompt:**
+**Paste-ready Claude Code prompt** (contains the `ultrathink` keyword — leave it in):
 ```
+ultrathink — the tricky part is extracting _schedule() from _render() so the Web-Audio scheduler stays
+byte-faithful and the cooldown/priority gate arithmetic is UNCHANGED (only the buildUtterance line moves out).
+Reason carefully on that split before editing.
+
 Read CLAUDE.md + STATUS.md. Single file, file://-safe, surgical edits, no auto-push. Builds on P1.
 
 Re-grep: VoiceSys.say (~L1623) and _render (~L1653, its buildUtterance line ~L1659); game literal (~L3274);
@@ -401,8 +419,9 @@ ctx.currentTime. Then assert:
 No push. Give me the commit message.
 ```
 
-**Model/effort:** **Opus 4.8 / high** (`ultrathink` on the `_render`→`_schedule` extraction so the scheduler
-stays byte-faithful and the gate arithmetic is untouched).
+**Session setup:** `/model opus` (Opus 4.8; effort defaults to `high`). The `ultrathink` keyword is already
+inside the prompt block, aimed at the `_render`→`_schedule` extraction (scheduler stays byte-faithful, gate
+arithmetic untouched).
 
 **Test expectations:** as embedded — caption fires with voice Off (independence), supersede overwrite, dt
 aging, dropped-line-no-caption (mirror), headless no-crash. The **audible** ring/style behavior and the
@@ -489,7 +508,7 @@ Headless test (ctx null):
 node --check + startGame()/update(1/60) no crash. No push. Give me the commit message.
 ```
 
-**Model/effort:** Sonnet 5 / high (mechanical, mirrors the Music-Track cycler and the established persistence
+**Session setup:** `/model sonnet` (Sonnet 5; effort defaults to `high`). Mechanical — mirrors the Music-Track cycler and the established persistence
 idiom).
 
 **Test expectations:** as embedded — cycler wraps, toggle flips, round-trip persists, unknown `voiceStyle`
@@ -556,7 +575,7 @@ Headless test (ctx null; the pure functions don't need it):
 node --check + headless run clean. No push. Give me the commit message.
 ```
 
-**Model/effort:** Sonnet 5 / high (mechanical port + two pure helpers).
+**Session setup:** `/model sonnet` (Sonnet 5; effort defaults to `high`). Mechanical port + two pure helpers.
 
 **Test expectations:** as embedded — `numberToWords` cases (incl. 23→twenty·three, 40→forty, ≥100 digit
 fallback), every `levelPhon` parses with zero `errs`, priority = 2, Level 1 caption fires at `startGame`.
@@ -619,7 +638,7 @@ Headless test:
 node --check + startGame()/update(1/60) headless (ctx null) clean. No push. Give me the commit message.
 ```
 
-**Model/effort:** Sonnet 5 / high (data + one hook).
+**Session setup:** `/model sonnet` (Sonnet 5; effort defaults to `high`). Data + one hook.
 
 **Test expectations:** as embedded — five lines, phon parses clean, priority = 2, one line per break,
 cooldown dedups a multi-node break, drops under `health_low`.
