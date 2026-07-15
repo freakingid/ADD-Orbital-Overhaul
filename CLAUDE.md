@@ -307,6 +307,17 @@ each carries whatever small slice of game logic it needs duplicated in place
   "radio" character chain (spec fallback (a)) as an A/B toggle. Its Dump
   panel emits paste-ready `VOICE_PARAMS` + `VOICE_LINES` — the porting
   source for the future `VoiceSys` (CS010 P9), engine and data verbatim.
+- **`tools/voice-robot-lab.html`** — the robot/style + dictionary instrument
+  (CS011), superseding `voice-lab.html` as the active style/data porting
+  source (`voice-lab.html` stays as the CS010 engine source). Six selectable
+  robot-voice presets (`comms`/`comms_f`/`flat`/`flat_f`/`vintage`/`vintage_f`)
+  plus a ring-modulation stage, auditioned live; its Dump panel emits the
+  paste-ready `VOICE_STYLES` table entries and `ring` blocks ported
+  **verbatim** into `VOICE_STYLES` (P1) — the lab's flanger/crush stages do
+  NOT ship. Also the composition source for new phon dictionary entries: the
+  `LEVEL_PHON`/`NUM_PHON` level-announcement vocabulary (P4) and the five
+  `chain_broken` frustration lines (P5) were composed and zero-err-verified
+  here (`parsePhonTokens`) before being pasted verbatim into the build.
 
 ## Capture tools
 

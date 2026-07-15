@@ -238,7 +238,7 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
 // the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
 // segment IS the changeset number (this build shipped in CS010).
-const GAME_VERSION = "1.0.0.10";
+const GAME_VERSION = "1.0.0.11";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -1580,6 +1580,13 @@ const VOICE_LINES = {
     { text: "Truck is full, let's go.",
       phon: "T R AH1 K / IH Z / F UH1 L , L EH1 T S / G OW1 ." },
   ],
+  chain_broken: [
+    { text: "Junk is gone!", phon: "JH AH1 NG K / IH Z / G AO1 N ." },
+    { text: "Lost my scrap!", phon: "L AO1 S T / M AY1 / S K R AE1 P ." },
+    { text: "Trash is loose!", phon: "T R AE1 SH / IH Z / L UW1 S ." },
+    { text: "There goes the garbage!", phon: "DH EH1 R / G OW1 Z / DH AH / G AA1 R B IH JH ." },
+    { text: "There goes my junk!", phon: "DH EH1 R / G OW1 Z / M AY1 / JH AH1 NG K ." },
+  ],
 };
 
 // CS011 P4 — level announcement. LEVEL_PHON/NUM_PHON are ported VERBATIM from
@@ -1627,7 +1634,7 @@ function levelPhon(n) {
 // a lower one that is currently playing; an equal/lower one is DROPPED (never queued — a queue would have
 // Dan narrating events that finished ten seconds ago). 3 = hull critical, 2 = health milestones, 1 = rest.
 const VOICE_COOLDOWN = 1.2;
-const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2 };
+const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2, chain_broken: 2 };
 
 // CS011 P2 — on-screen caption look/timing knobs (LOOK-CALL). The caption is Dan's VISIBLE echo, shown
 // whenever settings.captions is on — even with voice audio OFF — and gated by the SAME cooldown/priority
@@ -4462,6 +4469,7 @@ function breakChain(i) { // node i destroyed; everything aft breaks loose
   }
   chain.length = i;
   game.deliveryCount = 0;
+  VoiceSys.say("chain_broken"); // CS011 P5: choke point only — scatterChain() (ship death) stays silent
 }
 
 function scatterChain() { // ship destroyed: whole load breaks loose

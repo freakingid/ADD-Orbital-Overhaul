@@ -21,7 +21,8 @@
 //      hpReliefFlash still arming; health_full edge-once on heal-to-full and NOT at spawn; collect_<type>
 //      per pickup (scoop via its early-return branch; health says nothing); expire_<type> on the falling
 //      edge of powerActive() in BOTH time and count mode; expire_scoop on a scoop damage-loss; the dock
-//      tiers on the emptying pop (1–4 silent) with breakChain/scatterChain firing NOTHING; cargo_full
+//      tiers on the emptying pop (1–4 silent) with breakChain firing chain_broken (CS011 P5) and
+//      scatterChain firing NOTHING; cargo_full
 //      exactly once when a clump-scoop fills the chain.
 
 "use strict";
@@ -367,7 +368,7 @@ function count(arr, v) { return arr.filter(x => x === v).length; }
 
 // ================= (E7) dock tiers on the emptying pop; breakChain/scatterChain silent =====================
 (function () {
-  console.log("(E7) dock tiers on the pop that empties the chain (1–4 silent); breakChain/scatterChain fire NOTHING");
+  console.log("(E7) dock tiers on the pop that empties the chain (1–4 silent); breakChain fires chain_broken, scatterChain fires NOTHING");
   // drive the REAL dock offload for a given chain length, return the dock_* lines spoken
   function runDock(N) {
     const A = buildInstance();
@@ -399,14 +400,17 @@ function count(arr, v) { return arr.filter(x => x === v).length; }
   assert(JSON.stringify(seen[9]) === '["dock_5"]' && JSON.stringify(seen[10]) === '["dock_10"]', "boundary 9→dock_5, 10→dock_10");
   assert(JSON.stringify(seen[19]) === '["dock_15"]' && JSON.stringify(seen[20]) === '["dock_20"]', "boundary 19→dock_15, 20→dock_20");
 
-  // breakChain / scatterChain zero deliveryCount but MUST speak nothing
+  // breakChain zeroes deliveryCount AND (CS011 P5) speaks chain_broken; scatterChain zeroes it but
+  // MUST stay silent (the ship-death path — FLAG-E, see breakChain's own comment).
   const C = buildInstance();
   prepPlaying(C, C.SHIP_MAX_HP);
   for (let i = 0; i < 8; i++) C.game.chain.push({ x: 0, y: 0, px: 0, py: 0, spin: 0, spinRate: 0, mass: 1 });
   C.game.deliveryCount = 8;
   const clog = spyVoice(C);
   C.breakChain(3);
-  assert(clog.length === 0 && C.game.deliveryCount === 0, "breakChain fires no line (and still zeroes deliveryCount)");
+  assert(JSON.stringify(clog) === '["chain_broken"]' && C.game.deliveryCount === 0,
+    "breakChain (CS011 P5) fires chain_broken exactly once (and still zeroes deliveryCount)");
+  clog.length = 0;
   for (let i = 0; i < 5; i++) C.game.chain.push({ x: 0, y: 0, px: 0, py: 0, spin: 0, spinRate: 0, mass: 1 });
   C.game.deliveryCount = 5;
   C.scatterChain();
