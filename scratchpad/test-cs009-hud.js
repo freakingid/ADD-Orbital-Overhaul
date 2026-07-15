@@ -8,8 +8,8 @@
 // Per-state checks (the phase prompt's required (A)-(C), run for every state below):
 //  (A) drawHUD() does not throw.
 //  (B) ZERO ctx.fillRect and ZERO ctx.strokeRect calls anywhere in the call (the whole point of the
-//      no-fills sweep — the only surviving fills are drawText's fillText and the SCOOP pip's ctx.fill,
-//      neither of which is fillRect/strokeRect).
+//      no-fills sweep — the only surviving fill is drawText's fillText; CS012 P2 removed the SCOOP
+//      pip row's ctx.fill dot, so drawHUD() has zero ctx.fill() calls left too).
 //  (C) ctx.globalAlpha is exactly 1 when drawHUD() returns (no leaked pulse/bank-flash alpha).
 // Plus one integration check, not per-state:
 //  (D) Capture.hudVisible = false means the call site (`if (Capture.hudVisible) drawHUD();`, the

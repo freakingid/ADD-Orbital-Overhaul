@@ -121,14 +121,19 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   frac, color, width, blur)` (CS009 P1) is the ring/arc equivalent for HUD
   gauges — routes through `glowStroke` the same way, never `closePath()`s,
   and doesn't clamp `frac` (overshoot handling is the caller's job).
+  `drawRingSegments(x, y, r, segs, filled, litColor, dimColor)` (CS012 P2)
+  is the segmented-ring sibling — `segs` gapped wedges, the first `filled`
+  lit via `glowStroke`, the rest a plain dim stroke — used for the Scoop
+  level indicator; same never-`closePath()`s convention.
 - **The HUD draws with `glowStroke` like everything else — no `fillRect`,
   no `strokeRect`.** The CS009 HUD rebuild (P0–P6) replaced every hull/
-  shield/cargo/powerup fill bar with rings via `drawRingArc`. The only
-  fills left anywhere in `drawHUD()` are `drawText` (`fillText`), the
-  SCOOP pip row's 4px `ctx.fill()` dots, and — as of CS010 P3 — the
-  low-health corner glow's four `createRadialGradient` corner fills, each
-  a named, deliberate exception (see the GDD §3.2 no-fills rule: three
-  named exceptions, membership changed across CS010 but count unchanged).
+  shield/cargo/powerup fill bar with rings via `drawRingArc`; CS012 P2
+  replaced the Scoop pip row's fill dots with `drawRingSegments`. The only
+  fills left anywhere in `drawHUD()` are `drawText` (`fillText`) and the
+  low-health corner glow's four `createRadialGradient` corner fills, a
+  named, deliberate exception (see the GDD §3.2 no-fills rule: two named
+  exceptions as of CS012 P2, membership changed across CS010–CS012 but
+  each drop/add is individually named there).
   The corner glow is a fill *by design* — a peripheral, edgeless alarm,
   not a `glowStroke` arc — so it doesn't count as reintroducing a bar.
   Don't reintroduce a bar/rect for a new HUD element; follow the ring
@@ -249,7 +254,8 @@ asteroids-deluxe.html
     //                   read keys{} directly
     // Helpers           rand, wrap, dist2, angleTo, shortDelta (wrap-aware),
     //                   glowStroke, drawPoly, drawRingArc (CS009 P1, the HUD
-    //                   ring/arc primitive), COLOR
+    //                   ring/arc primitive), drawRingSegments (CS012 P2, the
+    //                   segmented-ring sibling — used by the Scoop row), COLOR
     // Entity classes    Ship, Bullet, Asteroid, Satellite, Wedge, Saucer,
     //                   Particle, Garbage, FloatText, Dock — uniform
     //                   contract, see "Entity lifecycle" above

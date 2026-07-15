@@ -149,8 +149,13 @@ function fresh() {
   game.powerBudget = { rapid: 0, triple: 0, magnet: 0 };
 }
 
-// The bottom-baseline y of the FIRST active powerup row (slot 1; slot 0 is reserved for SCOOP pips).
+// CS012 P2: rows are FIXED by index in POWERUP_DROP_TYPES (["rapid","triple","magnet","engine"]),
+// never compacted — row i sits at HUD_FX_BASE_Y - (i+1)*HUD_FX_ROW_H regardless of which other types
+// are active/inactive. ROW1_Y (rapid, index 0) happens to match the old "first active slot" value;
+// MAGNET_Y (index 2) does not, since magnet is no longer compacted down to slot 1 when it's the only
+// active effect.
 const ROW1_Y = HUD_FX_BASE_Y - 1 * HUD_FX_ROW_H;
+const MAGNET_Y = HUD_FX_BASE_Y - 3 * HUD_FX_ROW_H;
 // arcs centered on a powerup ring column (x = 40), by radius
 const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && near(a.r, r));
 
@@ -161,8 +166,8 @@ const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && 
   game.powerFx.magnet = MAGNET_DURATION;   // 30s remaining, full magnet duration -> frac must be 1.0
   const { arcs } = captureHUD();
 
-  // magnet is the only active row -> it's slot 1
-  const value = atRow(arcs, ROW1_Y, HUD_FX_RING_R).find(a => a.color === POWERUP_COLOR.magnet);
+  // magnet's row is FIXED at its POWERUP_DROP_TYPES index (2), active or not (CS012 P2)
+  const value = atRow(arcs, MAGNET_Y, HUD_FX_RING_R).find(a => a.color === POWERUP_COLOR.magnet);
   assert(!!value, "A: magnet value arc drawn in POWERUP_COLOR.magnet");
   assert(value && near(value.sweep, TAU),
     `A: magnet arc sweeps a FULL turn (denominator 30, not 15) — got sweep ${value && value.sweep} (expected ${TAU})`);
@@ -170,7 +175,7 @@ const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && 
   assert(value && Math.abs(value.sweep) <= TAU + 1e-6,
     "A: magnet arc does NOT sweep two turns (would mean POWERUP_DURATION=15 was used as the denominator)");
   // sanity: the dim track is still there at the same radius
-  const track = atRow(arcs, ROW1_Y, HUD_FX_RING_R).find(a => a.color === COLOR.dim && near(Math.abs(a.sweep), TAU));
+  const track = atRow(arcs, MAGNET_Y, HUD_FX_RING_R).find(a => a.color === COLOR.dim && near(Math.abs(a.sweep), TAU));
   assert(!!track, "A: dim full-circle track drawn under the magnet ring");
 })();
 
@@ -211,13 +216,13 @@ const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && 
   game.powerBudget.magnet = 40;                // budget remaining -> powerActive("magnet") true
   const { arcs } = captureHUD();
 
-  const rowArcs = atRow(arcs, ROW1_Y, HUD_FX_RING_R);
+  const rowArcs = atRow(arcs, MAGNET_Y, HUD_FX_RING_R);
   const track = rowArcs.find(a => a.color === COLOR.dim && near(Math.abs(a.sweep), TAU));
   assert(!!track, "C: dim full-circle track still drawn in count mode (row shape constant)");
   const valueArc = rowArcs.find(a => a.color === POWERUP_COLOR.magnet);
   assert(!valueArc, "C: NO value arc drawn for a count-mode row (track only)");
   // and definitely no overcharge halo either
-  const halo = atRow(arcs, ROW1_Y, HUD_FX_RING_R + 4);
+  const halo = atRow(arcs, MAGNET_Y, HUD_FX_RING_R + 4);
   assert(halo.length === 0, "C: no overcharge halo in count mode");
 })();
 
@@ -231,7 +236,7 @@ const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && 
   game.powerFx.triple = 2;                      // time mode, low-timer warning (<= HUD_FX_LOW)
   game.powerFx.engine = 20;                     // time mode, overcharged (>15)
   game.powerBudget.magnet = 25;                 // count mode
-  game.scoopLevel = 3;                          // SCOOP pips draw too (they use ctx.fill, NOT fillRect)
+  game.scoopLevel = 3;                          // SCOOP segmented ring draws too (strokes only, no fills)
   const { fillRectCount, strokeRectCount } = captureHUD();
   assert(fillRectCount === 0, `D: drawHUD() makes ZERO fillRect calls (got ${fillRectCount})`);
   assert(strokeRectCount === 0, `D: drawHUD() makes ZERO strokeRect calls (got ${strokeRectCount})`);
@@ -258,29 +263,33 @@ const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && 
   assert(!!track, "E: count-mode row still has its dim track");
 })();
 
-// ================= (F) fixed-baseline stacking: rows don't jump when one expires =================
+// ================= (F) CS012 P2: fixed rows — a row NEVER moves when other rows (de)activate =================
 (function sectionF() {
   perfNow = 5000;
-  // two active effects: rapid + magnet. Rapid is first in POWERUP_DROP_TYPES so it's slot 1 (bottom),
-  // magnet slot 2 (above). Their y's must be HUD_FX_BASE_Y - 1/2 * HUD_FX_ROW_H regardless of which
-  // other types are active — the anchor is fixed, not a moving cursor.
+  // rapid (index 0) and magnet (index 2) both active — each at its OWN fixed row, with the inactive
+  // triple (index 1) row's y left as a gap, not collapsed.
   fresh();
   game.powerFx.rapid = 10;
   game.powerFx.magnet = 10;
   const { arcs } = captureHUD();
   const rapidY = HUD_FX_BASE_Y - 1 * HUD_FX_ROW_H;
-  const magnetY = HUD_FX_BASE_Y - 2 * HUD_FX_ROW_H;
   const rapidArc = arcs.find(a => near(a.x, 40) && near(a.y, rapidY) && a.color === POWERUP_COLOR.rapid);
-  const magnetArc = arcs.find(a => near(a.x, 40) && near(a.y, magnetY) && a.color === POWERUP_COLOR.magnet);
-  assert(!!rapidArc, "F: rapid (first in stable order) sits at slot 1 (bottom row)");
-  assert(!!magnetArc, "F: magnet sits at slot 2 (row above), off the FIXED baseline");
+  const magnetArc = arcs.find(a => near(a.x, 40) && near(a.y, MAGNET_Y) && a.color === POWERUP_COLOR.magnet);
+  assert(!!rapidArc, "F: rapid (index 0) sits at its fixed row (y = BASE - 1*ROW_H)");
+  assert(!!magnetArc, "F: magnet (index 2) sits at its fixed row (y = BASE - 3*ROW_H)");
 
-  // Now expire rapid: magnet compacts DOWN to slot 1 (rows stack from the baseline up, active-only).
+  // Now expire rapid: magnet MUST NOT move — no compaction, ever (the point of CS012 P2).
   fresh();
   game.powerFx.magnet = 10;                     // only magnet active now
   const { arcs: arcs2 } = captureHUD();
-  const magnetArc2 = arcs2.find(a => near(a.x, 40) && near(a.y, rapidY) && a.color === POWERUP_COLOR.magnet);
-  assert(!!magnetArc2, "F: with rapid gone, magnet compacts to slot 1 — no hole left at the bottom");
+  const magnetArc2 = arcs2.find(a => near(a.x, 40) && near(a.y, MAGNET_Y) && a.color === POWERUP_COLOR.magnet);
+  const magnetAtRapidSlot = arcs2.find(a => near(a.x, 40) && near(a.y, rapidY) && a.color === POWERUP_COLOR.magnet);
+  assert(!!magnetArc2, "F: with rapid gone, magnet STAYS at its own fixed row (y = BASE - 3*ROW_H)");
+  assert(!magnetAtRapidSlot, "F: magnet does NOT compact down into rapid's row");
+
+  // and rapid's now-inactive row still renders (dim, muted) at its fixed y, not removed
+  const rapidTrack = arcs2.find(a => near(a.x, 40) && near(a.y, rapidY) && a.color === COLOR.dim && near(Math.abs(a.sweep), TAU));
+  assert(!!rapidTrack, "F: rapid's row still renders its dim track when inactive (muted, not hidden)");
 })();
 
 // ---------------------------------------------------------------------------
