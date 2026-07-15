@@ -47,7 +47,7 @@ const returnList = [
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_CEIL_MAX",
   "SAUCER_FIRE_INIT", "SAUCER_FIRE_BIG", "SAUCER_FIRE_SMALL",
   "SAUCER_FIRE_MULT_FLOOR", "SAUCER_FIRE_MULT_CEIL",
-  "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL",
+  "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
   "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL",
   "WORLD_W", "WORLD_H"
 ];
@@ -63,7 +63,7 @@ const {
   SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MIN, SAUCER_GAP_CEIL_MAX,
   SAUCER_FIRE_INIT, SAUCER_FIRE_BIG, SAUCER_FIRE_SMALL,
   SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL,
-  SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL,
+  SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, SAUCER_ACCURACY_RAMP_SCALE,
   SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL,
   WORLD_W, WORLD_H
 } = A;
@@ -131,6 +131,10 @@ assert(fmult20 < fmult1 && fmult20 < 1.12, `B: wave-20 fire multiplier eased tow
 assert(fmult20 >= SAUCER_FIRE_MULT_CEIL, "B: fire multiplier never dips below the 1.0x ceiling");
 
 // -- small-saucer aim error: much wider early, tightening late --
+// NOTE (CS012 P1): this is the raw-wave ramp() curve, still a true statement about that pure
+// helper — but the LIVE Saucer no longer samples it at the raw wave for aim error; it samples a
+// scaled wave (SAUCER_ACCURACY_RAMP_SCALE), tested end-to-end against the real fired bullet below
+// in section (C), which is what actually reflects live behaviour.
 const err1 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1);
 const err20 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 20);
 console.log(`     aim err  wave1=±${err1.toFixed(3)}rad   wave20=±${err20.toFixed(3)}rad`);
@@ -173,9 +177,14 @@ function measureFiredAimError(wave) {
 const firedErr1 = measureFiredAimError(1);
 const firedErr20 = measureFiredAimError(20);
 console.log(`     fired aim error  wave1=${firedErr1.toFixed(3)}rad   wave20=${firedErr20.toFixed(3)}rad`);
-assert(near(firedErr1, err1, 1e-6), `C: wave-1 fired bullet carries the ±0.35 aim error (got ${firedErr1.toFixed(4)})`);
-assert(near(firedErr20, err20, 1e-6), `C: wave-20 fired bullet carries the tightened aim error (got ${firedErr20.toFixed(4)})`);
-assert(firedErr1 > firedErr20 * 2.5, "C: the actual fired shot is much wider at wave 1 than wave 20");
+// CS012 P1: the live Saucer samples ramp() at a SCALED wave (1 + (wave-1)*SAUCER_ACCURACY_RAMP_SCALE),
+// not the raw wave — so the fired bullet's error is compared against that scaled expectation, not
+// against err1/err20 (the raw-wave curve from section B) directly.
+const scaledErr1 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (1 - 1) * SAUCER_ACCURACY_RAMP_SCALE);
+const scaledErr20 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (20 - 1) * SAUCER_ACCURACY_RAMP_SCALE);
+assert(near(firedErr1, scaledErr1, 1e-6), `C: wave-1 fired bullet carries the ±0.35 aim error (got ${firedErr1.toFixed(4)})`);
+assert(near(firedErr20, scaledErr20, 1e-6), `C: wave-20 fired bullet carries the scaled-wave tightened aim error (got ${firedErr20.toFixed(4)}, exp ${scaledErr20.toFixed(4)})`);
+assert(firedErr1 > firedErr20 * 1.8, "C: the actual fired shot is still meaningfully wider at wave 1 than wave 20 under the slower scaled ramp");
 
 // (C2) reload: rollFireTimer() on a real Saucer, Math.random pinned to 0.5 (range midpoint).
 function measureReload(wave, range) {

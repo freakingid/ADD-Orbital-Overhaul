@@ -398,6 +398,8 @@ const SAUCER_FIRE_MULT_CEIL  = 1.0;   // full difficulty: shipped cadence
 // Small-saucer aim error (rad): wide barely-aimed spray early, tightening to precise late.
 const SAUCER_AIM_ERR_FLOOR = 0.35;    // wave-1 aim error
 const SAUCER_AIM_ERR_CEIL  = 0.09;    // full-difficulty aim error (shipped precision)
+const SAUCER_ACCURACY_RAMP_SCALE = 0.5;  // <1: saucer aim sharpens slower than the global difficulty
+                                         // ramp. Pins the wave-1 floor exactly. PLAYTEST KNOB.
 // Small-saucer appearance chance: rare early, common late. Folds in the old >8000-pt gate
 // so there's one wave-driven escalation system instead of two (F10 cleanup).
 const SAUCER_SMALL_CHANCE_FLOOR = 0.15; // wave-1: mostly the harmless random-fire big saucer
@@ -3162,7 +3164,7 @@ class Saucer {
       let a;
       if (this.small) {
         // aimed, but the error widens toward a barely-aimed spray at low waves (F10)
-        const err = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, game.wave);
+        const err = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE);
         a = angleTo(this, game.ship) + rand(-err, err);
       } else {
         a = rand(0, TAU); // random
