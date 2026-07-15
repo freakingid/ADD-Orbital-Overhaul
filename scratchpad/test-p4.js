@@ -7,8 +7,8 @@
 // Corrected scheme under test (supersedes the earlier B-1-a mapping):
 //  - Controller START = session toggle: title/gameover -> start a game; playing -> open pause;
 //    paused -> dismiss & resume.
-//  - Keyboard "O" and controller B open the Options/Achievements SYSTEM menu from title/gameover;
-//    its root is ["Options","Achievements","Back"]; Back closes the overlay -> underlying screen.
+//  - Keyboard "O" and controller B open OPTIONS directly from title/gameover (CS012 P4, FORK-CS012-C
+//    → a: the Options/Achievements system-menu root is retired); Back closes the overlay -> underlying screen.
 //  - Keyboard ESC: playing -> pause; inside a menu -> back (confirm->back->pause resolution order).
 //  - Controller B is context-aware (mirrors ESC): no menu on title/gameover -> open; menu open -> back.
 //  - A / Enter still start a game from title/gameover; a single confirm can't both nav a menu AND
@@ -75,7 +75,7 @@ const returnList = [
   "startGame", "update", "game", "keys", "input", "bindings", "GP",
   "pollGamepad", "handleGamepadMenu",
   "openPause", "closePause", "menuInput", "menuActive", "rootItems",
-  "MENU_ROOT_PLAY", "MENU_ROOT_SYS", "MENU_OPTIONS", "AudioSys"
+  "MENU_ROOT_PLAY", "MENU_OPTIONS", "AudioSys"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -86,7 +86,7 @@ const {
   startGame, update, game, keys, input, bindings, GP,
   pollGamepad, handleGamepadMenu,
   openPause, closePause, menuInput, menuActive, rootItems,
-  MENU_ROOT_PLAY, MENU_ROOT_SYS, MENU_OPTIONS, AudioSys
+  MENU_ROOT_PLAY, MENU_OPTIONS, AudioSys
 } = A;
 
 let passed = 0, failed = 0;
@@ -133,46 +133,43 @@ assert(game.state === "playing" && !game.paused, "B: Start while paused -> DISMI
 noPad();
 
 // =====================================================================
-// (C) Keyboard "O" opens the SYSTEM menu from title/gameover; Back returns to the underlying screen
+// (C) Keyboard "O" opens OPTIONS directly from title/gameover; Back closes to the underlying screen
 // =====================================================================
-console.log("(C) keyboard O opens the system menu; Back returns");
+console.log("(C) keyboard O opens Options directly; Back closes");
 game.state = "title"; game.paused = false; game.menu.screen = null; clearKeys();
 keydown("o");
-assert(game.paused && game.menu.screen === "root", "C: O on title -> system menu open");
-assert(eqArr(rootItems(), MENU_ROOT_SYS), "C: system root = [Options,Achievements,High Scores,Back] (v3.6 P6)");
-assert(game.state === "title", "C: opening the system menu did NOT also start a game");
-// navigate to "Back" and confirm -> close overlay, back to title. v3.6 P6 added a "High Scores" row
-// to MENU_ROOT_SYS ahead of "Back" — look it up by label (this file's own convention elsewhere, e.g.
-// section D below) instead of a stale hardcoded index.
-game.menu.index = rootItems().indexOf("Back");
-menuInput("confirm");
+assert(game.paused && game.menu.screen === "options", "C: O on title -> OPTIONS open directly (no system root)");
+assert(game.state === "title", "C: opening Options did NOT also start a game");
+// CS012 P4: Options is the top-level dialog from title/gameover, so its Back closes the overlay.
+menuInput("back");
 assert(!game.paused && game.menu.screen === null && game.state === "title", "C: Back closes overlay -> underlying title");
 
 // gameover behaves the same
 game.state = "gameover"; game.paused = false; game.menu.screen = null; clearKeys();
 keydown("o");
-assert(game.paused && eqArr(rootItems(), MENU_ROOT_SYS), "C: O on gameover -> system menu");
-game.menu.index = rootItems().indexOf("Back"); menuInput("confirm");
+assert(game.paused && game.menu.screen === "options", "C: O on gameover -> Options directly");
+menuInput("back");
 assert(!game.paused && game.state === "gameover", "C: Back -> underlying gameover");
 
 // =====================================================================
-// (D) Controller B opens the system menu (title/gameover); B backs out when a menu is open
+// (D) Controller B opens Options directly (title/gameover); B backs out when a menu is open
 // =====================================================================
-console.log("(D) controller B: open on title/gameover, back when a menu is open");
+console.log("(D) controller B: open Options on title/gameover, back when a menu is open");
 game.state = "title"; game.paused = false; game.menu.screen = null; noPad();
 padPress(GP.B);
-assert(game.paused && game.menu.screen === "root" && eqArr(rootItems(), MENU_ROOT_SYS), "D: B on title -> system menu");
-// B again -> back (root back closes)
+assert(game.paused && game.menu.screen === "options", "D: B on title -> Options directly");
+// B again -> back (Options is top-level from title/gameover, so its Back closes the overlay)
 padPress(GP.B);
 assert(!game.paused && game.state === "title", "D: B while menu open -> back/close");
-// Reach Achievements directly from the system root, then B backs to root (cursor on Achievements)
+// CS012 P4: Achievements is reached via Options now; from there B backs to Options (cursor on Achievements)
 game.state = "gameover"; game.paused = false; game.menu.screen = null; noPad();
 padPress(GP.B);
-game.menu.index = rootItems().indexOf("Achievements"); menuInput("confirm");
-assert(game.menu.screen === "achievements", "D: system root -> Achievements");
+assert(game.menu.screen === "options", "D: B on gameover -> Options directly");
+game.menu.index = MENU_OPTIONS.indexOf("Achievements"); menuInput("confirm");
+assert(game.menu.screen === "achievements", "D: Options -> Achievements");
 menuInput("back");
-assert(game.menu.screen === "root" && rootItems()[game.menu.index] === "Achievements",
-  "D: back from Achievements -> system root, cursor on Achievements (achReturn=root)");
+assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Achievements",
+  "D: back from Achievements -> Options, cursor on Achievements (single parent, no achReturn)");
 closePause();
 
 // =====================================================================
@@ -212,12 +209,11 @@ noPad();
 // (G) FLAG P4-b: a single confirm can't both open/navigate the menu AND start a game
 // =====================================================================
 console.log("(G) confirm can't both navigate a menu and start a game (P4-b)");
-// Keyboard: system menu open on title; Enter navigates the menu, never restarts.
+// Keyboard: Options open on title; Enter navigates the menu, never restarts.
 game.state = "title"; game.paused = false; game.menu.screen = null; clearKeys();
-keydown("o");                                  // open system menu
-const savedScreen = game.menu.screen;
+keydown("o");                                  // open Options
 keydown("enter");                              // confirm INSIDE the menu
-assert(game.state === "title" && game.paused, "G: Enter inside the system menu does NOT start a game");
+assert(game.state === "title" && game.paused, "G: Enter inside Options does NOT start a game");
 assert(game.menu.screen !== null, "G: Enter routed to menu nav (still in a menu screen)");
 closePause();
 // Gamepad single-frame race: B (open) + A (confirm) pressed the same frame -> B wins, no start.
@@ -225,11 +221,11 @@ game.state = "title"; game.paused = false; game.menu.screen = null; noPad();
 setPad(makePad([])); setPad(makePad([GP.B, GP.A])); handleGamepadMenu();
 assert(game.paused && game.state === "title", "G: same-frame B+A -> menu opens, game does NOT start (else-if guard)");
 closePause(); noPad();
-// Gamepad: while the system menu is open, A confirms in-menu, never starts a game.
+// Gamepad: while Options is open, A confirms in-menu, never starts a game.
 game.state = "title"; game.paused = false; game.menu.screen = null; noPad();
 padPress(GP.B);                                // open
 padPress(GP.A);                                // confirm inside
-assert(game.state === "title" && game.paused, "G: A while system menu open confirms in-menu, no start");
+assert(game.state === "title" && game.paused, "G: A while Options open confirms in-menu, no start");
 closePause(); noPad();
 
 // =====================================================================
@@ -237,7 +233,7 @@ closePause(); noPad();
 // =====================================================================
 console.log("(H) no menu-input leak into keys{} / gameplay / a title start");
 game.state = "title"; game.paused = false; game.menu.screen = null; clearKeys();
-keydown("o");                                  // system menu open
+keydown("o");                                  // Options open
 keydown("arrowdown");                           // nav
 assert(!keys["arrowdown"], "H: menu nav key NOT written to keys{}");
 keydown("arrowleft"); keydown("w");
@@ -253,16 +249,16 @@ assert(game.ship.angle === angBefore, "H: update() frozen while paused -> ship d
 closePause(); clearKeys();
 
 // =====================================================================
-// (I) Achievements reachable via BOTH paths, each backing to the right parent
+// (I) Achievements reached via Options backs to Options (single parent, CS012 P4)
 // =====================================================================
-console.log("(I) Achievements back-target resolves by entry path");
-// play path: pause -> Options -> Achievements -> back -> Options
+console.log("(I) Achievements backs to Options");
+// pause -> Options -> Achievements -> back -> Options
 startGame(); openPause();
 game.menu.index = rootItems().indexOf("Options"); menuInput("confirm"); // -> options
 game.menu.index = MENU_OPTIONS.indexOf("Achievements"); menuInput("confirm"); // -> achievements (from options)
-assert(game.menu.screen === "achievements" && game.menu.achReturn === "options", "I: play path sets achReturn=options");
+assert(game.menu.screen === "achievements", "I: reached Achievements via Options");
 menuInput("back");
-assert(game.menu.screen === "options", "I: back from Achievements -> Options (play path)");
+assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Achievements", "I: back from Achievements -> Options, cursor on Achievements");
 closePause();
 
 console.log(`\n${passed} passed, ${failed} failed`);

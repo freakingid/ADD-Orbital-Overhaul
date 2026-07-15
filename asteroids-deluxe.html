@@ -1995,7 +1995,7 @@ const bindings = {
   // Menu / system actions (edge-triggered). Fixed per F7 — not exposed to rebinding.
   confirm: { label: "Confirm",    fixed: true,  keys: ["enter"],           buttons: [GP.A] },
   // back is context-aware (v3.0 P4): inside a menu it backs out; on title/gameover with no menu, B
-  // opens the system menu (keyboard equivalent is "o", handled inline). ESC is shared with pause below.
+  // opens OPTIONS directly (keyboard equivalent is "o", handled inline). ESC is shared with pause below.
   back:    { label: "Back",       fixed: true,  keys: ["escape"],          buttons: [GP.B] },
   // pause is ESC (P retired, v3.0 P4 FLAG P4-a): ESC pauses during play; inside a menu the keydown
   // handler resolves confirm->back->pause in order, so ESC there means "back" (back matches first).
@@ -2120,8 +2120,9 @@ window.addEventListener("keydown", e => {
   // case entry-handling is ever restructured.
   if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover") && !game.entry) startGame();
   if (bindings.pause.keys.includes(k) && game.state === "playing") openPause();
-  // "O" opens the Options/Achievements system menu from title/gameover (v3.0 P4; replaces the old
-  // P->options path). No game to pause here — openPause() picks the system-menu root off game.state.
+  // "O" opens OPTIONS directly from title/gameover (v3.0 P4 replaced the old P->options path; CS012 P4
+  // FORK-CS012-C → a replaced the Options/Achievements system-menu root with Options itself). No game to
+  // pause here — openPause() routes to the Options screen off game.state.
   // Guarded off during initials entry so O can't pop the menu mid-entry.
   if (k === "o" && (game.state === "title" || game.state === "gameover") && !game.entry) openPause();
 });
@@ -2179,7 +2180,7 @@ function handleGamepadMenu() {
   // frame can't both open a menu AND start a game (FLAG P4-b); priority Start > B > A.
   //   Start = session toggle : title/gameover -> start a game ; playing -> open pause (resume is the
   //           menu-branch case above).
-  //   B     = context-aware  : title/gameover with no menu -> open the system menu (mirrors ESC/O).
+  //   B     = context-aware  : title/gameover with no menu -> open OPTIONS directly (mirrors ESC/O).
   //   A     = confirm        : title/gameover -> start a game (never mid-play, where A is fire).
   const onTitleOrOver = game.state === "title" || game.state === "gameover";
   if (pressedStart) {
@@ -2233,14 +2234,13 @@ function firstPressedButton() {
 // into menuInput(action); the rendering lives near draw() (drawMenu). Gameplay stays frozen the
 // whole time (update() early-returns on paused), so menu input can never move the ship.
 
-// The root screen has two context-dependent layouts (v3.0 P4). Which one is live is decided purely by
-// game.state: pausing mid-game keeps state "playing"; the system menu opened from title/gameover keeps
-// state "title"/"gameover" (update() skips the sim in both, so game.paused is safe in any state).
-const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game
-// CS010 P4 (FORK-4): "High Scores" REMOVED — nested under Options instead (§8b), so it's reachable
-// from both this system menu AND the pause menu, which the root-only entry never was.
-const MENU_ROOT_SYS  = ["Options", "Achievements", "Back"];  // system menu from title/gameover
-function rootItems() { return game.state === "playing" ? MENU_ROOT_PLAY : MENU_ROOT_SYS; }
+// The root ("PAUSED") screen is the paused-mid-game menu only (game.state "playing"). CS012 P4
+// (FORK-CS012-C → a) retired the separate system-menu root (the old MENU_ROOT_SYS =
+// ["Options","Achievements","Back"]): from title/gameover, O/Start/B now open OPTIONS directly
+// (openPause routes there off game.state), so Options is the sole hub and rootItems() has only the
+// one layout to return. update() skips the sim outside "playing", so game.paused is safe in any state.
+const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game — the only root layout now
+function rootItems() { return MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
 // themselves. CS010 P4 (§9/§10a): the three volume sliders + Music Track moved OFF this screen onto
@@ -2285,7 +2285,9 @@ function menuActive() { return game.paused; } // paused <=> a pause-menu screen 
 // --- Open / close / quit ---
 function openPause() {
   game.paused = true;
-  game.menu.screen = "root"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
+  // CS012 P4 (FORK-CS012-C → a): paused mid-game opens the root menu; from title/gameover, O/Start/B
+  // open OPTIONS directly (no separate system-menu root anymore) — openPause routes off game.state.
+  game.menu.screen = game.state === "playing" ? "root" : "options"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
   game.menu.rebinding = null;
   resetMenuNav();          // don't let a direction held at pause-time fire a phantom move
   AudioSys.thrust(false);  // kill the thrust loop immediately (update() would too, next frame)
@@ -2346,13 +2348,11 @@ function menuRoot(a) {
   if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
   else if (a === "confirm") {
-    // Dispatch by label so both root layouts (play vs. system) work off one handler.
+    // CS012 P4: the root is the paused-mid-game menu only — Continue / Options / Quit.
     const label = items[m.index];
-    if (label === "Continue")          closePause();
-    else if (label === "Options")      gotoScreen("options");
-    else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "root"; }
-    else if (label === "Quit")         quitToTitle();
-    else if (label === "Back")         closePause(); // system menu: close overlay -> underlying title/gameover
+    if (label === "Continue")     closePause();
+    else if (label === "Options") gotoScreen("options");
+    else if (label === "Quit")    quitToTitle();
   }
   else if (a === "back" || a === "pause") closePause();
 }
@@ -2367,12 +2367,14 @@ function menuOptions(a) {
   else if (a === "confirm") {
     if (label === "Sound / Music") gotoScreen("sound"); // CS010 P4 §9
     else if (label === "Controls") gotoScreen("controls");
-    else if (label === "Achievements") { gotoScreen("achievements"); m.achReturn = "options"; } // viewer (F9)
+    else if (label === "Achievements") gotoScreen("achievements"); // viewer (F9)
     else if (label === "High Scores") gotoScreen("highscores"); // CS010 P4 §8b: nested under Options
     else if (label === "Difficulty") gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
-    else if (label === "Back") gotoScreen("root", rootItems().indexOf("Options")); // -> root, cursor on "Options"
+    // CS012 P4: Back is context-aware — paused mid-game returns to the root menu (cursor on Options);
+    // from title/gameover, where Options is the top-level dialog, it closes the overlay entirely.
+    else if (label === "Back") { if (game.state === "playing") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
   }
-  else if (a === "back") gotoScreen("root", rootItems().indexOf("Options"));
+  else if (a === "back") { if (game.state === "playing") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
   else if (a === "pause") closePause();
 }
 
@@ -2419,17 +2421,15 @@ function menuSound(a) {
 // of confirm/back/pause exits back to Options (cursor left on the "Achievements" row).
 function menuAchievements(a) {
   if (a === "pause") closePause();
-  else if (a === "confirm" || a === "back") {
-    // Return to wherever we came from: the system-menu root (title/gameover) reaches Achievements
-    // directly, whereas play (and system-menu Options) reaches it via the Options screen.
-    if (game.menu.achReturn === "root") gotoScreen("root", rootItems().indexOf("Achievements"));
-    else gotoScreen("options", MENU_OPTIONS.indexOf("Achievements"));
-  }
+  // CS012 P4: Achievements now lives ONLY under Options (reached the same way from title/gameover AND
+  // from pause), so Back always returns to Options with the cursor on "Achievements" — the old
+  // achReturn tracker (which distinguished a direct system-root entry) is retired.
+  else if (a === "confirm" || a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Achievements"));
 }
 
 // High Scores viewer: read-only top-10 table, nested under Options (CS010 P4 §8b) — reachable from
-// BOTH the system menu (title/gameover, via Options) and the pause menu mid-game, unlike the old
-// root-only entry. One entry point -> one back-destination; no achReturn-style tracker needed.
+// BOTH title/gameover (via Options) and the pause menu mid-game, unlike the old root-only entry. One
+// entry point -> one back-destination, no return-context tracker needed (like Achievements as of CS012 P4).
 function menuHighScores(a) {
   if (a === "pause") closePause();
   else if (a === "confirm" || a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("High Scores"));
@@ -3493,7 +3493,7 @@ const game = {
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
   // index = cursor for root/options; row/col = cursor for the controls grid;
   // rebinding = { action, device } while capturing a new binding, else null.
-  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null, achReturn: "options" },
+  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null },
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -3563,7 +3563,7 @@ function startGame() {
   game.paused = false;
   game.deathT = 0; game.shake = 0;   // v3.6 P5: a fresh run never carries death-spectacle state over
   game.entry = null; game.lastScoreId = null; // v3.6 P6: nor any stale initials-entry/highlight state
-  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, achReturn: "options" }; // ensure no menu carries in
+  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null }; // ensure no menu carries in
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
@@ -5531,7 +5531,7 @@ function draw() {
       if (a.y > VIEW_H + 60) a.y -= VIEW_H + 120;
       a.draw();
     });
-    if (game.paused) drawMenu();  // system menu (Options/Achievements) overlays the title (v3.0 P4)
+    if (game.paused) drawMenu();  // the menu (Options + its sub-screens) overlays the title (v3.0 P4; CS012 P4)
     drawToasts();                 // keep unlock banners on top even on the title
     return;
   }

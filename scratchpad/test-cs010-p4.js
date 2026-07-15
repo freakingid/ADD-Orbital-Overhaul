@@ -9,13 +9,13 @@
 // fragility (FLAG-8b) — every navigation assertion below checks the LANDING LABEL, not a raw index,
 // so the test survives the next reorder. Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) config: MENU_ROOT_SYS/MENU_OPTIONS/SOUND_ROWS shapes; "High Scores" is OUT of MENU_ROOT_SYS
-//      and IN MENU_OPTIONS; no gotoScreen("options", <numeric literal>) call survives in source.
-//  (C) root -> Options -> Sound/Music -> Back.
-//  (D) Options -> High Scores -> Back, from BOTH the system-menu-root entry path AND the pause-menu
-//      entry path (the whole point of §8b — a single Options nesting reaches both contexts).
+//  (B) config: MENU_ROOT_PLAY/MENU_OPTIONS/SOUND_ROWS shapes; "High Scores" is IN MENU_OPTIONS; no
+//      gotoScreen("options", <numeric literal>) call survives in source. (CS012 P4: MENU_ROOT_SYS retired.)
+//  (C) title -> Options (opened directly) -> Sound/Music -> Back.
+//  (D) Options -> High Scores -> Back, from BOTH the title/gameover entry (O opens Options directly)
+//      AND the pause-menu entry (the whole point of §8b — a single Options nesting reaches both contexts).
 //  (E) Options -> Controls -> Back, and P2's Ship Rotation row on Controls still works (not clobbered).
-//  (F) Options -> Achievements -> Back, from BOTH entry paths (achReturn still tracks two).
+//  (F) Options -> Achievements -> Back — single parent (Options), from BOTH title and pause (CS012 P4: achReturn retired).
 //  (G) Options -> Difficulty -> Back.
 //  (H) Sound/Music screen: the three volume sliders + Music Track cycler still work, label-dispatched,
 //      persisted via saveSettings(); Back returns to Options.
@@ -59,7 +59,7 @@ function FakeAudioContext() {
 
 const RETURN = [
   "startGame", "game", "menuInput", "openPause", "closePause", "rootItems", "gotoScreen",
-  "MENU_ROOT_SYS", "MENU_ROOT_PLAY", "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "VOL_LABELS",
+  "MENU_ROOT_PLAY", "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "VOL_LABELS",
   "REBINDABLE", "AudioSys", "settings", "MUSIC_TRACK_VALUES"
 ];
 
@@ -97,11 +97,13 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
 // ================= (B) config shapes + no surviving hardcoded indices =====================
 (function () {
-  console.log("(B) MENU_ROOT_SYS / MENU_OPTIONS / SOUND_ROWS shapes; no hardcoded gotoScreen index");
+  console.log("(B) MENU_ROOT_PLAY / MENU_OPTIONS / SOUND_ROWS shapes; no hardcoded gotoScreen index");
   const A = buildInstance();
-  assert(!A.MENU_ROOT_SYS.includes("High Scores"), "B: MENU_ROOT_SYS no longer carries High Scores (FORK-4)");
-  assert(A.MENU_ROOT_SYS.includes("Options") && A.MENU_ROOT_SYS.includes("Achievements") && A.MENU_ROOT_SYS.includes("Back"),
-    "B: MENU_ROOT_SYS still carries Options/Achievements/Back");
+  // CS012 P4 (FORK-CS012-C → a): the system-menu root (MENU_ROOT_SYS) is retired — Options is the sole
+  // hub, opened directly from title/gameover. MENU_ROOT_PLAY (Continue/Options/Quit) is the only root.
+  assert(JSON.stringify(A.MENU_ROOT_PLAY) === JSON.stringify(["Continue", "Options", "Quit"]),
+    `B: MENU_ROOT_PLAY === [Continue, Options, Quit]; got ${JSON.stringify(A.MENU_ROOT_PLAY)}`);
+  assert(!/const\s+MENU_ROOT_SYS/.test(currentSrc), "B: MENU_ROOT_SYS is no longer declared (only referenced in a retire-note comment)");
   const expectedOptions = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
   assert(JSON.stringify(A.MENU_OPTIONS) === JSON.stringify(expectedOptions),
     `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a); got ${JSON.stringify(A.MENU_OPTIONS)}`);
@@ -124,15 +126,13 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   assert(!negativeLiteral, `B: no gotoScreen(...) call passes a negative literal index; found: ${JSON.stringify(negativeLiteral)}`);
 })();
 
-// ================= (C) root -> Options -> Sound/Music -> Back =====================
+// ================= (C) title -> Options (direct) -> Sound/Music -> Back =====================
 (function () {
-  console.log("(C) root -> Options -> Sound/Music -> Back");
+  console.log("(C) title -> Options (direct) -> Sound/Music -> Back");
   const A = buildInstance();
   A.startGame(); A.game.state = "title"; A.game.paused = false;
   A.openPause();
-  A.game.menu.index = A.rootItems().indexOf("Options");
-  A.menuInput("confirm");
-  assert(A.game.menu.screen === "options", "C: root -> Options");
+  assert(A.game.menu.screen === "options", "C: O from title opens Options directly (no intermediate root)");
   A.game.menu.index = A.MENU_OPTIONS.indexOf("Sound / Music");
   A.menuInput("confirm");
   assert(A.game.menu.screen === "sound" && A.SOUND_ROWS[A.game.menu.index] === "SFX Volume",
@@ -145,18 +145,18 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
 // ================= (D) Options -> High Scores -> Back, both entry paths =====================
 (function () {
-  console.log("(D) Options -> High Scores -> Back (system-menu path AND pause-menu path)");
+  console.log("(D) Options -> High Scores -> Back (title/gameover path AND pause-menu path)");
   const A = buildInstance();
 
-  // System-menu path: title/gameover -> Options -> High Scores.
+  // Title/gameover path: O opens Options directly -> High Scores.
   A.startGame(); A.game.state = "title"; A.game.paused = false;
   A.openPause();
-  A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "options", "D: title path: O opens Options directly");
   A.game.menu.index = A.MENU_OPTIONS.indexOf("High Scores"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "highscores", "D: system-menu path: Options -> High Scores opens the screen");
+  assert(A.game.menu.screen === "highscores", "D: title path: Options -> High Scores opens the screen");
   A.menuInput("back");
   assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "High Scores",
-    "D: system-menu path: back -> Options, cursor on High Scores");
+    "D: title path: back -> Options, cursor on High Scores");
   A.closePause();
 
   // Pause-menu path (mid-game): Continue/Options/Quit root -> Options -> High Scores. This reachability
@@ -194,29 +194,30 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   A.closePause();
 })();
 
-// ================= (F) Options -> Achievements -> Back, both entry paths (achReturn) =====================
+// ================= (F) Options -> Achievements -> Back, single parent (CS012 P4) =====================
 (function () {
-  console.log("(F) Options -> Achievements -> Back, from BOTH the system root AND Options");
+  console.log("(F) Options -> Achievements -> Back, reached via Options from BOTH title and pause");
   const A = buildInstance();
 
-  // Direct from the system root (title/gameover).
+  // Title/gameover context: O opens Options directly -> Achievements -> Back -> Options.
   A.startGame(); A.game.state = "title"; A.game.paused = false;
   A.openPause();
-  A.game.menu.index = A.rootItems().indexOf("Achievements"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "achievements" && A.game.menu.achReturn === "root", "F: root -> Achievements sets achReturn=root");
+  assert(A.game.menu.screen === "options", "F: title path: O opens Options directly");
+  A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "achievements", "F: title path: Options -> Achievements");
   A.menuInput("back");
-  assert(A.game.menu.screen === "root" && A.rootItems()[A.game.menu.index] === "Achievements",
-    "F: back from Achievements (root entry) -> root, cursor on Achievements");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Achievements",
+    "F: title path: back from Achievements -> Options, cursor on Achievements");
   A.closePause();
 
-  // Via Options (play path).
+  // Pause context (mid-game): root -> Options -> Achievements -> Back -> Options.
   A.startGame(); A.openPause();
   A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
   A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "achievements" && A.game.menu.achReturn === "options", "F: Options -> Achievements sets achReturn=options");
+  assert(A.game.menu.screen === "achievements", "F: pause path: Options -> Achievements");
   A.menuInput("back");
   assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Achievements",
-    "F: back from Achievements (options entry) -> Options, cursor on Achievements");
+    "F: pause path: back from Achievements -> Options, cursor on Achievements");
   A.closePause();
 })();
 

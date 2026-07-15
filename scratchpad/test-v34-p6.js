@@ -306,7 +306,12 @@ openOptionsAt("Sound / Music"); menuInput("confirm"); assert(game.menu.screen ==
 openOptionsAt("Controls");     menuInput("confirm"); assert(game.menu.screen === "controls",    "F: Options row 'Controls' -> controls");
 openOptionsAt("Achievements"); menuInput("confirm"); assert(game.menu.screen === "achievements", "F: Options row 'Achievements' -> achievements");
 openOptionsAt("Difficulty");   menuInput("confirm"); assert(game.menu.screen === "difficulty",   "F: Options row 'Difficulty' -> difficulty");
-openOptionsAt("Back");         menuInput("confirm"); assert(game.menu.screen === "root",          "F: Options row 'Back' -> root");
+// CS012 P4: Options 'Back' is context-aware now — paused mid-game returns to root; from title/gameover
+// (where Options is top-level) it closes the overlay (that path is covered in test-cs012-p4). This
+// section runs in the title context (game.state set to "title" above), so pin "playing" for the Back test.
+{ const savedState = game.state; game.state = "playing";
+  openOptionsAt("Back");         menuInput("confirm"); assert(game.menu.screen === "root",          "F: Options row 'Back' -> root (paused mid-game)");
+  game.state = savedState; }
 
 // The three volume sliders still nudge the routed gains (label-dispatched, not index-dispatched).
 for (const [label, cat] of [["SFX Volume", "sfx"], ["Music Volume", "music"], ["Master Volume", "master"]]) {

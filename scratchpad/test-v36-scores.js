@@ -83,7 +83,7 @@ const returnList = [
   "Achievements", "HighScores", "entryInput", "commitEntry",
   "SCORES_MAX", "SCORES_CHARSET", "GAME_VERSION", "DEATH_DURATION",
   "bindings", "GP", "GP_DEADZONE", "pollGamepad", "handleGamepadMenu",
-  "openPause", "closePause", "menuInput", "rootItems", "MENU_ROOT_SYS", "MENU_OPTIONS", "AudioSys"
+  "openPause", "closePause", "menuInput", "rootItems", "MENU_OPTIONS", "AudioSys"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -95,7 +95,7 @@ const {
   Achievements, HighScores, entryInput, commitEntry,
   SCORES_MAX, SCORES_CHARSET, GAME_VERSION, DEATH_DURATION,
   bindings, GP, GP_DEADZONE, pollGamepad, handleGamepadMenu,
-  openPause, closePause, menuInput, rootItems, MENU_ROOT_SYS, MENU_OPTIONS, AudioSys
+  openPause, closePause, menuInput, rootItems, MENU_OPTIONS, AudioSys
 } = A;
 
 let passed = 0, failed = 0;
@@ -313,23 +313,19 @@ function freshDeath(score, wave, delivered) {
 // ================= (J) "High Scores" nested under Options (CS010 P4, §8b) ============================
 (function sectionJ() {
   console.log("(J) 'High Scores' is browsable from Options, reachable from both entry paths");
-  assert(!MENU_ROOT_SYS.includes("High Scores"), "J: MENU_ROOT_SYS no longer carries a High Scores row (FORK-4)");
   assert(MENU_OPTIONS.includes("High Scores"), "J: MENU_OPTIONS carries a High Scores row");
 
-  // Path 1: system menu (title/gameover) -> Options -> High Scores -> back -> Options.
+  // Path 1: title/gameover -> Options (opened directly, CS012 P4) -> High Scores -> back -> Options.
   startGame(); game.state = "title"; game.paused = false;
-  openPause(); // system menu from title
-  assert(game.paused && rootItems().includes("Options"), "J: system root includes Options");
-  game.menu.index = rootItems().indexOf("Options");
-  menuInput("confirm");
-  assert(game.menu.screen === "options", "J: system root -> Options");
+  openPause(); // CS012 P4: O opens Options directly from title (no system-menu root)
+  assert(game.paused && game.menu.screen === "options", "J: title path: O opens Options directly");
   game.menu.index = MENU_OPTIONS.indexOf("High Scores");
   menuInput("confirm");
   assert(game.menu.screen === "highscores", "J: confirm on High Scores opens the highscores screen");
   menuInput("back");
   assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "High Scores", "J: back returns to Options, cursor on High Scores");
   closePause();
-  assert(!game.paused, "J: closePause() exits the system menu");
+  assert(!game.paused, "J: closePause() exits the Options overlay");
 
   // Path 2: pause menu mid-game -> Options -> High Scores -> back -> Options — the whole point of §8b.
   startGame(); openPause(); // pause menu (play root: Continue/Options/Quit)
