@@ -8,9 +8,12 @@ conventions + code map; `STATUS.md` is ground truth for what is actually built.
 
 Asteroid Field Deluxe — a standalone, browser-based vector arcade shooter in
 the spirit of Atari's *Asteroids Deluxe*, with an original radioactive-salvage
-tow-chain mechanic layered on top. Single self-contained HTML file: HTML5
-Canvas 2D + vanilla JavaScript + Web Audio API. **No bundler, no build step, no
-external assets or libraries, no npm runtime deps.** The browser opens the file
+tow-chain mechanic layered on top. Browser-based, no build step: HTML5
+Canvas 2D + vanilla JavaScript + Web Audio API. **All game logic lives in one
+`<script>` block in `asteroids-deluxe.html` — no bundler, no ES modules, no npm
+runtime deps.** As of CS011 the game MAY load extra runtime files, but only as
+**non-essential enhancements** (see `EXTERNAL-FILES.md`): the HTML must always
+open and play by double-click, with or without them. The browser opens the file
 directly. Solo developer (Paul); you (Claude Code) are the implementer only.
 
 Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
@@ -68,9 +71,19 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
 
 ## Tech + test conventions
 
-- **Single file, vanilla JS, no modules.** Everything lives in one
-  `<script>` block inside `asteroids-deluxe.html`. No imports, no build step —
-  the file must always be runnable as-is by opening it in a browser.
+- **Game logic in one file, vanilla JS, no modules.** All game logic lives in
+  one `<script>` block inside `asteroids-deluxe.html`. No ES-module imports, no
+  build step — the file must always be runnable as-is by opening it in a browser
+  (`file://`). **External runtime files are allowed but must be optional
+  (CS011).** The shipped game may load extra files (e.g. base64-encoded audio) as
+  classic `<script src="…">` subresources decoded at boot — never via `fetch()`
+  or `import` (both fail on `file://`). Every such file is a **non-essential
+  enhancement**: wrap the load so failure is caught (`<script onerror>` or
+  try/catch around the decode), treat absence as the *normal* fallback path, and
+  never let a missing / corrupt / blocked external file break gameplay — if voice
+  audio doesn't load, the game plays silently-voiced, full stop. **Log every
+  runtime external file in `EXTERNAL-FILES.md` before it ships.** `tools/`,
+  `scratchpad/`, and docs don't count — only files the *shipped game* loads.
 - **Tuning constants at the top, never inline magic numbers.** New mechanics
   get named constants in the constants block (grouped by system, e.g.
   `GARBAGE_*`, `CHAIN_*`, `CARGO_*`, `DOCK_*`). This is how balance gets tuned
@@ -185,7 +198,8 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
 
 ## Code map (target layout — GDD §3 tracks what actually exists)
 
-Everything lives in one file. This is the read-order map; it's descriptive
+The game logic lives in one file (optional external runtime enhancements, if
+any, are catalogued in `EXTERNAL-FILES.md`). This is the read-order map; it's descriptive
 (matches what's built), not aspirational — check the GDD's Architecture Map
 table for the authoritative, currently-accurate version, since this file
 updates less often than that one.

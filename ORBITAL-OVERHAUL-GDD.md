@@ -4,8 +4,8 @@
 **Changelog:** `GDD-VERSION-HISTORY.md`.
 **This document describes what is SHIPPED (§2), not what is planned.**
 
-**File:** `asteroids-deluxe.html` (single self-contained HTML file)
-**Stack:** Vanilla JavaScript, HTML5 Canvas 2D, Web Audio API. No dependencies, no build step.
+**File:** `asteroids-deluxe.html` — all game logic in one `<script>` block; runs by opening the file directly. As of CS011 the game may load optional external enhancement files (catalogued in `EXTERNAL-FILES.md`); each is non-essential and the game stays fully playable without it (best-effort load, non-fatal on failure).
+**Stack:** Vanilla JavaScript, HTML5 Canvas 2D, Web Audio API. No build step, no npm runtime deps, no ES modules.
 **Logical resolution:** 1280×720 viewport (`VIEW_W×VIEW_H`), scaled to fit window with letterboxing (CSS scaling, canvas stays 1280×720 internally). As of v1.2 the simulation runs in a larger toroidal world (`WORLD_W×WORLD_H`, **2560×1440** as of v3.1 P1) that the viewport scrolls across, keeping the ship centered — see §2.11.
 
 **Companion documents (read alongside this one):**
