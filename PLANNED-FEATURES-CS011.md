@@ -192,7 +192,7 @@ caption shows the numeral ("Level 23"); the audio speaks the words.
   (`String(n).split("")…`) so it never breaks — spec that fallback explicitly.
 - `VOICE_PRIORITY.level = 2` (below `health_low`, above default chatter — see §7).
 - Priming: `nextWave()` runs once at `startGame`, so this also announces **Level 1** at game start.
-  FLAG: if that reads as redundant, gate to `game.wave >= 2` (one line).
+  Resolved: announce Level 1 at game start too — no gate.
 
 ---
 
@@ -233,7 +233,7 @@ hull-critical alarm (3 > 2).
 
 ## 8. Persistence (additive, frozen `afd_settings_v1`)
 
-- `settings.voiceStyle` (default `"comms"`), `settings.captions` (default `false`).
+- `settings.voiceStyle` (default `"comms"`), `settings.captions` (default `true`).  <!-- captions ON, resolved -->
 - `saveSettings()`: add both to the serialized `data`.
 - `loadSettings()`: accept `voiceStyle` **only if** in `VOICE_STYLE_VALUES` (else `"comms"`); accept
   `captions` **only if** boolean (else `false`) — the established known-value-else-default pattern. No
@@ -268,8 +268,8 @@ level:2}`; `settings` += `{voiceStyle, captions}`; `SOUND_ROWS` += `["Voice","Ca
 
 ## 11. Flags for the implementing session
 
-- **Captions default OFF** (opt-in; preserves current experience). One line to flip to on.
-- **Level 1 announced at game start** (nextWave runs at startGame). One line to gate `wave >= 2`.
+- **Captions default ON** (resolved this session).
+- **Level 1 announced at game start** (resolved this session — announce every level, including 1; no gate).
 - **Caption look** (position, size, linger, fade, label text, panel height) are look-calls — tune by eye.
 - **Captions require the AudioContext** (via `_emit`'s ctx guard). Events fire only during play, after
   the start gesture, so ctx always exists; acceptable, but note it.
