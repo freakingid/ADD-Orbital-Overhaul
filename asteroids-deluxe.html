@@ -128,6 +128,7 @@ const SHIELD_DRAIN = 0.55;      // energy/sec while on
 const SHIELD_RECHARGE = 0.12;   // energy/sec while off
 const SHIELD_HIT_COST = 0.22;   // energy per deflection
 const SHIELD_RADIUS = 26;
+const AUTO_SHIELD_SCORE_PENALTY = 500; // PLAYTEST KNOB — score lost per auto-save. Flat (FLAG-4d).
 
 const DEBRIS_SPEEDS = { 3: 70, 2: 110, 1: 160 };  // base drift speed by size
 const DEBRIS_RADII  = { 3: 46, 2: 26, 1: 13 };
@@ -238,7 +239,7 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
 // the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
 // segment IS the changeset number (this build shipped in CS010).
-const GAME_VERSION = "1.0.0.11";
+const GAME_VERSION = "1.0.0.12";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -2266,6 +2267,7 @@ const settings = {
   shipTurnScale:   SHIP_TURN_SCALE_DEFAULT, // CS010 §10b: player rotation-speed multiplier (0.5..1.5), read by shipTurnRate()
   voiceStyle:      "comms", // CS011: selected Dan voice — "off" or a VOICE_STYLE_VALUES id. NOT persisted yet (later phase).
   captions:        true,    // CS011: show on-screen captions of Dan's lines. NOT persisted yet (later phase).
+  autoShield:      false,   // CS012 P5: auto-raise the shield on a hit at critical hull (costs energy + AUTO_SHIELD_SCORE_PENALTY). Off by default.
 };
 
 // CS011: Dan speaks only when a real voice style is selected. voiceStyle "off" mutes him without disturbing
@@ -2439,7 +2441,7 @@ function menuHighScores(a) {
 // default, right picks the count variant, matching the on-screen "Time | Shots/Pieces" layout.
 // Structured to grow with future difficulty knobs (FLAG B-4-c): add a row here + a case in the
 // switch and the renderer picks it up.
-const DIFFICULTY_ROWS = ["shot", "magnet", "back"];
+const DIFFICULTY_ROWS = ["shot", "magnet", "autoshield", "back"];
 function menuDifficulty(a) {
   const m = game.menu, N = DIFFICULTY_ROWS.length;
   const row = DIFFICULTY_ROWS[m.index];
@@ -2448,6 +2450,7 @@ function menuDifficulty(a) {
   else if (a === "left" || a === "right") {
     if (row === "shot")        { settings.shotPowerupMode = a === "right" ? "shots"  : "time"; saveSettings(); AudioSys.ui(false); }
     else if (row === "magnet") { settings.magnetMode      = a === "right" ? "pieces" : "time"; saveSettings(); AudioSys.ui(false); }
+    else if (row === "autoshield") { settings.autoShield  = a === "right"; saveSettings(); AudioSys.ui(false); }
   }
   else if (a === "confirm") {
     if (row === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Difficulty"));
@@ -2545,7 +2548,8 @@ function saveSettings() {
       shotPowerupMode: settings.shotPowerupMode, magnetMode: settings.magnetMode, // v3.0 P5 (additive)
       musicTrack: settings.musicTrack,                                            // v3.4 P6 (additive)
       shipTurnScale: settings.shipTurnScale,                                      // CS010 §10b (additive)
-      voiceStyle: settings.voiceStyle, captions: settings.captions };             // CS011 P3 (additive)
+      voiceStyle: settings.voiceStyle, captions: settings.captions,               // CS011 P3 (additive)
+      autoShield: settings.autoShield };                                          // CS012 P5 (additive)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -2595,6 +2599,8 @@ function loadSettings() {
     if (VOICE_STYLE_VALUES.includes(data.voiceStyle)) settings.voiceStyle = data.voiceStyle;
     VoiceSys.setStyle(settings.voiceStyle);
     if (typeof data.captions === "boolean") settings.captions = data.captions;
+    // CS012 P5: auto-shield is an additive boolean — missing/non-boolean leaves the runtime default (false) in place.
+    if (typeof data.autoShield === "boolean") settings.autoShield = data.autoShield;
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
@@ -4251,6 +4257,29 @@ function powerTypesUsed(s) {
 // damage was actually applied.
 function damageShip(amount, srcX, srcY) {
   const s = game.ship;
+  // CS012 P5 auto-shield: a reactive last-resort save at critical hull. When enabled and the hull is at/below
+  // the low-health threshold, an incoming hit spends SHIELD_HIT_COST energy to raise the shield and eat the hit
+  // for 0 HP instead of taking damage. The knockback+stun below are the SAME as a real hit — the i-frame is the
+  // rate-limiter that caps this to ~one save per HIT_STUN_DURATION (same-frame repeats hit the shieldOn early-return
+  // just below), and energy recharge (0.12/s) < cost (0.22/save) means it self-exhausts after ~4-5 saves. Guarded by
+  // the same conditions the early-return checks so it never fires on a dead/shielded/i-framed ship.
+  if (settings.autoShield && !s.dead && !s.shieldOn && s.invuln <= 0 && s.hp <= LOW_HP_THRESHOLD
+      && s.energy >= SHIELD_HIT_COST) {
+    s.energy = Math.max(0, s.energy - SHIELD_HIT_COST);
+    // Knockback away from the hazard — copied verbatim from the real-hit body below so an auto-save shoves clear identically.
+    const [kdx, kdy] = shortDelta(srcX, srcY, s.x, s.y); // vector from hazard to ship = away
+    const kd = Math.hypot(kdx, kdy);
+    const ka = kd > 0.001 ? Math.atan2(kdy, kdx) : rand(0, TAU);
+    s.vx = Math.cos(ka) * KNOCKBACK_SPEED;
+    s.vy = Math.sin(ka) * KNOCKBACK_SPEED;
+    s.invuln = HIT_STUN_DURATION;
+    s.shieldOn = true;
+    // Penalty BYPASSES addScore by design (FLAG-4e / CLAUDE.md scoring exception): auto-save must NOT touch
+    // game.nextRepair, so it can never trip the HP-repair milestone. Clamp the score at 0.
+    game.score = Math.max(0, game.score - AUTO_SHIELD_SCORE_PENALTY);
+    game.floaters.push(new FloatText("-" + AUTO_SHIELD_SCORE_PENALTY, s.x, s.y, COLOR.lowhp));
+    return false; // 0 HP dealt — same contract as the shielded early-return
+  }
   if (s.dead || s.shieldOn || s.invuln > 0) return false;
   s.hp -= amount;
   if (s.hp <= 0) {
@@ -5195,26 +5224,35 @@ function drawSound() {
 // toggle is lit (COLOR.text), the other dim; the selected row shows the ◄► adjust chevrons. Mirrors
 // the tested drawOptionsMenu pattern so it inherits the same vector-panel look.
 function drawDifficulty() {
-  const { x, y } = menuPanel(620, 360, "DIFFICULTY");
+  // Panel grown +58 (from 360) vs. pre-CS012-P5 to seat the third value row (Auto-shield); Back and the
+  // help/hint lines shift down by the same 58 so the layout below the rows is unchanged in spirit.
+  const { x, y } = menuPanel(620, 418, "DIFFICULTY");
   const m = game.menu;
+  // Each row draws as "left | right" with the ACTIVE side lit. rightActive=true lights the right label.
   const rows = [
-    { label: "Shot powerups expire", value: settings.shotPowerupMode, right: "shots"  },
-    { label: "Magnet expires",       value: settings.magnetMode,       right: "pieces" },
+    { label: "Shot powerups expire", left: "Time", right: "Shots",  rightActive: settings.shotPowerupMode === "shots" },
+    { label: "Magnet expires",       left: "Time", right: "Pieces", rightActive: settings.magnetMode === "pieces" },
+    { label: "Auto-shield",          left: "Off",  right: "On",     rightActive: settings.autoShield },
   ];
   rows.forEach((r, i) => {
     const sel = m.index === i, cy = y + 122 + i * 58;
     drawText(r.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
-    const timeOn = r.value === "time";
-    const ox = x + 360, rightLabel = r.right === "shots" ? "Shots" : "Pieces";
-    drawText("Time",     ox,       cy + 6, 18, timeOn ? COLOR.text : COLOR.dim, "left");
-    drawText("|",        ox + 74,  cy + 6, 18, COLOR.dim, "left");
-    drawText(rightLabel, ox + 92,  cy + 6, 18, timeOn ? COLOR.dim : COLOR.text, "left");
+    const ox = x + 360;
+    drawText(r.left,  ox,       cy + 6, 18, r.rightActive ? COLOR.dim : COLOR.text, "left");
+    drawText("|",     ox + 74,  cy + 6, 18, COLOR.dim, "left");
+    drawText(r.right, ox + 92,  cy + 6, 18, r.rightActive ? COLOR.text : COLOR.dim, "left");
     if (sel) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 178, cy + 7, 16, COLOR.text); }
   });
-  const backSel = m.index === 2;
-  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 262, 22, backSel ? COLOR.text : COLOR.dim);
-  drawText("Time = today's 15-second timer.   Shots / Pieces = expire by use, not the clock.", VIEW_W / 2, y + 306, 12, COLOR.dim);
-  drawText("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 336, 12, COLOR.dim);
+  // Per-row help line under the rows — describes the FOCUSED row only (Back has no help line).
+  const HELP = [
+    "Time = today's 15-second timer.   Shots = expire by use, not the clock.",
+    "Time = today's 15-second timer.   Pieces = expire by use, not the clock.",
+    "Auto-raises shield at critical hull. -500 points per blocked hit.",
+  ];
+  const backSel = m.index === 3;
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 320, 22, backSel ? COLOR.text : COLOR.dim);
+  drawText(m.index < HELP.length ? HELP[m.index] : "", VIEW_W / 2, y + 364, 12, COLOR.dim);
+  drawText("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 394, 12, COLOR.dim);
 }
 
 function drawControlsMenu() {

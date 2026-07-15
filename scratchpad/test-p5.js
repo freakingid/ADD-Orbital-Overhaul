@@ -266,7 +266,10 @@ menuInput("left");  assert(settings.shotPowerupMode === "time", "I: ◄ on shot 
 menuInput("down");  assert(game.menu.index === 1, "I: down -> magnet row");
 menuInput("right"); assert(settings.magnetMode === "pieces", "I: ► on magnet row selects Pieces");
 menuInput("left");  assert(settings.magnetMode === "time", "I: ◄ on magnet row selects Time");
-menuInput("down");  assert(game.menu.index === 2, "I: down -> Back row");
+menuInput("down");  assert(game.menu.index === 2, "I: down -> auto-shield row (CS012 P5)");
+menuInput("right"); assert(settings.autoShield === true,  "I: ► on auto-shield row turns it On");
+menuInput("left");  assert(settings.autoShield === false, "I: ◄ on auto-shield row turns it Off");
+menuInput("down");  assert(game.menu.index === 3, "I: down -> Back row");
 menuInput("confirm");
 assert(game.menu.screen === "options" && game.menu.index === MENU_OPTIONS.indexOf("Difficulty"),
   "I: Back returns to Options with the cursor on Difficulty");

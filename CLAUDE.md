@@ -139,7 +139,13 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   Don't reintroduce a bar/rect for a new HUD element; follow the ring
   idiom instead.
 - **Route all scoring through `addScore()`.** It also handles the HP-repair
-  milestone bonus (post-Phase 2) — bypassing it breaks that logic.
+  milestone bonus (post-Phase 2) — bypassing it breaks that logic. **One
+  documented exception (CS012 P5, FLAG-4e):** the auto-shield's
+  `AUTO_SHIELD_SCORE_PENALTY` deduction in `damageShip` subtracts from
+  `game.score` directly (clamped at 0) and MUST NOT go through `addScore` —
+  it's a penalty, not a gain, and routing it through `addScore` would let a
+  score *drop* trip the `nextRepair` milestone. This is the only sanctioned
+  `addScore` bypass; don't add others without the same explicit reason.
 - **Tracks are DATA. `MusicSys.update()`/`scheduleStep()` and the
   `layerGates` gain-gating are not to be modified.** New tracks are new
   entries in `MUSIC_TRACKS`, built by their own `buildXTrack()` — never a
@@ -202,8 +208,9 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   STATUS.md so the next phase's prompt can account for it.
 - **Three frozen `localStorage` keys — never rename or merge them.**
   `afd_settings_v1` (options/bindings/difficulty modes/music track; CS011 P3
-  added `voiceStyle`/`captions` additively — same known-value-else-default
-  rule as every other field on this key),
+  added `voiceStyle`/`captions` additively, CS012 P5 added `autoShield` the
+  same way — same known-value-else-default rule as every other field on this
+  key),
   `afd_achievements_v2` (progress + unlocks), and `afd_scores_v1` (v3.6 P6 —
   the high-score table) are independent stores, each with its own guarded
   `storageOK()` try/catch load/save path. None of the three reads or writes
