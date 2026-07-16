@@ -2244,6 +2244,7 @@ function firstPressedButton() {
 // "playing", so game.paused is safe in any state.
 const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];             // paused mid-game
 const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover (CS013 P1)
+const MENU_HINT_SIZE = 16;  // CS013 P2: control-hint footer text size (drawMenuHint) — playtest knob
 function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
@@ -2746,6 +2747,9 @@ const COLOR = {
   shield: "#40b0ff",
   text: "#a8d4ff",
   dim: "#3a5a80",
+  menuIdle: "#6f92bd",      // CS013 P2: unselected menu-item text — brighter than dim, dimmer than text.
+                            // Menu-item contrast only; COLOR.dim itself stays untouched (HUD rings/
+                            // chevrons/table headers/glyphs/slider frames all still read it).
   garbage: "#c8ff50",
   garbageLight: "#b8ffb0",   // low-mass Hunter scrap: a paler, mintier tint so it reads as "lighter / easier to tow" (F4)
   chain: "#8aa0ff",
@@ -5128,6 +5132,12 @@ function drawText(str, x, y, size, color = COLOR.text, align = "center") {
   ctx.shadowBlur = 0;
 }
 
+// CS013 P2 (§2.2): the shared control-hint footer look — larger + higher-contrast than the old
+// literal size-12/COLOR.dim footers. Centered, like every menu footer.
+function drawMenuHint(text, cx, y) {
+  drawText(text, cx, y, MENU_HINT_SIZE, COLOR.menuIdle, "center");
+}
+
 // CS011 P2: Dan's on-screen caption — the voice channel's visible echo (settings.captions), centered near
 // the viewport bottom. In-play only (never over a menu / gameover / the title). Independent of Capture's H
 // HUD toggle by design (accessibility text, not a HUD readout) — a SIBLING of drawHUD() in draw(), not
@@ -5180,9 +5190,9 @@ function drawRootMenu() {
   const { y } = menuPanel(360, 300, game.state === "playing" ? "PAUSED" : "MENU");
   items.forEach((it, i) => {
     const sel = i === game.menu.index;
-    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, sel ? COLOR.text : COLOR.dim);
+    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, sel ? COLOR.text : COLOR.menuIdle);
   });
-  drawText("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 272, 12, COLOR.dim);
+  drawMenuHint("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 272);
 }
 
 // CS010 P4 (§9/§10a): now a pure nav list (Sound / Music, Controls, Achievements, High Scores,
@@ -5193,9 +5203,9 @@ function drawOptionsMenu() {
   const m = game.menu;
   MENU_OPTIONS.forEach((label, i) => {
     const sel = m.index === i;
-    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, y + 118 + i * 42, 22, sel ? COLOR.text : COLOR.dim);
+    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, y + 118 + i * 42, 22, sel ? COLOR.text : COLOR.menuIdle);
   });
-  drawText("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 400, 12, COLOR.dim);
+  drawMenuHint("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 400);
 }
 
 // Sound / Music sub-screen (CS010 P4, §9) — a relocation of the three volume sliders + Music Track
@@ -5208,7 +5218,7 @@ function drawSound() {
   SOUND_ROWS.forEach((label, i) => {
     if (label === "Back") return;
     const sel = m.index === i;
-    drawText(label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+    drawText(label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
     const vi = VOL_LABELS.indexOf(label);
     if (vi >= 0) { // volume slider
       const bx = x + 270, bw = 190, bh = 12, by = cy - 3;
@@ -5216,7 +5226,7 @@ function drawSound() {
       ctx.strokeRect(bx, by, bw, bh);
       ctx.fillStyle = sel ? COLOR.shield : COLOR.dim;
       ctx.fillRect(bx + 1, by + 1, (bw - 2) * AudioSys.vol[VOL_CATS[vi]], bh - 2);
-      drawText(Math.round(AudioSys.vol[VOL_CATS[vi]] * 100) + "%", bx + bw + 44, cy + 6, 16, sel ? COLOR.text : COLOR.dim, "right");
+      drawText(Math.round(AudioSys.vol[VOL_CATS[vi]] * 100) + "%", bx + bw + 44, cy + 6, 16, sel ? COLOR.text : COLOR.menuIdle, "right");
       if (sel) { drawText("◄", bx - 16, cy + 7, 16, COLOR.text); drawText("►", bx + bw + 16, cy + 7, 16, COLOR.text); }
     } else { // value-column rows — a single dispatch mirroring drawDifficulty's toggle layout
       const ox = x + 270;
@@ -5224,15 +5234,15 @@ function drawSound() {
       if (label === "Music Track")   val = MUSIC_TRACK_LABELS[settings.musicTrack];
       else if (label === "Voice")    val = VOICE_STYLE_LABELS[settings.voiceStyle];
       else if (label === "Captions") val = settings.captions ? "On" : "Off";
-      drawText(val, ox, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+      drawText(val, ox, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
       if (sel) { drawText("◄", ox - 20, cy + 7, 16, COLOR.text); drawText("►", ox + 150, cy + 7, 16, COLOR.text); }
     }
     cy += 46;
   });
   cy += 14;
   const backSel = m.index === SOUND_ROWS.indexOf("Back");
-  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.dim);
-  drawText("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 582, 12, COLOR.dim);
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.menuIdle);
+  drawMenuHint("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 582);
 }
 
 // Difficulty screen renderer (v3.0 P5): two two-option toggle rows + Back. The active side of each
@@ -5251,7 +5261,7 @@ function drawDifficulty() {
   ];
   rows.forEach((r, i) => {
     const sel = m.index === i, cy = y + 122 + i * 58;
-    drawText(r.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.dim, "left");
+    drawText(r.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
     const ox = x + 360;
     drawText(r.left,  ox,       cy + 6, 18, r.rightActive ? COLOR.dim : COLOR.text, "left");
     drawText("|",     ox + 74,  cy + 6, 18, COLOR.dim, "left");
@@ -5265,9 +5275,9 @@ function drawDifficulty() {
     "Auto-raises shield at critical hull. -500 points per blocked hit.",
   ];
   const backSel = m.index === 3;
-  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 320, 22, backSel ? COLOR.text : COLOR.dim);
-  drawText(m.index < HELP.length ? HELP[m.index] : "", VIEW_W / 2, y + 364, 12, COLOR.dim);
-  drawText("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 394, 12, COLOR.dim);
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 320, 22, backSel ? COLOR.text : COLOR.menuIdle);
+  if (m.index < HELP.length) drawMenuHint(HELP[m.index], VIEW_W / 2, y + 364);
+  drawMenuHint("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 394);
 }
 
 function drawControlsMenu() {
@@ -5279,7 +5289,7 @@ function drawControlsMenu() {
   REBINDABLE.forEach((name, r) => {
     const ry = y + 122 + r * 42;
     const rowSel = m.row === r;
-    drawText(bindings[name].label, x + 36, ry, 17, rowSel ? COLOR.text : COLOR.dim, "left");
+    drawText(bindings[name].label, x + 36, ry, 17, rowSel ? COLOR.text : COLOR.menuIdle, "left");
     const capKb = m.rebinding && m.rebinding.action === name && m.rebinding.device === "key";
     const capGp = m.rebinding && m.rebinding.action === name && m.rebinding.device === "pad";
     drawBindCell(x + 250, ry, keyLabel(bindings[name]), rowSel && m.col === 0, capKb);
@@ -5290,9 +5300,9 @@ function drawControlsMenu() {
   const turnRow = REBINDABLE.length;
   drawTurnScaleRow(x, y + 122 + turnRow * 42, m.row === turnRow);
   const dRow = REBINDABLE.length + 1, bRow = dRow + 1;
-  drawText((m.row === dRow ? "▶ " : "   ") + "Return to Defaults", VIEW_W / 2, y + 122 + dRow * 42 + 26, 20, m.row === dRow ? COLOR.text : COLOR.dim);
-  drawText((m.row === bRow ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 122 + bRow * 42 + 26, 20, m.row === bRow ? COLOR.text : COLOR.dim);
-  drawText("↑↓ row    ◄► column / rotation    ENTER / A rebind    ESC / B back", VIEW_W / 2, y + 494, 12, COLOR.dim);
+  drawText((m.row === dRow ? "▶ " : "   ") + "Return to Defaults", VIEW_W / 2, y + 122 + dRow * 42 + 26, 20, m.row === dRow ? COLOR.text : COLOR.menuIdle);
+  drawText((m.row === bRow ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 122 + bRow * 42 + 26, 20, m.row === bRow ? COLOR.text : COLOR.menuIdle);
+  drawMenuHint("↑↓ row    ◄► column / rotation    ENTER / A rebind    ESC / B back", VIEW_W / 2, y + 494);
 }
 
 // One slider row for the ship-rotation preference on the Controls screen (§10b). Readout is a
@@ -5301,7 +5311,7 @@ function drawControlsMenu() {
 // when the value sits exactly on 100%. Menu rects are exempt from the HUD no-fills rule — this mirrors
 // the volume slider in drawOptionsMenu.
 function drawTurnScaleRow(x, ry, sel) {
-  drawText("Ship Rotation", x + 36, ry, 17, sel ? COLOR.text : COLOR.dim, "left");
+  drawText("Ship Rotation", x + 36, ry, 17, sel ? COLOR.text : COLOR.menuIdle, "left");
   const bx = x + 250, bw = 200, bh = 12, by = ry - 11;
   const span = SHIP_TURN_SCALE_MAX - SHIP_TURN_SCALE_MIN;
   const frac = (settings.shipTurnScale - SHIP_TURN_SCALE_MIN) / span;
@@ -5314,7 +5324,7 @@ function drawTurnScaleRow(x, ry, sel) {
   ctx.strokeStyle = COLOR.ach; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(tx, by - 4); ctx.lineTo(tx, by + bh + 4); ctx.stroke();
   const pct = Math.round(settings.shipTurnScale * 100) + "%";
-  drawText(atDefault ? pct + "  (default)" : pct, bx + bw + 30, ry, 16, atDefault ? COLOR.ach : (sel ? COLOR.text : COLOR.dim), "left");
+  drawText(atDefault ? pct + "  (default)" : pct, bx + bw + 30, ry, 16, atDefault ? COLOR.ach : (sel ? COLOR.text : COLOR.menuIdle), "left");
   if (sel) { drawText("◄", bx - 20, ry + 1, 16, COLOR.text); drawText("►", bx + bw + 8, ry + 1, 16, COLOR.text); }
 }
 
@@ -5325,7 +5335,7 @@ function drawBindCell(cx, cy, text, sel, capturing) {
     ctx.strokeRect(cx - 6, cy - 15, 200, 24);
   }
   const label = capturing ? "press…" : (text || "—");
-  drawText(label, cx, cy, 15, capturing ? COLOR.garbage : (sel ? COLOR.text : COLOR.dim), "left");
+  drawText(label, cx, cy, 15, capturing ? COLOR.garbage : (sel ? COLOR.text : COLOR.menuIdle), "left");
 }
 
 // Format the current bindings for display.
