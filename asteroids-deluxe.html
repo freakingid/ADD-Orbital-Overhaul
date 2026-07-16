@@ -2245,6 +2245,8 @@ function firstPressedButton() {
 const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];             // paused mid-game
 const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover (CS013 P1)
 const MENU_HINT_SIZE = 16;  // CS013 P2: control-hint footer text size (drawMenuHint) — playtest knob
+const ACH_SCALE = 1.5;      // CS013 P3: Achievements-viewer text-size multiplier (readability pass) — playtest knob
+const ACH_SCROLL_STEP = 60; // CS013 P3: px per up/down scroll press in the Achievements viewer, ~one row — playtest knob
 function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
@@ -2323,7 +2325,7 @@ function quitToTitle() {
 }
 function gotoScreen(s, index) {
   game.menu.screen = s;
-  game.menu.index = index || 0; game.menu.row = 0; game.menu.col = 0;
+  game.menu.index = index || 0; game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
   AudioSys.ui(true);
 }
 
@@ -2435,6 +2437,12 @@ function menuSound(a) {
 // of confirm/back/pause exits back to Options (cursor left on the "Achievements" row).
 function menuAchievements(a) {
   if (a === "pause") closePause();
+  // CS013 P3: up/down drive the continuous vertical scroll (FLAG-2c) — the viewer has no row
+  // selection to conflict with. Keyboard and gamepad d-pad/L-stick both normalize to "up"/"down"
+  // through menuInput, so this covers both inputs uniformly. Clamped against the SAME achMaxScroll()
+  // drawAchievements() renders with, so input and render never disagree about the scroll ceiling.
+  else if (a === "up")   game.menu.scroll = Math.max(0, game.menu.scroll - ACH_SCROLL_STEP);
+  else if (a === "down") game.menu.scroll = Math.min(achMaxScroll(), game.menu.scroll + ACH_SCROLL_STEP);
   // CS012 P4: Achievements now lives ONLY under Options (reached the same way from title/gameover AND
   // from pause), so Back always returns to Options with the cursor on "Achievements" — the old
   // achReturn tracker (which distinguished a direct system-root entry) is retired.
@@ -3514,7 +3522,7 @@ const game = {
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
   // index = cursor for root/options; row/col = cursor for the controls grid;
   // rebinding = { action, device } while capturing a new binding, else null.
-  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null },
+  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null, scroll: 0 }, // scroll: CS013 P3, Achievements-viewer vertical offset
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -5357,27 +5365,72 @@ function axisLabel(a) {
   return "Axis " + a.index;
 }
 
-// ---------- Achievements viewer + unlock toasts (F9; 3-column since v3.0 P8) ----------
+// ---------- Achievements viewer + unlock toasts (F9; 3-column since v3.0 P8; ×1.5 + scroll CS013 P3) ----------
 // Read-only list reachable from Options -> Achievements. Three columns: this week's 5 (left) and the
 // lifetime set split across two columns (P8 grew it 12 -> 19, too many for one column), each row with
 // unlock status + a progress readout. Screen-fixed, drawn by drawMenu. Layout widths/split are a pure
 // look-call tunable (colW / xL / xM / xR / the ceil-half split) — see the P8 playtest ask in STATUS.
+//
+// CS013 P3: geometry hoisted to top-level consts (rather than locals inside drawAchievements) so
+// achMaxScroll() — called from menuAchievements(), which has no drawing context — derives the exact
+// same numbers drawAchievements() renders with. Panel position is deterministic (VIEW_W/H and the
+// panel's own w/h are fixed), so this is safe without re-invoking menuPanel() (which has fill/stroke/
+// text side effects and can't be called twice per frame).
+const ACH_PANEL_W = 1200, ACH_PANEL_H = 660;
+const ACH_PANEL_Y = (VIEW_H - ACH_PANEL_H) / 2;
+const ACH_ROW0_Y = ACH_PANEL_Y + 130;                // first row baseline (unchanged from pre-P3)
+const ACH_ROW_STEP = 40 * ACH_SCALE;                 // row-to-row baseline spacing (was a bare 40 pre-P3)
+const ACH_ROW_CLIP_TOP = ACH_ROW0_Y - 16;             // headroom above row 0, below the column headers (baseline y+108)
+const ACH_ROW_CLIP_BOTTOM = ACH_PANEL_Y + 620;        // headroom above the footer (drawn at ACH_PANEL_Y+644)
+const ACH_ROW_VISIBLE_H = ACH_ROW_CLIP_BOTTOM - ACH_ROW_CLIP_TOP;
+
+// Derives maxScroll from the ACTUAL row counts (not a hardcoded pixel total), so a future LIFETIME/
+// weekly resize keeps working — the "tallest column" is whichever of the weekly or split-lifetime
+// columns has more rows (today: 10 lifetime rows per column vs. 5 weekly). Shared by drawAchievements()
+// (render + clamp) and menuAchievements() (input clamp) so the two can never disagree about the ceiling.
+function achMaxScroll() {
+  const half = Math.ceil(Achievements.LIFETIME.length / 2);
+  const rowsTall = Math.max(Achievements.activeWeekly().length, half);
+  const contentH = (rowsTall - 1) * ACH_ROW_STEP + 22 + 10 * ACH_SCALE; // last row's baseline -> its description's bottom
+  return Math.max(0, contentH - ACH_ROW_VISIBLE_H);
+}
+
 function drawAchievements() {
   ctx.fillStyle = "rgba(4,10,20,0.88)"; // v3.3 P1: matches drawMenu's raised backdrop dim (look-call)
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  const { x, y } = menuPanel(1200, 660, "ACHIEVEMENTS");
-  drawText("WEEKLY SET " + Achievements.weekKey + " — resets each calendar week", VIEW_W / 2, y + 74, 12, COLOR.dim);
-  const colW = 350, xL = x + 30, xM = x + 430, xR = x + 820, ry0 = y + 130, step = 40;
-  drawText("THIS WEEK",        xL, y + 108, 15, COLOR.satellite, "left");
-  drawText("LIFETIME",         xM, y + 108, 15, COLOR.satellite, "left");
-  drawText("LIFETIME (cont.)", xR, y + 108, 15, COLOR.satellite, "left");
-  Achievements.activeWeekly().forEach((a, i) => drawAchRow(a, xL, ry0 + i * step, colW));
+  const { x, y } = menuPanel(ACH_PANEL_W, ACH_PANEL_H, "ACHIEVEMENTS");
+  drawText("WEEKLY SET " + Achievements.weekKey + " — resets each calendar week", VIEW_W / 2, y + 74, 12 * ACH_SCALE, COLOR.dim);
+  const colW = 350, xL = x + 30, xM = x + 430, xR = x + 820, ry0 = ACH_ROW0_Y, step = ACH_ROW_STEP;
+  drawText("THIS WEEK",        xL, y + 108, 15 * ACH_SCALE, COLOR.satellite, "left");
+  drawText("LIFETIME",         xM, y + 108, 15 * ACH_SCALE, COLOR.satellite, "left");
+  drawText("LIFETIME (cont.)", xR, y + 108, 15 * ACH_SCALE, COLOR.satellite, "left");
+
+  // CS013 P3 (§2.3.3): clamp against the same ceiling menuAchievements() uses, then clip the row
+  // region so scrolled rows can never spill past the panel or under the header/footer (FLAG-2c:
+  // continuous scroll, all three columns move together — no per-row selection to conflict with).
+  const maxScroll = achMaxScroll();
+  game.menu.scroll = Math.max(0, Math.min(maxScroll, game.menu.scroll));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, ACH_ROW_CLIP_TOP, ACH_PANEL_W, ACH_ROW_VISIBLE_H);
+  ctx.clip(); // not a fill — GDD §3.2's no-fills rule gains no new exception here
+  Achievements.activeWeekly().forEach((a, i) => drawAchRow(a, xL, ry0 + i * step - game.menu.scroll, colW));
   const half = Math.ceil(Achievements.LIFETIME.length / 2);   // first half -> middle column, rest -> right
   Achievements.LIFETIME.forEach((a, i) => {
     const cx = i < half ? xM : xR, row = i < half ? i : i - half;
-    drawAchRow(a, cx, ry0 + row * step, colW);
+    drawAchRow(a, cx, ry0 + row * step - game.menu.scroll, colW);
   });
-  drawText("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 644, 12, COLOR.dim);
+  ctx.restore();
+
+  // Scroll affordance (FLAG-2c): shown only while there's anything to scroll; ▲ additionally requires
+  // scroll > 0 (nothing above yet at the top) and ▼ additionally requires scroll < maxScroll (nothing
+  // below once fully scrolled) — both cues drawn OUTSIDE the clip, like the header/footer chrome.
+  if (maxScroll > 0) {
+    if (game.menu.scroll > 0)         drawText("▲", VIEW_W / 2, ACH_ROW_CLIP_TOP - 4, 16, COLOR.menuIdle, "center");
+    if (game.menu.scroll < maxScroll) drawText("▼", VIEW_W / 2, ACH_ROW_CLIP_BOTTOM + 10, 16, COLOR.menuIdle, "center");
+  }
+
+  drawMenuHint("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 644);
 }
 
 // Thousands-grouped integer, locale-independent (deterministic across environments/tests).
@@ -5386,19 +5439,22 @@ function fmtCommas(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); 
 // One achievement row: name + status on the top line, description below.
 // Tiered lifetime rows show a tier badge + progress-to-next in the tier's colour (v3.0 P7);
 // single-goal rows keep the F9 look — a ✓ when earned (gold) or a cur/goal readout when not.
+// CS013 P3: sizes scaled by ACH_SCALE; description offset ry+15 -> ry+22; description and
+// locked/incomplete progress lifted dim -> menuIdle for contrast (unlocked stays ach gold, tier tints
+// unchanged).
 function drawAchRow(ach, x, ry, w) {
   if (ach.tiers) {
     const idx = Achievements.tierIndex(ach);
     const col = idx >= 0 ? TIER_COLOR[idx] : COLOR.text;   // badge/name in the current tier's tint
-    drawText(ach.name, x, ry, 15, col, "left");
-    drawText(Achievements.tierStatusText(ach), x + w, ry, 13, idx >= 0 ? col : COLOR.dim, "right");
-    drawText(ach.desc, x, ry + 15, 10, COLOR.dim, "left");
+    drawText(ach.name, x, ry, 15 * ACH_SCALE, col, "left");
+    drawText(Achievements.tierStatusText(ach), x + w, ry, 13 * ACH_SCALE, idx >= 0 ? col : COLOR.menuIdle, "right");
+    drawText(ach.desc, x, ry + 22, 10 * ACH_SCALE, COLOR.menuIdle, "left");
     return;
   }
   const done = Achievements.isUnlocked(ach);
-  drawText(ach.name, x, ry, 15, done ? COLOR.ach : COLOR.text, "left");
-  drawText(done ? "✓" : Achievements.progressText(ach), x + w, ry, 14, done ? COLOR.ach : COLOR.dim, "right");
-  drawText(ach.desc, x, ry + 15, 10, COLOR.dim, "left");
+  drawText(ach.name, x, ry, 15 * ACH_SCALE, done ? COLOR.ach : COLOR.text, "left");
+  drawText(done ? "✓" : Achievements.progressText(ach), x + w, ry, 14 * ACH_SCALE, done ? COLOR.ach : COLOR.menuIdle, "right");
+  drawText(ach.desc, x, ry + 22, 10 * ACH_SCALE, COLOR.menuIdle, "left");
 }
 
 // ---------- High Scores rendering (v3.6 P6) ----------
