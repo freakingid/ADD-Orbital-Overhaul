@@ -2235,13 +2235,16 @@ function firstPressedButton() {
 // into menuInput(action); the rendering lives near draw() (drawMenu). Gameplay stays frozen the
 // whole time (update() early-returns on paused), so menu input can never move the ship.
 
-// The root ("PAUSED") screen is the paused-mid-game menu only (game.state "playing"). CS012 P4
-// (FORK-CS012-C → a) retired the separate system-menu root (the old MENU_ROOT_SYS =
-// ["Options","Achievements","Back"]): from title/gameover, O/Start/B now open OPTIONS directly
-// (openPause routes there off game.state), so Options is the sole hub and rootItems() has only the
-// one layout to return. update() skips the sim outside "playing", so game.paused is safe in any state.
-const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];      // paused mid-game — the only root layout now
-function rootItems() { return MENU_ROOT_PLAY; }
+// The root ("PAUSED"/"MENU") screen is context-aware. CS012 P4 (FORK-CS012-C → a) retired the
+// separate system-menu root (the old MENU_ROOT_SYS = ["Options","Achievements","Back"]): from
+// title, O/Start/B open OPTIONS directly (openPause routes there off game.state), so title has no
+// root layout at all. CS013 P1 (FORK-CS013-A → a) restores a root for gameover — a session-end state
+// with its own session verbs (Play Again / Quit to Title) — distinct from the paused-mid-game root
+// (Continue / Quit). rootItems() picks the layout off game.state; update() skips the sim outside
+// "playing", so game.paused is safe in any state.
+const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];             // paused mid-game
+const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover (CS013 P1)
+function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
 // themselves. CS010 P4 (§9/§10a): the three volume sliders + Music Track moved OFF this screen onto
@@ -2287,9 +2290,12 @@ function menuActive() { return game.paused; } // paused <=> a pause-menu screen 
 // --- Open / close / quit ---
 function openPause() {
   game.paused = true;
-  // CS012 P4 (FORK-CS012-C → a): paused mid-game opens the root menu; from title/gameover, O/Start/B
-  // open OPTIONS directly (no separate system-menu root anymore) — openPause routes off game.state.
-  game.menu.screen = game.state === "playing" ? "root" : "options"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
+  // CS012 P4 (FORK-CS012-C → a): paused mid-game opens the root menu; from title, O/Start/B open
+  // OPTIONS directly (no separate system-menu root) — openPause routes off game.state. CS013 P1
+  // (FORK-CS013-A → a): gameover is a session-end state with real session verbs (Play Again/Quit to
+  // Title), so it now ALSO opens the root — a context-aware one, see rootItems(). Title alone has no
+  // session verbs and keeps going straight to Options.
+  game.menu.screen = (game.state === "playing" || game.state === "gameover") ? "root" : "options"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
   game.menu.rebinding = null;
   resetMenuNav();          // don't let a direction held at pause-time fire a phantom move
   AudioSys.thrust(false);  // kill the thrust loop immediately (update() would too, next frame)
@@ -2350,11 +2356,15 @@ function menuRoot(a) {
   if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
   else if (a === "confirm") {
-    // CS012 P4: the root is the paused-mid-game menu only — Continue / Options / Quit.
+    // CS013 P1: the root is context-aware (see rootItems()) — paused mid-game gives
+    // Continue/Options/Quit, gameover gives Play Again/Options/Quit to Title. Dispatch by label
+    // (menuOptions precedent) so the two layouts share one handler without an index branch.
     const label = items[m.index];
-    if (label === "Continue")     closePause();
-    else if (label === "Options") gotoScreen("options");
-    else if (label === "Quit")    quitToTitle();
+    if (label === "Continue")          closePause();
+    else if (label === "Play Again")   startGame();
+    else if (label === "Options")      gotoScreen("options");
+    else if (label === "Quit")         quitToTitle();
+    else if (label === "Quit to Title") quitToTitle();
   }
   else if (a === "back" || a === "pause") closePause();
 }
@@ -2372,11 +2382,12 @@ function menuOptions(a) {
     else if (label === "Achievements") gotoScreen("achievements"); // viewer (F9)
     else if (label === "High Scores") gotoScreen("highscores"); // CS010 P4 §8b: nested under Options
     else if (label === "Difficulty") gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
-    // CS012 P4: Back is context-aware — paused mid-game returns to the root menu (cursor on Options);
-    // from title/gameover, where Options is the top-level dialog, it closes the overlay entirely.
-    else if (label === "Back") { if (game.state === "playing") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
+    // CS012 P4 / CS013 P1: Back is context-aware — paused mid-game OR gameover (both have a root)
+    // return to it (cursor on Options); from title, where Options is the top-level dialog, it closes
+    // the overlay entirely.
+    else if (label === "Back") { if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
   }
-  else if (a === "back") { if (game.state === "playing") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
+  else if (a === "back") { if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
   else if (a === "pause") closePause();
 }
 
@@ -5160,6 +5171,10 @@ function menuPanel(w, h, title) {
   return { x, y };
 }
 
+// CS013 P1: the "MENU" branch of the title ternary below, dead since CS012 P4 made the root
+// play-only, is reachable again — gameover now opens this same root (rootItems() gives it the
+// Play Again/Options/Quit to Title layout). Both root layouts are 3 items, so the 360x300 panel's
+// row math (fixed 46px step) needs no resize for the gameover case.
 function drawRootMenu() {
   const items = rootItems();
   const { y } = menuPanel(360, 300, game.state === "playing" ? "PAUSED" : "MENU");
@@ -5626,7 +5641,10 @@ function draw() {
       drawScoreTable(VIEW_W/2, VIEW_H/2 + 60, game.lastScoreId);
       if (Math.floor(performance.now() / 600) % 2 === 0)
         drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 280, 22);
-      drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 312, 14, COLOR.ach);
+      // CS013 P1: gameover now opens a root (Play Again/Options/Quit to Title), not Options directly —
+      // the hint reads "MENU" here, distinct from the title's still-direct-to-Options "OPTIONS /
+      // ACHIEVEMENTS" copy at L5559 (unchanged, do not conflate the two).
+      drawText("MENU: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 312, 14, COLOR.ach);
     }
   }
 

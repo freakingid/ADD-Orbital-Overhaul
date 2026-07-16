@@ -11,9 +11,14 @@
 //  (A) node --check on the extracted <script>; the retired identifiers are gone from source
 //      (no `const MENU_ROOT_SYS`, no `.achReturn` read/write, no `achReturn:` field).
 //  (B) rootItems() returns only [Continue, Options, Quit] — never an Achievements/Back system row —
-//      in any game.state.
+//      for "playing" and "title" (gameover's own root layout is CS013 P1's addition, tested in
+//      test-cs013-p1.js, not here — this file only pins the pre-CS013 CONTINUE/OPTIONS/QUIT shape).
 //  (C) title: openPause() lands on "options" directly (not "root"); Back closes the overlay to title.
-//  (D) gameover: same — openPause() -> "options"; Back closes the overlay to gameover.
+//  (D) gameover: openPause() now lands on "root" (CS013 P1, FORK-CS013-A -> a — superseded this
+//      file's original "-> options directly" pin); Back from the freshly-opened root closes the
+//      overlay. The full gameover-root contract (Play Again/Quit to Title/Options round-trip) lives
+//      in test-cs013-p1.js — this section only confirms CS012 P4's own back-path plumbing isn't
+//      broken by CS013 P1's routing change.
 //  (E) playing: openPause() -> "root" (Continue/Options/Quit); Options -> "options"; Back -> "root"
 //      (NOT closePause — still paused).
 //  (F) Achievements is reached ONLY via Options (from BOTH title and pause) and its Back always returns
@@ -104,18 +109,20 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(!/achReturn\s*:/.test(currentSrc), "A: game.menu literal no longer carries an achReturn field");
 })();
 
-// ================= (B) rootItems() is Continue/Options/Quit only, in any state =====================
+// ================= (B) rootItems() is Continue/Options/Quit for playing/title =====================
 (function () {
-  console.log("(B) rootItems() never returns an Achievements/Back system row");
+  console.log("(B) rootItems() never returns an Achievements/Back system row (playing/title)");
   const A = buildInstance();
   A.startGame();
-  for (const st of ["playing", "title", "gameover"]) {
+  // CS013 P1 gave "gameover" its own root layout (MENU_ROOT_OVER) — deliberately NOT checked here,
+  // see test-cs013-p1.js. This section still pins the CS012 P4 shape for the two states it governs.
+  for (const st of ["playing", "title"]) {
     A.game.state = st;
     assert(eqJSON(A.rootItems(), ["Continue", "Options", "Quit"]), `B: rootItems() === [Continue,Options,Quit] in state "${st}"`);
     assert(!A.rootItems().includes("Achievements") && !A.rootItems().includes("Back"),
       `B: rootItems() has no Achievements/Back row in state "${st}"`);
   }
-  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Options", "Quit"]), "B: MENU_ROOT_PLAY is the sole root layout");
+  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Options", "Quit"]), "B: MENU_ROOT_PLAY is the playing-state root layout");
 })();
 
 // ================= (C) title: O -> Options directly; Back closes the overlay =====================
@@ -131,15 +138,18 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(A.game.state === "title", "C: closing returns to the underlying title screen");
 })();
 
-// ================= (D) gameover: O -> Options directly; Back closes the overlay =====================
+// ================= (D) gameover: openPause() -> root (CS013 P1); Back from it closes =====================
 (function () {
-  console.log("(D) gameover -> openPause() lands on Options; Back closes to gameover");
+  console.log("(D) gameover -> openPause() lands on \"root\" (CS013 P1 superseded the old -> Options-direct); Back closes to gameover");
   const A = buildInstance();
   A.startGame(); A.game.state = "gameover"; A.game.paused = false;
   A.openPause();
-  assert(A.game.menu.screen === "options", "D: openPause from gameover lands on \"options\" directly");
+  // CS013 P1 (FORK-CS013-A -> a): gameover now opens its own context-aware root, not Options directly.
+  // Full coverage of that root (Play Again/Quit to Title/Options round-trip) is test-cs013-p1.js's job;
+  // this section only re-confirms CS012 P4's back-path plumbing survives the routing change.
+  assert(A.game.menu.screen === "root", "D: openPause from gameover lands on \"root\" (CS013 P1)");
   A.menuInput("back");
-  assert(A.game.paused === false && A.game.menu.screen === null, "D: Back closes the overlay");
+  assert(A.game.paused === false && A.game.menu.screen === null, "D: Back from the freshly-opened root closes the overlay");
   assert(A.game.state === "gameover", "D: closing returns to the underlying gameover screen");
 })();
 

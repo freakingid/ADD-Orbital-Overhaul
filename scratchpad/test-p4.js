@@ -144,10 +144,13 @@ assert(game.state === "title", "C: opening Options did NOT also start a game");
 menuInput("back");
 assert(!game.paused && game.menu.screen === null && game.state === "title", "C: Back closes overlay -> underlying title");
 
-// gameover behaves the same
+// CS013 P1 (FORK-CS013-A → a): gameover no longer behaves the same as title — it now opens its OWN
+// context-aware root (Play Again/Options/Quit to Title), not Options directly. Full root coverage
+// (Play Again/Quit to Title/the Options round-trip) lives in test-cs013-p1.js; this just keeps O's
+// basic open/close cycle correct for gameover.
 game.state = "gameover"; game.paused = false; game.menu.screen = null; clearKeys();
 keydown("o");
-assert(game.paused && game.menu.screen === "options", "C: O on gameover -> Options directly");
+assert(game.paused && game.menu.screen === "root", "C: O on gameover -> root (CS013 P1, was Options directly)");
 menuInput("back");
 assert(!game.paused && game.state === "gameover", "C: Back -> underlying gameover");
 
@@ -161,10 +164,13 @@ assert(game.paused && game.menu.screen === "options", "D: B on title -> Options 
 // B again -> back (Options is top-level from title/gameover, so its Back closes the overlay)
 padPress(GP.B);
 assert(!game.paused && game.state === "title", "D: B while menu open -> back/close");
-// CS012 P4: Achievements is reached via Options now; from there B backs to Options (cursor on Achievements)
+// CS013 P1: B on gameover now opens the gameover root (not Options directly) — Achievements is
+// still reached via Options -> Achievements, one level deeper than before this phase.
 game.state = "gameover"; game.paused = false; game.menu.screen = null; noPad();
 padPress(GP.B);
-assert(game.menu.screen === "options", "D: B on gameover -> Options directly");
+assert(game.menu.screen === "root", "D: B on gameover -> root (CS013 P1, was Options directly)");
+game.menu.index = rootItems().indexOf("Options"); menuInput("confirm");
+assert(game.menu.screen === "options", "D: root -> Options");
 game.menu.index = MENU_OPTIONS.indexOf("Achievements"); menuInput("confirm");
 assert(game.menu.screen === "achievements", "D: Options -> Achievements");
 menuInput("back");
