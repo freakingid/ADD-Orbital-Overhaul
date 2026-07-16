@@ -524,6 +524,11 @@ const ACH_WEEKLY_SHOWN = 5;    // weekly achievements active per calendar week (
 const ACH_LINEAGE_FULL = 13;   // Hunter kills in one full lineage: 1 large + 3 medium + 9 small (Hunter's Bane)
 const ACH_SAVE_EVERY   = 30;   // sec between periodic lifetime-progress saves (bounds localStorage writes)
 
+// CS014 P0: onboarding hints (HintSys, built P1). TUT_IDS is the CANONICAL hint id list AND the
+// display-priority order (index = priority, danger/loop-critical first) — P1's HintSys.update() consumes
+// both meanings. Single source of truth; never redeclared elsewhere.
+const TUT_IDS = ["shield", "hook", "dock", "clump", "birth", "tow", "thrust", "decay"];
+
 // ---------- Canvas / scaling ----------
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -2275,6 +2280,7 @@ const settings = {
   voiceStyle:      "comms", // CS011: selected Dan voice — "off" or a VOICE_STYLE_VALUES id. NOT persisted yet (later phase).
   captions:        true,    // CS011: show on-screen captions of Dan's lines. NOT persisted yet (later phase).
   autoShield:      false,   // CS012 P5: auto-raise the shield on a hit at critical hull (costs energy + AUTO_SHIELD_SCORE_PENALTY). Off by default.
+  tutSeen:         Object.fromEntries(TUT_IDS.map(id => [id, false])), // CS014 P0: per-hint onboarding latch, built P1 (HintSys). All unseen by default.
 };
 
 // CS011: Dan speaks only when a real voice style is selected. voiceStyle "off" mutes him without disturbing
@@ -2534,6 +2540,8 @@ function capturePadRebind(btn) {
 // rotation-speed slider return to 100% MANUALLY, not via this button. Do NOT "fix" it to also reset
 // shipTurnScale; that would reverse an explicit design call. (Counter-intuitive because the slider row
 // lives on this same screen, hence this comment.)
+// CS014 P0: same reasoning extends to settings.tutSeen — this resets BINDINGS only, never preferences
+// or onboarding progress. The "Replay Hints" reset path (P3) is separate and deliberately not this button.
 function returnToDefaults() {
   for (const name of REBINDABLE) {
     const d = DEFAULT_BINDINGS[name];
@@ -2570,7 +2578,8 @@ function saveSettings() {
       musicTrack: settings.musicTrack,                                            // v3.4 P6 (additive)
       shipTurnScale: settings.shipTurnScale,                                      // CS010 §10b (additive)
       voiceStyle: settings.voiceStyle, captions: settings.captions,               // CS011 P3 (additive)
-      autoShield: settings.autoShield };                                          // CS012 P5 (additive)
+      autoShield: settings.autoShield,                                            // CS012 P5 (additive)
+      tutSeen: settings.tutSeen };                                                // CS014 P0 (additive)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -2622,6 +2631,13 @@ function loadSettings() {
     if (typeof data.captions === "boolean") settings.captions = data.captions;
     // CS012 P5: auto-shield is an additive boolean — missing/non-boolean leaves the runtime default (false) in place.
     if (typeof data.autoShield === "boolean") settings.autoShield = data.autoShield;
+    // CS014 P0: onboarding-hint latches are additive — accept only a plain object (not array/null);
+    // copy only known hint ids (TUT_IDS), coercing each present value to boolean. An id absent from the
+    // saved data, or a corrupt/non-object tutSeen entirely, leaves that flag at its false default — a
+    // corrupt tutSeen must never disturb any other field's load.
+    if (data.tutSeen && typeof data.tutSeen === "object" && !Array.isArray(data.tutSeen)) {
+      for (const id of TUT_IDS) if (id in data.tutSeen) settings.tutSeen[id] = !!data.tutSeen[id];
+    }
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
