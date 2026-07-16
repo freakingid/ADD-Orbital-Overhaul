@@ -16,8 +16,11 @@
 //      subtracts AUTO_SHIELD_SCORE_PENALTY (clamped >= 0) WITHOUT touching game.nextRepair, pushes a "-500" floater.
 //  (D) Rate-limit: a second hit the SAME frame is a shieldOn no-op; with invuln active (i-frame), a hit is
 //      absorbed with NO extra auto-save (no energy/score/floater change).
-//  (E) Energy self-limit: back-to-back saves exhaust energy (recharge 0.12/s < cost 0.22/save); once
-//      energy < SHIELD_HIT_COST, hits land normally again.
+//  (E) Energy self-limit: this loop never calls Ship.update(), so no passive recharge was ever modeled
+//      here even pre-CS013 — it exercises the no-recharge floor (exactly 4 saves from a full pool),
+//      which CS013 P4's AUTO_SHIELD_REGEN_PAUSE now guarantees is the REAL in-game worst case too. The
+//      recharge-timing-sensitive assertions (lock arm/tick/expiry, halved save count under real dt)
+//      live in test-cs013-p4.js, which drives the real Ship.update().
 //  (F) autoShield ON but hull ABOVE the threshold => normal full damage (no auto-save). Dead ship => no auto-save.
 //  (G) Persistence: autoShield round-trips through afd_settings_v1 (save -> load); missing/non-boolean => false; default false.
 //  (H) DIFFICULTY_ROWS includes "autoshield"; menuDifficulty toggles it both directions and saves each time.
@@ -178,11 +181,13 @@ function armShip(A, hp) {
   let saves = 0, landed = false;
   for (let i = 0; i < 20; i++) {
     s.shieldOn = false; s.invuln = 0; s.hp = A.LOW_HP_THRESHOLD - 10; // simulate the i-frame lapsing, hull still critical
+    // No Ship.update() in this loop => no passive recharge ever ran here, pre- or post-CS013 — this is
+    // the no-recharge floor (4 saves from a full pool), which AUTO_SHIELD_REGEN_PAUSE now guarantees.
     const hpBefore = s.hp, dealt = A.damageShip(30, 150, 100);
     if (dealt === false && near(s.hp, hpBefore)) saves++;         // absorbed (auto-save)
     else if (dealt === true && s.hp < hpBefore) { landed = true; break; } // energy ran out -> real damage
   }
-  assert(saves >= 4 && saves <= 5, "E: ~4-5 saves before energy < cost (got " + saves + ")");
+  assert(saves === 4, "E: exactly 4 saves before energy < cost (got " + saves + ")");
   assert(landed, "E: once energy < SHIELD_HIT_COST, a hit lands as real damage");
 })();
 
