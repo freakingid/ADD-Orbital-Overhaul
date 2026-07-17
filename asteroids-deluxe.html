@@ -322,6 +322,9 @@ const GARBAGE_MAGNET_RANGE = 180;      // PLAYTEST KNOB — TUNE THIS FIRST BY F
 const GARBAGE_MAGNET_PULL = 40;        // px/s² each active piece accelerates toward a nearby active piece
 const GARBAGE_MERGE_DIST = 12;         // px: two active pieces this close fuse into one clump
 const HUNTER_COALESCE_COUNT = 12;      // pieces fused into one clump -> a new large Hunter core forms
+const HUNTER_TELEGRAPH_COUNT = 9;      // PLAYTEST KNOB (CS014 P2): pieces at which a clump starts reading
+                                       // as unstable (Garbage.draw pulses its stroke alpha). Must stay
+                                       // < HUNTER_COALESCE_COUNT or the tell never shows before birth.
 const GARBAGE_CLUMP_MAXSPD = Infinity; // off-by-default playtest clamp on a piece's coalescence speed
 const GARBAGE_SHATTER_KICK = [40, 90]; // v3.2 P2: px/s outward kick range for shatterClump's emitted pieces (playtest knob)
 
@@ -3543,7 +3546,17 @@ class Garbage {
     // proximity-to-Hunter lerp is gone) — size (radius = 7*sqrt(pieces)) is the only remaining tell
     // that a clump is nearing the Hunter transform.
     const color = (this.mass / this.pieces) < 1 ? COLOR.garbageLight : COLOR.garbage;
-    drawCanister(this.x, this.y, this.spin, 0.9, color, this.radius / 7);
+    // CS014 P2: pre-birth telegraph — a clump nearing HUNTER_COALESCE_COUNT pulses its stroke alpha
+    // so the imminent Hunter birth is teachable BEFORE the punishment. Same HUD_PULSE_HZ non-HP phase
+    // source the cargo-gold/powerup-low-timer rows read (game.lowHpPhase is the HP alarm's own ramped
+    // accumulator — wrong rate semantics here, not this). Modulates the SAME alpha param the decay-fade
+    // blink above already uses to drive drawCanister's stroke — no new color, no fills, no shape change,
+    // so the tell reads "unstable," not "new enemy class" (look-call, revisable in playtest).
+    let alpha = 0.9;
+    if (this.pieces >= HUNTER_TELEGRAPH_COUNT) {
+      alpha *= 0.6 + 0.4 * Math.sin(performance.now() / 1000 * TAU * HUD_PULSE_HZ);
+    }
+    drawCanister(this.x, this.y, this.spin, alpha, color, this.radius / 7);
   }
 }
 
@@ -3895,6 +3908,8 @@ function addScore(pts) {
     game.nextRepair += REPAIR_MILESTONE;
     if (game.ship.hp < SHIP_MAX_HP) {
       game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + REPAIR_AMOUNT);
+      // FLAG-CS014-h: the repair was landing invisibly (only the ping); a floater makes it self-teaching.
+      game.floaters.push(new FloatText("HULL +" + REPAIR_AMOUNT, game.ship.x, game.ship.y - 22, COLOR.hp));
     } else {
       game.score += REPAIR_FULL_BONUS; // already at full HP: cash the milestone in as points
     }
