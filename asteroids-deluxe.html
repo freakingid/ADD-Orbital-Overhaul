@@ -528,6 +528,23 @@ const ACH_SAVE_EVERY   = 30;   // sec between periodic lifetime-progress saves (
 // display-priority order (index = priority, danger/loop-critical first) — P1's HintSys.update() consumes
 // both meanings. Single source of truth; never redeclared elsewhere.
 const TUT_IDS = ["shield", "hook", "dock", "clump", "birth", "tow", "thrust", "decay"];
+// CS014 P1: the hint channel's own timing/placement. TUT_Y puts hints at the TOP of the screen —
+// deliberately the opposite end from Dan's caption line (VIEW_H - CAPTION_Y, bottom), so the two
+// message channels can never collide even when both are live.
+const TUT_GAP  = 5.0;  // PLAYTEST KNOB (FLAG-CS014-j). min sec of clear air BETWEEN two hint displays
+const TUT_DUR  = 4.5;  // PLAYTEST KNOB (FLAG-CS014-j). sec a hint stays on screen
+const TUT_Y    = 96;   // screen-space y of the hint line (top-center)
+const TUT_SIZE = 20;   // hint text size — matches CAPTION_SIZE (one message-text scale)
+// Per-hint trigger thresholds. All PLAYTEST KNOBS: they decide how patient each hint is and what counts
+// as "this player already knows it" (the silent veteran skip). See HintSys.RULES for how each is read.
+const TUT_THRUST_WAIT   = 6.0;  // sec of play after which a player who still hasn't thrust gets told
+const TUT_THRUST_SHOWN  = 0.5;  // sec of cumulative thrust that means "found it" — blocks the hint
+const TUT_THRUST_SKILL  = 1.5;  // sec of cumulative thrust that silently latches the hint (veteran skip)
+const TUT_SHIELD_SKILL  = 0.5;  // sec of cumulative shield-hold that counts as demonstrated (blocks + latches)
+const TUT_SHIELD_ENERGY = 0.5;  // min shield energy (0..1) for "hold shield" to be advice the player can act on
+const TUT_CLUMP_PIECES  = 3;    // clump size (pieces) that makes the clumping hint worth showing
+const TUT_TOW_LEN       = 5;    // chain length that triggers the tow-weight hint
+const TUT_VIEW_PAD      = 40;   // px of slop around the viewport for the on-screen tests (clump/decay)
 
 // ---------- Canvas / scaling ----------
 const canvas = document.getElementById("game");
@@ -1960,6 +1977,173 @@ const VoiceSys = {
     this.cur = { sources, utterG, osc };
     return utt;
   },
+};
+
+// ---------- HintSys (onboarding callouts, CS014 P1) ----------
+// A module ALONGSIDE AudioSys/MusicSys/VoiceSys — never inside one of them (same precedent VoiceSys set:
+// each channel owns its own gate and its own surface). This is the SILENT channel (FORK-CS014-B: a
+// dedicated surface, not Dan's voice), and it is deliberately small: eight one-shot lines that teach the
+// novel systems just-in-time, then never speak again for that player.
+//
+// Three rules bind this module (spec §2.2):
+//  1. Copy is DATA. TUT_LINES is id -> string; a copy edit is a one-line data change, never a code change.
+//     `{action}` placeholders resolve through the LIVE binding table at draw time (see HintSys.text), so a
+//     hint can never name a key the player has rebound away. No key name is ever baked into copy.
+//  2. Armed triggers RE-ARM frame to frame until a display succeeds — a busy moment DELAYS a hint, it never
+//     drops it. This is a deliberate INVERSION of VoiceSys's drop-not-queue: Dan narrates events (a stale
+//     event is noise), while hints describe STATE that is still true when the channel frees up. It is also
+//     why this needs no queue — every `armed` predicate is re-read from live state every frame, so "still
+//     relevant" is answered by the world, not by a stored backlog.
+//  3. A demonstrated skill latches SILENTLY — same persisted `tutSeen` write, no display. That is the
+//     implicit veteran skip: competent players prove they don't need a hint and simply never see it.
+//
+// What HintSys is NOT: a queue, a sequencer, or a tutorial MODE. It never touches game state, spawns,
+// scoring, or achievements — reading the world is the whole of its authority. Zero achievement-integrity
+// surface, by construction.
+const TUT_LINES = {
+  shield: "HOLD {shield} TO SHIELD — IT COSTS ENERGY",
+  hook:   "FLY OVER SALVAGE TO HOOK IT",
+  dock:   "THE MARKER POINTS TO THE RECYCLING DOCK",
+  clump:  "SCRAP IS CLUMPING — SHOOT IT APART",
+  birth:  "NEGLECTED SCRAP BUILT THAT HUNTER",
+  tow:    "CARGO SLOWS YOU — DOCK IT TO SCORE",
+  thrust: "HOLD {thrust} TO THRUST — YOU KEEP DRIFTING",
+  decay:  "LOOSE SALVAGE FADES — HAUL IT SOON"
+};
+
+// The FIRST bound keyboard key for an action, prettified through the CONTROLS SCREEN's own prettyKey map —
+// one prettifier for the whole build, so a hint and the Controls screen can never disagree about what a key
+// is called. First key only (keyLabel joins all of them with " / ": right for a bindings table, wrong mid-
+// sentence — "HOLD ↑ / W TO THRUST" reads as two keys at once).
+function tutKey(action) {
+  const b = bindings[action];
+  return (b && b.keys && b.keys.length) ? prettyKey(b.keys[0]) : "—";
+}
+
+const HintSys = {
+  // Per-hint predicates, in one table beside the copy.
+  //   armed()   — "this hint's moment is NOW", re-read from live state every frame (rule 2 above).
+  //   skilled() — "the player already demonstrated this", latch it silently (rule 3). Optional: the purely
+  //               informational hints (tow/clump/birth/decay) have no skill to demonstrate.
+  RULES: {
+    // K5. shieldHitArmed is set by damageShip's REAL-hit branch ONLY — an auto-shield save is the shield
+    // already doing its job, so there is nothing to teach there. The energy term keeps the advice
+    // actionable ("hold shield" is a lie on an empty tank); the flag itself persists, so an unshielded hit
+    // taken during a busy moment still gets its hint once the channel frees up.
+    shield: {
+      armed:   () => game.tut.shieldHitArmed && game.ship.energy >= TUT_SHIELD_ENERGY
+                     && game.tut.shieldT < TUT_SHIELD_SKILL,
+      skilled: () => game.tut.shieldT >= TUT_SHIELD_SKILL
+    },
+    // V3+V4. hookArmed is set where a PLAYER bullet destroys debris — the first moment canisters exist to
+    // fly over. Hooking one first teaches it better than the line does, so that latches it unseen.
+    hook: {
+      armed:   () => game.tut.hookArmed,
+      skilled: () => game.tut.chainPeak >= 1
+    },
+    // V1+V6. The dock chevron exists exactly while something is on the chain, so "hauling right now" IS the
+    // chain's 0->1 rising edge in LATCHED form: true the frame the chevron appears, and still true next
+    // frame if the channel was busy (rule 2 — a bare one-frame edge would be dropped). It also keeps the
+    // copy honest: the hint can never point at a marker that isn't on screen. A player who has already
+    // delivered has plainly found the dock.
+    dock: {
+      armed:   () => game.chain.length > 0,
+      skilled: () => game.stats.delivered >= 1
+    },
+    // V9+V10. The clump is on screen and big enough to read as a growing threat.
+    clump: {
+      armed:   () => game.garbage.some(g => !g.dead && g.pieces >= TUT_CLUMP_PIECES && HintSys.onScreen(g))
+    },
+    // V9. A Hunter has been born from neglected scrap this run — name the cause while the sting still rings.
+    // Persistent (a count, not an event), so it waits its turn rather than being lost to a busy frame.
+    birth: {
+      armed:   () => game.stats.hunterCoalesced > 0
+    },
+    // V5. chainPeak is the run's high-water chain length: once they have hauled TUT_TOW_LEN, the weight is
+    // something they can feel, so the line lands. Purely informational — no skill to demonstrate.
+    tow: {
+      armed:   () => game.tut.chainPeak >= TUT_TOW_LEN
+    },
+    // K1. Only fires if the player STILL hasn't meaningfully thrust after TUT_THRUST_WAIT seconds. Between
+    // TUT_THRUST_SHOWN and TUT_THRUST_SKILL sits a deliberate dead band: they have clearly found the key
+    // (so the hint would be noise) but haven't flown enough to call it demonstrated (so nothing latches).
+    thrust: {
+      armed:   () => game.stats.gameTime > TUT_THRUST_WAIT && game.tut.thrustT < TUT_THRUST_SHOWN,
+      skilled: () => game.tut.thrustT >= TUT_THRUST_SKILL
+    },
+    // V8. A loose single is blinking out on screen (its last GARBAGE_FADE sec). Lowest priority of the
+    // eight, and explicitly cuttable (FLAG-CS014-f).
+    decay: {
+      armed:   () => game.garbage.some(g => !g.dead && g.pieces === 1 && g.decay > 0
+                                            && g.decay < GARBAGE_FADE && HintSys.onScreen(g))
+    }
+  },
+
+  // Wrap-aware viewport test. The world is a torus: a canister 8 px across the seam is 8 px away, not
+  // WORLD_W away, so naive subtraction would call it off-screen and silently break both scans near the
+  // edge. shortDelta is the house helper for exactly this (CLAUDE.md: wrap-aware helpers are mandatory).
+  onScreen(e) {
+    const [dx, dy] = shortDelta(game.camera.x, game.camera.y, e.x, e.y);
+    return Math.abs(dx) <= VIEW_W / 2 + TUT_VIEW_PAD && Math.abs(dy) <= VIEW_H / 2 + TUT_VIEW_PAD;
+  },
+
+  // Resolve a hint's copy: data + live bindings. Called from drawHint() each frame rather than baked at
+  // display time, so a rebind mid-hint is reflected on the very next frame.
+  text(id) {
+    return TUT_LINES[id].replace(/\{(\w+)\}/g, (_, action) => tutKey(action));
+  },
+
+  // The seen-latch. BOTH paths write it identically — a hint that was displayed and a hint that was skipped
+  // because the player demonstrated the skill are the same fact: "this player doesn't need this line."
+  // Persisted immediately (§3 rides afd_settings_v1 additively); at most eight of these writes per run.
+  latch(id) {
+    settings.tutSeen[id] = true;
+    saveSettings();
+  },
+
+  show(id) {
+    game.tut.active = id;
+    game.tut.showT = TUT_DUR;
+    this.latch(id);
+  },
+
+  // Called once per frame from update()'s playing body (so it never runs paused, and never in "dying" —
+  // that state runs its own reduced sim and returns before reaching here).
+  update(dt) {
+    const t = game.tut;
+
+    // Skill accumulators + the chain high-water mark: ALWAYS, even while a hint is on screen and even once
+    // every hint is seen. They measure the PLAYER, not the hint channel — a player who learns to thrust
+    // while some other hint is up has still learned to thrust.
+    if (input.thrust()) t.thrustT += dt;
+    if (input.shield()) t.shieldT += dt;
+    if (game.chain.length > t.chainPeak) t.chainPeak = game.chain.length;
+
+    // Pass 1 — silent latches. ALWAYS, independent of the gap timer and of whatever is on screen: a
+    // demonstrated skill burns its hint on the spot. Running this BEFORE the display pass is what makes the
+    // veteran skip dominant — in a frame where a hint is both armed and demonstrated (kill a rock and hook
+    // a canister in the same breath), the demonstration wins and the line never shows.
+    for (const id of TUT_IDS) {
+      const skilled = this.RULES[id].skilled;
+      if (skilled && !settings.tutSeen[id] && skilled()) this.latch(id);
+    }
+
+    // Pass 2 — the display channel: one hint at a time, TUT_GAP of clear air between them.
+    if (t.active) {
+      t.showT -= dt;
+      if (t.showT <= 0) { t.active = null; t.showT = 0; t.gapT = TUT_GAP; }
+      return;
+    }
+    if (t.gapT > 0) { t.gapT = Math.max(0, t.gapT - dt); return; }
+    // TUT_IDS order IS the priority order (danger/loop-critical first). Nothing is queued: every armed
+    // predicate is re-read from live state, so a hint that can't get a slot this frame simply keeps asking
+    // until it can — delayed, never dropped (rule 2). Note the scans in clump/decay only ever run when no
+    // higher-priority hint is armed and the channel is actually free.
+    for (const id of TUT_IDS) {
+      if (settings.tutSeen[id]) continue;
+      if (this.RULES[id].armed()) { this.show(id); return; }
+    }
+  }
 };
 
 // ---------- Input ----------
@@ -3501,6 +3685,24 @@ class Dock {
 // Fresh per-game achievement stats (F9). One flat bag of counters/flags observed at the points
 // events already happen (kills, deliveries, hits, deliveries, powerups). Reset at startGame; the
 // weekly (single-game) achievements read off this, lifetime ones read Achievements.lifetime.
+// CS014 P1: HintSys's per-run scratch state — a factory (resetGameStats's precedent) so the shape lives in
+// ONE place rather than being duplicated into the game literal and startGame, where a field added to one
+// site and forgotten at the other would silently persist across runs.
+// RUNTIME-ONLY: none of this is ever saved. The only thing that outlives a run is settings.tutSeen (§3),
+// which is the fact "this player has seen/proved hint X" — not any of the measurement below.
+function resetTutState() {
+  return {
+    thrustT: 0,           // sec of cumulative thrust held this run (K1's demonstrated-skill measure)
+    shieldT: 0,           // sec of cumulative shield held this run (K5's)
+    shieldHitArmed: false,// set by damageShip's REAL-hit branch only — a genuine unshielded hull hit landed
+    hookArmed: false,     // set where a PLAYER bullet destroys debris — canisters now exist to fly over
+    chainPeak: 0,         // high-water chain length this run (feeds hook's silent latch + the tow hint)
+    active: null,         // id of the hint on screen, or null
+    showT: 0,             // sec left on the active display (counts down from TUT_DUR)
+    gapT: 0               // sec of enforced quiet left before the next display may start (TUT_GAP)
+  };
+}
+
 function resetGameStats() {
   return {
     gameTime: 0,             // sec since this game started (Speed Recycler's 60s window)
@@ -3604,7 +3806,9 @@ const game = {
   // line text; dur = its utterance length (from buildUtterance); life = seconds left to display, set to
   // 0.10 + dur + CAPTION_LINGER by showCaption() and decayed in update()'s playing body. drawCaption()
   // renders it while life > 0 (fading over the last CAPTION_FADE s). Overwritten wholesale per line.
-  caption: { text: "", life: 0, dur: 0 }
+  caption: { text: "", life: 0, dur: 0 },
+  // CS014 P1: HintSys's per-run state — see resetTutState() for the shape and why it's a factory.
+  tut: resetTutState()
 };
 
 function startGame() {
@@ -3645,6 +3849,10 @@ function startGame() {
   game.hpFullVoice = true;
   game.powerVoiced = { rapid: false, triple: false, magnet: false, engine: false };
   game.caption = { text: "", life: 0, dur: 0 }; // CS011 P2: no stale caption carries into a fresh run
+  // CS014 P1: HintSys's measurements/arms/timers are per-RUN — a fresh run re-measures the player from
+  // scratch. What does NOT reset is settings.tutSeen: a hint seen (or skill proved) in an earlier run stays
+  // burned, which is the whole point of persisting it.
+  game.tut = resetTutState();
   VoiceSys.reset();
   nextWave();
 }
@@ -4346,6 +4554,10 @@ function damageShip(amount, srcX, srcY) {
   game.stats.dmgThisWave++;
   Achievements.lifetime.hitsSurvived++;
   if (s.hp < SHIP_MAX_HP * 0.5) game.stats.everBelowHalf = true;
+  // CS014 P1: arm the shield hint. THIS branch only — a hit the auto-shield ate (above) is the shield
+  // already doing the job the hint would teach, and a LETHAL hit returned to killShip before here, where a
+  // hint would be worse than useless. Set-and-leave: the flag persists until the hint gets a display slot.
+  game.tut.shieldHitArmed = true;
   for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
   AudioSys.hit();
   // Scoop decays by DAMAGE, not time (v3.3 P3): every SCOOP_HITS_PER_LEVEL non-lethal hits costs one
@@ -4759,6 +4971,10 @@ function update(dt) {
   game.particles.forEach(p => p.update(dt));
   game.floaters.forEach(f => f.update(dt));
   game.caption.life -= dt; // CS011 P2: age Dan's on-screen caption (drawCaption gates on life > 0)
+  // CS014 P1: the other message channel, beside Dan's. Living HERE (the playing body) is what gates hints
+  // to live play for free: "dying" runs its own reduced sim and returns above, and a paused/menu frame
+  // never reaches here — so no hint ages, arms, or fires outside play.
+  HintSys.update(dt);
   if (game.dock) game.dock.update(dt);
 
   // --- Salvage pickup & chain physics ---
@@ -4988,7 +5204,10 @@ function update(dt) {
     if (!b.hostile) {
       for (const a of game.debris) {
         if (!a.dead && dist2(b, a) < a.radius * a.radius) {
-          b.dead = true; destroyDebris(a); break;
+          // CS014 P1: arm the hook hint HERE, at the PLAYER's kill — not inside destroyDebris(), which the
+          // Bomb powerup and hostile fire also reach. The hint teaches "those canisters you just made are
+          // yours to fly over", which is only true when the player made them.
+          b.dead = true; destroyDebris(a); game.tut.hookArmed = true; break;
         }
       }
       if (b.dead) continue;
@@ -5171,6 +5390,18 @@ function drawMenuHint(text, cx, y) {
 // the viewport bottom. In-play only (never over a menu / gameover / the title). Independent of Capture's H
 // HUD toggle by design (accessibility text, not a HUD readout) — a SIBLING of drawHUD() in draw(), not
 // inside it. Fades over the last CAPTION_FADE s via ctx.globalAlpha (drawText leaves globalAlpha alone).
+// CS014 P1: the onboarding hint line — sibling of drawHUD()/drawCaption(), self-gating like the latter.
+// Top-center, deliberately the opposite end of the screen from Dan's caption (bottom), so the two message
+// channels never collide. Unlike captions it DOES hide with the H capture toggle (FLAG-CS014-d): captions
+// are accessibility (they carry audio the player may not hear), hints are guidance — a clean capture frame
+// shouldn't have onboarding text in it. No fade and no new fill class: drawText is the named exception.
+function drawHint() {
+  if (!Capture.hudVisible) return;
+  if (game.state === "playing" && !game.paused && game.tut.active) {
+    drawText(HintSys.text(game.tut.active), VIEW_W / 2, TUT_Y, TUT_SIZE, COLOR.ach, "center");
+  }
+}
+
 function drawCaption() {
   if (game.state === "playing" && !game.paused && game.caption.life > 0) {
     const a = game.caption.life < CAPTION_FADE ? game.caption.life / CAPTION_FADE : 1;
@@ -5716,6 +5947,7 @@ function draw() {
   // of this call only; the game keeps simulating/updating regardless of hudVisible.
   if (Capture.hudVisible) drawHUD();
   drawCaption(); // CS011 P2: sibling of drawHUD (NOT inside it) — captions show regardless of the H toggle
+  drawHint();    // CS014 P1: sibling too, but self-gates on hudVisible — hints DO hide with H (FLAG-CS014-d)
 
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
