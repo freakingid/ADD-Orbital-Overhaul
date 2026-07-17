@@ -1,6 +1,6 @@
 # ORBITAL OVERHAUL — Game Design Document & Handoff Guide
 
-**Current build:** CS014 P3 (in-game version stamp: `GAME_VERSION` "1.0.0.13", unchanged this phase — CS014 P4 bumps it at round close) — see `STATUS.md` for build reality.
+**Current build:** CS014 P4 (in-game version stamp: `GAME_VERSION` "1.0.0.14") — **CS014 round complete** (P0–P4, all five phases shipped) — see `STATUS.md` for build reality.
 **Changelog:** `GDD-VERSION-HISTORY.md`.
 **This document describes what is SHIPPED (§2), not what is planned.**
 
@@ -409,6 +409,7 @@ Eight one-shot, ≤8-word callouts that teach the novel systems **just-in-time**
 >
 > The clump/decay on-screen scans go through `HintSys.onScreen(e)`, which uses **wrap-aware `shortDelta`** against `VIEW_W/2 + TUT_VIEW_PAD`: the world is a torus, so a canister 8 px across the seam is 8 px away, not `WORLD_W` away — naive subtraction would silently blind both scans at the wrap edge.
 
+- **Title-screen tagline (CS014 P4, FLAG-CS014-g).** The title screen taught combat (control diagram) and warned of Hunters but said nothing about the game's actual point. One new line — `SHOOT DEBRIS · HOOK SALVAGE · HAUL IT TO THE DOCK` — sits between the second control line (`VIEW_H/2 + 62`) and the Hunter warning (`VIEW_H/2 + 120`), at `VIEW_H/2 + 91`, size 18, in `COLOR.dock` so it reads as the salvage system's own color rather than another control-instruction line. Neither neighboring line moved. This is the cheapest possible static teach with the highest leverage — the title's fourth and final onboarding surface, alongside `HintSys`, the pre-birth telegraph, and the reference card — and doubles as the one-line marketing pitch. **Look-call, open playtest ask (see STATUS.md):** `COLOR.dock` (`#70ffa0`, green) sits one line above `COLOR.satellite` (`#6fe8d8`, cyan-teal) — the two are close enough in hue that they may read as one visual group rather than two distinct statements; `COLOR.dim` (matching the two control lines above) is the named fallback if that reads poorly in a real browser.
 - **The retrievability guarantee (CS014 P3, §2.3).** `HintSys` is deliberately one-shot per hint, per the design above — a player who missed one (busy moment, a channel delay, a skill they hadn't proven yet) never sees it again. That's only sound if the information stays reachable some other way: the new **"HOW TO PLAY"** reference card (Options → How to Play, §2.16) restates every `TUT_LINES` line and the clump pre-birth telegraph's meaning (§2.5.1) — verbatim or tighter — in one static panel, plus the live CONTROLS mapping and the POWERUPS glyph legend neither the hints nor the title screen fully cover. It's a pull surface (the player goes looking), where `HintSys` is push (the game interrupts once); together they satisfy "skipped info stays reachable" without re-teaching a hint that already fired. **"Replay Hints"**, the Options row beside it, is the reset half of the same guarantee — it doesn't touch the card (which needs no reset, being stateless), only the one-shot latches, so a player (or Paul, playtesting) can put `HintSys` back into its first-run state on demand.
 
 ---

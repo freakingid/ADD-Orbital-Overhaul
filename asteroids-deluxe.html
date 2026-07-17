@@ -240,7 +240,7 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
 // the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
 // segment IS the changeset number (this build shipped in CS010).
-const GAME_VERSION = "1.0.0.13";
+const GAME_VERSION = "1.0.0.14";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -5992,6 +5992,11 @@ function draw() {
     drawText("O V E R H A U L", VIEW_W/2, VIEW_H/2 - 60, 32, COLOR.satellite);
     drawText("ROTATE: ←→ / A D      THRUST: ↑ / W", VIEW_W/2, VIEW_H/2 + 30, 20, COLOR.dim);
     drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE: ESC", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
+    // CS014 P4 (FLAG-CS014-g): the game's actual point, in one line — the title taught combat/hazards
+    // but said nothing about salvage/towing/the dock. COLOR.dock so it reads as the salvage system's
+    // color, distinct from the dim control lines above and the satellite-teal Hunter warning below
+    // (look-call — playtest ask, see STATUS.md).
+    drawText("SHOOT DEBRIS · HOOK SALVAGE · HAUL IT TO THE DOCK", VIEW_W/2, VIEW_H/2 + 91, 18, COLOR.dock);
     drawText("BEWARE THE HUNTER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.satellite);
     if (Math.floor(performance.now() / 600) % 2 === 0)
       drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
