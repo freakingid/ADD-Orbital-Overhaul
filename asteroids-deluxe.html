@@ -2445,7 +2445,10 @@ function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_
 // adding a row here is purely additive and can't silently shift the other handlers out from under
 // themselves. CS010 P4 (§9/§10a): the three volume sliders + Music Track moved OFF this screen onto
 // the new "Sound / Music" sub-screen (SOUND_ROWS below); "High Scores" (§8b) moved IN, nested here.
-const MENU_OPTIONS = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
+// CS014 P3 (§2.3/FLAG-CS014-c): "How to Play" leads the list (newest players reach it fastest — a
+// look-call) and opens the new "howto" reference card; "Replay Hints" sits directly before Back,
+// mirroring the Controls screen's "Return to Defaults"-before-Back placement for a reset-type action.
+const MENU_OPTIONS = ["How to Play", "Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Replay Hints", "Back"];
 // CS010 P4 (§9): the Sound/Music sub-screen's rows, same template as DIFFICULTY_ROWS. CS010 P9 (§11c)
 // added the Voice Volume slider — SOUND_ROWS + VOL_LABELS + VOL_CATS grow together so the parallel
 // label→category lookup stays paired. CS011 P3 added "Voice" (style picker) + "Captions" (toggle),
@@ -2545,6 +2548,7 @@ function menuInput(action) {
     case "difficulty":   menuDifficulty(action); break;
     case "achievements": menuAchievements(action); break;
     case "highscores":   menuHighScores(action); break;
+    case "howto":        menuHowto(action); break;
   }
 }
 
@@ -2574,11 +2578,16 @@ function menuOptions(a) {
   if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
   else if (a === "confirm") {
-    if (label === "Sound / Music") gotoScreen("sound"); // CS010 P4 §9
+    if (label === "How to Play") gotoScreen("howto"); // CS014 P3 (§2.3): the reference card
+    else if (label === "Sound / Music") gotoScreen("sound"); // CS010 P4 §9
     else if (label === "Controls") gotoScreen("controls");
     else if (label === "Achievements") gotoScreen("achievements"); // viewer (F9)
     else if (label === "High Scores") gotoScreen("highscores"); // CS010 P4 §8b: nested under Options
     else if (label === "Difficulty") gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
+    // CS014 P3 (FLAG-CS014-c): stays on Options (no sub-screen) — flips every onboarding latch back
+    // to unseen and persists immediately, so HintSys re-teaches everything on the next run. No
+    // confirmation dialog (spec'd) — the UI beep is the only feedback.
+    else if (label === "Replay Hints") { for (const id of TUT_IDS) settings.tutSeen[id] = false; saveSettings(); AudioSys.ui(true); }
     // CS012 P4 / CS013 P1: Back is context-aware — paused mid-game OR gameover (both have a root)
     // return to it (cursor on Options); from title, where Options is the top-level dialog, it closes
     // the overlay entirely.
@@ -2649,6 +2658,14 @@ function menuAchievements(a) {
 function menuHighScores(a) {
   if (a === "pause") closePause();
   else if (a === "confirm" || a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("High Scores"));
+}
+
+// "HOW TO PLAY" reference card (CS014 P3, §2.3): a read-only static panel, same single-entry-point
+// idiom as Achievements/High Scores — no rows to select, so nav is a no-op and any of
+// confirm/back/pause returns to Options with the cursor left on "How to Play".
+function menuHowto(a) {
+  if (a === "pause") closePause();
+  else if (a === "confirm" || a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("How to Play"));
 }
 
 // Difficulty screen (v3.0 P5, B-4/B-5): two left/right mode toggles + Back. Left picks the timed
@@ -5440,6 +5457,7 @@ function drawMenu() {
   else if (s === "difficulty") drawDifficulty();
   else if (s === "achievements") drawAchievements();
   else if (s === "highscores") drawHighScores();
+  else if (s === "howto") drawHowto();
 }
 
 function menuPanel(w, h, title) {
@@ -5474,13 +5492,15 @@ function drawRootMenu() {
 // Difficulty, Back) — the value rows (volume sliders + Music Track) moved to drawSound() below, so
 // this mirrors drawRootMenu's plain centered-list layout instead of the old split value/nav layout.
 function drawOptionsMenu() {
-  const { y } = menuPanel(600, 420, "OPTIONS");
+  // CS014 P3: panel grown 420->504 (+2 rows * the 42px row pitch) to seat "How to Play"/"Replay
+  // Hints" — the footer keeps the same 20px margin off the panel bottom the pre-CS014 layout used.
+  const { y } = menuPanel(600, 504, "OPTIONS");
   const m = game.menu;
   MENU_OPTIONS.forEach((label, i) => {
     const sel = m.index === i;
     drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, y + 118 + i * 42, 22, sel ? COLOR.text : COLOR.menuIdle);
   });
-  drawMenuHint("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 400);
+  drawMenuHint("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 484);
 }
 
 // Sound / Music sub-screen (CS010 P4, §9) — a relocation of the three volume sliders + Music Track
@@ -5787,6 +5807,77 @@ function drawHighScores() {
   const topY = y + 120;
   drawScoreTable(VIEW_W / 2, topY, null, HS_TABLE_SCALE);
   drawText("ESC / B / ENTER  return", VIEW_W / 2, y + 497, 12, COLOR.dim);
+}
+
+// ---------- "HOW TO PLAY" reference card (CS014 P3, §2.3) ----------
+// A single static panel (FLAG-CS014-i) — the retrievability guarantee: every HintSys line (§2.19)
+// and the clump pre-birth telegraph's meaning appear here verbatim-or-tighter, so a player who
+// skipped or missed a one-shot hint always has somewhere to look it up again. Read-only, no rows to
+// select (menuHowto's nav is a no-op), so this function is pure render.
+// Six pickups, in the shipped POWERUP_DROP_TYPES + health + scoop order — full names for the legend
+// (vs. the terse HUD POWERUP_LABEL) since there's room and a newcomer needs the whole word.
+const HOWTO_POWERUPS = [
+  { type: "rapid",  name: "Rapid Fire" },
+  { type: "triple", name: "Triple Shot" },
+  { type: "health", name: "Health" },
+  { type: "magnet", name: "Magnet" },
+  { type: "engine", name: "Engine" },
+  { type: "scoop",  name: "Scoop" },
+];
+function drawHowto() {
+  const { x, y } = menuPanel(1080, 660, "HOW TO PLAY");
+
+  // Block 1 — CONTROLS, live off `bindings` via the Controls screen's own keyLabel/padLabel/prettyKey
+  // helpers, so a rebind is reflected here truthfully — never a baked-in key name.
+  drawText("CONTROLS", x + 50, y + 82, 17, COLOR.satellite, "left");
+  drawText("ACTION", x + 50, y + 106, 12, COLOR.dim, "left");
+  drawText("KEYBOARD", x + 320, y + 106, 12, COLOR.dim, "left");
+  drawText("GAMEPAD", x + 620, y + 106, 12, COLOR.dim, "left");
+  REBINDABLE.forEach((name, r) => {
+    const ry = y + 132 + r * 26;
+    drawText(bindings[name].label, x + 50, ry, 15, COLOR.text, "left");
+    drawText(keyLabel(bindings[name]), x + 320, ry, 15, COLOR.menuIdle, "left");
+    drawText(padLabel(bindings[name]), x + 620, ry, 15, COLOR.menuIdle, "left");
+  });
+
+  // Blocks 2/3 — THE SALVAGE LOOP (left) / THE HUNTER LOOP (right), side by side. Copy mirrors the
+  // TUT_LINES hint wording verbatim-or-tighter (spec §2.3) — never implies a tow/release key, since
+  // neither exists; hooking/docking are both automatic (fly-over / park-at).
+  // xR sits far enough right of xL that even the longest line in either column (~470px at this font)
+  // can't run into the other column — checked by character count, not just eyeballed (STATUS.md).
+  const xL = x + 50, xR = x + 600, loopY = y + 270;
+  drawText("THE SALVAGE LOOP", xL, loopY, 17, COLOR.satellite, "left");
+  const salvageLines = [
+    "Shoot debris to make it drop salvage.",
+    "Fly over salvage to hook it onto your chain.",
+    "Follow the marker to the dock to bank escalating points.",
+    "Towed cargo slows your ship down.",
+    "Loose salvage fades in about 20s — haul it soon.",
+  ];
+  salvageLines.forEach((line, i) => drawText(line, xL, loopY + 30 + i * 24, 14, COLOR.menuIdle, "left"));
+
+  drawText("THE HUNTER LOOP", xR, loopY, 17, COLOR.satellite, "left");
+  const hunterLines = [
+    "Neglected salvage clumps together over time.",
+    "A clump of 12 pieces coalesces into a Hunter.",
+    "Shoot a clump apart, or haul it away whole.",
+    "Your shield destroys homing Hunters on contact.",
+  ];
+  hunterLines.forEach((line, i) => drawText(line, xR, loopY + 30 + i * 24, 14, COLOR.menuIdle, "left"));
+
+  // Block 4 — POWERUPS glyph legend, reusing the shipped drawPowerupGlyph/POWERUP_COLOR renderer
+  // (same look as the field pickup and the HUD row — a powerup reads identically everywhere).
+  const puY = y + 430, iconY = y + 480, spacing = 160;
+  drawText("POWERUPS", x + 50, puY, 17, COLOR.satellite, "left");
+  HOWTO_POWERUPS.forEach((p, i) => {
+    const cx = x + 110 + i * spacing;
+    const color = POWERUP_COLOR[p.type];
+    drawPowerupGlyph(p.type, cx, iconY, 18, color);
+    drawText(p.name, cx, iconY + 34, 13, color, "center");
+  });
+  drawText("Scoop is permanent, but taking damage can knock off a level.", x + 50, iconY + 60, 13, COLOR.menuIdle, "left");
+
+  drawMenuHint("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 634);
 }
 
 // Non-blocking unlock banners at top-center. Fade in then out; stack downward if several land at once.

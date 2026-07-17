@@ -176,8 +176,10 @@ const cx = VIEW_W / 2;
 (function sectionD() {
   console.log("(D) drawOptionsMenu: unselected -> menuIdle, selected -> text; footer -> drawMenuHint");
   game.state = "playing";
-  gotoScreen("options", 2); // select "Achievements"
-  const y = (VIEW_H - 420) / 2;
+  gotoScreen("options", MENU_OPTIONS.indexOf("Achievements")); // select "Achievements"
+  // CS014 P3 grew the panel 420->504 (+2 rows: "How to Play"/"Replay Hints") — snapshot updated
+  // deliberately, not weakened; see IMPLEMENTATION-PHASES-CS014.md P3.
+  const y = (VIEW_H - 504) / 2;
   const log = render(drawOptionsMenu);
   MENU_OPTIONS.forEach((label, i) => {
     const entries = at(log, cx, y + 118 + i * 42);
@@ -185,7 +187,7 @@ const cx = VIEW_W / 2;
     const expect = i === game.menu.index ? COLOR.text : COLOR.menuIdle;
     assert(entries[0].color === expect, `D: options item "${label}" draws in the expected color`);
   });
-  const footer = at(log, cx, y + 400);
+  const footer = at(log, cx, y + 484);
   assert(footer.length === 1 && footer[0].color === COLOR.menuIdle, "D: options footer draws in COLOR.menuIdle");
   assert(fontSize(footer[0]) === MENU_HINT_SIZE, "D: options footer draws at MENU_HINT_SIZE");
 })();

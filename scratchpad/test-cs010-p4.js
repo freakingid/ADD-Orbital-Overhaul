@@ -104,9 +104,11 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   assert(JSON.stringify(A.MENU_ROOT_PLAY) === JSON.stringify(["Continue", "Options", "Quit"]),
     `B: MENU_ROOT_PLAY === [Continue, Options, Quit]; got ${JSON.stringify(A.MENU_ROOT_PLAY)}`);
   assert(!/const\s+MENU_ROOT_SYS/.test(currentSrc), "B: MENU_ROOT_SYS is no longer declared (only referenced in a retire-note comment)");
-  const expectedOptions = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
+  // CS014 P3 added "How to Play" (first row) + "Replay Hints" (immediately before Back) — deliberate
+  // snapshot update, not a weakened assertion; see IMPLEMENTATION-PHASES-CS014.md P3.
+  const expectedOptions = ["How to Play", "Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Replay Hints", "Back"];
   assert(JSON.stringify(A.MENU_OPTIONS) === JSON.stringify(expectedOptions),
-    `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a); got ${JSON.stringify(A.MENU_OPTIONS)}`);
+    `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a, CS014 P3 update); got ${JSON.stringify(A.MENU_OPTIONS)}`);
   // CS010 P9 added the "Voice Volume" slider row (SOUND_ROWS/VOL_LABELS/VOL_CATS grew together);
   // CS011 P3 added "Voice" (style picker) + "Captions" (toggle), both value-column rows outside
   // VOL_LABELS/VOL_CATS (those two arrays stay slider-only).

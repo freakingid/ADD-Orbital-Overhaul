@@ -134,7 +134,10 @@ console.log("(A) config + defaults");
 assert(settings.shotPowerupMode === "time", "A: shotPowerupMode defaults to time");
 assert(settings.magnetMode === "time", "A: magnetMode defaults to time");
 assert(MENU_OPTIONS.includes("Difficulty"), "A: MENU_OPTIONS has a Difficulty row");
-assert(MENU_OPTIONS.indexOf("Difficulty") === MENU_OPTIONS.indexOf("Back") - 1, "A: Difficulty sits immediately before Back");
+// CS014 P3 inserted "Replay Hints" between Difficulty and Back (the Controls screen's "Return to
+// Defaults"-before-Back precedent) — deliberate snapshot update, not a weakened assertion.
+assert(MENU_OPTIONS.indexOf("Difficulty") === MENU_OPTIONS.indexOf("Replay Hints") - 1, "A: Difficulty sits immediately before Replay Hints (CS014 P3)");
+assert(MENU_OPTIONS.indexOf("Replay Hints") === MENU_OPTIONS.indexOf("Back") - 1, "A: Replay Hints sits immediately before Back (CS014 P3)");
 assert(POWERUP_BUDGET.rapid === RAPID_SHOTS && POWERUP_BUDGET.triple === TRIPLE_SHOTS && POWERUP_BUDGET.magnet === MAGNET_PIECES,
   "A: POWERUP_BUDGET maps rapid/triple/magnet to their constants");
 assert([RAPID_SHOTS, TRIPLE_SHOTS, MAGNET_PIECES].every(n => Number.isFinite(n) && n > 0), "A: budget constants are positive numbers");

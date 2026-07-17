@@ -136,7 +136,9 @@ menuInput("back"); assert(game.paused === false && game.menu.screen === null, "A
 // =====================================================================
 console.log("(B) volume sliders + gain-node routing + clamping");
 // CS010 P4: the sliders moved off Options onto a nested "Sound / Music" screen (SOUND_ROWS).
-openPause(); menuInput("down"); menuInput("confirm"); // -> options, index 0 = "Sound / Music"
+openPause(); menuInput("down"); menuInput("confirm"); // -> options
+// CS014 P3 inserted "How to Play" ahead of "Sound / Music" (no longer row 0) — select by label.
+game.menu.index = MENU_OPTIONS.indexOf("Sound / Music");
 assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Sound / Music", "B: on Sound/Music row");
 menuInput("confirm"); // -> sound, index 0 = SFX
 assert(game.menu.screen === "sound" && game.menu.index === 0 && SOUND_ROWS[0] === "SFX Volume", "B: on SFX slider");
