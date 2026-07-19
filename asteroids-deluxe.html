@@ -2346,11 +2346,23 @@ const settings = {
 // changeset is one registry edit + repointing its consumer — the same "tracks/lines are DATA" idiom
 // used elsewhere. Each entry's `def` derives from the shipped gameplay const (in display units) so
 // there is ONE source of truth for the default; `toNative` converts a display value (what the panel
-// shows/persists) into the native unit the consumer reads (identity when absent). P4 ships exactly one
-// entry (item 5); P5/P6 add entries only — no panel/persistence code changes.
+// shows/persists) into the native unit the consumer reads (identity when absent). P4 shipped exactly
+// one entry (item 5); P5 (items 7, 11, 12) adds four more entries only — no panel/persistence code
+// changes; P6 does the same.
 const DEBUG_VARS = [
   { id: "autoShieldRegenPause", label: "Auto Shield Regen Pause", unit: "ms",
     def: AUTO_SHIELD_REGEN_PAUSE * 1000, min: 0, max: 5000, step: 100, toNative: v => v / 1000 },
+  // CS015 P5 (items 7, 11, 12): four more knobs, same registry/toNative idiom — defaults derive from
+  // the shipped consts (SCOOP_HITS_PER_LEVEL, GARBAGE_COALESCE_DELAY/MAGNET_RANGE/MAGNET_PULL), which
+  // stay in place as the documented shipped values. No panel/persistence code changes.
+  { id: "scoopHitsPerLevel", label: "Hits before losing scoop", unit: "",
+    def: SCOOP_HITS_PER_LEVEL, min: 1, max: 20, step: 1 },
+  { id: "garbageAttractDelay", label: "Garbage attraction delay", unit: "ms",
+    def: GARBAGE_COALESCE_DELAY * 1000, min: 0, max: 10000, step: 250, toNative: v => v / 1000 },
+  { id: "garbageAttractRadius", label: "Garbage attraction radius", unit: "px",
+    def: GARBAGE_MAGNET_RANGE, min: 0, max: 600, step: 10 },
+  { id: "garbageAttractForce", label: "Garbage attraction force", unit: "px/s²",
+    def: GARBAGE_MAGNET_PULL, min: 0, max: 200, step: 5 },
 ];
 const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
 const debugShown = {};   // display-unit values — what the panel shows and what persists in afd_settings_v1.debug
@@ -3441,7 +3453,7 @@ class Garbage {
     // v3.2 P1 reverses FORK-2: on merge `mass` now SUMS and `radius` DERIVES from pieces (a clump is
     // a real, heavy, big, un-hookable body — you must shoot it apart first). radius = 7*sqrt(pieces),
     // so a single piece still reads 7 (the base canister radius).
-    this.coalesceDelay = GARBAGE_COALESCE_DELAY;
+    this.coalesceDelay = DEBUG.garbageAttractDelay; // CS015 P5: tunable live (captured per-piece at ctor time)
     this.pieces = 1;
     this.radius = 7 * Math.sqrt(this.pieces);
     this.dead = false;
@@ -4482,7 +4494,7 @@ function damageShip(amount, srcX, srcY) {
   // A shielded / i-frame hit early-returned above, so it never reaches here.
   if (game.scoopLevel > 0) {
     game.scoopHits++;
-    if (game.scoopHits >= SCOOP_HITS_PER_LEVEL) {
+    if (game.scoopHits >= DEBUG.scoopHitsPerLevel) {
       game.scoopLevel = Math.max(0, game.scoopLevel - 1);
       game.scoopHits = 0;
       game.floaters.push(new FloatText("SCOOP -1", s.x, s.y - 22, POWERUP_COLOR.scoop));
@@ -4591,7 +4603,7 @@ function coalesceGarbage(dt) {
       const b = gs[j];
       if (b.dead || b.coalesceDelay > 0) continue;        // both pieces must be active
       const d2 = dist2(a, b);
-      if (d2 >= GARBAGE_MAGNET_RANGE * GARBAGE_MAGNET_RANGE) continue;
+      if (d2 >= DEBUG.garbageAttractRadius * DEBUG.garbageAttractRadius) continue;
       const [dx, dy] = shortDelta(a.x, a.y, b.x, b.y);     // shortest vector a -> b (wrap-aware)
       if (d2 < GARBAGE_MERGE_DIST * GARBAGE_MERGE_DIST) {
         // Merge (v3.2 P1, reverses FORK-2): survivor's velocity is the MOMENTUM sum (with PRE-merge
@@ -4624,7 +4636,7 @@ function coalesceGarbage(dt) {
       // loose singles fall into. Momentum-conserving (m_a·acc_a == m_b·acc_b). Reduces EXACTLY to the
       // shipped symmetric pull when both masses are 1.0, so GARBAGE_MAGNET_PULL needs no retune.
       const d = Math.sqrt(d2) || 0.0001;
-      const ux = (dx / d) * GARBAGE_MAGNET_PULL * dt, uy = (dy / d) * GARBAGE_MAGNET_PULL * dt;
+      const ux = (dx / d) * DEBUG.garbageAttractForce * dt, uy = (dy / d) * DEBUG.garbageAttractForce * dt;
       a.vx += ux * b.mass; a.vy += uy * b.mass;
       b.vx -= ux * a.mass; b.vy -= uy * a.mass;
       if (GARBAGE_CLUMP_MAXSPD !== Infinity) { // off-by-default playtest clamp
@@ -4954,7 +4966,7 @@ function update(dt) {
           g.pieces -= take;
           g.mass  -= take * pMass;
           g.radius = 7 * Math.sqrt(g.pieces);
-          g.coalesceDelay = GARBAGE_COALESCE_DELAY;
+          g.coalesceDelay = DEBUG.garbageAttractDelay;
           const [ax, ay] = shortDelta(game.ship.x, game.ship.y, g.x, g.y); // ship -> leftover (wrap-aware)
           const d = Math.hypot(ax, ay) || 0.0001;
           g.vx += (ax / d) * SCOOP_SPILL_KICK;

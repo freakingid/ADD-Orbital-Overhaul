@@ -133,10 +133,11 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   console.log("(B) applyDebug round-trips display<->native (ms/1000) and seeds from the registry default");
   const A = build().exports;
 
-  assert(A.DEBUG_VARS.length === 1, "B: P4 ships exactly one debug var (no later knobs wired here)");
-  const e = A.DEBUG_VARS[0];
-  assert(e.id === "autoShieldRegenPause" && e.unit === "ms" && e.min === 0 && e.max === 5000 && e.step === 100,
-    "B: the one entry is Auto Shield Regen Pause, ms, [0,5000] step 100");
+  // CS015 P5 appended four more entries to the registry (see test-cs015-p5.js) — look this one up by
+  // id rather than assume index 0 / a length of 1, which was only ever true as of P4 itself.
+  const e = A.DEBUG_VARS.find(v => v.id === "autoShieldRegenPause");
+  assert(!!e && e.unit === "ms" && e.min === 0 && e.max === 5000 && e.step === 100,
+    "B: the Auto Shield Regen Pause entry is still ms, [0,5000] step 100");
   assert(e.def === A.AUTO_SHIELD_REGEN_PAUSE * 1000,
     "B: def derives from the shipped const in display units (single source of truth)");
 
@@ -263,22 +264,25 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   const A = build().exports;
   const g = A.game;
 
-  // Render at each cursor row (var row + Back row).
+  // Render at each cursor row (var row + Back row). backRow is read off the real registry length —
+  // CS015 P5 grew it from 1 to 5 entries (see test-cs015-p5.js), so backRow is no longer literally 1.
+  const backRow = A.DEBUG_VARS.length;
   g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = 0;
   let threw = null;
   try {
     A.drawDebug();
-    A.menuDebug("down"); assert(g.menu.index === 1, "F: down moves cursor onto the Back row (index 1 of 2)");
+    for (let i = 0; i < backRow; i++) A.menuDebug("down");
+    assert(g.menu.index === backRow, `F: down moves the cursor onto the Back row (index ${backRow})`);
     A.drawDebug();
     A.menuDebug("down"); assert(g.menu.index === 0, "F: down wraps from Back back to the first var row");
-    A.menuDebug("up"); assert(g.menu.index === 1, "F: up wraps to the Back row");
+    A.menuDebug("up"); assert(g.menu.index === backRow, "F: up wraps to the Back row");
     A.menuDebug("left"); A.menuDebug("right"); // left/right on the Back row do nothing (no crash)
     A.drawDebug();
   } catch (e) { threw = e; }
   assert(!threw, "F: drawDebug()/menuDebug() did not throw headless" + (threw ? ": " + threw : ""));
 
   // Return from title context -> closePause (screen null, unpaused).
-  g.menu.index = 1; // Back row
+  g.menu.index = backRow; // Back row
   A.menuDebug("confirm");
   assert(g.menu.screen === null && g.paused === false, "F: confirm on Back from title context closes the overlay (closePause)");
 
