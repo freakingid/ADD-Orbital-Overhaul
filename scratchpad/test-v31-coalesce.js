@@ -78,7 +78,7 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "GARBAGE_DECAY", "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
-  "settings",
+  "settings", "DEBUG",
   "WORLD_W", "WORLD_H"];
 
 const wrapped = new Function(
@@ -91,7 +91,7 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
   GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
-  MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings,
+  MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
   WORLD_W, WORLD_H } = G;
 
 let passed = 0, failed = 0;
@@ -442,22 +442,24 @@ function killLineage(core) {
 }
 
 // =====================================================================
-console.log("(16) v3.3 P4 (9a): a loose SINGLE ages out at GARBAGE_DECAY; a CLUMP never decays");
+console.log("(16) CS015 P6 (item 10): a loose SINGLE ages out on DEBUG.garbageLifetime; a stalled CLUMP now ages out too");
 {
   beginPlaying();
+  const life = DEBUG.garbageLifetime; // live knob (default 10s), not the frozen GARBAGE_DECAY (22, historical)
   const g = new Garbage(500, 500, 0, 0); // isolated single — no neighbours to coalesce with
-  // drive the REAL Garbage.update just SHORT of GARBAGE_DECAY: still alive
-  for (let t = 0; t < GARBAGE_DECAY - 1; t += 1 / 60) g.update(1 / 60);
-  assert(!g.dead, "16: a lone single is still alive just before GARBAGE_DECAY");
-  // now cross GARBAGE_DECAY: it dies of age
+  assert(g.decay === life, `16: a fresh single seeds decay from the live DEBUG.garbageLifetime (${life})`);
+  // drive the REAL Garbage.update just SHORT of the lifetime: still alive
+  for (let t = 0; t < life - 1; t += 1 / 60) g.update(1 / 60);
+  assert(!g.dead, "16: a lone single is still alive just before its lifetime elapses");
+  // now cross the lifetime: it dies of age
   for (let t = 0; t < 1.5; t += 1 / 60) g.update(1 / 60);
-  assert(g.dead, "16: a lone single ages out once GARBAGE_DECAY elapses (decay is back, v3.3 P4)");
+  assert(g.dead, "16: a lone single ages out once DEBUG.garbageLifetime elapses");
 
-  // a CLUMP (pieces>1) never decays — drive it far past GARBAGE_DECAY
+  // CS015 P6 reverses FORK-4: a STALLED clump (pieces>1, no merges) now ages out too, past the same lifetime.
   const clump = new Garbage(700, 700, 0, 0);
   clump.pieces = 4; clump.mass = 4; clump.radius = 7 * Math.sqrt(4);
-  for (let t = 0; t < GARBAGE_DECAY * 3; t += 1 / 60) clump.update(1 / 60);
-  assert(!clump.dead, "16: a clump (pieces>1) never ages out (FORK-4: singles only)");
+  for (let t = 0; t < life + 1; t += 1 / 60) clump.update(1 / 60);
+  assert(clump.dead, "16: a stalled clump (pieces>1, no merges) now ages out too (FORK-4 reversed)");
 
   assert(!("garbageDecayed" in game.stats), "16: the old garbageDecayed stat is still gone from game.stats");
 }

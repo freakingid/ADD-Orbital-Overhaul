@@ -240,7 +240,7 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
 // the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
 // segment IS the changeset number (this build shipped in CS010).
-const GAME_VERSION = "1.0.0.13";
+const GAME_VERSION = "1.0.0.15";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -289,17 +289,20 @@ const HUD_CAP_FLASH = 0.5;      // sec — reserved flash duration for a cap-rel
 // Radioactive salvage / tow chain / recycling dock
 // v3.3 P4 (9a): loose SINGLE canisters decay again (GARBAGE_DECAY) — decay is the GOVERNOR that keeps
 // the field readable now that Hunters always drop garbage (9b) reopens the 12-in/66-out amplifier.
-// This REVERSES the v3.2 P3 "garbage is permanent" rule (Paul signed off). Exits for a single are now
-// three: RECYCLED (towed to the dock), CONSUMED INTO A HUNTER (coalescence), or AGED OUT (decay).
-// A CLUMP (pieces > 1) still never decays — it is a target AND, as of 9c, a scoopable pickup, so
-// aging it out would steal the player's loot and their Hunter-prevention window (FORK-4: singles only).
+// This REVERSES the v3.2 P3 "garbage is permanent" rule (Paul signed off). CS015 P6 (item 10,
+// FLAG-CS015-a) reverses FORK-4 in turn: a CLUMP (pieces > 1) now ages out too — every piece, single or
+// clump, counts down a lifetime and dies at 0 — but a MERGE resets the survivor's clock to full, so an
+// actively-growing lineage never dies while a stalled one does (coalesceGarbage). Exits for a piece are
+// now three: RECYCLED (towed to the dock), CONSUMED INTO A HUNTER (coalescence), or AGED OUT (decay).
 // Chain nodes never decay (they're game.chain, not game.garbage). Severed garbage (Garbage.fromNode)
-// inherits this same one GARBAGE_DECAY — the old separate GARBAGE_SEVER_DECAY stays deleted. See §2.10.1.
+// still routes through the one ctor line, so it gets a normal (tunable) life — no separate constant.
+// `GARBAGE_DECAY` below is now a historical/shipped-value reference only; the live source of truth is
+// the `garbageLifetime` debug var (DEBUG_VARS, CS015 P6), default 10 s, seeded at Garbage ctor time.
 const GARBAGE_PICKUP = 18;      // pickup radius from ship center
-const GARBAGE_DECAY = 22;       // PLAYTEST KNOB (v3.3 P4, reintroduced). sec a loose SINGLE lives before it
-                                // ages out; must exceed GARBAGE_COALESCE_DELAY by a wide margin or nothing
-                                // ever clumps. The last ~GARBAGE_FADE sec it blinks as an expiry tell.
-const GARBAGE_FADE = 2.0;       // sec of blink-out before a decaying single dies (look-call)
+const GARBAGE_DECAY = 22;       // PRE-CS015-P6 SHIPPED VALUE (v3.3 P4, reintroduced; single-only back then).
+                                // Superseded by the `garbageLifetime` debug var (default 10, CS015 P6) —
+                                // kept here as the documented historical default, no longer read live.
+const GARBAGE_FADE = 2.0;       // sec of blink-out before a decaying piece (single OR clump) dies (look-call)
 
 // Garbage coalescence (v3.1 P3): uncollected canisters mutually attract and, on contact, fuse into a
 // growing clump; at HUNTER_COALESCE_COUNT pieces the clump collapses into a fresh large Hunter core
@@ -2363,6 +2366,11 @@ const DEBUG_VARS = [
     def: GARBAGE_MAGNET_RANGE, min: 0, max: 600, step: 10 },
   { id: "garbageAttractForce", label: "Garbage attraction force", unit: "px/s²",
     def: GARBAGE_MAGNET_PULL, min: 0, max: 200, step: 5 },
+  // CS015 P6 (item 10, FLAG-CS015-a): garbage of ANY size now ages out on this lifetime (a merge
+  // resets the clock) — RESOLVED default 10s, not the old single-only GARBAGE_DECAY (22). The const
+  // stays in place as the documented pre-P6 shipped value; this knob is the live source of truth now.
+  { id: "garbageLifetime", label: "Garbage lifetime", unit: "s",
+    def: 10, min: 1, max: 60, step: 1 },
 ];
 const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
 const debugShown = {};   // display-unit values — what the panel shows and what persists in afd_settings_v1.debug
@@ -3438,15 +3446,17 @@ function drawCanister(x, y, angle, alpha, color = COLOR.garbage, scale = 1) {
 }
 
 class Garbage {
-  // v3.3 P4 (9a): a loose SINGLE decays again on GARBAGE_DECAY (see update()). Not a ctor param — every
-  // piece is born a single with a full life; a clump (pieces > 1) simply never counts it down (FORK-4).
+  // v3.3 P4 (9a): a loose piece decays on a lifetime clock (see update()). Not a ctor param — every
+  // piece is born with a full life. CS015 P6 (item 10): EVERY piece counts its clock down regardless
+  // of `pieces` — a clump no longer lives forever (FORK-4 reversed); a merge resets the clock instead
+  // (see coalesceGarbage), so an actively-growing lineage never dies but a stalled one does.
   constructor(x, y, vx = 0, vy = 0, mass = 1.0) {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.spin = rand(0, TAU);
     this.spinRate = rand(-1.5, 1.5);
     this.mass = mass;   // towing weight (F5): 1.0 for Debris scrap; lighter scrap tows easier
-    this.decay = GARBAGE_DECAY; // v3.3 P4: single-canister life clock; counts down only while pieces === 1
+    this.decay = DEBUG.garbageLifetime; // CS015 P6: tunable live (captured per-piece at ctor time, like coalesceDelay)
     // Coalescence (v3.2 P1). These constructor defaults are inherited by all three emission sites
     // AND Garbage.fromNode. `coalesceDelay` counts down in update(); a piece is "active" (attracts +
     // can merge) once it hits 0. `pieces` is the 1..11 threat counter (at 12 the clump transforms).
@@ -3467,13 +3477,12 @@ class Garbage {
     this.x += this.vx * dt; this.y += this.vy * dt;
     this.spin += this.spinRate * dt;
     wrap(this);
-    // v3.3 P4 (9a): a loose SINGLE ages out — GARBAGE_DECAY is the density governor. A CLUMP (pieces > 1)
-    // never decays (FORK-4: a clump is a target and a scoopable pickup). Chain nodes aren't Garbage, so
-    // they never reach here. A pickup still sets `dead` externally; coalescence still consumes pieces.
-    if (this.pieces === 1) {
-      this.decay -= dt;
-      if (this.decay <= 0) this.dead = true;
-    }
+    // CS015 P6 (item 10): EVERY piece ages out now, single or clump — the density governor no longer
+    // exempts clumps (FORK-4 reversed; a merge resets the clock instead, see coalesceGarbage). Chain
+    // nodes aren't Garbage, so they never reach here. A pickup still sets `dead` externally; coalescence
+    // still consumes pieces.
+    this.decay -= dt;
+    if (this.decay <= 0) this.dead = true;
     // `coalesceDelay` still gates attraction/merge (see coalesceGarbage).
     if (this.coalesceDelay > 0) this.coalesceDelay -= dt;
   }
@@ -3497,9 +3506,15 @@ class Garbage {
     // exactly equal this.radius, so the visual and the (unchanged) collision radius agree by
     // construction. v3.6 P1a: colour now follows the same per-piece-mass rule as a single (the red
     // proximity-to-Hunter lerp is gone) — size (radius = 7*sqrt(pieces)) is the only remaining tell
-    // that a clump is nearing the Hunter transform.
+    // that a clump is nearing the Hunter transform. CS015 P6 (item 10): a clump now ages out too (a
+    // merge resets its clock), so it gets the same expiry blink tell as a single, mirrored verbatim.
     const color = (this.mass / this.pieces) < 1 ? COLOR.garbageLight : COLOR.garbage;
-    drawCanister(this.x, this.y, this.spin, 0.9, color, this.radius / 7);
+    let alpha = 0.9;
+    if (this.decay < GARBAGE_FADE) {
+      if (Math.sin(this.decay * 18) < 0) return;
+      alpha = 0.9 * Math.max(0.2, this.decay / GARBAGE_FADE);
+    }
+    drawCanister(this.x, this.y, this.spin, alpha, color, this.radius / 7);
   }
 }
 
@@ -4617,6 +4632,8 @@ function coalesceGarbage(dt) {
         a.mass = mt;
         a.pieces += b.pieces;
         a.radius = 7 * Math.sqrt(a.pieces);
+        a.decay = DEBUG.garbageLifetime; // CS015 P6 (item 10): a merge is activity — clock resets to full,
+                                          // so an actively-growing lineage never ages out, only a stalled one
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).

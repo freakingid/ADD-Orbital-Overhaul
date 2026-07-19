@@ -87,7 +87,9 @@ function beginPlaying(A) {
 (function sectionB() {
   console.log("(B) DEBUG_VARS grew to 5 entries; the 4 new ones match id/label/unit/min/max/step/def");
   const A = build();
-  assert(A.DEBUG_VARS.length === 5, `B: DEBUG_VARS has 5 entries (1 from P4 + 4 new; got ${A.DEBUG_VARS.length})`);
+  // >= 5, not === 5: CS015 P6 appends a 6th entry (garbageLifetime, see test-cs015-p6.js) — the
+  // registry only ever grows, per the same note test-cs015-p4.js's own P5 update left behind.
+  assert(A.DEBUG_VARS.length >= 5, `B: DEBUG_VARS has at least 5 entries (1 from P4 + 4 new; got ${A.DEBUG_VARS.length})`);
   assert(A.DEBUG_VARS[0].id === "autoShieldRegenPause", "B: P4's entry is still first (registry is append-only)");
 
   const byId = id => A.DEBUG_VARS.find(v => v.id === id);

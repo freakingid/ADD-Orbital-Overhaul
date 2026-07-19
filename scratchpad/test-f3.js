@@ -44,7 +44,7 @@ const returnList = [
   "DebrisSatellite", "Garbage",
   "destroyDebris", "updateChain", "scatterChain", "chainMass",
   "DEBRIS_GARBAGE", "DEBRIS_SCORE",
-  "GARBAGE_PICKUP", "GARBAGE_DECAY",
+  "GARBAGE_PICKUP", "GARBAGE_DECAY", "DEBUG",
   "CHAIN_LINK", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG",
   "WORLD_W", "WORLD_H"
@@ -59,7 +59,7 @@ const {
   DebrisSatellite, Garbage,
   destroyDebris, updateChain, scatterChain, chainMass,
   DEBRIS_GARBAGE, GARBAGE_DECAY,
-  GARBAGE_PICKUP,
+  GARBAGE_PICKUP, DEBUG,
   CHAIN_LINK, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG,
   WORLD_W, WORLD_H
@@ -96,7 +96,7 @@ function node(x, y, mass) {
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (v3.3 P4: single garbage decays again on GARBAGE_DECAY=${GARBAGE_DECAY})`);
+console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (garbage decays on DEBUG.garbageLifetime=${DEBUG.garbageLifetime}, CS015 P6; was the frozen GARBAGE_DECAY=${GARBAGE_DECAY} single-only)`);
 
 // =====================================================================
 // (A) full lineage: 1 large -> 3 mediums -> 9 smalls = 13 kills, 13*DEBRIS_GARBAGE canisters
@@ -170,10 +170,11 @@ assert(game.chain.length === 0, "C: scatterChain empties the chain");
 const scatMass = game.garbage.map(g => g.mass).sort();
 assert(game.garbage.length === 2 && scatMass[0] === 0.5 && scatMass[1] === 1.0,
   `C: scattered garbage preserves node masses [0.5, 1.0] (got [${scatMass}])`);
-// v3.3 P4 (9a): severed garbage (Garbage.fromNode) is a single, so it inherits the ONE GARBAGE_DECAY
-// life clock (the old separate GARBAGE_SEVER_DECAY stays deleted — one constant).
-assert(game.garbage.every(g => g.pieces === 1 && g.decay === GARBAGE_DECAY),
-  "C: severed garbage inherits the single GARBAGE_DECAY life clock (no separate sever-decay)");
+// v3.3 P4 (9a): severed garbage (Garbage.fromNode) is a single, so it inherits the ONE life clock
+// (the old separate GARBAGE_SEVER_DECAY stays deleted — one constant/knob). CS015 P6: that one clock
+// is now the live DEBUG.garbageLifetime debug var, not the frozen GARBAGE_DECAY const (see test-cs015-p6.js).
+assert(game.garbage.every(g => g.pieces === 1 && g.decay === DEBUG.garbageLifetime),
+  "C: severed garbage inherits the single garbageLifetime life clock (no separate sever-decay)");
 
 // =====================================================================
 // (D) chain tow physics use the MASS SUM (8x1.0 tows identically to 16x0.5)
