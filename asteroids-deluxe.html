@@ -853,6 +853,36 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
     o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.21);
+  },
+
+  secretArm() { // CS015 P4: the debug secret code armed a capture window — 3 quick ASCENDING blips
+    if (!this.ctx) return;
+    const t = this.now();
+    [440, 587, 784].forEach((f, i) => { // A4 - D5 - G5, rising
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(f, t + i * 0.06);
+      g.gain.setValueAtTime(0.05, t + i * 0.06);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.05);
+      o.connect(g).connect(this.sfx);
+      o.start(t + i * 0.06); o.stop(t + i * 0.06 + 0.06);
+    });
+  },
+
+  secretDisarm() { // CS015 P4: the debug secret-code window timed out / was cancelled — the same 3 blips DESCENDING
+    if (!this.ctx) return;
+    const t = this.now();
+    [784, 587, 440].forEach((f, i) => { // G5 - D5 - A4, falling
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(f, t + i * 0.06);
+      g.gain.setValueAtTime(0.05, t + i * 0.06);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.05);
+      o.connect(g).connect(this.sfx);
+      o.start(t + i * 0.06); o.stop(t + i * 0.06 + 0.06);
+    });
   }
 };
 
@@ -2078,6 +2108,32 @@ window.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   AudioSys.init(); AudioSys.resume();
 
+  // CS015 P4: hidden Debug Options secret code — consulted before the three context branches below, but
+  // ONLY on the Title screen or a paused live game (never mid-play, gameover, a rebind capture, or
+  // initials entry), so its keystrokes can't collide with those exclusive input modes. The backtick ARMS
+  // a capture window and is consumed (return); each later single-char key accretes into DebugCode.buf
+  // (raw e.key, so case + shifted symbols like G/3/$ survive; multi-char keys — Shift/Arrow*/Enter/Esc —
+  // are dropped). When the buffer's tail matches DEBUG_CODE the panel opens (openDebug from title, else
+  // gotoScreen off the paused root). Non-backtick code chars fall through INERT — none are nav/confirm/
+  // pause/O keys — so nothing is visible until the code lands. The window self-expires on inactivity in
+  // loop(). Backtick keys are NOT preventDefault'd.
+  if (!game.menu.rebinding && !game.entry && (game.state === "title" || (game.paused && game.state === "playing"))) {
+    if (e.key === "`") {
+      DebugCode.armed = true; DebugCode.buf = ""; DebugCode.last = performance.now();
+      AudioSys.secretArm();
+      return;
+    } else if (DebugCode.armed && !e.repeat) {
+      DebugCode.last = performance.now();
+      if (e.key.length === 1) { // single-char keys only — modifiers/arrows/Enter/Esc have multi-char e.key
+        DebugCode.buf = (DebugCode.buf + e.key).slice(-DEBUG_CODE.length);
+        if (DebugCode.buf.endsWith(DEBUG_CODE)) {
+          DebugCode.armed = false; DebugCode.buf = "";
+          if (game.state === "title") openDebug(); else gotoScreen("debug");
+        }
+      }
+    }
+  }
+
   // (1) Rebind capture — exclusive; the key never reaches gameplay or nav.
   if (game.menu.rebinding) {
     e.preventDefault();
@@ -2283,6 +2339,38 @@ const settings = {
   autoShield:      false,   // CS012 P5: auto-raise the shield on a hit at critical hull (costs energy + AUTO_SHIELD_SCORE_PENALTY). Off by default.
 };
 
+// ---------- Debug Options (CS015 P4) — a hidden, data-driven tuning panel ----------
+// Reached only by a secret keystroke sequence (see DebugCode + the keydown listener); never listed in
+// any menu. DEBUG_VARS is the single source of truth (FLAG-CS015-h): one registry entry drives the
+// panel render, the adjust handler, AND persistence generically, so adding/removing a knob in a later
+// changeset is one registry edit + repointing its consumer — the same "tracks/lines are DATA" idiom
+// used elsewhere. Each entry's `def` derives from the shipped gameplay const (in display units) so
+// there is ONE source of truth for the default; `toNative` converts a display value (what the panel
+// shows/persists) into the native unit the consumer reads (identity when absent). P4 ships exactly one
+// entry (item 5); P5/P6 add entries only — no panel/persistence code changes.
+const DEBUG_VARS = [
+  { id: "autoShieldRegenPause", label: "Auto Shield Regen Pause", unit: "ms",
+    def: AUTO_SHIELD_REGEN_PAUSE * 1000, min: 0, max: 5000, step: 100, toNative: v => v / 1000 },
+];
+const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
+const debugShown = {};   // display-unit values — what the panel shows and what persists in afd_settings_v1.debug
+function applyDebug(id, shown) {
+  const e = DEBUG_VARS.find(v => v.id === id);
+  debugShown[id] = shown;
+  DEBUG[id] = e.toNative ? e.toNative(shown) : shown;
+}
+for (const v of DEBUG_VARS) applyDebug(v.id, v.def);   // seed both maps from the registry defaults
+
+// Secret-code entry state for the debug panel (module-level; driven by the keydown listener + loop()).
+// The backtick ARMS a capture window; subsequent single-char keys accrete into `buf` until its tail
+// matches DEBUG_CODE, then the panel opens. The window self-expires after DEBUG_CODE_IDLE_MS of
+// inactivity — timed in loop() (which runs every frame), NOT update() (paused/title-gated, exactly the
+// states the code is armed in). The code's characters are deliberately none of the nav/confirm/pause/O
+// keys, so every keystroke stays inert on the title/pause screens until the full code lands (item 4.3).
+const DEBUG_CODE = "EvilG3niu$";
+const DEBUG_CODE_IDLE_MS = 4000;
+const DebugCode = { armed: false, buf: "", last: 0 };
+
 // CS011: Dan speaks only when a real voice style is selected. voiceStyle "off" mutes him without disturbing
 // VOICE_PARAMS (which keeps the last real style so the acoustic engine always has a valid full object).
 function voiceEnabled() { return settings.voiceStyle !== "off"; }
@@ -2335,6 +2423,17 @@ function gotoScreen(s, index) {
   game.menu.index = index || 0; game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
   AudioSys.ui(true);
 }
+// CS015 P4: open the hidden Debug Options panel straight from the Title screen (where there is no root
+// menu to route through). Sibling of openPause — sets game.paused so update() freezes and menuActive()
+// reads true; from a paused live game the secret-code path uses gotoScreen("debug") instead (the game is
+// already paused). Not listed in any menu; reachable only by the secret code.
+function openDebug() {
+  game.paused = true;
+  game.menu.screen = "debug"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
+  game.menu.rebinding = null;
+  resetMenuNav();          // a direction held while typing the code must not fire a phantom first move
+  AudioSys.ui(true);
+}
 
 // --- Keyboard -> menu action mapping (arrows + WASD nav; Enter/Esc/P via the binding table) ---
 function handleMenuKey(k) {
@@ -2358,6 +2457,7 @@ function menuInput(action) {
     case "difficulty":   menuDifficulty(action); break;
     case "achievements": menuAchievements(action); break;
     case "highscores":   menuHighScores(action); break;
+    case "debug":        menuDebug(action); break;   // CS015 P4: hidden, secret-code-only
   }
 }
 
@@ -2486,6 +2586,34 @@ function menuDifficulty(a) {
   else if (a === "pause") closePause();
 }
 
+// Hidden Debug Options panel handler (CS015 P4). Generic over DEBUG_VARS: N value rows + a trailing Back
+// row. up/down move the cursor; left/right adjust the focused var by its step (clamped [min,max]) then
+// applyDebug + persist immediately; confirm on Back — or back anywhere — returns to context. Reached only
+// by the secret code (see the keydown listener), so there is no "Debug" menu row to restore the cursor
+// to on return: debugReturn mirrors menuOptions' routing and lands on the always-present Options row when
+// a root exists. Adding a debug var later touches nothing here — the registry drives the row count.
+function menuDebug(a) {
+  const m = game.menu, N = DEBUG_VARS.length, ROWS = N + 1, backRow = N;
+  if (a === "up")   { m.index = (m.index + ROWS - 1) % ROWS; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % ROWS; AudioSys.ui(false); }
+  else if (a === "left" || a === "right") {
+    if (m.index < N) { // a value row (not Back)
+      const e = DEBUG_VARS[m.index];
+      const next = Math.max(e.min, Math.min(e.max, debugShown[e.id] + (a === "right" ? e.step : -e.step)));
+      applyDebug(e.id, next);
+      saveSettings();
+      AudioSys.ui(false);
+    }
+  }
+  else if (a === "confirm") { if (m.index === backRow) debugReturn(); }
+  else if (a === "back") debugReturn();
+  else if (a === "pause") closePause();
+}
+function debugReturn() {
+  if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options"));
+  else closePause();
+}
+
 function menuControls(a) {
   const m = game.menu;
   const ACTIONS = REBINDABLE;               // one row per rebindable action, col 0 = kb, col 1 = pad
@@ -2576,7 +2704,8 @@ function saveSettings() {
       musicTrack: settings.musicTrack,                                            // v3.4 P6 (additive)
       shipTurnScale: settings.shipTurnScale,                                      // CS010 §10b (additive)
       voiceStyle: settings.voiceStyle, captions: settings.captions,               // CS011 P3 (additive)
-      autoShield: settings.autoShield };                                          // CS012 P5 (additive)
+      autoShield: settings.autoShield,                                            // CS012 P5 (additive)
+      debug: { ...debugShown } };                                                 // CS015 P4 (additive sub-object, display units)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -2628,6 +2757,15 @@ function loadSettings() {
     if (typeof data.captions === "boolean") settings.captions = data.captions;
     // CS012 P5: auto-shield is an additive boolean — missing/non-boolean leaves the runtime default (false) in place.
     if (typeof data.autoShield === "boolean") settings.autoShield = data.autoShield;
+    // CS015 P4: debug variables persist as an additive sub-object (display units; no new frozen key). Each
+    // registry entry is validated independently — a finite in-[min,max] stored value applies via applyDebug,
+    // anything else (missing / NaN / out of range / hand-edited garbage) leaves the seeded default in place.
+    if (data.debug) {
+      for (const e of DEBUG_VARS) {
+        const dv = data.debug[e.id];
+        if (Number.isFinite(dv) && dv >= e.min && dv <= e.max) applyDebug(e.id, dv);
+      }
+    }
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
@@ -4306,7 +4444,7 @@ function damageShip(amount, srcX, srcY) {
     s.vx = Math.cos(ka) * KNOCKBACK_SPEED;
     s.vy = Math.sin(ka) * KNOCKBACK_SPEED;
     s.invuln = HIT_STUN_DURATION;
-    s.autoShieldRegenLock = AUTO_SHIELD_REGEN_PAUSE;
+    s.autoShieldRegenLock = DEBUG.autoShieldRegenPause; // CS015 P4: now tunable live from the Debug panel (default = AUTO_SHIELD_REGEN_PAUSE)
     s.shieldOn = true;
     // Penalty BYPASSES addScore by design (FLAG-4e / CLAUDE.md scoring exception): auto-save must NOT touch
     // game.nextRepair, so it can never trip the HP-repair milestone. Clamp the score at 0.
@@ -5186,6 +5324,7 @@ function drawMenu() {
   else if (s === "difficulty") drawDifficulty();
   else if (s === "achievements") drawAchievements();
   else if (s === "highscores") drawHighScores();
+  else if (s === "debug") drawDebug();   // CS015 P4: hidden, secret-code-only
 }
 
 function menuPanel(w, h, title) {
@@ -5303,6 +5442,28 @@ function drawDifficulty() {
   drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 320, 22, backSel ? COLOR.text : COLOR.menuIdle);
   if (m.index < HELP.length) drawMenuHint(HELP[m.index], VIEW_W / 2, y + 364);
   drawMenuHint("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 394);
+}
+
+// Hidden Debug Options panel renderer (CS015 P4) — generic over DEBUG_VARS, following drawSound's
+// value-row layout (left-aligned label + value + ◄► chevrons on the focused row) plus a centered Back
+// row. Panel height grows with the registry, so P5/P6 knobs slot in with no layout edit.
+function drawDebug() {
+  const N = DEBUG_VARS.length, h = 220 + N * 46;
+  const { x, y } = menuPanel(560, h, "DEBUG OPTIONS");
+  const m = game.menu;
+  let cy = y + 100;
+  DEBUG_VARS.forEach((e, i) => {
+    const sel = m.index === i;
+    drawText(e.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
+    const ox = x + 340;
+    drawText(debugShown[e.id] + (e.unit ? " " + e.unit : ""), ox, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
+    if (sel) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 120, cy + 7, 16, COLOR.text); }
+    cy += 46;
+  });
+  cy += 14;
+  const backSel = m.index === N;
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.menuIdle);
+  drawMenuHint("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + h - 30);
 }
 
 function drawControlsMenu() {
@@ -6063,6 +6224,13 @@ function loop(now) {
   pollGamepad();        // refresh the first-gamepad snapshot once per frame, before anything reads it
   handleGamepadMenu();  // edge-triggered controller menu/system actions (Start/A/B)
   update(dt);
+  // CS015 P4: expire the debug secret-code arming window on inactivity. Lives HERE (loop() runs every
+  // frame) and NOT update(), which early-returns while paused/at title — the very states the code is
+  // armed in. performance.now() matches the clock DebugCode.last is stamped with in the keydown listener.
+  if (DebugCode.armed && performance.now() - DebugCode.last > DEBUG_CODE_IDLE_MS) {
+    DebugCode.armed = false;
+    AudioSys.secretDisarm();
+  }
   updateToasts(dt);     // age out achievement-unlock toasts (independent of pause/state) (F9)
   updateMusic();        // v3.4 P6: drive the music state/duck off game.state + menu, then run the scheduler
   draw();

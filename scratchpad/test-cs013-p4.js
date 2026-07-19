@@ -97,7 +97,9 @@ function armShip(A, hp) {
 
   assert(/const AUTO_SHIELD_REGEN_PAUSE\s*=\s*1\.0/.test(currentSrc), "A: AUTO_SHIELD_REGEN_PAUSE = 1.0 constant present");
   assert(/this\.autoShieldRegenLock\s*=\s*0/.test(currentSrc), "A: ship init carries autoShieldRegenLock = 0");
-  assert(/s\.autoShieldRegenLock\s*=\s*AUTO_SHIELD_REGEN_PAUSE/.test(currentSrc), "A: auto-shield branch arms the lock");
+  // CS015 P4 repointed the arm site from the frozen const to the live Debug-panel value DEBUG.autoShieldRegenPause
+  // (default = AUTO_SHIELD_REGEN_PAUSE * 1000 / 1000 = 1.0s, so section B's runtime check below is unchanged).
+  assert(/s\.autoShieldRegenLock\s*=\s*DEBUG\.autoShieldRegenPause/.test(currentSrc), "A: auto-shield branch arms the lock (from the live DEBUG value as of CS015 P4)");
   assert(/if\s*\(this\.autoShieldRegenLock\s*>\s*0\)\s*this\.autoShieldRegenLock\s*-=\s*dt/.test(currentSrc), "A: lock ticks down each frame");
   assert(/if\s*\(this\.autoShieldRegenLock\s*<=\s*0\)\s*this\.energy\s*=\s*Math\.min\(1,\s*this\.energy\s*\+\s*SHIELD_RECHARGE\s*\*\s*dt\)/.test(currentSrc),
     "A: passive recharge site gated on the lock");
