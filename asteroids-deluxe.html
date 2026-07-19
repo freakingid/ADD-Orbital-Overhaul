@@ -4838,7 +4838,8 @@ function update(dt) {
     p.update(dt);
     if (!p.dead && !game.ship.dead) {
       const r = p.radius + SHIP_RADIUS;
-      if (dist2(p, game.ship) < r * r) { p.dead = true; applyPowerup(p.type); }
+      // CS015 P3 (item 8): scoop mouth also captures powerups — scoop only, no magnet multiplier.
+      if (dist2(p, game.ship) < r * r || inScoopBox(p)) { p.dead = true; applyPowerup(p.type); }
     }
   }
   for (const k in game.powerFx) {
@@ -5104,8 +5105,9 @@ function update(dt) {
   game.powerups = game.powerups.filter(p => !p.dead);
   if (hadSaucer && game.saucers.length === 0) AudioSys.saucer(false);
 
-  // --- Wave clear ---
-  if (game.debris.length === 0 && game.hunters.length === 0) {
+  // --- Wave clear --- CS015 P3: clears on debris-empty alone; Hunters and loose garbage
+  // carry over by design (not wiped by nextWave()) and can accumulate if neglected.
+  if (game.debris.length === 0) {
     game.waveClearTimer += dt;
     if (game.waveClearTimer > 2.5) {
       game.waveClearTimer = 0;
