@@ -12,22 +12,29 @@ first, re-grep its named anchors to confirm shipped behavior, build only that
 phase, deliver a headless `scratchpad/test-cs015-p*.js` with the code, update the
 docs in place, commit on `main`, do **not** push.
 
+**How to use this doc.** Each phase ends with a **▶ Claude Code prompt** — a fenced
+block you paste directly into a fresh Claude Code session (set the model/effort noted
+on the block first). The prompt is self-contained: it tells Claude Code to read
+`STATUS.md`, re-grep the anchors, make the change, write the test, update the docs,
+and commit (without pushing) with the exact message. The prose above each prompt
+(Goal / anchors / Change / Watch / Test) is the reasoning behind it — read it if you
+want the why; paste the block to get the work done. Run phases one at a time, in
+order.
+
 ---
 
 ## Round-level forks & flags (resolve/skim before starting)
 
-- **FLAG-CS015-a (item 10 — garbage lifetime default & scope).** The planning
-  doc says "Garbage lifetime … default 10 (s)," but the shipped constant is
-  `GARBAGE_DECAY = 22`, and today **only loose singles decay** (`pieces === 1`);
-  clumps never age out (FORK-4, v3.3 P4). Item 10 asks for **any size** to
-  disappear "if not picked up **or merged together**." Best-guess taken in P6:
-  honor the doc's **10 s default** (it's a live-tunable knob you'll retune by
-  feel anyway; the panel exists precisely for this), make **all sizes** decay,
-  and treat a **merge as activity** — the surviving clump's clock **resets to a
-  full lifetime** on each merge, so an actively-growing lineage never dies but a
-  stalled one does. This changes single-garbage life from 22 s → 10 s at default.
-  If you'd rather preserve current feel and tune down from the panel, flip the P6
-  registry `def` from `10` to `22`; nothing else changes.
+- **FLAG-CS015-a (item 10 — garbage lifetime default & scope). — RESOLVED: 10 s.**
+  The shipped constant is `GARBAGE_DECAY = 22`, and today **only loose singles
+  decay** (`pieces === 1`); clumps never age out (FORK-4, v3.3 P4). Item 10 asks
+  for **any size** to disappear "if not picked up **or merged together**."
+  **Paul's call: default 10 s** (the panel is the escape hatch — tune from there;
+  no reason to bias the default toward the old 22). P6 therefore: `def:10`, make
+  **all sizes** decay, and treat a **merge as activity** — the surviving clump's
+  clock **resets to a full lifetime** on each merge, so an actively-growing
+  lineage never dies but a stalled one does. Note for the build log: this changes
+  single-garbage life from 22 s → 10 s at default (expected, not a regression).
 
 - **FLAG-CS015-b (item 2 — "same colors" is ambiguous).** Each timed row already
   uses its **own** hue when active and `COLOR.dim` when idle; the Scoop row's
@@ -56,11 +63,15 @@ docs in place, commit on `main`, do **not** push.
   data" idiom the codebase already uses. P4 ships the registry with **one** entry
   (item 5); P5/P6 add entries only.
 
-- **FORK-CS015-D (item 6 — which strings ship).** You asked for ≥5 proposed
-  replacement lines; proposals are in **P7**. Pick/approve the final set **before**
-  P7 runs, because the phon for each must be composed and zero-err-verified in
-  `tools/voice-robot-lab.html` and pasted **verbatim** (voice non-negotiable) — P7
-  is gated on both your sign-off and the lab output, exactly like CS011 P5.
+- **FORK-CS015-D (item 6 — which strings ship). — RESOLVED (strings approved).**
+  Approved set (functional/matter-of-fact register — no Dan sarcasm here, by
+  design): **"Payload damaged."**, **"Payload disrupted."**, **"Payload
+  scattered."**, **"Bounty broke free."**, **"Bounty lost."** "Payload"/"Bounty"
+  chosen deliberately to signal the lost salvage was *worth points*, not trash.
+  P7 remains gated on the **lab phon** step: each line's `phon` must still be
+  composed and zero-err-verified in `tools/voice-robot-lab.html` and pasted
+  **verbatim** (voice non-negotiable), exactly like CS011 P5. Strings are locked;
+  only the phon composition remains before P7 can run.
 
 - **FLAG-CS015-e (item 5 — "even longer").** "Make it take even longer … I believe
   we made it 1 second before" — confirmed: `AUTO_SHIELD_REGEN_PAUSE = 1.0`.
@@ -134,6 +145,32 @@ title + paused.
 
 **Model/effort:** **Sonnet 5 · high.** Two localized rendering edits, no logic.
 
+**▶ Claude Code prompt — paste this (model: Sonnet 5 · high):**
+```
+CS015 Phase P1 (items 1,2): pause-panel width fit + Scoop HUD indicator color.
+
+First read STATUS.md and CLAUDE.md. This is ONE phase only — do not build ahead.
+
+Re-grep to confirm current line numbers before editing (they will have drifted):
+- drawRootMenu → the menuPanel(360, 300, ...) call and the control-hint drawMenuHint call
+- MENU_HINT_SIZE, drawMenuHint
+- the Scoop HUD row: drawRingSegments(..., POWERUP_COLOR.scoop, ...) plus the two drawText for the SCOOP label and the level number
+- a timed powerup row for the convention: active ? POWERUP_COLOR[t] : COLOR.dim
+
+Change:
+1. Add const ROOT_MENU_HINT = "↑↓ move    ENTER / A select    ESC / B back"; and a new tuning const ROOT_MENU_HINT_MARGIN = 28 (playtest knob, grouped with the menu consts). In drawRootMenu, before menuPanel: set ctx.font = MENU_HINT_SIZE + "px monospace", measure ROOT_MENU_HINT, compute w = Math.max(360, Math.ceil(measuredWidth) + 2*ROOT_MENU_HINT_MARGIN), pass w to menuPanel(w, 300, ...). Draw the hint via drawMenuHint(ROOT_MENU_HINT, ...). Do NOT touch menuPanel internals or the row height/step.
+2. In the Scoop HUD row, compute scoopCol = game.scoopLevel > 0 ? POWERUP_COLOR.scoop : COLOR.dim and use scoopCol for the lit segments, the SCOOP label, and the level number. Leave the dim track as COLOR.dim.
+
+No new fills.
+
+Test: create scratchpad/test-cs015-p1.js. node --check clean. Drive the REAL symbols (stub canvas/ctx like the other scratchpad tests): assert the computed panel width ≥ measured hint width + 2*margin; assert the scoop-color expression returns COLOR.dim at scoopLevel 0 and POWERUP_COLOR.scoop at ≥1; headless draw() smoke at title and paused with no throw. Run the full scratchpad regression.
+
+Docs (in place): GDD §2 HUD/menu note (Scoop-row active/idle color + measured root-panel width); Architecture Map only if it references panel size; append GDD-VERSION-HISTORY.md; update STATUS.md.
+
+Commit on main, do NOT push:
+CS015 P1: widen pause panel to fit control hint; align Scoop HUD indicator to the active/idle color convention
+```
+
 **Commit:** `CS015 P1: widen pause panel to fit control hint; align Scoop HUD indicator to the active/idle color convention`
 
 **Docs:** GDD §2 HUD/menu notes for the Scoop-row color rule + the measured root-
@@ -187,6 +224,31 @@ headless `drawAchievements()` no-crash at scroll 0 and scroll = max, both column
 **Model/effort:** **Sonnet 5 · high** (drop `ultrathink` into the message for the
 `achMaxScroll` coupling if it stalls — that shared-math seam is the only trap).
 
+**▶ Claude Code prompt — paste this (model: Sonnet 5 · high; add `ultrathink` if the scroll math stalls):**
+```
+CS015 Phase P2 (item 3): stop achievement name/medal overlap at ACH_SCALE 1.5.
+
+First read STATUS.md and CLAUDE.md. ONE phase only.
+
+Re-grep to confirm current lines:
+- drawAchRow(ach, x, ry, w): the three drawText calls (name left @ry, status right-aligned @x+w @ry, desc @ry+22), in BOTH the tiered and plain branches
+- ACH_SCALE, ACH_ROW_STEP
+- achMaxScroll(): the content-height math (it shares the per-row height with the render — both must agree)
+- the achievements clip-region consts
+
+Change (uniform 3-line rows):
+1. Add tuning consts ACH_STATUS_DY and ACH_DESC_DY (playtest knobs, grouped with the ach consts). Lay each row as three stacked lines: name @ry, status @ry+ACH_STATUS_DY (keep it right-aligned at x+w), desc @ry+ACH_DESC_DY. Apply to BOTH branches of drawAchRow.
+2. Bump ACH_ROW_STEP so three lines seat without touching the next row (start ~48*ACH_SCALE).
+3. Update achMaxScroll()'s tail term to the new desc bottom (ACH_DESC_DY + ~10*ACH_SCALE) so render and input-clamp agree exactly.
+
+Test: scratchpad/test-cs015-p2.js. node --check. Pull the real per-row height and the value achMaxScroll() assumes from the real symbols and assert they match; assert achMaxScroll() ≥ 0 and clamps game.menu.scroll; headless drawAchievements() no-throw at scroll 0 and scroll=max, both column shapes. Full regression.
+
+Docs: GDD §2.16 row-layout note; Architecture Map if the row-geometry consts are listed; version history; STATUS.md (note the DY/step values are browser-tuned look-calls to nudge in playtest).
+
+Commit on main, do NOT push:
+CS015 P2: stack Achievements name/status/desc on separate lines to stop overlap at the larger font
+```
+
 **Commit:** `CS015 P2: stack Achievements name/status/desc on separate lines to stop overlap at the larger font`
 
 **Docs:** GDD §2.16 (Achievements viewer) row-layout note; Architecture Map if the
@@ -235,6 +297,33 @@ inside the scoop mouth but outside `r` **is** collected (real `inScoopBox`, real
 `applyPowerup`). `node --check`; no-crash smoke.
 
 **Model/effort:** **Sonnet 5 · high.** Two small, well-anchored logic edits.
+
+**▶ Claude Code prompt — paste this (model: Sonnet 5 · high):**
+```
+CS015 Phase P3 (items 9,8): level-up on debris-empty; scoop mouth captures powerups.
+
+First read STATUS.md and CLAUDE.md. ONE phase only.
+
+Re-grep to confirm current lines:
+- the wave-clear condition: game.debris.length === 0 && game.hunters.length === 0
+- nextWave(): CONFIRM it does NOT clear game.hunters or game.garbage (it shouldn't)
+- powerup pickup: const r = p.radius + SHIP_RADIUS; if (dist2(p, game.ship) < r*r) { ... }
+- inScoopBox(g): confirm it reads g.x/g.y generically and returns false at scoopLevel 0
+- confirm there is NO second wave-clear path anywhere
+
+Change:
+1. Item 9: drop the hunters clause → if (game.debris.length === 0). Update the comment: wave clears on debris-empty; Hunters and loose garbage carry over by design and can accumulate if neglected. Do NOT add any hunter/garbage wipe to nextWave.
+2. Item 8: OR the scoop mouth into the powerup test → if (dist2(p, game.ship) < r*r || inScoopBox(p)) { ... }. Scoop only, no magnet multiplier.
+
+dist2 is wrap-aware and already in place. No new fills.
+
+Test: scratchpad/test-cs015-p3.js driving the REAL update/nextWave. (9) debris=[] with a live Hunter → wave-clear timer runs, nextWave fires, the carried Hunter and any carried garbage survive into the new wave and new debris is added on top. (8) scoopLevel 0: a powerup just outside r is NOT collected; scoopLevel ≥1: a powerup inside the scoop mouth but outside r IS collected (real inScoopBox + real applyPowerup). node --check; full regression.
+
+Docs: GDD §2 wave/level progression + §2.14/§2.14.1 (scoop now captures powerups); version history; STATUS.md.
+
+Commit on main, do NOT push:
+CS015 P3: clear wave on debris-empty (Hunters/garbage carry over); scoop mouth now also captures powerups
+```
 
 **Commit:** `CS015 P3: clear wave on debris-empty (Hunters/garbage carry over); scoop mouth now also captures powerups`
 
@@ -353,6 +442,59 @@ context-gating, the `loop()`-vs-`update()` timeout seam, persistence, registry.
 Drop **`ultrathink`** into the message on two sub-problems: the secret-code
 contexts/`e.key` buffering, and the const→`DEBUG` live-tunable persistence path.
 
+**▶ Claude Code prompt — paste this (model: Opus 4.8 · xhigh; include `ultrathink`):**
+```
+CS015 Phase P4 (items 4,5): hidden Debug Options panel — data-driven DEBUG_VARS registry + secret-code entry + first knob (Auto Shield Regen Pause). FOUNDATION phase; build ONLY this, no later debug vars. ultrathink.
+
+First read STATUS.md and CLAUDE.md. ONE phase only.
+
+Re-grep to confirm current lines:
+- menu state machine: menuInput(action) dispatch, the per-screen handlers (menuRoot/menuOptions, label-dispatched), drawMenu() render dispatch, menuPanel(w,h,title)
+- gotoScreen(s,index), openPause() (sets game.paused), closePause()
+- the keydown listener (three contexts: rebind / menu-open / play) and where AudioSys.init()/resume() is called in it
+- update(dt) early-return guard (state !== "playing" || paused) — CONFIRM it early-returns; the idle timeout must NOT live there
+- loop() (runs unconditionally every frame)
+- AudioSys one-shot method pattern (e.g. ui(), scooploss()): this.ctx guard, this.now(), oscillator→gain→this.sfx
+- settings obj, saveSettings(), loadSettings() (additive known-value-else-default), STORAGE_KEY "afd_settings_v1"
+- item-5 consumer: s.autoShieldRegenLock = AUTO_SHIELD_REGEN_PAUSE; and const AUTO_SHIELD_REGEN_PAUSE = 1.0
+
+Change — four pieces:
+
+(1) Registry + runtime. Near the settings block, add:
+  const DEBUG_VARS = [
+    { id:"autoShieldRegenPause", label:"Auto Shield Regen Pause", unit:"ms",
+      def: AUTO_SHIELD_REGEN_PAUSE * 1000, min:0, max:5000, step:100, toNative:v=>v/1000 },
+  ];
+  const DEBUG = {};        // native-unit live values (consumers read these)
+  const debugShown = {};   // display-unit values (panel + persistence)
+  function applyDebug(id, shown){
+    const e = DEBUG_VARS.find(v=>v.id===id);
+    debugShown[id] = shown;
+    DEBUG[id] = e.toNative ? e.toNative(shown) : shown;
+  }
+  for (const v of DEBUG_VARS) applyDebug(v.id, v.def);
+Repoint the item-5 consumer to DEBUG.autoShieldRegenPause (native seconds). Leave the AUTO_SHIELD_REGEN_PAUSE const in place as the documented default.
+
+(2) Panel screen (generic over the registry). Add "debug" to the menuInput dispatch and the drawMenu dispatch. drawDebug(): menuPanel(560, ..., "DEBUG OPTIONS"), one row per DEBUG_VARS entry — label left, "◄ value+unit ►" right — plus a centered Back row; cursor game.menu.index over N+1 rows. menuDebug(a): up/down move; left/right adjust the selected var by step, clamped [min,max], then applyDebug(id, newShown) + saveSettings() + AudioSys.ui(false); Back row (or the back action) returns to context. Return routing mirrors menuOptions: state playing/gameover → gotoScreen("root", ...), else closePause(). Add openDebug() like openPause() but screen="debug" (sets game.paused). Do NOT add Debug to MENU_OPTIONS/rootItems.
+
+(3) Persistence. In saveSettings add debug: { ...debugShown }. In loadSettings, after the other additive fields, for each DEBUG_VARS entry: if data.debug && Number.isFinite(data.debug[id]) && it's within [min,max] → applyDebug(id, data.debug[id]); else keep the seeded default. No new storage key.
+
+(4) Secret-code entry + beeps. Add module-level DebugCode = { armed:false, buf:"", last:0 } and consts DEBUG_CODE = "EvilG3niu$", DEBUG_CODE_IDLE_MS = 4000. Add two AudioSys methods modeled on ui()/scooploss(): secretArm() = 3 ascending blips, secretDisarm() = 3 descending blips (both this.ctx-guarded). In the keydown listener, right after AudioSys.init(), only when ((game.state==="title") || (game.paused && game.state==="playing")) and NOT rebinding/name-entry:
+  - if e.key === "`": DebugCode.armed=true; DebugCode.buf=""; DebugCode.last=performance.now(); AudioSys.secretArm(); return;
+  - else if DebugCode.armed && !e.repeat: DebugCode.last=performance.now(); if e.key.length===1 append e.key to DebugCode.buf (this preserves case and $/G/3 and drops multi-char modifier/nav keys); keep only the last DEBUG_CODE.length chars; if DebugCode.buf.endsWith(DEBUG_CODE) → disarm and (game.state==="title" ? openDebug() : gotoScreen("debug")).
+  Otherwise let normal handling proceed (every code char is inert on title/pause). Do NOT preventDefault the code keys.
+In loop(), unconditionally after update(): if DebugCode.armed && performance.now() - DebugCode.last > DEBUG_CODE_IDLE_MS → DebugCode.armed=false; AudioSys.secretDisarm(). (Must be in loop(), NOT update, which is paused-gated.)
+
+Do NOT touch invariant guards, the MusicSys scheduler, or the VoiceSys engine. No new frozen localStorage key names.
+
+Test: scratchpad/test-cs015-p4.js. node --check. Drive REAL functions: applyDebug round-trips display↔native (ms/1000) and clamps at min/max; a real saveSettings→loadSettings cycle round-trips debug.autoShieldRegenPause and snaps a garbage/out-of-range stored value to default; the item-5 consumer reads DEBUG.autoShieldRegenPause (drive the real auto-shield/damage path; the lock equals the live value, default 1.0s); the secret-code machine on a fake key stream (backtick arms; "EvilG3niu$" suffix opens "debug"; a non-matching stream does not; modifier/arrow keys do not pollute buf); the loop() idle path disarms after DEBUG_CODE_IDLE_MS; drawDebug()/menuDebug() no-throw headless. Full regression.
+
+Docs: GDD §2 new "Debug Options" subsection (secret entry, registry, persistence location); Architecture Map — AudioSys (secretArm/secretDisarm), menu/input (debug screen, DebugCode, openDebug), Constants (DEBUG_VARS/DEBUG), loop() idle-timeout note; the afd_settings_v1 frozen-keys note gains the additive debug sub-object; version history; STATUS.md.
+
+Commit on main, do NOT push:
+CS015 P4: hidden Debug Options panel (data-driven DEBUG_VARS registry, secret-code entry + beeps, afd_settings_v1.debug persistence); first knob: Auto Shield Regen Pause
+```
+
 **Commit:** `CS015 P4: hidden Debug Options panel (data-driven DEBUG_VARS registry, secret-code entry + beeps, afd_settings_v1.debug persistence); first knob: Auto Shield Regen Pause`
 
 **Docs:** GDD §2 new "Debug Options" subsection (secret entry, registry, persistence
@@ -410,6 +552,35 @@ paths: scoop-loss after `DEBUG.scoopHitsPerLevel` hits; a fresh piece stays iner
 at defaults, behavior is byte-identical to pre-P5 (assert against the shipped consts).
 
 **Model/effort:** **Sonnet 5 · high.** Mechanical, well-anchored, no design surface.
+
+**▶ Claude Code prompt — paste this (model: Sonnet 5 · high):**
+```
+CS015 Phase P5 (items 7,11,12): four more debug knobs. Depends on P4's registry. Defaults = shipped consts, so NO behavior change at default.
+
+First read STATUS.md and CLAUDE.md. ONE phase only.
+
+Re-grep to confirm current lines AND every value-read (not just the first):
+- SCOOP_HITS_PER_LEVEL and its consumer (game.scoopHits >= SCOOP_HITS_PER_LEVEL)
+- GARBAGE_COALESCE_DELAY and ALL consumers (the ctor assignment + the re-arm site; also check for a shatter re-arm)
+- GARBAGE_MAGNET_RANGE and its consumer (d2 >= RANGE*RANGE continue)
+- GARBAGE_MAGNET_PULL and its consumer (pull * dt)
+
+Change. Append to DEBUG_VARS:
+  { id:"scoopHitsPerLevel",    label:"Hits before losing scoop", unit:"",      def:SCOOP_HITS_PER_LEVEL,        min:1, max:20,    step:1 },
+  { id:"garbageAttractDelay",  label:"Garbage attraction delay", unit:"ms",    def:GARBAGE_COALESCE_DELAY*1000, min:0, max:10000, step:250, toNative:v=>v/1000 },
+  { id:"garbageAttractRadius", label:"Garbage attraction radius",unit:"px",    def:GARBAGE_MAGNET_RANGE,        min:0, max:600,   step:10 },
+  { id:"garbageAttractForce",  label:"Garbage attraction force", unit:"px/s²", def:GARBAGE_MAGNET_PULL,         min:0, max:200,   step:5 },
+Repoint consumers: SCOOP_HITS_PER_LEVEL→DEBUG.scoopHitsPerLevel; GARBAGE_COALESCE_DELAY (all sites, native seconds)→DEBUG.garbageAttractDelay; GARBAGE_MAGNET_RANGE→DEBUG.garbageAttractRadius; GARBAGE_MAGNET_PULL→DEBUG.garbageAttractForce. Keep the consts in place as documented defaults. garbageAttractDelay is captured per-piece at ctor time (applies to new garbage — fine).
+
+Do NOT touch the SCOOP_WIDTH[0]/SCOOP_DEPTH[0] invariant guard.
+
+Test: scratchpad/test-cs015-p5.js. node --check. For each of the four: round-trip display↔native + clamp; the consumer reads DEBUG.* (scoop-loss after DEBUG.scoopHitsPerLevel hits; a fresh piece stays inert for DEBUG.garbageAttractDelay then attracts; coalesceGarbage skips pairs beyond DEBUG.garbageAttractRadius; pull magnitude scales with DEBUG.garbageAttractForce). Assert byte-identical to pre-P5 at defaults (compare against the shipped consts). Full regression.
+
+Docs: GDD §2.10.1 (coalescence knobs now dev-tunable) + §2.14 (scoop hits/level); Architecture Map Constants (DEBUG_VARS grown); version history; STATUS.md.
+
+Commit on main, do NOT push:
+CS015 P5: add debug knobs — scoop hits/level, garbage attraction delay/radius/force (defaults = shipped)
+```
 
 **Commit:** `CS015 P5: add debug knobs — scoop hits/level, garbage attraction delay/radius/force (defaults = shipped)`
 
@@ -471,46 +642,97 @@ that stalls dies; headless no-crash `draw()` for a decaying clump.
 FLAG and the merge-reset/fade-tell decisions). `ultrathink` on the decay/merge
 interaction if it stalls.
 
+**▶ Claude Code prompt — paste this (model: Opus 4.8 · xhigh; include `ultrathink`):**
+```
+CS015 Phase P6 (item 10): garbage of ANY size ages out on a tunable lifetime; a merge resets the clock. Depends on P4. FLAG-CS015-a resolved: default 10s. ultrathink on the decay/merge interaction.
+
+First read STATUS.md and CLAUDE.md. ONE phase only.
+
+Re-grep to confirm current lines:
+- GARBAGE_DECAY (=22) and the seed this.decay = GARBAGE_DECAY
+- the decay gate: if (this.pieces === 1) { this.decay -= dt; if (this.decay <= 0) this.dead = true; }
+- the single blink-out tell in draw() (this.decay < GARBAGE_FADE) and the clump draw branch (no fade tell today)
+- the merge site in coalesceGarbage (survivor a absorbs b: a.pieces += b.pieces, a.radius = ...)
+- Garbage.fromNode (routes through the ctor)
+
+Change:
+1. Append registry entry: { id:"garbageLifetime", label:"Garbage lifetime", unit:"s", def:10, min:1, max:60, step:1 }.  (def:10 is the resolved call.)
+2. Seed from the knob: this.decay = DEBUG.garbageLifetime; at the ctor seed site.
+3. All sizes decay: remove the pieces===1 gate so every piece runs: this.decay -= dt; if (this.decay <= 0) this.dead = true;
+4. Merge resets the clock: in the merge branch, after the survivor a absorbs b, add a.decay = DEBUG.garbageLifetime;
+5. Clump expiry tell: mirror the single's (this.decay < GARBAGE_FADE) blink in the pieces>1 draw branch.
+
+Leave the GARBAGE_DECAY const in place as the documented shipped value. The coalesced-Hunter transform is unaffected (it kills a and spawns a Hunter before decay matters).
+
+Test: scratchpad/test-cs015-p6.js. node --check. A clump (pieces>1) now ages out after DEBUG.garbageLifetime (it never did before); a merge resets the survivor's decay to full; a single still dies on schedule and blinks in its last GARBAGE_FADE; changing the knob changes new-spawn lifetime; a clump that keeps merging (one shy of the Hunter threshold) never dies while a stalled one does; headless draw() no-throw for a decaying clump. Full regression.
+
+Docs: GDD §2.10.1 (rewrite the decay rule: all sizes, merge-resets, lifetime is a dev knob; note the 22→10 default change); Architecture Map Constants/Entity; version history; STATUS.md (call out FLAG-CS015-a).
+
+VERSION: only if you are NOT running P7 this round (voice lab not done), ALSO bump GAME_VERSION "1.0.0.13" → "1.0.0.15" here and grep scratchpad/ for the old literal and bump it too, then add that to this commit message. If P7 is coming, leave the version alone (P7 carries it).
+
+Commit on main, do NOT push:
+CS015 P6: garbage of any size ages out on a tunable lifetime (merge resets the clock); add Garbage Lifetime debug knob (default 10s — was 22s single-only)
+```
+
 **Commit:** `CS015 P6: garbage of any size ages out on a tunable lifetime (merge resets the clock); add Garbage Lifetime debug knob (default 10s — was 22s single-only)`
 
 **Docs:** GDD §2.10.1 (rewrite the decay rule: all sizes, merge-resets, lifetime is a
 dev knob; note the 22→10 default change); Architecture Map Constants/Entity rows;
 version history; `STATUS.md` (call out FLAG-CS015-a explicitly for future readers).
 
+> **⛔ STOP — do this before P7 (manual lab step, not a build session).**
+> P7 is blocked until the voice phon is composed. When you finish P6:
+> 1. Open **`tools/voice-robot-lab.html`** in a browser.
+> 2. Compose the `phon` for each of the **five approved lines** (copy the text
+>    verbatim): `Payload damaged.` · `Payload disrupted.` · `Payload scattered.` ·
+>    `Bounty broke free.` · `Bounty lost.`
+> 3. Confirm the lab reports **zero errors** for every line (`parsePhonTokens`).
+> 4. If you added any dictionary entries in the lab, **commit the lab file first**
+>    (design-instruments-first rule).
+> 5. Copy the five verified `{text, phon}` pairs into your P7 build session.
+>
+> Only after all five phon strings are zero-err-verified does P7 run. If you're
+> **not** doing the lab this round, tell Claude Code to carry the `GAME_VERSION` →
+> **1.0.0.15** bump in **P6** instead (it normally rides P7 as the last landed
+> phase), so the round still ships versioned — then run P7 as a later follow-up.
+
 ---
 
 ## Phase P7 — Chain-broken voice strings + version bump (item 6)
 
-**GATED.** Two preconditions before this phase runs: **(a)** you approve the final
-line set below (FORK-CS015-D), and **(b)** each approved line's `phon` is composed
-and **zero-err-verified** in `tools/voice-robot-lab.html` (`parsePhonTokens`) and
-brought here to paste **verbatim** — the voice engine/data port-verbatim rule
-(CLAUDE.md VoiceSys non-negotiable) forbids hand-authoring `phon` in the build.
+**GATED — strings locked, one precondition remains.** (a) Line set is **approved**
+(FORK-CS015-D, below). (b) **Still required before this phase runs:** each approved
+line's `phon` composed and **zero-err-verified** in `tools/voice-robot-lab.html`
+(`parsePhonTokens`), brought here to paste **verbatim** — the voice engine/data
+port-verbatim rule (CLAUDE.md VoiceSys non-negotiable) forbids hand-authoring `phon`
+in the build. Do the lab pass, then run P7.
 
 **Why item 6 exists.** The trigger is a **severed tow-haul**: `breakChain(i)` fires
 when a chain node is destroyed and everything aft floats free (≈ L4546–4555,
 `VoiceSys.say("chain_broken")`). Today's lines
 (`"Junk is gone!"`, `"Lost my scrap!"`, `"Trash is loose!"`, `"There goes the garbage!"`,
-`"There goes my junk!"`, ≈ L1589–1595) don't say **what** ("your tow chain / haul
-snapped") or **why** ("a hit severed it"). Captions default on, so the **text** is
-what the player reads — clarity lands even before phon.
+`"There goes my junk!"`, ≈ L1589–1595) don't say **what** was lost or convey that it
+was **worth points**. Captions default on, so the **text** is what the player reads —
+clarity lands even before phon.
 
-**Proposed replacements (pick ≥5; Dan = gruff blue-collar salvage hauler):**
-1. `Tow line snapped — lost the haul!`
-2. `My salvage broke loose!`
-3. `The load came off the chain!`
-4. `Cargo's adrift — the chain broke!`
-5. `Lost my tow — scrap's floating away!`
-6. `Something hit the chain, haul's gone!`
-7. `Chain's severed — there goes the load!`
+**Approved replacement set (locked — replaces the current five).** Register is
+deliberately **functional/matter-of-fact**, not sarcastic — a flat status call for
+this trigger (a conscious deviation from Dan's dryer lines elsewhere). "Payload"/
+"Bounty" are chosen to signal the lost salvage was *worth points*, not trash:
 
-Best-guess: **replace** the current five with the approved set (item 6 says the old
-ones are the problem). Say if you'd rather **augment** (keep some, add these).
+1. `Payload damaged.`
+2. `Payload disrupted.`
+3. `Payload scattered.`
+4. `Bounty broke free.`
+5. `Bounty lost.`
 
-**Change (once (a)+(b) are done):**
-1. Compose each approved line's `phon` in `tools/voice-robot-lab.html`; verify zero
-   errors; **commit the lab** first if any dictionary entries were added (design-
-   instruments-first).
+**Replace** the current five with these (item 6 says the old ones are the problem).
+Text is final; only the `phon` composition (lab step (b)) remains.
+
+**Change (once the lab phon step (b) is done):**
+1. Compose the `phon` for each of the five approved lines in
+   `tools/voice-robot-lab.html`; verify zero errors; **commit the lab** first if any
+   dictionary entries were added (design-instruments-first).
 2. Replace `VOICE_LINES.chain_broken` (≈ L1589–1595) with the approved
    `{text, phon}` pairs, pasted verbatim. `VOICE_PRIORITY.chain_broken` unchanged.
    Lines-are-data — no engine/scheduler edit.
@@ -529,6 +751,41 @@ no-crash smoke.
 **Model/effort:** **Sonnet 5 · high** for the paste + version bump (mechanical once
 phon is verified). The lab composition is a separate manual/creative step — do it in
 the lab, not in a build session. (Fable 5 · xhigh is fine if you prefer.)
+
+**▶ Claude Code prompt — paste this ONLY after the lab phon is verified (model: Sonnet 5 · high; Fable 5 · xhigh is fine):**
+```
+CS015 Phase P7 (item 6): replace the chain-broken voice lines + bump version to 1.0.0.15. GATED — do not run until the five phon strings are composed and zero-err-verified in tools/voice-robot-lab.html.
+
+First read STATUS.md and CLAUDE.md. ONE phase only.
+
+Precondition: you should be pasting five verified {text, phon} pairs for exactly these lines:
+  "Payload damaged."
+  "Payload disrupted."
+  "Payload scattered."
+  "Bounty broke free."
+  "Bounty lost."
+If you do not have verified phon for all five, STOP and do the lab pass first. If the lab added any dictionary entries, that lab commit must already be on main.
+
+Re-grep to confirm current lines:
+- VOICE_LINES.chain_broken (the current five entries)
+- VOICE_PRIORITY.chain_broken (leave unchanged)
+- breakChain(i) → VoiceSys.say("chain_broken") (context only, no edit)
+- GAME_VERSION (currently "1.0.0.13")
+- grep scratchpad/ for the old version literal "1.0.0.13"
+
+Change:
+1. Replace VOICE_LINES.chain_broken with the five approved {text, phon} pairs, pasted VERBATIM from the lab. Do NOT hand-author or hand-edit phon. No engine/scheduler change (lines are data).
+2. Bump GAME_VERSION "1.0.0.13" → "1.0.0.15" (.14 skipped: CS014 reverted, tag kept). Bump any matching literal found in scratchpad/.
+
+Do NOT touch the VoiceSys engine.
+
+Test: scratchpad/test-cs015-p7.js. node --check. Assert every chain_broken entry has non-empty text + phon; run each phon through the build's parsePhonTokens/buildUtterance path and assert ZERO unknown tokens; VoiceSys.say("chain_broken") is headless-safe (early-returns when !AudioSys.ctx); pin GAME_VERSION === "1.0.0.15". Full regression.
+
+Docs: GDD §2.8/§2 voice-lines note (chain_broken set replaced); GDD top-of-file Current-build → CS015 / "1.0.0.15"; version history (a consolidated CS015 entry); STATUS.md → CS015 round complete.
+
+Commit on main, do NOT push:
+CS015 P7: clearer chain-broken voice lines (verbatim from voice-robot-lab); bump GAME_VERSION 1.0.0.13 -> 1.0.0.15 (CS014 reverted, .14 skipped)
+```
 
 **Commit:** `CS015 P7: clearer chain-broken voice lines (verbatim from voice-robot-lab); bump GAME_VERSION 1.0.0.13 -> 1.0.0.15 (CS014 reverted, .14 skipped)`
 
