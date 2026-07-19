@@ -2248,6 +2248,12 @@ const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover 
 const MENU_HINT_SIZE = 16;  // CS013 P2: control-hint footer text size (drawMenuHint) — playtest knob
 const ACH_SCALE = 1.5;      // CS013 P3: Achievements-viewer text-size multiplier (readability pass) — playtest knob
 const ACH_SCROLL_STEP = 60; // CS013 P3: px per up/down scroll press in the Achievements viewer, ~one row — playtest knob
+// CS015 P1: the root/PAUSED panel's control hint, at MENU_HINT_SIZE 16, no longer fits the fixed
+// 360px panel width — hoisted to a const so drawRootMenu's width measurement and its drawMenuHint
+// call can't drift apart. ROOT_MENU_HINT_MARGIN is the side padding added to the measured text
+// width on each edge before it becomes the panel width — playtest knob.
+const ROOT_MENU_HINT = "↑↓ move    ENTER / A select    ESC / B back";
+const ROOT_MENU_HINT_MARGIN = 28;
 function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
@@ -5200,12 +5206,16 @@ function menuPanel(w, h, title) {
 // row math (fixed 46px step) needs no resize for the gameover case.
 function drawRootMenu() {
   const items = rootItems();
-  const { y } = menuPanel(360, 300, game.state === "playing" ? "PAUSED" : "MENU");
+  // CS015 P1: measure the control hint at its real render size/font before sizing the panel, so a
+  // future hint or font-size change self-heals instead of silently bleeding past the border again.
+  ctx.font = MENU_HINT_SIZE + "px monospace";
+  const w = Math.max(360, Math.ceil(ctx.measureText(ROOT_MENU_HINT).width) + 2 * ROOT_MENU_HINT_MARGIN);
+  const { y } = menuPanel(w, 300, game.state === "playing" ? "PAUSED" : "MENU");
   items.forEach((it, i) => {
     const sel = i === game.menu.index;
     drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, sel ? COLOR.text : COLOR.menuIdle);
   });
-  drawMenuHint("↑↓ move    ENTER / A select    ESC / B back", VIEW_W / 2, y + 272);
+  drawMenuHint(ROOT_MENU_HINT, VIEW_W / 2, y + 272);
 }
 
 // CS010 P4 (§9/§10a): now a pure nav list (Sound / Music, Controls, Achievements, High Scores,
@@ -5914,10 +5924,14 @@ function drawHUD() {
   // STROKE ONLY — the old pip row's fill dot is gone (GDD §3.2 no-fills exception list update).
   {
     const scoopY = HUD_FX_BASE_Y;
+    // CS015 P1 (FLAG-CS015-b): follow the same active/idle convention as the timed rows above
+    // (color = active ? POWERUP_COLOR[t] : COLOR.dim) — previously hardcoded violet regardless of
+    // level, so it read as the one bright row among dim ones at rest.
+    const scoopCol = game.scoopLevel > 0 ? POWERUP_COLOR.scoop : COLOR.dim;
     drawRingSegments(40, scoopY, HUD_FX_RING_R, SCOOP_MAX_LEVEL, game.scoopLevel,
-      POWERUP_COLOR.scoop, COLOR.dim);
-    drawText("SCOOP", 64, scoopY - 4, 13, POWERUP_COLOR.scoop, "left");
-    drawText(String(game.scoopLevel), 64, scoopY + 14, 16, POWERUP_COLOR.scoop, "left");
+      scoopCol, COLOR.dim);
+    drawText("SCOOP", 64, scoopY - 4, 13, scoopCol, "left");
+    drawText(String(game.scoopLevel), 64, scoopY + 14, 16, scoopCol, "left");
   }
   // when hauling, a chevron orbiting screen-center points toward the (maybe off-screen) dock
   if (game.chain.length && game.dock && !game.ship.dead) {

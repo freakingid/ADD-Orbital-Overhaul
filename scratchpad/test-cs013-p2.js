@@ -74,6 +74,9 @@ function makeRecordingCtx() {
       if (p === "fillText") return (str, x, y) => recLog.push({ c: "fillText", str, x, y, font: t.font, color: t.fillStyle, align: t.textAlign });
       if (p === "fillRect") return (x, y, w, h) => recLog.push({ c: "fillRect", x, y, w, h, color: t.fillStyle });
       if (p === "strokeRect") return (x, y, w, h) => recLog.push({ c: "strokeRect", x, y, w, h, color: t.strokeStyle });
+      // CS015 P1: drawRootMenu now measures its control hint before sizing the panel — a plausible
+      // monospace-width stand-in (fontSize * 0.6 * length) so that call doesn't throw on undefined.
+      if (p === "measureText") return (str) => ({ width: (parseInt(t.font, 10) || 10) * 0.6 * str.length });
       if (p in t) return t[p];
       return () => {};
     },
