@@ -124,8 +124,8 @@ const localStorageStub = {
 
 const RETURN = [
   "startGame", "update", "game", "gotoScreen", "menuAchievements", "achMaxScroll",
-  "Achievements", "COLOR", "TIER_COLOR", "ACH_SCALE", "ACH_SCROLL_STEP", "MENU_HINT_SIZE",
-  "MENU_OPTIONS", "drawAchievements", "drawAchRow", "AudioSys", "VIEW_W", "VIEW_H"
+  "Achievements", "COLOR", "TIER_COLOR", "ACH_SCALE", "ACH_SCROLL_STEP", "ACH_STATUS_DY", "ACH_DESC_DY",
+  "ACH_ROW_STEP", "MENU_HINT_SIZE", "MENU_OPTIONS", "drawAchievements", "drawAchRow", "AudioSys", "VIEW_W", "VIEW_H"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -134,8 +134,8 @@ const factory = new Function(
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, localStorageStub);
 const {
   startGame, update, game, gotoScreen, menuAchievements, achMaxScroll,
-  Achievements, COLOR, TIER_COLOR, ACH_SCALE, ACH_SCROLL_STEP, MENU_HINT_SIZE,
-  MENU_OPTIONS, drawAchievements, drawAchRow, AudioSys, VIEW_W, VIEW_H
+  Achievements, COLOR, TIER_COLOR, ACH_SCALE, ACH_SCROLL_STEP, ACH_STATUS_DY, ACH_DESC_DY,
+  ACH_ROW_STEP, MENU_HINT_SIZE, MENU_OPTIONS, drawAchievements, drawAchRow, AudioSys, VIEW_W, VIEW_H
 } = A;
 
 AudioSys.init();
@@ -165,13 +165,17 @@ const cx = VIEW_W / 2;
 // re-imported, so a geometry regression in the real code shows up as a position mismatch below.
 const px = (VIEW_W - 1200) / 2, py = (VIEW_H - 660) / 2;
 const xL = px + 30, xM = px + 430, xR = px + 820;
-const ry0 = py + 130, step = 40 * ACH_SCALE;
+const ry0 = py + 130, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE pre-P2; now the real (bumped) row step
 
 // ================= (B) sizes + step + description offset =================
+// CS015 P2 note: name/status no longer share row i's baseline — status moved to ry+ACH_STATUS_DY and
+// desc to ry+ACH_DESC_DY (was a bare ry+22), and the row step itself grew to fit the extra line. The
+// dedicated geometry regression test for that phase is scratchpad/test-cs015-p2.js; this section keeps
+// verifying sizes/positions still track the real (now CS015-P2) symbols, not a re-pin of old numbers.
 (function sectionB() {
-  console.log("(B) sizes == pre-P3 * ACH_SCALE; step == 60; description at ry+22");
+  console.log("(B) sizes == pre-P3 * ACH_SCALE; step == ACH_ROW_STEP; description at ry+ACH_DESC_DY");
   assert(ACH_SCALE === 1.5, "B: ACH_SCALE is 1.5 (got " + ACH_SCALE + ")");
-  assert(step === 60, "B: row step is 60 (40*ACH_SCALE, got " + step + ")");
+  assert(step === ACH_ROW_STEP, "B: row step is the real ACH_ROW_STEP (got " + step + ")");
   game.state = "playing";
   resetAch();
   gotoScreen("achievements", 0);
@@ -195,11 +199,11 @@ const ry0 = py + 130, step = 40 * ACH_SCALE;
     const name = at(log, xL, ry).find(e => e.str === ach.name);
     assert(!!name, `B: weekly row ${i} ("${ach.name}") name at its expected (x, ry)`);
     assert(fontSize(name) === 15 * ACH_SCALE, `B: weekly row ${i} name size == 15*ACH_SCALE`);
-    const desc = at(log, xL, ry + 22).find(e => e.str === ach.desc);
-    assert(!!desc, `B: weekly row ${i} description at ry+22`);
+    const desc = at(log, xL, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
+    assert(!!desc, `B: weekly row ${i} description at ry+ACH_DESC_DY`);
     assert(fontSize(desc) === 10 * ACH_SCALE, `B: weekly row ${i} description size == 10*ACH_SCALE`);
-    const readout = at(log, xL + 350, ry);
-    assert(readout.length === 1, `B: weekly row ${i} has exactly one readout fillText`);
+    const readout = at(log, xL + 350, ry + ACH_STATUS_DY);
+    assert(readout.length === 1, `B: weekly row ${i} has exactly one readout fillText at ry+ACH_STATUS_DY`);
     assert(fontSize(readout[0]) === 14 * ACH_SCALE, `B: weekly row ${i} readout size == 14*ACH_SCALE`);
   });
 
@@ -212,11 +216,11 @@ const ry0 = py + 130, step = 40 * ACH_SCALE;
     assert(!!name, `B: lifetime row ${i} ("${ach.name}") name at its expected (x, ry)`);
     assert(fontSize(name) === 15 * ACH_SCALE, `B: lifetime row ${i} name size == 15*ACH_SCALE`);
     const statusSize = ach.tiers ? 13 * ACH_SCALE : 14 * ACH_SCALE;
-    const readout = at(log, col + 350, ry);
-    assert(readout.length === 1, `B: lifetime row ${i} has exactly one status/readout fillText`);
+    const readout = at(log, col + 350, ry + ACH_STATUS_DY);
+    assert(readout.length === 1, `B: lifetime row ${i} has exactly one status/readout fillText at ry+ACH_STATUS_DY`);
     assert(fontSize(readout[0]) === statusSize, `B: lifetime row ${i} status/readout size == ${statusSize}`);
-    const desc = at(log, col, ry + 22).find(e => e.str === ach.desc);
-    assert(!!desc, `B: lifetime row ${i} description at ry+22`);
+    const desc = at(log, col, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
+    assert(!!desc, `B: lifetime row ${i} description at ry+ACH_DESC_DY`);
     assert(fontSize(desc) === 10 * ACH_SCALE, `B: lifetime row ${i} description size == 10*ACH_SCALE`);
   });
 
@@ -246,9 +250,9 @@ const ry0 = py + 130, step = 40 * ACH_SCALE;
     const done = ach.id === unlockedWeeklyId;
     const name = at(log, xL, ry).find(e => e.str === ach.name);
     assert(name.color === (done ? COLOR.ach : COLOR.text), `C: weekly "${ach.name}" name color matches unlocked state`);
-    const readout = at(log, xL + 350, ry)[0];
+    const readout = at(log, xL + 350, ry + ACH_STATUS_DY)[0];
     assert(readout.color === (done ? COLOR.ach : COLOR.menuIdle), `C: weekly "${ach.name}" readout is ach-when-done / menuIdle-when-locked`);
-    const desc = at(log, xL, ry + 22).find(e => e.str === ach.desc);
+    const desc = at(log, xL, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
     assert(desc.color === COLOR.menuIdle, `C: weekly "${ach.name}" description always reads menuIdle`);
   });
 
@@ -256,21 +260,21 @@ const ry0 = py + 130, step = 40 * ACH_SCALE;
   Achievements.LIFETIME.forEach((ach, i) => {
     const col = i < half ? xM : xR, row = i < half ? i : i - half;
     const ry = ry0 + row * step;
-    const desc = at(log, col, ry + 22).find(e => e.str === ach.desc);
+    const desc = at(log, col, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
     assert(desc.color === COLOR.menuIdle, `C: lifetime "${ach.name}" description always reads menuIdle`);
     if (ach.tiers) {
       const idx = Achievements.tierIndex(ach);
       const expectCol = idx >= 0 ? TIER_COLOR[idx] : COLOR.text;
       const name = at(log, col, ry).find(e => e.str === ach.name);
       assert(name.color === expectCol, `C: tiered "${ach.name}" name reads its tier tint (or COLOR.text pre-bronze) — unaffected by P3`);
-      const status = at(log, col + 350, ry)[0];
+      const status = at(log, col + 350, ry + ACH_STATUS_DY)[0];
       const expectStatusCol = idx >= 0 ? expectCol : COLOR.menuIdle;
       assert(status.color === expectStatusCol, `C: tiered "${ach.name}" status is tier-tinted once >=bronze, else menuIdle`);
     } else {
       const done = Achievements.isUnlocked(ach);
       const name = at(log, col, ry).find(e => e.str === ach.name);
       assert(name.color === (done ? COLOR.ach : COLOR.text), `C: non-tiered "${ach.name}" name color matches unlocked state`);
-      const readout = at(log, col + 350, ry)[0];
+      const readout = at(log, col + 350, ry + ACH_STATUS_DY)[0];
       assert(readout.color === (done ? COLOR.ach : COLOR.menuIdle), `C: non-tiered "${ach.name}" readout is ach-when-done / menuIdle-when-locked`);
     }
   });

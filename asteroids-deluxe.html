@@ -5394,7 +5394,9 @@ function axisLabel(a) {
 const ACH_PANEL_W = 1200, ACH_PANEL_H = 660;
 const ACH_PANEL_Y = (VIEW_H - ACH_PANEL_H) / 2;
 const ACH_ROW0_Y = ACH_PANEL_Y + 130;                // first row baseline (unchanged from pre-P3)
-const ACH_ROW_STEP = 40 * ACH_SCALE;                 // row-to-row baseline spacing (was a bare 40 pre-P3)
+const ACH_STATUS_DY = 24;                            // CS015 P2: status line's y-offset below the row's name baseline (playtest knob)
+const ACH_DESC_DY = 46;                              // CS015 P2: description line's y-offset below the row's name baseline (playtest knob)
+const ACH_ROW_STEP = 48 * ACH_SCALE;                 // row-to-row baseline spacing (was 40*ACH_SCALE pre-CS015-P2; three stacked lines need more headroom)
 const ACH_ROW_CLIP_TOP = ACH_ROW0_Y - 16;             // headroom above row 0, below the column headers (baseline y+108)
 const ACH_ROW_CLIP_BOTTOM = ACH_PANEL_Y + 620;        // headroom above the footer (drawn at ACH_PANEL_Y+644)
 const ACH_ROW_VISIBLE_H = ACH_ROW_CLIP_BOTTOM - ACH_ROW_CLIP_TOP;
@@ -5406,7 +5408,7 @@ const ACH_ROW_VISIBLE_H = ACH_ROW_CLIP_BOTTOM - ACH_ROW_CLIP_TOP;
 function achMaxScroll() {
   const half = Math.ceil(Achievements.LIFETIME.length / 2);
   const rowsTall = Math.max(Achievements.activeWeekly().length, half);
-  const contentH = (rowsTall - 1) * ACH_ROW_STEP + 22 + 10 * ACH_SCALE; // last row's baseline -> its description's bottom
+  const contentH = (rowsTall - 1) * ACH_ROW_STEP + ACH_DESC_DY + 10 * ACH_SCALE; // last row's baseline -> its description's bottom
   return Math.max(0, contentH - ACH_ROW_VISIBLE_H);
 }
 
@@ -5451,25 +5453,28 @@ function drawAchievements() {
 // Thousands-grouped integer, locale-independent (deterministic across environments/tests).
 function fmtCommas(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 
-// One achievement row: name + status on the top line, description below.
+// One achievement row: name, status, and description on three stacked lines.
 // Tiered lifetime rows show a tier badge + progress-to-next in the tier's colour (v3.0 P7);
 // single-goal rows keep the F9 look — a ✓ when earned (gold) or a cur/goal readout when not.
-// CS013 P3: sizes scaled by ACH_SCALE; description offset ry+15 -> ry+22; description and
-// locked/incomplete progress lifted dim -> menuIdle for contrast (unlocked stays ach gold, tier tints
-// unchanged).
+// CS013 P3: sizes scaled by ACH_SCALE; description and locked/incomplete progress lifted dim ->
+// menuIdle for contrast (unlocked stays ach gold, tier tints unchanged).
+// CS015 P2: name/status moved off the shared top line onto their own stacked lines (name @ry,
+// status @ry+ACH_STATUS_DY, desc @ry+ACH_DESC_DY) — at ACH_SCALE 1.5 a long name and a long
+// status/medal string sharing one line and colW could run into each other in the middle; status
+// stays right-aligned at x+w, just on its own row now.
 function drawAchRow(ach, x, ry, w) {
   if (ach.tiers) {
     const idx = Achievements.tierIndex(ach);
     const col = idx >= 0 ? TIER_COLOR[idx] : COLOR.text;   // badge/name in the current tier's tint
     drawText(ach.name, x, ry, 15 * ACH_SCALE, col, "left");
-    drawText(Achievements.tierStatusText(ach), x + w, ry, 13 * ACH_SCALE, idx >= 0 ? col : COLOR.menuIdle, "right");
-    drawText(ach.desc, x, ry + 22, 10 * ACH_SCALE, COLOR.menuIdle, "left");
+    drawText(Achievements.tierStatusText(ach), x + w, ry + ACH_STATUS_DY, 13 * ACH_SCALE, idx >= 0 ? col : COLOR.menuIdle, "right");
+    drawText(ach.desc, x, ry + ACH_DESC_DY, 10 * ACH_SCALE, COLOR.menuIdle, "left");
     return;
   }
   const done = Achievements.isUnlocked(ach);
   drawText(ach.name, x, ry, 15 * ACH_SCALE, done ? COLOR.ach : COLOR.text, "left");
-  drawText(done ? "✓" : Achievements.progressText(ach), x + w, ry, 14 * ACH_SCALE, done ? COLOR.ach : COLOR.menuIdle, "right");
-  drawText(ach.desc, x, ry + 22, 10 * ACH_SCALE, COLOR.menuIdle, "left");
+  drawText(done ? "✓" : Achievements.progressText(ach), x + w, ry + ACH_STATUS_DY, 14 * ACH_SCALE, done ? COLOR.ach : COLOR.menuIdle, "right");
+  drawText(ach.desc, x, ry + ACH_DESC_DY, 10 * ACH_SCALE, COLOR.menuIdle, "left");
 }
 
 // ---------- High Scores rendering (v3.6 P6) ----------
