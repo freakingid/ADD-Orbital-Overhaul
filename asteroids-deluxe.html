@@ -240,7 +240,7 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
 // the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
 // segment IS the changeset number (this build shipped in CS010).
-const GAME_VERSION = "1.0.0.15";
+const GAME_VERSION = "1.0.0.16";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -2347,6 +2347,12 @@ const TITLE_MENU_HINT   = "↑↓ move    ENTER / A select    ESC / B options";
 const MENU_HINT_SIZE = 16;  // CS013 P2: control-hint footer text size (drawMenuHint) — playtest knob
 const ACH_SCALE = 1.5;      // CS013 P3: Achievements-viewer text-size multiplier (readability pass) — playtest knob
 const ACH_SCROLL_STEP = 60; // CS013 P3: px per up/down scroll press in the Achievements viewer, ~one row — playtest knob
+// CS016 P5: the viewer's two tabs replace the old three columns. The default tab id lives up here
+// (not beside ACH_TABS down in the viewer section) because game.menu's object literals — evaluated
+// long before the viewer's consts — need it, and a `const` referenced ahead of its definition is a
+// TDZ throw at load, not an undefined. ACH_TABS[0].id reads this, so the two can't drift apart.
+const ACH_TAB_DEFAULT = "weekly";
+const ACH_HINT = "↑↓ scroll    ◄► switch tab    ESC / B / ENTER  return";
 // CS015 P1: the root/PAUSED panel's control hint, at MENU_HINT_SIZE 16, no longer fits the fixed
 // 360px panel width — hoisted to a const so drawRootMenu's width measurement and its drawMenuHint
 // call can't drift apart. ROOT_MENU_HINT_MARGIN is the side padding added to the measured text
@@ -2542,6 +2548,7 @@ function gotoScreen(s, index) {
   game.menu.screen = s;
   game.menu.index = index || 0; game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
   game.menu.modal = null;  // CS016 P3: a dialog belongs to the screen that raised it and never survives a screen change
+  game.menu.achTab = ACH_TAB_DEFAULT;  // CS016 P5: sits beside the scroll reset — re-entry is always Weekly, unscrolled
   AudioSys.ui(true);
 }
 // CS015 P4: open the hidden Debug Options panel straight from the Title screen (where there is no root
@@ -2752,10 +2759,17 @@ function menuSound(a) {
   else if (a === "pause") closePause();
 }
 
-// Achievements viewer (F9): a read-only list — no rows to select, so nav does nothing and any
-// of confirm/back/pause exits back to Options (cursor left on the "Achievements" row).
+// Achievements viewer (F9): a read-only list — no rows to select, so nav only scrolls/switches tab
+// and any of confirm/back/pause exits (cursor left on the "Achievements" row of its parent screen).
 function menuAchievements(a) {
   if (a === "pause") closePause();
+  // CS016 P5: left/right switch tabs. These two actions were UNUSED on this screen (it handled only
+  // up/down/confirm/back/pause), so there was no input to displace. WRAPPING, not clamping: with
+  // exactly two tabs either direction always lands on the other one — a player who taps ◄ on the
+  // Weekly tab gets Lifetime rather than a dead key — and setAchTab's modulo keeps that a carousel
+  // if a third tab is ever added.
+  else if (a === "left")  setAchTab(achTabIndex() - 1);
+  else if (a === "right") setAchTab(achTabIndex() + 1);
   // CS013 P3: up/down drive the continuous vertical scroll (FLAG-2c) — the viewer has no row
   // selection to conflict with. Keyboard and gamepad d-pad/L-stick both normalize to "up"/"down"
   // through menuInput, so this covers both inputs uniformly. Clamped against the SAME achMaxScroll()
@@ -3907,7 +3921,7 @@ const game = {
   // CS016 P2: boots on the title's own menu (state starts "title"), NOT null — the title screen is a
   // navigable menu now, and a null screen there would render cursor-less and read menuActive() false.
   // index 0 = "Start Game", so ENTER / A on a cold boot still starts a run immediately.
-  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none)
+  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -3982,8 +3996,10 @@ function startGame() {
   // "Start Game", and this reset already clears it.
   // CS016 P3: `modal` is added to BOTH this reset and the game literal, per the standing note that
   // `scroll` was only ever added to the literal (see STATUS.md Known issues) — a new game.menu field
-  // that lands in one and not the other is `undefined` for the whole of a run.
-  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null }; // ensure no menu carries in
+  // that lands in one and not the other is `undefined` for the whole of a run. CS016 P5's `achTab`
+  // follows the same rule (achTabIndex() defends against a bad id anyway, but the field should never
+  // BE undefined in the first place).
+  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null, achTab: ACH_TAB_DEFAULT }; // ensure no menu carries in
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
@@ -5855,11 +5871,13 @@ function axisLabel(a) {
   return "Axis " + a.index;
 }
 
-// ---------- Achievements viewer + unlock toasts (F9; 3-column since v3.0 P8; ×1.5 + scroll CS013 P3) ----------
-// Read-only list reachable from Options -> Achievements. Three columns: this week's 5 (left) and the
-// lifetime set split across two columns (P8 grew it 12 -> 19, too many for one column), each row with
-// unlock status + a progress readout. Screen-fixed, drawn by drawMenu. Layout widths/split are a pure
-// look-call tunable (colW / xL / xM / xR / the ceil-half split) — see the P8 playtest ask in STATUS.
+// ---------- Achievements viewer + unlock toasts (F9; ×1.5 + scroll CS013 P3; 2-tab since CS016 P5) ----------
+// Read-only list reachable from the title menu -> Achievements. CS016 P5 replaced the old three
+// 350px-wide columns (weekly | lifetime | lifetime-cont.) with TWO TABS — Weekly and Lifetime —
+// showing one pool at a time down a SINGLE full-width column, each row with unlock status + a
+// progress readout. That resolves CS013 P3's own complaint that colW=350 was marginal for a long
+// description at ACH_SCALE 1.5: the column is now ACH_COL_W (1140) wide, better than 3x the room.
+// Screen-fixed, drawn by drawMenu.
 //
 // CS013 P3: geometry hoisted to top-level consts (rather than locals inside drawAchievements) so
 // achMaxScroll() — called from menuAchievements(), which has no drawing context — derives the exact
@@ -5867,22 +5885,54 @@ function axisLabel(a) {
 // panel's own w/h are fixed), so this is safe without re-invoking menuPanel() (which has fill/stroke/
 // text side effects and can't be called twice per frame).
 const ACH_PANEL_W = 1200, ACH_PANEL_H = 660;
+const ACH_PANEL_X = (VIEW_W - ACH_PANEL_W) / 2;      // CS016 P5: the x sibling of ACH_PANEL_Y (menuPanel's own maths)
 const ACH_PANEL_Y = (VIEW_H - ACH_PANEL_H) / 2;
+const ACH_COL_X = ACH_PANEL_X + 30;                  // CS016 P5: the single column's left edge (the old xL)
+const ACH_COL_W = ACH_PANEL_W - 60;                  // CS016 P5: full panel width less a 30px gutter each side
+const ACH_TAB_Y = 108;                               // tab-header baseline, relative to the panel top (the old column-header y)
+const ACH_TAB_STEP = 260;                            // px between tab labels — playtest knob
 const ACH_ROW0_Y = ACH_PANEL_Y + 130;                // first row baseline (unchanged from pre-P3)
 const ACH_STATUS_DY = 24;                            // CS015 P2: status line's y-offset below the row's name baseline (playtest knob)
 const ACH_DESC_DY = 46;                              // CS015 P2: description line's y-offset below the row's name baseline (playtest knob)
 const ACH_ROW_STEP = 48 * ACH_SCALE;                 // row-to-row baseline spacing (was 40*ACH_SCALE pre-CS015-P2; three stacked lines need more headroom)
-const ACH_ROW_CLIP_TOP = ACH_ROW0_Y - 16;             // headroom above row 0, below the column headers (baseline y+108)
+const ACH_ROW_CLIP_TOP = ACH_ROW0_Y - 16;             // headroom above row 0, below the tab header (baseline y+ACH_TAB_Y)
 const ACH_ROW_CLIP_BOTTOM = ACH_PANEL_Y + 620;        // headroom above the footer (drawn at ACH_PANEL_Y+644)
 const ACH_ROW_VISIBLE_H = ACH_ROW_CLIP_BOTTOM - ACH_ROW_CLIP_TOP;
 
-// Derives maxScroll from the ACTUAL row counts (not a hardcoded pixel total), so a future LIFETIME/
-// weekly resize keeps working — the "tallest column" is whichever of the weekly or split-lifetime
-// columns has more rows (today: 10 lifetime rows per column vs. 5 weekly). Shared by drawAchievements()
-// (render + clamp) and menuAchievements() (input clamp) so the two can never disagree about the ceiling.
+// CS016 P5: the two tabs are DATA. `rows` is a thunk, not a snapshot — activeWeekly() re-derives from
+// the live weekly rotation every frame, and a test that swaps Achievements.LIFETIME still sees the swap.
+// achTabIndex()/achRows()/achMaxScroll()/drawAchievements() all read this one table, so a third tab
+// would be one more entry here and no new branch anywhere.
+const ACH_TABS = [
+  { id: ACH_TAB_DEFAULT, label: "WEEKLY",   rows: () => Achievements.activeWeekly() },
+  { id: "lifetime",      label: "LIFETIME", rows: () => Achievements.LIFETIME }
+];
+// Resolves game.menu.achTab to a table position, defaulting to tab 0 for any unknown/undefined id —
+// so a stale or missing field degrades to "show Weekly", never to a crash or a blank screen.
+function achTabIndex() {
+  const i = ACH_TABS.findIndex(t => t.id === game.menu.achTab);
+  return i < 0 ? 0 : i;
+}
+function achRows() { return ACH_TABS[achTabIndex()].rows(); }
+// Switching tabs ALWAYS zeroes the scroll: the two tabs are very different heights (5 weekly rows vs.
+// 20 lifetime ones), so carrying a Lifetime offset onto the Weekly tab would open it scrolled into
+// empty space. `i` wraps in both directions (see menuAchievements).
+function setAchTab(i) {
+  const n = ACH_TABS.length;
+  game.menu.achTab = ACH_TABS[((i % n) + n) % n].id;
+  game.menu.scroll = 0;
+  AudioSys.ui(false);
+}
+
+// Derives maxScroll from the ACTIVE TAB's ACTUAL row count (not a hardcoded pixel total), so a future
+// LIFETIME/weekly resize — or a third tab — keeps working. CS016 P5 made this tab-aware: pre-P5 it took
+// the tallest of three columns (max(weekly, ceil(LIFETIME/2))); now each tab is its own single column,
+// so the Lifetime tab's content is no longer halved and is roughly twice as tall as it used to be.
+// Shared by drawAchievements() (render + clamp) and menuAchievements() (input clamp) so the two can
+// never disagree about the ceiling — that shared-ceiling contract is why CS013 P3 hoisted this to a
+// top-level helper in the first place, and the renderer must never grow its own copy of this maths.
 function achMaxScroll() {
-  const half = Math.ceil(Achievements.LIFETIME.length / 2);
-  const rowsTall = Math.max(Achievements.activeWeekly().length, half);
+  const rowsTall = achRows().length;
   const contentH = (rowsTall - 1) * ACH_ROW_STEP + ACH_DESC_DY + 10 * ACH_SCALE; // last row's baseline -> its description's bottom
   return Math.max(0, contentH - ACH_ROW_VISIBLE_H);
 }
@@ -5892,26 +5942,26 @@ function drawAchievements() {
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   const { x, y } = menuPanel(ACH_PANEL_W, ACH_PANEL_H, "ACHIEVEMENTS");
   drawText("WEEKLY SET " + Achievements.weekKey + " — resets each calendar week", VIEW_W / 2, y + 74, 12 * ACH_SCALE, COLOR.dim);
-  const colW = 350, xL = x + 30, xM = x + 430, xR = x + 820, ry0 = ACH_ROW0_Y, step = ACH_ROW_STEP;
-  drawText("THIS WEEK",        xL, y + 108, 15 * ACH_SCALE, COLOR.satellite, "left");
-  drawText("LIFETIME",         xM, y + 108, 15 * ACH_SCALE, COLOR.satellite, "left");
-  drawText("LIFETIME (cont.)", xR, y + 108, 15 * ACH_SCALE, COLOR.satellite, "left");
+
+  // CS016 P5: the tab header replaces the three column headers, in the established selected/idle
+  // convention every other menu uses (COLOR.text lit / COLOR.menuIdle dim) rather than the old
+  // uniform COLOR.satellite — these are now a cursor position, not three static captions.
+  const ti = achTabIndex();
+  ACH_TABS.forEach((t, i) => {
+    drawText(t.label, ACH_COL_X + i * ACH_TAB_STEP, y + ACH_TAB_Y, 15 * ACH_SCALE, i === ti ? COLOR.text : COLOR.menuIdle, "left");
+  });
 
   // CS013 P3 (§2.3.3): clamp against the same ceiling menuAchievements() uses, then clip the row
   // region so scrolled rows can never spill past the panel or under the header/footer (FLAG-2c:
-  // continuous scroll, all three columns move together — no per-row selection to conflict with).
+  // continuous scroll, the whole column moves together — no per-row selection to conflict with).
   const maxScroll = achMaxScroll();
   game.menu.scroll = Math.max(0, Math.min(maxScroll, game.menu.scroll));
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, ACH_ROW_CLIP_TOP, ACH_PANEL_W, ACH_ROW_VISIBLE_H);
   ctx.clip(); // not a fill — GDD §3.2's no-fills rule gains no new exception here
-  Achievements.activeWeekly().forEach((a, i) => drawAchRow(a, xL, ry0 + i * step - game.menu.scroll, colW));
-  const half = Math.ceil(Achievements.LIFETIME.length / 2);   // first half -> middle column, rest -> right
-  Achievements.LIFETIME.forEach((a, i) => {
-    const cx = i < half ? xM : xR, row = i < half ? i : i - half;
-    drawAchRow(a, cx, ry0 + row * step - game.menu.scroll, colW);
-  });
+  // Only the ACTIVE tab's rows are drawn — one full-width column, so no per-column x/row juggling.
+  achRows().forEach((a, i) => drawAchRow(a, ACH_COL_X, ACH_ROW0_Y + i * ACH_ROW_STEP - game.menu.scroll, ACH_COL_W));
   ctx.restore();
 
   // Scroll affordance (FLAG-2c): shown only while there's anything to scroll; ▲ additionally requires
@@ -5922,7 +5972,9 @@ function drawAchievements() {
     if (game.menu.scroll < maxScroll) drawText("▼", VIEW_W / 2, ACH_ROW_CLIP_BOTTOM + 10, 16, COLOR.menuIdle, "center");
   }
 
-  drawMenuHint("ESC / B / ENTER  return to Options", VIEW_W / 2, y + 644);
+  // CS016 P5: the hint gains the ◄► tab control and drops the stale "to Options" destination — CS016
+  // P2 repointed this viewer's one parent to the title menu, which this footer had never caught up with.
+  drawMenuHint(ACH_HINT, VIEW_W / 2, y + 644);
 }
 
 // Thousands-grouped integer, locale-independent (deterministic across environments/tests).
@@ -5937,6 +5989,8 @@ function fmtCommas(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); 
 // status @ry+ACH_STATUS_DY, desc @ry+ACH_DESC_DY) — at ACH_SCALE 1.5 a long name and a long
 // status/medal string sharing one line and colW could run into each other in the middle; status
 // stays right-aligned at x+w, just on its own row now.
+// CS016 P5: unchanged — the tab rebuild only changed the `w` it is handed (350 -> ACH_COL_W) and how
+// many callers there are (three columns -> one), never the three-line shape itself.
 function drawAchRow(ach, x, ry, w) {
   if (ach.tiers) {
     const idx = Achievements.tierIndex(ach);

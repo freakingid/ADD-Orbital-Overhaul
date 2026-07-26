@@ -11,21 +11,31 @@
 // canvas-recording idiom. No menu-render or achievement-logic is reimplemented here; resetAch() below
 // only clears TEST state (mirrors test-f9.js's own resetAch(), it isn't game logic).
 //
+// CS016 P5 MIGRATION: the viewer became TWO TABS (Weekly / Lifetime) down a SINGLE full-width column
+// instead of three 350px columns. Every assertion below keeps its original INTENT — sizes, contrast,
+// the clip bracket, the scroll clamp — and only the positional expectations the new layout genuinely
+// invalidates were repointed: the row x is ACH_COL_X (was xL/xM/xR), the row width is ACH_COL_W (was
+// a hardcoded 350), the three COLOR.satellite column headers became two selected/idle tab labels, and
+// each section now runs across BOTH tabs rather than across three columns of one render. Coverage went
+// up, not down. Tab BEHAVIOUR itself (switching, wrap, per-tab ceilings) is scratchpad/test-cs016-p5.js.
+//
 // Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) Sizes: every achievement fillText size == the pre-P3 size * ACH_SCALE; row-to-row step == 60;
-//      the description sits at ry+22 under its name (checked across weekly + both lifetime columns).
+//  (B) Sizes: every achievement fillText size == the pre-P3 size * ACH_SCALE; row-to-row step ==
+//      ACH_ROW_STEP; the description sits at ry+ACH_DESC_DY under its name — checked on BOTH tabs,
+//      plus the tab header's own size and selected/idle contrast.
 //  (C) Contrast: description and locked/incomplete progress read COLOR.menuIdle (tiered AND
 //      non-tiered rows); an unlocked non-tiered row's name/readout read COLOR.ach; tier tints on a
-//      tiered row's name/status are unaffected by this phase.
-//  (D) Clip bracket: a save -> beginPath -> rect -> clip -> ...75 row fillTexts... -> restore
-//      sequence appears in the log, in that order; the panel title, subtitle, column headers, and
-//      footer draw OUTSIDE that bracket (before save or after restore).
-//  (E) Scroll: with the real (full 20-entry) LIFETIME, achMaxScroll() > 0; menuAchievements("down")
-//      increases game.menu.scroll and clamps at maxScroll; "up" decreases and clamps at 0; the ▲/▼
-//      cue fillTexts are logged only while there's room to scroll that direction; forcing a short
-//      LIFETIME (2 entries — weekly's 5 rows still dominate) drives maxScroll to 0 and the cue
-//      disappears entirely. gotoScreen("achievements", ...) resets scroll to 0 on every entry.
+//      tiered row's name/status are unaffected by this phase. Both tabs.
+//  (D) Clip bracket: a save -> beginPath -> rect -> clip -> ...the active tab's row fillTexts... ->
+//      restore sequence appears in the log, in that order; the panel title, subtitle, tab header, and
+//      footer draw OUTSIDE that bracket (before save or after restore). Both tabs.
+//  (E) Scroll: on the Lifetime tab (20 rows, no longer halved across two columns) achMaxScroll() > 0;
+//      menuAchievements("down") increases game.menu.scroll and clamps at maxScroll; "up" decreases and
+//      clamps at 0; the ▲/▼ cue fillTexts are logged only while there's room to scroll that direction;
+//      the Weekly tab's 5 rows fit, so its ceiling is 0 and no cue is drawn at all; forcing a short
+//      LIFETIME (2 entries) drives the Lifetime tab's ceiling to 0 too. gotoScreen("achievements", ...)
+//      resets scroll to 0 on every entry.
 //  (F) headless: AudioSys.ctx null -> startGame()/update(1/60) + an open/scroll/close cycle never throws.
 
 "use strict";
@@ -125,7 +135,9 @@ const localStorageStub = {
 const RETURN = [
   "startGame", "update", "game", "gotoScreen", "menuAchievements", "achMaxScroll",
   "Achievements", "COLOR", "TIER_COLOR", "ACH_SCALE", "ACH_SCROLL_STEP", "ACH_STATUS_DY", "ACH_DESC_DY",
-  "ACH_ROW_STEP", "MENU_HINT_SIZE", "MENU_OPTIONS", "drawAchievements", "drawAchRow", "AudioSys", "VIEW_W", "VIEW_H"
+  "ACH_ROW_STEP", "MENU_HINT_SIZE", "MENU_OPTIONS", "drawAchievements", "drawAchRow", "AudioSys", "VIEW_W", "VIEW_H",
+  // CS016 P5: the two-tab layout's own symbols.
+  "ACH_TABS", "ACH_TAB_DEFAULT", "ACH_COL_X", "ACH_COL_W", "ACH_TAB_STEP", "ACH_TAB_Y", "ACH_HINT", "achTabIndex"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -135,7 +147,8 @@ const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorS
 const {
   startGame, update, game, gotoScreen, menuAchievements, achMaxScroll,
   Achievements, COLOR, TIER_COLOR, ACH_SCALE, ACH_SCROLL_STEP, ACH_STATUS_DY, ACH_DESC_DY,
-  ACH_ROW_STEP, MENU_HINT_SIZE, MENU_OPTIONS, drawAchievements, drawAchRow, AudioSys, VIEW_W, VIEW_H
+  ACH_ROW_STEP, MENU_HINT_SIZE, MENU_OPTIONS, drawAchievements, drawAchRow, AudioSys, VIEW_W, VIEW_H,
+  ACH_TABS, ACH_TAB_DEFAULT, ACH_COL_X, ACH_COL_W, ACH_TAB_STEP, ACH_TAB_Y, ACH_HINT, achTabIndex
 } = A;
 
 AudioSys.init();
@@ -164,8 +177,17 @@ const cx = VIEW_W / 2;
 // Panel geometry (mirrors menuPanel(1200,660) + drawAchievements' own constants) — derived here, not
 // re-imported, so a geometry regression in the real code shows up as a position mismatch below.
 const px = (VIEW_W - 1200) / 2, py = (VIEW_H - 660) / 2;
-const xL = px + 30, xM = px + 430, xR = px + 820;
 const ry0 = py + 130, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE pre-P2; now the real (bumped) row step
+
+// CS016 P5: enter the viewer with a specific tab active, driving the REAL handler — gotoScreen always
+// lands on Weekly, so reaching Lifetime means pressing "right" exactly as a player would. No direct
+// poke at game.menu.achTab anywhere in this file.
+function openTab(id) {
+  gotoScreen("achievements", 0);
+  for (let i = 0; i < ACH_TABS.length && ACH_TABS[achTabIndex()].id !== id; i++) menuAchievements("right");
+  assert(ACH_TABS[achTabIndex()].id === id, `openTab: reached the "${id}" tab by pressing right`);
+}
+const statusSizeFor = ach => (ach.tiers ? 13 : 14) * ACH_SCALE;
 
 // ================= (B) sizes + step + description offset =================
 // CS015 P2 note: name/status no longer share row i's baseline — status moved to ry+ACH_STATUS_DY and
@@ -173,61 +195,57 @@ const ry0 = py + 130, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE 
 // dedicated geometry regression test for that phase is scratchpad/test-cs015-p2.js; this section keeps
 // verifying sizes/positions still track the real (now CS015-P2) symbols, not a re-pin of old numbers.
 (function sectionB() {
-  console.log("(B) sizes == pre-P3 * ACH_SCALE; step == ACH_ROW_STEP; description at ry+ACH_DESC_DY");
+  console.log("(B) sizes == pre-P3 * ACH_SCALE; step == ACH_ROW_STEP; description at ry+ACH_DESC_DY (both tabs)");
   assert(ACH_SCALE === 1.5, "B: ACH_SCALE is 1.5 (got " + ACH_SCALE + ")");
   assert(step === ACH_ROW_STEP, "B: row step is the real ACH_ROW_STEP (got " + step + ")");
+  assert(ACH_COL_X === px + 30, `B: the single column's left edge is the old xL (px+30, got ${ACH_COL_X})`);
+  assert(ACH_COL_W === 1200 - 60, `B: the single column is full panel width less a 30px gutter each side (got ${ACH_COL_W})`);
+  assert(ACH_COL_W > 350 * 3, `B: CS013 P3's colW=350 complaint is resolved — the column is now wider than all three old ones (${ACH_COL_W})`);
   game.state = "playing";
   resetAch();
-  gotoScreen("achievements", 0);
-  const log = render(drawAchievements);
 
-  // Column headers: size 15*ACH_SCALE, unchanged position/color.
-  [["THIS WEEK", xL], ["LIFETIME", xM], ["LIFETIME (cont.)", xR]].forEach(([text, x]) => {
-    const e = at(log, x, py + 108).find(e => e.str === text);
-    assert(!!e, `B: header "${text}" logs a fillText at its expected position`);
-    assert(fontSize(e) === 15 * ACH_SCALE, `B: header "${text}" size == 15*ACH_SCALE (got ${e && fontSize(e)})`);
-  });
-  // Subtitle: size 12*ACH_SCALE.
-  const sub = log.find(e => e.c === "fillText" && /^WEEKLY SET/.test(e.str));
-  assert(!!sub && sub.x === cx && sub.y === py + 74, "B: subtitle logs at (cx, py+74)");
-  assert(fontSize(sub) === 12 * ACH_SCALE, `B: subtitle size == 12*ACH_SCALE (got ${sub && fontSize(sub)})`);
+  ACH_TABS.forEach((tab, ti) => {
+    openTab(tab.id);
+    const log = render(drawAchievements);
 
-  // Weekly rows (5, unscrolled -> scroll is 0 right after gotoScreen): name/readout/desc sizes + offsets.
-  const weekly = Achievements.activeWeekly();
-  weekly.forEach((ach, i) => {
-    const ry = ry0 + i * step;
-    const name = at(log, xL, ry).find(e => e.str === ach.name);
-    assert(!!name, `B: weekly row ${i} ("${ach.name}") name at its expected (x, ry)`);
-    assert(fontSize(name) === 15 * ACH_SCALE, `B: weekly row ${i} name size == 15*ACH_SCALE`);
-    const desc = at(log, xL, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
-    assert(!!desc, `B: weekly row ${i} description at ry+ACH_DESC_DY`);
-    assert(fontSize(desc) === 10 * ACH_SCALE, `B: weekly row ${i} description size == 10*ACH_SCALE`);
-    const readout = at(log, xL + 350, ry + ACH_STATUS_DY);
-    assert(readout.length === 1, `B: weekly row ${i} has exactly one readout fillText at ry+ACH_STATUS_DY`);
-    assert(fontSize(readout[0]) === 14 * ACH_SCALE, `B: weekly row ${i} readout size == 14*ACH_SCALE`);
-  });
+    // Tab header (CS016 P5, replacing the three COLOR.satellite column headers): same 15*ACH_SCALE
+    // size, now carrying the established selected/idle colour convention.
+    ACH_TABS.forEach((t, i) => {
+      const hit = at(log, ACH_COL_X + i * ACH_TAB_STEP, py + ACH_TAB_Y).find(e => e.str === t.label);
+      assert(!!hit, `B: [${tab.id}] tab label "${t.label}" logs a fillText at its expected position`);
+      assert(!!hit && fontSize(hit) === 15 * ACH_SCALE, `B: [${tab.id}] tab label "${t.label}" size == 15*ACH_SCALE`);
+      assert(!!hit && hit.color === (i === ti ? COLOR.text : COLOR.menuIdle),
+        `B: [${tab.id}] tab label "${t.label}" reads ${i === ti ? "COLOR.text (active)" : "COLOR.menuIdle (idle)"}`);
+    });
+    // Subtitle: size 12*ACH_SCALE, unchanged.
+    const sub = log.find(e => e.c === "fillText" && /^WEEKLY SET/.test(e.str));
+    assert(!!sub && sub.x === cx && sub.y === py + 74, `B: [${tab.id}] subtitle logs at (cx, py+74)`);
+    assert(!!sub && fontSize(sub) === 12 * ACH_SCALE, `B: [${tab.id}] subtitle size == 12*ACH_SCALE`);
 
-  // Lifetime rows (20, split half/half across mid+right columns): step spacing across the FULL column.
-  const half = Math.ceil(Achievements.LIFETIME.length / 2);
-  Achievements.LIFETIME.forEach((ach, i) => {
-    const col = i < half ? xM : xR, row = i < half ? i : i - half;
-    const ry = ry0 + row * step;
-    const name = at(log, col, ry).find(e => e.str === ach.name);
-    assert(!!name, `B: lifetime row ${i} ("${ach.name}") name at its expected (x, ry)`);
-    assert(fontSize(name) === 15 * ACH_SCALE, `B: lifetime row ${i} name size == 15*ACH_SCALE`);
-    const statusSize = ach.tiers ? 13 * ACH_SCALE : 14 * ACH_SCALE;
-    const readout = at(log, col + 350, ry + ACH_STATUS_DY);
-    assert(readout.length === 1, `B: lifetime row ${i} has exactly one status/readout fillText at ry+ACH_STATUS_DY`);
-    assert(fontSize(readout[0]) === statusSize, `B: lifetime row ${i} status/readout size == ${statusSize}`);
-    const desc = at(log, col, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
-    assert(!!desc, `B: lifetime row ${i} description at ry+ACH_DESC_DY`);
-    assert(fontSize(desc) === 10 * ACH_SCALE, `B: lifetime row ${i} description size == 10*ACH_SCALE`);
+    // The ACTIVE tab's rows, one full-width column, unscrolled (gotoScreen/tab switch both zero it).
+    tab.rows().forEach((ach, i) => {
+      const ry = ry0 + i * step;
+      const name = at(log, ACH_COL_X, ry).find(e => e.str === ach.name);
+      assert(!!name, `B: [${tab.id}] row ${i} ("${ach.name}") name at its expected (ACH_COL_X, ry)`);
+      assert(!!name && fontSize(name) === 15 * ACH_SCALE, `B: [${tab.id}] row ${i} name size == 15*ACH_SCALE`);
+      const desc = at(log, ACH_COL_X, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
+      assert(!!desc, `B: [${tab.id}] row ${i} description at ry+ACH_DESC_DY`);
+      assert(!!desc && fontSize(desc) === 10 * ACH_SCALE, `B: [${tab.id}] row ${i} description size == 10*ACH_SCALE`);
+      const readout = at(log, ACH_COL_X + ACH_COL_W, ry + ACH_STATUS_DY);
+      assert(readout.length === 1, `B: [${tab.id}] row ${i} has exactly one readout fillText at (x+ACH_COL_W, ry+ACH_STATUS_DY)`);
+      assert(readout.length === 1 && fontSize(readout[0]) === statusSizeFor(ach),
+        `B: [${tab.id}] row ${i} readout size == ${statusSizeFor(ach)} (tiers=${!!ach.tiers})`);
+    });
+
+    // Footer: routed through drawMenuHint -> MENU_HINT_SIZE / COLOR.menuIdle, at the unchanged y.
+    const footer = log.find(e => e.c === "fillText" && e.str === ACH_HINT);
+    assert(!!footer && footer.x === cx && footer.y === py + 644, `B: [${tab.id}] footer logs at (cx, py+644)`);
+    assert(!!footer && fontSize(footer) === MENU_HINT_SIZE, `B: [${tab.id}] footer size == MENU_HINT_SIZE (drawMenuHint)`);
   });
 
-  // Footer: routed through drawMenuHint -> MENU_HINT_SIZE / COLOR.menuIdle, at the unchanged y.
-  const footer = log.find(e => e.c === "fillText" && /return to Options/.test(e.str));
-  assert(!!footer && footer.x === cx && footer.y === py + 644, "B: footer logs at (cx, py+644)");
-  assert(fontSize(footer) === MENU_HINT_SIZE, "B: footer size == MENU_HINT_SIZE (drawMenuHint)");
+  // The pools really are different sizes — so the per-tab loop above isn't quietly testing one thing twice.
+  assert(Achievements.activeWeekly().length !== Achievements.LIFETIME.length,
+    "B: the two tabs carry genuinely different row counts (5 weekly vs. 20 lifetime)");
 })();
 
 // ================= (C) contrast =================
@@ -242,99 +260,96 @@ const ry0 = py + 130, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE 
   const tieredAch = Achievements.LIFETIME.find(a => a.tiers);
   Achievements.lifetimeTiers[tieredAch.id] = 1;
 
-  gotoScreen("achievements", 0);
-  const log = render(drawAchievements);
+  // Both tabs: the weekly one carries the unlocked non-tiered row, the lifetime one both branches.
+  ACH_TABS.forEach(tab => {
+    openTab(tab.id);
+    const log = render(drawAchievements);
 
-  Achievements.activeWeekly().forEach((ach, i) => {
-    const ry = ry0 + i * step;
-    const done = ach.id === unlockedWeeklyId;
-    const name = at(log, xL, ry).find(e => e.str === ach.name);
-    assert(name.color === (done ? COLOR.ach : COLOR.text), `C: weekly "${ach.name}" name color matches unlocked state`);
-    const readout = at(log, xL + 350, ry + ACH_STATUS_DY)[0];
-    assert(readout.color === (done ? COLOR.ach : COLOR.menuIdle), `C: weekly "${ach.name}" readout is ach-when-done / menuIdle-when-locked`);
-    const desc = at(log, xL, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
-    assert(desc.color === COLOR.menuIdle, `C: weekly "${ach.name}" description always reads menuIdle`);
+    tab.rows().forEach((ach, i) => {
+      const ry = ry0 + i * step;
+      const desc = at(log, ACH_COL_X, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
+      assert(!!desc && desc.color === COLOR.menuIdle, `C: [${tab.id}] "${ach.name}" description always reads menuIdle`);
+      const name = at(log, ACH_COL_X, ry).find(e => e.str === ach.name);
+      const status = at(log, ACH_COL_X + ACH_COL_W, ry + ACH_STATUS_DY)[0];
+      if (ach.tiers) {
+        const idx = Achievements.tierIndex(ach);
+        const expectCol = idx >= 0 ? TIER_COLOR[idx] : COLOR.text;
+        assert(!!name && name.color === expectCol, `C: tiered "${ach.name}" name reads its tier tint (or COLOR.text pre-bronze) — unaffected by P3/P5`);
+        assert(!!status && status.color === (idx >= 0 ? expectCol : COLOR.menuIdle), `C: tiered "${ach.name}" status is tier-tinted once >=bronze, else menuIdle`);
+      } else {
+        const done = ach.id === unlockedWeeklyId || Achievements.isUnlocked(ach);
+        assert(!!name && name.color === (done ? COLOR.ach : COLOR.text), `C: non-tiered "${ach.name}" name color matches unlocked state`);
+        assert(!!status && status.color === (done ? COLOR.ach : COLOR.menuIdle), `C: non-tiered "${ach.name}" readout is ach-when-done / menuIdle-when-locked`);
+      }
+    });
   });
 
-  const half = Math.ceil(Achievements.LIFETIME.length / 2);
-  Achievements.LIFETIME.forEach((ach, i) => {
-    const col = i < half ? xM : xR, row = i < half ? i : i - half;
-    const ry = ry0 + row * step;
-    const desc = at(log, col, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
-    assert(desc.color === COLOR.menuIdle, `C: lifetime "${ach.name}" description always reads menuIdle`);
-    if (ach.tiers) {
-      const idx = Achievements.tierIndex(ach);
-      const expectCol = idx >= 0 ? TIER_COLOR[idx] : COLOR.text;
-      const name = at(log, col, ry).find(e => e.str === ach.name);
-      assert(name.color === expectCol, `C: tiered "${ach.name}" name reads its tier tint (or COLOR.text pre-bronze) — unaffected by P3`);
-      const status = at(log, col + 350, ry + ACH_STATUS_DY)[0];
-      const expectStatusCol = idx >= 0 ? expectCol : COLOR.menuIdle;
-      assert(status.color === expectStatusCol, `C: tiered "${ach.name}" status is tier-tinted once >=bronze, else menuIdle`);
-    } else {
-      const done = Achievements.isUnlocked(ach);
-      const name = at(log, col, ry).find(e => e.str === ach.name);
-      assert(name.color === (done ? COLOR.ach : COLOR.text), `C: non-tiered "${ach.name}" name color matches unlocked state`);
-      const readout = at(log, col + 350, ry + ACH_STATUS_DY)[0];
-      assert(readout.color === (done ? COLOR.ach : COLOR.menuIdle), `C: non-tiered "${ach.name}" readout is ach-when-done / menuIdle-when-locked`);
-    }
-  });
+  // Both drawAchRow branches and both unlock states really were exercised above.
+  assert(Achievements.activeWeekly().some(a => a.id === unlockedWeeklyId), "C: sanity — an unlocked weekly row was in the rendered pool");
+  assert(Achievements.LIFETIME.some(a => a.tiers) && Achievements.LIFETIME.some(a => !a.tiers),
+    "C: sanity — the lifetime tab carries both a tiered and a plain row");
 })();
 
 // ================= (D) clip bracket =================
 (function sectionD() {
-  console.log("(D) save->beginPath->rect->clip->...75 row fillTexts...->restore; chrome draws outside it");
+  console.log("(D) save->beginPath->rect->clip->...the active tab's row fillTexts...->restore; chrome draws outside it");
   game.state = "playing";
   resetAch();
-  gotoScreen("achievements", 0);
-  const log = render(drawAchievements);
 
-  const idx = c => log.findIndex(e => e.c === c);
-  const saveIdx = idx("save"), beginIdx = idx("beginPath"), rectIdx = idx("rect"), clipIdx = idx("clip"), restoreIdx = idx("restore");
-  assert([saveIdx, beginIdx, rectIdx, clipIdx, restoreIdx].every(i => i >= 0), "D: save/beginPath/rect/clip/restore all appear in the log");
-  assert(saveIdx < beginIdx && beginIdx < rectIdx && rectIdx < clipIdx && clipIdx < restoreIdx, "D: they appear in save->beginPath->rect->clip->restore order");
+  ACH_TABS.forEach(tab => {
+    openTab(tab.id);
+    const log = render(drawAchievements);
 
-  const rowFillTexts = log.slice(clipIdx + 1, restoreIdx).filter(e => e.c === "fillText");
-  const expectedRows = Achievements.activeWeekly().length + Achievements.LIFETIME.length; // 5 + 20
-  assert(rowFillTexts.length === expectedRows * 3, `D: exactly ${expectedRows * 3} row fillTexts (name+status+desc x ${expectedRows}) inside the clip (got ${rowFillTexts.length})`);
+    const idx = c => log.findIndex(e => e.c === c);
+    const saveIdx = idx("save"), beginIdx = idx("beginPath"), rectIdx = idx("rect"), clipIdx = idx("clip"), restoreIdx = idx("restore");
+    assert([saveIdx, beginIdx, rectIdx, clipIdx, restoreIdx].every(i => i >= 0), `D: [${tab.id}] save/beginPath/rect/clip/restore all appear in the log`);
+    assert(saveIdx < beginIdx && beginIdx < rectIdx && rectIdx < clipIdx && clipIdx < restoreIdx, `D: [${tab.id}] they appear in save->beginPath->rect->clip->restore order`);
 
-  const outsideStrings = ["ACHIEVEMENTS", "THIS WEEK", "LIFETIME", "LIFETIME (cont.)"];
-  const titleEntry = log.find(e => e.c === "fillText" && e.str === "ACHIEVEMENTS");
-  const headerEntries = log.filter(e => e.c === "fillText" && ["THIS WEEK", "LIFETIME", "LIFETIME (cont.)"].includes(e.str));
-  const subtitleEntry = log.find(e => e.c === "fillText" && /^WEEKLY SET/.test(e.str));
-  const footerEntry = log.find(e => e.c === "fillText" && /return to Options/.test(e.str));
-  [titleEntry, subtitleEntry, footerEntry, ...headerEntries].forEach(e => {
-    const i = log.indexOf(e);
-    assert(i < saveIdx || i > restoreIdx, `D: chrome fillText "${e.str}" draws outside the save/restore bracket`);
+    const rowFillTexts = log.slice(clipIdx + 1, restoreIdx).filter(e => e.c === "fillText");
+    const expectedRows = tab.rows().length; // CS016 P5: ONLY the active tab's rows are drawn (was 5 + 20 together)
+    assert(rowFillTexts.length === expectedRows * 3, `D: [${tab.id}] exactly ${expectedRows * 3} row fillTexts (name+status+desc x ${expectedRows}) inside the clip (got ${rowFillTexts.length})`);
+
+    const titleEntry = log.find(e => e.c === "fillText" && e.str === "ACHIEVEMENTS");
+    const headerEntries = log.filter(e => e.c === "fillText" && ACH_TABS.some(t => t.label === e.str));
+    const subtitleEntry = log.find(e => e.c === "fillText" && /^WEEKLY SET/.test(e.str));
+    const footerEntry = log.find(e => e.c === "fillText" && e.str === ACH_HINT);
+    assert(headerEntries.length === ACH_TABS.length, `D: [${tab.id}] both tab labels are drawn (got ${headerEntries.length})`);
+    [titleEntry, subtitleEntry, footerEntry, ...headerEntries].forEach(e => {
+      const i = log.indexOf(e);
+      assert(i >= 0 && (i < saveIdx || i > restoreIdx), `D: [${tab.id}] chrome fillText "${e && e.str}" draws outside the save/restore bracket`);
+    });
+    assert(log.indexOf(titleEntry) < saveIdx, `D: [${tab.id}] the panel title draws before the clip (via menuPanel, unchanged)`);
+    headerEntries.forEach(e => assert(log.indexOf(e) < saveIdx, `D: [${tab.id}] the tab label "${e.str}" draws before the clip`));
+    assert(log.indexOf(footerEntry) > restoreIdx, `D: [${tab.id}] the footer draws after restore (unscrolled chrome)`);
   });
-  assert(log.indexOf(titleEntry) < saveIdx, "D: the panel title draws before the clip (via menuPanel, unchanged)");
-  assert(log.indexOf(footerEntry) > restoreIdx, "D: the footer draws after restore (unscrolled chrome)");
 })();
 
 // ================= (E) scroll =================
 (function sectionE() {
-  console.log("(E) achMaxScroll() > 0 for the full LIFETIME; up/down clamp; the ▲/▼ cue tracks maxScroll; gotoScreen resets scroll");
+  console.log("(E) the Lifetime tab's achMaxScroll() > 0; up/down clamp; the ▲/▼ cue tracks maxScroll; the Weekly tab fits; gotoScreen resets scroll");
   game.state = "playing";
   resetAch();
 
-  gotoScreen("achievements", 0);
+  // CS016 P5: the scrolling tab is Lifetime — its 20 rows are no longer halved across two columns.
+  openTab("lifetime");
   const maxScroll = achMaxScroll();
-  assert(maxScroll > 0, `E: achMaxScroll() > 0 with the real 20-entry LIFETIME (got ${maxScroll})`);
-  assert(game.menu.scroll === 0, "E: gotoScreen(\"achievements\") starts unscrolled");
+  assert(maxScroll > 0, `E: achMaxScroll() > 0 on the Lifetime tab with the real 20-entry LIFETIME (got ${maxScroll})`);
+  assert(game.menu.scroll === 0, "E: entering the Lifetime tab starts unscrolled");
 
   // down increases, clamped at maxScroll.
   menuAchievements("down");
   assert(game.menu.scroll === Math.min(maxScroll, ACH_SCROLL_STEP), `E: one "down" advances scroll by ACH_SCROLL_STEP, clamped (got ${game.menu.scroll})`);
-  for (let i = 0; i < 20; i++) menuAchievements("down"); // hammer past the ceiling
+  for (let i = 0; i < 40; i++) menuAchievements("down"); // hammer past the ceiling
   assert(game.menu.scroll === maxScroll, `E: repeated "down" clamps at maxScroll (got ${game.menu.scroll}, max ${maxScroll})`);
   let log = render(drawAchievements);
   let up = log.find(e => e.c === "fillText" && e.str === "▲");
   let down = log.find(e => e.c === "fillText" && e.str === "▼");
   assert(!!up, "E: at max scroll, the ▲ cue is shown (there's content above)");
   assert(!down, "E: at max scroll, the ▼ cue is hidden (nothing further below)");
-  assert(up.color === COLOR.menuIdle, "E: the ▲ cue reads COLOR.menuIdle");
+  assert(!!up && up.color === COLOR.menuIdle, "E: the ▲ cue reads COLOR.menuIdle");
 
   // up decreases, clamped at 0.
-  for (let i = 0; i < 20; i++) menuAchievements("up"); // hammer past the floor
+  for (let i = 0; i < 40; i++) menuAchievements("up"); // hammer past the floor
   assert(game.menu.scroll === 0, `E: repeated "up" clamps at 0 (got ${game.menu.scroll})`);
   log = render(drawAchievements);
   up = log.find(e => e.c === "fillText" && e.str === "▲");
@@ -342,17 +357,27 @@ const ry0 = py + 130, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE 
   assert(!up, "E: at scroll 0, the ▲ cue is hidden (nothing above)");
   assert(!!down, "E: at scroll 0, the ▼ cue is shown (there's content below)");
 
-  // A short LIFETIME (weekly's 5 rows still dominate the row count) drives maxScroll to 0 -> no cue at all.
-  const fullLifetime = Achievements.LIFETIME;
-  Achievements.LIFETIME = fullLifetime.slice(0, 2);
-  gotoScreen("achievements", 0); // re-enter so scroll is freshly 0 against the new (smaller) ceiling
-  assert(achMaxScroll() === 0, `E: a short LIFETIME (2 entries) drives achMaxScroll() to 0 (got ${achMaxScroll()})`);
+  // The Weekly tab's 5 rows fit inside ACH_ROW_VISIBLE_H -> ceiling 0, no cue at all, and up/down are
+  // inert. (Pre-P5 the ceiling was shared across all three columns, so this case couldn't be expressed.)
+  openTab(ACH_TAB_DEFAULT);
+  assert(achMaxScroll() === 0, `E: the Weekly tab's 5 rows fit -> achMaxScroll() 0 (got ${achMaxScroll()})`);
+  for (let i = 0; i < 5; i++) menuAchievements("down");
+  assert(game.menu.scroll === 0, `E: "down" on a tab with nothing to scroll leaves scroll at 0 (got ${game.menu.scroll})`);
   log = render(drawAchievements);
   assert(!log.find(e => e.c === "fillText" && (e.str === "▲" || e.str === "▼")), "E: with maxScroll 0, neither cue is logged");
+
+  // A short LIFETIME drives the Lifetime tab's ceiling to 0 too — the ceiling is derived from the live
+  // row count, not a hardcoded pixel total.
+  const fullLifetime = Achievements.LIFETIME;
+  Achievements.LIFETIME = fullLifetime.slice(0, 2);
+  openTab("lifetime"); // re-enter so scroll is freshly 0 against the new (smaller) ceiling
+  assert(achMaxScroll() === 0, `E: a short LIFETIME (2 entries) drives the Lifetime tab's achMaxScroll() to 0 (got ${achMaxScroll()})`);
+  log = render(drawAchievements);
+  assert(!log.find(e => e.c === "fillText" && (e.str === "▲" || e.str === "▼")), "E: with maxScroll 0, neither cue is logged (short LIFETIME)");
   Achievements.LIFETIME = fullLifetime; // restore for any later section
 
   // gotoScreen resets scroll on every entry, not just the first.
-  gotoScreen("achievements", 0);
+  openTab("lifetime");
   menuAchievements("down"); menuAchievements("down");
   assert(game.menu.scroll > 0, "E: scroll advanced ahead of the reset check");
   gotoScreen("achievements", 0);
@@ -369,12 +394,14 @@ const ry0 = py + 130, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE 
   noThrow(() => {
     gotoScreen("achievements", 0);
     render(drawAchievements);
+    menuAchievements("right");   // CS016 P5: tab switching is part of the cycle now
     menuAchievements("down"); menuAchievements("down"); menuAchievements("down");
     render(drawAchievements);
     menuAchievements("up");
+    menuAchievements("left");
     render(drawAchievements);
     menuAchievements("back");
-  }, "F: a full open/scroll/close cycle renders without throwing");
+  }, "F: a full open/tab-switch/scroll/close cycle renders without throwing");
   game.state = "gameover";
   noThrow(() => { gotoScreen("achievements", 0); render(drawAchievements); menuAchievements("confirm"); }, "F: the same cycle from gameover never throws");
 })();
