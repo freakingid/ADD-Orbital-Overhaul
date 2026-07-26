@@ -84,11 +84,14 @@ function byId(A, id) { return A.DEBUG_VARS.find(v => v.id === id); }
 
 // ================= (B) registry: garbageLifetime entry matches the spec exactly ====================
 (function sectionB() {
-  console.log("(B) DEBUG_VARS grew to 6 entries; garbageLifetime matches id/label/unit/min/max/step/def");
+  console.log("(B) DEBUG_VARS grew to (at least) 6 entries; garbageLifetime matches id/label/unit/min/max/step/def");
   const A = build();
-  assert(A.DEBUG_VARS.length === 6, `B: DEBUG_VARS has 6 entries (5 prior + 1 new; got ${A.DEBUG_VARS.length})`);
+  // CS017 P4 appended three more entries after garbageLifetime (saucerPressureSecs/saucerAimPressure/
+  // saucerGapPressure) — the registry is append-only and keeps growing across changesets, so this pins
+  // garbageLifetime's own position (index 5, still exactly where P6 put it), not the live total length.
+  assert(A.DEBUG_VARS.length >= 6, `B: DEBUG_VARS has at least 6 entries (5 prior + 1 new; got ${A.DEBUG_VARS.length})`);
   assert(A.DEBUG_VARS[0].id === "autoShieldRegenPause", "B: P4's entry is still first (registry is append-only)");
-  assert(A.DEBUG_VARS[5].id === "garbageLifetime", "B: garbageLifetime is appended last");
+  assert(A.DEBUG_VARS[5].id === "garbageLifetime", "B: garbageLifetime is still at index 5, where P6 appended it");
 
   const life = byId(A, "garbageLifetime");
   assert(!!life, "B: garbageLifetime entry exists");

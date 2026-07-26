@@ -2463,6 +2463,15 @@ const DEBUG_VARS = [
   // stays in place as the documented pre-P6 shipped value; this knob is the live source of truth now.
   { id: "garbageLifetime", label: "Garbage lifetime", unit: "s",
     def: 10, min: 1, max: 60, step: 1 },
+  // CS017 P4: the time-in-level saucer pressure axis (FORK-CS017-B -> (b) COMPOSE). saucerPressureSecs
+  // is how long a level takes to reach full pressure; the two *Pressure knobs scale how much of the
+  // FLOOR..CEIL gap that pressure closes (0 disables the axis entirely, reproducing pre-P4 behaviour).
+  { id: "saucerPressureSecs", label: "Saucer pressure ramp time", unit: "s",
+    def: 90, min: 10, max: 300, step: 5 },
+  { id: "saucerAimPressure", label: "Saucer aim pressure scale", unit: "",
+    def: 0.5, min: 0, max: 1, step: 0.05 },
+  { id: "saucerGapPressure", label: "Saucer gap pressure scale", unit: "",
+    def: 0.5, min: 0, max: 1, step: 0.05 },
 ];
 const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
 const debugShown = {};   // display-unit values — what the panel shows and what persists in afd_settings_v1.debug
@@ -3128,6 +3137,12 @@ function difficultyFactor(wave) {
 function ramp(floor, ceil, wave) {
   return floor + (ceil - floor) * difficultyFactor(wave);
 }
+// CS017 P4 (FORK-CS017-B -> (b) COMPOSE): time-in-level pressure, 0 at level start rising to 1
+// once game.waveTime (P1) reaches DEBUG.saucerPressureSecs. Composes ON TOP of the wave-based
+// opening value at the saucer aim/gap sites — it never replaces it.
+function wavePressure() {
+  return Math.min(1, game.waveTime / DEBUG.saucerPressureSecs);
+}
 
 // A difficulty lever scales a quantity from `start` (wave 1) toward `floor` (full difficulty)
 // along the SHIPPED difficultyFactor() curve — levers never get their own curve. When
@@ -3726,8 +3741,11 @@ class Saucer {
     if (this.fireTimer <= 0 && !game.ship.dead) {
       let a;
       if (this.small) {
-        // aimed, but the error widens toward a barely-aimed spray at low waves (F10)
-        const err = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE);
+        // aimed, but the error widens toward a barely-aimed spray at low waves (F10). CS017 P4: the
+        // wave-scaled value is the level's OPENING error; time-in-level (wavePressure) then tightens
+        // it further toward SAUCER_AIM_ERR_CEIL (the tighter/more-precise value) on top of that.
+        const base = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE);
+        const err  = base + (SAUCER_AIM_ERR_CEIL - base) * wavePressure() * DEBUG.saucerAimPressure;
         a = angleTo(this, game.ship) + rand(-err, err);
       } else {
         a = rand(0, TAU); // random
@@ -5504,8 +5522,13 @@ function update(dt) {
     game.saucers.push(new Saucer(small));
     AudioSys.saucer(true, small);
     // Longer gaps between saucers early, tightening toward the shipped cadence at full difficulty.
-    const gapMin = ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, game.wave);
-    const gapMax = ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, game.wave);
+    // CS017 P4: the wave-scaled value is the level's OPENING gap; time-in-level (wavePressure) then
+    // shortens it further toward each bound's own _CEIL on top of that (FORK-CS017-B -> COMPOSE).
+    const gapMinBase = ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, game.wave);
+    const gapMaxBase = ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, game.wave);
+    const gapPressure = wavePressure() * DEBUG.saucerGapPressure;
+    const gapMin = gapMinBase + (SAUCER_GAP_CEIL_MIN - gapMinBase) * gapPressure;
+    const gapMax = gapMaxBase + (SAUCER_GAP_CEIL_MAX - gapMaxBase) * gapPressure;
     game.saucerTimer = rand(gapMin, gapMax);
   }
 
