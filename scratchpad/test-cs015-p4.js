@@ -264,9 +264,11 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   const A = build().exports;
   const g = A.game;
 
-  // Render at each cursor row (var row + Back row). backRow is read off the real registry length —
-  // CS015 P5 grew it from 1 to 5 entries (see test-cs015-p5.js), so backRow is no longer literally 1.
-  const backRow = A.DEBUG_VARS.length;
+  // Render at each cursor row (var row + dump-action row + Back row). backRow is read off the real
+  // registry length — CS015 P5 grew it from 1 to 5 entries (see test-cs015-p5.js), and CS017 P2 inserted
+  // a "Dump difficulty log" action row between the values and Back (see test-cs017-p2.js), so backRow is
+  // DEBUG_VARS.length + 1, never a literal.
+  const backRow = A.DEBUG_VARS.length + 1;
   g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = 0;
   let threw = null;
   try {

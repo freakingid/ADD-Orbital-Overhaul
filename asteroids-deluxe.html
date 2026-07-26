@@ -2464,6 +2464,75 @@ const DEBUG_CODE = "EvilG3niu$";
 const DEBUG_CODE_IDLE_MS = 4000;
 const DebugCode = { armed: false, buf: "", last: 0 };
 
+// ---------- Dev-only difficulty logging (CS017 P2) — nothing player-visible, nothing persisted ----------
+// One snapshot row per nextWave() call, kept only in memory (never touches localStorage) and exported by
+// hand from the DEBUG_CODE-gated debug panel below. DIFFLOG_FIELDS is the single source of truth for both
+// the row shape (logDifficultySnapshot) and the CSV column order (difficultyLogCSV) — the field list is
+// frozen by IMPLEMENTATION-PHASES-CS017.md P2 and must not change; only the expressions feeding each field
+// may be repointed as later phases (P3/P4) wire the levers for real.
+const DIFFLOG_MAX = 2000; // cap so a long dev session can't grow the buffer without bound; drops oldest
+const DiffLog = { rows: [] };
+const DIFFLOG_FIELDS = [
+  "t", "wave", "cycle", "cycleWave", "score",
+  "debrisCount", "debrisSpeedMul", "hunterSpeedFrac", "hunterTurnFrac",
+  "saucerAimErr", "saucerGapMin", "saucerGapMax",
+  "hunterCount", "chainLen", "cargoMax", "scoopLevel",
+];
+// Snapshots read every lever from the SAME expressions the live sites use — never a re-derived formula.
+// debrisCount/debrisSpeedMul are passed in verbatim from nextWave()'s own `count`/`speedMul` locals (the
+// exact values that wave's DebrisSatellite spawns just used). hunterSpeedFrac/hunterTurnFrac are today
+// IDENTICAL — both HunterSatellite's speed and turnRate ramp from the same HUNTER_FLOOR_FRAC floor up to
+// their own per-tier ceiling (see the ctor), so the ceiling cancels out of the ratio and both reduce to
+// this one wave-driven fraction; logged as two fields (not one) because P3/P4 may give them independent
+// curves later. saucerAimErr/saucerGapMin/saucerGapMax mirror the exact ramp() calls at the saucer aim
+// and spawn-gap sites (there is no cached variable to read at nextWave() time).
+function logDifficultySnapshot(debrisCount, debrisSpeedMul) {
+  DiffLog.rows.push({
+    t: performance.now(),
+    wave: game.wave,
+    cycle: game.cycle,
+    cycleWave: game.cycleWave,
+    score: game.score,
+    debrisCount,
+    debrisSpeedMul,
+    hunterSpeedFrac: ramp(HUNTER_FLOOR_FRAC, 1, game.wave),
+    hunterTurnFrac: ramp(HUNTER_FLOOR_FRAC, 1, game.wave),
+    saucerAimErr: ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE),
+    saucerGapMin: ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, game.wave),
+    saucerGapMax: ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, game.wave),
+    hunterCount: game.hunters.length, // FLAG-CS017-g: seeds the future music-intensity changeset
+    chainLen: game.chain.length,
+    cargoMax: game.cargoMax,
+    scoopLevel: game.scoopLevel,
+  });
+  if (DiffLog.rows.length > DIFFLOG_MAX) DiffLog.rows.shift(); // drop oldest, keep the cap
+}
+// CSV column order matches DIFFLOG_FIELDS exactly; one header line + one line per row.
+function difficultyLogCSV() {
+  const lines = [DIFFLOG_FIELDS.join(",")];
+  for (const row of DiffLog.rows) lines.push(DIFFLOG_FIELDS.map(f => row[f]).join(","));
+  return lines.join("\n");
+}
+// "Dump difficulty log" debug-panel action (item 5). Builds the CSV, triggers a Blob download, then
+// clears the buffer — clear only on a successful dump. An empty buffer does nothing but the negative
+// blip (no download). The download path is wrapped so a headless/no-DOM environment (or a test stub
+// missing Blob/URL/click) can never throw; the run still counts as a successful dump.
+function dumpDifficultyLog() {
+  if (!DiffLog.rows.length) { AudioSys.ui(false); return; }
+  const csv = difficultyLogCSV();
+  try {
+    const blob = new Blob([csv], { type: "text/csv" });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `orbital-difficulty-${ts}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch (e) { /* headless/no-DOM: download silently unavailable, buffer still clears below */ }
+  DiffLog.rows = [];
+  AudioSys.ui(true);
+}
+
 // CS011: Dan speaks only when a real voice style is selected. voiceStyle "off" mutes him without disturbing
 // VOICE_PARAMS (which keeps the last real style so the acoustic engine always has a valid full object).
 function voiceEnabled() { return settings.voiceStyle !== "off"; }
@@ -2827,18 +2896,21 @@ function menuDifficulty(a) {
   else if (a === "pause") closePause();
 }
 
-// Hidden Debug Options panel handler (CS015 P4). Generic over DEBUG_VARS: N value rows + a trailing Back
-// row. up/down move the cursor; left/right adjust the focused var by its step (clamped [min,max]) then
-// applyDebug + persist immediately; confirm on Back — or back anywhere — returns to context. Reached only
-// by the secret code (see the keydown listener), so there is no "Debug" menu row to restore the cursor
-// to on return: debugReturn mirrors menuOptions' routing and lands on the always-present Options row when
-// a root exists. Adding a debug var later touches nothing here — the registry drives the row count.
+// Hidden Debug Options panel handler (CS015 P4). Generic over DEBUG_VARS: N value rows, then a trailing
+// "Dump difficulty log" ACTION row (CS017 P2 — no value, no chevrons, left/right is a no-op on it same as
+// Back), then Back. up/down move the cursor; left/right adjust the focused var by its step (clamped
+// [min,max]) then applyDebug + persist immediately; confirm on the dump row triggers dumpDifficultyLog(),
+// confirm on Back — or back anywhere — returns to context. Reached only by the secret code (see the
+// keydown listener), so there is no "Debug" menu row to restore the cursor to on return: debugReturn
+// mirrors menuOptions' routing and lands on the always-present Options row when a root exists. Adding a
+// debug var later touches nothing here — the registry drives the row count (CS015 P5 lesson: derive
+// dumpRow/backRow from DEBUG_VARS.length, never a literal).
 function menuDebug(a) {
-  const m = game.menu, N = DEBUG_VARS.length, ROWS = N + 1, backRow = N;
+  const m = game.menu, N = DEBUG_VARS.length, dumpRow = N, backRow = N + 1, ROWS = N + 2;
   if (a === "up")   { m.index = (m.index + ROWS - 1) % ROWS; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % ROWS; AudioSys.ui(false); }
   else if (a === "left" || a === "right") {
-    if (m.index < N) { // a value row (not Back)
+    if (m.index < N) { // a value row (not the dump action or Back)
       const e = DEBUG_VARS[m.index];
       const next = Math.max(e.min, Math.min(e.max, debugShown[e.id] + (a === "right" ? e.step : -e.step)));
       applyDebug(e.id, next);
@@ -2846,7 +2918,10 @@ function menuDebug(a) {
       AudioSys.ui(false);
     }
   }
-  else if (a === "confirm") { if (m.index === backRow) debugReturn(); }
+  else if (a === "confirm") {
+    if (m.index === dumpRow) dumpDifficultyLog();
+    else if (m.index === backRow) debugReturn();
+  }
   else if (a === "back") debugReturn();
   else if (a === "pause") closePause();
 }
@@ -4017,6 +4092,7 @@ function startGame() {
   // follows the same rule (achTabIndex() defends against a bad id anyway, but the field should never
   // BE undefined in the first place).
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null, achTab: ACH_TAB_DEFAULT }; // ensure no menu carries in
+  DiffLog.rows = []; // CS017 P2: dev log is per-run, never carries into a fresh game
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
@@ -4091,6 +4167,7 @@ function nextWave() {
     const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
     game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
   }
+  logDifficultySnapshot(count, speedMul); // CS017 P2: dev-only, one row per wave (see DiffLog above)
 }
 
 function addScore(pts) {
@@ -5804,9 +5881,11 @@ function drawDifficulty() {
 
 // Hidden Debug Options panel renderer (CS015 P4) — generic over DEBUG_VARS, following drawSound's
 // value-row layout (left-aligned label + value + ◄► chevrons on the focused row) plus a centered Back
-// row. Panel height grows with the registry, so P5/P6 knobs slot in with no layout edit.
+// row. Panel height grows with the registry, so P5/P6 knobs slot in with no layout edit. CS017 P2 adds
+// one more row between the values and Back: "Dump difficulty log" — an ACTION row, rendered like Back
+// (centered, ▶ marker, no value, no chevrons even when selected) rather than like a value row.
 function drawDebug() {
-  const N = DEBUG_VARS.length, h = 220 + N * 46;
+  const N = DEBUG_VARS.length, h = 220 + (N + 1) * 46;
   const { x, y } = menuPanel(560, h, "DEBUG OPTIONS");
   const m = game.menu;
   let cy = y + 100;
@@ -5818,8 +5897,11 @@ function drawDebug() {
     if (sel) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 120, cy + 7, 16, COLOR.text); }
     cy += 46;
   });
+  const dumpSel = m.index === N;
+  drawText((dumpSel ? "▶ " : "   ") + "Dump difficulty log", VIEW_W / 2, cy + 6, 18, dumpSel ? COLOR.text : COLOR.menuIdle);
+  cy += 46;
   cy += 14;
-  const backSel = m.index === N;
+  const backSel = m.index === N + 1;
   drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.menuIdle);
   drawMenuHint("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + h - 30);
 }
