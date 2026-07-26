@@ -242,7 +242,7 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
 // the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
 // segment IS the changeset number (this build shipped in CS010).
-const GAME_VERSION = "1.0.0.16";
+const GAME_VERSION = "1.0.0.17";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -1678,6 +1678,14 @@ const VOICE_LINES = {
     { text: "Payload adrift.",          phon: "P EY1 L OW D / AH D R IH1 F T ." },
     { text: "Payload is getting away.", phon: "P EY1 L OW D / IH Z / G EH1 T IH NG / AH W EY1 ." },
   ],
+  // CS017 P7 — fired from the guard-absorb branch at the top of breakChain (the single choke point,
+  // so a multi-node hit speaks once). Lab-composed and zero-err-verified by Paul in
+  // tools/voice-robot-lab.html; pasted verbatim.
+  chain_guard: [
+    { text: "Payload protected.",       phon: "P EY1 L OW D / P R AH T EH1 K T IH D ." },
+    { text: "Payload armor activated.", phon: "P EY1 L OW D / AA1 R M ER / AE1 K T IH V EY T IH D ." },
+    { text: "Payload shield on.",       phon: "P EY1 L OW D / SH IY1 L D / AA1 N ." },
+  ],
 };
 
 // CS011 P4 — level announcement. LEVEL_PHON/NUM_PHON are ported VERBATIM from
@@ -1725,7 +1733,7 @@ function levelPhon(n) {
 // a lower one that is currently playing; an equal/lower one is DROPPED (never queued — a queue would have
 // Dan narrating events that finished ten seconds ago). 3 = hull critical, 2 = health milestones, 1 = rest.
 const VOICE_COOLDOWN = 1.2;
-const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2, chain_broken: 2 };
+const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2, chain_broken: 2, chain_guard: 2 };
 
 // CS011 P2 — on-screen caption look/timing knobs (LOOK-CALL). The caption is Dan's VISIBLE echo, shown
 // whenever settings.captions is on — even with voice audio OFF — and gated by the SAME cooldown/priority
@@ -5300,7 +5308,7 @@ function breakChain(i) { // node i destroyed; everything aft breaks loose
     for (let p = 0; p < GUARD_ABSORB_SPARKS; p++) game.particles.push(new Particle(hit.x, hit.y, POWERUP_COLOR.guard));
     game.floaters.push(new FloatText("GUARDED", hit.x, hit.y - 18, POWERUP_COLOR.guard));
     AudioSys.shieldPing();
-    // TODO CS017 P7: VoiceSys.say("chain_guard") once phon is lab-verified
+    VoiceSys.say("chain_guard"); // CS017 P7 — same single choke point: a multi-node hit speaks once
     return; // no node severed, deliveryCount untouched — the load is byte-identical
   }
   boom(hit.x, hit.y, 1, COLOR.garbage);

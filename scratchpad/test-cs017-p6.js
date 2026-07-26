@@ -34,9 +34,10 @@
 //      without locking the player out of the row afterwards.
 //  (H) the HUD: SIX fixed rows (Scoop + five timed), the new one topmost, and NO existing row moved —
 //      the pre-P6 build's row indices are re-read and compared, not assumed. Still zero ctx.fill().
-//  (I) NO VOICE this phase: VoiceSys.say is never called with ANY guard-related event, VOICE_LINES has
-//      no chain_guard/collect_guard/expire_guard key, and the P7 TODO anchor is present. An UNGUARDED
-//      break still fires chain_broken, which is what proves the spy actually observes calls.
+//  (I) [CS017 P7 REPOINT] collect_guard/expire_guard are PERMANENTLY absent (never fires, never will);
+//      chain_guard is the guard's only voice event, now landed and firing on every absorbed break, via
+//      the real spied say(). An UNGUARDED break still fires chain_broken, which is what proves the spy
+//      actually observes calls. Originally asserted P6's "ships SILENT" — that half is now obsolete.
 //  (J) AudioSys.ctx null smoke across the whole feature.
 
 "use strict";
@@ -829,30 +830,34 @@ const chainIdentical = (g, snap) =>
 })();
 
 // ================= (I) NO VOICE this phase =====================
+// CS017 P7 REPOINT: this section originally asserted P6's "ships SILENT" behavior — VOICE_LINES had no
+// chain_guard key and say() was never called with a guard event. P6's own docs named this as
+// phase-specific, not permanent ("That is also permanent, not just this phase: P7 adds only
+// chain_guard" — meaning ONLY chain_guard, not collect_guard/expire_guard). P7 landed VOICE_LINES.chain_guard
+// + the live VoiceSys.say("chain_guard") call, verified independently and exhaustively by its own
+// scratchpad/test-cs017-p7.js. This section is repointed (not weakened) to assert what is now
+// PERMANENT: collect_guard/expire_guard never exist and are never called, guard's only voice event is
+// the intercept itself — while dropping the now-superseded "chain_guard never fires" claims.
 (function sectionI() {
-  console.log("(I) NO VOICE: say() is never called with a guard event; VOICE_LINES has no chain_guard key");
+  console.log("(I) collect_guard/expire_guard are PERMANENTLY absent; chain_guard is the guard's only voice event (P7-repointed)");
 
-  // The data side.
-  for (const key of ["chain_guard", "collect_guard", "expire_guard", "guard"]) {
-    assert(!(key in VOICE_LINES), `I: VOICE_LINES has NO "${key}" key this phase`);
+  // The data side: collect_/expire_ never exist for guard — permanent per P6/P7 docs.
+  for (const key of ["collect_guard", "expire_guard"]) {
+    assert(!(key in VOICE_LINES), `I: VOICE_LINES has NO "${key}" key (permanent — guard never gets a collect/expire line)`);
   }
-  assert(!Object.keys(VOICE_LINES).some(k => k.includes("guard")),
-    `I: no VOICE_LINES key mentions guard at all (got ${Object.keys(VOICE_LINES).filter(k => k.includes("guard"))})`);
-  assert(!("chain_guard" in A.VOICE_PRIORITY), "I: VOICE_PRIORITY has no chain_guard entry either (P7 adds it)");
+  assert("chain_guard" in VOICE_LINES, "I: (P7 landed) VOICE_LINES.chain_guard now exists");
   assert("chain_broken" in VOICE_LINES, "I: (sanity) the pre-existing chain_broken lines are untouched");
+  assert(A.VOICE_PRIORITY.chain_guard === 2, "I: (P7 landed) VOICE_PRIORITY.chain_guard === 2");
 
-  // The P7 anchor is present, so the next phase has an unambiguous insertion point.
-  assert(/TODO CS017 P7: VoiceSys\.say\("chain_guard"\)/.test(scriptSrc),
-    "I: the P7 TODO anchor sits in breakChain's intercept branch");
-  // ...but only as a COMMENT. Strip line comments before looking for a live call, or the TODO anchor
-  // asserted just above would itself satisfy the search.
+  // The P7 TODO anchor is gone — replaced by the live call, not left dangling as a stale comment.
+  assert(!/TODO CS017 P7/.test(scriptSrc), "I: the P7 TODO anchor was replaced, not left behind");
   const codeOnly = scriptSrc.split("\n").map(l => l.replace(/\/\/.*$/, "")).join("\n");
-  assert(!/VoiceSys\.say\(\s*["'`]chain_guard/.test(codeOnly),
-    "I: ...and no live VoiceSys.say(\"chain_guard\") call was shipped — the anchor is comment-only");
+  assert(/VoiceSys\.say\(\s*["'`]chain_guard/.test(codeOnly),
+    "I: a live VoiceSys.say(\"chain_guard\") call is shipped (P7 landed)");
   assert(!/VoiceSys\.say\(\s*["'`](collect|expire)_guard/.test(codeOnly),
-    "I: no literal collect_guard/expire_guard call was shipped either");
+    "I: no literal collect_guard/expire_guard call was shipped — permanent, unchanged by P7");
 
-  // The behaviour side: spy on the REAL say() with a live AudioContext, so a call would be observed.
+  // The behaviour side: spy on the REAL say() with a live AudioContext, so a call is actually observed.
   const S = build();
   // Bring the audio graph up first (the game does this on the first keypress, per the autoplay policy).
   // Without it every VoiceSys entry point short-circuits on `if (!AudioSys.ctx) return`, and "nothing
@@ -876,9 +881,11 @@ const chainIdentical = (g, snap) =>
   while (S.powerActive("guard")) S.breakChain(6);
   for (let i = 0; i < 120; i++) S.update(1 / 60);
 
+  // Every guard-related event observed is chain_guard itself — never collect_guard/expire_guard.
   const guardish = saidEvents.filter(ev => String(ev).includes("guard"));
-  assert(guardish.length === 0,
-    `I: VoiceSys.say was NEVER called with a guard-related event (got ${JSON.stringify(guardish)})`);
+  assert(guardish.length > 0, `I: (P7 landed) at least one chain_guard line fired across the absorbed breaks (got ${JSON.stringify(guardish)})`);
+  assert(guardish.every(ev => ev === "chain_guard"),
+    `I: every guard-related event observed is exactly "chain_guard" — never collect_/expire_ (got ${JSON.stringify(guardish)})`);
 
   // CONTROL — the spy really does observe calls, and the existing chain_broken line still fires on an
   // UNGUARDED break. Without this the assertion above would pass even if say() were never reachable.
@@ -890,14 +897,14 @@ const chainIdentical = (g, snap) =>
   assert(saidEvents.slice(before).includes("chain_broken"),
     `I: CONTROL — an UNGUARDED break still fires chain_broken (got ${JSON.stringify(saidEvents.slice(before))})`);
 
-  // ...and a GUARDED break fires nothing at all.
+  // ...and a GUARDED break fires exactly chain_guard, nothing else (P7 landed).
   const before2 = saidEvents.length;
   S.settings.chainGuardMode = "time";
   S.game.powerFx.guard = 30;
   layChain(S, 8);
   S.breakChain(3);
-  assert(saidEvents.length === before2,
-    `I: a GUARDED break speaks nothing this phase (got ${JSON.stringify(saidEvents.slice(before2))})`);
+  assert(JSON.stringify(saidEvents.slice(before2)) === JSON.stringify(["chain_guard"]),
+    `I: (P7 landed) a GUARDED break speaks exactly ["chain_guard"] (got ${JSON.stringify(saidEvents.slice(before2))})`);
 })();
 
 // ================= (J) AudioSys.ctx null smoke =====================
