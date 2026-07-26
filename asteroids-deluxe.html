@@ -390,6 +390,9 @@ const STAR_NEAR_BRIGHT_MAX = 1.0;
 // threat parameter from an easy wave-1 floor up to a full-intensity ceiling (see §2.6/§2.13).
 const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficultyFactor(wave);
                                 // ~0 at wave 1, ~0.9 by wave 20, plateauing near 1 by ~wave 25.
+// CS017 P1: the difficulty CYCLE clock — inert this phase (nothing reads cycleValue() yet; P3 wires it).
+const CYCLE_LENGTH = 9;         // PLAYTEST KNOB: waves per difficulty cycle; the sawtooth reset period
+const CYCLE_GAIN   = 0.12;      // PLAYTEST KNOB: per-cycle escalation multiplier (FORK-CS017-A -> spiral)
 // Saucer spawn gap (sec between saucers): wide early, tightening with difficulty.
 // Re-expresses the old `rand(12,22) - min(6,wave)` as an interpolated rand(min,max) range.
 const SAUCER_GAP_FLOOR_MIN = 20;  // wave-1 shortest gap between saucers
@@ -3037,6 +3040,13 @@ function leverScale(lever, wave) {
   return Math.max(lever.floor, s);
 }
 
+// CS017 P1: the FORK-CS017-A spiral term — each difficulty cycle's values are multiplied by this so
+// cycle N+1 starts above where cycle N started, even though the in-cycle sawtooth resets every
+// CYCLE_LENGTH waves. Inert this phase: nothing calls it yet. P3 wires it into the sawtooth levers.
+function cycleValue(base, cycle) {
+  return base * (1 + cycle * CYCLE_GAIN);
+}
+
 function wrap(obj) {
   if (obj.x < -60) obj.x += WORLD_W;
   if (obj.x > WORLD_W + 60) obj.x -= WORLD_W;
@@ -3945,6 +3955,13 @@ const game = {
                                                         // a bug instead of a promotion. Decayed in update().
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
+  // CS017 P1: the difficulty cycle clock. wave stays the ABSOLUTE player-facing counter — every
+  // achievement, the HUD LEVEL readout, high-score records and musicStateFor keep reading game.wave,
+  // untouched. cycle/cycleWave are DERIVED from it in nextWave() (the sawtooth); waveTime is a per-wave
+  // seconds-elapsed accumulator ticked in update(). All three are inert this phase.
+  cycle: 0,      // 0-based difficulty cycle index
+  cycleWave: 1,  // 1-based wave within the current cycle
+  waveTime: 0,   // seconds elapsed in the current wave
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
   saucerTimer: 0,
   hunterTimer: 0,
@@ -4004,6 +4021,9 @@ function startGame() {
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
   game.wave = 0;
+  // CS017 P1: fresh run never carries a stale cycle/cycleWave/waveTime — nextWave() (called at the end
+  // of this function) derives cycle/cycleWave for wave 1 and zeroes waveTime, same as every other wave.
+  game.cycle = 0; game.cycleWave = 1; game.waveTime = 0;
   game.nextRepair = REPAIR_MILESTONE;
   game.debris = []; game.bullets = []; game.saucers = [];
   game.hunters = []; game.particles = [];
@@ -4038,6 +4058,12 @@ function startGame() {
 
 function nextWave() {
   game.wave++;
+  // CS017 P1: derive the sawtooth cycle clock from the absolute wave counter. game.wave itself is
+  // UNTOUCHED and stays the player-facing absolute counter — every achievement, the HUD LEVEL readout,
+  // high-score records and musicStateFor keep reading game.wave, not cycle/cycleWave.
+  game.cycle     = Math.floor((game.wave - 1) / CYCLE_LENGTH);
+  game.cycleWave = ((game.wave - 1) % CYCLE_LENGTH) + 1;
+  game.waveTime  = 0;
   VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
   // v3.4 P7: intensity recomputed ONLY on wave change, never per-frame — keeps updateMusic()'s
   // per-frame path clean. Runs at wave 1 too (startGame calls nextWave()), so a fresh run starts
@@ -5141,6 +5167,10 @@ function update(dt) {
   // Achievements (F9): per-game clock (Speed Recycler's 60s window) + lifetime play time & periodic save
   game.stats.gameTime += dt;
   Achievements.tick(dt);
+  // CS017 P1: seconds elapsed in the current wave — inert this phase (P4 wires it to saucer pressure).
+  // Lives here, not loop(), so it FREEZES while paused and at the title, same rationale as
+  // game.lowHpPhase (CS010 P3): this early-return above already gates on game.state === "playing" && !game.paused.
+  game.waveTime += dt;
   game.debris.forEach(a => a.update(dt));
   game.bullets.forEach(b => b.update(dt));
   game.saucers.forEach(s => s.update(dt));
