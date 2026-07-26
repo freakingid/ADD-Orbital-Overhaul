@@ -142,7 +142,7 @@ padPress(GP.START);
 assert(game.state === "playing" && !game.paused, "B: Start on title -> START A GAME");
 padPress(GP.START);
 assert(game.state === "playing" && game.paused && game.menu.screen === "root", "B: Start while playing -> OPEN PAUSE (root)");
-assert(eqArr(rootItems(), MENU_ROOT_PLAY), "B: paused-from-play root = [Continue,Options,Quit]");
+assert(eqArr(rootItems(), MENU_ROOT_PLAY), "B: paused-from-play root = MENU_ROOT_PLAY");
 padPress(GP.START);
 assert(game.state === "playing" && !game.paused, "B: Start while paused -> DISMISS & RESUME");
 noPad();
@@ -209,7 +209,8 @@ startGame(); game.paused = false; clearKeys(); // fresh playing game
 keydown("escape");
 assert(game.paused && game.menu.screen === "root", "E: ESC while playing -> PAUSE");
 // dive: Options -> ESC backs to root -> ESC backs out (resumes)
-menuInput("down"); // Continue -> Options in play root
+// CS016 P4 inserted a dim "Save" row between Continue and Options — index by label, not press count.
+game.menu.index = rootItems().indexOf("Options");
 assert(rootItems()[game.menu.index] === "Options", "E: cursor on Options");
 menuInput("confirm");
 assert(game.menu.screen === "options", "E: into Options");

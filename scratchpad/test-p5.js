@@ -255,7 +255,12 @@ settings.shotPowerupMode = "time"; settings.magnetMode = "time"; // restore defa
 // =====================================================================
 console.log("(I) Difficulty screen: navigation, toggles, persistence");
 settings.shotPowerupMode = "time"; settings.magnetMode = "time";
-startGame(); openPause();                                   // play root
+// CS016 P4 (§5): Difficulty's value rows lock while game.state === "playing" (a live run's rules can't
+// change mid-run) — reaching them via Pause during a live game is no longer this section's scenario, so
+// this drives the UNLOCKED path (post-game, via the gameover root) to keep exercising toggle +
+// persistence. The lock itself is covered in test-cs016-p4.js.
+startGame(); game.state = "gameover"; game.paused = false; game.menu.screen = null;
+openPause();                                                 // gameover root
 game.menu.index = rootItems().indexOf("Options"); menuInput("confirm");
 assert(game.menu.screen === "options", "I: reached Options");
 game.menu.index = MENU_OPTIONS.indexOf("Difficulty"); menuInput("confirm");

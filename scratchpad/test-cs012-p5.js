@@ -254,6 +254,9 @@ function armShip(A, hp) {
   const store = {};
   const A = buildInstance(store);
   A.startGame();
+  // CS016 P4 (§5): Difficulty rows lock while game.state === "playing" — this section is about the
+  // toggle-and-persist mechanics, not the lock (covered in test-cs016-p4.js), so drive it unlocked.
+  A.game.state = "gameover";
   assert(A.DIFFICULTY_ROWS.includes("autoshield"), "H: DIFFICULTY_ROWS contains \"autoshield\"");
   A.game.menu.screen = "difficulty";
   A.game.menu.index = A.DIFFICULTY_ROWS.indexOf("autoshield");

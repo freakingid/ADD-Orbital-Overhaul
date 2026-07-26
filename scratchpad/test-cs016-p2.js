@@ -165,9 +165,11 @@ function build({ audio = true } = {}) {
   assert(eqJSON(A.MENU_OPTIONS, ["Sound / Music", "Controls", "Difficulty", "Back"]),
     `A: MENU_OPTIONS shrank 6 -> 4; got ${JSON.stringify(A.MENU_OPTIONS)}`);
   assert(A.MENU_OPTIONS.length === 4, "A: MENU_OPTIONS is exactly 4 rows");
-  // The two roots that existed before are untouched by this phase (P4 changes MENU_ROOT_PLAY, not P2).
-  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Options", "Quit"]), "A: MENU_ROOT_PLAY untouched by P2");
-  assert(eqJSON(A.MENU_ROOT_OVER, ["Play Again", "Options", "Quit to Title"]), "A: MENU_ROOT_OVER untouched by P2");
+  // The two roots that existed before are untouched by THIS phase (P4 later adds a dim, inert "Save"
+  // row to MENU_ROOT_PLAY, not P2 — this file re-runs against the current build, so it pins the
+  // post-P4 shape rather than the stale pre-P4 one).
+  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Save", "Options", "Quit"]), "A: MENU_ROOT_PLAY (CS016 P4: + Save; P2 itself left it untouched)");
+  assert(eqJSON(A.MENU_ROOT_OVER, ["Play Again", "Options", "Quit to Title"]), "A: MENU_ROOT_OVER untouched by P2 (or P4)");
   // No hardcoded index anywhere in the two repointed Back destinations.
   assert(!/gotoScreen\(\s*"titlemenu"\s*,\s*-?\d+\s*\)/.test(scriptSrc),
     "A: no gotoScreen(\"titlemenu\", <numeric literal>) — both call sites resolve via MENU_TITLE.indexOf");
@@ -347,7 +349,8 @@ function build({ audio = true } = {}) {
   A.startGame();
   A.openPause();
   assert(g.paused === true && g.menu.screen === "root", "F: paused mid-game still opens \"root\" (NOT titlemenu)");
-  assert(eqJSON(A.rootItems(), ["Continue", "Options", "Quit"]), "F: ...with the play-root layout");
+  // CS016 P4 inserted a dim, inert "Save" row into MENU_ROOT_PLAY — pinned against the live constant.
+  assert(eqJSON(A.rootItems(), A.MENU_ROOT_PLAY), "F: ...with the play-root layout");
   g.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
   assert(g.menu.screen === "options", "F: root -> Options");
   A.menuInput("back");

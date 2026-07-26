@@ -119,13 +119,15 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   A.startGame();
   // CS013 P1 gave "gameover" its own root layout (MENU_ROOT_OVER) — deliberately NOT checked here,
   // see test-cs013-p1.js. This section still pins the CS012 P4 shape for the two states it governs.
+  // CS016 P4 inserted a dim, inert "Save" row into MENU_ROOT_PLAY — pinned here against the live
+  // constant rather than a re-hardcoded array, so this section can't drift from it a second time.
   for (const st of ["playing", "title"]) {
     A.game.state = st;
-    assert(eqJSON(A.rootItems(), ["Continue", "Options", "Quit"]), `B: rootItems() === [Continue,Options,Quit] in state "${st}"`);
+    assert(eqJSON(A.rootItems(), A.MENU_ROOT_PLAY), `B: rootItems() === MENU_ROOT_PLAY in state "${st}"`);
     assert(!A.rootItems().includes("Achievements") && !A.rootItems().includes("Back"),
       `B: rootItems() has no Achievements/Back row in state "${st}"`);
   }
-  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Options", "Quit"]), "B: MENU_ROOT_PLAY is the playing-state root layout");
+  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Save", "Options", "Quit"]), "B: MENU_ROOT_PLAY is the playing-state root layout (CS016 P4: Save added)");
 })();
 
 // ================= (C) title: O -> Options directly; Back returns to the title menu =====================
@@ -170,7 +172,7 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   A.startGame(); // state "playing"
   A.openPause();
   assert(A.game.paused === true && A.game.menu.screen === "root", "E: openPause while playing lands on \"root\"");
-  assert(eqJSON(A.rootItems(), ["Continue", "Options", "Quit"]), "E: root shows Continue/Options/Quit");
+  assert(eqJSON(A.rootItems(), A.MENU_ROOT_PLAY), "E: root shows the MENU_ROOT_PLAY layout (CS016 P4: + Save)");
   A.game.menu.index = A.rootItems().indexOf("Options");
   A.menuInput("confirm");
   assert(A.game.menu.screen === "options", "E: selecting Options -> \"options\"");

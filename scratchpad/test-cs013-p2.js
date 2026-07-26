@@ -124,7 +124,7 @@ const localStorageStub = {
 };
 
 const RETURN = [
-  "startGame", "update", "game", "gotoScreen", "rootItems", "COLOR", "MENU_HINT_SIZE",
+  "startGame", "update", "game", "gotoScreen", "rootItems", "COLOR", "MENU_HINT_SIZE", "ROOT_MENU_HINT",
   "drawRootMenu", "drawOptionsMenu", "drawSound", "drawDifficulty", "drawControlsMenu",
   "MENU_OPTIONS", "SOUND_ROWS", "VOL_LABELS", "REBINDABLE", "bindings", "AudioSys", "VIEW_W", "VIEW_H"
 ];
@@ -134,7 +134,7 @@ const factory = new Function(
 );
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, localStorageStub);
 const {
-  startGame, update, game, gotoScreen, rootItems, COLOR, MENU_HINT_SIZE,
+  startGame, update, game, gotoScreen, rootItems, COLOR, MENU_HINT_SIZE, ROOT_MENU_HINT,
   drawRootMenu, drawOptionsMenu, drawSound, drawDifficulty, drawControlsMenu,
   MENU_OPTIONS, SOUND_ROWS, VOL_LABELS, REBINDABLE, bindings, AudioSys, VIEW_W, VIEW_H
 } = A;
@@ -157,22 +157,29 @@ const cx = VIEW_W / 2;
 
 // ================= (C) drawRootMenu =================
 (function sectionC() {
-  console.log("(C) drawRootMenu: unselected -> menuIdle, selected -> text; footer -> drawMenuHint");
+  console.log("(C) drawRootMenu: unselected -> menuIdle, selected -> text; Save always dim; footer -> drawMenuHint");
   game.state = "playing";
-  gotoScreen("root", 1); // select "Options" (index 1 of ["Continue","Options","Quit"])
+  // CS016 P4 grew MENU_ROOT_PLAY (Continue/Save/Options/Quit) and derived the panel height from
+  // items.length instead of a fixed 300 — select by label and read the panel's own strokeRect for its
+  // top, rather than re-hardcoding either the old index or the old height here.
+  gotoScreen("root", rootItems().indexOf("Options"));
   const items = rootItems();
-  const y = (VIEW_H - 300) / 2;
   const log = render(drawRootMenu);
+  const box = log.find(e => e.c === "strokeRect");
+  assert(!!box, "C: drawRootMenu stroked a menuPanel box");
+  const y = box ? box.y : 0;
   items.forEach((it, i) => {
     const entries = at(log, cx, y + 118 + i * 46);
     assert(entries.length === 1, `C: exactly one fillText for root item "${it}" (got ${entries.length})`);
-    const expect = i === game.menu.index ? COLOR.text : COLOR.menuIdle;
-    assert(entries[0].color === expect, `C: root item "${it}" (${i === game.menu.index ? "selected" : "unselected"}) draws in ${i === game.menu.index ? "COLOR.text" : "COLOR.menuIdle"}`);
+    // CS016 P4: "Save" is the shared unavailable-row idiom — always COLOR.dim, focused or not.
+    const expect = it === "Save" ? COLOR.dim : (i === game.menu.index ? COLOR.text : COLOR.menuIdle);
+    const expectName = it === "Save" ? "COLOR.dim" : (i === game.menu.index ? "COLOR.text" : "COLOR.menuIdle");
+    assert(entries[0].color === expect, `C: root item "${it}" draws in ${expectName}`);
   });
-  const footer = at(log, cx, y + 272);
-  assert(footer.length === 1, "C: exactly one footer fillText");
-  assert(footer[0].color === COLOR.menuIdle, "C: root footer draws in COLOR.menuIdle");
-  assert(fontSize(footer[0]) === MENU_HINT_SIZE, `C: root footer draws at MENU_HINT_SIZE (got ${fontSize(footer[0])})`);
+  const footer = log.find(e => e.c === "fillText" && e.str === ROOT_MENU_HINT);
+  assert(!!footer, "C: exactly one footer fillText carrying ROOT_MENU_HINT");
+  assert(footer && footer.color === COLOR.menuIdle, "C: root footer draws in COLOR.menuIdle");
+  assert(footer && fontSize(footer) === MENU_HINT_SIZE, `C: root footer draws at MENU_HINT_SIZE (got ${footer && fontSize(footer)})`);
 })();
 
 // ================= (D) drawOptionsMenu =================
@@ -246,7 +253,10 @@ const cx = VIEW_W / 2;
 // ================= (F) drawDifficulty =================
 (function sectionF() {
   console.log("(F) drawDifficulty: row label + Back swap; toggle inactive-side + \"|\" glyph stay dim; help/footer via drawMenuHint");
-  game.state = "playing";
+  // CS016 P4 (§5): the three value rows render COLOR.dim unconditionally while game.state === "playing"
+  // (the mid-run lock) — this section is about the baseline selected/unselected contrast, not the lock
+  // (covered in test-cs016-p4.js), so it stays off "playing" to exercise the unlocked colors.
+  game.state = "gameover";
   gotoScreen("difficulty", 1); // select the second toggle row ("Magnet expires")
   const x0 = (VIEW_W - 620) / 2, y0 = (VIEW_H - 418) / 2;
   const log = render(drawDifficulty);

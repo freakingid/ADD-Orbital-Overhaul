@@ -2321,7 +2321,10 @@ function firstPressedButton() {
 // with its own session verbs (Play Again / Quit to Title) — distinct from the paused-mid-game root
 // (Continue / Quit). rootItems() picks the layout off game.state; update() skips the sim outside
 // "playing", so game.paused is safe in any state.
-const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];             // paused mid-game
+// CS016 P4 (§4): "Save" is a placeholder row — save-game itself is not implemented this round. It uses
+// the shared unavailable-row idiom (below): focusable, always COLOR.dim, confirm is inert. MENU_ROOT_OVER
+// is deliberately NOT given one — there is no run in progress at gameover for a save to apply to.
+const MENU_ROOT_PLAY = ["Continue", "Save", "Options", "Quit"];     // paused mid-game
 const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover (CS013 P1)
 // CS016 P2 (§1): the TITLE screen's own root menu — the third root layout, and the only one that is
 // not an overlay. It lives at game.menu.screen === "titlemenu" with game.paused staying FALSE (the
@@ -2672,6 +2675,9 @@ function menuRoot(a) {
     // Continue/Options/Quit, gameover gives Play Again/Options/Quit to Title. Dispatch by label
     // (menuOptions precedent) so the two layouts share one handler without an index branch.
     const label = items[m.index];
+    // CS016 P4 (§4): "Save" is deliberately given no branch — an unmatched label falls off this chain
+    // as a no-op (no state change, no AudioSys.ui() blip), which is the inert half of the shared
+    // unavailable-row idiom. drawRootMenu renders it in COLOR.dim so the cursor visibly stops there.
     if (label === "Continue")          closePause();
     else if (label === "Play Again")   startGame();
     else if (label === "Options")      gotoScreen("options");
@@ -2779,12 +2785,20 @@ function menuHighScores(a) {
 // Structured to grow with future difficulty knobs (FLAG B-4-c): add a row here + a case in the
 // switch and the renderer picks it up.
 const DIFFICULTY_ROWS = ["shot", "magnet", "autoshield", "back"];
+// CS016 P4 (§5): a live run's rules can't change mid-run — retroactively flipping shot/magnet/
+// auto-shield would corrupt the meaning of that run's score and achievement progress. Keyed on
+// game.state === "playing" specifically (NOT game.paused, which the title also carries as of CS016 P2;
+// NOT gameover, where the run is already over and changing settings for the next one is harmless).
+// The three value rows stay focusable (so the player can still READ them) and render COLOR.dim — the
+// shared unavailable-row idiom (see MENU_ROOT_PLAY's "Save" above); "back" is unaffected.
+const DIFFICULTY_LOCK_HELP = "Difficulty can't be changed during a run.";
 function menuDifficulty(a) {
   const m = game.menu, N = DIFFICULTY_ROWS.length;
   const row = DIFFICULTY_ROWS[m.index];
+  const locked = game.state === "playing" && row !== "back";
   if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
   else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
-  else if (a === "left" || a === "right") {
+  else if ((a === "left" || a === "right") && !locked) {
     if (row === "shot")        { settings.shotPowerupMode = a === "right" ? "shots"  : "time"; saveSettings(); AudioSys.ui(false); }
     else if (row === "magnet") { settings.magnetMode      = a === "right" ? "pieces" : "time"; saveSettings(); AudioSys.ui(false); }
     else if (row === "autoshield") { settings.autoShield  = a === "right"; saveSettings(); AudioSys.ui(false); }
@@ -5629,12 +5643,23 @@ function drawRootMenu() {
   // future hint or font-size change self-heals instead of silently bleeding past the border again.
   ctx.font = MENU_HINT_SIZE + "px monospace";
   const w = Math.max(360, Math.ceil(ctx.measureText(ROOT_MENU_HINT).width) + 2 * ROOT_MENU_HINT_MARGIN);
-  const { y } = menuPanel(w, 300, game.state === "playing" ? "PAUSED" : "MENU");
+  // CS016 P4: height DERIVED from items.length (same self-healing principle as the width above) rather
+  // than a hardcoded 300, so the 3-row gameover root and the 4-row pause root (Save added) both fit
+  // through this one function with no branch. Rows start at y+118 and step 46px apart (unchanged); the
+  // hint sits 62px below the last row's baseline (extra breathing room beyond the row step), and the
+  // panel keeps 28px of margin below the hint. h = 118 + (N-1)*46 + 62 + 28 reproduces the old fixed
+  // 300 exactly at N=3.
+  const hintY = 118 + (items.length - 1) * 46 + 62;
+  const h = hintY + 28;
+  const { y } = menuPanel(w, h, game.state === "playing" ? "PAUSED" : "MENU");
   items.forEach((it, i) => {
     const sel = i === game.menu.index;
-    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, sel ? COLOR.text : COLOR.menuIdle);
+    // CS016 P4 (§4): "Save" is the shared unavailable-row idiom — always COLOR.dim, focused or not,
+    // so silence (no confirm blip) reads as "this row does nothing" rather than "nothing happened".
+    const color = it === "Save" ? COLOR.dim : (sel ? COLOR.text : COLOR.menuIdle);
+    drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, color);
   });
-  drawMenuHint(ROOT_MENU_HINT, VIEW_W / 2, y + 272);
+  drawMenuHint(ROOT_MENU_HINT, VIEW_W / 2, y + hintY);
 }
 
 // CS010 P4 (§9/§10a): a pure nav list — the value rows (volume sliders + Music Track) moved to
@@ -5698,6 +5723,10 @@ function drawDifficulty() {
   // help/hint lines shift down by the same 58 so the layout below the rows is unchanged in spirit.
   const { x, y } = menuPanel(620, 418, "DIFFICULTY");
   const m = game.menu;
+  // CS016 P4 (§5): mid-run, all three value rows render dim regardless of focus — the shared
+  // unavailable-row idiom — so a player who lands on one can still read it but sees plainly that it
+  // won't respond. "back" is excluded; it stays fully live at every game.state.
+  const locked = game.state === "playing";
   // Each row draws as "left | right" with the ACTIVE side lit. rightActive=true lights the right label.
   const rows = [
     { label: "Shot powerups expire", left: "Time", right: "Shots",  rightActive: settings.shotPowerupMode === "shots" },
@@ -5706,14 +5735,16 @@ function drawDifficulty() {
   ];
   rows.forEach((r, i) => {
     const sel = m.index === i, cy = y + 122 + i * 58;
-    drawText(r.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
+    drawText(r.label, x + 40, cy + 6, 18, locked ? COLOR.dim : (sel ? COLOR.text : COLOR.menuIdle), "left");
     const ox = x + 360;
-    drawText(r.left,  ox,       cy + 6, 18, r.rightActive ? COLOR.dim : COLOR.text, "left");
+    drawText(r.left,  ox,       cy + 6, 18, locked ? COLOR.dim : (r.rightActive ? COLOR.dim : COLOR.text), "left");
     drawText("|",     ox + 74,  cy + 6, 18, COLOR.dim, "left");
-    drawText(r.right, ox + 92,  cy + 6, 18, r.rightActive ? COLOR.text : COLOR.dim, "left");
-    if (sel) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 178, cy + 7, 16, COLOR.text); }
+    drawText(r.right, ox + 92,  cy + 6, 18, locked ? COLOR.dim : (r.rightActive ? COLOR.text : COLOR.dim), "left");
+    if (sel) { drawText("◄", ox - 24, cy + 7, 16, locked ? COLOR.dim : COLOR.text); drawText("►", ox + 178, cy + 7, 16, locked ? COLOR.dim : COLOR.text); }
   });
-  // Per-row help line under the rows — describes the FOCUSED row only (Back has no help line).
+  // Per-row help line under the rows — describes the FOCUSED row only (Back has no help line). CS016 P4:
+  // while locked it's replaced by DIFFICULTY_LOCK_HELP for all three value rows — routed through the
+  // SAME line (drawMenuHint at the same y) rather than a second help mechanism.
   const HELP = [
     "Time = today's 15-second timer.   Shots = expire by use, not the clock.",
     "Time = today's 15-second timer.   Pieces = expire by use, not the clock.",
@@ -5721,7 +5752,7 @@ function drawDifficulty() {
   ];
   const backSel = m.index === 3;
   drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 320, 22, backSel ? COLOR.text : COLOR.menuIdle);
-  if (m.index < HELP.length) drawMenuHint(HELP[m.index], VIEW_W / 2, y + 364);
+  if (m.index < HELP.length) drawMenuHint(locked ? DIFFICULTY_LOCK_HELP : HELP[m.index], VIEW_W / 2, y + 364);
   drawMenuHint("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 394);
 }
 

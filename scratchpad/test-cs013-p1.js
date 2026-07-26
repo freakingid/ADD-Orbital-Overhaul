@@ -123,12 +123,13 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   A.startGame();
   for (const st of ["playing", "title"]) {
     A.game.state = st;
-    assert(eqJSON(A.rootItems(), ["Continue", "Options", "Quit"]), `B: rootItems() === MENU_ROOT_PLAY in state "${st}"`);
+    // CS016 P4 inserted a dim, inert "Save" row into MENU_ROOT_PLAY — pinned against the live constant.
+    assert(eqJSON(A.rootItems(), A.MENU_ROOT_PLAY), `B: rootItems() === MENU_ROOT_PLAY in state "${st}"`);
   }
   A.game.state = "gameover";
   assert(eqJSON(A.rootItems(), ["Play Again", "Options", "Quit to Title"]), "B: rootItems() === MENU_ROOT_OVER in state \"gameover\"");
-  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Options", "Quit"]), "B: MENU_ROOT_PLAY unchanged from CS012 P4");
-  assert(eqJSON(A.MENU_ROOT_OVER, ["Play Again", "Options", "Quit to Title"]), "B: MENU_ROOT_OVER is the new CS013 P1 layout");
+  assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Save", "Options", "Quit"]), "B: MENU_ROOT_PLAY (CS016 P4: + Save)");
+  assert(eqJSON(A.MENU_ROOT_OVER, ["Play Again", "Options", "Quit to Title"]), "B: MENU_ROOT_OVER is the new CS013 P1 layout, untouched by CS016 P4");
 })();
 
 // ================= (C) gameover: openPause() lands on "root" =====================
@@ -201,7 +202,7 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   A.startGame(); // state "playing"
   A.openPause();
   assert(A.game.paused === true && A.game.menu.screen === "root", "G: openPause while playing lands on \"root\"");
-  assert(eqJSON(A.rootItems(), ["Continue", "Options", "Quit"]), "G: root still shows Continue/Options/Quit while playing");
+  assert(eqJSON(A.rootItems(), A.MENU_ROOT_PLAY), "G: root still shows the MENU_ROOT_PLAY layout while playing (CS016 P4: + Save)");
   A.game.menu.index = A.rootItems().indexOf("Options");
   A.menuInput("confirm");
   assert(A.game.menu.screen === "options", "G: selecting Options -> \"options\"");

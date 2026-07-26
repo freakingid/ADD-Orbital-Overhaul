@@ -108,9 +108,10 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   console.log("(B) MENU_ROOT_PLAY / MENU_OPTIONS / SOUND_ROWS shapes; no hardcoded gotoScreen index");
   const A = buildInstance();
   // CS012 P4 (FORK-CS012-C → a): the system-menu root (MENU_ROOT_SYS) is retired — Options is the sole
-  // hub, opened directly from title/gameover. MENU_ROOT_PLAY (Continue/Options/Quit) is the only root.
-  assert(JSON.stringify(A.MENU_ROOT_PLAY) === JSON.stringify(["Continue", "Options", "Quit"]),
-    `B: MENU_ROOT_PLAY === [Continue, Options, Quit]; got ${JSON.stringify(A.MENU_ROOT_PLAY)}`);
+  // hub, opened directly from title/gameover. MENU_ROOT_PLAY is the only root here (MENU_ROOT_OVER is
+  // gameover's). CS016 P4 inserted a dim, inert "Save" row — pinned to its current post-P4 shape.
+  assert(JSON.stringify(A.MENU_ROOT_PLAY) === JSON.stringify(["Continue", "Save", "Options", "Quit"]),
+    `B: MENU_ROOT_PLAY === [Continue, Save, Options, Quit]; got ${JSON.stringify(A.MENU_ROOT_PLAY)}`);
   assert(!/const\s+MENU_ROOT_SYS/.test(currentSrc), "B: MENU_ROOT_SYS is no longer declared (only referenced in a retire-note comment)");
   // CS016 P2: §10a's six-row order minus the two rows that moved to the title menu. The remaining four
   // keep §10a's relative order exactly (Sound / Music, Controls, …, Back), which is what §10a fixed.

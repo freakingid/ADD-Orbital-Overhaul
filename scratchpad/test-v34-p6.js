@@ -591,6 +591,9 @@ keydown("d", false);
 assert(near(AudioSys.vol.sfx, 0.6), "O: a non-repeat keydown on a volume slider moves it exactly one step");
 
 // A Difficulty toggle row: same shape, on the "difficulty" screen.
+// CS016 P4 (§5): Difficulty value rows lock while game.state === "playing" (set above, section L, and
+// still live here) — this repeat-guard check is orthogonal to that lock, so drive it unlocked.
+game.state = "gameover";
 game.menu.screen = "difficulty"; game.menu.index = 0; // "shot" row
 settings.shotPowerupMode = "time";
 keydown("d", true);

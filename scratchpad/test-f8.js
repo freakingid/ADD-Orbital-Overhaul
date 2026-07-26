@@ -79,7 +79,7 @@ global.localStorage = {
 const returnList = [
   "startGame", "update", "game", "keys", "input", "bindings", "GP", "GP_DEADZONE",
   "pollGamepad", "handleGamepadMenu",
-  "openPause", "closePause", "menuInput", "menuActive",
+  "openPause", "closePause", "menuInput", "menuActive", "rootItems",
   "returnToDefaults", "saveSettings", "loadSettings",
   "DEFAULT_BINDINGS", "REBINDABLE", "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "AudioSys"
 ];
@@ -91,7 +91,7 @@ const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorS
 const {
   startGame, update, game, keys, input, bindings, GP, GP_DEADZONE,
   pollGamepad, handleGamepadMenu,
-  openPause, closePause, menuInput, menuActive,
+  openPause, closePause, menuInput, menuActive, rootItems,
   returnToDefaults, saveSettings, loadSettings,
   DEFAULT_BINDINGS, REBINDABLE, MENU_OPTIONS, SOUND_ROWS, VOL_CATS, AudioSys
 } = A;
@@ -124,7 +124,9 @@ console.log("(A) menu state machine transitions");
 assert(!menuActive(), "A: not in a menu while playing");
 openPause();
 assert(game.paused === true && game.menu.screen === "root" && game.menu.index === 0, "A: pause opens root");
-menuInput("down"); assert(game.menu.index === 1, "A: down -> Options row");
+menuInput("down"); assert(game.menu.index === 1 && rootItems()[game.menu.index] === "Save", "A: down -> Save row (CS016 P4, focusable but inert)");
+menuInput("confirm"); assert(game.menu.screen === "root", "A: confirm on Save is inert — still on root");
+menuInput("down"); assert(rootItems()[game.menu.index] === "Options", "A: down again -> Options row");
 menuInput("confirm"); assert(game.menu.screen === "options", "A: confirm Options -> options screen");
 game.menu.index = MENU_OPTIONS.indexOf("Controls"); menuInput("confirm"); assert(game.menu.screen === "controls", "A: confirm Controls -> controls screen");
 menuInput("back"); assert(game.menu.screen === "options", "A: back -> options");
@@ -136,7 +138,8 @@ menuInput("back"); assert(game.paused === false && game.menu.screen === null, "A
 // =====================================================================
 console.log("(B) volume sliders + gain-node routing + clamping");
 // CS010 P4: the sliders moved off Options onto a nested "Sound / Music" screen (SOUND_ROWS).
-openPause(); menuInput("down"); menuInput("confirm"); // -> options, index 0 = "Sound / Music"
+// CS016 P4: one more "down" than before to step past the inserted "Save" row.
+openPause(); menuInput("down"); menuInput("down"); menuInput("confirm"); // -> options, index 0 = "Sound / Music"
 assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Sound / Music", "B: on Sound/Music row");
 menuInput("confirm"); // -> sound, index 0 = SFX
 assert(game.menu.screen === "sound" && game.menu.index === 0 && SOUND_ROWS[0] === "SFX Volume", "B: on SFX slider");
@@ -230,6 +233,10 @@ assert(game.menu.index === 1, "F: D-Pad Down moves the cursor once");
 setPad(makePad([GP.DPAD_DOWN])); handleGamepadMenu();
 assert(game.menu.index === 1, "F: holding D-Pad Down does NOT repeat (edge-detected)");
 setPad(makePad([])); handleGamepadMenu();               // release
+// CS016 P4: one more Down to step past the inserted "Save" row before reaching Options.
+setPad(makePad([GP.DPAD_DOWN])); handleGamepadMenu();
+setPad(makePad([])); handleGamepadMenu();               // release
+assert(rootItems()[game.menu.index] === "Options", "F: D-Pad Down again reaches Options (past Save)");
 setPad(makePad([GP.A])); handleGamepadMenu();            // A = confirm -> Options
 assert(game.menu.screen === "options", "F: A confirms into Options");
 // pad rebind: arm capture for thrust's gamepad cell, then press a button
