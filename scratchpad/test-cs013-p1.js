@@ -22,8 +22,9 @@
 //  (F) gameover: Options -> Back -> root -> Back -> close (the full round-trip loop from the prompt).
 //  (G) playing-path regression (unchanged): root is still Continue/Options/Quit; Options -> Back ->
 //      root -> Back -> resume (still paused after the first Back, exactly as CS012 P4 left it).
-//  (H) title-path regression (unchanged): openPause() from title still lands directly on "options"
-//      (no root involved), Back closes straight to title.
+//  (H) title-path regression: openPause() from title still lands directly on "options" (no PAUSE root
+//      involved) — unchanged. CS016 P2: Back from there now returns to the title's OWN menu (screen
+//      "titlemenu", game.paused cleared) instead of nulling the screen.
 //  (I) entry-guard: with game.entry live at gameover, the "o" keydown opener is a no-op (the existing
 //      !game.entry guard already covers the new root path — no code change needed, asserted here).
 //  (J) headless no-crash: AudioSys.ctx null -> startGame()/update(1/60) plus a full gameover
@@ -71,7 +72,7 @@ function FakeAudioContext() {
 
 const RETURN = [
   "startGame", "update", "game", "menuInput", "openPause", "closePause", "rootItems", "gotoScreen",
-  "quitToTitle", "MENU_ROOT_PLAY", "MENU_ROOT_OVER", "MENU_OPTIONS", "AudioSys", "bindings"
+  "quitToTitle", "MENU_ROOT_PLAY", "MENU_ROOT_OVER", "MENU_OPTIONS", "MENU_TITLE", "AudioSys", "bindings"
 ];
 
 // Returns the eval'd instance PLUS a `keydown(key, repeat)` test helper wired to the real
@@ -150,7 +151,13 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   A.game.menu.index = A.rootItems().indexOf("Quit to Title");
   A.menuInput("confirm");
   assert(A.game.state === "title", "D: Quit to Title moves game.state to \"title\"");
-  assert(A.game.paused === false && A.game.menu.screen === null, "D: the overlay is closed after Quit to Title");
+  // CS016 P2: quitToTitle() now ARMS the title's own menu instead of nulling the screen — a null screen
+  // there would leave the title cursor-less and dead to input. The property this line was written to
+  // check (nothing is left paused, no pause overlay survives the quit) is unchanged.
+  assert(A.game.paused === false && A.game.menu.screen === "titlemenu",
+    "D: no overlay survives Quit to Title; the title's own menu is armed (CS016 P2)");
+  assert(A.game.menu.index === 0 && A.MENU_TITLE[A.game.menu.index] === "Start Game",
+    "D: the title cursor resets to Start Game, not the root's stale index");
 })();
 
 // ================= (E) gameover root, Play Again =====================
@@ -207,13 +214,17 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ================= (H) title-path regression (unchanged) =====================
 (function () {
-  console.log("(H) title -> openPause() still lands directly on \"options\" (no root); Back closes to title");
+  console.log("(H) title -> openPause() still lands directly on \"options\" (no PAUSE root); Back -> title menu");
   const A = buildInstance();
-  A.startGame(); A.game.state = "title"; A.game.paused = false;
+  A.startGame(); A.quitToTitle();
   A.openPause();
-  assert(A.game.menu.screen === "options", "H: openPause from title still lands on \"options\" directly (title has no root)");
+  // Unchanged by CS016 P2: openPause() still routes the title straight to Options rather than to a
+  // pause root — that routing is what keeps Options' dimmed-panel chrome when opened from the title.
+  // The title's OWN menu (screen "titlemenu") is not that root; it is not opened by openPause at all.
+  assert(A.game.menu.screen === "options", "H: openPause from title still lands on \"options\" directly (title has no PAUSE root)");
   A.menuInput("back");
-  assert(A.game.paused === false && A.game.menu.screen === null, "H: Back from Options closes the overlay");
+  assert(A.game.paused === false && A.game.menu.screen === "titlemenu",
+    "H: Back from Options unpauses and returns to the title menu (CS016 P2)");
   assert(A.game.state === "title", "H: closing returns to the underlying title screen");
 })();
 
@@ -253,7 +264,10 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     A.update(1 / 60);
   } catch (e) { ok = false; console.error("  FAIL: threw: " + e.stack); }
   assert(ok, "J: no throw across startGame/update + the two gameover-root cycles with ctx null");
-  assert(A.game.paused === false && A.game.menu.screen === null, "J: the cycles ended with the overlay closed");
+  // The second cycle ends in Quit to Title, so per CS016 P2 the title's own menu is armed — still
+  // "nothing paused, no overlay", which is what this line pins.
+  assert(A.game.paused === false && A.game.menu.screen === "titlemenu",
+    "J: the cycles ended unpaused with no overlay (on the title menu, CS016 P2)");
 })();
 
 console.log(`\ntest-cs013-p1: ${passed} passed, ${failed} failed`);

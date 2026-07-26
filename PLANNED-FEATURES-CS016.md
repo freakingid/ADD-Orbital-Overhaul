@@ -111,8 +111,20 @@ Getting these backwards is the single easiest way to break this round: the duck 
 **freeze** concept, the music-state read uses the **menu-open** concept. They move in opposite
 directions.
 
+**FLAG-CS016-l — ✅ RESOLVED IN P2** (candidate fix taken as-is: `menuActive()` is now
+`return game.paused || game.menu.screen !== null;`). The original write-up follows, unedited, as the
+record of what the gap was and why the fix was chosen. P2 additionally found and closed a **second,
+related hole the flag did not name**: the *opposite* case, a title screen with `game.menu.screen ===
+null`. `closePause()` produced exactly that from any title-context screen (the `pause` action on an
+Options sub-screen, `debugReturn()` out of the hidden panel), leaving the title rendering with no
+cursor and `menuActive()` false — a title dead to input. Fixed by making `closePause()` delegate to
+the new `returnToTitleMenu()` when `game.state === "title"`: at the title there is no "no menu" state
+to close back to, because the title menu *is* the title's base UI rather than an overlay. The
+invariant the two fixes together establish, and which the rest of the round should preserve: **at the
+title, `game.menu.screen` is never `null`.**
+
 **FLAG-CS016-l — `menuActive()`'s `"titlemenu"`-only check does not survive drilling into a
-sub-screen (discovered during P1, unresolved).** `menuActive()` gates three things: the music
+sub-screen (discovered during P1, resolved in P2).** `menuActive()` gates three things: the music
 system (above), the render path, and — the one this flag is about — the input router
 (`handleMenuKey`/`handleGamepadMenu`, both `if (menuActive())`-gated). §2 has `menuAchievements` /
 `menuHighScores` reach their screens via `gotoScreen("achievements"|"highscores")`, which sets
@@ -530,13 +542,16 @@ only lifetime progress, not the run.
   `musicStateFor` swaps `game.paused` → `menuActive()`. Both are byte-identical on today's build,
   which makes them independently verifiable before the title menu exists. Getting them backwards
   permanently ducks the title track and silently kills the High Scores fanfare.
-- **FLAG-CS016-k — `MENU_OPTIONS` shrinks 6 → 4.** Safe because all 8 consumers address rows by
-  label via `indexOf`. Verified by grep, not assumed. See §2.
-- **FLAG-CS016-l — `menuActive()`'s `"titlemenu"`-only check breaks on Achievements/High Scores.**
-  Discovered during P1, unresolved — a real gap, not a matter of interpretation. See §1.1 addendum
-  for the full derivation and a candidate fix (`game.menu.screen !== null` in place of
-  `=== "titlemenu"`). **P2 must resolve this explicitly before shipping Achievements/High Scores
-  navigation from the title menu.**
+- **FLAG-CS016-k — `MENU_OPTIONS` shrinks 6 → 4. ✅ SHIPPED (P2).** Safe because all consumers address
+  rows by label via `indexOf`. Re-verified by grep at implementation time, not assumed: 6 remaining
+  `MENU_OPTIONS.indexOf(...)` call sites (`menuSound` ×2, `menuDifficulty` ×2, `menuControls` ×2), one
+  cursor-relative `MENU_OPTIONS[m.index]` read in `menuOptions`, and the label-driven `forEach` in
+  `drawOptionsMenu` — **zero** hardcoded positional accesses. See §2.
+- **FLAG-CS016-l — `menuActive()`'s `"titlemenu"`-only check breaks on Achievements/High Scores.
+  ✅ RESOLVED (P2)**, with the candidate fix taken as-is: `game.paused || game.menu.screen !== null`.
+  P2 also closed the mirror-image hole (a title screen left with `screen === null` by `closePause()`),
+  establishing the invariant *at the title, `game.menu.screen` is never null*. Full write-up in the
+  §1.1 addendum; `scratchpad/test-cs016-p1.js` (B)/(D) and `test-cs016-p2.js` (D)/(E)/(I) pin it.
 
 ---
 

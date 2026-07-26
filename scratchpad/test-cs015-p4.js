@@ -281,10 +281,14 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   } catch (e) { threw = e; }
   assert(!threw, "F: drawDebug()/menuDebug() did not throw headless" + (threw ? ": " + threw : ""));
 
-  // Return from title context -> closePause (screen null, unpaused).
+  // Return from title context -> closePause, which as of CS016 P2 lands on the title's own menu rather
+  // than a null screen (a null screen at the title would render cursor-less and read menuActive()
+  // false, i.e. a title dead to input). Unpausing is unchanged, and that's what debugReturn's title
+  // branch was written to guarantee.
   g.menu.index = backRow; // Back row
   A.menuDebug("confirm");
-  assert(g.menu.screen === null && g.paused === false, "F: confirm on Back from title context closes the overlay (closePause)");
+  assert(g.menu.screen === "titlemenu" && g.paused === false,
+    "F: confirm on Back from title context unpauses and returns to the title menu (closePause, CS016 P2)");
 
   // Return from a paused live game -> gotoScreen("root") landing on the Options row.
   g.state = "playing"; g.paused = true; g.menu.screen = "debug"; g.menu.index = 0;

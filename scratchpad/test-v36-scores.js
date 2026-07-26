@@ -19,8 +19,9 @@
 //  (H) the gamepad path reaches the same entryInput() dispatcher (edge-detected nav + confirm).
 //  (I) draw() is crash-free with an empty table, a partial table, a full table with the fresh entry
 //      highlighted, the initials-entry slots, and the browsable High Scores menu screen.
-//  (J) "High Scores" is nested under Options (CS010 P4, §8b) and reachable/returnable from BOTH the
-//      system menu (via Options) and the pause menu mid-game; it is NOT in MENU_ROOT_SYS.
+//  (J) "High Scores" hangs off the TITLE MENU as its sole parent (CS016 P2 §2 deliberately reversed
+//      CS010 P4 §8b's Options nesting): browsable + returnable from there with the cursor restored,
+//      and no longer reachable via Options from the title or from a mid-run pause.
 
 "use strict";
 const fs = require("fs");
@@ -83,7 +84,7 @@ const returnList = [
   "Achievements", "HighScores", "entryInput", "commitEntry",
   "SCORES_MAX", "SCORES_CHARSET", "GAME_VERSION", "DEATH_DURATION",
   "bindings", "GP", "GP_DEADZONE", "pollGamepad", "handleGamepadMenu",
-  "openPause", "closePause", "menuInput", "rootItems", "MENU_OPTIONS", "AudioSys"
+  "openPause", "closePause", "menuInput", "rootItems", "MENU_OPTIONS", "MENU_TITLE", "quitToTitle", "AudioSys"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -95,7 +96,7 @@ const {
   Achievements, HighScores, entryInput, commitEntry,
   SCORES_MAX, SCORES_CHARSET, GAME_VERSION, DEATH_DURATION,
   bindings, GP, GP_DEADZONE, pollGamepad, handleGamepadMenu,
-  openPause, closePause, menuInput, rootItems, MENU_OPTIONS, AudioSys
+  openPause, closePause, menuInput, rootItems, MENU_OPTIONS, MENU_TITLE, quitToTitle, AudioSys
 } = A;
 
 let passed = 0, failed = 0;
@@ -310,30 +311,41 @@ function freshDeath(score, wave, delivered) {
   assert(ok, "I: draw() never threw across any of the above");
 })();
 
-// ================= (J) "High Scores" nested under Options (CS010 P4, §8b) ============================
+// ================= (J) "High Scores" hangs off the TITLE MENU (CS016 P2, §2) =========================
+// CS010 P4 §8b nested High Scores under Options precisely so it would be reachable from the pause menu
+// mid-game. CS016 P2 (FORK-CS016-A, single-parent IA) DELIBERATELY REVERSES that: the title menu is now
+// its sole parent, and the mid-run route is gone. The accepted mitigation — already covered by section
+// (I) above and unaffected — is that the gameover screen renders the top-10 table inline with the fresh
+// entry highlighted. The browse/return/cursor-restore assertions are the ones §8b shipped, repointed to
+// the new parent; the two lost paths are asserted absent rather than deleted.
 (function sectionJ() {
-  console.log("(J) 'High Scores' is browsable from Options, reachable from both entry paths");
-  assert(MENU_OPTIONS.includes("High Scores"), "J: MENU_OPTIONS carries a High Scores row");
+  console.log("(J) 'High Scores' is browsable from the title menu; no longer reachable via Options");
+  assert(!MENU_OPTIONS.includes("High Scores"), "J: MENU_OPTIONS no longer carries a High Scores row (CS016 P2)");
+  assert(MENU_TITLE.includes("High Scores"), "J: MENU_TITLE carries it instead — its sole parent now");
 
-  // Path 1: title/gameover -> Options (opened directly, CS012 P4) -> High Scores -> back -> Options.
-  startGame(); game.state = "title"; game.paused = false;
-  openPause(); // CS012 P4: O opens Options directly from title (no system-menu root)
-  assert(game.paused && game.menu.screen === "options", "J: title path: O opens Options directly");
-  game.menu.index = MENU_OPTIONS.indexOf("High Scores");
+  // Path 1: the title's own menu -> High Scores -> back -> title menu, cursor restored.
+  startGame(); quitToTitle();
+  assert(game.state === "title" && !game.paused && game.menu.screen === "titlemenu",
+    "J: the title screen owns a menu, unpaused");
+  game.menu.index = MENU_TITLE.indexOf("High Scores");
   menuInput("confirm");
   assert(game.menu.screen === "highscores", "J: confirm on High Scores opens the highscores screen");
+  assert(!game.paused, "J: browsing High Scores from the title does NOT pause (CS016 P1's concept split)");
   menuInput("back");
-  assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "High Scores", "J: back returns to Options, cursor on High Scores");
+  assert(game.menu.screen === "titlemenu" && MENU_TITLE[game.menu.index] === "High Scores",
+    "J: back returns to the title menu, cursor on High Scores");
+
+  // Path 2: the two former routes through Options are gone, from the title and from a mid-run pause.
+  openPause();
+  assert(game.paused && game.menu.screen === "options", "J: title path: Options still opens directly");
+  assert(MENU_OPTIONS.indexOf("High Scores") === -1, "J: title path: no High Scores row on Options");
   closePause();
   assert(!game.paused, "J: closePause() exits the Options overlay");
 
-  // Path 2: pause menu mid-game -> Options -> High Scores -> back -> Options — the whole point of §8b.
   startGame(); openPause(); // pause menu (play root: Continue/Options/Quit)
   game.menu.index = rootItems().indexOf("Options"); menuInput("confirm");
-  game.menu.index = MENU_OPTIONS.indexOf("High Scores"); menuInput("confirm");
-  assert(game.menu.screen === "highscores", "J: pause path -> Options -> High Scores also opens the screen");
-  menuInput("back");
-  assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "High Scores", "J: pause path back -> Options, cursor on High Scores");
+  assert(game.menu.screen === "options" && MENU_OPTIONS.indexOf("High Scores") === -1,
+    "J: pause path: High Scores is unreachable mid-run (CS016 P2 accepted cost)");
   closePause();
 })();
 

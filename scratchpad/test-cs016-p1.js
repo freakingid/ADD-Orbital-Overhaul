@@ -87,28 +87,57 @@ function build() {
 }
 
 // ================= (B) EQUIVALENCE: menuActive() === game.paused for every reachable combination ====
+// CS016 P2 UPDATE. P1 shipped `game.paused || game.menu.screen === "titlemenu"`; P2 resolved
+// FLAG-CS016-l by widening the second operand to `!== null` (the "titlemenu"-only form left
+// Achievements/High Scores reached from the title menu with menuActive() false — dead input). Section B
+// still proves the SAME property it was written to prove — that menuActive() is byte-identical to the
+// old bare `game.paused` on every PRE-P2-REACHABLE state — but the cross product it sweeps has to be
+// the reachable one, not the raw Cartesian product. The two pre-P2 reachable shapes were, by
+// construction of openPause/openDebug (set BOTH) and closePause/quitToTitle (clear BOTH):
+//     paused === true  with ANY non-null screen   -> menuActive() true
+//     paused === false with screen === null       -> menuActive() false
+// The combinations dropped from the sweep (paused false + a non-null screen) were never reachable
+// before P2 and are now the title menu's own shape, which section C/D cover directly. Nothing here was
+// weakened to accommodate the fix: the discarded rows asserted a property of impossible states.
 (function sectionB() {
-  console.log("(B) menuActive() === game.paused across every currently-reachable state x paused x screen");
+  console.log("(B) menuActive() === game.paused across every PRE-P2-REACHABLE state x paused x screen");
   const A = build();
   const g = A.game;
 
   const STATES = ["title", "playing", "dying", "gameover"];
-  const PAUSED = [true, false];
-  const SCREENS = [null, "root", "options", "sound", "controls", "difficulty", "achievements", "highscores", "debug"];
+  const SCREENS = ["root", "options", "sound", "controls", "difficulty", "achievements", "highscores", "debug"];
 
   let combos = 0;
   for (const st of STATES) {
-    for (const p of PAUSED) {
-      for (const sc of SCREENS) {
+    // paused === true, any open screen (openPause/openDebug always set both together)
+    for (const sc of SCREENS) {
+      g.state = st; g.paused = true; g.menu.screen = sc;
+      combos++;
+      assert(A.menuActive() === g.paused,
+        `B: menuActive()===game.paused failed at state=${st} paused=true screen=${sc}`);
+    }
+    // paused === false, no screen (closePause/quitToTitle always cleared both together pre-P2)
+    g.state = st; g.paused = false; g.menu.screen = null;
+    combos++;
+    assert(A.menuActive() === g.paused,
+      `B: menuActive()===game.paused failed at state=${st} paused=false screen=null`);
+  }
+  assert(combos === STATES.length * (SCREENS.length + 1), "B: sanity — exercised every reachable pair");
+
+  // And the invariant the widened form actually asserts, over the FULL Cartesian product including the
+  // states P2 makes reachable: menuActive() is exactly "paused OR some screen owns input".
+  let full = 0;
+  for (const st of STATES) {
+    for (const p of [true, false]) {
+      for (const sc of [null, "titlemenu", ...SCREENS]) {
         g.state = st; g.paused = p; g.menu.screen = sc;
-        combos++;
-        assert(A.menuActive() === g.paused,
-          `B: menuActive()===game.paused failed at state=${st} paused=${p} screen=${sc}`);
+        full++;
+        assert(A.menuActive() === (p || sc !== null),
+          `B: menuActive() === (paused || screen!==null) failed at state=${st} paused=${p} screen=${sc}`);
       }
     }
   }
-  assert(combos === STATES.length * PAUSED.length * SCREENS.length, "B: sanity — exercised the full cross product");
-  console.log(`  (checked ${combos} combinations)`);
+  console.log(`  (checked ${combos} reachable pairs + ${full} full-product combinations)`);
 })();
 
 // ================= (C) forward-looking: screen="titlemenu", paused=false ============================
@@ -128,27 +157,41 @@ function build() {
 })();
 
 // ================= (D) the P2 shape: screen="highscores", paused=false =================================
-// FLAG-CS016-l (see STATUS.md / PLANNED-FEATURES-CS016.md §1.1 addendum): the phase prompt's own
-// description of this case says musicStateFor() should still return "highscore" here, reasoning that
-// edit (3)'s menuActive() read covers it. It does NOT, as written. menuActive() is
-// `game.paused || game.menu.screen === "titlemenu"` — literally "titlemenu" only. Once P2's
-// gotoScreen("highscores") is reached FROM the title menu, game.menu.screen becomes "highscores" (not
-// "titlemenu") while game.paused stays false, so menuActive() reads false again at that exact moment.
-// This is a real gap in the P2 plan (not just the music state: handleMenuKey/handleGamepadMenu also
-// gate on menuActive(), so Up/Down/Back would stop responding on that screen too, and Confirm would
-// fall through to the title's startGame() shortcut). Flagged for P2 rather than silently patched here
-// (P1 is scoped to the exact three edits, and the fix belongs with whichever phase actually introduces
-// the reachable state). This test pins TODAY's real, literal behavior — update it once P2 lands.
+// FLAG-CS016-l, RESOLVED IN P2 — this section now pins the FIX, not the gap it used to pin. P1 shipped
+// menuActive() as `game.paused || game.menu.screen === "titlemenu"`, which special-cased the title's
+// ROOT screen only. P2 reaches High Scores via gotoScreen("highscores") FROM the title menu, which sets
+// game.menu.screen to "highscores" (not "titlemenu") while game.paused stays false — so the old form
+// read false again at exactly that moment. That broke the highscore fanfare AND, worse, all menu input
+// on that screen (handleMenuKey/handleGamepadMenu both gate on menuActive(), so Up/Down/Back went dead
+// and Confirm fell through to the title's startGame() shortcut — Enter on the High Scores table would
+// have silently started a run). P2 widened the second operand to `game.menu.screen !== null`, the
+// candidate fix the flag recorded. This section asserts the behaviour the P1 prompt originally
+// described and could not then deliver.
 (function sectionD() {
-  console.log("(D) game.menu.screen='highscores' with paused=false (the P2 shape): documents today's literal behavior");
+  console.log("(D) game.menu.screen='highscores' with paused=false (the real P2 shape): FLAG-CS016-l fixed");
   const A = build();
   const g = A.game;
 
   g.state = "title"; g.paused = false; g.menu.screen = "highscores";
-  assert(A.menuActive() === false,
-    "D: menuActive() is false here — only 'titlemenu' is special-cased, not 'highscores' (FLAG-CS016-l)");
-  assert(A.musicStateFor(g.state) !== "highscore",
-    "D: consequently musicStateFor() does NOT return 'highscore' for an unpaused highscores screen today (FLAG-CS016-l)");
+  assert(A.menuActive() === true,
+    "D: menuActive() is TRUE for an unpaused highscores screen — `screen !== null` covers every title descendant (FLAG-CS016-l fix)");
+  assert(A.musicStateFor(g.state) === "highscore",
+    "D: musicStateFor() returns 'highscore' for an unpaused highscores screen — the fanfare survives the move to the title menu");
+
+  // The other title descendant with the same shape, and the reason the fix is `!== null` rather than an
+  // ever-growing OR chain: Achievements must own input too.
+  g.menu.screen = "achievements";
+  assert(A.menuActive() === true, "D: menuActive() is TRUE for an unpaused achievements screen too");
+  assert(A.musicStateFor(g.state) === "title",
+    "D: ...but only 'highscores' gets the fanfare — Achievements keeps the title track");
+
+  // And ducking still stays OFF for both (no gameplay under the title to make room for).
+  for (const sc of ["highscores", "achievements", "titlemenu"]) {
+    g.menu.screen = sc;
+    A.MusicSys.ducked = false;
+    A.updateMusic();
+    assert(A.MusicSys.ducked === false, `D: no duck on the unpaused title-descendant screen '${sc}'`);
+  }
 })();
 
 // ================= (E) existing pause-menu highscores path is unchanged ==============================

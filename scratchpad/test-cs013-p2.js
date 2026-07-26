@@ -179,7 +179,11 @@ const cx = VIEW_W / 2;
 (function sectionD() {
   console.log("(D) drawOptionsMenu: unselected -> menuIdle, selected -> text; footer -> drawMenuHint");
   game.state = "playing";
-  gotoScreen("options", 2); // select "Achievements"
+  // CS016 P2 shrank MENU_OPTIONS 6 rows -> 4 (Achievements/High Scores moved to the title menu), so
+  // index 2 is now "Difficulty" rather than "Achievements". The forEach below is label-driven and
+  // adapts automatically; this section's assertion COUNT therefore drops by 4 (two fewer rows x two
+  // assertions each) with no loss of coverage — every row that still exists is still checked.
+  gotoScreen("options", 2); // select whichever row sits at index 2 ("Difficulty" as of CS016 P2)
   const y = (VIEW_H - 420) / 2;
   const log = render(drawOptionsMenu);
   MENU_OPTIONS.forEach((label, i) => {

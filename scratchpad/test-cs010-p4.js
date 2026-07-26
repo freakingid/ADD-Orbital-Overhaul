@@ -9,13 +9,21 @@
 // fragility (FLAG-8b) — every navigation assertion below checks the LANDING LABEL, not a raw index,
 // so the test survives the next reorder. Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) config: MENU_ROOT_PLAY/MENU_OPTIONS/SOUND_ROWS shapes; "High Scores" is IN MENU_OPTIONS; no
-//      gotoScreen("options", <numeric literal>) call survives in source. (CS012 P4: MENU_ROOT_SYS retired.)
+//  (B) config: MENU_ROOT_PLAY/MENU_OPTIONS/SOUND_ROWS shapes; no gotoScreen("options", <numeric
+//      literal>) call survives in source. (CS012 P4: MENU_ROOT_SYS retired.)
 //  (C) title -> Options (opened directly) -> Sound/Music -> Back.
-//  (D) Options -> High Scores -> Back, from BOTH the title/gameover entry (O opens Options directly)
-//      AND the pause-menu entry (the whole point of §8b — a single Options nesting reaches both contexts).
+//  (D) Title menu -> High Scores -> Back, and NOT reachable from Options in either context.
 //  (E) Options -> Controls -> Back, and P2's Ship Rotation row on Controls still works (not clobbered).
-//  (F) Options -> Achievements -> Back — single parent (Options), from BOTH title and pause (CS012 P4: achReturn retired).
+//  (F) Title menu -> Achievements -> Back, and NOT reachable from Options in either context.
+//
+// CS016 P2 UPDATE (sections B, D, F). §8b's "High Scores nested under Options" and CS012 P4's
+// "Achievements nested under Options" were both DELIBERATELY REVERSED by CS016 P2 (FORK-CS016-A,
+// single-parent IA): both screens now hang off the title menu as their sole parent, and MENU_OPTIONS
+// shrank 6 rows -> 4. What §8b was really testing — that each screen is reachable, that Back lands on
+// its own row, and that no navigation assertion depends on a raw index — is preserved verbatim below,
+// just pointed at the new parent; the two former parent paths are now asserted UNREACHABLE rather than
+// deleted, so the reversal itself stays pinned. The relocation-not-redesign / label-not-index principle
+// this file was built on is unchanged.
 //  (G) Options -> Difficulty -> Back.
 //  (H) Sound/Music screen: the three volume sliders + Music Track cycler still work, label-dispatched,
 //      persisted via saveSettings(); Back returns to Options.
@@ -59,8 +67,8 @@ function FakeAudioContext() {
 
 const RETURN = [
   "startGame", "game", "menuInput", "openPause", "closePause", "rootItems", "gotoScreen",
-  "MENU_ROOT_PLAY", "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "VOL_LABELS",
-  "REBINDABLE", "AudioSys", "settings", "MUSIC_TRACK_VALUES"
+  "MENU_ROOT_PLAY", "MENU_OPTIONS", "MENU_TITLE", "SOUND_ROWS", "VOL_CATS", "VOL_LABELS",
+  "REBINDABLE", "AudioSys", "settings", "MUSIC_TRACK_VALUES", "quitToTitle"
 ];
 
 function buildInstance(lsStore) {
@@ -104,9 +112,15 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   assert(JSON.stringify(A.MENU_ROOT_PLAY) === JSON.stringify(["Continue", "Options", "Quit"]),
     `B: MENU_ROOT_PLAY === [Continue, Options, Quit]; got ${JSON.stringify(A.MENU_ROOT_PLAY)}`);
   assert(!/const\s+MENU_ROOT_SYS/.test(currentSrc), "B: MENU_ROOT_SYS is no longer declared (only referenced in a retire-note comment)");
-  const expectedOptions = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
+  // CS016 P2: §10a's six-row order minus the two rows that moved to the title menu. The remaining four
+  // keep §10a's relative order exactly (Sound / Music, Controls, …, Back), which is what §10a fixed.
+  const expectedOptions = ["Sound / Music", "Controls", "Difficulty", "Back"];
   assert(JSON.stringify(A.MENU_OPTIONS) === JSON.stringify(expectedOptions),
-    `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a); got ${JSON.stringify(A.MENU_OPTIONS)}`);
+    `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a order, CS016 P2 shrink); got ${JSON.stringify(A.MENU_OPTIONS)}`);
+  assert(!A.MENU_OPTIONS.includes("High Scores") && !A.MENU_OPTIONS.includes("Achievements"),
+    "B: neither moved screen is still an Options row (CS016 P2 single-parent IA)");
+  assert(JSON.stringify(A.MENU_TITLE) === JSON.stringify(["Start Game", "Achievements", "High Scores", "Options"]),
+    `B: MENU_TITLE is the new sole parent of both; got ${JSON.stringify(A.MENU_TITLE)}`);
   // CS010 P9 added the "Voice Volume" slider row (SOUND_ROWS/VOL_LABELS/VOL_CATS grew together);
   // CS011 P3 added "Voice" (style picker) + "Captions" (toggle), both value-column rows outside
   // VOL_LABELS/VOL_CATS (those two arrays stay slider-only).
@@ -143,33 +157,40 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   A.closePause();
 })();
 
-// ================= (D) Options -> High Scores -> Back, both entry paths =====================
+// ================= (D) Title menu -> High Scores -> Back; gone from Options ==================
+// CS016 P2 repointed §8b's single Options nesting to the title menu. The reachability + Back-cursor
+// assertions are the same ones §8b shipped; only the parent changed. The two ex-parent paths are now
+// asserted unreachable so the reversal can't silently regress back.
 (function () {
-  console.log("(D) Options -> High Scores -> Back (title/gameover path AND pause-menu path)");
+  console.log("(D) title menu -> High Scores -> Back; unreachable from Options in both contexts");
   const A = buildInstance();
 
-  // Title/gameover path: O opens Options directly -> High Scores.
-  A.startGame(); A.game.state = "title"; A.game.paused = false;
-  A.openPause();
-  assert(A.game.menu.screen === "options", "D: title path: O opens Options directly");
-  A.game.menu.index = A.MENU_OPTIONS.indexOf("High Scores"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "highscores", "D: title path: Options -> High Scores opens the screen");
+  // Title path: the title screen's own menu is the sole parent now (quitToTitle is the real route to it).
+  A.startGame(); A.quitToTitle();
+  assert(A.game.state === "title" && A.game.menu.screen === "titlemenu" && A.game.paused === false,
+    "D: quitToTitle arms the title menu with the sim unpaused");
+  A.game.menu.index = A.MENU_TITLE.indexOf("High Scores"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "highscores", "D: title menu -> High Scores opens the screen");
   A.menuInput("back");
-  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "High Scores",
-    "D: title path: back -> Options, cursor on High Scores");
+  assert(A.game.menu.screen === "titlemenu" && A.MENU_TITLE[A.game.menu.index] === "High Scores",
+    "D: back -> title menu, cursor on High Scores");
+
+  // Title path via Options: the row is gone, so nothing on the Options screen can reach it.
+  A.openPause();
+  assert(A.game.menu.screen === "options", "D: title path: Options still opens directly");
+  assert(A.MENU_OPTIONS.indexOf("High Scores") === -1, "D: title path: Options has no High Scores row");
   A.closePause();
 
-  // Pause-menu path (mid-game): Continue/Options/Quit root -> Options -> High Scores. This reachability
-  // is the entire point of §8b — the root-only entry never allowed this.
+  // Pause-menu path (mid-game): root -> Options, and High Scores is not offered anywhere on the way.
+  // This is the §8b reachability CS016 P2 deliberately gives up (the gameover screen's inline top-10
+  // table with the fresh entry highlighted is the accepted mitigation).
   A.startGame(); A.openPause();
   assert(A.rootItems().includes("Options") && !A.rootItems().includes("High Scores"),
     "D: pause-menu root has Options, no direct High Scores row");
   A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
-  A.game.menu.index = A.MENU_OPTIONS.indexOf("High Scores"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "highscores", "D: pause-menu path: Options -> High Scores opens the screen");
-  A.menuInput("back");
-  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "High Scores",
-    "D: pause-menu path: back -> Options, cursor on High Scores");
+  assert(A.game.menu.screen === "options", "D: pause-menu path reaches Options");
+  assert(A.MENU_OPTIONS.indexOf("High Scores") === -1,
+    "D: pause-menu path: High Scores is unreachable mid-run (CS016 P2 accepted cost)");
   A.closePause();
 })();
 
@@ -194,30 +215,33 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   A.closePause();
 })();
 
-// ================= (F) Options -> Achievements -> Back, single parent (CS012 P4) =====================
+// ================= (F) Title menu -> Achievements -> Back, single parent (CS016 P2) ==================
+// Still exactly one parent and still no achReturn tracker (CS012 P4's point); CS016 P2 repointed which
+// one parent that is. Same shape as (D).
 (function () {
-  console.log("(F) Options -> Achievements -> Back, reached via Options from BOTH title and pause");
+  console.log("(F) title menu -> Achievements -> Back; unreachable from Options in both contexts");
   const A = buildInstance();
 
-  // Title/gameover context: O opens Options directly -> Achievements -> Back -> Options.
-  A.startGame(); A.game.state = "title"; A.game.paused = false;
-  A.openPause();
-  assert(A.game.menu.screen === "options", "F: title path: O opens Options directly");
-  A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "achievements", "F: title path: Options -> Achievements");
+  A.startGame(); A.quitToTitle();
+  A.game.menu.index = A.MENU_TITLE.indexOf("Achievements"); A.menuInput("confirm");
+  assert(A.game.menu.screen === "achievements", "F: title menu -> Achievements");
   A.menuInput("back");
-  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Achievements",
-    "F: title path: back from Achievements -> Options, cursor on Achievements");
+  assert(A.game.menu.screen === "titlemenu" && A.MENU_TITLE[A.game.menu.index] === "Achievements",
+    "F: back from Achievements -> title menu, cursor on Achievements");
+  // (No achReturn assertion here — test-cs012-p4.js (A) already pins its retirement with a precise
+  // read/write/field regex that tolerates the retire-note comment.)
+
+  // Title context via Options: gone.
+  A.openPause();
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS.indexOf("Achievements") === -1,
+    "F: title path: Options has no Achievements row");
   A.closePause();
 
-  // Pause context (mid-game): root -> Options -> Achievements -> Back -> Options.
+  // Pause context (mid-game): root -> Options, no Achievements row anywhere on the path.
   A.startGame(); A.openPause();
   A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
-  A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "achievements", "F: pause path: Options -> Achievements");
-  A.menuInput("back");
-  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Achievements",
-    "F: pause path: back from Achievements -> Options, cursor on Achievements");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS.indexOf("Achievements") === -1,
+    "F: pause path: Achievements is unreachable mid-run (CS016 P2 accepted cost; unlock toasts remain)");
   A.closePause();
 })();
 

@@ -112,8 +112,17 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 function preP7(s) { return s === "playing" ? settings.musicTrack : s === "title" ? "title" : "off"; }
 
 // =====================================================================
-// A) musicStateFor() is menu-aware: "highscore" IFF (game.paused && game.menu.screen==="highscores").
+// A) musicStateFor() is menu-aware: "highscore" IFF (menuActive() && game.menu.screen==="highscores").
 //    Exhaustive over the state strings the flow actually visits x paused x a spread of menu screens.
+//
+//    CS016 P1/P2 UPDATE — the oracle's FIRST operand moved, its intent did not. CS010 P7 wrote the
+//    condition as `game.paused && screen === "highscores"` because back then game.paused WAS "a menu is
+//    open". CS016 P1 split those concepts and pointed musicStateFor() at menuActive(); CS016 P2 put High
+//    Scores on the title menu, where game.paused is FALSE by design and only menuActive() is true. So
+//    the oracle becomes menuActive()-based, which for this screen reduces to `scr === "highscores"`
+//    (a non-null screen is always menuActive()). This is the CS010 P7 intent preserved exactly — "the
+//    fanfare plays iff the High Scores screen owns input" — not a loosened assertion; the previously-
+//    excluded rows (unpaused + highscores) were unreachable in CS010 and are the shipping path now.
 // =====================================================================
 settings.musicTrack = "warehouse"; // a concrete gameplay selection so the "playing" branch is observable
 const STATES = ["title", "playing", "gameover", "dying"];
@@ -123,10 +132,12 @@ for (const st of STATES) {
     for (const scr of SCREENS) {
       game.state = st; game.paused = paused; game.menu.screen = scr;
       const got = musicStateFor(st);
-      const wantHigh = paused && scr === "highscores";
+      const wantHigh = menuActive() && scr === "highscores";
+      assert(wantHigh === (scr === "highscores"),
+        `A: sanity — the highscores screen always satisfies menuActive() (paused=${paused})`);
       if (wantHigh) {
         assert(got === "highscore",
-          `A: highscore IFF (paused && screen==highscores) — state=${st} scr=${scr} -> ${got}`);
+          `A: highscore IFF (menuActive() && screen==highscores) — state=${st} paused=${paused} scr=${scr} -> ${got}`);
       } else {
         // THE REGRESSION: every other combination is byte-identical to the pre-P7 mapping.
         assert(got === preP7(st),

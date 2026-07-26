@@ -13,7 +13,9 @@
 //  (B) rootItems() returns only [Continue, Options, Quit] — never an Achievements/Back system row —
 //      for "playing" and "title" (gameover's own root layout is CS013 P1's addition, tested in
 //      test-cs013-p1.js, not here — this file only pins the pre-CS013 CONTINUE/OPTIONS/QUIT shape).
-//  (C) title: openPause() lands on "options" directly (not "root"); Back closes the overlay to title.
+//  (C) title: openPause() lands on "options" directly (not "root"); Back returns to the title menu
+//      (CS016 P2 — the title is a navigable menu now, so "close the overlay" there means "back to
+//      screen 'titlemenu' with game.paused cleared", not "screen null").
 //  (D) gameover: openPause() now lands on "root" (CS013 P1, FORK-CS013-A -> a — superseded this
 //      file's original "-> options directly" pin); Back from the freshly-opened root closes the
 //      overlay. The full gameover-root contract (Play Again/Quit to Title/Options round-trip) lives
@@ -21,8 +23,9 @@
 //      broken by CS013 P1's routing change.
 //  (E) playing: openPause() -> "root" (Continue/Options/Quit); Options -> "options"; Back -> "root"
 //      (NOT closePause — still paused).
-//  (F) Achievements is reached ONLY via Options (from BOTH title and pause) and its Back always returns
-//      to Options with the cursor on "Achievements".
+//  (F) Achievements has exactly ONE parent and its Back restores the cursor to its own row — CS016 P2
+//      (FORK-CS016-A) repointed that one parent from Options to the TITLE MENU, so the section now
+//      drives the title-menu route and asserts Options offers no such row in either context.
 //  (G) headless no-crash: with AudioSys.ctx null, startGame()/update(1/60) and a full title-context
 //      open/nav/close cycle never throw.
 
@@ -68,7 +71,7 @@ function FakeAudioContext() {
 
 const RETURN = [
   "startGame", "update", "game", "menuInput", "openPause", "closePause", "rootItems", "gotoScreen",
-  "MENU_ROOT_PLAY", "MENU_OPTIONS", "AudioSys"
+  "MENU_ROOT_PLAY", "MENU_OPTIONS", "MENU_TITLE", "quitToTitle", "AudioSys"
 ];
 
 function buildInstance(lsStore) {
@@ -125,16 +128,23 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(eqJSON(A.MENU_ROOT_PLAY, ["Continue", "Options", "Quit"]), "B: MENU_ROOT_PLAY is the playing-state root layout");
 })();
 
-// ================= (C) title: O -> Options directly; Back closes the overlay =====================
+// ================= (C) title: O -> Options directly; Back returns to the title menu =====================
+// CS016 P2: openPause()'s title routing is UNCHANGED (Options directly, game.paused true, so Options
+// keeps its dimmed-panel chrome), which is what this section was written to pin. What changed is where
+// Back lands: the title is a navigable menu now, so "close the overlay entirely" became "return to the
+// title menu" — game.paused still clears, but game.menu.screen goes to "titlemenu", not null. The
+// assertion below tests the same transition, against the new destination.
 (function () {
-  console.log("(C) title -> openPause() lands on Options (not root); Back closes to title");
+  console.log("(C) title -> openPause() lands on Options (not root); Back returns to the title menu");
   const A = buildInstance();
-  A.startGame(); A.game.state = "title"; A.game.paused = false;
+  A.startGame(); A.quitToTitle();
   A.openPause();
   assert(A.game.paused === true, "C: openPause pauses (overlay open) on title");
   assert(A.game.menu.screen === "options", "C: openPause from title lands on \"options\" (NOT \"root\")");
   A.menuInput("back");
-  assert(A.game.paused === false && A.game.menu.screen === null, "C: Back from Options closes the overlay (paused false, screen null)");
+  assert(A.game.paused === false && A.game.menu.screen === "titlemenu",
+    "C: Back from Options returns to the title menu (paused cleared, screen \"titlemenu\") — CS016 P2");
+  assert(A.MENU_TITLE[A.game.menu.index] === "Options", "C: ...with the cursor on the Options row it came from");
   assert(A.game.state === "title", "C: closing returns to the underlying title screen");
 })();
 
@@ -173,32 +183,35 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(A.game.paused === false && A.game.menu.screen === null, "E: Back from root resumes the game");
 })();
 
-// ================= (F) Achievements: single parent (Options), from title AND pause =====================
+// ================= (F) Achievements: single parent (title menu as of CS016 P2) =====================
+// CS012 P4's property was "exactly ONE parent, so Back needs no return-context tracker". That property
+// is intact; CS016 P2 (FORK-CS016-A) changed WHICH single parent — Options -> the title menu — and the
+// pause-context path is now deliberately gone rather than a second route to the same screen.
 (function () {
-  console.log("(F) Achievements reached ONLY via Options; Back always -> Options (both contexts)");
+  console.log("(F) Achievements reached ONLY from the title menu; Back always -> title menu; gone from Options");
   const A = buildInstance();
 
-  // Title context: O -> Options -> Achievements -> Back -> Options.
-  A.startGame(); A.game.state = "title"; A.game.paused = false;
-  A.openPause();
-  assert(A.game.menu.screen === "options", "F: title path: O opens Options directly");
-  A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements");
+  // Title context: title menu -> Achievements -> Back -> title menu.
+  A.startGame(); A.quitToTitle();
+  assert(A.game.menu.screen === "titlemenu", "F: title path: the title screen owns a menu");
+  A.game.menu.index = A.MENU_TITLE.indexOf("Achievements");
   A.menuInput("confirm");
-  assert(A.game.menu.screen === "achievements", "F: title path: Options -> Achievements");
+  assert(A.game.menu.screen === "achievements", "F: title path: title menu -> Achievements");
   A.menuInput("back");
-  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Achievements",
-    "F: title path: Back -> Options, cursor on Achievements");
+  assert(A.game.menu.screen === "titlemenu" && A.MENU_TITLE[A.game.menu.index] === "Achievements",
+    "F: title path: Back -> title menu, cursor on Achievements");
+
+  // Still exactly one parent: Options no longer offers it, from the title or from pause.
+  A.openPause();
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS.indexOf("Achievements") === -1,
+    "F: title path: Options has no Achievements row (single parent, repointed)");
   A.closePause();
 
-  // Pause context (mid-game): root -> Options -> Achievements -> Back -> Options.
   A.startGame(); // state "playing"
   A.openPause();
   A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
-  A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements"); A.menuInput("confirm");
-  assert(A.game.menu.screen === "achievements", "F: pause path: Options -> Achievements");
-  A.menuInput("back");
-  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS[A.game.menu.index] === "Achievements",
-    "F: pause path: Back -> Options, cursor on Achievements");
+  assert(A.game.menu.screen === "options" && A.MENU_OPTIONS.indexOf("Achievements") === -1,
+    "F: pause path: Achievements is unreachable mid-run (CS016 P2 accepted cost; unlock toasts remain)");
   A.closePause();
 })();
 
@@ -211,16 +224,19 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     assert(A.AudioSys.ctx === null || A.AudioSys.ctx === undefined, "G: AudioSys.ctx is null (no init())");
     A.startGame();
     for (let i = 0; i < 30; i++) A.update(1 / 60);
-    // title-context menu cycle: open Options, dive into Achievements, back out, close — all UI calls
-    // route through AudioSys.ui()/etc which early-return on a null ctx.
-    A.game.state = "title"; A.game.paused = false;
+    // title-context menu cycle: from the title menu dive into Achievements, back out, open Options,
+    // back out — all UI calls route through AudioSys.ui()/etc which early-return on a null ctx.
+    // CS016 P2: Achievements now hangs off the title menu, so the cycle starts there.
+    A.quitToTitle();
+    A.game.menu.index = A.MENU_TITLE.indexOf("Achievements"); A.menuInput("confirm");
+    A.menuInput("back");
     A.openPause();
-    A.game.menu.index = A.MENU_OPTIONS.indexOf("Achievements"); A.menuInput("confirm");
-    A.menuInput("back"); A.menuInput("back");
+    A.menuInput("back");
     A.update(1 / 60);
   } catch (e) { ok = false; console.error("  FAIL: threw: " + e.stack); }
   assert(ok, "G: no throw across startGame/update + title menu cycle with ctx null");
-  assert(A.game.paused === false && A.game.menu.screen === null, "G: the cycle ended with the overlay closed");
+  assert(A.game.paused === false && A.game.menu.screen === "titlemenu",
+    "G: the cycle ended back on the title menu with nothing paused (CS016 P2 — 'closed' at the title means the title menu)");
 })();
 
 console.log(`\ntest-cs012-p4: ${passed} passed, ${failed} failed`);

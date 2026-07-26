@@ -2179,12 +2179,22 @@ window.addEventListener("keydown", e => {
   // THE LOAD-BEARING GUARD (v3.6 P6, §10): without `&& !game.entry`, confirm would restart the run
   // instead of committing the initials — belt-and-suspenders alongside the early return above, in
   // case entry-handling is ever restructured.
+  //
+  // CS016 P2: these three lines are now unreachable at the TITLE — the title menu satisfies
+  // menuActive(), so branch (2) intercepts and routes to menuTitle (which handles confirm/"o"/ESC/Start
+  // itself). They are STILL REQUIRED at GAMEOVER, which has no menu open until the player opens one
+  // (game.menu.screen stays null, game.paused false), so the `game.state === "title"` operands are
+  // deliberately left in place rather than trimmed: gameover -> pause -> Quit to Title and boot both
+  // arrive at the title with a menu armed, but nothing guarantees a future state won't reach the title
+  // with a null screen, and the fallback costs nothing.
   if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover") && !game.entry) startGame();
   if (bindings.pause.keys.includes(k) && game.state === "playing") openPause();
   // "O" opens OPTIONS directly from title/gameover (v3.0 P4 replaced the old P->options path; CS012 P4
   // FORK-CS012-C → a replaced the Options/Achievements system-menu root with Options itself). No game to
   // pause here — openPause() routes to the Options screen off game.state.
   // Guarded off during initials entry so O can't pop the menu mid-entry.
+  // CS016 P2: the title case now goes through handleMenuKey's "o" -> menuInput("options") -> menuTitle
+  // instead (see there); this line still serves gameover.
   if (k === "o" && (game.state === "title" || game.state === "gameover") && !game.entry) openPause();
 });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
@@ -2243,6 +2253,11 @@ function handleGamepadMenu() {
   //           menu-branch case above).
   //   B     = context-aware  : title/gameover with no menu -> open OPTIONS directly (mirrors ESC/O).
   //   A     = confirm        : title/gameover -> start a game (never mid-play, where A is fire).
+  //
+  // CS016 P2: all three are now unreachable at the TITLE — the title menu satisfies menuActive(), so
+  // branch (2) above catches Start/A/B first and routes them to menuTitle, which reproduces every one
+  // of these behaviours deliberately (Start -> startGame, A -> confirm the focused row, B -> Options).
+  // They remain LIVE and REQUIRED at gameover, which has no menu open until the player opens one.
   const onTitleOrOver = game.state === "title" || game.state === "gameover";
   if (pressedStart) {
     if (game.state === "playing") openPause();
@@ -2290,10 +2305,14 @@ function firstPressedButton() {
 // ---------- Menu state machine, Options & Rebinding (F8) ----------
 // The game's first nested menu: playing --(pause)--> menu:root (Continue/Options/Quit) -->
 // menu:options (SFX/Music/Master sliders + Controls) --> menu:controls (rebind + Return to Defaults).
-// game.paused is true iff a menu is open; game.menu.screen names the current screen (null = closed).
+// game.menu.screen names the current screen (null = no menu). CS016 P1/P2: game.paused is no longer a
+// synonym for "a menu is open" — that is menuActive(), i.e. `paused || screen !== null`. The TITLE menu
+// (screen "titlemenu") owns input with game.paused FALSE, because there is no sim to freeze there;
+// every OTHER screen is an overlay opened via openPause()/openDebug(), which do set game.paused.
 // Both keyboard (keydown -> handleMenuKey) and gamepad (handleGamepadMenu) funnel discrete actions
-// into menuInput(action); the rendering lives near draw() (drawMenu). Gameplay stays frozen the
-// whole time (update() early-returns on paused), so menu input can never move the ship.
+// into menuInput(action); the rendering lives near draw() (drawMenu, plus drawTitleMenu for the
+// chrome-less title root). Gameplay stays frozen the whole time (update() early-returns on paused, and
+// on state !== "playing" for the title), so menu input can never move the ship.
 
 // The root ("PAUSED"/"MENU") screen is context-aware. CS012 P4 (FORK-CS012-C → a) retired the
 // separate system-menu root (the old MENU_ROOT_SYS = ["Options","Achievements","Back"]): from
@@ -2304,6 +2323,24 @@ function firstPressedButton() {
 // "playing", so game.paused is safe in any state.
 const MENU_ROOT_PLAY = ["Continue", "Options", "Quit"];             // paused mid-game
 const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover (CS013 P1)
+// CS016 P2 (§1): the TITLE screen's own root menu — the third root layout, and the only one that is
+// not an overlay. It lives at game.menu.screen === "titlemenu" with game.paused staying FALSE (the
+// sim was never running at the title), which is exactly the concept split CS016 P1 opened up.
+// Achievements/High Scores are reachable ONLY from here as of this phase (single-parent IA,
+// FORK-CS016-A) — they are deliberately no longer under Options, and so no longer reachable mid-run
+// or at gameover. Cursor defaults to "Start Game" on every entry, so ENTER / A still starts a run
+// immediately (the existing muscle memory survives).
+const MENU_TITLE = ["Start Game", "Achievements", "High Scores", "Options"];
+// Title-menu layout (FORK-CS016-B → b: chrome-less, drawn straight onto the title art — no backdrop
+// dim, no menuPanel box). The rows sit in the band the two removed keyboard-legend lines vacated,
+// between "O V E R H A U L" (baseline VIEW_H/2 - 60) above and "BEWARE THE HUNTER SATELLITE"
+// (baseline VIEW_H/2 + 120) below. All four are PLAYTEST KNOBS.
+const TITLE_MENU_Y      = VIEW_H / 2 - 18;   // first row baseline (342 at VIEW_H 720)
+const TITLE_MENU_STEP   = 38;                // px between row baselines — 4 rows span 114px, ending at 456
+const TITLE_MENU_SIZE   = 24;                // row text size, matching drawRootMenu's rows
+const TITLE_MENU_HINT_Y = VIEW_H / 2 + 170;  // control-hint baseline, below the flavour line (530)
+// Routed through drawMenuHint() (the CS013 P2 shared-footer helper), not a fresh drawText literal.
+const TITLE_MENU_HINT   = "↑↓ move    ENTER / A select    ESC / B options";
 const MENU_HINT_SIZE = 16;  // CS013 P2: control-hint footer text size (drawMenuHint) — playtest knob
 const ACH_SCALE = 1.5;      // CS013 P3: Achievements-viewer text-size multiplier (readability pass) — playtest knob
 const ACH_SCROLL_STEP = 60; // CS013 P3: px per up/down scroll press in the Achievements viewer, ~one row — playtest knob
@@ -2318,7 +2355,13 @@ function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_
 // adding a row here is purely additive and can't silently shift the other handlers out from under
 // themselves. CS010 P4 (§9/§10a): the three volume sliders + Music Track moved OFF this screen onto
 // the new "Sound / Music" sub-screen (SOUND_ROWS below); "High Scores" (§8b) moved IN, nested here.
-const MENU_OPTIONS = ["Sound / Music", "Controls", "Achievements", "High Scores", "Difficulty", "Back"];
+// CS016 P2 (§2, FORK-CS016-A): 6 rows -> 4. "Achievements" and "High Scores" moved OUT to MENU_TITLE
+// as their SOLE parent, reversing CS010 P4 §8b and CS012 P4 deliberately (see the GDD). Safe to do
+// positionally-blind: every consumer addresses rows by LABEL via MENU_OPTIONS.indexOf(...) — verified
+// by grep at all 6 remaining call sites plus the forEach renderer, no hardcoded index anywhere.
+// Options is now purely "change how the game behaves"; the title menu is "start playing, or look at
+// things".
+const MENU_OPTIONS = ["Sound / Music", "Controls", "Difficulty", "Back"];
 // CS010 P4 (§9): the Sound/Music sub-screen's rows, same template as DIFFICULTY_ROWS. CS010 P9 (§11c)
 // added the Voice Volume slider — SOUND_ROWS + VOL_LABELS + VOL_CATS grow together so the parallel
 // label→category lookup stays paired. CS011 P3 added "Voice" (style picker) + "Captions" (toggle),
@@ -2404,10 +2447,18 @@ const MUSIC_TRACK_LABELS = { zen: "Zen", derelict: "Derelict", drift: "Drift", w
 const VOICE_STYLE_LABELS = { off: "Off", comms: "Comms", comms_f: "Comms ♀", flat: "Monotone", flat_f: "Monotone ♀", vintage: "Computer", vintage_f: "Computer ♀" };
 
 // CS016 P1: split from a bare `game.paused` so "a menu owns input" (this) and "the sim is frozen"
-// (game.paused) can diverge — P2's title menu is input-owning but never pauses (update() already
-// early-returns on game.state !== "playing"). No screen is named "titlemenu" yet, so this is
-// byte-identical to game.paused for every currently-reachable state.
-function menuActive() { return game.paused || game.menu.screen === "titlemenu"; }
+// (game.paused) can diverge — the title menu is input-owning but never pauses (update() already
+// early-returns on game.state !== "playing").
+// CS016 P2 resolves FLAG-CS016-l: the second operand was `=== "titlemenu"`, which only covered the
+// title's ROOT screen. gotoScreen("achievements"|"highscores") from the title menu sets
+// game.menu.screen to THAT name while game.paused stays false, so the old check read false again the
+// instant either screen was reached — killing Up/Down/Back on them and letting Confirm fall through
+// to the title's startGame() shortcut (Enter on the High Scores table would silently start a run).
+// `!== null` is the invariant that actually holds: game.menu.screen is non-null iff some menu screen
+// owns input, and it covers every present and future title-descendant screen without an OR chain.
+// The `game.paused ||` term is kept as belt-and-braces (a paused-with-null-screen state is
+// unreachable today — openPause/openDebug set both, closePause/quitToTitle clear both together).
+function menuActive() { return game.paused || game.menu.screen !== null; }
 
 // --- Open / close / quit ---
 function openPause() {
@@ -2426,14 +2477,37 @@ function openPause() {
   AudioSys.ui(true);
 }
 function closePause() {
+  // CS016 P2: at the TITLE there is no "no menu" state to close back to — the title menu IS the
+  // title's base UI, not an overlay. Every remaining route here from a title-context screen (the
+  // `pause` action on any Options sub-screen, debugReturn() out of the hidden panel) must therefore
+  // land on "titlemenu", or the title would render with no cursor and menuActive() would read false,
+  // leaving the whole screen dead to input. menuOptions' Back branches call returnToTitleMenu()
+  // directly (they're the designed path); this delegation is the catch-all for the rest.
+  if (game.state === "title") { returnToTitleMenu(); return; }
   game.paused = false;
   game.menu.screen = null; game.menu.rebinding = null;
   game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
   AudioSys.ui(false);
 }
+// CS016 P2 (§2): the title menu's re-entry point, used by every Back/close that lands on the title.
+// It also CLEARS game.paused — openPause() sets it true so Options keeps its dimmed-panel chrome even
+// when opened from the title, and that flag must not survive back onto the paused-free title menu.
+// Cursor lands on "Options" (where the player just was); label lookup, never a hardcoded index.
+function returnToTitleMenu() {
+  game.paused = false;
+  game.menu.screen = "titlemenu";
+  game.menu.index = MENU_TITLE.indexOf("Options");
+  game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
+  AudioSys.ui(false);
+}
 function quitToTitle() {
   game.paused = false;
-  game.menu.screen = null; game.menu.rebinding = null;
+  // CS016 P2: the title is a navigable menu now, so quitting to it must ARM that menu, not close all
+  // menus (screen = null would leave the title cursor-less and dead to input). Cursor resets to
+  // "Start Game" (index 0) rather than inheriting the root's — a stale index 2 ("Quit") would land on
+  // "High Scores" here.
+  game.menu.screen = "titlemenu"; game.menu.rebinding = null;
+  game.menu.index = 0; game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
   game.state = "title";
   AudioSys.thrust(false); AudioSys.saucer(false); // stop any continuous voices
   AudioSys.lowhp(false); game.lowHpSiren = false;
@@ -2468,12 +2542,19 @@ function handleMenuKey(k) {
   else if (bindings.confirm.keys.includes(k)) menuInput("confirm"); // Enter
   else if (bindings.back.keys.includes(k)) menuInput("back");       // Esc
   else if (bindings.pause.keys.includes(k)) menuInput("pause");     // P
+  // CS016 P2: "o" as a menu-level action. The title now satisfies menuActive(), so branch (2) of the
+  // keydown listener swallows every key before the old title-only `if (k === "o") openPause()` in
+  // branch (3) can see it — that shortcut (existing muscle memory, FLAG-CS016-e) would have gone inert.
+  // Mapping it here keeps the one-action-vocabulary architecture: only menuTitle acts on "options";
+  // every other screen handler is an if/else-if chain over known actions, so it's an inert no-op there.
+  else if (k === "o") menuInput("options");
 }
 
 // --- The dispatcher: one entry point, both input methods feed it ---
 function menuInput(action) {
   if (game.menu.rebinding) return; // capture mode owns all input; ignore stray nav
   switch (game.menu.screen) {
+    case "titlemenu":    menuTitle(action); break;   // CS016 P2: the title screen's own root
     case "root":         menuRoot(action); break;
     case "options":      menuOptions(action); break;
     case "sound":        menuSound(action); break;
@@ -2483,6 +2564,41 @@ function menuInput(action) {
     case "highscores":   menuHighScores(action); break;
     case "debug":        menuDebug(action); break;   // CS015 P4: hidden, secret-code-only
   }
+}
+
+// CS016 P2 (§1): the TITLE screen's root menu. Follows the menuRoot template exactly — dispatch by
+// LABEL, never by index, so reordering MENU_TITLE can't silently shift a branch out from under itself.
+//
+// Three actions do more than the plan's first sketch, each to avoid a silent regression that only
+// exists because the title now satisfies menuActive() and so shadows keydown branch (3) /
+// handleGamepadMenu branch (3), which used to handle these at the title:
+//   "options" — keyboard "o" (see handleMenuKey). Was branch (3)'s `k === "o"` title shortcut.
+//   "back"    — ESC (keyboard) AND B (gamepad) both normalize to "back". B on the title already
+//               opened Options (handleGamepadMenu branch (3), `pressedBack && onTitleOrOver`), so
+//               leaving "back" inert here would REGRESS the pad. Making it open Options preserves that
+//               and simultaneously delivers §7 / FLAG-CS016-e's "ESC opens Options from the title"
+//               (ESC was inert at the title before — it resolves to "back", and branch (3) only had a
+//               pause handler gated on state === "playing"). There is nothing to back OUT to from a
+//               root, so the action was free.
+//   "pause"   — gamepad Start (keyboard has no distinct pause key: both back and pause bind ESC, and
+//               handleMenuKey resolves back first). Start on the title already STARTED A GAME
+//               (branch (3), `pressedStart` -> startGame() outside "playing"); routed through here so
+//               it still does, with no state-sniffing special case bolted onto the pad dispatcher.
+function menuTitle(a) {
+  const m = game.menu, N = MENU_TITLE.length;
+  if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
+  else if (a === "confirm") {
+    const label = MENU_TITLE[m.index];
+    if (label === "Start Game")        startGame();
+    else if (label === "Achievements") gotoScreen("achievements");
+    else if (label === "High Scores")  gotoScreen("highscores");
+    // openPause() (not gotoScreen) on purpose: it sets game.paused, which is what keeps Options and
+    // its sub-screens on their existing dimmed-panel drawMenu() chrome when opened from the title.
+    else if (label === "Options")      openPause();
+  }
+  else if (a === "back" || a === "options") openPause();   // ESC / B / "o" -> Options shortcut
+  else if (a === "pause") startGame();                     // gamepad Start -> start a run
 }
 
 function menuRoot(a) {
@@ -2513,15 +2629,15 @@ function menuOptions(a) {
   else if (a === "confirm") {
     if (label === "Sound / Music") gotoScreen("sound"); // CS010 P4 §9
     else if (label === "Controls") gotoScreen("controls");
-    else if (label === "Achievements") gotoScreen("achievements"); // viewer (F9)
-    else if (label === "High Scores") gotoScreen("highscores"); // CS010 P4 §8b: nested under Options
+    // CS016 P2 (§2): the "Achievements" and "High Scores" rows are GONE from MENU_OPTIONS — the title
+    // menu is now their sole parent, so there are no dispatch branches for them here either.
     else if (label === "Difficulty") gotoScreen("difficulty"); // Difficulty screen (v3.0 P5)
     // CS012 P4 / CS013 P1: Back is context-aware — paused mid-game OR gameover (both have a root)
-    // return to it (cursor on Options); from title, where Options is the top-level dialog, it closes
-    // the overlay entirely.
-    else if (label === "Back") { if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
+    // return to it (cursor on Options). CS016 P2: from the title the `else` no longer closes the
+    // overlay entirely — the title has a menu of its own to return to, with game.paused cleared.
+    else if (label === "Back") { if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options")); else returnToTitleMenu(); }
   }
-  else if (a === "back") { if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options")); else closePause(); }
+  else if (a === "back") { if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options")); else returnToTitleMenu(); }
   else if (a === "pause") closePause();
 }
 
@@ -2574,18 +2690,22 @@ function menuAchievements(a) {
   // drawAchievements() renders with, so input and render never disagree about the scroll ceiling.
   else if (a === "up")   game.menu.scroll = Math.max(0, game.menu.scroll - ACH_SCROLL_STEP);
   else if (a === "down") game.menu.scroll = Math.min(achMaxScroll(), game.menu.scroll + ACH_SCROLL_STEP);
-  // CS012 P4: Achievements now lives ONLY under Options (reached the same way from title/gameover AND
-  // from pause), so Back always returns to Options with the cursor on "Achievements" — the old
-  // achReturn tracker (which distinguished a direct system-root entry) is retired.
-  else if (a === "confirm" || a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Achievements"));
+  // CS012 P4: Achievements has exactly ONE parent, so Back is a hardcoded destination with the cursor
+  // restored to its own row — no achReturn tracker. CS016 P2 (§2, FORK-CS016-A) repoints that single
+  // parent from Options to the TITLE MENU; still one parent, still no return-context machinery, only
+  // the screen it names changed. Accepted cost: the viewer is now unreachable mid-run and at gameover
+  // (unlock toasts during play remain the in-run feedback).
+  else if (a === "confirm" || a === "back") gotoScreen("titlemenu", MENU_TITLE.indexOf("Achievements"));
 }
 
-// High Scores viewer: read-only top-10 table, nested under Options (CS010 P4 §8b) — reachable from
-// BOTH title/gameover (via Options) and the pause menu mid-game, unlike the old root-only entry. One
-// entry point -> one back-destination, no return-context tracker needed (like Achievements as of CS012 P4).
+// High Scores viewer: read-only top-10 table. One entry point -> one back-destination, no
+// return-context tracker (like Achievements). CS016 P2 (§2, FORK-CS016-A) moves that one parent from
+// Options (where CS010 P4 §8b nested it specifically to be reachable from pause) to the TITLE MENU —
+// a deliberate reversal, signed off: the gameover screen already renders the top-10 table inline with
+// the fresh entry highlighted, which covers the end-of-run case this gives up.
 function menuHighScores(a) {
   if (a === "pause") closePause();
-  else if (a === "confirm" || a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("High Scores"));
+  else if (a === "confirm" || a === "back") gotoScreen("titlemenu", MENU_TITLE.indexOf("High Scores"));
 }
 
 // Difficulty screen (v3.0 P5, B-4/B-5): two left/right mode toggles + Back. Left picks the timed
@@ -3701,7 +3821,10 @@ const game = {
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
   // index = cursor for root/options; row/col = cursor for the controls grid;
   // rebinding = { action, device } while capturing a new binding, else null.
-  menu: { screen: null, index: 0, row: 0, col: 0, rebinding: null, scroll: 0 }, // scroll: CS013 P3, Achievements-viewer vertical offset
+  // CS016 P2: boots on the title's own menu (state starts "title"), NOT null — the title screen is a
+  // navigable menu now, and a null screen there would render cursor-less and read menuActive() false.
+  // index 0 = "Start Game", so ENTER / A on a cold boot still starts a run immediately.
+  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0 }, // scroll: CS013 P3, Achievements-viewer vertical offset
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -3771,6 +3894,9 @@ function startGame() {
   game.paused = false;
   game.deathT = 0; game.shake = 0;   // v3.6 P5: a fresh run never carries death-spectacle state over
   game.entry = null; game.lastScoreId = null; // v3.6 P6: nor any stale initials-entry/highlight state
+  // CS016 P2: screen back to null — in play there is no menu (the title menu belongs to the title).
+  // Confirmed correct as-is; the only entry point that now reaches here from a menu is menuTitle's
+  // "Start Game", and this reset already clears it.
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null }; // ensure no menu carries in
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
@@ -5360,6 +5486,22 @@ function drawMenu() {
   else if (s === "debug") drawDebug();   // CS015 P4: hidden, secret-code-only
 }
 
+// CS016 P2 (§1.2, FORK-CS016-B → b): the title screen's own menu — the ONE menu that deliberately
+// does NOT go through drawMenu(). No backdrop dim, no menuPanel box: the title art and the drifting
+// titleDebris field stay fully visible, which is the whole point on the one screen whose job is to
+// look good. Called from draw()'s title branch (not drawMenu's dispatch), so it can never pick up that
+// function's chrome by accident. Row look reuses the established idioms exactly — the "▶ " selection
+// prefix and the COLOR.text (selected) / COLOR.menuIdle (idle) convention from drawRootMenu, and the
+// shared drawMenuHint() footer from CS013 P2. Every y here is a TITLE_MENU_* playtest knob.
+function drawTitleMenu() {
+  MENU_TITLE.forEach((label, i) => {
+    const sel = i === game.menu.index;
+    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, TITLE_MENU_Y + i * TITLE_MENU_STEP,
+             TITLE_MENU_SIZE, sel ? COLOR.text : COLOR.menuIdle);
+  });
+  drawMenuHint(TITLE_MENU_HINT, VIEW_W / 2, TITLE_MENU_HINT_Y);
+}
+
 function menuPanel(w, h, title) {
   const x = (VIEW_W - w) / 2, y = (VIEW_H - h) / 2;
   // v3.3 P1: fill the panel before stroking it (look-call alpha) — previously only stroked, so the
@@ -5392,9 +5534,12 @@ function drawRootMenu() {
   drawMenuHint(ROOT_MENU_HINT, VIEW_W / 2, y + 272);
 }
 
-// CS010 P4 (§9/§10a): now a pure nav list (Sound / Music, Controls, Achievements, High Scores,
-// Difficulty, Back) — the value rows (volume sliders + Music Track) moved to drawSound() below, so
-// this mirrors drawRootMenu's plain centered-list layout instead of the old split value/nav layout.
+// CS010 P4 (§9/§10a): a pure nav list — the value rows (volume sliders + Music Track) moved to
+// drawSound() below, so this mirrors drawRootMenu's plain centered-list layout instead of the old split
+// value/nav layout. CS016 P2: down to four rows (Sound / Music, Controls, Difficulty, Back) now that
+// Achievements + High Scores live on the title menu. The forEach is label-driven, so the shrink needs
+// no layout edit; the 600x420 panel is left as-is (it just carries more whitespace) — resizing it is a
+// look call for Paul, and drawRootMenu's derived-height work is CS016 P4's scope, not this phase's.
 function drawOptionsMenu() {
   const { y } = menuPanel(600, 420, "OPTIONS");
   const m = game.menu;
@@ -5848,12 +5993,12 @@ function draw() {
   if (game.state === "title") {
     drawText("ORBITAL", VIEW_W/2, VIEW_H/2 - 120, 64);
     drawText("O V E R H A U L", VIEW_W/2, VIEW_H/2 - 60, 32, COLOR.satellite);
-    drawText("ROTATE: ←→ / A D      THRUST: ↑ / W", VIEW_W/2, VIEW_H/2 + 30, 20, COLOR.dim);
-    drawText("FIRE: SPACE      SHIELD: SHIFT      PAUSE: ESC", VIEW_W/2, VIEW_H/2 + 62, 20, COLOR.dim);
+    // CS016 P2 (§1.2, FORK-CS016-B → b): the two keyboard control-legend lines, the blinking
+    // "PRESS ENTER TO START", and the "OPTIONS / ACHIEVEMENTS: O" hint are all GONE — the legend is
+    // redundant now that Options -> Controls is a visible navigable destination that lists every
+    // binding authoritatively (and it never served a gamepad player), and the blink/hint are replaced
+    // by the menu itself plus one drawMenuHint footer. The flavour line stays, at its original y.
     drawText("BEWARE THE HUNTER SATELLITE", VIEW_W/2, VIEW_H/2 + 120, 18, COLOR.satellite);
-    if (Math.floor(performance.now() / 600) % 2 === 0)
-      drawText("PRESS ENTER TO START", VIEW_W/2, VIEW_H/2 + 180, 26);
-    drawText("OPTIONS / ACHIEVEMENTS: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 220, 14, COLOR.ach);
     // CS010 P0 — build stamp, lower-right corner. Not a design element: small, dim, out of the way.
     drawText("v" + GAME_VERSION, VIEW_W - VERSION_STAMP_INSET_X, VIEW_H - VERSION_STAMP_INSET_Y,
               12, COLOR.dim, "right");
@@ -5866,7 +6011,16 @@ function draw() {
       if (a.y > VIEW_H + 60) a.y -= VIEW_H + 120;
       a.draw();
     });
-    if (game.paused) drawMenu();  // the menu (Options + its sub-screens) overlays the title (v3.0 P4; CS012 P4)
+    // CS016 P2: two render paths, mutually exclusive by construction. The title's OWN root menu draws
+    // chrome-less, straight over the art and debris. Any DEEPER title-descendant screen still routes
+    // through drawMenu()'s dim-plus-panel chrome, unchanged.
+    //
+    // The condition is game.menu.screen, NOT the old `if (game.paused)`: P1 decoupled the two, and
+    // Achievements / High Scores reached from the title menu are input-owning WITHOUT being paused
+    // (gotoScreen doesn't set the flag; only openPause does). A `game.paused` test would have rendered
+    // nothing at all on those two screens — a blank title with live input.
+    if (game.menu.screen === "titlemenu") drawTitleMenu();
+    else if (game.menu.screen !== null) drawMenu(); // Options + sub-screens, Achievements, High Scores, debug
     drawToasts();                 // keep unlock banners on top even on the title
     return;
   }

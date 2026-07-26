@@ -13,6 +13,16 @@
 //  - Controller B is context-aware (mirrors ESC): no menu on title/gameover -> open; menu open -> back.
 //  - A / Enter still start a game from title/gameover; a single confirm can't both nav a menu AND
 //    start a game (FLAG P4-b); menu input never leaks into keys{} or a title start.
+//
+// CS016 P2 amendments (the title screen became a navigable menu — see MENU_TITLE/menuTitle):
+//  - "At the title with nothing open" is now game.menu.screen === "titlemenu", not null; the atTitle()
+//    helper below sets that up. Backing out of Options at the title returns THERE, not to a null screen.
+//  - O and pad B still open Options directly from the title, but now via menuTitle ("options"/"back")
+//    rather than keydown/gamepad branch (3), which the title menu shadows.
+//  - ESC on the title is no longer inert: it resolves to "back", which menuTitle routes to Options
+//    (§7 / spec 1.3). Section (E) asserts the new behaviour.
+//  - Achievements/High Scores left MENU_OPTIONS for the title menu (single-parent IA), so the
+//    Options -> Achievements descents in (D)/(I) are asserted ABSENT rather than deleted.
 
 "use strict";
 const fs = require("fs");
@@ -75,7 +85,7 @@ const returnList = [
   "startGame", "update", "game", "keys", "input", "bindings", "GP",
   "pollGamepad", "handleGamepadMenu",
   "openPause", "closePause", "menuInput", "menuActive", "rootItems",
-  "MENU_ROOT_PLAY", "MENU_OPTIONS", "AudioSys"
+  "MENU_ROOT_PLAY", "MENU_OPTIONS", "MENU_TITLE", "quitToTitle", "AudioSys"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -86,8 +96,13 @@ const {
   startGame, update, game, keys, input, bindings, GP,
   pollGamepad, handleGamepadMenu,
   openPause, closePause, menuInput, menuActive, rootItems,
-  MENU_ROOT_PLAY, MENU_OPTIONS, AudioSys
+  MENU_ROOT_PLAY, MENU_OPTIONS, MENU_TITLE, quitToTitle, AudioSys
 } = A;
+// CS016 P2: the title screen is a navigable menu now, so "at the title" means game.menu.screen ===
+// "titlemenu", not null. Sections below that used to hand-set `game.menu.screen = null` to mean
+// "sitting on the title with nothing open" use this instead — otherwise they'd exercise the
+// keydown/gamepad branch-(3) fallbacks that the title menu now shadows, i.e. a path no player can reach.
+function atTitle() { game.state = "title"; quitToTitle(); clearKeys(); noPad(); }
 
 let passed = 0, failed = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
@@ -136,13 +151,18 @@ noPad();
 // (C) Keyboard "O" opens OPTIONS directly from title/gameover; Back closes to the underlying screen
 // =====================================================================
 console.log("(C) keyboard O opens Options directly; Back closes");
-game.state = "title"; game.paused = false; game.menu.screen = null; clearKeys();
+// CS016 P2: "o" at the title is now routed handleMenuKey -> menuInput("options") -> menuTitle (the title
+// menu satisfies menuActive(), so keydown branch (3)'s title-only `k === "o"` line is shadowed there).
+// It still calls openPause() and still lands on Options directly, which is what this section pins.
+atTitle();
 keydown("o");
 assert(game.paused && game.menu.screen === "options", "C: O on title -> OPTIONS open directly (no system root)");
 assert(game.state === "title", "C: opening Options did NOT also start a game");
-// CS012 P4: Options is the top-level dialog from title/gameover, so its Back closes the overlay.
+// CS012 P4: Options is the top-level dialog from title/gameover, so its Back leaves it. CS016 P2: at the
+// title that means "return to the title menu with game.paused cleared", not "screen null".
 menuInput("back");
-assert(!game.paused && game.menu.screen === null && game.state === "title", "C: Back closes overlay -> underlying title");
+assert(!game.paused && game.menu.screen === "titlemenu" && game.state === "title",
+  "C: Back leaves Options -> unpaused, back on the underlying title's own menu");
 
 // CS013 P1 (FORK-CS013-A → a): gameover no longer behaves the same as title — it now opens its OWN
 // context-aware root (Play Again/Options/Quit to Title), not Options directly. Full root coverage
@@ -158,24 +178,27 @@ assert(!game.paused && game.state === "gameover", "C: Back -> underlying gameove
 // (D) Controller B opens Options directly (title/gameover); B backs out when a menu is open
 // =====================================================================
 console.log("(D) controller B: open Options on title/gameover, back when a menu is open");
-game.state = "title"; game.paused = false; game.menu.screen = null; noPad();
+// CS016 P2: B at the title now resolves through menuTitle's "back" branch, which deliberately opens
+// Options — that preserves this exact shipped behaviour (handleGamepadMenu branch (3)'s
+// `pressedBack && onTitleOrOver -> openPause()` is shadowed at the title now) and simultaneously
+// delivers §7 / FLAG-CS016-e's "ESC opens Options from the title", since ESC normalizes to "back" too.
+atTitle();
 padPress(GP.B);
 assert(game.paused && game.menu.screen === "options", "D: B on title -> Options directly");
-// B again -> back (Options is top-level from title/gameover, so its Back closes the overlay)
+// B again -> back out of Options, i.e. to the title's own menu (CS016 P2; was "screen null").
 padPress(GP.B);
-assert(!game.paused && game.state === "title", "D: B while menu open -> back/close");
-// CS013 P1: B on gameover now opens the gameover root (not Options directly) — Achievements is
-// still reached via Options -> Achievements, one level deeper than before this phase.
+assert(!game.paused && game.state === "title" && game.menu.screen === "titlemenu", "D: B while menu open -> back/close");
+// CS013 P1: B on gameover opens the gameover root (not Options directly).
 game.state = "gameover"; game.paused = false; game.menu.screen = null; noPad();
 padPress(GP.B);
 assert(game.menu.screen === "root", "D: B on gameover -> root (CS013 P1, was Options directly)");
 game.menu.index = rootItems().indexOf("Options"); menuInput("confirm");
 assert(game.menu.screen === "options", "D: root -> Options");
-game.menu.index = MENU_OPTIONS.indexOf("Achievements"); menuInput("confirm");
-assert(game.menu.screen === "achievements", "D: Options -> Achievements");
-menuInput("back");
-assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Achievements",
-  "D: back from Achievements -> Options, cursor on Achievements (single parent, no achReturn)");
+// CS016 P2 (FORK-CS016-A): Achievements moved off Options to the title menu as its sole parent, so this
+// gameover -> Options -> Achievements descent no longer exists. Asserted absent, not deleted, so the
+// reversal stays pinned; the title-menu route it moved to is exercised in section (I).
+assert(MENU_OPTIONS.indexOf("Achievements") === -1,
+  "D: Options offers no Achievements row at gameover any more (CS016 P2 single-parent IA)");
 closePause();
 
 // =====================================================================
@@ -194,10 +217,16 @@ keydown("escape");
 assert(game.menu.screen === "root", "E: ESC inside a menu -> BACK (options -> root)");
 keydown("escape");
 assert(!game.paused && game.menu.screen === null, "E: ESC at root -> back out / resume");
-// ESC on the title with no menu does nothing (pause is gated on 'playing')
-game.state = "title"; game.paused = false; game.menu.screen = null; clearKeys();
+// CS016 P2 (§7 / spec 1.3), a DELIBERATE behaviour change: ESC on the title used to be inert (it
+// resolves to the "back" action, and branch (3) only had a pause handler gated on state === "playing").
+// The title menu now owns input, so ESC reaches menuTitle's "back" branch and opens Options — the same
+// shortcut gamepad B already had. It still cannot start a game.
+atTitle();
 keydown("escape");
-assert(!game.paused && game.state === "title", "E: ESC on title with no menu is inert (O/B are the openers)");
+assert(game.paused && game.menu.screen === "options" && game.state === "title",
+  "E: ESC on the title opens Options (CS016 P2 §7 — was inert; O and pad B do the same)");
+menuInput("back");
+assert(!game.paused && game.menu.screen === "titlemenu", "E: ...and ESC again backs out to the title menu");
 
 // =====================================================================
 // (F) A / Enter still start a game from title/gameover
@@ -257,15 +286,20 @@ closePause(); clearKeys();
 // =====================================================================
 // (I) Achievements reached via Options backs to Options (single parent, CS012 P4)
 // =====================================================================
-console.log("(I) Achievements backs to Options");
-// pause -> Options -> Achievements -> back -> Options
+console.log("(I) Achievements backs to its single parent (the title menu as of CS016 P2)");
+// CS016 P2 (FORK-CS016-A): the single-parent property is unchanged; the parent is now the title menu, so
+// the pause -> Options -> Achievements descent this section used to walk is gone. Both halves asserted.
 startGame(); openPause();
 game.menu.index = rootItems().indexOf("Options"); menuInput("confirm"); // -> options
-game.menu.index = MENU_OPTIONS.indexOf("Achievements"); menuInput("confirm"); // -> achievements (from options)
-assert(game.menu.screen === "achievements", "I: reached Achievements via Options");
-menuInput("back");
-assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Achievements", "I: back from Achievements -> Options, cursor on Achievements");
+assert(game.menu.screen === "options" && MENU_OPTIONS.indexOf("Achievements") === -1,
+  "I: mid-run pause -> Options no longer offers Achievements (accepted cost; unlock toasts remain)");
 closePause();
+atTitle();
+game.menu.index = MENU_TITLE.indexOf("Achievements"); menuInput("confirm");
+assert(game.menu.screen === "achievements", "I: reached Achievements from the title menu");
+menuInput("back");
+assert(game.menu.screen === "titlemenu" && MENU_TITLE[game.menu.index] === "Achievements",
+  "I: back from Achievements -> title menu, cursor on Achievements");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

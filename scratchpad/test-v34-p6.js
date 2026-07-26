@@ -96,7 +96,7 @@ const returnList = [
   "startGame", "update", "game", "AudioSys", "MusicSys", "MUSIC_TRACKS", "MUSIC_TRACK_VALUES",
   "menuActive", "openPause", "closePause", "gotoScreen", "menuInput",
   "settings", "saveSettings", "loadSettings", "STORAGE_KEY",
-  "MENU_OPTIONS", "SOUND_ROWS", "VOL_CATS", "bindings", "REBINDABLE", "keys",
+  "MENU_OPTIONS", "MENU_TITLE", "SOUND_ROWS", "VOL_CATS", "bindings", "REBINDABLE", "keys",
   "nextWave", "difficultyFactor", "RAMP_WAVES", "updateMusic", "musicStateFor", "MUSIC_LAYER_THRESHOLD",
 ];
 const factory = new Function(
@@ -108,7 +108,7 @@ const {
   startGame, update, game, AudioSys, MusicSys, MUSIC_TRACKS, MUSIC_TRACK_VALUES,
   menuActive, openPause, closePause, gotoScreen, menuInput,
   settings, saveSettings, loadSettings, STORAGE_KEY,
-  MENU_OPTIONS, SOUND_ROWS, VOL_CATS, bindings, REBINDABLE, keys,
+  MENU_OPTIONS, MENU_TITLE, SOUND_ROWS, VOL_CATS, bindings, REBINDABLE, keys,
   nextWave, difficultyFactor, RAMP_WAVES, updateMusic, musicStateFor, MUSIC_LAYER_THRESHOLD,
 } = A;
 
@@ -304,8 +304,19 @@ function openSoundAt(label) {
 // Nav rows -> their screens.
 openOptionsAt("Sound / Music"); menuInput("confirm"); assert(game.menu.screen === "sound",        "F: Options row 'Sound / Music' -> sound");
 openOptionsAt("Controls");     menuInput("confirm"); assert(game.menu.screen === "controls",    "F: Options row 'Controls' -> controls");
-openOptionsAt("Achievements"); menuInput("confirm"); assert(game.menu.screen === "achievements", "F: Options row 'Achievements' -> achievements");
 openOptionsAt("Difficulty");   menuInput("confirm"); assert(game.menu.screen === "difficulty",   "F: Options row 'Difficulty' -> difficulty");
+// CS016 P2 (FORK-CS016-A): the 'Achievements' Options row moved to the title menu as its sole parent, so
+// there is no such row to label-dispatch here any more. The label-dispatch property this section exists
+// to prove is unchanged for the rows that remain; the moved row's own route is covered in
+// test-cs010-p4.js (F) and test-p4.js (I).
+assert(MENU_OPTIONS.indexOf("Achievements") === -1, "F: Options no longer carries an Achievements row (CS016 P2)");
+// The title menu label-dispatches it the same way (same template, different array).
+{ const savedState = game.state, savedScreen = game.menu.screen, savedIdx = game.menu.index;
+  game.state = "title"; game.paused = false;
+  game.menu.screen = "titlemenu"; game.menu.index = MENU_TITLE.indexOf("Achievements");
+  menuInput("confirm");
+  assert(game.menu.screen === "achievements", "F: title-menu row 'Achievements' -> achievements (label-dispatched)");
+  game.state = savedState; game.menu.screen = savedScreen; game.menu.index = savedIdx; game.paused = true; }
 // CS012 P4: Options 'Back' is context-aware now — paused mid-game returns to root; from title/gameover
 // (where Options is top-level) it closes the overlay (that path is covered in test-cs012-p4). This
 // section runs in the title context (game.state set to "title" above), so pin "playing" for the Back test.
