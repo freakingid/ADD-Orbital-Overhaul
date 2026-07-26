@@ -249,7 +249,9 @@ achievement unlocks fire as toasts during play (`drawToasts`, ~L5740).
 
 ---
 
-## §3 — Modal confirmation dialog (new machinery)
+## §3 — Modal confirmation dialog (new machinery) ✅ SHIPPED (P3)
+
+**Shipped as specced.** `game.menu.modal` + `openModal`/`menuModal`/`drawModal`, the exclusive guard placed after `rebinding` and before the screen `switch`, `index` defaulting to 1 (CANCEL), and both consumers (Return to Defaults, mid-run `"Quit"`). Gameover's `"Quit to Title"` stays ungated per FORK-CS016-C. Details in the GDD §2.16 modal subsection; tests in `scratchpad/test-cs016-p3.js` (177 assertions).
 
 **The gap.** `returnToDefaults()` (~L2691) wipes every rebindable action's keys and buttons back to
 `DEFAULT_BINDINGS` and saves immediately on `confirm`. One accidental keypress on that row destroys
@@ -438,9 +440,11 @@ Menu rows draw directly on the title screen — no backdrop dim, no panel box, a
 stay fully visible. Both keyboard control-legend lines are removed as redundant with Options →
 Controls; `BEWARE THE HUNTER SATELLITE` is kept as flavour. Full layout in §1.2.
 
-### FORK-CS016-C → **(b) confirm Return to Defaults and mid-run Quit** ✅ RESOLVED
+### FORK-CS016-C → **(b) confirm Return to Defaults and mid-run Quit** ✅ RESOLVED — **SHIPPED (P3)**
 
-Gameover's `"Quit to Title"` stays unconfirmed. Full detail in §3.2.
+Gameover's `"Quit to Title"` stays unconfirmed. Full detail in §3.2. Both gates and the one deliberate
+non-gate are live as of P3, with the split falling out of `menuRoot`'s existing label dispatch (the two
+rows carry different labels, so no `game.state` check was needed).
 
 ---
 
@@ -523,7 +527,7 @@ only lifetime progress, not the run.
 - **FLAG-CS016-e — `O` and `ESC` on the title.** Best guess: **both** open Options directly, as a
   shortcut past the menu row. `O` is retained rather than retired because it is existing muscle
   memory and costs one line to keep.
-- **FLAG-CS016-f — `pause` action inside a modal.** Best guess: treat as cancel. It should never
+- **FLAG-CS016-f — `pause` action inside a modal. ✅ SHIPPED (P3)** — best guess taken as-is: treated as cancel. It should never
   close the entire menu stack out from under an open confirmation.
 - **FLAG-CS016-g — rebinding is NOT touched this round.** Two latent issues were found and are
   deliberately left alone: (1) `captureKeyRebind` (~L2670) does `bindings[action].keys = [k]`, which

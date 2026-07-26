@@ -2350,6 +2350,24 @@ const ACH_SCROLL_STEP = 60; // CS013 P3: px per up/down scroll press in the Achi
 // width on each edge before it becomes the panel width — playtest knob.
 const ROOT_MENU_HINT = "↑↓ move    ENTER / A select    ESC / B back";
 const ROOT_MENU_HINT_MARGIN = 28;
+// --- CS016 P3: the modal confirmation dialog (the build's FIRST modal) ---
+// Layout deliberately reuses drawRootMenu's vertical rhythm one-for-one, so the dialog reads as the
+// same family of panel rather than a new widget: menuPanel's own title baseline (y+46), then the
+// prompt, then two rows at the root's 46px step / 24px size, then a drawMenuHint footer at y+272
+// inside a 300px-tall box. Width is MEASURED (CS015 P1's self-healing precedent), never fixed — the
+// prompt text is per-consumer, so a hardcoded width would clip the first long one someone adds.
+const MODAL_TITLE        = "CONFIRM";
+const MODAL_CANCEL_LABEL = "CANCEL";  // openModal's default cancelLabel — the safe row, always index 1
+const MODAL_HINT         = "↑↓ move    ENTER / A select    ESC / B cancel";
+const MODAL_MIN_W        = 420;       // floor, so a very short prompt still gets a dialog-sized box
+const MODAL_MARGIN       = 28;        // side padding added to the measured text on EACH edge (mirrors ROOT_MENU_HINT_MARGIN)
+const MODAL_H            = 300;       // same box height as the root panel
+const MODAL_TEXT_SIZE    = 20;        // the prompt line
+const MODAL_TEXT_Y       = 110;       // prompt baseline, relative to the panel top
+const MODAL_ROW_Y        = 172;       // first choice row (confirm), relative to the panel top
+const MODAL_ROW_STEP     = 46;        // px between the two choice rows — drawRootMenu's step
+const MODAL_ROW_SIZE     = 24;        // choice-row text size — drawRootMenu's size
+const MODAL_HINT_Y       = 272;       // control-hint baseline, relative to the panel top
 function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
@@ -2469,7 +2487,7 @@ function openPause() {
   // Title), so it now ALSO opens the root — a context-aware one, see rootItems(). Title alone has no
   // session verbs and keeps going straight to Options.
   game.menu.screen = (game.state === "playing" || game.state === "gameover") ? "root" : "options"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
-  game.menu.rebinding = null;
+  game.menu.rebinding = null; game.menu.modal = null;   // CS016 P3: modal mirrors rebinding at every menu-state reset
   resetMenuNav();          // don't let a direction held at pause-time fire a phantom move
   AudioSys.thrust(false);  // kill the thrust loop immediately (update() would too, next frame)
   AudioSys.lowhp(false); game.lowHpSiren = false; // same — the siren must not drone through a pause menu
@@ -2485,7 +2503,7 @@ function closePause() {
   // directly (they're the designed path); this delegation is the catch-all for the rest.
   if (game.state === "title") { returnToTitleMenu(); return; }
   game.paused = false;
-  game.menu.screen = null; game.menu.rebinding = null;
+  game.menu.screen = null; game.menu.rebinding = null; game.menu.modal = null;
   game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
   AudioSys.ui(false);
 }
@@ -2498,6 +2516,7 @@ function returnToTitleMenu() {
   game.menu.screen = "titlemenu";
   game.menu.index = MENU_TITLE.indexOf("Options");
   game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
+  game.menu.modal = null;  // CS016 P3: a clear site the P3 plan could not name — this helper post-dates it
   AudioSys.ui(false);
 }
 function quitToTitle() {
@@ -2506,7 +2525,7 @@ function quitToTitle() {
   // menus (screen = null would leave the title cursor-less and dead to input). Cursor resets to
   // "Start Game" (index 0) rather than inheriting the root's — a stale index 2 ("Quit") would land on
   // "High Scores" here.
-  game.menu.screen = "titlemenu"; game.menu.rebinding = null;
+  game.menu.screen = "titlemenu"; game.menu.rebinding = null; game.menu.modal = null;
   game.menu.index = 0; game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
   game.state = "title";
   AudioSys.thrust(false); AudioSys.saucer(false); // stop any continuous voices
@@ -2519,6 +2538,7 @@ function quitToTitle() {
 function gotoScreen(s, index) {
   game.menu.screen = s;
   game.menu.index = index || 0; game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
+  game.menu.modal = null;  // CS016 P3: a dialog belongs to the screen that raised it and never survives a screen change
   AudioSys.ui(true);
 }
 // CS015 P4: open the hidden Debug Options panel straight from the Title screen (where there is no root
@@ -2528,9 +2548,45 @@ function gotoScreen(s, index) {
 function openDebug() {
   game.paused = true;
   game.menu.screen = "debug"; game.menu.index = 0; game.menu.row = 0; game.menu.col = 0;
-  game.menu.rebinding = null;
+  game.menu.rebinding = null; game.menu.modal = null;
   resetMenuNav();          // a direction held while typing the code must not fire a phantom first move
   AudioSys.ui(true);
+}
+
+// --- CS016 P3: modal confirmation dialogs ---
+// The build's first modal. State is ONE nullable field on game.menu, mirroring `rebinding`: a mode
+// that owns menu input while it is non-null. `onConfirm` is a plain closure, so a consumer wires a
+// dialog with one call and no per-screen state.
+//
+// index 1 (CANCEL) IS THE SAFETY PROPERTY, not a default worth "tidying" to 0. Every consumer here is
+// destructive, and ENTER is the same key that opened the dialog — with index 0 a double-tap of ENTER
+// (or a held key that got past the e.repeat guard) would wipe a run or a rebind set with no
+// deliberate act. The player must move the cursor to destroy something.
+function openModal(text, confirmLabel, onConfirm, cancelLabel = MODAL_CANCEL_LABEL) {
+  game.menu.modal = { text, confirmLabel, cancelLabel, index: 1, onConfirm };
+  AudioSys.ui(true);
+}
+// The exclusive handler. Two rows only, so every direction is the same toggle — up/down is the
+// natural gesture for a vertical list, left/right costs nothing and stops a stick nudge reading as
+// dead input. No per-screen handler knows modals exist; menuInput's guard keeps them all unreached.
+function menuModal(a) {
+  const md = game.menu.modal;
+  if (a === "up" || a === "down" || a === "left" || a === "right") { md.index = 1 - md.index; AudioSys.ui(false); }
+  else if (a === "confirm") {
+    if (md.index === 0) {
+      // Capture, then CLEAR BEFORE INVOKING: onConfirm is free to navigate (quitToTitle re-arms the
+      // title menu, gotoScreen changes screen), and a teardown running after it would clobber the
+      // state the callback just set — or, worse, resurrect a dialog it had already dismissed.
+      const run = md.onConfirm;
+      game.menu.modal = null;
+      if (run) run();
+      AudioSys.ui(true);
+    } else { game.menu.modal = null; AudioSys.ui(false); } // ENTER on CANCEL is a dismissal, so the back tone
+  }
+  // `pause` is treated as cancel, NOT passed through: it must never close the whole menu out from
+  // under an open confirmation (closePause() from here would leave the dialog's question unanswered
+  // and the player back in the game with no idea which way it went).
+  else if (a === "back" || a === "pause") { game.menu.modal = null; AudioSys.ui(false); }
 }
 
 // --- Keyboard -> menu action mapping (arrows + WASD nav; Enter/Esc/P via the binding table) ---
@@ -2553,6 +2609,12 @@ function handleMenuKey(k) {
 // --- The dispatcher: one entry point, both input methods feed it ---
 function menuInput(action) {
   if (game.menu.rebinding) return; // capture mode owns all input; ignore stray nav
+  // CS016 P3: the second exclusive mode, and it stays SECOND on purpose. Rebinding is a live hardware
+  // capture — the very next keypress is data, not navigation — so it must out-rank everything,
+  // including an open dialog. (The two are mutually exclusive in practice: you cannot reach a modal's
+  // opener while capturing, nor a rebind row while a modal is up. The order is the guarantee, not the
+  // observed behaviour.) Placed BEFORE the screen switch so no per-screen handler sees the action.
+  if (game.menu.modal) { menuModal(action); return; }
   switch (game.menu.screen) {
     case "titlemenu":    menuTitle(action); break;   // CS016 P2: the title screen's own root
     case "root":         menuRoot(action); break;
@@ -2613,7 +2675,11 @@ function menuRoot(a) {
     if (label === "Continue")          closePause();
     else if (label === "Play Again")   startGame();
     else if (label === "Options")      gotoScreen("options");
-    else if (label === "Quit")         quitToTitle();
+    // CS016 P3: the two Quit rows split here, and label dispatch already tells them apart with no
+    // game.state sniffing. Mid-run "Quit" throws away a live run, so it is confirmed. Gameover's
+    // "Quit to Title" is deliberately NOT — the run is already over and there is nothing left to
+    // destroy, so a dialog there would be pure friction on the most-pressed row of that screen.
+    else if (label === "Quit")         openModal("Quit to title? Progress in this run will be lost.", "QUIT", quitToTitle);
     else if (label === "Quit to Title") quitToTitle();
   }
   else if (a === "back" || a === "pause") closePause();
@@ -2776,7 +2842,10 @@ function menuControls(a) {
   else if (a === "confirm") {
     if (m.row < ACTIONS.length) startRebind(ACTIONS[m.row], m.col === 0 ? "key" : "pad");
     // turnRow has no confirm action — it's a ◄/► slider (Paul: rotation returns to default manually).
-    else if (m.row === defaultsRow) { returnToDefaults(); AudioSys.ui(true); }
+    // CS016 P3: was an immediate `returnToDefaults(); AudioSys.ui(true);`. Now gated behind a
+    // confirmation — this row silently discards every rebind the player has made, and it sits one
+    // step from the Back row. returnToDefaults() itself is untouched; openModal plays the blip.
+    else if (m.row === defaultsRow) openModal("Reset all controls to defaults?", "RESET", returnToDefaults);
     else if (m.row === backRow) gotoScreen("options", MENU_OPTIONS.indexOf("Controls")); // back to Options, cursor on "Controls"
   }
   else if (a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Controls"));
@@ -3824,7 +3893,7 @@ const game = {
   // CS016 P2: boots on the title's own menu (state starts "title"), NOT null — the title screen is a
   // navigable menu now, and a null screen there would render cursor-less and read menuActive() false.
   // index 0 = "Start Game", so ENTER / A on a cold boot still starts a run immediately.
-  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0 }, // scroll: CS013 P3, Achievements-viewer vertical offset
+  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none)
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -3897,7 +3966,10 @@ function startGame() {
   // CS016 P2: screen back to null — in play there is no menu (the title menu belongs to the title).
   // Confirmed correct as-is; the only entry point that now reaches here from a menu is menuTitle's
   // "Start Game", and this reset already clears it.
-  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null }; // ensure no menu carries in
+  // CS016 P3: `modal` is added to BOTH this reset and the game literal, per the standing note that
+  // `scroll` was only ever added to the literal (see STATUS.md Known issues) — a new game.menu field
+  // that lands in one and not the other is `undefined` for the whole of a run.
+  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null }; // ensure no menu carries in
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
@@ -5484,6 +5556,37 @@ function drawMenu() {
   else if (s === "achievements") drawAchievements();
   else if (s === "highscores") drawHighScores();
   else if (s === "debug") drawDebug();   // CS015 P4: hidden, secret-code-only
+  drawModal();  // CS016 P3: LAST, unconditionally — it must paint over whichever panel raised it
+}
+
+// CS016 P3: the confirmation dialog's render. Self-gating (no-op when no modal is open) so drawMenu()
+// can call it unconditionally as its final act — a dialog is always on top of the screen that raised
+// it, and ordering it last is what makes that true without a z-index concept.
+//
+// Width is MEASURED, never fixed (the CS015 P1 self-healing precedent that drawRootMenu set): both the
+// per-consumer prompt AND the fixed hint are measured at their real render sizes and the wider one
+// wins, so a longer prompt added later widens the box instead of bleeding through the border.
+// menuPanel's own fill is opaque enough (0.95) to hide the panel underneath wherever they overlap, so
+// no extra backdrop dim is painted here — drawMenu already laid one over the world.
+function drawModal() {
+  const md = game.menu.modal;
+  if (!md) return;
+  ctx.font = MODAL_TEXT_SIZE + "px monospace";
+  const textW = Math.ceil(ctx.measureText(md.text).width);
+  ctx.font = MENU_HINT_SIZE + "px monospace";
+  const hintW = Math.ceil(ctx.measureText(MODAL_HINT).width);
+  const w = Math.max(MODAL_MIN_W, Math.max(textW, hintW) + 2 * MODAL_MARGIN);
+  const { y } = menuPanel(w, MODAL_H, MODAL_TITLE);
+  drawText(md.text, VIEW_W / 2, y + MODAL_TEXT_Y, MODAL_TEXT_SIZE, COLOR.text);
+  // Two rows, confirm first (index 0) and cancel second (index 1) — the same "▶ " prefix and
+  // COLOR.text / COLOR.menuIdle convention every other menu list uses, so the selection reads
+  // identically here. Order is fixed; it is the default INDEX (1) that keeps cancel safe.
+  [md.confirmLabel, md.cancelLabel].forEach((label, i) => {
+    const sel = i === md.index;
+    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, y + MODAL_ROW_Y + i * MODAL_ROW_STEP,
+             MODAL_ROW_SIZE, sel ? COLOR.text : COLOR.menuIdle);
+  });
+  drawMenuHint(MODAL_HINT, VIEW_W / 2, y + MODAL_HINT_Y);
 }
 
 // CS016 P2 (§1.2, FORK-CS016-B → b): the title screen's own menu — the ONE menu that deliberately
