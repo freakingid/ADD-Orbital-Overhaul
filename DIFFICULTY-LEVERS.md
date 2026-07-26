@@ -114,7 +114,11 @@ design decision, not an inconsistency to be tidied away**:
 
 - **Sawtooth group** (`game.cycleWave` + `cycleValue`): debris count, debris
   speed (both sites), Hunter speed, Hunter turn rate. These breathe — they reset
-  at each cycle boundary.
+  at each cycle boundary. **CS017 P5 adds a fifth member on the same clock but
+  NOT through `cycleValue`: the bonus-canister spawn chance.** It reads
+  `game.cycleWave` (so it resets at the boundary like the rest) but takes no
+  spiral gain — a probability that grew every cycle would eventually pin at 1.
+  It is also the only member that eases off rather than climbing (§2.7).
 - **Frozen group** (absolute `game.wave`): everything else — the whole saucer
   group, the two `leverScale` levers, and the Kessler / player-ability / economy
   knobs. These only ever get harder.
@@ -132,6 +136,32 @@ Every mechanism above interpolates with `difficultyFactor`/`ramp` (GDD §2.13).
 on those rather than duplicating them, so tuning them retunes every lever at
 once, consistently. **No lever gets its own curve.**
 
+**One documented exception: the bonus-canister spawn chance (CS017 P5).**
+`bonusSpawnChance()` interpolates **linearly** across `game.cycleWave` rather
+than through `ramp()`. The reason is specific and does not generalize: its two
+constants are defined as the **cycle's exact endpoints** — `_EARLY` at
+`cycleWave` 1, `_LATE` at `cycleWave === CYCLE_LENGTH` — and `difficultyFactor`
+is asymptotic. Over the 9 waves of a cycle it only reaches
+`1 − e^(−8/8) ≈ 0.632`, so a `ramp()` version would bottom out around **0.25**
+and `BONUS_SPAWN_CHANCE_LATE = 0.1` would never be the number it says it is. A
+playtest knob that lies about its own value is worse than a private curve. This
+is also the only lever whose value **decreases** with difficulty by design (see
+§2.7), so it shares nothing with `RAMP_WAVES`'s pacing intent anyway. **Do not
+take this as license for a second private curve** — a new lever that wants one
+should first be re-specified in terms of `ramp()`'s asymptotic endpoints.
+
+### 2.7 One lever eases OFF (CS017 P5)
+
+Every other entry in the registry makes the game harder as it climbs. The
+**bonus-canister spawn chance** is deliberately inverted: it is highest right
+after a cycle reset and lowest at the cycle's end. It is not a threat lever at
+all — it governs how often a *reward* appears — and it is registered here
+because it reads the same cycle clock as the sawtooth group and will be retuned
+alongside them. Its intent (GDD §2.10.1) is to concentrate the temptation in the
+window where the player can afford to take it: the reward is six extra cargo
+nodes, which is itself a liability, so the lever tunes **how often the game
+offers a greedy line**, not how hard the game is.
+
 ## 3. Lever registry
 
 | Lever | Constant(s) | Scales | Mechanism | Clock | Shape / range | Enabled? | Shipped | Playtest status |
@@ -146,6 +176,7 @@ once, consistently. **No lever gets its own curve.**
 | Saucer fire rate | `SAUCER_FIRE_MULT_FLOOR/CEIL` | between-shot interval multiplier | direct `ramp` | **absolute `game.wave`** | 1.8× → 1.0× | **yes** | v1.5 | Shipped. **FROZEN group.** |
 | Small-saucer aim error | `SAUCER_AIM_ERR_FLOOR/CEIL`, `SAUCER_ACCURACY_RAMP_SCALE` (0.5) | aimed-shot spread (rad) | direct `ramp`, scaled wave argument | **absolute `game.wave`** | ±0.35 → ±0.09 | **yes** | v1.5; scale knob CS012 P1 | Shipped. **FROZEN group.** |
 | Small-saucer chance | `SAUCER_SMALL_CHANCE_FLOOR/CEIL` | odds the spawned saucer is the aimed one | direct `ramp` | **absolute `game.wave`** | 15% → 60% | **yes** | v1.5 | Shipped. **FROZEN group.** |
+| **Bonus-canister spawn chance** | `BONUS_SPAWN_CHANCE_EARLY` (0.5), `BONUS_SPAWN_CHANCE_LATE` (0.1) | per-wave probability that `nextWave()` spawns a bonus canister | **linear** across the cycle (`bonusSpawnChance()`, §2.6 exception) | `game.cycleWave` | **50% → 10%, EASES OFF** (0.50, 0.45, 0.40, 0.35, 0.30, 0.25, 0.20, 0.15, 0.10) | **yes** | CS017 P5 | **Live, unplaytested.** The only lever that decreases (§2.7). Resets to 50% at every cycle boundary. |
 
 **On the two `leverScale` levers (FLAG-CS017-h).** Both remain
 `enabled: false` after CS017 P3 — that was reviewed and deliberately left alone.

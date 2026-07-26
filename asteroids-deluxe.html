@@ -330,6 +330,19 @@ const HUNTER_COALESCE_COUNT = 12;      // pieces fused into one clump -> a new l
 const GARBAGE_CLUMP_MAXSPD = Infinity; // off-by-default playtest clamp on a piece's coalescence speed
 const GARBAGE_SHATTER_KICK = [40, 90]; // v3.2 P2: px/s outward kick range for shatterClump's emitted pieces (playtest knob)
 
+// Rare BONUS CANISTER (CS017 P5, FORK-CS017-D -> (b) PRE-LINKED CLUMP). It is NOT a new entity type:
+// it is an ordinary `Garbage` born with a high `pieces` count plus a `bonus` marker, so the existing
+// scoop-intake path (which already turns a multi-piece clump into `take` chain nodes), coalescence,
+// shatter and decay all handle it with zero new machinery. Design intent: a reward-flavoured reason to
+// keep playing the low-stakes early waves that INVITES GREED (a fat chain is riskier to protect)
+// without making survival itself harder. Its spawn chance is the ONE lever in CS017 that EASES OFF
+// rather than escalating — see DIFFICULTY-LEVERS.md and bonusSpawnChance() below.
+const BONUS_CANISTER_PIECES = 6;      // PLAYTEST KNOB: chain slots one bonus clump fills on a full scoop
+const BONUS_CANISTER_SCORE  = 250;    // PLAYTEST KNOB: points paid ONCE per clump, at the scoop
+const BONUS_SPAWN_CHANCE_EARLY = 0.5; // PLAYTEST KNOB: per-wave spawn probability at cycleWave 1
+const BONUS_SPAWN_CHANCE_LATE  = 0.1; // PLAYTEST KNOB: ... at the LAST wave of a cycle (cycleWave === CYCLE_LENGTH)
+const BONUS_RING_PAD = 5;             // px: gap between the clump's collision radius and its halo-ring tell (look-call)
+
 const CHAIN_LINK = 20;          // px between chain nodes
 const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-8: 3→4 to keep a 20-node chain from sagging; §3.4 rule 7)
 // Tow capacity (B-8): the cap is a runtime value (game.cargoMax) that GROWS during a run from
@@ -3163,6 +3176,22 @@ function cycleValue(base, cycle) {
   return base * (1 + cycle * CYCLE_GAIN);
 }
 
+// CS017 P5: the bonus canister's per-wave spawn probability — the ONE lever in this changeset that
+// EASES OFF instead of escalating. Common at the start of a cycle (the learning window right after a
+// sawtooth reset), rare at its end. Reads game.cycleWave, so it breathes with the sawtooth group.
+//
+// DELIBERATE DEVIATION from DIFFICULTY-LEVERS.md 2.6 ("no lever gets its own curve"), documented
+// there: this is a straight LINEAR interpolation across the cycle, not ramp()/difficultyFactor().
+// The two constants are defined as the CYCLE'S ENDPOINTS, and difficultyFactor() is asymptotic — over
+// CYCLE_LENGTH (9) waves it only reaches 1-exp(-8/8) = 0.63, so a ramp() lever would top out near
+// 0.25 and BONUS_SPAWN_CHANCE_LATE would never be the value it says it is. A knob that lies is worse
+// than a private curve; this one hits both endpoints exactly.
+function bonusSpawnChance() {
+  const t = CYCLE_LENGTH > 1 ? (game.cycleWave - 1) / (CYCLE_LENGTH - 1) : 1; // 0 at cycleWave 1, 1 at the cycle's last wave
+  const f = Math.min(1, Math.max(0, t));  // clamp: cycleWave is always in 1..CYCLE_LENGTH, but never trust a knob retune
+  return BONUS_SPAWN_CHANCE_EARLY + (BONUS_SPAWN_CHANCE_LATE - BONUS_SPAWN_CHANCE_EARLY) * f;
+}
+
 function wrap(obj) {
   if (obj.x < -60) obj.x += WORLD_W;
   if (obj.x > WORLD_W + 60) obj.x -= WORLD_W;
@@ -3272,6 +3301,10 @@ const COLOR = {
                             // chevrons/table headers/glyphs/slider frames all still read it).
   garbage: "#c8ff50",
   garbageLight: "#b8ffb0",   // low-mass Hunter scrap: a paler, mintier tint so it reads as "lighter / easier to tow" (F4)
+  garbageBonus: "#ffe23a",   // CS017 P5: the rare bonus canister. Deliberately still in the SALVAGE hue family
+                             // (a hot yellow pushed off garbage's yellow-green) so it never reads as a new hazard,
+                             // but unmistakably hotter at a glance; paired with a halo ring in Garbage.draw so the
+                             // tell survives colour-blindness and the expiry blink. LOOK-CALL — tune freely.
   chain: "#8aa0ff",
   dock: "#70ffa0",
   hp: "#5fe08a",
@@ -3829,6 +3862,12 @@ class Garbage {
     this.coalesceDelay = DEBUG.garbageAttractDelay; // CS015 P5: tunable live (captured per-piece at ctor time)
     this.pieces = 1;
     this.radius = 7 * Math.sqrt(this.pieces);
+    // CS017 P5: the rare bonus-canister marker. Default FALSE for every emission site (debris drops,
+    // Hunter drops, shatter children, Garbage.fromNode) — only nextWave()'s bonus spawn sets it true.
+    // It drives (a) the draw tell and (b) the one-shot BONUS_CANISTER_SCORE payout at the scoop, which
+    // CLEARS it on the way through — that clear is what makes "paid once per clump" true for a partial
+    // scoop, whose leftover is the SAME object. See the pickup block and GDD 2.10.1.
+    this.bonus = false;
     this.dead = false;
   }
   static fromNode(n) { // chain node knocked loose -> free garbage (v3.2 P3: no decay)
@@ -3853,7 +3892,9 @@ class Garbage {
     if (this.pieces === 1) {
       // A single centered canister. v3.3 P4 (9a): in its last GARBAGE_FADE sec it blinks out as an
       // expiry tell — otherwise byte-identical to the pre-decay single render.
-      const color = this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
+      // CS017 P5: `bonus` wins the colour branch. A bonus clump is normally pieces > 1, but this path
+      // is covered too so a BONUS_CANISTER_PIECES retune down to 1 still renders the tell.
+      const color = this.bonus ? COLOR.garbageBonus : this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
       let alpha = 0.9;
       if (this.decay < GARBAGE_FADE) {
         // fast on/off blink (skip the "off" frames) that fades as death nears
@@ -3861,6 +3902,7 @@ class Garbage {
         alpha = 0.9 * Math.max(0.2, this.decay / GARBAGE_FADE);
       }
       drawCanister(this.x, this.y, this.spin, alpha, color);
+      if (this.bonus) this.drawBonusRing(alpha);
       return;
     }
     // v3.5 P2 (reverses v3.3 P1): a clump (pieces > 1) draws as ONE ordinary canister scaled up by
@@ -3871,13 +3913,26 @@ class Garbage {
     // proximity-to-Hunter lerp is gone) — size (radius = 7*sqrt(pieces)) is the only remaining tell
     // that a clump is nearing the Hunter transform. CS015 P6 (item 10): a clump now ages out too (a
     // merge resets its clock), so it gets the same expiry blink tell as a single, mirrored verbatim.
-    const color = (this.mass / this.pieces) < 1 ? COLOR.garbageLight : COLOR.garbage;
+    // CS017 P5: a bonus clump overrides the per-piece-mass colour with COLOR.garbageBonus and adds a
+    // halo ring below — the size tell (radius) is already spoken for by the Hunter-transform warning,
+    // so the bonus needs its own channel.
+    const color = this.bonus ? COLOR.garbageBonus
+                : (this.mass / this.pieces) < 1 ? COLOR.garbageLight : COLOR.garbage;
     let alpha = 0.9;
     if (this.decay < GARBAGE_FADE) {
       if (Math.sin(this.decay * 18) < 0) return;
       alpha = 0.9 * Math.max(0.2, this.decay / GARBAGE_FADE);
     }
     drawCanister(this.x, this.y, this.spin, alpha, color, this.radius / 7);
+    if (this.bonus) this.drawBonusRing(alpha);
+  }
+  // CS017 P5: the second half of the bonus tell — a halo just outside the collision radius. STROKE
+  // ONLY, via the shared drawRingArc/glowStroke path (no new fill exception, GDD 3.2; frac 1 = a full
+  // turn). drawCanister leaves globalAlpha at 1, so the blink/expiry alpha is re-applied here.
+  drawBonusRing(alpha) {
+    ctx.globalAlpha = alpha;
+    drawRingArc(this.x, this.y, this.radius + BONUS_RING_PAD, 1, COLOR.garbageBonus, 1.5, 8);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -4230,6 +4285,23 @@ function nextWave() {
     const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
     game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
   }
+  // CS017 P5 — the rare bonus canister (FORK-CS017-D -> (b) PRE-LINKED CLUMP). ONE roll per wave, on
+  // the EASING-OFF curve (bonusSpawnChance()): common right after a cycle reset, rare at the cycle's
+  // end. Placed by the SAME ring-around-the-ship rule as the debris above, so it is reachable without
+  // being dumped on the player. Nothing here is new intake machinery — it is a plain Garbage whose
+  // `pieces`/`mass`/`radius` are set by the same three expressions coalescence and the partial-scoop
+  // leftover already use, so every downstream system (scoop, shatter, coalesce, decay) just works.
+  if (Math.random() < bonusSpawnChance()) {
+    const ba = rand(0, TAU);
+    const bd = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
+    const bp = wrapPos({ x: game.ship.x + Math.cos(ba) * bd, y: game.ship.y + Math.sin(ba) * bd });
+    const bonusClump = new Garbage(bp.x, bp.y);
+    bonusClump.pieces = BONUS_CANISTER_PIECES;
+    bonusClump.mass   = BONUS_CANISTER_PIECES;          // per-piece mass 1.0 — the Debris-scrap default, so mass sums to the piece count
+    bonusClump.radius = 7 * Math.sqrt(bonusClump.pieces); // the ONE clump-radius expression (never a hardcoded px)
+    bonusClump.bonus  = true;
+    game.garbage.push(bonusClump);
+  }
   logDifficultySnapshot(count, speedMul); // CS017 P2: dev-only, one row per wave (see DiffLog above)
 }
 
@@ -4353,6 +4425,9 @@ function destroySaucer(s) {
 // disperses before it can start re-clumping), and an outward kick that inherits a fraction of the
 // clump's own drift — same fan-out shape as destroyDebris/destroyHunter. No score: the reward is
 // the hookable canisters themselves.
+// CS017 P5: the emitted pieces are FRESH Garbage, so a bonus marker is deliberately NOT inherited —
+// shooting a bonus canister apart forfeits BONUS_CANISTER_SCORE (scoop it intact or lose it). That's
+// the opposite call from coalescence, which does carry the marker; both are argued in GDD 2.10.1.
 function shatterClump(g) {
   g.dead = true;
   const pieceMass = g.mass / g.pieces;
@@ -5035,6 +5110,12 @@ function coalesceGarbage(dt) {
         a.radius = 7 * Math.sqrt(a.pieces);
         a.decay = DEBUG.garbageLifetime; // CS015 P6 (item 10): a merge is activity — clock resets to full,
                                           // so an actively-growing lineage never ages out, only a stalled one
+        // CS017 P5: an unclaimed bonus marker survives a merge onto the survivor. Coalescence is not
+        // something the player controls, so a bonus canister quietly absorbed into a passing clump
+        // shouldn't silently stop being one. It can't double-pay: there is exactly one survivor object
+        // and the payout clears the flag. (Shatter is the opposite call by design — its children are
+        // fresh Garbage and inherit nothing, so shooting a bonus clump forfeits it. See GDD 2.10.1.)
+        a.bonus = a.bonus || b.bonus;
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
@@ -5350,6 +5431,18 @@ function update(dt) {
     // scoopLevel 0 inScoopBox is always false, so this is byte-identical to the pre-scoop pickup.
     if (game.chain.length < game.cargoMax &&
         (dist2(g, game.ship) < pickR * pickR || inScoopBox(g))) {
+      // CS017 P5: the bonus canister pays ONCE, HERE — at the moment of capture, above the
+      // single/clump branch so both paths trip it, and inside the capture gate so only a real scoop
+      // counts. Deliberately NOT proportional to how many pieces actually fit: reaching the clump is
+      // what's being rewarded, so a nearly-full chain still banks the full BONUS_CANISTER_SCORE.
+      // Clearing the flag is load-bearing — a partial scoop's leftover is the SAME object and would
+      // otherwise pay again when the player comes back for it. Routed through addScore() normally
+      // (this is a gain, not the AUTO_SHIELD_SCORE_PENALTY bypass case — see CLAUDE.md).
+      if (g.bonus) {
+        g.bonus = false;
+        addScore(BONUS_CANISTER_SCORE);
+        game.floaters.push(new FloatText("+" + BONUS_CANISTER_SCORE, g.x, g.y, COLOR.garbageBonus));
+      }
       if (g.pieces === 1) {
         // A single hooks onto the chain as one node (unchanged behavior).
         g.dead = true;
