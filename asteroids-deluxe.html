@@ -345,6 +345,12 @@ const BONUS_RING_PAD = 5;             // px: gap between the clump's collision r
 
 const CHAIN_LINK = 20;          // px between chain nodes
 const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-8: 3→4 to keep a 20-node chain from sagging; §3.4 rule 7)
+// CS017 P6 (chain guard) — the ABSORBED-break tell. Deliberately fewer particles than boom()'s
+// `6 + size*6` (12 for a size-1 canister burst): a deflection should read as a spark shower, not a
+// detonation. The rest of the chain-guard tuning lives in DEBUG_VARS (chainGuardTime/Intercepts/MinTow).
+const GUARD_ABSORB_SPARKS = 7;  // PLAYTEST KNOB: guard-hued particles spat out where a break was absorbed
+const GUARD_CHAIN_WIDTH = 1.8;  // link stroke width while guarded (vs the normal 1.2) — the "armoured" read
+const GUARD_CHAIN_BLUR = 14;    // link glow blur while guarded (vs the normal 6)
 // Tow capacity (B-8): the cap is a runtime value (game.cargoMax) that GROWS during a run from
 // CARGO_BASE toward CARGO_CAP_MAX — capacity is earned by engaging the salvage loop (Pillar 5),
 // not handed out. The old fixed `CHAIN_MAX` (12) is now CARGO_BASE.
@@ -460,12 +466,20 @@ const POWERUP_RADIUS = 15;          // pickup icon radius = its collision radius
 // baseline as difficulty ramps. Ships DISABLED (pinned at start=2.0). See DIFFICULTY-LEVERS.md.
 const LEVER_POWERUP_SIZE = { enabled: false, start: 2.0, floor: 1.0 };
 const POWERUP_DECAY = 26;           // sec an uncollected powerup lingers before fading (v3.3 P3: 14->26, playtest knob — shot powerups should linger longer)
-const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine"]; // TIMED effects the HUD/powerActive/powerBudget machinery understands — Health & Scoop are NOT here (see POWERUP_DROP_WEIGHTS)
+// CS017 P6: "guard" (the chain guard) APPENDED — it is a genuine timed effect, so it belongs on this
+// list (HUD row, powerActive/powerMode/powerBudget, the expiry latch). Appended, never inserted: the
+// order is load-bearing (it fixes each type's HUD row index — see drawHUD), so a new type must land
+// at the END or every existing row moves.
+const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine", "guard"]; // TIMED effects the HUD/powerActive/powerBudget machinery understands — Health & Scoop are NOT here (see POWERUP_DROP_WEIGHTS)
 // v3.3 P3: what can actually DROP (weighted), a SEPARATE structure from POWERUP_DROP_TYPES above.
 // Favors the shot powerups; Scoop is droppable but is a persistent, non-timed upgrade, so it is
 // deliberately absent from POWERUP_DROP_TYPES (the timed-effect list). Weights are the playtest knob.
 // v3.6 P3: this is now the type-roll table for THREE unconditional emitters (dropPowerup) — see below.
-const POWERUP_DROP_WEIGHTS = { rapid: 3, triple: 3, scoop: 2, magnet: 1, engine: 1 };
+// CS017 P6: "guard" is the first CONDITIONAL entry — dropPowerup only admits it to the roll while the
+// player is towing >= DEBUG.chainGuardMinTow nodes (a guard with nothing to guard is a dead pickup).
+// Below that threshold the roll renormalises over the other five and is byte-identical to pre-P6.
+// Weight 1 puts it in the existing rare tier alongside magnet/engine — a PLAYTEST KNOB, like the rest.
+const POWERUP_DROP_WEIGHTS = { rapid: 3, triple: 3, scoop: 2, magnet: 1, engine: 1, guard: 1 };
 const POWERUP_HEALTH_GAP = [18, 26]; // sec between ambient Health spawns (saucer-like cadence)
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
 const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
@@ -506,6 +520,9 @@ const RAPID_SHOTS   = 40;           // trigger-pulls Rapid Fire lasts in "shots"
 const TRIPLE_SHOTS  = 30;           // trigger-pulls Triple Shot lasts in "shots" mode (a 3-fan is ONE pull)
 const MAGNET_PIECES = 40;           // canisters hooked the Magnet lasts in "pieces" mode (v3.4 P4: 20->40, counted at the hook)
 const POWERUP_BUDGET = { rapid: RAPID_SHOTS, triple: TRIPLE_SHOTS, magnet: MAGNET_PIECES }; // full budget by type
+// CS017 P6: "guard" is deliberately ABSENT here — its count-mode budget is the live, dev-tunable
+// DEBUG.chainGuardIntercepts, not a frozen const, so a panel change takes effect on the next pickup.
+// Read it through powerBudgetAmount(type) (the sibling of powerDuration(type)), never this table.
 // Scoop (v3.3 P3) — a PERSISTENT, non-timed ship upgrade, the first of its kind here. It lives on
 // game.scoopLevel (0..SCOOP_MAX_LEVEL), NOT in powerFx/powerBudget, and it only ever decays by TAKING
 // HITS (never on a clock). Each level widens/deepens an oriented capture BOX (the "mouth") on the
@@ -2445,6 +2462,9 @@ const settings = {
   voiceStyle:      "comms", // CS011: selected Dan voice — "off" or a VOICE_STYLE_VALUES id. NOT persisted yet (later phase).
   captions:        true,    // CS011: show on-screen captions of Dan's lines. NOT persisted yet (later phase).
   autoShield:      false,   // CS012 P5: auto-raise the shield on a hit at critical hull (costs energy + AUTO_SHIELD_SCORE_PENALTY). Off by default.
+  chainGuardMode:  "time",  // CS017 P6: "time" | "count" — how the chain-guard powerup expires. Same dual-mode
+                            // pattern as shotPowerupMode/magnetMode, and the same "time" default, so the shipped
+                            // behaviour is the timed one until a player opts in via Options -> Difficulty.
 };
 
 // ---------- Debug Options (CS015 P4) — a hidden, data-driven tuning panel ----------
@@ -2485,6 +2505,18 @@ const DEBUG_VARS = [
     def: 0.5, min: 0, max: 1, step: 0.05 },
   { id: "saucerGapPressure", label: "Saucer gap pressure scale", unit: "",
     def: 0.5, min: 0, max: 1, step: 0.05 },
+  // CS017 P6: the chain-guard powerup's three knobs. chainGuardTime is powerDuration("guard") in TIME
+  // mode; chainGuardIntercepts is the seeded powerBudget in COUNT mode (see powerBudgetAmount); both are
+  // live values, NOT frozen consts, so the registry entry IS the source of truth for each default.
+  // chainGuardMinTow is the drop gate — "guard" only enters the dropPowerup roll while the player is
+  // towing at least this many nodes. 0 makes it always-eligible (the un-gated roll), which is the useful
+  // dev setting for exercising the powerup without first building a load.
+  { id: "chainGuardTime", label: "Chain guard duration", unit: "s",
+    def: 30, min: 5, max: 120, step: 5 },
+  { id: "chainGuardIntercepts", label: "Chain guard intercepts", unit: "",
+    def: 3, min: 1, max: 10, step: 1 },
+  { id: "chainGuardMinTow", label: "Chain guard min tow", unit: "",
+    def: 5, min: 0, max: 24, step: 1 },
 ];
 const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
 const debugShown = {};   // display-unit values — what the panel shows and what persists in afd_settings_v1.debug
@@ -2916,7 +2948,10 @@ function menuHighScores(a) {
 // default, right picks the count variant, matching the on-screen "Time | Shots/Pieces" layout.
 // Structured to grow with future difficulty knobs (FLAG B-4-c): add a row here + a case in the
 // switch and the renderer picks it up.
-const DIFFICULTY_ROWS = ["shot", "magnet", "autoshield", "back"];
+// CS017 P6: "chainguard" appended before "back" — the fourth value row. Adding it here + a branch in the
+// switch below + an entry in drawDifficulty's rows/HELP arrays is the whole change; the CS016 P4 mid-run
+// lock (`row !== "back"`) and the value-row renderer both pick it up with no further edit.
+const DIFFICULTY_ROWS = ["shot", "magnet", "autoshield", "chainguard", "back"];
 // CS016 P4 (§5): a live run's rules can't change mid-run — retroactively flipping shot/magnet/
 // auto-shield would corrupt the meaning of that run's score and achievement progress. Keyed on
 // game.state === "playing" specifically (NOT game.paused, which the title also carries as of CS016 P2;
@@ -2934,6 +2969,7 @@ function menuDifficulty(a) {
     if (row === "shot")        { settings.shotPowerupMode = a === "right" ? "shots"  : "time"; saveSettings(); AudioSys.ui(false); }
     else if (row === "magnet") { settings.magnetMode      = a === "right" ? "pieces" : "time"; saveSettings(); AudioSys.ui(false); }
     else if (row === "autoshield") { settings.autoShield  = a === "right"; saveSettings(); AudioSys.ui(false); }
+    else if (row === "chainguard") { settings.chainGuardMode = a === "right" ? "count" : "time"; saveSettings(); AudioSys.ui(false); } // CS017 P6
   }
   else if (a === "confirm") {
     if (row === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Difficulty"));
@@ -3070,6 +3106,7 @@ function saveSettings() {
       shipTurnScale: settings.shipTurnScale,                                      // CS010 §10b (additive)
       voiceStyle: settings.voiceStyle, captions: settings.captions,               // CS011 P3 (additive)
       autoShield: settings.autoShield,                                            // CS012 P5 (additive)
+      chainGuardMode: settings.chainGuardMode,                                    // CS017 P6 (additive)
       debug: { ...debugShown } };                                                 // CS015 P4 (additive sub-object, display units)
     for (const name of REBINDABLE) {
       const b = bindings[name];
@@ -3122,6 +3159,11 @@ function loadSettings() {
     if (typeof data.captions === "boolean") settings.captions = data.captions;
     // CS012 P5: auto-shield is an additive boolean — missing/non-boolean leaves the runtime default (false) in place.
     if (typeof data.autoShield === "boolean") settings.autoShield = data.autoShield;
+    // CS017 P6: chain-guard mode is additive on the SAME frozen key (no schema bump, no rename). Same
+    // known-value-else-default rule as shotPowerupMode/magnetMode above — a missing key (every save
+    // written before this phase) or a hand-edited junk value leaves the "time" default in place, so an
+    // older save can never leave the player stuck in a mode the menu can't name.
+    if (data.chainGuardMode === "time" || data.chainGuardMode === "count") settings.chainGuardMode = data.chainGuardMode;
     // CS015 P4: debug variables persist as an additive sub-object (display units; no new frozen key). Each
     // registry entry is validated independently — a finite in-[min,max] stored value applies via applyDebug,
     // anything else (missing / NaN / out of range / hand-edited garbage) leaves the seeded default in place.
@@ -3328,11 +3370,16 @@ const POWERUP_COLOR = {
   health: "#ff6b6b",   // Health — red (cross)
   magnet: "#8ab6ff",   // Magnet — blue
   engine: "#7dffb0",   // Engine — mint green
-  scoop:  "#c07bff"    // Scoop — violet (v3.3 P3; no other purple in the palette, so it's an
+  scoop:  "#c07bff",   // Scoop — violet (v3.3 P3; no other purple in the palette, so it's an
                        // unmistakable pickup and never reads as a hazard tell — look-call, tunable)
+  guard:  "#ff9a3c"    // Chain Guard — orange (CS017 P6). The only orange in the whole palette: the
+                       // hazard tells are teal/blue (Hunter/debris/saucer) and the salvage family is
+                       // yellow-green, so it can never read as either. Deliberately pushed well off
+                       // Rapid's amber (#ffd24a, a yellow) — LOOK-CALL, tune freely after a playtest.
 };
 const POWERUP_LABEL = {
-  rapid: "RAPID", triple: "TRIPLE", health: "+HP", magnet: "MAGNET", engine: "ENGINE", scoop: "SCOOP"
+  rapid: "RAPID", triple: "TRIPLE", health: "+HP", magnet: "MAGNET", engine: "ENGINE", scoop: "SCOOP",
+  guard: "GUARD"
 };
 
 // ---------- Entities ----------
@@ -3974,6 +4021,13 @@ function drawPowerupGlyph(type, x, y, r, color) {
     case "scoop":  // a widening funnel / collector mouth (v3.3 P3): narrow throat, flaring open forward
       ctx.moveTo(-8, -7); ctx.lineTo(-3, 4); ctx.lineTo(3, 4); ctx.lineTo(8, -7);
       break;
+    case "guard":  // CS017 P6 — a heater shield over a chain link: the payload, armoured. Stroke only
+                   // (no fill, GDD §3.2), and no closePath on the link so it reads as a link, not a ring.
+      ctx.moveTo(-7, -7); ctx.lineTo(7, -7); ctx.lineTo(7, 0);      // shield: flat top, shoulders...
+      ctx.lineTo(0, 8); ctx.lineTo(-7, 0); ctx.closePath();          // ...tapering to a point
+      ctx.moveTo(-3, -3); ctx.lineTo(3, -3);                         // the link inside it
+      ctx.moveTo(-3, 1);  ctx.lineTo(3, 1);
+      break;
   }
   glowStroke(color, 1.6, 8);
   ctx.restore();
@@ -4124,10 +4178,13 @@ const game = {
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
   garbage: [], chain: [], floaters: [], dock: null,
   powerups: [],                                        // free-floating Powerup pickups (F6)
-  powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // remaining sec per timed effect (0 = inactive)
-  powerBudget: { rapid: 0, triple: 0, magnet: 0 },    // remaining shots/pieces in count mode (P5; Engine is always timed)
-  powerBank: { rapid: 0, triple: 0, magnet: 0, engine: 0 },    // CS009 P5: sec of bank-flash left per type (0 = none)
-  powerBankAmt: { rapid: 0, triple: 0, magnet: 0, engine: 0 }, // CS009 P5: the "+Ns" badge amount for the current flash
+  // CS017 P6: every one of these four gains a `guard` key. powerBudget's is the one that matters most —
+  // powerActive("guard") reads it in count mode, and a missing key would make the guard read as
+  // permanently expired. Keep these in step with POWERUP_DROP_TYPES and with startGame()'s resets below.
+  powerFx: { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 }, // remaining sec per timed effect (0 = inactive)
+  powerBudget: { rapid: 0, triple: 0, magnet: 0, guard: 0 },   // remaining shots/pieces/intercepts in count mode (P5; Engine is always timed)
+  powerBank: { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 },    // CS009 P5: sec of bank-flash left per type (0 = none)
+  powerBankAmt: { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 }, // CS009 P5: the "+Ns" badge amount for the current flash
   hudHull: 1,                                          // CS009 P1: eased HUD hull fraction, chases
                                                         // ship.hp/SHIP_MAX_HP so a hit/heal reads as a
                                                         // drain/fill, not a jump. Advanced in update(),
@@ -4168,7 +4225,9 @@ const game = {
   hpFullVoice: true,
   // CS010 P9: previous powerActive() state per timed type, for the powerup-EXPIRED voice's falling edge.
   // Keyed through powerActive() (not powerFx) so it correctly covers count modes too.
-  powerVoiced: { rapid: false, triple: false, magnet: false, engine: false },
+  // CS017 P6: `guard` is latched here like every other timed type so the loop stays fully generic, but
+  // it deliberately has NO expire_ line to fire — see the expiry loop in update().
+  powerVoiced: { rapid: false, triple: false, magnet: false, engine: false, guard: false },
   // CS010 P3: the low-health pulse PHASE ACCUMULATOR. Advanced by 2π·lowhpPulseRate(t)·dt in update()
   // while engaged; read as Math.sin(game.lowHpPhase) by BOTH the critical-hull ring pulse AND the corner
   // glow, so they lock to each other and (via the shared rate helper) to the siren — one alarm. An
@@ -4217,10 +4276,10 @@ function startGame() {
   game.hunters = []; game.particles = [];
   game.garbage = []; game.chain = []; game.floaters = [];
   game.powerups = [];
-  game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
-  game.powerBudget = { rapid: 0, triple: 0, magnet: 0 }; // count-mode budgets reset with the run (P5)
-  game.powerBank = { rapid: 0, triple: 0, magnet: 0, engine: 0 };    // bank-flash state resets with the run (P5)
-  game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
+  game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
+  game.powerBudget = { rapid: 0, triple: 0, magnet: 0, guard: 0 }; // count-mode budgets reset with the run (P5; guard CS017 P6)
+  game.powerBank = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };    // bank-flash state resets with the run (P5)
+  game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.cargoMax = CARGO_BASE;      // tow cap resets to base each run; grows with deliveries (B-8)
@@ -4238,7 +4297,7 @@ function startGame() {
   // "brand new ship" at wave start); powerVoiced all false. reset() clears any in-flight line + cooldown.
   game.lowHpVoiced = false;
   game.hpFullVoice = true;
-  game.powerVoiced = { rapid: false, triple: false, magnet: false, engine: false };
+  game.powerVoiced = { rapid: false, triple: false, magnet: false, engine: false, guard: false };
   game.caption = { text: "", life: 0, dur: 0 }; // CS011 P2: no stale caption carries into a fresh run
   VoiceSys.reset();
   nextWave();
@@ -4444,17 +4503,30 @@ function shatterClump(g) {
 // ---------- Powerups (F6) ----------
 // Which expiry mode governs a timed effect (v3.0 P5). Rapid + Triple follow shotPowerupMode; Magnet
 // follows magnetMode; Engine is always time-based (never player-configurable). Health is instant.
+// CS017 P6: Chain Guard follows chainGuardMode ("time" | "count"), the third player-configurable mode.
 function powerMode(type) {
   if (type === "rapid" || type === "triple") return settings.shotPowerupMode;
   if (type === "magnet") return settings.magnetMode;
+  if (type === "guard") return settings.chainGuardMode;
   return "time";
 }
 // v3.4 P4: how long a timed effect lasts in "time" mode, by type. Magnet is the one long effect
 // (MAGNET_DURATION, 30 s); the other three share POWERUP_DURATION (15 s). Mirrors powerMode(type).
 // THREE call sites: applyPowerup (sets powerFx) and the HUD active-effect bar's DENOMINATOR (reads it).
 // Miss the HUD one and the magnet bar renders permanently over-full.
+// CS017 P6: Chain Guard's duration is the LIVE debug knob (default 30 s), not a frozen const, so the
+// dev panel retunes it without a reload. Same three call sites as the others — including the HUD ring's
+// denominator, which is why this must be a function and never an inlined POWERUP_DURATION.
 function powerDuration(type) {
+  if (type === "guard") return DEBUG.chainGuardTime;
   return type === "magnet" ? MAGNET_DURATION : POWERUP_DURATION;
+}
+// CS017 P6: the count-mode sibling of powerDuration(type) — how much budget one pickup grants. The three
+// original types read the frozen POWERUP_BUDGET table; Chain Guard reads its live debug knob instead.
+// applyPowerup is the only consumer (the += and the bank badge), and it must never read POWERUP_BUDGET
+// directly again, or guard banks `undefined` and NaNs its own budget.
+function powerBudgetAmount(type) {
+  return type === "guard" ? DEBUG.chainGuardIntercepts : POWERUP_BUDGET[type];
 }
 // Is a timed effect currently ACTIVE, honouring its expiry mode? In "time" mode it's live while
 // seconds remain (game.powerFx); in a count mode while budget remains (game.powerBudget). Every call
@@ -4494,10 +4566,16 @@ function maxBullets() {
 function dropPowerup(x, y, vx = 0, vy = 0) {
   // weighted roll over POWERUP_DROP_WEIGHTS (favors the shot powerups), NOT a flat pick over
   // POWERUP_DROP_TYPES — the two structures are deliberately separate (Scoop drops but isn't a timed effect).
+  // CS017 P6: "guard" is CONDITIONAL — it only enters the roll while the player is towing at least
+  // DEBUG.chainGuardMinTow nodes (dropping a chain guard at an empty chain is a wasted pickup). An
+  // ineligible key is skipped in BOTH the total and the walk, so the surviving weights RENORMALISE
+  // rather than leaving a dead slot that would silently drop nothing. Below the threshold this reduces
+  // to exactly the pre-P6 table (total 10, same walk order, one Math.random() call) — byte-identical.
+  const eligible = k => k !== "guard" || game.chain.length >= DEBUG.chainGuardMinTow;
   let total = 0;
-  for (const k in POWERUP_DROP_WEIGHTS) total += POWERUP_DROP_WEIGHTS[k];
+  for (const k in POWERUP_DROP_WEIGHTS) if (eligible(k)) total += POWERUP_DROP_WEIGHTS[k];
   let r = Math.random() * total, type;
-  for (const k in POWERUP_DROP_WEIGHTS) { r -= POWERUP_DROP_WEIGHTS[k]; if (r < 0) { type = k; break; } }
+  for (const k in POWERUP_DROP_WEIGHTS) { if (!eligible(k)) continue; r -= POWERUP_DROP_WEIGHTS[k]; if (r < 0) { type = k; break; } }
   game.powerups.push(new Powerup(x, y, type, vx, vy));
 }
 
@@ -4545,9 +4623,9 @@ function applyPowerup(type) {
   } else {
     if (powerActive(type)) {
       game.powerBank[type] = HUD_BANK_FLASH;
-      game.powerBankAmt[type] = POWERUP_BUDGET[type];
+      game.powerBankAmt[type] = powerBudgetAmount(type); // CS017 P6: never POWERUP_BUDGET directly — guard isn't in it
     }
-    game.powerBudget[type] += POWERUP_BUDGET[type]; // count mode: banks the shots/pieces budget too (same rule)
+    game.powerBudget[type] += powerBudgetAmount(type); // count mode: banks the shots/pieces/intercepts budget too (same rule)
   }
   // Achievement stats (F9): any pickup counts for "No Powerups Needed"; Health picks gate "Glass
   // Cannon"; the four drop types feed "Powered Up" (use all four).
@@ -4559,7 +4637,11 @@ function applyPowerup(type) {
   // CS010 P9: the four timed types announce their pickup (Health has no collect line — it speaks via the
   // hull-full latch instead). A same-type BANK re-pickup re-fires collect_<type>; the §11e cooldown drops
   // the second line if it lands inside the window (a decided, acceptable behavior — see STATUS.md).
-  if (type !== "health") VoiceSys.say("collect_" + type);
+  // CS017 P6: "guard" is excluded too. Chain Guard's ONLY voice event is the chain_guard INTERCEPT line
+  // (added in P7, once Paul's lab-verified phon exists) — it has no collect_ line by design, so this
+  // never builds a "collect_guard" event string. say() would no-op on the missing key anyway; the
+  // explicit gate is what makes "this phase ships silent" a property of the code, not an accident of data.
+  if (type !== "health" && type !== "guard") VoiceSys.say("collect_" + type);
 }
 
 // ---------- Achievements (F9) ----------
@@ -5201,6 +5283,26 @@ function updateChain(dt) {
 function breakChain(i) { // node i destroyed; everything aft breaks loose
   const chain = game.chain;
   const hit = chain[i];
+  // CS017 P6 — CHAIN GUARD. This function is the single HOSTILE break choke point: both call sites (a
+  // hostile bullet vs a node, and a debris/Hunter body vs a node) route through here, and each severs
+  // everything aft of node i in ONE call, so one hostile hit is absorbed exactly once no matter how many
+  // nodes it would have cut loose. Two separate hits in the same frame are two separate absorptions,
+  // which is correct — they are two events, not one.
+  //   FORK-CS017-E resolved (a): this covers HOSTILE breaks ONLY. scatterChain() (ship death) is
+  //   deliberately NOT guarded — death still scatters the whole load, and stays unambiguously terminal.
+  if (powerActive("guard")) {
+    // TIME mode: the clock alone governs — nothing is spent per intercept. COUNT mode: one charge each.
+    if (powerMode("guard") === "count") game.powerBudget.guard = Math.max(0, game.powerBudget.guard - 1);
+    // The tell. Deliberately NOT boom() — that carries AudioSys.explosion() and would sound like the
+    // canister died. shieldPing() is the shipped "a hit was blocked" voice (the same one the ship's own
+    // shield uses), and the particles are pushed straight in, in the guard hue, so the burst reads as a
+    // deflection rather than a detonation. The persistent state tell is the guard-lit chain in drawChain.
+    for (let p = 0; p < GUARD_ABSORB_SPARKS; p++) game.particles.push(new Particle(hit.x, hit.y, POWERUP_COLOR.guard));
+    game.floaters.push(new FloatText("GUARDED", hit.x, hit.y - 18, POWERUP_COLOR.guard));
+    AudioSys.shieldPing();
+    // TODO CS017 P7: VoiceSys.say("chain_guard") once phon is lab-verified
+    return; // no node severed, deliveryCount untouched — the load is byte-identical
+  }
   boom(hit.x, hit.y, 1, COLOR.garbage);
   for (let j = i + 1; j < chain.length; j++) {
     game.garbage.push(Garbage.fromNode(chain[j]));
@@ -5216,20 +5318,30 @@ function scatterChain() { // ship destroyed: whole load breaks loose
   game.deliveryCount = 0;
 }
 
-function drawLink(x1, y1, x2, y2) {
+// CS017 P6: `guarded` lights the link up — full alpha instead of 0.7, a wider stroke, a much bigger glow
+// blur, and the guard hue. Same glowStroke idiom, same single path, no new geometry and no fill
+// (GDD §3.2). Computed ONCE per frame by drawChain and passed down rather than re-read per link.
+function drawLink(x1, y1, x2, y2, guarded = false) {
   const [dx, dy] = shortDelta(x1, y1, x2, y2);
   if (Math.hypot(dx, dy) > 120) return; // don't streak across the wrap seam
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x1 + dx, y1 + dy);
-  ctx.globalAlpha = 0.7;
-  glowStroke(COLOR.chain, 1.2, 6);
+  ctx.globalAlpha = guarded ? 1 : 0.7;
+  glowStroke(guarded ? POWERUP_COLOR.guard : COLOR.chain,
+    guarded ? GUARD_CHAIN_WIDTH : 1.2, guarded ? GUARD_CHAIN_BLUR : 6);
   ctx.globalAlpha = 1;
 }
 
 function drawChain() {
   const chain = game.chain;
   if (!chain.length) return;
+  // CS017 P6: while the chain guard is up the whole tow reads "armoured" — links and canisters both
+  // take the guard hue and the links glow harder. NOTE the deliberate trade: a guarded node no longer
+  // shows its mass tint (COLOR.garbageLight for low-mass Hunter scrap vs COLOR.garbage), because
+  // "this load cannot be cut" is the more urgent read and the guard window is short. Reversible
+  // look-call — playtest ask, see STATUS.md.
+  const guarded = powerActive("guard");
   // Chain nodes trail the ship but can straddle the world seam; map each point to
   // its nearest image relative to the camera so links/canisters render next to the ship.
   const cam = game.camera;
@@ -5240,14 +5352,14 @@ function drawChain() {
   if (!game.ship.dead) {
     const a = img(chainAnchor());
     const c0 = img(chain[0]);
-    drawLink(a.x, a.y, c0.x, c0.y);
+    drawLink(a.x, a.y, c0.x, c0.y, guarded);
   }
   for (let i = 1; i < chain.length; i++) {
     const p = img(chain[i - 1]), q = img(chain[i]);
-    drawLink(p.x, p.y, q.x, q.y);
+    drawLink(p.x, p.y, q.x, q.y, guarded);
   }
   for (const n of chain) { const p = img(n); drawCanister(p.x, p.y, n.spin, 1,
-    n.mass < 1 ? COLOR.garbageLight : COLOR.garbage); }
+    guarded ? POWERUP_COLOR.guard : (n.mass < 1 ? COLOR.garbageLight : COLOR.garbage)); }
 }
 
 // ---------- Update ----------
@@ -5514,9 +5626,13 @@ function update(dt) {
   // powerActive() (never powerFx directly) so it correctly catches BOTH time mode (clock ran out) AND
   // count mode (shots/pieces budget hit 0) — hooking powerFx would silently miss the count modes. Runs
   // after the powerFx decay and after this frame's budget spends, so powerActive() is current.
+  // CS017 P6: "guard" joined POWERUP_DROP_TYPES, so it is latched here like every other type — but it has
+  // NO expire_ line (its only voice event is the P7 chain_guard intercept), so the say() is skipped for it
+  // and the string "expire_guard" is never built. The latch still tracks, so adding a line later stays a
+  // one-line data edit plus deleting the `t !== "guard"` clause.
   for (const t of POWERUP_DROP_TYPES) {
     const active = powerActive(t);
-    if (!active && game.powerVoiced[t]) VoiceSys.say("expire_" + t);
+    if (!active && game.powerVoiced[t] && t !== "guard") VoiceSys.say("expire_" + t);
     game.powerVoiced[t] = active;
   }
   for (const k in game.powerBank) {
@@ -6008,7 +6124,9 @@ function drawSound() {
 function drawDifficulty() {
   // Panel grown +58 (from 360) vs. pre-CS012-P5 to seat the third value row (Auto-shield); Back and the
   // help/hint lines shift down by the same 58 so the layout below the rows is unchanged in spirit.
-  const { x, y } = menuPanel(620, 418, "DIFFICULTY");
+  // CS017 P6: +58 again (418 -> 476) for the fourth value row (Chain guard), and the three anchors below
+  // the rows shift by the same 58 — Back 320 -> 378, help 364 -> 422, hint 394 -> 452.
+  const { x, y } = menuPanel(620, 476, "DIFFICULTY");
   const m = game.menu;
   // CS016 P4 (§5): mid-run, all three value rows render dim regardless of focus — the shared
   // unavailable-row idiom — so a player who lands on one can still read it but sees plainly that it
@@ -6019,6 +6137,7 @@ function drawDifficulty() {
     { label: "Shot powerups expire", left: "Time", right: "Shots",  rightActive: settings.shotPowerupMode === "shots" },
     { label: "Magnet expires",       left: "Time", right: "Pieces", rightActive: settings.magnetMode === "pieces" },
     { label: "Auto-shield",          left: "Off",  right: "On",     rightActive: settings.autoShield },
+    { label: "Chain guard expires",  left: "Time", right: "Intercepts", rightActive: settings.chainGuardMode === "count" }, // CS017 P6
   ];
   rows.forEach((r, i) => {
     const sel = m.index === i, cy = y + 122 + i * 58;
@@ -6036,11 +6155,18 @@ function drawDifficulty() {
     "Time = today's 15-second timer.   Shots = expire by use, not the clock.",
     "Time = today's 15-second timer.   Pieces = expire by use, not the clock.",
     "Auto-raises shield at critical hull. -500 points per blocked hit.",
+    // CS017 P6: the only INTERPOLATED help line. Both of chain guard's numbers are live DEBUG_VARS
+    // knobs (unlike the siblings' 15 s, which is the frozen POWERUP_DURATION const), so a literal here
+    // would silently go stale the moment the dev panel is touched. HELP is rebuilt every frame anyway.
+    `Tows can't be cut while it holds. Time = a ${DEBUG.chainGuardTime}-second timer.   ` +
+      `Intercepts = ${DEBUG.chainGuardIntercepts} blocked breaks.`,
   ];
-  const backSel = m.index === 3;
-  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 320, 22, backSel ? COLOR.text : COLOR.menuIdle);
-  if (m.index < HELP.length) drawMenuHint(locked ? DIFFICULTY_LOCK_HELP : HELP[m.index], VIEW_W / 2, y + 364);
-  drawMenuHint("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 394);
+  // Back is the row AFTER the value rows — derived from rows.length, never a literal, so the next
+  // difficulty knob is a one-line push to `rows` + `HELP` (CS015 P5's derive-the-index lesson).
+  const backSel = m.index === rows.length;
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 378, 22, backSel ? COLOR.text : COLOR.menuIdle);
+  if (m.index < HELP.length) drawMenuHint(locked ? DIFFICULTY_LOCK_HELP : HELP[m.index], VIEW_W / 2, y + 422);
+  drawMenuHint("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 452);
 }
 
 // Hidden Debug Options panel renderer (CS015 P4) — generic over DEBUG_VARS, following drawSound's
@@ -6674,8 +6800,16 @@ function drawHUD() {
   // i = index in POWERUP_DROP_TYPES) — activating/expiring a powerup no longer moves any other row,
   // because nothing is compacted anymore (the old `slot` cursor + `!powerActive(t) continue` skip are
   // gone). An inactive row is a muted track: dim glyph/label/number, no value arc, no low pulse, no
-  // bank pop. Row index 0 (y = HUD_FX_BASE_Y) is RESERVED for the SCOOP segmented ring below; the four
-  // timed rows float above it, i = 0..3.
+  // bank pop. Row index 0 (y = HUD_FX_BASE_Y) is RESERVED for the SCOOP segmented ring below; the timed
+  // rows float above it.
+  //
+  // CS017 P6: the stack is now SIX rows deep — Scoop at 640 plus five timed rows at 600/560/520/480/440,
+  // Chain Guard being the new topmost (i = 4). Nothing here changed to get that: the loop is generic over
+  // POWERUP_DROP_TYPES and the y is derived from the index, so appending the type was the whole edit.
+  // (Note for the record: the P6 prompt predicted y = HUD_FX_BASE_Y - 6*HUD_FX_ROW_H = 400 for the new
+  // row. The shipped formula is HUD_FX_BASE_Y - (i+1)*HUD_FX_ROW_H over a 0-based POWERUP_DROP_TYPES
+  // index, so the 6th row of the stack is the 5th TIMED row, i = 4, y = 440 — the figure the CS017
+  // planning doc's FLAG-CS017-c also gives. Verified against the code, not assumed.)
   for (let i = 0; i < POWERUP_DROP_TYPES.length; i++) {
     const t = POWERUP_DROP_TYPES[i];
     const y = HUD_FX_BASE_Y - (i + 1) * HUD_FX_ROW_H;
@@ -6737,8 +6871,8 @@ function drawHUD() {
   // SCOOP segmented ring (CS012 P2) — a PERSISTENT upgrade, NOT a timed effect, so it's deliberately
   // drawn OUTSIDE the POWERUP_DROP_TYPES loop above (game.scoopLevel is not in powerFx/powerBudget and
   // never expires on a clock). Row index 0 (y = HUD_FX_BASE_Y), the stable floor of the bottom-left
-  // stack — the persistent upgrade anchors the bottom, the four timed rows (i = 0..3, above) float
-  // above it. ALWAYS drawn, even at level 0 (dim track, 0 lit segments) — matches the timed rows'
+  // stack — the persistent upgrade anchors the bottom, the five timed rows (i = 0..4, above; five since
+  // CS017 P6) float above it. ALWAYS drawn, even at level 0 (dim track, 0 lit segments) — matches the timed rows'
   // always-shown-muted-when-idle treatment; segment count derives from SCOOP_MAX_LEVEL, never hardcoded.
   // STROKE ONLY — the old pip row's fill dot is gone (GDD §3.2 no-fills exception list update).
   {

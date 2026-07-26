@@ -99,7 +99,7 @@ const RETURN = [
   "DIFFICULTY_ROWS", "DIFFICULTY_LOCK_HELP",
   "drawRootMenu", "drawDifficulty", "drawMenu",
   "COLOR", "MENU_HINT_SIZE", "ROOT_MENU_HINT", "VIEW_W", "VIEW_H", "GAME_VERSION",
-  "AudioSys", "STORAGE_KEY"
+  "AudioSys", "STORAGE_KEY", "DEBUG"   // DEBUG: CS017 P6's chain-guard help line interpolates two knobs
 ];
 
 // `audio: true` gives the real keydown-adjacent helpers a live AudioSys; the default leaves
@@ -162,13 +162,21 @@ function build({ audio = true } = {}) {
   return A;
 }
 
-// The three exact per-row help strings drawDifficulty carries (unchanged by this phase) — used to prove
+// The exact per-row help strings drawDifficulty carries (unchanged by this phase) — used to prove
 // the locked help line REPLACES these rather than appending to them.
-const HELP_TEXT = [
+// CS017 P6: a FOURTH row (Chain guard) joined the screen. Its help line is the one that INTERPOLATES
+// live DEBUG_VARS values, so it is rebuilt here from the same knobs rather than pinned as a literal —
+// that keeps the "the lock replaces the per-row tip" assertion exact without pinning a number that the
+// debug panel is designed to change.
+const helpText = A => [
   "Time = today's 15-second timer.   Shots = expire by use, not the clock.",
   "Time = today's 15-second timer.   Pieces = expire by use, not the clock.",
   "Auto-raises shield at critical hull. -500 points per blocked hit.",
+  `Tows can't be cut while it holds. Time = a ${A.DEBUG.chainGuardTime}-second timer.   ` +
+    `Intercepts = ${A.DEBUG.chainGuardIntercepts} blocked breaks.`,
 ];
+const DIFFICULTY_VALUE_ROWS = 4;   // CS017 P6: shot, magnet, autoshield, chainguard (Back excluded)
+const DIFFICULTY_PANEL_H = 476;    // CS017 P6: 418 + 58 for the fourth value row
 
 // ================= (A, part 2) config shapes =====================
 (function sectionA_shapes() {
@@ -267,11 +275,14 @@ const HELP_TEXT = [
   const A = build();
   const g = A.game;
 
-  for (const row of ["shot", "magnet", "autoshield"]) {
+  // CS017 P6: "chainguard" joins the locked set — the lock keys on `row !== "back"`, so it inherited the
+  // behaviour automatically, and this loop is what proves that rather than assuming it.
+  for (const row of ["shot", "magnet", "autoshield", "chainguard"]) {
     A.atDifficultyLocked();
     assert(g.state === "playing", `D: (precondition) [${row}] game.state is "playing"`);
     g.menu.index = A.DIFFICULTY_ROWS.indexOf(row);
-    const before = { shot: A.settings.shotPowerupMode, magnet: A.settings.magnetMode, auto: A.settings.autoShield };
+    const before = { shot: A.settings.shotPowerupMode, magnet: A.settings.magnetMode, auto: A.settings.autoShield,
+      guard: A.settings.chainGuardMode };
     const callsBefore = A.setItemCalls();
     A.menuInput("left");
     A.menuInput("right");
@@ -279,6 +290,7 @@ const HELP_TEXT = [
     assert(A.settings.shotPowerupMode === before.shot, `D: [${row}] shotPowerupMode byte-identical after left/right/left`);
     assert(A.settings.magnetMode === before.magnet, `D: [${row}] magnetMode byte-identical`);
     assert(A.settings.autoShield === before.auto, `D: [${row}] autoShield byte-identical`);
+    assert(A.settings.chainGuardMode === before.guard, `D: [${row}] chainGuardMode byte-identical`);
     assert(A.setItemCalls() === callsBefore, `D: [${row}] no saveSettings/localStorage write occurred while locked`);
     assert(g.menu.index === A.DIFFICULTY_ROWS.indexOf(row), `D: [${row}] left/right did not even move the cursor`);
   }
@@ -304,6 +316,15 @@ const HELP_TEXT = [
     A.settings.autoShield = false;
     A.menuInput("right");
     assert(A.settings.autoShield === true, `E: [${from}] right on the auto-shield row DID turn it on`);
+
+    // CS017 P6: the new row is live in exactly the same unlocked states.
+    g.menu.index = A.DIFFICULTY_ROWS.indexOf("chainguard");
+    A.settings.chainGuardMode = "time";
+    A.menuInput("right");
+    assert(A.settings.chainGuardMode === "count", `E: [${from}] right on the chain-guard row DID flip it to "count"`);
+    assert(JSON.parse(A.store[A.STORAGE_KEY]).chainGuardMode === "count", `E: [${from}] ...and it persisted`);
+    A.menuInput("left");
+    assert(A.settings.chainGuardMode === "time", `E: [${from}] left on the chain-guard row DID flip it back to "time"`);
   }
 })();
 
@@ -337,8 +358,9 @@ const HELP_TEXT = [
 
   // ---- LOCKED ----
   A.atDifficultyLocked();
-  const y0 = (A.VIEW_H - 418) / 2;
-  for (let i = 0; i < 3; i++) {
+  const y0 = (A.VIEW_H - DIFFICULTY_PANEL_H) / 2;
+  const HELP_TEXT = helpText(A);
+  for (let i = 0; i < DIFFICULTY_VALUE_ROWS; i++) {
     g.menu.index = i;
     const log = A.render(A.drawDifficulty);
     const cy = y0 + 122 + i * 58 + 6;
@@ -354,7 +376,7 @@ const HELP_TEXT = [
     const chevrons = log.filter(e => e.c === "fillText" && e.y === cy + 1 && (e.str === "◄" || e.str === "►"));
     assert(chevrons.length === 2, `G: [locked] row ${i} (focused) drew both ◄► chevrons`);
     assert(chevrons.every(e => e.color === A.COLOR.dim), `G: [locked] row ${i}'s chevrons draw COLOR.dim, not COLOR.text`);
-    const help = at(log, cx, y0 + 364)[0];
+    const help = at(log, cx, y0 + 422)[0];
     assert(!!help && help.str === A.DIFFICULTY_LOCK_HELP,
       `G: [locked] row ${i}'s help line is DIFFICULTY_LOCK_HELP, not the per-row tip (got ${help && help.str})`);
     assert(!HELP_TEXT.includes(help && help.str), `G: [locked] the normal per-row HELP text is NOT shown`);
@@ -363,7 +385,8 @@ const HELP_TEXT = [
   // ---- UNLOCKED ----
   const B = build();
   B.atDifficultyUnlocked("gameover");
-  for (let i = 0; i < 3; i++) {
+  const HELP_TEXT_B = helpText(B);
+  for (let i = 0; i < DIFFICULTY_VALUE_ROWS; i++) {
     B.game.menu.index = i;
     const log = B.render(B.drawDifficulty);
     const cy = y0 + 122 + i * 58 + 6;
@@ -375,13 +398,13 @@ const HELP_TEXT = [
       const expect = i === B.game.menu.index ? B.COLOR.text : B.COLOR.menuIdle;
       assert(labelEntry.color === expect, `G: [unlocked] row ${i} label draws the normal focus color, not dim (got ${labelEntry.color})`);
     }
-    const help = at(log, cx, y0 + 364)[0];
-    assert(!!help && help.str === HELP_TEXT[i], `G: [unlocked] row ${i}'s help line is the normal per-row tip (got ${help && help.str})`);
+    const help = at(log, cx, y0 + 422)[0];
+    assert(!!help && help.str === HELP_TEXT_B[i], `G: [unlocked] row ${i}'s help line is the normal per-row tip (got ${help && help.str})`);
     assert((help && help.str) !== B.DIFFICULTY_LOCK_HELP, `G: [unlocked] the lock message is NOT shown`);
   }
 
   // The Back row's own color contrast is unaffected by the lock either way.
-  A.atDifficultyLocked(); g.menu.index = 3;
+  A.atDifficultyLocked(); g.menu.index = A.DIFFICULTY_ROWS.indexOf("back");
   let log = A.render(A.drawDifficulty);
   let backEntry = log.find(e => e.c === "fillText" && e.str.endsWith("Back"));
   assert(!!backEntry && backEntry.color === A.COLOR.text, "G: [locked] focused Back still draws COLOR.text");
@@ -405,7 +428,7 @@ const HELP_TEXT = [
     // Difficulty, locked: nav every row, try left/right, draw each time.
     A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
     A.game.menu.index = A.MENU_OPTIONS.indexOf("Difficulty"); A.menuInput("confirm");
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       A.game.menu.index = i;
       A.menuInput("left"); A.menuInput("right");
       A.draw();
@@ -417,7 +440,7 @@ const HELP_TEXT = [
     A.openPause();
     A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");
     A.game.menu.index = A.MENU_OPTIONS.indexOf("Difficulty"); A.menuInput("confirm");
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       A.game.menu.index = i;
       A.menuInput("left"); A.menuInput("right");
       A.draw();

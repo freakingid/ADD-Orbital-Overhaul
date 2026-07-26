@@ -11,9 +11,17 @@
 // — never a reimplemented curve. Every expected value is computed from the REAL exported helpers
 // (ramp/difficultyFactor/cycleValue) and the REAL constants, never a hand-copied formula.
 //
-// Section (F) additionally builds the PRE-P3 module from `git show HEAD:asteroids-deluxe.html` and runs
-// both builds side by side in this process, so "frozen levers are byte-identical to the pre-P3 build"
-// is checked against the actual previous build rather than against a restated formula.
+// Section (F) additionally builds the PRE-P3 module from git and runs both builds side by side in this
+// process, so "frozen levers are byte-identical to the pre-P3 build" is checked against the actual
+// previous build rather than against a restated formula.
+//
+// CS017 P6 REPOINT: that reference used to be the moving `HEAD`, which was only the pre-P3 build during
+// the session that wrote this file. The moment P3 was committed, HEAD became the P3 build, `H` and `W`
+// became the same source, and the section's two CONTROL assertions (the sources differ; the sawtooth
+// levers genuinely diverge) started failing — a stale pin, not a regression, and it was already failing
+// at the start of the CS017 P6 session. Pinned to the actual pre-P3 commit instead, which restores the
+// section's original meaning exactly. Nothing here was relaxed: the same identities are still asserted,
+// now against the build they were always meant to compare against.
 
 "use strict";
 const fs = require("fs");
@@ -372,15 +380,19 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 // ================= (F) frozen levers are byte-identical to the PRE-P3 build ============================
 (function sectionF() {
   console.log("(F) frozen levers (saucer fire mult / small-saucer chance / gap) unchanged vs the pre-P3 build");
-  const headHtml = execSync("git show HEAD:asteroids-deluxe.html", { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
+  // The pre-P3 build is commit 683de82 (CS017 P2), the commit immediately before the sawtooth landed.
+  // A fixed SHA, deliberately — see the CS017 P6 repoint note in this file's header for why `HEAD` was
+  // the wrong reference and silently went vacuous as soon as P3 was committed.
+  const PRE_P3_REF = "683de82";
+  const headHtml = execSync(`git show ${PRE_P3_REF}:asteroids-deluxe.html`, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
   const hm = headHtml.match(/<script>([\s\S]*?)<\/script>/);
-  assert(!!hm, "F: extracted the <script> block from the pre-P3 build at HEAD");
+  assert(!!hm, `F: extracted the <script> block from the pre-P3 build at ${PRE_P3_REF}`);
   const H = build(hm[1], RETURN_HEAD);
   const W = build();
   H.startGame(); W.startGame();
 
   // Sanity that these really are two different builds — otherwise every identity below is vacuous.
-  assert(hm[1] !== scriptSrc, "F: the HEAD build and the worktree build are genuinely different sources");
+  assert(hm[1] !== scriptSrc, "F: the pre-P3 build and the worktree build are genuinely different sources");
 
   let divergedCount = 0;
   for (let w = 1; w <= 30; w++) {

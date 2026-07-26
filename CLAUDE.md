@@ -208,8 +208,10 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   STATUS.md so the next phase's prompt can account for it.
 - **Three frozen `localStorage` keys — never rename or merge them.**
   `afd_settings_v1` (options/bindings/difficulty modes/music track; CS011 P3
-  added `voiceStyle`/`captions` additively, CS012 P5 added `autoShield` the
-  same way — same known-value-else-default rule as every other field on this
+  added `voiceStyle`/`captions` additively, CS012 P5 added `autoShield`, and
+  CS017 P6 added `chainGuardMode` (`"time"` | `"count"`, the chain-guard
+  expiry mode) — all the same way, and all under the same
+  known-value-else-default rule as every other field on this
   key),
   `afd_achievements_v2` (progress + unlocks), and `afd_scores_v1` (v3.6 P6 —
   the high-score table) are independent stores, each with its own guarded
@@ -229,6 +231,16 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   out of `dropPowerup()` — is the separate `POWERUP_DROP_WEIGHTS`. This
   distinction has already caused confusion across two changesets (v3.3 P3,
   v3.6 P3); don't conflate the two structures a third time (GDD §2.14).
+  **CS017 P6 note:** `"guard"` (the chain guard) is now in **both** — it is a
+  real timed effect *and* a real drop — which does NOT merge the structures;
+  they still answer different questions, and Health/Scoop still prove it.
+  Two further rules came with it. (1) `POWERUP_DROP_TYPES` is **append-only**:
+  its order fixes each type's HUD row index, so inserting rather than
+  appending silently moves every existing row. (2) `POWERUP_DROP_WEIGHTS` now
+  has its first **conditional** entry — `"guard"` enters the roll only while
+  `game.chain.length >= DEBUG.chainGuardMinTow`, and an ineligible key must be
+  skipped in **both** the running total and the walk so the rest renormalise;
+  skipping it in only one leaves a dead slot that silently drops nothing.
 
 ## Code map (target layout — GDD §3 tracks what actually exists)
 

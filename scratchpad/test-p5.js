@@ -274,7 +274,10 @@ menuInput("left");  assert(settings.magnetMode === "time", "I: ◄ on magnet row
 menuInput("down");  assert(game.menu.index === 2, "I: down -> auto-shield row (CS012 P5)");
 menuInput("right"); assert(settings.autoShield === true,  "I: ► on auto-shield row turns it On");
 menuInput("left");  assert(settings.autoShield === false, "I: ◄ on auto-shield row turns it Off");
-menuInput("down");  assert(game.menu.index === 3, "I: down -> Back row");
+menuInput("down");  assert(game.menu.index === 3, "I: down -> chain-guard row (CS017 P6)");
+menuInput("right"); assert(settings.chainGuardMode === "count", "I: ► on chain-guard row selects Intercepts");
+menuInput("left");  assert(settings.chainGuardMode === "time",  "I: ◄ on chain-guard row selects Time");
+menuInput("down");  assert(game.menu.index === 4, "I: down -> Back row");
 menuInput("confirm");
 assert(game.menu.screen === "options" && game.menu.index === MENU_OPTIONS.indexOf("Difficulty"),
   "I: Back returns to Options with the cursor on Difficulty");
