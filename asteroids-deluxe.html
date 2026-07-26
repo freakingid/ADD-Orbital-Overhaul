@@ -2403,7 +2403,11 @@ const MUSIC_TRACK_LABELS = { zen: "Zen", derelict: "Derelict", drift: "Drift", w
 // CS011 P3: display labels for the Voice-style picker, parallel to VOICE_STYLE_VALUES.
 const VOICE_STYLE_LABELS = { off: "Off", comms: "Comms", comms_f: "Comms ♀", flat: "Monotone", flat_f: "Monotone ♀", vintage: "Computer", vintage_f: "Computer ♀" };
 
-function menuActive() { return game.paused; } // paused <=> a pause-menu screen is open
+// CS016 P1: split from a bare `game.paused` so "a menu owns input" (this) and "the sim is frozen"
+// (game.paused) can diverge — P2's title menu is input-owning but never pauses (update() already
+// early-returns on game.state !== "playing"). No screen is named "titlemenu" yet, so this is
+// byte-identical to game.paused for every currently-reachable state.
+function menuActive() { return game.paused || game.menu.screen === "titlemenu"; }
 
 // --- Open / close / quit ---
 function openPause() {
@@ -6278,7 +6282,10 @@ function loop(now) {
 // reads the settings module global). Switching in/out is then a normal setState() crossfade — no
 // new track-switch path. Every OTHER combination is byte-identical to the pre-P7 mapping.
 function musicStateFor(s) {
-  if (game.paused && game.menu.screen === "highscores") return "highscore";
+  // CS016 P1: reads menuActive(), not game.paused — P2 moves this screen onto the title menu, where
+  // game.paused is FALSE. Reading game.paused here would silently stop the highscore fanfare track
+  // the moment High Scores becomes reachable from the title without pausing.
+  if (menuActive() && game.menu.screen === "highscores") return "highscore";
   return s === "playing" ? settings.musicTrack : s === "title" ? "title" : "off";
 }
 function updateMusic() {
@@ -6286,7 +6293,11 @@ function updateMusic() {
   // CS010 P7: menu ducking (50%) exists to make room for gameplay audio under an overlaid menu. The
   // High Scores screen has its OWN full-level track and nothing beneath it, so exempt it — otherwise
   // a track that plays only while a menu is open would be permanently ducked. setDuck is idempotent.
-  MusicSys.setDuck(menuActive() && game.menu.screen !== "highscores");
+  // CS016 P1: reads game.paused, not menuActive() — ducking exists to make room for GAMEPLAY audio
+  // under an overlaid menu, and there is no gameplay under the title screen. Reading menuActive()
+  // here would permanently duck the title track to MUSIC_DUCK_GAIN once P2's title menu (input-
+  // owning but never paused) lands.
+  MusicSys.setDuck(game.paused && game.menu.screen !== "highscores");
   MusicSys.update();
 }
 
