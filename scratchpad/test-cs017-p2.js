@@ -62,6 +62,7 @@ const RETURN = [
   "logDifficultySnapshot", "difficultyLogCSV", "dumpDifficultyLog",
   "DEBUG_VARS", "menuDebug", "drawDebug", "debugReturn",
   "ramp", "difficultyFactor", "HUNTER_FLOOR_FRAC",
+  "cycleValue", "DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX", "DEBRIS_SPEED_PER_WAVE", // CS017 P3 repoint
   "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "AudioSys"
@@ -134,15 +135,21 @@ function build() {
     assert(row.scoopLevel === g.scoopLevel, `B: wave ${w}: row.scoopLevel matches game.scoopLevel`);
 
     // debrisCount/debrisSpeedMul: the SAME expressions nextWave() itself uses to spawn the wave.
-    const expCount = Math.min(3 + g.wave, 9);
-    const expSpeedMul = 1 + (g.wave - 1) * 0.08;
+    // REPOINTED BY CS017 P3 — both levers now ramp on the cycleWave sawtooth and pass through the
+    // cycleValue() spiral. The DIFFLOG_FIELDS list is frozen; only what feeds it moves (see the header
+    // note at the DiffLog block). Built from the REAL cycleValue()/constants, never re-derived arithmetic.
+    const expCount = Math.min(
+      Math.round(A.cycleValue(Math.min(3 + g.cycleWave, A.DEBRIS_COUNT_MAX), g.cycle)),
+      A.DEBRIS_COUNT_HARD_MAX);
+    const expSpeedMul = A.cycleValue(1 + (g.cycleWave - 1) * A.DEBRIS_SPEED_PER_WAVE, g.cycle);
     assert(row.debrisCount === expCount, `B: wave ${w}: debrisCount expected ${expCount}, got ${row.debrisCount}`);
     assert(Math.abs(row.debrisSpeedMul - expSpeedMul) < 1e-9, `B: wave ${w}: debrisSpeedMul expected ${expSpeedMul}, got ${row.debrisSpeedMul}`);
     assert(g.debris.length === expCount, `B: wave ${w}: sanity — the wave actually spawned debrisCount pieces`);
 
-    // hunterSpeedFrac/hunterTurnFrac: today identical (both HunterSatellite speed/turnRate ramp from the
-    // SAME HUNTER_FLOOR_FRAC up to their own per-tier ceiling, so the ceiling cancels out of the ratio).
-    const expFrac = A.ramp(A.HUNTER_FLOOR_FRAC, 1, g.wave);
+    // hunterSpeedFrac/hunterTurnFrac: still identical to each other (both HunterSatellite speed/turnRate
+    // ramp from the SAME HUNTER_FLOOR_FRAC up to their own per-tier ceiling, so the ceiling cancels out of
+    // the ratio), and CS017 P3 repointed both onto the same sawtooth+spiral the ctor now samples.
+    const expFrac = A.cycleValue(A.ramp(A.HUNTER_FLOOR_FRAC, 1, g.cycleWave), g.cycle);
     assert(Math.abs(row.hunterSpeedFrac - expFrac) < 1e-9, `B: wave ${w}: hunterSpeedFrac expected ${expFrac}, got ${row.hunterSpeedFrac}`);
     assert(Math.abs(row.hunterTurnFrac - expFrac) < 1e-9, `B: wave ${w}: hunterTurnFrac expected ${expFrac}, got ${row.hunterTurnFrac}`);
 

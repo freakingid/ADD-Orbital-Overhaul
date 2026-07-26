@@ -2,8 +2,15 @@
 // nextWave() now derives game.cycle/game.cycleWave from the untouched game.wave (a sawtooth: cycle =
 // floor((wave-1)/CYCLE_LENGTH), cycleWave = ((wave-1) % CYCLE_LENGTH) + 1); update()'s playing body ticks
 // game.waveTime += dt, frozen while paused/at the title; cycleValue(base, cycle) is a spiral-scaling
-// helper nothing calls yet. NO existing lever changes behaviour this phase — every debris/Hunter/saucer
-// formula still reads the absolute game.wave, not cycleWave. Section (F) proves that byte-identity.
+// helper nothing called at the time. Sections (B)-(E)/(G) are P1's own contract and are unchanged.
+//
+// SECTION (F) WAS REPOINTED BY CS017 P3. P1's inertness was a property of P1 only: P3 deliberately wired
+// the four SAWTOOTH levers (debris count, debris speed at both sites, Hunter speed, Hunter turn rate) to
+// cycleWave/cycleValue, so the old "these must still read the absolute game.wave" sweep is now asserting
+// the opposite of the shipped design. Rather than delete the coverage, (F) now proves the OTHER half of
+// the same claim, at the same strength and against the same real helpers: the sawtooth levers read the
+// cycle clock EXACTLY as P3 specified, and the FROZEN levers (the saucer group) still do not. The full
+// sawtooth/reset/spiral behaviour is owned by scratchpad/test-cs017-p3.js.
 //
 //   node scratchpad/test-cs017-p1.js
 //
@@ -60,6 +67,7 @@ const RETURN = [
   "cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN",
   "DebrisSatellite", "HunterSatellite", "Saucer",
   "ramp", "difficultyFactor", "leverScale",
+  "DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX", "DEBRIS_SPEED_PER_WAVE", // CS017 P3 (section F)
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
   "MusicSys", "AudioSys"
@@ -182,12 +190,15 @@ function build() {
   assert(A.cycleValue(0, 5) === 0, "E: cycleValue(0, cycle) === 0 for any cycle");
 })();
 
-// ================= (F) byte-identity: waves 1..12 unaffected by cycle/cycleWave ====================
-// P1 wires NOTHING to cycle/cycleWave/cycleValue — debris count/speed, Hunter speed/turn and saucer gaps
-// must be identical to the pre-P1 build, i.e. driven purely off the absolute game.wave via the REAL
-// ramp()/leverScale() helpers (not re-derived arithmetic).
+// ================= (F) which levers read the cycle clock, and which still read game.wave ===========
+// REPOINTED BY CS017 P3 (was: "nothing reads cycle/cycleWave"). The SAWTOOTH levers must now read the
+// cycle clock exactly as P3 specified — debris count/speed via cycleValue(...cycleWave, cycle), Hunter
+// speed/turn the same — while the FROZEN saucer group must still sample the absolute game.wave. Both
+// halves are checked with the REAL cycleValue()/ramp() helpers and the REAL constants, never re-derived
+// arithmetic, and each half carries the mirror-image control (the value must NOT equal what the other
+// clock would have produced) so neither direction can pass vacuously.
 (function sectionF() {
-  console.log("(F) byte-identity: debris count/speedMul, Hunter speed/turn, saucer gaps still read game.wave only");
+  console.log("(F) lever wiring: sawtooth levers read cycle/cycleWave, the frozen saucer group still reads game.wave");
   const A = build();
   const g = A.game;
   A.startGame();
@@ -198,36 +209,41 @@ function build() {
     if (w > 1) { g.debris = []; A.nextWave(); }
     assert(g.wave === w, `F: sanity — game.wave === ${w}`);
 
-    // --- debris: count + speedMul, exactly as nextWave() spawned them ---
-    const expectedCount = Math.min(3 + g.wave, 9);
+    // --- SAWTOOTH: debris count + speedMul, exactly as nextWave() spawned them ---
+    const expectedCount = Math.min(
+      Math.round(A.cycleValue(Math.min(3 + g.cycleWave, A.DEBRIS_COUNT_MAX), g.cycle)),
+      A.DEBRIS_COUNT_HARD_MAX);
     assert(g.debris.length === expectedCount,
-      `F: wave ${w}: debris count expected ${expectedCount}, got ${g.debris.length} (cycleWave=${g.cycleWave} must NOT change this)`);
-    const expectedSpeedMul = 1 + (g.wave - 1) * 0.08;
-    // Every debris piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); recover
-    // speedMul-independent bounds by checking the piece speed falls in the rand(0.7,1.3) envelope of
-    // the wave-based (not cycleWave-based) expected multiplier.
+      `F: wave ${w}: debris count expected ${expectedCount}, got ${g.debris.length} (cycleWave=${g.cycleWave}, cycle=${g.cycle})`);
+    const expectedSpeedMul = A.cycleValue(1 + (g.cycleWave - 1) * A.DEBRIS_SPEED_PER_WAVE, g.cycle);
+    // Every debris piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the
+    // piece speed falls in the rand(0.7,1.3) envelope of the cycleWave-based expected multiplier.
     for (const d of g.debris) {
       const sp = Math.hypot(d.vx, d.vy);
       const lo = 70 * expectedSpeedMul * 0.7 * 0.999, hi = 70 * expectedSpeedMul * 1.3 * 1.001;
       assert(sp >= lo && sp <= hi,
-        `F: wave ${w}: debris speed ${sp.toFixed(2)} outside the game.wave-based envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+        `F: wave ${w}: debris speed ${sp.toFixed(2)} outside the cycleWave-based envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
     }
 
-    // --- Hunter speed/turn: constructed fresh at this game.wave, must equal ramp(..., game.wave) ---
+    // --- SAWTOOTH: Hunter speed/turn, sampled fresh at spawn from the cycle clock ---
     const h = new A.HunterSatellite(0, 0, 3);
-    const expSpeed = A.ramp(A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC, A.HUNTER_SPEED_CEIL[3], g.wave);
-    const expTurn  = A.ramp(A.HUNTER_TURN_CEIL[3]  * A.HUNTER_FLOOR_FRAC, A.HUNTER_TURN_CEIL[3],  g.wave);
+    const expSpeed = A.cycleValue(A.ramp(A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC, A.HUNTER_SPEED_CEIL[3], g.cycleWave), g.cycle);
+    const expTurn  = A.cycleValue(A.ramp(A.HUNTER_TURN_CEIL[3]  * A.HUNTER_FLOOR_FRAC, A.HUNTER_TURN_CEIL[3],  g.cycleWave), g.cycle);
     assert(Math.abs(h.speed - expSpeed) < 1e-9, `F: wave ${w}: Hunter speed expected ${expSpeed}, got ${h.speed}`);
     assert(Math.abs(h.turnRate - expTurn) < 1e-9, `F: wave ${w}: Hunter turnRate expected ${expTurn}, got ${h.turnRate}`);
-    // Sanity the sampled value is NOT what cycleWave would have produced when wave !== cycleWave
-    // (proves the sample is not silently reading the new field).
+    // CONTROL (mirror image of the pre-P3 one): where wave !== cycleWave the sample must NOT equal what
+    // the old absolute-wave formula produced, proving the repoint is real and not a coincidence.
     if (g.wave !== g.cycleWave) {
-      const wrongSpeed = A.ramp(A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC, A.HUNTER_SPEED_CEIL[3], g.cycleWave);
-      assert(Math.abs(h.speed - wrongSpeed) > 1e-9,
-        `F: wave ${w}: Hunter speed must differ from the cycleWave-based value (cycle/cycleWave is provably NOT wired in yet)`);
+      const preP3Speed = A.ramp(A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC, A.HUNTER_SPEED_CEIL[3], g.wave);
+      assert(Math.abs(h.speed - preP3Speed) > 1e-9,
+        `F: wave ${w}: Hunter speed must differ from the pre-P3 absolute-wave value (the sawtooth is provably wired)`);
+      const preP3Mul = 1 + (g.wave - 1) * A.DEBRIS_SPEED_PER_WAVE;
+      assert(Math.abs(expectedSpeedMul - preP3Mul) > 1e-9,
+        `F: wave ${w}: debris speedMul must differ from the pre-P3 absolute-wave value`);
     }
 
-    // --- saucer gap: force the spawn timer to expire and force Math.random() to pin rand(gapMin,gapMax) ---
+    // --- FROZEN: saucer gap. Forces the spawn timer to expire, with Math.random() pinned so
+    // rand(gapMin,gapMax) collapses to gapMin. Must still read the ABSOLUTE game.wave (CS017 P3 §5).
     g.saucers = [];
     g.saucerTimer = -1;
     const savedRandom = Math.random;
@@ -241,6 +257,12 @@ function build() {
     const expGapMin = A.ramp(A.SAUCER_GAP_FLOOR_MIN, A.SAUCER_GAP_CEIL_MIN, g.wave);
     assert(Math.abs(g.saucerTimer - expGapMin) < 1e-9,
       `F: wave ${w}: saucer gap (Math.random pinned to 0) expected gapMin=${expGapMin}, got ${g.saucerTimer}`);
+    // CONTROL: where wave !== cycleWave the frozen lever must NOT have picked up the cycle clock.
+    if (g.wave !== g.cycleWave) {
+      const sawtoothGap = A.cycleValue(A.ramp(A.SAUCER_GAP_FLOOR_MIN, A.SAUCER_GAP_CEIL_MIN, g.cycleWave), g.cycle);
+      assert(Math.abs(g.saucerTimer - sawtoothGap) > 1e-9,
+        `F: wave ${w}: the saucer gap is FROZEN — it must not equal the cycleWave/spiral value (${sawtoothGap})`);
+    }
   }
 })();
 

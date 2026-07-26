@@ -43,7 +43,8 @@ const rafStub = () => 0;               // never actually runs the game loop
 const navigatorStub = { getGamepads: () => [] };
 
 const returnList = [
-  "startGame", "update", "game", "keys",
+  "startGame", "update", "nextWave", "game", "keys",
+  "cycleValue", "ramp", // CS017 P3: section (D) builds exact expectations from the REAL helpers
   "HunterSatellite", "Garbage", "destroyHunter",
   "HUNTER_RADII", "HUNTER_SCORE", "HUNTER_DAMAGE",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC", "HUNTER_SCATTER",
@@ -58,7 +59,8 @@ const factory = new Function(
 );
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
 const {
-  startGame, update, game, keys,
+  startGame, update, nextWave, game, keys,
+  cycleValue, ramp,
   HunterSatellite, Garbage, destroyHunter,
   HUNTER_RADII, HUNTER_SCORE, HUNTER_DAMAGE,
   HUNTER_SPEED_CEIL, HUNTER_TURN_CEIL, HUNTER_FLOOR_FRAC, HUNTER_SCATTER,
@@ -178,18 +180,31 @@ assert(core.size === 3 && core.homing === false, "C: spawnCore() makes a passive
 // (D) difficulty scaling: floor at wave 1, meaningfully faster by wave 20 (every tier)
 // =====================================================================
 console.log("(D) difficulty ramp wired into every speed & turn rate");
-function tier(size, wave) { game.wave = wave; return new HunterSatellite(cx, cy, size, 0); }
+// CS017 P3: a Hunter now samples game.cycleWave/game.cycle, not the absolute game.wave, so assigning
+// game.wave alone no longer places the game at that wave's difficulty. Drive the REAL nextWave() instead
+// — it does game.wave++ and derives the sawtooth clock itself, so nothing here re-implements that
+// derivation. (Pre-positioning the absolute counter is safe: only nextWave() writes cycle/cycleWave.)
+function tier(size, wave) {
+  game.wave = wave - 1;
+  game.debris.length = 0;
+  nextWave();
+  return new HunterSatellite(cx, cy, size, 0);
+}
 assert(near(difficultyFactor(1), 0), "D: difficultyFactor(1) == 0 (wave 1 sits exactly on the floor)");
 
 for (const size of [3, 2, 1]) {
   const w1 = tier(size, 1), w20 = tier(size, 20);
-  // wave-1 speed is exactly the floor fraction of the ceiling
+  // wave-1 speed is exactly the floor fraction of the ceiling (cycle 0, cycleWave 1 -> the spiral term
+  // is 1.0 and difficultyFactor(1) is 0, so wave 1 still sits exactly on the floor after CS017 P3)
   assert(near(w1.speed, HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC),
     `D[size ${size}]: wave-1 speed == ceiling x FLOOR_FRAC (${(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC).toFixed(1)}, got ${w1.speed.toFixed(1)})`);
-  // and meaningfully slower than wave 20 (ratio ~0.60 given df(20)~0.907)
-  const ratio = w1.speed / w20.speed;
-  assert(ratio > 0.5 && ratio < 0.72,
-    `D[size ${size}]: wave-1 speed is meaningfully slower than wave 20 (ratio ${ratio.toFixed(3)}, exp ~0.60)`);
+  // CS017 P3: the old hand-tuned ratio band (0.5..0.72, pinned to the pre-P3 pure-ramp(20) world) is
+  // replaced by an EXACT expectation built from the REAL exported helpers — strictly stronger than a
+  // band, and it self-updates with the curve instead of silently going stale on the next retune.
+  // Wave 20 is cycle 2 / cycleWave 2 under CYCLE_LENGTH 9.
+  const expect20 = cycleValue(ramp(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_SPEED_CEIL[size], game.cycleWave), game.cycle);
+  assert(near(w20.speed, expect20),
+    `D[size ${size}]: wave-20 speed == cycleValue(ramp(..., cycleWave), cycle) (exp ${expect20.toFixed(2)}, got ${w20.speed.toFixed(2)})`);
   assert(w1.speed < w20.speed - 1, `D[size ${size}]: speed climbs wave 1 -> 20 (${w1.speed.toFixed(1)} < ${w20.speed.toFixed(1)})`);
   // turn rate scales the same way for the homing tiers; the large core never turns
   if (size === 3) {
@@ -197,6 +212,9 @@ for (const size of [3, 2, 1]) {
   } else {
     assert(near(w1.turnRate, HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC),
       `D[size ${size}]: wave-1 turn rate == ceiling x FLOOR_FRAC (got ${w1.turnRate.toFixed(3)})`);
+    const expTurn20 = cycleValue(ramp(HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_TURN_CEIL[size], game.cycleWave), game.cycle);
+    assert(near(w20.turnRate, expTurn20),
+      `D[size ${size}]: wave-20 turn rate == cycleValue(ramp(..., cycleWave), cycle) (exp ${expTurn20.toFixed(3)}, got ${w20.turnRate.toFixed(3)})`);
     assert(w1.turnRate < w20.turnRate - 0.05, `D[size ${size}]: turn rate climbs wave 1 -> 20 (${w1.turnRate.toFixed(2)} < ${w20.turnRate.toFixed(2)})`);
   }
 }
