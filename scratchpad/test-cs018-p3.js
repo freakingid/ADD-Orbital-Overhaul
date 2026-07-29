@@ -17,7 +17,8 @@
 //      junkSpeedMul() is proven correct against a hand-computed tier lookup at low/normal/high levels.
 //  (D) bonusSpawnChance() re-homed onto the junk cycle position (levelDef().rel), hitting both
 //      endpoints exactly and diverging from what the retired game.cycleWave-based formula would say.
-//  (E) regression: cargoMax/hunters/saucers/cycleValue untouched this phase; GAME_VERSION unchanged.
+//  (E) regression: cargoMax/saucers untouched by P3; GAME_VERSION unchanged. REPOINTED BY CS018 P4 — the
+//      "cycleValue still has exactly 4 call sites" pin became "the cycle clock no longer exists."
 
 "use strict";
 const fs = require("fs");
@@ -75,8 +76,10 @@ function makeLocalStorage() {
 const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "levelDef", "stepAt",
                 "junkSpeedMul", "bonusSpawnChance", "JUNK_CYCLE", "DEBUG", "DEBUG_VARS",
                 "DEBRIS_SPEEDS", "DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX", "DEBRIS_SPEED_PER_WAVE",
-                "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE", "CYCLE_LENGTH",
-                "CARGO_BASE", "GAME_VERSION"];
+                "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE",
+                "CARGO_BASE", "GAME_VERSION",
+                // CS018 P4: the cycle clock is retired, so section (E) probes for its ABSENCE instead.
+                'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'];
 function build(src, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});
   const factory = new Function(
@@ -209,12 +212,15 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
     close(X.bonusSpawnChance(), want, `D: level ${n} bonusSpawnChance matches the rel-based linear formula`);
   }
 
-  // Regression: proves it actually MOVED off cycleWave — at level 10, cycleWave (CYCLE_LENGTH=9) would
-  // read back to 1 (old formula => EARLY exactly), but the junk-cycle position does not, so the two
-  // formulas now disagree. This fails if someone reverts to the old expression.
+  // Regression: proves it actually MOVED off the retired cycleWave clock. That clock was 9 levels long,
+  // so level 10 sat at cycleWave 1 and the OLD formula returned EARLY exactly there; the junk cycle is 4
+  // levels long, so level 10 sits at position 1 and cannot. This fails if someone reverts the expression.
+  // (CS018 P4 note: the assignment that used to stand in for nextWave()'s derivation here is gone with the
+  // field itself — the old expected value is now stated as the arithmetic constant it always was.)
+  const OLD_CYCLE_LENGTH = 9;
   X.game.wave = 10;
-  X.game.cycleWave = ((10 - 1) % X.CYCLE_LENGTH) + 1; // what nextWave() would still set it to (P4 retires this)
-  eq(X.game.cycleWave, 1, "D: (sanity) level 10's OLD cycleWave would read back to 1");
+  eq(((10 - 1) % OLD_CYCLE_LENGTH) + 1, 1, "D: (sanity) level 10's OLD cycleWave would have read back to 1");
+  eq((X.levelDef(10).rel - 1) % X.JUNK_CYCLE.length, 1, "D: level 10's junk-cycle position is 1, not 0");
   assert(Math.abs(X.bonusSpawnChance() - X.BONUS_SPAWN_CHANCE_EARLY) > 1e-6,
     "D: level 10 bonusSpawnChance no longer equals EARLY (proves it is off the old cycleWave formula)");
 })();
@@ -225,11 +231,17 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   const Y = build(scriptSrc);
   Y.startGame();
   eq(Y.game.cargoMax, Y.CARGO_BASE, "E: cargoMax still starts at CARGO_BASE (P5 territory, untouched)");
+  assert(!("cycle" in Y.game) && !("cycleWave" in Y.game), "E: game.cycle/game.cycleWave are gone (CS018 P4)");
   eq(Y.GAME_VERSION, "1.0.0.17", "E: GAME_VERSION unchanged this phase (bumps in P10)");
 
+  // REPOINTED BY CS018 P4: P3 left cycleValue() with exactly four call sites and pinned that as proof it
+  // had not touched hunters or the log. P4 retired the whole cycle clock, so the successor claim is that
+  // the symbol is gone entirely — from live source AND from the script block's own scope.
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
-  const cycleValueCalls = codeOnly.filter(l => /cycleValue\(/.test(l) && !l.trim().startsWith("function cycleValue("));
-  eq(cycleValueCalls.length, 4, `E: cycleValue() still called exactly 4x (2x logDifficultySnapshot, 2x HunterSatellite ctor) — untouched (got ${cycleValueCalls.length})`);
+  const cycleValueCalls = codeOnly.filter(l => /cycleValue\(/.test(l));
+  eq(cycleValueCalls.length, 0, `E: cycleValue() is retired — zero live references (got ${JSON.stringify(cycleValueCalls)})`);
+  eq(Y.probe("cycleValue"), "__ReferenceError__", "E: cycleValue is undefined in the script block's scope");
+  assert(Y.probe("levelDef") !== "__ReferenceError__", "E: (meta) the scope probe resolves a live symbol");
 
   // DEBUG_VARS: the new JUNK entries exist, are grouped under one header, and hold the specified shape.
   const idx = Y.DEBUG_VARS.findIndex(v => v.header === "JUNK");

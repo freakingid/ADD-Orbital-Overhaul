@@ -1,23 +1,25 @@
-// Headless test for CS017 Phase 1 — the difficulty cycle clock (state only, inert this phase).
-// nextWave() now derives game.cycle/game.cycleWave from the untouched game.wave (a sawtooth: cycle =
-// floor((wave-1)/CYCLE_LENGTH), cycleWave = ((wave-1) % CYCLE_LENGTH) + 1); update()'s playing body ticks
-// game.waveTime += dt, frozen while paused/at the title; cycleValue(base, cycle) is a spiral-scaling
-// helper nothing called at the time. Sections (B)-(E)/(G) are P1's own contract and are unchanged.
+// Headless test originally written for CS017 Phase 1 — the difficulty cycle clock (state only, inert at
+// the time): nextWave() derived game.cycle/game.cycleWave from the untouched game.wave as a sawtooth,
+// update() ticked game.waveTime, and cycleValue(base, cycle) applied a per-cycle spiral.
 //
-// SECTION (F) WAS REPOINTED BY CS017 P3. P1's inertness was a property of P1 only: P3 deliberately wired
-// the four SAWTOOTH levers (debris count, debris speed at both sites, Hunter speed, Hunter turn rate) to
-// cycleWave/cycleValue, so the old "these must still read the absolute game.wave" sweep is now asserting
-// the opposite of the shipped design. Rather than delete the coverage, (F) now proves the OTHER half of
-// the same claim, at the same strength and against the same real helpers: the sawtooth levers read the
-// cycle clock EXACTLY as P3 specified, and the FROZEN levers (the saucer group) still do not. The full
-// sawtooth/reset/spiral behaviour is owned by scratchpad/test-cs017-p3.js.
+// **REPOINTED BY CS018 P4 — the cycle clock is RETIRED, and this file now proves that.** FORK-CS018-A
+// replaced it with the levelDef() level table as the game's ONE difficulty clock, so CYCLE_LENGTH,
+// CYCLE_GAIN, cycleValue(), game.cycle and game.cycleWave no longer exist. Four sections were asserting
+// the mechanism rather than the intent, and each has been turned into its mirror image at the same
+// strength rather than deleted:
+//   (B) was "nextWave() derives the sawtooth"          -> the clock is GONE and game.wave alone drives levelDef.
+//   (C) was "both game literals declare all 3 fields"  -> only waveTime survives; the other two are absent.
+//   (E) was "cycleValue() spot values"                 -> cycleValue/CYCLE_LENGTH/CYCLE_GAIN are undefined.
+//   (F) was "which levers read which clock"            -> junk reads levelDef; Hunter speed/turn are FROZEN.
+// (D) waveTime and (G) the headless smoke are P1's own contract, still true, and unchanged.
+// (F) had already been repointed once, by CS017 P3, from P1's original "nothing reads the cycle clock."
 //
 //   node scratchpad/test-cs017-p1.js
 //
 // Follows the standing rule (GDD 5.4): stub window/document/rAF/navigator/localStorage, eval the REAL
 // <script> block, and drive the ACTUAL nextWave()/startGame()/update()/DebrisSatellite/HunterSatellite —
-// never reimplement game logic. Byte-identity comparisons use the REAL ramp()/leverScale() helpers, not
-// re-derived arithmetic.
+// never reimplement game logic. Byte-identity comparisons use the REAL ramp()/levelDef()/junkSpeedMul()
+// helpers, not re-derived arithmetic.
 
 "use strict";
 const fs = require("fs");
@@ -64,13 +66,16 @@ function makeCtx(canvasStub) {
 
 const RETURN = [
   "startGame", "update", "nextWave", "game", "settings",
-  "cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN",
   "DebrisSatellite", "HunterSatellite", "Saucer",
   "ramp", "difficultyFactor", "leverScale",
-  "DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX", "DEBRIS_SPEED_PER_WAVE", // CS017 P3 (section F)
+  "levelDef", "junkSpeedMul", "DEBRIS_SPEEDS",              // CS018 P4 (sections B, F)
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
-  "MusicSys", "AudioSys"
+  "MusicSys", "AudioSys",
+  // A scope probe, so section (E) can ask "does this identifier exist at all?" without the factory's
+  // own return statement throwing a ReferenceError on a retired symbol. Direct eval keeps the script
+  // block's lexical scope, so this sees exactly what the game's own code would see.
+  'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'
 ];
 
 function build() {
@@ -99,49 +104,59 @@ function build() {
   return factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, localStorageStub);
 }
 
-// ================= (B) the sawtooth: cycle/cycleWave for waves 1..28 ====================
+// ================= (B) the cycle clock is RETIRED; game.wave alone drives the level table ==============
+// REPOINTED BY CS018 P4 (was: "nextWave() derives cycle/cycleWave as a CYCLE_LENGTH=9 sawtooth"). The
+// mirror image of the original claim, at the same strength: across the same 28 levels, game.wave is still
+// the untouched absolute counter, the two derived fields no longer exist on `game` at all, and the level's
+// junk count now comes from levelDef(game.wave) — one clock, not two.
 (function sectionB() {
-  console.log("(B) nextWave() derives cycle/cycleWave as a CYCLE_LENGTH=9 sawtooth over the untouched game.wave");
+  console.log("(B) the cycle clock is retired: no game.cycle/game.cycleWave, and game.wave alone feeds levelDef()");
   const A = build();
   const g = A.game;
-  assert(A.CYCLE_LENGTH === 9, "B: sanity — CYCLE_LENGTH === 9");
   A.startGame(); // wave 1
 
-  const expected = {}; // wave -> [cycle, cycleWave]
   for (let w = 1; w <= 28; w++) {
-    expected[w] = [Math.floor((w - 1) / 9), ((w - 1) % 9) + 1];
-  }
-  // named spot checks from the prompt
-  assert(expected[9][0] === 0 && expected[9][1] === 9, "B: sanity — wave 9 -> cycle 0 / cw 9");
-  assert(expected[10][0] === 1 && expected[10][1] === 1, "B: sanity — wave 10 -> cycle 1 / cw 1");
-  assert(expected[19][0] === 2 && expected[19][1] === 1, "B: sanity — wave 19 -> cycle 2 / cw 1");
-
-  for (let w = 1; w <= 28; w++) {
-    if (w > 1) A.nextWave();
+    if (w > 1) { g.debris = []; A.nextWave(); }
     assert(g.wave === w, `B: game.wave is the untouched absolute counter (expected ${w}, got ${g.wave})`);
-    const [ec, ecw] = expected[w];
-    assert(g.cycle === ec, `B: wave ${w}: game.cycle expected ${ec}, got ${g.cycle}`);
-    assert(g.cycleWave === ecw, `B: wave ${w}: game.cycleWave expected ${ecw}, got ${g.cycleWave}`);
+    assert(!("cycle" in g), `B: level ${w}: game.cycle does not exist (the sawtooth is gone)`);
+    assert(!("cycleWave" in g), `B: level ${w}: game.cycleWave does not exist (the sawtooth is gone)`);
+    // The ONE clock, proven by its effect: the level's spawned junk count is levelDef(game.wave).junkCount.
+    assert(g.debris.length === A.levelDef(g.wave).junkCount,
+      `B: level ${w}: spawned junk ${g.debris.length} === levelDef(${w}).junkCount ${A.levelDef(w).junkCount}`);
   }
+  // CONTROL: the level table is genuinely not a 9-long sawtooth — level 1 and level 10 (same cycleWave
+  // under the retired CYCLE_LENGTH 9) do not have to agree, and in fact do not on the shipped table.
+  assert(A.levelDef(1).junkCount !== A.levelDef(10).junkCount,
+    "B: control — levels 1 and 10 differ, so nothing is still reading a 9-long cycle position");
 })();
 
-// ================= (C) both game literals carry all three fields — SOURCE inspection ====================
+// ================= (C) the game literals: waveTime survives, cycle/cycleWave are gone — SOURCE ==========
+// REPOINTED BY CS018 P4 (was: "both literals declare all three fields"). The standing repo rule is that a
+// game.* field must be declared in BOTH the `const game = {...}` literal and startGame()'s reset, or it
+// reads undefined for a whole run. The retirement has to be symmetric for the same reason.
 (function sectionC() {
-  console.log("(C) source inspection: the game{} literal AND startGame()'s reset both declare cycle/cycleWave/waveTime");
+  console.log("(C) source inspection: only waveTime remains in the game{} literal and startGame()'s reset");
 
   const literalMatch = scriptSrc.match(/const game = \{[\s\S]*?\n\};/);
   assert(!!literalMatch, "C: located the `const game = {...}` literal in source");
   const literalSrc = literalMatch ? literalMatch[0] : "";
-  assert(/cycle:\s*0/.test(literalSrc), "C: game literal declares cycle: 0");
-  assert(/cycleWave:\s*1/.test(literalSrc), "C: game literal declares cycleWave: 1");
-  assert(/waveTime:\s*0/.test(literalSrc), "C: game literal declares waveTime: 0");
+  assert(!/^\s*cycle:\s*0/m.test(literalSrc), "C: game literal no longer declares cycle: 0");
+  assert(!/^\s*cycleWave:\s*1/m.test(literalSrc), "C: game literal no longer declares cycleWave: 1");
+  assert(/waveTime:\s*0/.test(literalSrc), "C: game literal still declares waveTime: 0");
 
   const startGameMatch = scriptSrc.match(/function startGame\(\) \{[\s\S]*?\nfunction nextWave/);
   assert(!!startGameMatch, "C: located startGame()'s body in source");
   const startGameSrc = startGameMatch ? startGameMatch[0] : "";
-  assert(/game\.cycle\s*=\s*0/.test(startGameSrc), "C: startGame() resets game.cycle = 0");
-  assert(/game\.cycleWave\s*=\s*1/.test(startGameSrc), "C: startGame() resets game.cycleWave = 1");
-  assert(/game\.waveTime\s*=\s*0/.test(startGameSrc), "C: startGame() resets game.waveTime = 0");
+  assert(!/game\.cycle\s*=/.test(startGameSrc), "C: startGame() no longer resets game.cycle");
+  assert(!/game\.cycleWave\s*=/.test(startGameSrc), "C: startGame() no longer resets game.cycleWave");
+  assert(/game\.waveTime\s*=\s*0/.test(startGameSrc), "C: startGame() still resets game.waveTime = 0");
+
+  // And nowhere in live (non-comment) code either — the retirement ledger's "removed outright" claim.
+  const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
+  for (const id of ["game.cycle", "game.cycleWave"]) {
+    const hits = codeOnly.filter(l => l.includes(id));
+    assert(hits.length === 0, `C: zero live references to ${id} (found: ${JSON.stringify(hits)})`);
+  }
 })();
 
 // ================= (D) waveTime: accumulates while playing, zeroed by nextWave(), frozen paused/title ===
@@ -177,73 +192,86 @@ function build() {
   assert(g.waveTime === 0, "D: nextWave() resets game.waveTime to 0");
 })();
 
-// ================= (E) cycleValue() spot values ====================
+// ================= (E) cycleValue / CYCLE_LENGTH / CYCLE_GAIN are GONE ====================
+// REPOINTED BY CS018 P4 (was: "cycleValue(base, cycle) === base * (1 + cycle * CYCLE_GAIN)"). Removed
+// outright per the retirement ledger (PLANNED-FEATURES-CS018 §7), so the assertion is existential: the
+// identifiers do not resolve in the script block's own scope, and the source carries no definition. The
+// probe's own positive control keeps this from passing vacuously (a broken probe would fail it).
 (function sectionE() {
-  console.log("(E) cycleValue(base, cycle) === base * (1 + cycle * CYCLE_GAIN)");
+  console.log("(E) cycleValue / CYCLE_LENGTH / CYCLE_GAIN no longer exist");
   const A = build();
-  assert(A.CYCLE_GAIN === 0.12, "E: sanity — CYCLE_GAIN === 0.12");
-  assert(A.cycleValue(100, 0) === 100, "E: cycleValue(100, 0) === 100 (cycle 0 is a no-op)");
-  const c1 = A.cycleValue(100, 1);
-  assert(Math.abs(c1 - 112) < 1e-9, `E: cycleValue(100, 1) === 112 (got ${c1})`);
-  const c3 = A.cycleValue(10, 3);
-  assert(Math.abs(c3 - 13.6) < 1e-9, `E: cycleValue(10, 3) === 13.6 (got ${c3})`);
-  assert(A.cycleValue(0, 5) === 0, "E: cycleValue(0, cycle) === 0 for any cycle");
+  assert(A.probe("RAMP_WAVES") === 8, "E: (meta) the scope probe genuinely resolves a live constant");
+  for (const id of ["cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN"]) {
+    assert(A.probe(id) === "__ReferenceError__", `E: ${id} is undefined in the script block's scope`);
+  }
+  const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
+  for (const id of ["cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN"]) {
+    const hits = codeOnly.filter(l => l.includes(id));
+    assert(hits.length === 0, `E: zero live source references to ${id} (found: ${JSON.stringify(hits)})`);
+  }
+  // FLAG-l: the one piece of the old machinery that was RETAINED, and why — the music-intensity curve.
+  assert(typeof A.difficultyFactor === "function" && typeof A.ramp === "function",
+    "E: difficultyFactor()/ramp() are retained (FLAG-l: the music-intensity curve)");
+  assert(Math.abs(A.difficultyFactor(1)) < 1e-12, "E: difficultyFactor(1) is still 0");
 })();
 
-// ================= (F) which levers read the cycle clock, and which still read game.wave ===========
-// REPOINTED BY CS017 P3 (was: "nothing reads cycle/cycleWave"). The SAWTOOTH levers must now read the
-// cycle clock exactly as P3 specified — debris count/speed via cycleValue(...cycleWave, cycle), Hunter
-// speed/turn the same — while the FROZEN saucer group must still sample the absolute game.wave. Both
-// halves are checked with the REAL cycleValue()/ramp() helpers and the REAL constants, never re-derived
-// arithmetic, and each half carries the mirror-image control (the value must NOT equal what the other
-// clock would have produced) so neither direction can pass vacuously.
+// ================= (F) lever wiring after the retirement: table-driven, frozen, and still-on-ramp ======
+// REPOINTED BY CS018 P4. This section has now been repointed twice — P1 asserted "nothing reads the cycle
+// clock", P3 asserted "the sawtooth levers read it", and P4 asserts the third and final arrangement:
+//   - junk count and speed read levelDef()/junkSpeedMul() (P3);
+//   - Hunter speed and turn rate are FROZEN CONSTANTS, level-independent (P4, FLAG-a);
+//   - the saucer spawn gap still ramps on the absolute game.wave (P6 moves it onto tiers, not this phase).
+// Each claim carries its mirror-image control so no direction can pass vacuously, and every expectation is
+// built from the REAL levelDef/junkSpeedMul/ramp helpers, never re-derived arithmetic.
 (function sectionF() {
-  console.log("(F) lever wiring: sawtooth levers read cycle/cycleWave, the frozen saucer group still reads game.wave");
+  console.log("(F) lever wiring: junk on levelDef, Hunter speed/turn FROZEN, saucer gap still on game.wave");
   const A = build();
   const g = A.game;
   A.startGame();
 
+  const frozenSpeeds = [], frozenTurns = [];
   for (let w = 1; w <= 12; w++) {
     // nextWave() only ever fires once the field is clear (game.debris.length === 0 gate, elsewhere in
     // update()) — nextWave() itself does not clear the array, so the test must simulate that precondition.
     if (w > 1) { g.debris = []; A.nextWave(); }
     assert(g.wave === w, `F: sanity — game.wave === ${w}`);
 
-    // --- SAWTOOTH: debris count + speedMul, exactly as nextWave() spawned them ---
-    const expectedCount = Math.min(
-      Math.round(A.cycleValue(Math.min(3 + g.cycleWave, A.DEBRIS_COUNT_MAX), g.cycle)),
-      A.DEBRIS_COUNT_HARD_MAX);
+    // --- TABLE-DRIVEN: junk count + speedMul, exactly as nextWave() spawned them (CS018 P3) ---
+    const expectedCount = A.levelDef(w).junkCount;
     assert(g.debris.length === expectedCount,
-      `F: wave ${w}: debris count expected ${expectedCount}, got ${g.debris.length} (cycleWave=${g.cycleWave}, cycle=${g.cycle})`);
-    const expectedSpeedMul = A.cycleValue(1 + (g.cycleWave - 1) * A.DEBRIS_SPEED_PER_WAVE, g.cycle);
-    // Every debris piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the
-    // piece speed falls in the rand(0.7,1.3) envelope of the cycleWave-based expected multiplier.
+      `F: level ${w}: junk count expected ${expectedCount}, got ${g.debris.length}`);
+    const expectedSpeedMul = A.junkSpeedMul();
+    // Every piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the piece speed
+    // falls inside the rand(0.7,1.3) envelope of the tier-derived multiplier.
     for (const d of g.debris) {
       const sp = Math.hypot(d.vx, d.vy);
-      const lo = 70 * expectedSpeedMul * 0.7 * 0.999, hi = 70 * expectedSpeedMul * 1.3 * 1.001;
+      const lo = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 0.7 * 0.999;
+      const hi = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 1.3 * 1.001;
       assert(sp >= lo && sp <= hi,
-        `F: wave ${w}: debris speed ${sp.toFixed(2)} outside the cycleWave-based envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+        `F: level ${w}: junk speed ${sp.toFixed(2)} outside the tier envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
     }
 
-    // --- SAWTOOTH: Hunter speed/turn, sampled fresh at spawn from the cycle clock ---
-    const h = new A.HunterSatellite(0, 0, 3);
-    const expSpeed = A.cycleValue(A.ramp(A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC, A.HUNTER_SPEED_CEIL[3], g.cycleWave), g.cycle);
-    const expTurn  = A.cycleValue(A.ramp(A.HUNTER_TURN_CEIL[3]  * A.HUNTER_FLOOR_FRAC, A.HUNTER_TURN_CEIL[3],  g.cycleWave), g.cycle);
-    assert(Math.abs(h.speed - expSpeed) < 1e-9, `F: wave ${w}: Hunter speed expected ${expSpeed}, got ${h.speed}`);
-    assert(Math.abs(h.turnRate - expTurn) < 1e-9, `F: wave ${w}: Hunter turnRate expected ${expTurn}, got ${h.turnRate}`);
-    // CONTROL (mirror image of the pre-P3 one): where wave !== cycleWave the sample must NOT equal what
-    // the old absolute-wave formula produced, proving the repoint is real and not a coincidence.
-    if (g.wave !== g.cycleWave) {
-      const preP3Speed = A.ramp(A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC, A.HUNTER_SPEED_CEIL[3], g.wave);
-      assert(Math.abs(h.speed - preP3Speed) > 1e-9,
-        `F: wave ${w}: Hunter speed must differ from the pre-P3 absolute-wave value (the sawtooth is provably wired)`);
-      const preP3Mul = 1 + (g.wave - 1) * A.DEBRIS_SPEED_PER_WAVE;
-      assert(Math.abs(expectedSpeedMul - preP3Mul) > 1e-9,
-        `F: wave ${w}: debris speedMul must differ from the pre-P3 absolute-wave value`);
+    // --- FROZEN: Hunter speed/turn — no clock at all (CS018 P4, FLAG-a) ---
+    for (const size of [3, 2, 1]) {
+      const h = new A.HunterSatellite(0, 0, size);
+      const expSpeed = A.HUNTER_SPEED_CEIL[size] * A.HUNTER_FLOOR_FRAC;
+      const expTurn  = A.HUNTER_TURN_CEIL[size]  * A.HUNTER_FLOOR_FRAC;
+      assert(Math.abs(h.speed - expSpeed) < 1e-9,
+        `F: level ${w} size ${size}: frozen speed expected ${expSpeed}, got ${h.speed}`);
+      assert(Math.abs(h.turnRate - expTurn) < 1e-9,
+        `F: level ${w} size ${size}: frozen turnRate expected ${expTurn}, got ${h.turnRate}`);
+      if (size === 3) { frozenSpeeds.push(h.speed); frozenTurns.push(h.turnRate); }
+      // CONTROL: the old ramp is provably GONE — past level 1 the frozen value must NOT equal what
+      // ramp(floor, ceil, wave) would have produced (they coincide only at wave 1, where the factor is 0).
+      if (w > 1 && A.HUNTER_SPEED_CEIL[size] !== 0) {
+        const rampedSpeed = A.ramp(expSpeed, A.HUNTER_SPEED_CEIL[size], w);
+        assert(Math.abs(h.speed - rampedSpeed) > 1e-9,
+          `F: level ${w} size ${size}: frozen speed must differ from the retired ramp() value ${rampedSpeed.toFixed(3)}`);
+      }
     }
 
-    // --- FROZEN: saucer gap. Forces the spawn timer to expire, with Math.random() pinned so
-    // rand(gapMin,gapMax) collapses to gapMin. Must still read the ABSOLUTE game.wave (CS017 P3 §5).
+    // --- STILL ON ramp(): saucer gap. Forces the spawn timer to expire, with Math.random() pinned so
+    // rand(gapMin,gapMax) collapses to gapMin. Reads the ABSOLUTE game.wave until CS018 P6.
     g.saucers = [];
     g.saucerTimer = -1;
     const savedRandom = Math.random;
@@ -253,17 +281,17 @@ function build() {
     } finally {
       Math.random = savedRandom;
     }
-    assert(g.saucers.length === 1, `F: wave ${w}: forcing the spawn timer produced exactly one saucer`);
+    assert(g.saucers.length === 1, `F: level ${w}: forcing the spawn timer produced exactly one saucer`);
     const expGapMin = A.ramp(A.SAUCER_GAP_FLOOR_MIN, A.SAUCER_GAP_CEIL_MIN, g.wave);
     assert(Math.abs(g.saucerTimer - expGapMin) < 1e-9,
-      `F: wave ${w}: saucer gap (Math.random pinned to 0) expected gapMin=${expGapMin}, got ${g.saucerTimer}`);
-    // CONTROL: where wave !== cycleWave the frozen lever must NOT have picked up the cycle clock.
-    if (g.wave !== g.cycleWave) {
-      const sawtoothGap = A.cycleValue(A.ramp(A.SAUCER_GAP_FLOOR_MIN, A.SAUCER_GAP_CEIL_MIN, g.cycleWave), g.cycle);
-      assert(Math.abs(g.saucerTimer - sawtoothGap) > 1e-9,
-        `F: wave ${w}: the saucer gap is FROZEN — it must not equal the cycleWave/spiral value (${sawtoothGap})`);
-    }
+      `F: level ${w}: saucer gap (Math.random pinned to 0) expected gapMin=${expGapMin}, got ${g.saucerTimer}`);
   }
+
+  // The frozen claim, stated globally: every large Hunter sampled across levels 1..12 got the SAME value.
+  assert(new Set(frozenSpeeds).size === 1,
+    `F: large-Hunter speed is identical at every level (got ${JSON.stringify([...new Set(frozenSpeeds)])})`);
+  assert(new Set(frozenTurns).size === 1,
+    `F: large-Hunter turn rate is identical at every level (got ${JSON.stringify([...new Set(frozenTurns)])})`);
 })();
 
 // ================= (G) AudioSys.ctx null -> startGame()/update() no-crash smoke ======================

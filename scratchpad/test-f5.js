@@ -44,7 +44,7 @@ const navigatorStub = { getGamepads: () => [] };
 
 const returnList = [
   "startGame", "update", "nextWave", "game", "keys",
-  "cycleValue", "ramp", // CS017 P3: section (D) builds exact expectations from the REAL helpers
+  "ramp", // CS018 P4: section (D) builds its CONTROL from the REAL retired-ramp helper
   "HunterSatellite", "Garbage", "destroyHunter",
   "HUNTER_RADII", "HUNTER_SCORE", "HUNTER_DAMAGE",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC", "HUNTER_SCATTER",
@@ -60,7 +60,7 @@ const factory = new Function(
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
 const {
   startGame, update, nextWave, game, keys,
-  cycleValue, ramp,
+  ramp,
   HunterSatellite, Garbage, destroyHunter,
   HUNTER_RADII, HUNTER_SCORE, HUNTER_DAMAGE,
   HUNTER_SPEED_CEIL, HUNTER_TURN_CEIL, HUNTER_FLOOR_FRAC, HUNTER_SCATTER,
@@ -177,54 +177,57 @@ const core = HunterSatellite.spawnCore();
 assert(core.size === 3 && core.homing === false, "C: spawnCore() makes a passive large core");
 
 // =====================================================================
-// (D) difficulty scaling: floor at wave 1, meaningfully faster by wave 20 (every tier)
+// (D) Hunter speed & turn rate are FROZEN CONSTANTS — no difficulty clock at all
 // =====================================================================
-console.log("(D) difficulty ramp wired into every speed & turn rate");
-// CS017 P3: a Hunter now samples game.cycleWave/game.cycle, not the absolute game.wave, so assigning
-// game.wave alone no longer places the game at that wave's difficulty. Drive the REAL nextWave() instead
-// — it does game.wave++ and derives the sawtooth clock itself, so nothing here re-implements that
-// derivation. (Pre-positioning the absolute counter is safe: only nextWave() writes cycle/cycleWave.)
+// REPOINTED TWICE. Originally (v1.6) this section asserted "the difficulty ramp is wired into every speed
+// and turn rate": a wave-1 floor at HUNTER_FLOOR_FRAC x ceiling climbing toward the ceiling by ~wave 20.
+// CS017 P3 repointed it onto the cycleWave sawtooth + cycleValue() spiral. **CS018 P4 (FLAG-a) removes the
+// clock entirely**: speed and turn rate are frozen at the level-1 value for the whole game, and escalating
+// Hunter pressure is carried by the large-Hunter CAP instead (how many may exist, not how fast they move).
+// The section therefore asserts the exact opposite of "climbs" — level-independence — plus the controls
+// that (a) the value still IS the documented derivation and (b) the retired ramp is genuinely absent.
+console.log("(D) Hunter speed & turn rate frozen at _CEIL x HUNTER_FLOOR_FRAC, at every level");
 function tier(size, wave) {
   game.wave = wave - 1;
   game.debris.length = 0;
   nextWave();
   return new HunterSatellite(cx, cy, size, 0);
 }
-assert(near(difficultyFactor(1), 0), "D: difficultyFactor(1) == 0 (wave 1 sits exactly on the floor)");
+assert(near(difficultyFactor(1), 0), "D: difficultyFactor(1) == 0 (retained as the music-intensity curve, FLAG-l)");
 
+const PROBE_LEVELS = [1, 2, 5, 20, 21, 22, 43, 63, 200];
 for (const size of [3, 2, 1]) {
-  const w1 = tier(size, 1), w20 = tier(size, 20);
-  // wave-1 speed is exactly the floor fraction of the ceiling (cycle 0, cycleWave 1 -> the spiral term
-  // is 1.0 and difficultyFactor(1) is 0, so wave 1 still sits exactly on the floor after CS017 P3)
-  assert(near(w1.speed, HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC),
-    `D[size ${size}]: wave-1 speed == ceiling x FLOOR_FRAC (${(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC).toFixed(1)}, got ${w1.speed.toFixed(1)})`);
-  // CS017 P3: the old hand-tuned ratio band (0.5..0.72, pinned to the pre-P3 pure-ramp(20) world) is
-  // replaced by an EXACT expectation built from the REAL exported helpers — strictly stronger than a
-  // band, and it self-updates with the curve instead of silently going stale on the next retune.
-  // Wave 20 is cycle 2 / cycleWave 2 under CYCLE_LENGTH 9.
-  const expect20 = cycleValue(ramp(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_SPEED_CEIL[size], game.cycleWave), game.cycle);
-  assert(near(w20.speed, expect20),
-    `D[size ${size}]: wave-20 speed == cycleValue(ramp(..., cycleWave), cycle) (exp ${expect20.toFixed(2)}, got ${w20.speed.toFixed(2)})`);
-  assert(w1.speed < w20.speed - 1, `D[size ${size}]: speed climbs wave 1 -> 20 (${w1.speed.toFixed(1)} < ${w20.speed.toFixed(1)})`);
-  // turn rate scales the same way for the homing tiers; the large core never turns
-  if (size === 3) {
-    assert(w1.turnRate === 0 && w20.turnRate === 0, "D[large]: core turn rate is 0 at all waves (passive drift)");
-  } else {
-    assert(near(w1.turnRate, HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC),
-      `D[size ${size}]: wave-1 turn rate == ceiling x FLOOR_FRAC (got ${w1.turnRate.toFixed(3)})`);
-    const expTurn20 = cycleValue(ramp(HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_TURN_CEIL[size], game.cycleWave), game.cycle);
-    assert(near(w20.turnRate, expTurn20),
-      `D[size ${size}]: wave-20 turn rate == cycleValue(ramp(..., cycleWave), cycle) (exp ${expTurn20.toFixed(3)}, got ${w20.turnRate.toFixed(3)})`);
-    assert(w1.turnRate < w20.turnRate - 0.05, `D[size ${size}]: turn rate climbs wave 1 -> 20 (${w1.turnRate.toFixed(2)} < ${w20.turnRate.toFixed(2)})`);
+  const expSpeed = HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC;
+  const expTurn  = HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC;
+  const speeds = new Set(), turns = new Set();
+  for (const lvl of PROBE_LEVELS) {
+    const h = tier(size, lvl);
+    assert(near(h.speed, expSpeed),
+      `D[size ${size}]: level-${lvl} speed == _CEIL x FLOOR_FRAC (${expSpeed.toFixed(1)}, got ${h.speed.toFixed(1)})`);
+    assert(near(h.turnRate, expTurn),
+      `D[size ${size}]: level-${lvl} turn rate == _CEIL x FLOOR_FRAC (${expTurn.toFixed(3)}, got ${h.turnRate.toFixed(3)})`);
+    speeds.add(h.speed); turns.add(h.turnRate);
+  }
+  assert(speeds.size === 1, `D[size ${size}]: ONE speed across every probed level (got ${JSON.stringify([...speeds])})`);
+  assert(turns.size === 1, `D[size ${size}]: ONE turn rate across every probed level (got ${JSON.stringify([...turns])})`);
+  // The large core still never turns — its ceiling is 0, so the freeze preserves passive drift.
+  if (size === 3) assert(expTurn === 0, "D[large]: core turn rate is 0 at every level (passive drift)");
+  // CONTROL: the retired ramp is really gone. At level 20 the old formula produced a strictly higher
+  // value for every tier with a non-zero ceiling; the frozen value must NOT match it.
+  else {
+    const ramped = ramp(expSpeed, HUNTER_SPEED_CEIL[size], 20);
+    assert(ramped > expSpeed + 1, `D[size ${size}]: (context) the retired ramp would have given ${ramped.toFixed(1)} at level 20`);
+    assert(!near(tier(size, 20).speed, ramped),
+      `D[size ${size}]: CONTROL — the frozen speed does not equal the retired level-20 ramp value`);
   }
 }
-// concrete headline: a small homer at wave 1 vs wave 20
+// concrete headline: a small homer is the same at level 1 and level 20 now
 const s1 = tier(1, 1), s20 = tier(1, 20);
-console.log(`  small homer speed: wave1 ${s1.speed.toFixed(0)} px/s  vs  wave20 ${s20.speed.toFixed(0)} px/s  (turn ${s1.turnRate.toFixed(2)} vs ${s20.turnRate.toFixed(2)} rad/s)`);
-// the large core's drift speed scales but stays passive
+console.log(`  small homer speed: level1 ${s1.speed.toFixed(1)} px/s  ==  level20 ${s20.speed.toFixed(1)} px/s  (turn ${s1.turnRate.toFixed(3)} == ${s20.turnRate.toFixed(3)} rad/s)`);
+// the large core's drift speed no longer scales, and still never homes
 const L1 = tier(3, 1), L20 = tier(3, 20);
-assert(L1.speed < L20.speed && L1.homing === false && L20.homing === false,
-  `D: large core drift speed scales (${L1.speed.toFixed(0)} -> ${L20.speed.toFixed(0)}) yet never homes`);
+assert(near(L1.speed, L20.speed) && L1.homing === false && L20.homing === false,
+  `D: large core drift speed is frozen (${L1.speed.toFixed(1)} == ${L20.speed.toFixed(1)}) and it never homes`);
 
 // =====================================================================
 // (E) split children actively home — heading re-aims toward the ship

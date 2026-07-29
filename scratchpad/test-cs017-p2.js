@@ -1,15 +1,23 @@
 // Headless test for CS017 Phase 2 — dev-only difficulty logging + a debug-panel CSV dump. Nothing
 // player-visible; nothing persisted (DiffLog never touches localStorage). One snapshot row is pushed by
-// the REAL nextWave() (after the P1 cycle/cycleWave derivation), capped at DIFFLOG_MAX (drop oldest),
-// cleared by the REAL startGame(), and exported as CSV via a "Dump difficulty log" action row inserted
-// into the CS015 P4 debug panel between the value rows and Back.
+// the REAL nextWave(), capped at DIFFLOG_MAX (drop oldest), cleared by the REAL startGame(), and exported
+// as CSV via a "Dump difficulty log" action row inserted into the CS015 P4 debug panel between the value
+// rows and Back. All of that MECHANISM is P2's contract and is unchanged.
+//
+// **REPOINTED BY CS018 P4 — the COLUMN LIST changed.** P2 declared DIFFLOG_FIELDS frozen, which was right
+// while the cycle clock was the thing being observed; P4 retires that clock, so four columns (`cycle`,
+// `cycleWave`, `hunterSpeedFrac`, `hunterTurnFrac`) described machinery that no longer exists — the last
+// two would log a fixed 0.58 forever now that Hunter speed/turn are frozen constants. They are replaced by
+// what the level table actually decides: level/phase/rel/junkCount/junkSpeedMul/maxLargeHunters, the seven
+// tier NAMES, and prevLevelSecs (FLAG-k). Sections (B), (D) and (E) follow the new shape; (C), (F), (G) and
+// (H) test the mechanism and are untouched.
 //
 //   node scratchpad/test-cs017-p2.js
 //
 // Follows the standing rule (GDD 5.4): stub window/document/rAF/navigator/localStorage, eval the REAL
 // <script> block, and drive the ACTUAL nextWave()/startGame()/menuDebug()/drawDebug()/dumpDifficultyLog()
 // — never reimplement the logging or CSV logic under test. Section (B) cross-checks each snapshot field
-// against the REAL ramp()/difficultyFactor() helpers and live constants, never a re-derived formula.
+// against the REAL levelDef()/junkSpeedMul()/ramp() helpers and live constants, never a re-derived formula.
 
 "use strict";
 const fs = require("fs");
@@ -62,7 +70,7 @@ const RETURN = [
   "logDifficultySnapshot", "difficultyLogCSV", "dumpDifficultyLog",
   "DEBUG_VARS", "menuDebug", "drawDebug", "debugReturn",
   "ramp", "difficultyFactor", "HUNTER_FLOOR_FRAC",
-  "cycleValue", "DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX", "DEBRIS_SPEED_PER_WAVE", // CS017 P3 repoint
+  "levelDef", "junkSpeedMul", "largeHunterCap",                                        // CS018 P4 repoint
   "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "AudioSys"
@@ -106,6 +114,11 @@ function build() {
   return { exports, created };
 }
 
+// The seven graded levers log a TIER NAME, not a number — the one non-numeric column group in the row.
+const TIER_FIELDS = ["junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
+                     "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"];
+const TIER_NAMES = ["low", "normal", "high"];
+
 // ================= (B) one row per nextWave(), every field present/finite, matches the live sites =====
 (function sectionB() {
   console.log("(B) logDifficultySnapshot: one row per nextWave(), fields match the SAME live expressions");
@@ -122,36 +135,36 @@ function build() {
     const row = A.DiffLog.rows[A.DiffLog.rows.length - 1];
     for (const f of A.DIFFLOG_FIELDS) {
       assert(f in row, `B: wave ${w}: row has field "${f}"`);
-      assert(typeof row[f] === "number" && Number.isFinite(row[f]), `B: wave ${w}: field "${f}" is a finite number (got ${row[f]})`);
+      if (TIER_FIELDS.includes(f)) {
+        assert(TIER_NAMES.includes(row[f]), `B: wave ${w}: tier field "${f}" is a tier name (got ${row[f]})`);
+      } else {
+        assert(typeof row[f] === "number" && Number.isFinite(row[f]), `B: wave ${w}: field "${f}" is a finite number (got ${row[f]})`);
+      }
     }
 
-    assert(row.wave === g.wave, `B: wave ${w}: row.wave matches game.wave`);
-    assert(row.cycle === g.cycle, `B: wave ${w}: row.cycle matches game.cycle`);
-    assert(row.cycleWave === g.cycleWave, `B: wave ${w}: row.cycleWave matches game.cycleWave`);
+    assert(row.level === g.wave, `B: wave ${w}: row.level matches game.wave`);
     assert(row.score === g.score, `B: wave ${w}: row.score matches game.score`);
     assert(row.hunterCount === g.hunters.length, `B: wave ${w}: row.hunterCount matches game.hunters.length`);
     assert(row.chainLen === g.chain.length, `B: wave ${w}: row.chainLen matches game.chain.length`);
     assert(row.cargoMax === g.cargoMax, `B: wave ${w}: row.cargoMax matches game.cargoMax`);
     assert(row.scoopLevel === g.scoopLevel, `B: wave ${w}: row.scoopLevel matches game.scoopLevel`);
+    assert(!("cycle" in row) && !("cycleWave" in row), `B: wave ${w}: the retired cycle columns are gone from the row`);
+    assert(!("hunterSpeedFrac" in row) && !("hunterTurnFrac" in row), `B: wave ${w}: the retired Hunter-fraction columns are gone`);
 
-    // debrisCount/debrisSpeedMul: the SAME expressions nextWave() itself uses to spawn the wave.
-    // REPOINTED BY CS017 P3 — both levers now ramp on the cycleWave sawtooth and pass through the
-    // cycleValue() spiral. The DIFFLOG_FIELDS list is frozen; only what feeds it moves (see the header
-    // note at the DiffLog block). Built from the REAL cycleValue()/constants, never re-derived arithmetic.
-    const expCount = Math.min(
-      Math.round(A.cycleValue(Math.min(3 + g.cycleWave, A.DEBRIS_COUNT_MAX), g.cycle)),
-      A.DEBRIS_COUNT_HARD_MAX);
-    const expSpeedMul = A.cycleValue(1 + (g.cycleWave - 1) * A.DEBRIS_SPEED_PER_WAVE, g.cycle);
-    assert(row.debrisCount === expCount, `B: wave ${w}: debrisCount expected ${expCount}, got ${row.debrisCount}`);
-    assert(Math.abs(row.debrisSpeedMul - expSpeedMul) < 1e-9, `B: wave ${w}: debrisSpeedMul expected ${expSpeedMul}, got ${row.debrisSpeedMul}`);
-    assert(g.debris.length === expCount, `B: wave ${w}: sanity — the wave actually spawned debrisCount pieces`);
-
-    // hunterSpeedFrac/hunterTurnFrac: still identical to each other (both HunterSatellite speed/turnRate
-    // ramp from the SAME HUNTER_FLOOR_FRAC up to their own per-tier ceiling, so the ceiling cancels out of
-    // the ratio), and CS017 P3 repointed both onto the same sawtooth+spiral the ctor now samples.
-    const expFrac = A.cycleValue(A.ramp(A.HUNTER_FLOOR_FRAC, 1, g.cycleWave), g.cycle);
-    assert(Math.abs(row.hunterSpeedFrac - expFrac) < 1e-9, `B: wave ${w}: hunterSpeedFrac expected ${expFrac}, got ${row.hunterSpeedFrac}`);
-    assert(Math.abs(row.hunterTurnFrac - expFrac) < 1e-9, `B: wave ${w}: hunterTurnFrac expected ${expFrac}, got ${row.hunterTurnFrac}`);
+    // REPOINTED BY CS018 P4: the level-table columns must agree with ONE levelDef(game.wave) call, so a
+    // row can never disagree with itself about which level it describes. Built from the REAL levelDef()
+    // and junkSpeedMul(), never re-derived arithmetic.
+    const def = A.levelDef(g.wave);
+    assert(row.phase === def.phase, `B: wave ${w}: row.phase expected ${def.phase}, got ${row.phase}`);
+    assert(row.rel === def.rel, `B: wave ${w}: row.rel expected ${def.rel}, got ${row.rel}`);
+    assert(row.junkCount === def.junkCount, `B: wave ${w}: junkCount expected ${def.junkCount}, got ${row.junkCount}`);
+    assert(g.debris.length === row.junkCount, `B: wave ${w}: sanity — the level actually spawned junkCount pieces`);
+    assert(Math.abs(row.junkSpeedMul - A.junkSpeedMul()) < 1e-9, `B: wave ${w}: junkSpeedMul matches the live helper`);
+    assert(row.maxLargeHunters === def.maxLargeHunters, `B: wave ${w}: maxLargeHunters expected ${def.maxLargeHunters}, got ${row.maxLargeHunters}`);
+    assert(row.maxLargeHunters === A.largeHunterCap(), `B: wave ${w}: maxLargeHunters equals the live largeHunterCap()`);
+    for (const f of TIER_FIELDS) {
+      assert(row[f] === def[f], `B: wave ${w}: tier "${f}" expected ${def[f]}, got ${row[f]}`);
+    }
 
     // saucerAimErr/saucerGapMin/saucerGapMax: the SAME ramp() calls as the live saucer aim/spawn sites.
     const expAimErr = A.ramp(A.SAUCER_AIM_ERR_FLOOR, A.SAUCER_AIM_ERR_CEIL, 1 + (g.wave - 1) * A.SAUCER_ACCURACY_RAMP_SCALE);
@@ -160,7 +173,21 @@ function build() {
     assert(Math.abs(row.saucerAimErr - expAimErr) < 1e-9, `B: wave ${w}: saucerAimErr expected ${expAimErr}, got ${row.saucerAimErr}`);
     assert(Math.abs(row.saucerGapMin - expGapMin) < 1e-9, `B: wave ${w}: saucerGapMin expected ${expGapMin}, got ${row.saucerGapMin}`);
     assert(Math.abs(row.saucerGapMax - expGapMax) < 1e-9, `B: wave ${w}: saucerGapMax expected ${expGapMax}, got ${row.saucerGapMax}`);
+    assert(row.prevLevelSecs === 0, `B: wave ${w}: prevLevelSecs is 0 when no frames were simulated`);
   }
+
+  // CS018 P4 / FLAG-k: prevLevelSecs is game.waveTime captured BEFORE nextWave() zeroes it — the duration
+  // of the level that just ENDED. This is the field's only reader, and it is the reason the capture has to
+  // happen before the reset: reading game.waveTime after it would log a constant 0 forever.
+  for (let i = 0; i < 90; i++) A.update(1 / 60);   // ~1.5 s of real play on the current level
+  const elapsed = g.waveTime;
+  assert(elapsed > 1.4 && elapsed < 1.6, `B: sanity — ~1.5 s accumulated on the level (got ${elapsed})`);
+  g.debris = [];
+  A.nextWave();
+  const advanced = A.DiffLog.rows[A.DiffLog.rows.length - 1];
+  assert(Math.abs(advanced.prevLevelSecs - elapsed) < 1e-9,
+    `B: prevLevelSecs logs the FINISHED level's duration (expected ${elapsed}, got ${advanced.prevLevelSecs})`);
+  assert(g.waveTime === 0, "B: game.waveTime itself is still zeroed for the new level");
 })();
 
 // ================= (C) startGame() clears the buffer ====================================================
@@ -174,7 +201,7 @@ function build() {
 
   A.startGame(); // clears the buffer, then nextWave() (wave 1) pushes exactly one fresh row
   assert(A.DiffLog.rows.length === 1, `C: startGame() left exactly one row (the fresh wave 1 snapshot), got ${A.DiffLog.rows.length}`);
-  assert(A.DiffLog.rows[0].wave === 1, `C: the surviving row is wave 1, not a stale wave from before the restart`);
+  assert(A.DiffLog.rows[0].level === 1, `C: the surviving row is level 1, not a stale level from before the restart`);
 })();
 
 // ================= (D) DIFFLOG_MAX caps the buffer, dropping oldest =====================================
@@ -190,19 +217,38 @@ function build() {
 
   assert(A.DiffLog.rows.length === A.DIFFLOG_MAX, `D: buffer never exceeds DIFFLOG_MAX (got ${A.DiffLog.rows.length})`);
   const first = A.DiffLog.rows[0], last = A.DiffLog.rows[A.DiffLog.rows.length - 1];
-  assert(first.wave === totalWaves - A.DIFFLOG_MAX + 1, `D: oldest surviving row is wave ${totalWaves - A.DIFFLOG_MAX + 1} (got ${first.wave})`);
-  assert(last.wave === totalWaves, `D: newest row is the last wave pushed (${totalWaves}, got ${last.wave})`);
+  assert(first.level === totalWaves - A.DIFFLOG_MAX + 1, `D: oldest surviving row is level ${totalWaves - A.DIFFLOG_MAX + 1} (got ${first.level})`);
+  assert(last.level === totalWaves, `D: newest row is the last level pushed (${totalWaves}, got ${last.level})`);
 })();
 
 // ================= (E) difficultyLogCSV(): header + N lines, values round-trip ==========================
 (function sectionE() {
   console.log("(E) difficultyLogCSV() builds a header line + one line per row; values round-trip");
   const { exports: A } = build();
-  A.DiffLog.rows = [
-    { t: 1.5, wave: 1, cycle: 0, cycleWave: 1, score: 0, debrisCount: 4, debrisSpeedMul: 1, hunterSpeedFrac: 0.58, hunterTurnFrac: 0.58, saucerAimErr: 0.35, saucerGapMin: 20, saucerGapMax: 30, hunterCount: 0, chainLen: 0, cargoMax: 12, scoopLevel: 0 },
-    { t: 2.75, wave: 2, cycle: 0, cycleWave: 2, score: 300, debrisCount: 5, debrisSpeedMul: 1.08, hunterSpeedFrac: 0.6, hunterTurnFrac: 0.6, saucerAimErr: 0.34, saucerGapMin: 19.9, saucerGapMax: 29.8, hunterCount: 1, chainLen: 2, cargoMax: 12, scoopLevel: 1 },
-    { t: 3.0, wave: 3, cycle: 0, cycleWave: 3, score: 900, debrisCount: 6, debrisSpeedMul: 1.16, hunterSpeedFrac: 0.62, hunterTurnFrac: 0.62, saucerAimErr: 0.33, saucerGapMin: 19.8, saucerGapMax: 29.6, hunterCount: 2, chainLen: 5, cargoMax: 12, scoopLevel: 1 },
-  ];
+  // REPOINTED BY CS018 P4: the synthetic rows are built from the REAL levelDef() for their table columns
+  // (hand-authoring 23 fields three times is exactly how a column list and a fixture drift apart), with the
+  // runtime columns set to distinct literals so a wrong-column bug can't hide behind an equal value. Three
+  // levels are chosen to span two phases and to move the tier columns off "low".
+  A.DiffLog.rows = [1, 22, 63].map((lvl, i) => {
+    const def = A.levelDef(lvl);
+    const row = {
+      t: 1000 + i, level: def.level, phase: def.phase, rel: def.rel,
+      score: 300 * i, prevLevelSecs: 12.5 + i,
+      junkCount: def.junkCount, junkSpeedMul: 0.8 + i * 0.1,
+      maxLargeHunters: def.maxLargeHunters, hunterCount: i,
+      saucerAimErr: 0.35 - i * 0.01, saucerGapMin: 20 - i, saucerGapMax: 30 - i,
+      chainLen: 2 * i, cargoMax: 8 + i, scoopLevel: i,
+    };
+    for (const f of TIER_FIELDS) row[f] = def[f];
+    return row;
+  });
+  // The fixture must cover the column list exactly — this is what stops a future column from being added
+  // to the build and silently untested here.
+  for (const f of A.DIFFLOG_FIELDS) assert(f in A.DiffLog.rows[0], `E: fixture covers column "${f}"`);
+  assert(Object.keys(A.DiffLog.rows[0]).length === A.DIFFLOG_FIELDS.length,
+    `E: fixture has no extra columns (fixture ${Object.keys(A.DiffLog.rows[0]).length} vs list ${A.DIFFLOG_FIELDS.length})`);
+  assert(A.DiffLog.rows[2].junkSpeed === "high", "E: sanity — the level-63 fixture row is off the 'low' tier");
+
   const csv = A.difficultyLogCSV();
   const lines = csv.split("\n");
   assert(lines.length === 1 + A.DiffLog.rows.length, `E: header + N lines (expected ${1 + A.DiffLog.rows.length}, got ${lines.length})`);
@@ -212,7 +258,10 @@ function build() {
     const cells = lines[i + 1].split(",");
     assert(cells.length === A.DIFFLOG_FIELDS.length, `E: row ${i}: cell count matches field count (got ${cells.length})`);
     A.DIFFLOG_FIELDS.forEach((f, j) => {
-      assert(Number(cells[j]) === A.DiffLog.rows[i][f], `E: row ${i}: field "${f}" round-trips (expected ${A.DiffLog.rows[i][f]}, got ${cells[j]})`);
+      const want = A.DiffLog.rows[i][f];
+      // Tier columns are names, so they round-trip as text; every other column round-trips numerically.
+      const got = TIER_FIELDS.includes(f) ? cells[j] : Number(cells[j]);
+      assert(got === want, `E: row ${i}: field "${f}" round-trips (expected ${want}, got ${cells[j]})`);
     });
   }
 })();

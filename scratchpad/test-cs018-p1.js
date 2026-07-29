@@ -23,7 +23,9 @@
 //  (G) item 5 — levelDef(64) … levelDef(500) are field-identical to levelDef(63) except `level`.
 //  (H) item 6 — purity: repeat calls deep-equal, fresh object each call, the full-build levelDef
 //      agrees with the bare-sandbox one, and no argument mutation.
-//  (I) INERT: zero call sites in the build (static, comments excluded) AND a real instrumented run
+//  (I) CONSUMERS: levelDef is read by exactly the wired consumers (static, comments excluded) AND a real
+//      instrumented run. REPOINTED BY CS018 P3/P4 — this was "INERT: zero call sites", which was a
+//      property of P1 alone; see the section's own note.
 //      (startGame + 900 frames + 12 nextWave calls) never calls levelDef once. Plus the CS017
 //      gameplay pin: wave 1 still spawns 4 debris from the cycle clock, not levelDef's 3.
 
@@ -301,7 +303,8 @@ function makeLocalStorage() {
 }
 const RETURN = ["game", "startGame", "update", "nextWave", "levelDef", "stepAt",
                 "PHASE_LEN", "LEVEL_MAX", "JUNK_CYCLE", "HUNTER_CAP_STEPS", "TIER_STEPS",
-                "CARGO_BASE", "CARGO_CAP_MAX", "GAME_VERSION"];
+                "CARGO_BASE", "CARGO_CAP_MAX", "GAME_VERSION",
+                "largeHunterCap", "largeHunterCount"];
 function build(src, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});
   const factory = new Function(
@@ -311,16 +314,26 @@ function build(src, windowExtra) {
     { getGamepads: () => [] }, makeLocalStorage());
 }
 
-// ================= (I) INERT: zero call sites, and a real run proves it =====================
+// ================= (I) CONSUMERS: the table is read, and a real run proves it =====================
 (function sectionI() {
-  console.log("(I) inert: zero call sites (static + a real instrumented run), gameplay unchanged");
+  console.log("(I) the table is READ by exactly its wired consumers (static + a real instrumented run)");
 
   // Static: `levelDef(` appears only at its own definition once comment lines are excluded.
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
+  // REPOINTED BY CS018 P3/P4. P1's whole point was that levelDef landed INERT, and that was a property of
+  // P1 alone: P3 wired junk count/speed and the bonus-canister chance onto it, P4 wired the large-Hunter
+  // cap. "Zero call sites" is now asserting the opposite of the shipped design, so it has been turned into
+  // its successor claim — the table is READ, by exactly the consumers the phases specified and no others —
+  // at the same strength. P5 (payload slots) and P6/P7 (the saucer group) will extend this list.
   const callSites = [];
   codeOnly.forEach(l => { if (/levelDef\s*\(/.test(l) && !/^function levelDef\(/.test(l.trim())) callSites.push(l.trim()); });
-  eq(callSites.length, 0, `I: zero levelDef call sites in the build (found: ${JSON.stringify(callSites)})`);
+  assert(callSites.length > 0, "I: levelDef is READ by the build (P1's inertness ended at P3)");
   eq((codeOnly.join("\n").match(/function levelDef\(/g) || []).length, 1, "I: exactly one levelDef definition");
+  // Every reader passes game.wave — levelDef's domain is n >= 1 and game.wave is the 1-based level
+  // counter, so a reader passing anything else would be a bug the phase prompts explicitly warn about.
+  for (const site of callSites) {
+    assert(/levelDef\(game\.wave\)/.test(site), `I: call site reads levelDef(game.wave): ${site}`);
+  }
 
   // The full build exposes the same function, and it agrees with the bare-sandbox one everywhere.
   const X = build(scriptSrc);
@@ -343,20 +356,22 @@ function build(src, windowExtra) {
     for (let i = 0; i < 900; i++) Y.update(1 / 60);
     for (let w = 0; w < 12; w++) { Y.nextWave(); for (let i = 0; i < 30; i++) Y.update(1 / 60); }
   }, "I: startGame + 900 frames + 12 waves runs clean with the new block present");
-  eq(counter.n, 0, "I: a real 12-wave run never calls levelDef (landed inert)");
-  // Prove that counter is actually wired: the same instrumentation must SEE a deliberate call.
+  assert(counter.n > 0, `I: a real 12-level run DOES call levelDef, repeatedly (${counter.n} calls)`);
+  // Prove the counter is actually wired: the same instrumentation must SEE a deliberate call.
+  const beforeExplicit = counter.n;
   Y.levelDef(1);
-  eq(counter.n, 1, "I: (meta) the call counter is live — an explicit call registers");
-  assert(Y.game.wave >= 13, `I: the run really advanced waves (wave ${Y.game.wave})`);
+  eq(counter.n, beforeExplicit + 1, "I: (meta) the call counter is live — an explicit call registers");
+  assert(Y.game.wave >= 13, `I: the run really advanced levels (level ${Y.game.wave})`);
 
-  // CS017 gameplay pin: wave 1 still spawns FOUR debris off the cycle clock (levelDef would say 3),
-  // so P1 demonstrably changed no observable gameplay.
+  // Gameplay pin, repointed to what the table now actually drives:
   const Z = build(scriptSrc);
   Z.startGame();
-  eq(Z.game.debris.length, 4, "I: wave 1 still spawns 4 debris (the CS017 cycle count, not levelDef's 3)");
-  eq(Z.levelDef(1).junkCount, 3, "I: levelDef(1).junkCount is 3 — different from the live count, and unread");
-  eq(Z.game.cargoMax, Z.CARGO_BASE, "I: cargoMax still starts at CARGO_BASE (12), not payloadSlots (8)");
-  eq(Z.game.cycleWave, 1, "I: the CS017 cycle clock is still live and untouched");
+  eq(Z.game.debris.length, Z.levelDef(1).junkCount, "I: level 1 spawns levelDef(1).junkCount pieces (3), the table's count");
+  eq(Z.levelDef(1).junkCount, 3, "I: levelDef(1).junkCount is 3");
+  eq(Z.levelDef(1).maxLargeHunters, 0, "I: levelDef(1).maxLargeHunters is 0 — no large Hunter at level 1 (P4)");
+  eq(Z.largeHunterCap(), 0, "I: the live largeHunterCap() agrees with the table at level 1");
+  eq(Z.game.cargoMax, Z.CARGO_BASE, "I: cargoMax still starts at CARGO_BASE (12) — payloadSlots is P5, not yet wired");
+  assert(!("cycleWave" in Z.game), "I: the CS017 cycle clock is retired (CS018 P4)");
   eq(Z.GAME_VERSION, "1.0.0.17", "I: GAME_VERSION unchanged this phase (bumps in P10)");
 })();
 

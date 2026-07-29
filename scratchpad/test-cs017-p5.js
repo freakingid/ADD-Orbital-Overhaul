@@ -16,8 +16,13 @@
 //      radius (radius re-derived from the shipped 7*sqrt(pieces), never a literal) and a placement
 //      inside the SPAWN_MIN/MAX_DIST ring; a forced-failed roll spawns none. Both across many waves.
 //  (C) the spawn chance genuinely eases off across a cycle, asserted off the REAL bonusSpawnChance():
-//      strictly decreasing over cycleWave 1..CYCLE_LENGTH, hitting BOTH named endpoints exactly, and
-//      resetting at the cycle boundary (it is on the sawtooth clock, not the absolute wave).
+//      strictly decreasing across the cycle, hitting BOTH named endpoints exactly, and resetting at the
+//      cycle boundary rather than falling with the absolute level.
+//      REPOINTED BY CS018 P3/P4 (FLAG-f): the lever's CLOCK moved. It used to read game.cycleWave over a
+//      9-wave CS017 cycle; that clock is retired (FORK-CS018-A), so it now reads the JUNK CYCLE position,
+//      (levelDef(game.wave).rel - 1) % JUNK_CYCLE.length, a 4-level cycle. The lever's shape, its two
+//      endpoint constants and its reset-and-climb intent are unchanged, so every claim below is the same
+//      claim measured on the new clock — nothing was relaxed.
 //  (D) scooping with an EMPTY chain, through the REAL update() pickup pass: exactly
 //      BONUS_CANISTER_PIECES nodes are added, the clump dies, and BONUS_CANISTER_SCORE is paid
 //      EXACTLY once (a second pass over a re-armed field pays nothing more).
@@ -91,7 +96,7 @@ const RETURN = [
   "DEBUG", "AudioSys", "settings",
   "BONUS_CANISTER_PIECES", "BONUS_CANISTER_SCORE",
   "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE", "BONUS_RING_PAD",
-  "CYCLE_LENGTH", "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "GARBAGE_PICKUP", "SCOOP_SPILL_KICK",
+  "levelDef", "JUNK_CYCLE", "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "GARBAGE_PICKUP", "SCOOP_SPILL_KICK",
   "HUNTER_COALESCE_COUNT", "GARBAGE_MERGE_DIST", "COLOR", "CARGO_BASE", "WORLD_W", "WORLD_H",
 ];
 
@@ -110,7 +115,7 @@ const {
   game, startGame, nextWave, update, Garbage, Bullet, coalesceGarbage, shatterClump,
   bonusSpawnChance, dist2, shortDelta, DEBUG, AudioSys, settings,
   BONUS_CANISTER_PIECES, BONUS_CANISTER_SCORE, BONUS_SPAWN_CHANCE_EARLY, BONUS_SPAWN_CHANCE_LATE,
-  CYCLE_LENGTH, SPAWN_MIN_DIST, SPAWN_MAX_DIST, GARBAGE_PICKUP, SCOOP_SPILL_KICK,
+  levelDef, JUNK_CYCLE, SPAWN_MIN_DIST, SPAWN_MAX_DIST, GARBAGE_PICKUP, SCOOP_SPILL_KICK,
   HUNTER_COALESCE_COUNT, COLOR, CARGO_BASE, WORLD_W, WORLD_H,
 } = A;
 
@@ -169,10 +174,15 @@ const bonusOf = arr => arr.filter(g => g.bonus);
     assert(b.x >= 0 && b.x <= WORLD_W && b.y >= 0 && b.y <= WORLD_H,
       `wave ${wave}: placement wrapped into world bounds (wrapPos)`);
   }
-  // The placement is not accidentally distance-fixed: a mid-range random puts it mid-ring.
+  // The placement is not accidentally distance-fixed: a mid-range random puts it mid-ring. game.wave is
+  // reset to 0 so nextWave() lands on LEVEL 1 — junk-cycle position 0, where the chance is EARLY (0.5) and
+  // a 0.4 roll still succeeds. (Before CS018 P3 re-homed the lever, startGame()+nextWave() landed on a
+  // cycleWave whose chance was 0.45; on the shorter 4-level junk cycle the same level is 0.367, so the
+  // roll has to be taken at the cycle's opening position for this placement probe to have a clump at all.)
   startGame();
+  game.wave = 0;
   game.garbage.length = 0;
-  withRandom(0.4, () => nextWave());   // 0.4 < BONUS_SPAWN_CHANCE_EARLY (0.5) at cycleWave 1 -> spawns
+  withRandom(0.4, () => nextWave());   // 0.4 < BONUS_SPAWN_CHANCE_EARLY (0.5) at junk-cycle position 0 -> spawns
   const mids = bonusOf(game.garbage);
   assert(mids.length === 1, "a mid-range roll below the early chance still spawns exactly one clump");
   if (mids.length === 1) {
@@ -191,83 +201,92 @@ const bonusOf = arr => arr.filter(g => g.bonus);
   }
 
   // The roll is genuinely gated on bonusSpawnChance(): a random draw sitting between the LATE and
-  // EARLY chances must spawn at cycleWave 1 and not at the cycle's last wave.
+  // EARLY chances must spawn at the junk cycle's FIRST position and not at its LAST.
+  // REPOINTED BY CS018 P3 — the cycle is now JUNK_CYCLE.length levels long, read off levelDef().rel.
+  const cyclePos = w => (levelDef(w).rel - 1) % JUNK_CYCLE.length;
   const mid = (BONUS_SPAWN_CHANCE_LATE + BONUS_SPAWN_CHANCE_EARLY) / 2;
-  startGame();               // startGame -> nextWave() -> wave 1, cycleWave 1
+  startGame();               // startGame -> nextWave() -> level 1, junk-cycle position 0
   game.wave = 0; game.garbage.length = 0;
   withRandom(mid - 1e-6, () => nextWave());
-  assert(game.cycleWave === 1, "gate probe: first wave is cycleWave 1");
-  assert(bonusOf(game.garbage).length === 1, "gate probe: a mid-range roll SPAWNS at cycleWave 1 (early chance is high)");
+  assert(cyclePos(game.wave) === 0, "gate probe: level 1 opens the junk cycle (position 0)");
+  assert(bonusOf(game.garbage).length === 1, "gate probe: a mid-range roll SPAWNS at position 0 (early chance is high)");
   startGame();
-  game.wave = CYCLE_LENGTH - 1; game.garbage.length = 0;
+  game.wave = JUNK_CYCLE.length - 1; game.garbage.length = 0;   // -> level 4, position 3
   withRandom(mid - 1e-6, () => nextWave());
-  assert(game.cycleWave === CYCLE_LENGTH, "gate probe: wave CYCLE_LENGTH is the cycle's last wave");
-  assert(bonusOf(game.garbage).length === 0, "gate probe: the SAME roll does NOT spawn at the cycle's last wave (late chance is low)");
+  assert(cyclePos(game.wave) === JUNK_CYCLE.length - 1, `gate probe: level ${game.wave} closes the junk cycle (last position)`);
+  assert(bonusOf(game.garbage).length === 0, "gate probe: the SAME roll does NOT spawn at the cycle's last position (late chance is low)");
 })();
 
 // ================= (C) the easing-off ramp =====================
+// REPOINTED BY CS018 P3/P4 onto the junk-cycle clock — see the header note. Every property the section
+// asserted on the retired cycleWave clock is asserted here on the new one, at the same strength: both
+// endpoints hit exactly, strictly decreasing in between, a real reset at each boundary, a valid
+// probability throughout, and a negative control that it is NOT a function of the absolute level.
 (function () {
-  console.log("(C) the spawn chance eases off across a cycle (asserted off the real bonusSpawnChance)");
+  console.log("(C) the spawn chance eases off across the junk cycle (asserted off the real bonusSpawnChance)");
   assert(BONUS_SPAWN_CHANCE_EARLY > BONUS_SPAWN_CHANCE_LATE,
     "the constants themselves ease off: EARLY > LATE");
+  const CYC = JUNK_CYCLE.length;
+  const cyclePos = w => (levelDef(w).rel - 1) % CYC;
   startGame();
+
+  // Levels 1..CYC are exactly one junk cycle (rel 1..CYC -> positions 0..CYC-1).
   const vals = [];
-  for (let cw = 1; cw <= CYCLE_LENGTH; cw++) {
-    game.cycleWave = cw;
-    vals.push(bonusSpawnChance());
-  }
+  for (let w = 1; w <= CYC; w++) { game.wave = w; vals.push(bonusSpawnChance()); }
   assert(near(vals[0], BONUS_SPAWN_CHANCE_EARLY),
-    `cycleWave 1 hits BONUS_SPAWN_CHANCE_EARLY exactly (${vals[0]})`);
-  assert(near(vals[CYCLE_LENGTH - 1], BONUS_SPAWN_CHANCE_LATE),
-    `cycleWave ${CYCLE_LENGTH} hits BONUS_SPAWN_CHANCE_LATE exactly (${vals[CYCLE_LENGTH - 1]})`);
+    `junk-cycle position 0 hits BONUS_SPAWN_CHANCE_EARLY exactly (${vals[0]})`);
+  assert(near(vals[CYC - 1], BONUS_SPAWN_CHANCE_LATE),
+    `junk-cycle position ${CYC - 1} hits BONUS_SPAWN_CHANCE_LATE exactly (${vals[CYC - 1]})`);
   for (let i = 1; i < vals.length; i++) {
     assert(vals[i] < vals[i - 1],
-      `strictly decreasing across the cycle: cw${i + 1} (${vals[i].toFixed(4)}) < cw${i} (${vals[i - 1].toFixed(4)})`);
+      `strictly decreasing across the cycle: pos${i} (${vals[i].toFixed(4)}) < pos${i - 1} (${vals[i - 1].toFixed(4)})`);
   }
   // It is a PROBABILITY: never out of [0,1], never negative.
   for (const v of vals) assert(v >= 0 && v <= 1, `chance stays a valid probability (${v})`);
-  // Never clamps into nonsense at out-of-range cycleWave values (defensive clamp in the helper).
-  for (const cw of [-5, 0, CYCLE_LENGTH + 1, CYCLE_LENGTH + 50]) {
-    game.cycleWave = cw;
+  // Never clamps into nonsense at out-of-domain levels either (the defensive clamp in the helper).
+  // levelDef's documented domain is n >= 1, so these are exactly the cases the clamp exists for.
+  for (const w of [-5, 0, 1000, 1e6]) {
+    game.wave = w;
     const v = bonusSpawnChance();
     assert(v >= Math.min(BONUS_SPAWN_CHANCE_EARLY, BONUS_SPAWN_CHANCE_LATE) - 1e-12 &&
            v <= Math.max(BONUS_SPAWN_CHANCE_EARLY, BONUS_SPAWN_CHANCE_LATE) + 1e-12,
-      `out-of-range cycleWave ${cw} stays clamped between the two endpoints (${v})`);
+      `out-of-domain level ${w} stays clamped between the two endpoints (${v})`);
   }
 
-  // It rides the SAWTOOTH clock: it must RESET at the cycle boundary, not keep falling with game.wave.
-  // Driven through the REAL nextWave() so cycle/cycleWave come from the shipped derivation.
+  // It rides a RESET-AND-CLIMB clock: it must jump back up at each cycle boundary, not keep falling with
+  // game.wave. Driven through the REAL nextWave() so the level counter comes from the shipped code.
   startGame();
   game.wave = 0;
-  const perWave = [];
-  for (let w = 1; w <= CYCLE_LENGTH * 3; w++) {
+  const perLevel = [];
+  for (let w = 1; w <= CYC * 5; w++) {
+    game.debris.length = 0;
     nextWave();
-    perWave.push({ wave: game.wave, cw: game.cycleWave, chance: bonusSpawnChance() });
+    perLevel.push({ wave: game.wave, pos: cyclePos(game.wave), chance: bonusSpawnChance() });
   }
-  for (const row of perWave) {
-    if (row.cw === 1) {
+  for (const row of perLevel) {
+    if (row.pos === 0) {
       assert(near(row.chance, BONUS_SPAWN_CHANCE_EARLY),
-        `wave ${row.wave} opens a cycle: chance resets to EARLY (${row.chance})`);
+        `level ${row.wave} opens a junk cycle: chance resets to EARLY (${row.chance})`);
     }
-    if (row.cw === CYCLE_LENGTH) {
+    if (row.pos === CYC - 1) {
       assert(near(row.chance, BONUS_SPAWN_CHANCE_LATE),
-        `wave ${row.wave} closes a cycle: chance is LATE (${row.chance})`);
+        `level ${row.wave} closes a junk cycle: chance is LATE (${row.chance})`);
     }
   }
-  // The reset is real: wave CYCLE_LENGTH+1's chance is strictly HIGHER than wave CYCLE_LENGTH's,
-  // which an absolute-wave lever could never do.
-  for (let c = 1; c < 3; c++) {
-    const last = perWave[c * CYCLE_LENGTH - 1];
-    const first = perWave[c * CYCLE_LENGTH];
+  // The reset is real: the level after a cycle's last is strictly HIGHER, which an absolute-level lever
+  // could never do.
+  for (let c = 1; c < 5; c++) {
+    const last = perLevel[c * CYC - 1];
+    const first = perLevel[c * CYC];
     assert(first.chance > last.chance,
-      `cycle boundary at wave ${first.wave}: chance jumps back UP (${last.chance.toFixed(3)} -> ${first.chance.toFixed(3)})`);
+      `junk-cycle boundary at level ${first.wave}: chance jumps back UP (${last.chance.toFixed(3)} -> ${first.chance.toFixed(3)})`);
   }
-  // Negative control: it is NOT a function of the absolute wave — wave 1 and wave CYCLE_LENGTH+1
-  // (different waves, same cycleWave) give the same chance.
-  assert(near(perWave[0].chance, perWave[CYCLE_LENGTH].chance),
-    "same cycleWave in different cycles gives the same chance (it reads cycleWave, not game.wave)");
-  assert(near(perWave[0].chance, perWave[CYCLE_LENGTH * 2].chance),
-    "...and again three cycles in");
+  // Negative control: it is NOT a function of the absolute level — the same cycle position in a later
+  // cycle gives the same chance.
+  assert(near(perLevel[0].chance, perLevel[CYC].chance),
+    "the same junk-cycle position in a later cycle gives the same chance (it reads rel, not game.wave)");
+  assert(near(perLevel[0].chance, perLevel[CYC * 3].chance),
+    "...and again four cycles in");
 })();
 
 // Place a bonus clump well inside the ship's GARBAGE_PICKUP circle so the REAL pickup pass in
@@ -469,8 +488,13 @@ function quietField() {
   assert(far.vx < 0, "attraction: ...and pulls back on it (momentum-conserving, unchanged)");
 
   // --- it can still reach the HUNTER_COALESCE_COUNT threshold and transform ---
+  // REPOINTED BY CS018 P4: coalescence is now gated by the large-Hunter cap, and the cap is 0 at levels
+  // 1-4, so the level has to be one where a large Hunter is allowed to exist at all. The clump behaviour
+  // being asserted here — a BONUS clump transforms exactly like any other — is unchanged; the cap's own
+  // hold-at-the-threshold behaviour is owned by scratchpad/test-cs018-p4.js.
   startGame();
   quietField();
+  game.wave = 9;                        // cap 2 at level 9, and quietField() left game.hunters empty
   const core = new Garbage(1000, 1000, 0, 0, HUNTER_COALESCE_COUNT - 1);
   core.pieces = HUNTER_COALESCE_COUNT - 1;
   core.radius = 7 * Math.sqrt(core.pieces);
@@ -623,10 +647,11 @@ function quietField() {
   noThrow(() => {
     startGame();
     quietField();
-    // Deep into a cycle where the chance is at its LATE floor: still no throw, still valid state.
-    game.wave = CYCLE_LENGTH * 4;
-    for (let w = 0; w < 6; w++) { nextWave(); for (let i = 0; i < 60; i++) update(1 / 60); }
-  }, "deep-cycle waves at the LATE spawn chance");
+    // Deep into the table, sweeping every junk-cycle position including the LATE floor: still no throw,
+    // still valid state.
+    game.wave = 40;
+    for (let w = 0; w < 8; w++) { game.debris.length = 0; nextWave(); for (let i = 0; i < 60; i++) update(1 / 60); }
+  }, "deep levels sweeping the junk cycle, including the LATE spawn chance");
 
   assert(AudioSys.ctx === null, "AudioSys.ctx is still null after the smoke runs");
 })();

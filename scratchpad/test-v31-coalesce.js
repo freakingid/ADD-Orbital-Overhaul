@@ -75,6 +75,7 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "DebrisSatellite", "HunterSatellite", "destroyDebris", "destroyHunter", "shatterClump", "Bullet", "AudioSys", "Achievements",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
+  "levelDef", "largeHunterCount", "largeHunterCap",
   "GARBAGE_DECAY", "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
@@ -89,6 +90,7 @@ const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafS
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
   destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
+  levelDef, largeHunterCount, largeHunterCap,
   GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
   MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
@@ -108,10 +110,28 @@ function beginPlaying() {
   startGame();
   game.state = "playing"; game.paused = false;
   game.debris = []; game.hunters = []; game.garbage = []; game.chain = [];
+  // REPOINTED BY CS018 P4: coalescence into a large Hunter is now gated by the large-Hunter cap
+  // (levelDef(game.wave).maxLargeHunters), and that cap is 0 across levels 1-4 — so a fresh startGame()
+  // would sit at level 1, where NO clump may convert. Every coalescence assertion in this file is about
+  // the coalescence machinery, not the cap, so the whole file is placed at a level whose cap permits a
+  // core. The cap's own behaviour (including what a 12-piece clump does when the cap is full) is owned by
+  // scratchpad/test-cs018-p4.js. Nothing else here reads game.wave.
+  game.wave = CAP_OK_LEVEL;
 }
+
+// The level every test in this file runs at: the first level whose large-Hunter cap is at least 2, so a
+// clump may convert AND a second, independent clump may convert after it. Derived from the shipped table,
+// never hardcoded, so a cap retune moves this with it.
+const CAP_OK_LEVEL = (() => {
+  for (let n = 1; n <= 63; n++) if (levelDef(n).maxLargeHunters >= 2) return n;
+  throw new Error("no level in 1..63 allows 2 large Hunters — the cap table changed shape");
+})();
 
 // =====================================================================
 console.log("(0) config + inheritance: constants sane; emission sites + fromNode inherit defaults");
+assert(levelDef(CAP_OK_LEVEL).maxLargeHunters >= 2,
+  `0: the file runs at level ${CAP_OK_LEVEL}, whose large-Hunter cap (${levelDef(CAP_OK_LEVEL).maxLargeHunters}) permits a coalesced core`);
+assert(levelDef(1).maxLargeHunters === 0, "0: (context) level 1's cap is 0, which is why the file cannot run there");
 assert(GARBAGE_COALESCE_DELAY === 3.0, `0: GARBAGE_COALESCE_DELAY is 3.0 (v3.3 P4 retune 6.0->3.0; got ${GARBAGE_COALESCE_DELAY})`);
 assert(GARBAGE_MERGE_DIST === 12, `0: GARBAGE_MERGE_DIST is 12 (got ${GARBAGE_MERGE_DIST})`);
 assert(HUNTER_COALESCE_COUNT === 12, `0: HUNTER_COALESCE_COUNT is 12 (got ${HUNTER_COALESCE_COUNT})`);

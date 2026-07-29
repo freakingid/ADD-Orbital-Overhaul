@@ -143,21 +143,26 @@ const SAUCER_SCORE = { big: 200, small: 1000 };
 
 // Hunter Satellites (F4) — the reshaped killer-satellite/wedge system: a diamond core that
 // drifts passively toward the ship, then splits 3-ways into actively-homing children,
-// emitting garbage at every tier. All speeds/turn rates are CEILINGS the difficulty ramp
-// (§2.13) climbs toward; at wave 1 the whole family moves at HUNTER_FLOOR_FRAC of them, so
-// early waves are gentle and full pressure arrives ~wave 20.
+// emitting garbage at every tier.
+// CS018 P4 (FLAG-a): every Hunter's speed and turn rate is now FROZEN at _CEIL × HUNTER_FLOOR_FRAC
+// for the WHOLE GAME — no difficulty ramp, no cycle, no clock of any kind. The two _CEIL tables are
+// therefore the FROZEN VALUE'S DERIVATION, not a target anything climbs toward; nothing interpolates
+// between the floor fraction and the ceiling any more. Rising Hunter pressure is expressed purely as
+// COUNT now, through the level table's maxLargeHunters cap (see HUNTER_CAP_STEPS / levelDef).
 const HUNTER_RADII      = { 3: 24, 2: 15, 1: 10 };    // collision radius by tier
 const HUNTER_SCORE      = { 3: 200, 2: 150, 1: 250 }; // large core / medium / small (small worth most — hardest to hit)
 const HUNTER_DAMAGE     = { 3: 60, 2: 45, 1: 30 };    // contact damage — harder than the equivalent Debris tier (F2/F4)
-const HUNTER_SPEED_CEIL = { 3: 70, 2: 120, 1: 175 };  // full-difficulty px/s: large drifts, medium/small home (anchored on the old wedge 120/175)
-const HUNTER_TURN_CEIL  = { 3: 0, 2: 1.6, 1: 2.6 };   // full-difficulty homing turn rate (rad/s); large never turns (passive drift)
-const HUNTER_FLOOR_FRAC = 0.58;   // wave-1 speeds & turn rates = this × ceiling (THE knob for early-game Hunter calm)
+const HUNTER_SPEED_CEIL = { 3: 70, 2: 120, 1: 175 };  // frozen-speed DERIVATION base (px/s): large drifts, medium/small home (anchored on the old wedge 120/175)
+const HUNTER_TURN_CEIL  = { 3: 0, 2: 1.6, 1: 2.6 };   // frozen turn-rate DERIVATION base (rad/s); large's is 0, so it never turns (passive drift)
+const HUNTER_FLOOR_FRAC = 0.58;   // THE Hunter speed/turn knob: EVERY Hunter, at EVERY level, moves at this × its _CEIL
+                                  // (40.6 / 69.6 / 101.5 px/s and 0 / 0.928 / 1.508 rad/s by tier 3/2/1)
 const HUNTER_SCATTER    = 0.6;    // sec a freshly-split homer scatters outward before homing engages
 // v3.6 P2b: "last stand" — once no Debris remain (game.debris.length === 0), a large core slowly steers
 // toward the ship instead of drifting forever. Both PLAYTEST KNOBS, deliberately under-specified.
-const HUNTER_LAST_STAND_SPEED = 50;    // px/s — slower than a medium homer at ANY wave (medium ranges
-                                       // HUNTER_SPEED_CEIL[2]*HUNTER_FLOOR_FRAC≈70 at wave 1 up to 120 at
-                                       // ceiling); a search-ender, not a second homing tier.
+const HUNTER_LAST_STAND_SPEED = 50;    // px/s — slower than a medium homer, which since CS018 P4 is the
+                                       // FROZEN HUNTER_SPEED_CEIL[2]*HUNTER_FLOOR_FRAC = 69.6 px/s at
+                                       // EVERY level (it used to range 69.6 -> 120 and beyond); a
+                                       // search-ender, not a second homing tier.
 const HUNTER_LAST_STAND_TURN  = 0.5;   // rad/s — well below HUNTER_TURN_CEIL[2] (1.6); a slow, inevitable turn.
 // PLAYTEST KNOB (v3.4 P1): canisters per Hunter KILL, by tier — was a flat HUNTER_GARBAGE=3 for
 // both large/medium plus a separate HUNTER_SMALL_GARBAGE=6 for the small tier; now one per-tier
@@ -407,24 +412,29 @@ const STAR_NEAR_DENSITY = 22;   // near parallax layer: sparse, per viewport-siz
 const STAR_NEAR_BRIGHT_MIN = 0.55; // near layer reads brighter (closer) than the far layer
 const STAR_NEAR_BRIGHT_MAX = 1.0;
 
-// Difficulty ramp & early-game pacing (F10) — one shared curve scales every wave-driven
-// threat parameter from an easy wave-1 floor up to a full-intensity ceiling (see §2.6/§2.13).
+// Difficulty ramp & early-game pacing (F10) — originally the one shared curve that scaled every
+// wave-driven threat parameter from an easy wave-1 floor up to a full-intensity ceiling.
+// CS018 P4 (FLAG-l): RETAINED DELIBERATELY, but its job is now exactly ONE thing — it is the
+// MUSIC-INTENSITY CURVE. difficultyFactor()'s only direct caller is MusicSys.setIntensity() in
+// nextWave(); every per-level difficulty quantity comes from levelDef() below instead. Do NOT
+// re-derive music intensity from the level table, and do not put a new difficulty lever back on this
+// curve. ramp() (which composes difficultyFactor) still interpolates the remaining direct-ramp
+// levers: the small-saucer chance, plus the saucer gap/fire/aim group until CS018 P6/P7 move those
+// onto tiers.
 const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficultyFactor(wave);
                                 // ~0 at wave 1, ~0.9 by wave 20, plateauing near 1 by ~wave 25.
-// CS017 P1: the difficulty CYCLE clock. CS017 P3 wired it into the SAWTOOTH levers below (debris
-// count/speed, Hunter speed/turn). The FROZEN levers — everything else, saucers included — keep
-// sampling the absolute game.wave; that asymmetry is deliberate (GDD §2.13).
-const CYCLE_LENGTH = 9;         // PLAYTEST KNOB: waves per difficulty cycle; the sawtooth reset period
-const CYCLE_GAIN   = 0.12;      // PLAYTEST KNOB: per-cycle escalation multiplier (FORK-CS017-A -> spiral)
+// CS017's difficulty CYCLE clock — CYCLE_LENGTH, CYCLE_GAIN, cycleValue(), game.cycle,
+// game.cycleWave — is GONE as of CS018 P4 (FORK-CS018-A). The level table below replaced it and is
+// now the game's ONE difficulty clock; there is no second clock and no sawtooth/spiral any more.
 
 // ---------- CS018 P1: the LEVEL PROGRESSION TABLE (PLANNED-FEATURES-CS018 §3) ----------
 // One PURE function, levelDef(n), is the single source of truth for every per-level difficulty
 // quantity. It reads NO game state — not game.wave, not DEBUG, nothing — so it is callable before
 // startGame() and is this changeset's primary headless-test surface.
-// LANDED INERT IN P1: nothing in the build calls it yet. Consumers are repointed onto it group by
-// group in P3–P7, and the CS017 cycle clock above (CYCLE_LENGTH / CYCLE_GAIN / cycleValue() /
-// game.cycle / game.cycleWave) retires in P4 once its last reader is gone — until then BOTH exist
-// side by side and only the cycle clock is live. Domain: n >= 1 (game.wave is 1-based).
+// As of CS018 P4 this is the game's ONLY difficulty clock — the CS017 cycle clock it landed beside
+// in P1 has been retired outright. Consumers repointed so far: junk count + speed and the
+// bonus-canister chance (P3), the large-hunter cap (P4). Payload slots (P5) and the saucer group
+// (P6/P7) still read their old constants. Domain: n >= 1 (game.wave is 1-based).
 const PHASE_LEN  = 21;              // levels per phase; three phases cover levels 1..LEVEL_MAX
 const LEVEL_MAX  = 63;              // levels 64+ reuse level 63's definition unchanged (endgame plateau)
 const JUNK_CYCLE = [3, 5, 9, 13];   // junk count by position in the 4-level cycle, indexed (rel-1) % 4
@@ -2699,45 +2709,57 @@ const DebugCode = { armed: false, buf: "", last: 0 };
 // ---------- Dev-only difficulty logging (CS017 P2) — nothing player-visible, nothing persisted ----------
 // One snapshot row per nextWave() call, kept only in memory (never touches localStorage) and exported by
 // hand from the DEBUG_CODE-gated debug panel below. DIFFLOG_FIELDS is the single source of truth for both
-// the row shape (logDifficultySnapshot) and the CSV column order (difficultyLogCSV) — the field list is
-// frozen by IMPLEMENTATION-PHASES-CS017.md P2 and must not change; only the expressions feeding each field
-// may be repointed as later phases (P3/P4) wire the levers for real.
+// the row shape (logDifficultySnapshot) and the CSV column order (difficultyLogCSV).
+// CS018 P4 CHANGED THE FIELD LIST — deliberately, and it supersedes CS017 P2's "the field list is frozen"
+// rule, which was written when the cycle clock was the thing being observed. Four columns described
+// machinery that no longer exists (`cycle`, `cycleWave`, `hunterSpeedFrac`, `hunterTurnFrac`: the clock is
+// retired and Hunter speed/turn are now frozen constants, so those two would log a fixed 0.58 forever).
+// They are replaced by what the level table actually decides. Later phases may repoint the expressions
+// feeding a column; changing the LIST itself needs a reason as concrete as this one.
 const DIFFLOG_MAX = 2000; // cap so a long dev session can't grow the buffer without bound; drops oldest
 const DiffLog = { rows: [] };
 const DIFFLOG_FIELDS = [
-  "t", "wave", "cycle", "cycleWave", "score",
-  "debrisCount", "debrisSpeedMul", "hunterSpeedFrac", "hunterTurnFrac",
+  "t", "level", "phase", "rel", "score", "prevLevelSecs",
+  "junkCount", "junkSpeedMul", "maxLargeHunters", "hunterCount",
+  "junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
+  "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed",
   "saucerAimErr", "saucerGapMin", "saucerGapMax",
-  "hunterCount", "chainLen", "cargoMax", "scoopLevel",
+  "chainLen", "cargoMax", "scoopLevel",
 ];
 // Snapshots read every lever from the SAME expressions the live sites use — never a re-derived formula.
-// debrisCount/debrisSpeedMul are passed in verbatim from nextWave()'s own `count`/`speedMul` locals (the
-// exact values that wave's DebrisSatellite spawns just used). hunterSpeedFrac/hunterTurnFrac are today
-// IDENTICAL — both HunterSatellite's speed and turnRate ramp from the same HUNTER_FLOOR_FRAC floor up to
-// their own per-tier ceiling (see the ctor), so the ceiling cancels out of the ratio and both reduce to
-// this one fraction; logged as two fields (not one) because P4 may give them independent curves later.
-// CS017 P3 REPOINTED both to the cycle-wave sawtooth + cycleValue() spiral the HunterSatellite ctor now
-// samples — the field list is frozen, but what feeds it tracks the live sites (see the header note above).
-// Note these two can now exceed 1: they are a fraction OF THE CEILING, and the spiral term deliberately
-// carries deep cycles past it. saucerAimErr/saucerGapMin/saucerGapMax mirror the exact ramp() calls at the
-// saucer aim and spawn-gap sites (there is no cached variable to read at nextWave() time) — those are
-// FROZEN levers and still sample the absolute game.wave, which is exactly what makes this log able to
-// show the sawtooth/monotonic asymmetry side by side.
-function logDifficultySnapshot(debrisCount, debrisSpeedMul) {
+// junkCount/junkSpeedMul are passed in verbatim from nextWave()'s own `count`/`speedMul` locals (the exact
+// values that level's DebrisSatellite spawns just used). level/phase/rel/maxLargeHunters and the seven
+// tier names come from ONE levelDef(game.wave) call, so a row can never disagree with itself about which
+// level it describes. The seven tier columns log the TIER NAME ("low"/"normal"/"high"), which is what the
+// table decides; the px/s or seconds behind a name is a DEBUG_VARS knob and is not per-level data.
+// prevLevelSecs is game.waveTime captured by nextWave() BEFORE the reset — how long the level that just
+// ended took (FLAG-k, the field's only reader now that wavePressure is on its way out).
+// saucerAimErr/saucerGapMin/saucerGapMax still mirror the exact ramp() calls at the saucer aim and
+// spawn-gap sites (there is no cached variable to read at nextWave() time); CS018 P6/P7 repoint those
+// three sites onto tiers and these columns follow them there.
+function logDifficultySnapshot(junkCount, junkSpeedMul, prevLevelSecs) {
+  const def = levelDef(game.wave);
   DiffLog.rows.push({
     t: performance.now(),
-    wave: game.wave,
-    cycle: game.cycle,
-    cycleWave: game.cycleWave,
+    level: def.level,
+    phase: def.phase,
+    rel: def.rel,
     score: game.score,
-    debrisCount,
-    debrisSpeedMul,
-    hunterSpeedFrac: cycleValue(ramp(HUNTER_FLOOR_FRAC, 1, game.cycleWave), game.cycle),
-    hunterTurnFrac: cycleValue(ramp(HUNTER_FLOOR_FRAC, 1, game.cycleWave), game.cycle),
+    prevLevelSecs,
+    junkCount,
+    junkSpeedMul,
+    maxLargeHunters: def.maxLargeHunters,
+    hunterCount: game.hunters.length, // FLAG-CS017-g: seeds the future music-intensity changeset
+    junkSpeed: def.junkSpeed,
+    ufoAppearFreq: def.ufoAppearFreq,
+    ufoFlightSpeed: def.ufoFlightSpeed,
+    ufoDirChangeFreq: def.ufoDirChangeFreq,
+    ufoFireFreq: def.ufoFireFreq,
+    ufoAccuracy: def.ufoAccuracy,
+    ufoShotSpeed: def.ufoShotSpeed,
     saucerAimErr: ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE),
     saucerGapMin: ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, game.wave),
     saucerGapMax: ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, game.wave),
-    hunterCount: game.hunters.length, // FLAG-CS017-g: seeds the future music-intensity changeset
     chainLen: game.chain.length,
     cargoMax: game.cargoMax,
     scoopLevel: game.scoopLevel,
@@ -3441,14 +3463,17 @@ loadSettings(); // apply saved settings (if any) over the shipped defaults, once
 const rand = (a, b) => a + Math.random() * (b - a);
 const randSign = () => Math.random() < 0.5 ? -1 : 1;
 
-// Global difficulty ramp (F10). Returns 0 at wave 1 and climbs asymptotically toward 1
-// over many waves — the single curve every wave-driven threat parameter scales off.
-// RAMP_WAVES sets how fast the whole game gets hard; this is the one knob to turn.
+// The MUSIC-INTENSITY CURVE (F10; RETAINED by CS018 P4 per FLAG-l). Returns 0 at wave 1 and climbs
+// asymptotically toward 1 over many waves. Its ONLY direct caller is MusicSys.setIntensity() in
+// nextWave() — that is now this function's whole purpose, since every per-level difficulty quantity
+// comes from levelDef() instead. RAMP_WAVES sets how fast the music heats up. Do NOT re-derive music
+// intensity from the level table, and do not hang a new difficulty lever off this curve.
 function difficultyFactor(wave) {
   return 1 - Math.exp(-(wave - 1) / RAMP_WAVES);
 }
-// Interpolate a threat parameter between its easy wave-1 floor and its full-intensity
-// ceiling using the difficulty curve. Every early-game pacing value flows through this.
+// Interpolate a threat parameter between its easy wave-1 floor and its full-intensity ceiling using
+// the curve above. CS018 P4: still alive for the levers that remain on it — the small-saucer chance,
+// plus the saucer gap/fire/aim group until P6/P7 repoint those onto levelDef tiers.
 function ramp(floor, ceil, wave) {
   return floor + (ceil - floor) * difficultyFactor(wave);
 }
@@ -3469,13 +3494,32 @@ function leverScale(lever, wave) {
   return Math.max(lever.floor, s);
 }
 
-// CS017 P1: the FORK-CS017-A spiral term — each difficulty cycle's values are multiplied by this so
-// cycle N+1 starts above where cycle N started, even though the in-cycle sawtooth resets every
-// CYCLE_LENGTH waves. CS017 P3 wired it: the four SAWTOOTH levers (debris count, debris speed at both
-// sites, Hunter speed, Hunter turn rate) all read ramp/base off game.cycleWave and pass the result
-// through here with game.cycle. Every FROZEN lever bypasses this entirely and still samples game.wave.
-function cycleValue(base, cycle) {
-  return base * (1 + cycle * CYCLE_GAIN);
+// ---------- CS018 P4: the LARGE-HUNTER CAP (PLANNED-FEATURES-CS018 §4.1) ----------
+// The cap counts SPAWN SLOTS, not objects. Only size 3 is counted and only size 3 is capped: a split
+// (large -> 3 mediums) therefore FREES a slot rather than consuming three, middle/small hunters are
+// never counted and never capped, and destroying a large frees its slot immediately (dead-but-not-yet
+// -filtered hunters are excluded, so the slot is free within the same frame).
+function largeHunterCount() {
+  let n = 0;
+  for (const h of game.hunters) if (h.size === 3 && !h.dead) n++;
+  return n;
+}
+// The ceiling itself, straight off the level table: 0 at levels 1–4 (no large Hunter from EITHER
+// producer), 7 by 21, 12 from 59 on. Both producers — the ambient spawner in update() and the
+// coalescence conversion — gate on largeHunterCount() < largeHunterCap().
+function largeHunterCap() {
+  return levelDef(game.wave).maxLargeHunters;
+}
+// CS018 P4 (FLAG-i): Hunter's Bane counts kills within ONE lineage, and the shipped reset — "every
+// ambient spawnCore()" — breaks the moment lineages can coexist (the cap allows up to 12): a second
+// lineage arriving mid-fight would zero a counter the player was part-way through filling. Reset on
+// the 0 -> 1 transition instead: when the board goes from NO large Hunters to one, whichever producer
+// caused it. Call this IMMEDIATELY BEFORE pushing a new large, so the count read here is the
+// pre-spawn count. Accepted consequence (recorded in the GDD): the achievement loosens — a lineage's
+// tally now survives later lineages arriving, and a coalesced core onto an empty board resets it
+// where before it did not.
+function noteLargeHunterSpawn() {
+  if (largeHunterCount() === 0) game.stats.hunterLineageKills = 0;
 }
 
 // CS018 P3: the ONE debris speedMul derivation, shared by nextWave() and destroyDebris()'s split
@@ -3491,9 +3535,9 @@ function junkSpeedMul() {
 
 // CS018 P3 (FLAG-f): the bonus canister's per-wave spawn probability — the ONE lever in this
 // changeset that EASES OFF instead of escalating. Common right after a junk-cycle reset, rare at its
-// end. RE-HOMED off the retiring game.cycleWave (CYCLE_LENGTH 9) onto the junk cycle position instead
+// end. RE-HOMED off the (now-retired, CS018 P4) game.cycleWave onto the junk cycle position instead
 // — levelDef's `rel` mod JUNK_CYCLE.length (4) — so it keeps breathing with a reset-and-climb clock
-// even after the cycle clock itself is gone in P4.
+// now that the cycle clock itself is gone.
 //
 // DELIBERATE DEVIATION from DIFFICULTY-LEVERS.md 2.6 ("no lever gets its own curve"), documented
 // there: this is a straight LINEAR interpolation across the cycle, not ramp()/difficultyFactor().
@@ -3943,9 +3987,9 @@ class DebrisSatellite {
 // passively toward the ship (like the old Satellite); when shot it splits 3-ways into
 // actively-homing children — medium then small, each faster and more agile than the last
 // (like the old Wedge). Every tier emits garbage; the final small tier drops a larger burst
-// of LOW-mass scrap. All speeds/turn rates scale from a gentle wave-1 floor up to their
-// ceilings via the difficulty ramp (§2.13), so early waves are calm and full pressure
-// arrives ~wave 20. Tiers use the Debris 3/2/1 convention: 3 large, 2 medium, 1 small.
+// of LOW-mass scrap. CS018 P4: all speeds/turn rates are FROZEN constants (see the HUNTER_*
+// block) — the difficulty ramp no longer touches them, and escalation is carried entirely by
+// the large-Hunter CAP. Tiers use the Debris 3/2/1 convention: 3 large, 2 medium, 1 small.
 class HunterSatellite {
   constructor(x, y, size, scatterAngle = 0) {
     this.x = x; this.y = y;
@@ -3956,18 +4000,18 @@ class HunterSatellite {
     // v3.3 P4 (9b, FORK-5): the `bornOfScrap` flag is GONE. Every Hunter of every origin now drops
     // garbage at its tier counts — the v3.2 P3 suppression is reversed. 9a's single-decay is the new
     // governor for the 12-in/66-out amplifier that flag used to close.
-    // Scaled from a gentle floor (HUNTER_FLOOR_FRAC × ceiling) up to the full ceiling. CS017 P3: the
-    // ramp now samples game.cycleWave — the SAWTOOTH, which resets every CYCLE_LENGTH waves — and the
-    // result is multiplied by the cycleValue() spiral term, so each cycle opens above the last
-    // (FORK-CS017-A). See GDD §2.13.
-    // SAMPLED ONCE, AT SPAWN, and never re-sampled. (The comment that used to sit here claimed
-    // "game.wave is fixed for a Hunter's lifetime (Hunters block wave-clear)" — that has been FALSE
-    // since CS015 P3, which removed Hunters from the wave-clear gate.) A Hunter can now carry across
-    // several waves and even across a cycle boundary, keeping its SPAWN cycle's speed and turn rate for
-    // life — so a Hunter born late in one cycle stays fast after the field around it has reset. That is
-    // ACCEPTED DESIGN (Paul's explicit call), not an oversight; do not "fix" it by re-sampling.
-    this.speed    = cycleValue(ramp(HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC, HUNTER_SPEED_CEIL[size], game.cycleWave), game.cycle);
-    this.turnRate = cycleValue(ramp(HUNTER_TURN_CEIL[size]  * HUNTER_FLOOR_FRAC, HUNTER_TURN_CEIL[size],  game.cycleWave), game.cycle);
+    // CS018 P4 (FLAG-a): FROZEN at the level-1 value for the whole game — NO CLOCK. There is no ramp,
+    // no cycle, no game.wave and no game state of any kind in these two lines: a Hunter spawned at
+    // level 1 and a Hunter spawned at level 63 move and turn identically. The _CEIL constants are the
+    // frozen value's DERIVATION (× HUNTER_FLOOR_FRAC), NOT a ramp target — nothing climbs toward them
+    // any more. The expression is kept rather than baked into literals so that derivation stays
+    // visible: 40.6 / 69.6 / 101.5 px/s and 0 / 0.928 / 1.508 rad/s for tiers 3 / 2 / 1.
+    // This also RETIRES the CS017 P3 wrinkle that used to live here: because the value no longer
+    // depends on when a Hunter spawned, a Hunter carried across several levels can no longer be
+    // "stale-fast" relative to the field around it. Escalating Hunter pressure now comes entirely from
+    // the level table's maxLargeHunters cap — how MANY can exist, not how fast they move.
+    this.speed    = HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC;
+    this.turnRate = HUNTER_TURN_CEIL[size]  * HUNTER_FLOOR_FRAC;
     if (size === 3) {
       // Large core: passive drift toward the ship's position AT SPAWN — no continuous re-aim
       // (confirmed design). Only its drift *speed* scales with difficulty, not its behavior.
@@ -4413,7 +4457,8 @@ function resetGameStats() {
     pacifistStreak: 0,       // consecutive deliveries with no shot fired between them
     pacifistBest: 0,         // best such streak this game (Pacifist Tow, goal 5)
     debrisKills: 0,          // Debris Satellites the player destroyed (Satellite Buster)
-    hunterLineageKills: 0,   // kills in the CURRENT Hunter lineage (reset when a fresh core spawns)
+    hunterLineageKills: 0,   // kills in the CURRENT Hunter lineage. CS018 P4 (FLAG-i): reset on the
+                             // 0 -> 1 large-Hunter transition (noteLargeHunterSpawn), not on every spawn
     hunterLineComplete: false,// wiped a full 13-member Hunter line from one spawn (Hunter's Bane)
     largeHunterKills: 0,     // large Hunter cores destroyed this game (Diamond Cutter)
     smallSaucerKills: 0,     // small (aimed) saucers destroyed this game (Small Ball)
@@ -4473,13 +4518,11 @@ const game = {
                                                         // a bug instead of a promotion. Decayed in update().
   deliveryCount: 0, offloadTimer: 0,
   score: 0, wave: 0,
-  // CS017 P1: the difficulty cycle clock. wave stays the ABSOLUTE player-facing counter — every
-  // achievement, the HUD LEVEL readout, high-score records and musicStateFor keep reading game.wave,
-  // untouched. cycle/cycleWave are DERIVED from it in nextWave() (the sawtooth); waveTime is a per-wave
-  // seconds-elapsed accumulator ticked in update(). All three are inert this phase.
-  cycle: 0,      // 0-based difficulty cycle index
-  cycleWave: 1,  // 1-based wave within the current cycle
-  waveTime: 0,   // seconds elapsed in the current wave
+  // `wave` is the ABSOLUTE player-facing level counter and the ONE difficulty clock's input — every
+  // achievement, the HUD LEVEL readout, high-score records, musicStateFor and levelDef() read it.
+  // CS018 P4 retired its CS017 companions `cycle`/`cycleWave` outright (FORK-CS018-A).
+  waveTime: 0,   // seconds elapsed in the current level; ticked in update(), zeroed by nextWave().
+                 // CS018 P4 (FLAG-k): kept as telemetry — nextWave() logs the level just finished.
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
   saucerTimer: 0,
   hunterTimer: 0,
@@ -4542,9 +4585,10 @@ function startGame() {
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
   game.wave = 0;
-  // CS017 P1: fresh run never carries a stale cycle/cycleWave/waveTime — nextWave() (called at the end
-  // of this function) derives cycle/cycleWave for wave 1 and zeroes waveTime, same as every other wave.
-  game.cycle = 0; game.cycleWave = 1; game.waveTime = 0;
+  // A fresh run never carries a stale waveTime. nextWave() (called at the end of this function) zeroes
+  // it again for level 1, exactly as it does for every other level. (CS018 P4 removed the
+  // game.cycle/game.cycleWave resets that used to sit on this line with it.)
+  game.waveTime = 0;
   game.nextRepair = REPAIR_MILESTONE;
   game.debris = []; game.bullets = []; game.saucers = [];
   game.hunters = []; game.particles = [];
@@ -4579,11 +4623,11 @@ function startGame() {
 
 function nextWave() {
   game.wave++;
-  // CS017 P1: derive the sawtooth cycle clock from the absolute wave counter. game.wave itself is
-  // UNTOUCHED and stays the player-facing absolute counter — every achievement, the HUD LEVEL readout,
-  // high-score records and musicStateFor keep reading game.wave, not cycle/cycleWave.
-  game.cycle     = Math.floor((game.wave - 1) / CYCLE_LENGTH);
-  game.cycleWave = ((game.wave - 1) % CYCLE_LENGTH) + 1;
+  // CS018 P4: the cycle-clock derivation that used to sit here is gone — game.wave is the ONE
+  // difficulty clock and levelDef(game.wave) reads it directly. FLAG-k: waveTime's value is captured
+  // BEFORE it is zeroed so logDifficultySnapshot can record how long the level just finished took;
+  // reading it after the reset would only ever log 0.
+  const prevLevelSecs = game.waveTime;
   game.waveTime  = 0;
   VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
   // v3.4 P7: intensity recomputed ONLY on wave change, never per-frame — keeps updateMusic()'s
@@ -4631,7 +4675,7 @@ function nextWave() {
     bonusClump.bonus  = true;
     game.garbage.push(bonusClump);
   }
-  logDifficultySnapshot(count, speedMul); // CS017 P2: dev-only, one row per wave (see DiffLog above)
+  logDifficultySnapshot(count, speedMul, prevLevelSecs); // CS017 P2: dev-only, one row per level (see DiffLog above)
 }
 
 function addScore(pts) {
@@ -5437,7 +5481,8 @@ function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity surv
 // and a piece already marked dead this pass is skipped. Both the attraction and the merge require
 // BOTH pieces active (coalesceDelay <= 0), so a fresh burst disperses for 1 s before it can clump.
 // FORK-1: coalesced Hunters are spawned independent of game.hunterTimer, so neglect can breed several
-// concurrent lineages. Relies on the existing end-of-frame dead-filter for compaction (no new filter).
+// concurrent lineages — bounded since CS018 P4 by the shared large-Hunter cap (§4.1), which this pass
+// respects at the conversion site. Relies on the existing end-of-frame dead-filter (no new filter).
 function coalesceGarbage(dt) {
   const gs = game.garbage;
   for (let i = 0; i < gs.length; i++) {
@@ -5471,11 +5516,26 @@ function coalesceGarbage(dt) {
         a.bonus = a.bonus || b.bonus;
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
+          // CS018 P4 (§4.1): coalescence is the SECOND large-Hunter producer and is capped by the same
+          // level-table ceiling as the ambient spawner. With the cap full the clump HOLDS AT THE FINAL
+          // COALESCENCE STAGE instead of converting: it does not become a Hunter, it does not grow past
+          // HUNTER_COALESCE_COUNT pieces (the overflow this merge just added is shed, per-piece mass
+          // preserved), and its decay clock — already reset by the merge above, per the shipped rule —
+          // keeps running, so a held clump that nothing else touches still ages out and the player can
+          // still shatter or scoop it as ordinary 12-piece salvage. Destroy a large anywhere on the
+          // board and the next merge into this clump converts it.
+          if (largeHunterCount() >= largeHunterCap()) {
+            a.mass   = a.mass * (HUNTER_COALESCE_COUNT / a.pieces); // shed the overflow, keep mass-per-piece
+            a.pieces = HUNTER_COALESCE_COUNT;
+            a.radius = 7 * Math.sqrt(a.pieces);                     // the ONE clump-radius expression
+            continue;  // survivor lives on, saturated; keep scanning further pieces against it this pass
+          }
           // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
           // v3.3 P4 (9b, FORK-5): no bornOfScrap tag anymore — this coalesced core drops garbage like
           // any other Hunter. hunterCoalesced still counts the transform (it never read the flag) so the
           // "Waste Not" achievement is untouched.
           a.dead = true;
+          noteLargeHunterSpawn();   // FLAG-i: same 0 -> 1 rule as the ambient producer, one choke point
           game.hunters.push(new HunterSatellite(a.x, a.y, 3));
           game.stats.hunterCoalesced++;
           AudioSys.hunterborn();
@@ -6012,13 +6072,18 @@ function update(dt) {
     game.saucerTimer = rand(gapMin, gapMax);
   }
 
-  // One Hunter lineage at a time: a fresh large core only spawns once the whole family is
-  // clear (core + any homing children). Cadence is unchanged from the old Satellite; only the
-  // Hunters' movement speed/agility ramps with difficulty (F4), not how often they appear.
+  // The AMBIENT Hunter producer, one of two (the other is coalescence). CS018 P4 (§4.1): the old
+  // `game.hunters.length === 0` gate — "one lineage at a time, and not even a leftover small may be
+  // alive" — was a de facto cap of ONE, so it had to go for a table cap of 7/10/12 to mean anything.
+  // Several lineages can now coexist, bounded by largeHunterCap(); middle/small hunters no longer
+  // block a spawn at all. The `game.wave >= 2` gate and the rand(20, 32) cadence are UNCHANGED — how
+  // often a Hunter appears is still not a difficulty lever, only how many may exist at once.
+  // Levels 1–4 have a cap of 0, so no ambient Hunter appears there: levels 2–4 lose the Hunter they
+  // used to get, which is the intended consequence of the table (§4.1), not an oversight.
   game.hunterTimer -= dt;
-  if (game.hunterTimer <= 0 && game.hunters.length === 0 && game.wave >= 2) {
+  if (game.hunterTimer <= 0 && largeHunterCount() < largeHunterCap() && game.wave >= 2) {
+    noteLargeHunterSpawn();   // FLAG-i: arms Hunter's Bane only on the 0 -> 1 transition, not every spawn
     game.hunters.push(HunterSatellite.spawnCore());
-    game.stats.hunterLineageKills = 0; // start counting this lineage for Hunter's Bane (F9)
     game.hunterTimer = rand(20, 32);
   }
 

@@ -55,7 +55,8 @@ const RETURN = [
   "startGame", "update", "game", "settings",
   "DEBUG", "debugShown", "DEBUG_VARS", "applyDebug", "menuDebug",
   "Garbage", "coalesceGarbage", "AudioSys",
-  "GARBAGE_DECAY", "GARBAGE_FADE", "GARBAGE_COALESCE_DELAY", "HUNTER_COALESCE_COUNT", "WORLD_W"
+  "GARBAGE_DECAY", "GARBAGE_FADE", "GARBAGE_COALESCE_DELAY", "HUNTER_COALESCE_COUNT", "WORLD_W",
+  "levelDef"
 ];
 
 function build() {
@@ -224,6 +225,14 @@ function byId(A, id) { return A.DEBUG_VARS.find(v => v.id === id); }
   console.log("(F4) a merge crossing HUNTER_COALESCE_COUNT still transforms into a Hunter, even if decay is nearly 0");
   const A = build();
   beginPlaying(A);
+  // REPOINTED BY CS018 P4: the coalescence conversion is now gated by the large-Hunter cap, which is 0
+  // across levels 1-4, so a fresh startGame() (level 1) would refuse to convert for a reason that has
+  // nothing to do with this section's subject (decay proximity). Placed at the first level whose cap
+  // permits a core, derived from the shipped table rather than hardcoded.
+  let capLevel = 1;
+  while (capLevel <= 63 && A.levelDef(capLevel).maxLargeHunters < 1) capLevel++;
+  assert(capLevel <= 63, "F4: found a level whose large-Hunter cap permits a coalesced core");
+  A.game.wave = capLevel;
   A.applyDebug("garbageLifetime", 10);
   A.applyDebug("garbageAttractDelay", 0);
 

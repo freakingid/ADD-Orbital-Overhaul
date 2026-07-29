@@ -134,10 +134,13 @@ function onDebug(A, { playing = false } = {}) {
   const N = A.DEBUG_ENTRIES.length;
 
   // The bug the phase prompt asked to verify first, computed from the SAME registry the build ships.
+  // REPOINTED BY CS018 P3+: the "N === 12" pin was true only at P2 and every later phase adds knobs by
+  // design, so it has been replaced by the claim that actually matters and stays true — the old formula
+  // overflows the viewport AT THE LIVE REGISTRY SIZE, whatever that size is, and gets worse as it grows.
   const oldH = 220 + (N + 1) * 46;
-  assert(N === 12, `B: the registry still holds 12 value entries this phase (got ${N})`);
-  assert(oldH === 818, `B: the pre-P2 formula 220 + (N+1)*46 gives 818px at N=12 (got ${oldH})`);
-  assert(oldH > A.VIEW_H, `B: 818 > VIEW_H ${A.VIEW_H} — the old panel overflowed the viewport`);
+  assert(N >= 12, `B: the registry has at least P2's 12 value entries (got ${N})`);
+  assert(220 + (12 + 1) * 46 === 818, "B: (historical) the pre-P2 formula gave 818px at P2's N=12");
+  assert(oldH > A.VIEW_H, `B: the old formula gives ${oldH}px > VIEW_H ${A.VIEW_H} — it overflowed the viewport`);
   const oldY = (A.VIEW_H - oldH) / 2;
   assert(oldY < 0, `B: the old panel's top edge sat off-screen at y=${oldY}`);
   assert(oldY + oldH - 30 > A.VIEW_H, `B: the old control hint baseline (${oldY + oldH - 30}) was below the canvas`);
@@ -169,11 +172,14 @@ function onDebug(A, { playing = false } = {}) {
   const A = build().exports;
   const rows = A.DEBUG_ROWS, vars = A.DEBUG_VARS;
 
+  // REPOINTED BY CS018 P3+: the header count and total row count were pinned at P2's registry size; later
+  // phases add both knobs and sections by design. What is asserted now is the STRUCTURAL invariant, which
+  // is what the section was ever really about: every index derives from the registry.
   const headers = vars.filter(v => v.header).length;
-  assert(headers === 4, `C: the registry declares 4 section headers this phase (got ${headers})`);
+  assert(headers >= 4, `C: the registry declares at least P2's 4 section headers (got ${headers})`);
+  assert(vars.every(v => !!v.header !== !!v.id), "C: every registry entry is either a header or a value entry, never both");
   assert(A.DEBUG_ENTRIES.length === vars.length - headers, "C: DEBUG_ENTRIES is the registry minus its headers");
   assert(rows.length === vars.length + 2, `C: DEBUG_ROWS = registry + Dump + Back (${rows.length} = ${vars.length} + 2)`);
-  assert(rows.length === 18, `C: 18 rows total this phase (got ${rows.length})`);
 
   // Row order mirrors the registry exactly, then the two trailing action rows.
   let ok = true;
@@ -735,19 +741,28 @@ function onDebug(A, { playing = false } = {}) {
   // Splice synthetic rows in BEFORE the trailing Dump/Back pair, reusing real registry entries so
   // debugShown lookups resolve. This is the shape P3/P6/P7 will produce: 32 value entries interleaved with
   // JUNK / UFO MOVEMENT / UFO WEAPONS / GLOBAL headers, plus the two action rows.
+  // REPOINTED BY CS018 P3+: the synthetic count is now DERIVED, so this section keeps testing the CS018
+  // end-state (32 value rows, §3.1) as real knobs land phase by phase instead of overshooting it.
+  const CS018_VALUE_ROWS = 32;
   const reuse = A.DEBUG_ENTRIES[A.DEBUG_ENTRIES.length - 1];
+  const baseRows = rows.length, baseVars = rows.filter(r => r.kind === "var").length;
+  const need = CS018_VALUE_ROWS - baseVars;
+  assert(need >= 0, `M: the live registry has not yet passed CS018's 32 value rows (has ${baseVars})`);
+  const SECTIONS = 4;
   const extra = [];
-  for (let s = 0; s < 4; s++) {
+  for (let s = 0; s < SECTIONS; s++) {
     extra.push({ kind: "header", label: "SECTION " + s });
-    for (let k = 0; k < 5; k++) extra.push({ kind: "var", label: `synthetic ${s}.${k}`, e: reuse });
+    const per = Math.floor(need / SECTIONS) + (s < need % SECTIONS ? 1 : 0);
+    for (let k = 0; k < per; k++) extra.push({ kind: "var", label: `synthetic ${s}.${k}`, e: reuse });
   }
   rows.splice(rows.length - 2, 0, ...extra);
   const ROWS = rows.length, VIS = A.DEBUG_ROWS_VISIBLE, maxTop = ROWS - VIS;
-  assert(ROWS === 42, `M: the enlarged model has 42 rows (got ${ROWS})`);
-  assert(rows.filter(r => r.kind === "var").length === 32, "M: ...of which 32 are value rows, matching CS018 §3.1");
+  assert(ROWS === baseRows + extra.length, `M: the enlarged model has ${baseRows + extra.length} rows (got ${ROWS})`);
+  assert(rows.filter(r => r.kind === "var").length === CS018_VALUE_ROWS, `M: ...of which ${CS018_VALUE_ROWS} are value rows, matching CS018 §3.1`);
+  assert(ROWS >= 42, `M: at least the 42 rows CS018's end-state implies (got ${ROWS})`);
 
   // Panel height must NOT have grown — that is the whole point of the fixed-height rewrite.
-  assert(A.DEBUG_PANEL_H === 640 && A.DEBUG_PANEL_H <= A.VIEW_H, "M: the panel height is unchanged at 42 rows");
+  assert(A.DEBUG_PANEL_H === 640 && A.DEBUG_PANEL_H <= A.VIEW_H, `M: the panel height is unchanged at ${ROWS} rows`);
 
   // A full lap still visits every selectable row, never a header, and reaches the last row.
   g.menu.index = A.debugFirstRow();
@@ -760,7 +775,7 @@ function onDebug(A, { playing = false } = {}) {
     seen.push(g.menu.index);
   }
   assert(JSON.stringify(seen) === JSON.stringify(selectable), "M: one lap visits every selectable row at scale");
-  assert(g.menu.index === ROWS - 1 && rows[ROWS - 1].kind === "back", "M: Back is still reachable at 42 rows");
+  assert(g.menu.index === ROWS - 1 && rows[ROWS - 1].kind === "back", `M: Back is still reachable at ${ROWS} rows`);
   assert(A.DebugPanel.scroll === maxTop, `M: ...with the window scrolled to the end (${maxTop})`);
   A.menuDebug("down");
   assert(g.menu.index === A.debugFirstRow() && A.debugScrollTop() === 0, "M: the wrap still returns to the top");
@@ -770,7 +785,7 @@ function onDebug(A, { playing = false } = {}) {
   assert(!threw, "M: drawDebug renders every row of the enlarged model" + (threw ? ": " + threw.stack : ""));
 
   rows.splice(rows.length - 2 - extra.length, extra.length);   // leave the shared model as we found it
-  assert(rows.length === 18, "M: the synthetic rows were removed again");
+  assert(rows.length === baseRows, "M: the synthetic rows were removed again");
 })();
 
 console.log(`\ntest-cs018-p2: ${passed} passed, ${failed} failed`);
