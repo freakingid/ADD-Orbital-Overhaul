@@ -416,6 +416,81 @@ const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficu
 // sampling the absolute game.wave; that asymmetry is deliberate (GDD §2.13).
 const CYCLE_LENGTH = 9;         // PLAYTEST KNOB: waves per difficulty cycle; the sawtooth reset period
 const CYCLE_GAIN   = 0.12;      // PLAYTEST KNOB: per-cycle escalation multiplier (FORK-CS017-A -> spiral)
+
+// ---------- CS018 P1: the LEVEL PROGRESSION TABLE (PLANNED-FEATURES-CS018 §3) ----------
+// One PURE function, levelDef(n), is the single source of truth for every per-level difficulty
+// quantity. It reads NO game state — not game.wave, not DEBUG, nothing — so it is callable before
+// startGame() and is this changeset's primary headless-test surface.
+// LANDED INERT IN P1: nothing in the build calls it yet. Consumers are repointed onto it group by
+// group in P3–P7, and the CS017 cycle clock above (CYCLE_LENGTH / CYCLE_GAIN / cycleValue() /
+// game.cycle / game.cycleWave) retires in P4 once its last reader is gone — until then BOTH exist
+// side by side and only the cycle clock is live. Domain: n >= 1 (game.wave is 1-based).
+const PHASE_LEN  = 21;              // levels per phase; three phases cover levels 1..LEVEL_MAX
+const LEVEL_MAX  = 63;              // levels 64+ reuse level 63's definition unchanged (endgame plateau)
+const JUNK_CYCLE = [3, 5, 9, 13];   // junk count by position in the 4-level cycle, indexed (rel-1) % 4
+
+// Shared step-table reader: the value of the LAST breakpoint at or below n. Every table below is
+// ascending by level and starts at level 1, so a level under the table's start returns its first value.
+// ONE helper, ONE behaviour — used by the hunter cap AND all seven graded tier tables. Do not add a
+// per-lever lookup beside it; two implementations of "which step am I on" is how they drift apart.
+function stepAt(table, n) {
+  let v = table[0][1];
+  for (const [lvl, val] of table) { if (lvl <= n) v = val; else break; }
+  return v;
+}
+
+// Max LARGE hunters alive at once (size 3 ONLY — middle/small are never counted and never capped).
+// Cap 0 across levels 1–4 means no large hunter from EITHER producer, coalescence or ambient spawn
+// (§4.1); 12 is the changeset's hard ceiling and this table must never exceed it. Consumed in P4.
+const HUNTER_CAP_STEPS = [[1,0],[5,1],[9,2],[13,3],[17,5],[21,7],
+                          [22,8],[26,9],[34,10],[43,11],[59,12]];
+
+// The seven GRADED levers. levelDef returns a TIER NAME ("low"/"normal"/"high") per lever, never a
+// number: each tier's actual value is a trio of DEBUG_VARS playtest knobs wired in P3/P6/P7, so this
+// table stays a pure schedule and the values stay tunable without touching it.
+//
+// FOUR OF THE SEVEN ARE INVERTED (§3.1; source notes §1.1). Wherever the quantity is a delay or an
+// error, the number goes DOWN as difficulty rises:
+//     ufoAppearFreq     25 ->  18 ->  13   sec between saucers
+//     ufoDirChangeFreq  2.0 -> 1.3 -> 0.8   sec between zig-zags
+//     ufoFireFreq       1.8 -> 1.0 -> 0.7   × multiplier on the shipped reload ranges
+//     ufoAccuracy        30 ->  20 ->  10   degrees of aim error
+// while junkSpeed (58/70/90 px/s), ufoFlightSpeed (120/150/190 px/s) and ufoShotSpeed (300/380/470
+// px/s) climb. CONSEQUENCE, and it binds every later phase: NOTHING may validate, clamp, reorder or
+// assert low <= normal <= high — not here, not in the debug panel, not at a call site. Tier order is
+// by DIFFICULTY, never by magnitude, so there is deliberately no sanity check below.
+const TIER_STEPS = {
+  junkSpeed:        [[1,"low"],[22,"normal"],[43,"high"]],
+  ufoAppearFreq:    [[1,"low"],[26,"normal"],[47,"high"]],
+  ufoFlightSpeed:   [[1,"low"],[17,"normal"],[38,"high"]],
+  ufoDirChangeFreq: [[1,"low"],[30,"normal"],[55,"high"]],
+  ufoFireFreq:      [[1,"low"],[21,"normal"],[42,"high"]],
+  ufoAccuracy:      [[1,"low"],[13,"normal"],[34,"high"]],
+  ufoShotSpeed:     [[1,"low"],[51,"normal"],[63,"high"]],
+};
+
+// PURE: a level number in, a plain object out. `level` is the UNCLAMPED argument (display/telemetry
+// only); every derived field reads the clamped L, so levelDef(64) … levelDef(Infinity) are
+// field-identical to levelDef(63) except for `level`.
+function levelDef(n) {
+  const L     = Math.min(n, LEVEL_MAX);
+  const phase = Math.floor((L - 1) / PHASE_LEN) + 1;   // 1..3
+  const rel   = L - PHASE_LEN * (phase - 1);           // 1..21, the level's position within its phase
+  const def = {
+    level: n,
+    phase: phase,
+    rel: rel,
+    // A phase's LAST level holds 13 rather than restarting the cycle at 3 (spec: rel === 21).
+    junkCount: rel === PHASE_LEN ? 13 : JUNK_CYCLE[(rel - 1) % 4],
+    // 8 tow slots through level 4, then +2 per level to 24 (= CARGO_CAP_MAX) at level 12, then flat.
+    // Replaces the delivery-earned growCap curve (FORK-CS018-B); consumed in P5.
+    payloadSlots: L <= 4 ? 8 : L >= 12 ? 24 : 8 + (L - 4) * 2,
+    maxLargeHunters: stepAt(HUNTER_CAP_STEPS, L),
+  };
+  for (const k in TIER_STEPS) def[k] = stepAt(TIER_STEPS[k], L);
+  return def;
+}
+
 // CS017 P3 — the sawtooth debris knobs. Count and speed ramp on game.cycleWave (so they RESET at every
 // cycle boundary) and are then multiplied by cycleValue(x, game.cycle), so cycle N+1 opens above cycle N.
 const DEBRIS_COUNT_MAX      = 12;   // PLAYTEST KNOB: in-cycle ceiling on 3 + cycleWave (was the inline
