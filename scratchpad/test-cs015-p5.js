@@ -90,7 +90,10 @@ function beginPlaying(A) {
   // >= 5, not === 5: CS015 P6 appends a 6th entry (garbageLifetime, see test-cs015-p6.js) — the
   // registry only ever grows, per the same note test-cs015-p4.js's own P5 update left behind.
   assert(A.DEBUG_VARS.length >= 5, `B: DEBUG_VARS has at least 5 entries (1 from P4 + 4 new; got ${A.DEBUG_VARS.length})`);
-  assert(A.DEBUG_VARS[0].id === "autoShieldRegenPause", "B: P4's entry is still first (registry is append-only)");
+  // CS018 P2: the registry also holds non-selectable section-header entries now, so index 0 is a header.
+  // The append-only property is about the VALUE entries' order, which is what this pins.
+  const values = A.DEBUG_VARS.filter(v => !v.header);
+  assert(values[0].id === "autoShieldRegenPause", "B: P4's entry is still the first VALUE entry (registry is append-only)");
 
   const byId = id => A.DEBUG_VARS.find(v => v.id === id);
 
@@ -165,7 +168,9 @@ function beginPlaying(A) {
     A.menuDebug("right");
     assert(A.debugShown[e.id] === e.min + e.step, `D: ${e.id} steps by exactly its own step size (${e.step})`);
   }
-  A.DEBUG_VARS.forEach((e, i) => { if (e.id !== "autoShieldRegenPause") clampCheck(i, e); });
+  // CS018 P2: skip header entries — they have no id/min/max and are not selectable rows. An entry's ROW
+  // index is still its index in DEBUG_VARS (DEBUG_ROWS maps the registry 1:1, appending Dump + Back).
+  A.DEBUG_VARS.forEach((e, i) => { if (!e.header && e.id !== "autoShieldRegenPause") clampCheck(i, e); });
 })();
 
 // ================= (E) byte-identical to pre-P5 at defaults (fresh build, no knob touched) ============

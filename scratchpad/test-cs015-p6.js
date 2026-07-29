@@ -90,8 +90,11 @@ function byId(A, id) { return A.DEBUG_VARS.find(v => v.id === id); }
   // saucerGapPressure) — the registry is append-only and keeps growing across changesets, so this pins
   // garbageLifetime's own position (index 5, still exactly where P6 put it), not the live total length.
   assert(A.DEBUG_VARS.length >= 6, `B: DEBUG_VARS has at least 6 entries (5 prior + 1 new; got ${A.DEBUG_VARS.length})`);
-  assert(A.DEBUG_VARS[0].id === "autoShieldRegenPause", "B: P4's entry is still first (registry is append-only)");
-  assert(A.DEBUG_VARS[5].id === "garbageLifetime", "B: garbageLifetime is still at index 5, where P6 appended it");
+  // CS018 P2 interleaved non-selectable section-header entries into the registry, so these positions are
+  // now pinned among the VALUE entries — which is what "append-only" was ever about.
+  const values = A.DEBUG_VARS.filter(v => !v.header);
+  assert(values[0].id === "autoShieldRegenPause", "B: P4's entry is still the first VALUE entry (registry is append-only)");
+  assert(values[5].id === "garbageLifetime", "B: garbageLifetime is still the 6th value entry, where P6 appended it");
 
   const life = byId(A, "garbageLifetime");
   assert(!!life, "B: garbageLifetime entry exists");

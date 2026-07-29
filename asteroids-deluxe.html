@@ -2266,10 +2266,25 @@ window.addEventListener("keydown", e => {
         DebugCode.buf = (DebugCode.buf + e.key).slice(-DEBUG_CODE.length);
         if (DebugCode.buf.endsWith(DEBUG_CODE)) {
           DebugCode.armed = false; DebugCode.buf = "";
-          if (game.state === "title") openDebug(); else gotoScreen("debug");
+          enterDebug();   // CS018 P2: was `game.state === "title" ? openDebug() : gotoScreen("debug")` inline
         }
       }
     }
+  }
+
+  // CS018 P2: raw capture for the debug panel's direct numeric entry. menuDebug() only ever sees ABSTRACT
+  // actions, so digits (plus "." / "-" / Backspace) have to be taken here. Gated hard: only on the debug
+  // screen, only with a VALUE row selected, and only while the secret-code window is NOT armed — the code
+  // itself contains a digit ("EvilG3niu$"), so a live capture window keeps first claim on keystrokes and this
+  // hook stands down until it lapses (the block above self-expires on idle in loop()). It sits AFTER that
+  // block for the same reason. ENTER/ESC are deliberately NOT handled here: they stay on the abstract layer
+  // as confirm/back, so gamepad A/B commit and cancel identically. Consumed (preventDefault + return) so
+  // Backspace can't navigate the browser back and a digit can't reach branch (2)/(3).
+  if (game.menu.screen === "debug" && !DebugCode.armed && !game.menu.rebinding && !game.entry && !e.repeat &&
+      debugSelectedVar() && (DEBUG_ENTRY_CHARS.test(e.key) || e.key === "Backspace")) {
+    e.preventDefault();
+    debugEntryKey(e.key);
+    return;
   }
 
   // (1) Rebind capture — exclusive; the key never reaches gameplay or nav.
@@ -2482,6 +2497,21 @@ const TITLE_MENU_HINT   = "↑↓ move    ENTER / A select    ESC / B options";
 const MENU_HINT_SIZE = 16;  // CS013 P2: control-hint footer text size (drawMenuHint) — playtest knob
 const ACH_SCALE = 1.5;      // CS013 P3: Achievements-viewer text-size multiplier (readability pass) — playtest knob
 const ACH_SCROLL_STEP = 60; // CS013 P3: px per up/down scroll press in the Achievements viewer, ~one row — playtest knob
+// CS018 P2: the hidden Debug Options panel's layout + scroll geometry. Before this phase the panel sized
+// itself to the whole registry (`h = 220 + (N + 1) * 46`), which was ALREADY broken at N = 12: 818 px
+// against VIEW_H 720 put both panel edges off-screen and rendered the control hint at y + h - 30 = 739,
+// i.e. below the canvas. CS018 grows the registry to 32 entries (that formula would give 1738 px), so the
+// panel is now a FIXED, viewport-safe height with a scrolling window of rows — the registry can grow again
+// without any layout edit. DEBUG_ROWS_VISIBLE is the one knob: the panel height is DERIVED from it, so the
+// footer can never be pushed off the panel by changing it.
+const DEBUG_PANEL_W      = 660;   // wider than the pre-P2 560 — CS018's tier labels need the label column
+const DEBUG_ROW_STEP     = 32;    // px between row baselines (was 46) — tighter, so more rows fit the window
+const DEBUG_ROWS_VISIBLE = 14;    // rows drawn at once; everything else scrolls
+const DEBUG_ROWS_Y       = 100;   // first row baseline band, offset from the panel top (below the title)
+const DEBUG_FOOTER_H     = 92;    // room below the row band for the position indicator + the control hint
+const DEBUG_PANEL_H      = DEBUG_ROWS_Y + DEBUG_ROWS_VISIBLE * DEBUG_ROW_STEP + DEBUG_FOOTER_H; // 640 <= VIEW_H
+const DEBUG_VALUE_X      = 420;   // value column, offset from the panel's left edge
+const DEBUG_ENTRY_MAXLEN = 8;     // characters a typed numeric entry may accrete (guards a held/pasted key)
 // CS016 P5: the viewer's two tabs replace the old three columns. The default tab id lives up here
 // (not beside ACH_TABS down in the viewer section) because game.menu's object literals — evaluated
 // long before the viewer's consts — need it, and a `const` referenced ahead of its definition is a
@@ -2560,7 +2590,16 @@ const settings = {
 // shows/persists) into the native unit the consumer reads (identity when absent). P4 shipped exactly
 // one entry (item 5); P5 (items 7, 11, 12) adds four more entries only — no panel/persistence code
 // changes; P6 does the same.
+//
+// CS018 P2 (FLAG-j): the registry is also the panel's ROW ORDER, and an entry may now be a non-selectable
+// SECTION HEADER — `{ header: "JUNK" }` — instead of a value. A header has no `id`/`def`, so every loop
+// over VALUES goes through DEBUG_ENTRIES (below), never DEBUG_VARS directly; up/down skip headers so one can
+// never become the selection. Headers are pure grouping: they carry no state and nothing persists for them.
+// NOTE for CS018 P3/P6/P7 — the "SAUCER PRESSURE" header below belongs to the three pressure knobs and
+// retires WITH them in P7. Its replacements are the JUNK / UFO MOVEMENT / UFO WEAPONS / GLOBAL headers those
+// phases add. A header left behind with no entries under it renders as a stray label; delete it with them.
 const DEBUG_VARS = [
+  { header: "SHIP" },
   { id: "autoShieldRegenPause", label: "Auto Shield Regen Pause", unit: "ms",
     def: AUTO_SHIELD_REGEN_PAUSE * 1000, min: 0, max: 5000, step: 100, toNative: v => v / 1000 },
   // CS015 P5 (items 7, 11, 12): four more knobs, same registry/toNative idiom — defaults derive from
@@ -2568,6 +2607,7 @@ const DEBUG_VARS = [
   // stay in place as the documented shipped values. No panel/persistence code changes.
   { id: "scoopHitsPerLevel", label: "Hits before losing scoop", unit: "",
     def: SCOOP_HITS_PER_LEVEL, min: 1, max: 20, step: 1 },
+  { header: "GARBAGE" },
   { id: "garbageAttractDelay", label: "Garbage attraction delay", unit: "ms",
     def: GARBAGE_COALESCE_DELAY * 1000, min: 0, max: 10000, step: 250, toNative: v => v / 1000 },
   { id: "garbageAttractRadius", label: "Garbage attraction radius", unit: "px",
@@ -2582,6 +2622,7 @@ const DEBUG_VARS = [
   // CS017 P4: the time-in-level saucer pressure axis (FORK-CS017-B -> (b) COMPOSE). saucerPressureSecs
   // is how long a level takes to reach full pressure; the two *Pressure knobs scale how much of the
   // FLOOR..CEIL gap that pressure closes (0 disables the axis entirely, reproducing pre-P4 behaviour).
+  { header: "SAUCER PRESSURE" },
   { id: "saucerPressureSecs", label: "Saucer pressure ramp time", unit: "s",
     def: 90, min: 10, max: 300, step: 5 },
   { id: "saucerAimPressure", label: "Saucer aim pressure scale", unit: "",
@@ -2594,6 +2635,7 @@ const DEBUG_VARS = [
   // chainGuardMinTow is the drop gate — "guard" only enters the dropPowerup roll while the player is
   // towing at least this many nodes. 0 makes it always-eligible (the un-gated roll), which is the useful
   // dev setting for exercising the powerup without first building a load.
+  { header: "CHAIN GUARD" },
   { id: "chainGuardTime", label: "Chain guard duration", unit: "s",
     def: 30, min: 5, max: 120, step: 5 },
   { id: "chainGuardIntercepts", label: "Chain guard intercepts", unit: "",
@@ -2601,14 +2643,36 @@ const DEBUG_VARS = [
   { id: "chainGuardMinTow", label: "Chain guard min tow", unit: "",
     def: 5, min: 0, max: 24, step: 1 },
 ];
+// CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
+// "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
+// no `id`/`def`/`min`/`max`, so iterating DEBUG_VARS directly would seed `debugShown[undefined]`.
+const DEBUG_ENTRIES = DEBUG_VARS.filter(v => !v.header);
+// CS018 P2: the panel's ROW MODEL, derived from the registry — never a hardcoded count or offset. Each
+// registry entry becomes one row (a header row or a value row carrying its entry), and the two trailing rows
+// (the CS017 P2 "Dump difficulty log" action and Back) are APPENDED HERE rather than special-cased in the
+// handler and the renderer. That's what keeps them reachable at any registry size: they scroll with
+// everything else, and both menuDebug and drawDebug read row `kind` instead of comparing against
+// DEBUG_VARS.length. `game.menu.index` indexes THIS array, not DEBUG_VARS.
+const DEBUG_ROWS = [
+  ...DEBUG_VARS.map(v => v.header ? { kind: "header", label: v.header } : { kind: "var", label: v.label, e: v }),
+  { kind: "action", label: "Dump difficulty log" },
+  { kind: "back",   label: "Back" },
+];
+// CS018 P2: the panel's transient VIEW state — the scroll window's top row and the pending numeric-entry
+// buffer (`null` = not typing; a string = the digits typed so far, not yet committed). Module-level beside
+// DebugCode rather than fields on game.menu ON PURPOSE: game.menu is written from two literals (its own and
+// startGame's reset), and a field added to only one of them reads `undefined` for a whole run — see the
+// standing note at startGame's reset. This state belongs to one hidden screen with exactly one entry point
+// (enterDebug), which is the single place it resets.
+const DebugPanel = { scroll: 0, entry: null };
 const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
 const debugShown = {};   // display-unit values — what the panel shows and what persists in afd_settings_v1.debug
 function applyDebug(id, shown) {
-  const e = DEBUG_VARS.find(v => v.id === id);
+  const e = DEBUG_ENTRIES.find(v => v.id === id);
   debugShown[id] = shown;
   DEBUG[id] = e.toNative ? e.toNative(shown) : shown;
 }
-for (const v of DEBUG_VARS) applyDebug(v.id, v.def);   // seed both maps from the registry defaults
+for (const v of DEBUG_ENTRIES) applyDebug(v.id, v.def);   // seed both maps from the registry defaults
 
 // Secret-code entry state for the debug panel (module-level; driven by the keydown listener + loop()).
 // The backtick ARMS a capture window; subsequent single-char keys accrete into `buf` until its tail
@@ -2794,6 +2858,16 @@ function openDebug() {
   game.menu.rebinding = null; game.menu.modal = null;
   resetMenuNav();          // a direction held while typing the code must not fire a phantom first move
   AudioSys.ui(true);
+}
+// CS018 P2: the ONE entry point into the hidden panel — both secret-code routes (title and paused game) come
+// through here, so the panel's view state resets and the cursor lands on the first SELECTABLE row in a single
+// place. Row 0 is a section header now, so neither openDebug's nor gotoScreen's `index = 0` is a valid cursor
+// on its own; debugFirstRow() is applied after whichever route ran. openDebug keeps its own job (the
+// paused-from-title chrome) untouched.
+function enterDebug() {
+  DebugPanel.scroll = 0; DebugPanel.entry = null;
+  if (game.state === "title") openDebug(); else gotoScreen("debug");
+  game.menu.index = debugFirstRow();
 }
 
 // --- CS016 P3: modal confirmation dialogs ---
@@ -3061,22 +3135,110 @@ function menuDifficulty(a) {
   else if (a === "pause") closePause();
 }
 
-// Hidden Debug Options panel handler (CS015 P4). Generic over DEBUG_VARS: N value rows, then a trailing
-// "Dump difficulty log" ACTION row (CS017 P2 — no value, no chevrons, left/right is a no-op on it same as
-// Back), then Back. up/down move the cursor; left/right adjust the focused var by its step (clamped
-// [min,max]) then applyDebug + persist immediately; confirm on the dump row triggers dumpDifficultyLog(),
-// confirm on Back — or back anywhere — returns to context. Reached only by the secret code (see the
-// keydown listener), so there is no "Debug" menu row to restore the cursor to on return: debugReturn
-// mirrors menuOptions' routing and lands on the always-present Options row when a root exists. Adding a
-// debug var later touches nothing here — the registry drives the row count (CS015 P5 lesson: derive
-// dumpRow/backRow from DEBUG_VARS.length, never a literal).
+// --- CS018 P2: the debug panel's row model, scroll window and direct numeric entry ---
+// Every index below is DERIVED from DEBUG_ROWS (which is itself derived from the registry). There is no
+// literal row count, no "dumpRow = N" offset and no assumption that m.index maps onto DEBUG_VARS — that
+// mapping is exactly what section headers break, and it is what CS015 P5's "derive the index" lesson was
+// about in the first place. The registry can grow to 32 entries with headers interleaved and none of this
+// needs an edit.
+function debugFirstRow() { return DEBUG_ROWS.findIndex(r => r.kind !== "header"); }
+// The registry entry under the cursor, or null when the cursor is on a header / Dump / Back. The one place
+// "is a value row selected?" is answered — the keydown numeric-entry gate, the ◄► step and the renderer all
+// ask through it.
+function debugSelectedVar() {
+  const r = DEBUG_ROWS[game.menu.index];
+  return r && r.kind === "var" ? r.e : null;
+}
+// The next SELECTABLE row in `dir`, wrapping. Headers are skipped entirely (FLAG-j) so one can never become
+// the selection — including on the wrap from the last row back to the first, and vice versa. Walks at most
+// one full lap, so an all-headers registry (impossible: Dump and Back are always appended) returns `from`.
+function debugStep(from, dir) {
+  const n = DEBUG_ROWS.length;
+  for (let k = 1; k <= n; k++) {
+    const i = ((from + dir * k) % n + n) % n;
+    if (DEBUG_ROWS[i].kind !== "header") return i;
+  }
+  return from;
+}
+// The scroll window's top row. RECOMPUTED from the selection on every nav press and every draw rather than
+// nudged incrementally, so the window can never drift out of sync with the cursor: the selected row is
+// always inside [top, top + DEBUG_ROWS_VISIBLE), scrolling both directions and across the last→first wrap.
+function debugScrollTop() {
+  const max = Math.max(0, DEBUG_ROWS.length - DEBUG_ROWS_VISIBLE);
+  const i = game.menu.index;
+  let t = Math.max(0, Math.min(max, DebugPanel.scroll));
+  if (i < t) t = i;                                              // scrolled past the cursor going up
+  else if (i >= t + DEBUG_ROWS_VISIBLE) t = i - DEBUG_ROWS_VISIBLE + 1;   // ...or going down
+  // Pull a section header into view with the row it labels: without this, arriving on the first value under
+  // a header leaves that header one row above the window and the value reads as uncategorised.
+  if (t > 0 && i === t && DEBUG_ROWS[t - 1].kind === "header") t--;
+  DebugPanel.scroll = Math.max(0, Math.min(max, t));
+  return DebugPanel.scroll;
+}
+
+// Direct numeric entry. menuDebug() is fed ABSTRACT actions (up/down/left/right/confirm/back), so the digits
+// themselves are captured raw in the keydown listener and funnelled into debugEntryKey; commit and cancel
+// stay on the abstract layer (menuDebug's confirm/back) so gamepad A/B behave exactly like ENTER/ESC.
+const DEBUG_ENTRY_CHARS = /^[-.0-9]$/;
+function debugEntryActive() { return DebugPanel.entry !== null; }
+function debugEntryKey(key) {
+  const e = debugSelectedVar();
+  if (!e) return;                          // nothing typeable under the cursor (header / Dump / Back)
+  const cur = DebugPanel.entry === null ? "" : DebugPanel.entry;
+  let b = cur;
+  if (key === "Backspace") b = cur.slice(0, -1);
+  else if (key === "-") b = cur.startsWith("-") ? cur.slice(1) : "-" + cur;  // sign TOGGLE, usable mid-number
+  else if (key === ".") { if (!cur.includes(".")) b = cur + "."; }           // at most one decimal point
+  else b = cur + key;
+  if (b.length > DEBUG_ENTRY_MAXLEN) return;   // drop the keystroke rather than truncate someone's number
+  DebugPanel.entry = b;
+  AudioSys.ui(false);
+}
+// Commits through the SAME applyDebug + saveSettings path as ◄► stepping — one write path, one persistence
+// path, display units into afd_settings_v1.debug exactly as before. Clamped to the entry's own [min,max].
+// Deliberately does NOT snap to `step` (a typed value is an exact request, which is the point of typing it)
+// and deliberately performs NO cross-field comparison: CS018 ships four levers whose values DECREASE as
+// difficulty rises, so any low <= normal <= high check here would reject valid configuration.
+function debugEntryCommit() {
+  const e = debugSelectedVar(), raw = DebugPanel.entry;
+  DebugPanel.entry = null;
+  if (!e || raw === null) return;
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n)) { AudioSys.ui(false); return; }   // "", "-", "." — nothing typed; treat as cancel
+  applyDebug(e.id, Math.max(e.min, Math.min(e.max, n)));
+  saveSettings();
+  AudioSys.ui(true);
+}
+function debugEntryCancel() { DebugPanel.entry = null; AudioSys.ui(false); }
+
+// Hidden Debug Options panel handler (CS015 P4). Generic over DEBUG_ROWS: header rows (skipped by up/down),
+// value rows, then a trailing "Dump difficulty log" ACTION row (CS017 P2 — no value, no chevrons, left/right
+// is a no-op on it same as Back), then Back. up/down move the cursor; left/right adjust the focused var by
+// its step (clamped [min,max]) then applyDebug + persist immediately; confirm on the dump row triggers
+// dumpDifficultyLog(), confirm on Back — or back anywhere — returns to context. Reached only by the secret
+// code (see the keydown listener), so there is no "Debug" menu row to restore the cursor to on return:
+// debugReturn mirrors menuOptions' routing and lands on the always-present Options row when a root exists.
+// Adding a debug var later touches nothing here — the registry drives the rows.
 function menuDebug(a) {
-  const m = game.menu, N = DEBUG_VARS.length, dumpRow = N, backRow = N + 1, ROWS = N + 2;
-  if (a === "up")   { m.index = (m.index + ROWS - 1) % ROWS; AudioSys.ui(false); }
-  else if (a === "down") { m.index = (m.index + 1) % ROWS; AudioSys.ui(false); }
+  const m = game.menu;
+  // CS018 P2: a pending numeric entry OWNS the row. left/right must not step (a stray nudge would silently
+  // discard the digits and change the value anyway) and back must not leave the screen — ESC / B cancel the
+  // entry instead, which IS the "Escape cancels" contract. `pause` is treated as a leave too, for the same
+  // reason. up/down abandon the entry, since a half-typed value belongs to the row it was typed on.
+  if (debugEntryActive()) {
+    if (a === "confirm") { debugEntryCommit(); return; }
+    if (a === "back" || a === "pause") { debugEntryCancel(); return; }
+    if (a === "left" || a === "right") return;
+    if (a === "up" || a === "down") debugEntryCancel();
+  }
+  if (a === "up" || a === "down") {
+    m.index = debugStep(m.index, a === "up" ? -1 : 1);
+    debugScrollTop();
+    AudioSys.ui(false);
+  }
   else if (a === "left" || a === "right") {
-    if (m.index < N) { // a value row (not the dump action or Back)
-      const e = DEBUG_VARS[m.index];
+    const e = debugSelectedVar();   // null on a header / the dump action / Back — left/right is a no-op there
+    if (e) {
       const next = Math.max(e.min, Math.min(e.max, debugShown[e.id] + (a === "right" ? e.step : -e.step)));
       applyDebug(e.id, next);
       saveSettings();
@@ -3084,8 +3246,9 @@ function menuDebug(a) {
     }
   }
   else if (a === "confirm") {
-    if (m.index === dumpRow) dumpDifficultyLog();
-    else if (m.index === backRow) debugReturn();
+    const r = DEBUG_ROWS[m.index];
+    if (r && r.kind === "action") dumpDifficultyLog();
+    else if (r && r.kind === "back") debugReturn();
   }
   else if (a === "back") debugReturn();
   else if (a === "pause") closePause();
@@ -3250,8 +3413,10 @@ function loadSettings() {
     // CS015 P4: debug variables persist as an additive sub-object (display units; no new frozen key). Each
     // registry entry is validated independently — a finite in-[min,max] stored value applies via applyDebug,
     // anything else (missing / NaN / out of range / hand-edited garbage) leaves the seeded default in place.
+    // CS018 P2: iterate DEBUG_ENTRIES, not DEBUG_VARS — the registry now also holds non-selectable section
+    // header entries, which have no id/min/max and nothing to restore.
     if (data.debug) {
-      for (const e of DEBUG_VARS) {
+      for (const e of DEBUG_ENTRIES) {
         const dv = data.debug[e.id];
         if (Number.isFinite(dv) && dv >= e.min && dv <= e.max) applyDebug(e.id, dv);
       }
@@ -6252,31 +6417,47 @@ function drawDifficulty() {
   drawMenuHint("↑↓ move    ◄► toggle    ENTER / A select    ESC / B back", VIEW_W / 2, y + 452);
 }
 
-// Hidden Debug Options panel renderer (CS015 P4) — generic over DEBUG_VARS, following drawSound's
-// value-row layout (left-aligned label + value + ◄► chevrons on the focused row) plus a centered Back
-// row. Panel height grows with the registry, so P5/P6 knobs slot in with no layout edit. CS017 P2 adds
-// one more row between the values and Back: "Dump difficulty log" — an ACTION row, rendered like Back
+// Hidden Debug Options panel renderer (CS015 P4) — generic over DEBUG_ROWS, following drawSound's value-row
+// layout (left-aligned label + value + ◄► chevrons on the focused row) plus a centered Back row. CS017 P2
+// added one more row between the values and Back: "Dump difficulty log" — an ACTION row, rendered like Back
 // (centered, ▶ marker, no value, no chevrons even when selected) rather than like a value row.
+//
+// CS018 P2 rebuilt the layout. The panel used to size itself to the registry (`h = 220 + (N + 1) * 46`) and
+// already overflowed the viewport at 12 entries; it is now a FIXED DEBUG_PANEL_H with a SCROLLING WINDOW of
+// DEBUG_ROWS_VISIBLE rows, so growing the registry never touches layout. Rows come straight off DEBUG_ROWS —
+// section headers, value rows, the Dump action and Back are all just rows and all scroll together, which is
+// what keeps the last row reachable at any size. A position indicator below the band shows the cursor's place
+// in the whole list, with ▲/▼ when there is more above/below.
 function drawDebug() {
-  const N = DEBUG_VARS.length, h = 220 + (N + 1) * 46;
-  const { x, y } = menuPanel(560, h, "DEBUG OPTIONS");
-  const m = game.menu;
-  let cy = y + 100;
-  DEBUG_VARS.forEach((e, i) => {
-    const sel = m.index === i;
-    drawText(e.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
-    const ox = x + 340;
-    drawText(debugShown[e.id] + (e.unit ? " " + e.unit : ""), ox, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
-    if (sel) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 120, cy + 7, 16, COLOR.text); }
-    cy += 46;
-  });
-  const dumpSel = m.index === N;
-  drawText((dumpSel ? "▶ " : "   ") + "Dump difficulty log", VIEW_W / 2, cy + 6, 18, dumpSel ? COLOR.text : COLOR.menuIdle);
-  cy += 46;
-  cy += 14;
-  const backSel = m.index === N + 1;
-  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.menuIdle);
-  drawMenuHint("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + h - 30);
+  const { x, y } = menuPanel(DEBUG_PANEL_W, DEBUG_PANEL_H, "DEBUG OPTIONS");
+  const m = game.menu, total = DEBUG_ROWS.length;
+  const top = debugScrollTop(), end = Math.min(total, top + DEBUG_ROWS_VISIBLE);
+  let cy = y + DEBUG_ROWS_Y;
+  for (let i = top; i < end; i++) {
+    const r = DEBUG_ROWS[i], sel = m.index === i;
+    if (r.kind === "header") {
+      drawText("— " + r.label + " —", x + 40, cy + 6, 15, COLOR.dim, "left");   // never selectable, never a cursor
+    } else if (r.kind === "var") {
+      const e = r.e, ox = x + DEBUG_VALUE_X, typing = sel && debugEntryActive();
+      drawText(e.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
+      // While typing, the pending digits REPLACE the live value (with a caret, in the "uncommitted" tint) so
+      // it is unambiguous that nothing has been written yet — and the ◄► chevrons drop, because arrows don't
+      // step while an entry is pending.
+      const val = typing ? DebugPanel.entry + "_" : debugShown[e.id] + (e.unit ? " " + e.unit : "");
+      drawText(val, ox, cy + 6, 18, typing ? COLOR.garbageBonus : sel ? COLOR.text : COLOR.menuIdle, "left");
+      if (sel && !typing) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 120, cy + 7, 16, COLOR.text); }
+    } else {   // the Dump action row and Back — centered, ▶ marker, no value, no chevrons
+      drawText((sel ? "▶ " : "   ") + r.label, VIEW_W / 2, cy + 6,
+               r.kind === "back" ? 22 : 18, sel ? COLOR.text : COLOR.menuIdle);
+    }
+    cy += DEBUG_ROW_STEP;
+  }
+  const more = (top > 0 ? "▲  " : "    ") + (m.index + 1) + " / " + total + (end < total ? "  ▼" : "    ");
+  drawText(more, VIEW_W / 2, y + DEBUG_PANEL_H - 58, 15, COLOR.dim);
+  drawMenuHint(debugEntryActive()
+    ? "type value    ENTER / A commit    ESC / B cancel    BKSP delete"
+    : "↑↓ move    ◄► adjust    0-9 type    ENTER / A select    ESC / B back",
+    VIEW_W / 2, y + DEBUG_PANEL_H - 30);
 }
 
 function drawControlsMenu() {

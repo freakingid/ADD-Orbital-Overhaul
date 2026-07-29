@@ -159,7 +159,11 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   console.log("(C) menuDebug left/right adjust clamps at [min,max] and persists");
   const A = build().exports;
   const g = A.game;
-  g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = 0; // focus the var row
+  // CS018 P2: the registry now carries non-selectable section-header entries, so row 0 is no longer this
+  // knob's row (it is a header). A registry entry's ROW index is still its index in DEBUG_VARS — DEBUG_ROWS
+  // maps the registry 1:1 and only APPENDS the Dump/Back rows — so look the row up rather than assume 0.
+  g.paused = true; g.state = "title"; g.menu.screen = "debug";
+  g.menu.index = A.DEBUG_VARS.findIndex(v => v.id === "autoShieldRegenPause"); // focus the var row
 
   // Drive up past the ceiling.
   for (let i = 0; i < 100; i++) A.menuDebug("right");
@@ -268,15 +272,20 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   // registry length — CS015 P5 grew it from 1 to 5 entries (see test-cs015-p5.js), and CS017 P2 inserted
   // a "Dump difficulty log" action row between the values and Back (see test-cs017-p2.js), so backRow is
   // DEBUG_VARS.length + 1, never a literal.
+  // CS018 P2: still DEBUG_VARS.length + 1, because that phase's section headers are registry ENTRIES (the
+  // rows array maps the registry 1:1 and appends Dump + Back). But up/down now SKIP header rows, so the
+  // cursor no longer starts at 0 and "N downs" no longer equals "N rows travelled" — step until we arrive
+  // instead of counting, and take the first row from the registry rather than assuming index 0.
   const backRow = A.DEBUG_VARS.length + 1;
-  g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = 0;
+  const firstVar = A.DEBUG_VARS.findIndex(v => !v.header);
+  g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = firstVar;
   let threw = null;
   try {
     A.drawDebug();
-    for (let i = 0; i < backRow; i++) A.menuDebug("down");
+    for (let i = 0; i <= backRow && g.menu.index !== backRow; i++) A.menuDebug("down");
     assert(g.menu.index === backRow, `F: down moves the cursor onto the Back row (index ${backRow})`);
     A.drawDebug();
-    A.menuDebug("down"); assert(g.menu.index === 0, "F: down wraps from Back back to the first var row");
+    A.menuDebug("down"); assert(g.menu.index === firstVar, "F: down wraps from Back back to the first var row");
     A.menuDebug("up"); assert(g.menu.index === backRow, "F: up wraps to the Back row");
     A.menuDebug("left"); A.menuDebug("right"); // left/right on the Back row do nothing (no crash)
     A.drawDebug();

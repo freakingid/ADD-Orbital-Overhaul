@@ -275,7 +275,9 @@ const chainIdentical = (g, snap) =>
     assert(DEBUG[s.id] === s.def, `A: DEBUG.${s.id} seeded to its registry default (${s.def}, got ${DEBUG[s.id]})`);
     assert(typeof e.toNative !== "function", `A: ${s.id} needs no unit conversion (display unit === native unit)`);
   }
-  assert(DEBUG_VARS[0].id === "autoShieldRegenPause", "A: the registry is still append-only (P4's entry is first)");
+  // CS018 P2: header entries share the registry array now, so pin the first VALUE entry.
+  assert(DEBUG_VARS.filter(v => !v.header)[0].id === "autoShieldRegenPause",
+    "A: the registry is still append-only (P4's entry is the first VALUE entry)");
 
   // All four per-type seed literals carry a guard key — in the game object AND after startGame().
   for (const phase of ["fresh", "after startGame()"]) {

@@ -284,12 +284,17 @@ function build() {
   const g = A.game;
   const N = A.DEBUG_VARS.length, dumpRow = N, backRow = N + 1; // derived, never a literal (CS015 P5 lesson)
 
-  g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = 0;
+  // CS018 P2: the registry now interleaves non-selectable section-header entries, and up/down SKIP them, so
+  // the cursor no longer starts at row 0 and "N downs" no longer equals "N rows travelled". dumpRow/backRow
+  // are still N and N+1 (headers are registry entries; DEBUG_ROWS maps the registry 1:1 and appends the two
+  // action rows) — step until we arrive instead of counting, and take the first row off the registry.
+  const firstVar = A.DEBUG_VARS.findIndex(v => !v.header);
+  g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = firstVar;
   let threw = null;
   try {
     A.drawDebug();
-    for (let i = 0; i < N; i++) A.menuDebug("down");
-    assert(g.menu.index === dumpRow, `G: N downs from row 0 land on the dump row (index ${dumpRow}, got ${g.menu.index})`);
+    for (let i = 0; i <= N && g.menu.index !== dumpRow; i++) A.menuDebug("down");
+    assert(g.menu.index === dumpRow, `G: down reaches the dump row (index ${dumpRow}, got ${g.menu.index})`);
     A.drawDebug();
 
     A.menuDebug("down");
@@ -297,7 +302,7 @@ function build() {
     A.drawDebug();
 
     A.menuDebug("down");
-    assert(g.menu.index === 0, "G: down wraps from Back back to the first value row");
+    assert(g.menu.index === firstVar, "G: down wraps from Back back to the first value row");
 
     A.menuDebug("up");
     assert(g.menu.index === backRow, "G: up wraps back to Back");

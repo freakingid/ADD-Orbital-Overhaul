@@ -109,7 +109,8 @@ const RETURN = [
   "MENU_TITLE", "MENU_OPTIONS", "MENU_ROOT_PLAY", "MENU_ROOT_OVER", "SOUND_ROWS", "DIFFICULTY_ROWS",
   "TITLE_MENU_Y", "TITLE_MENU_STEP", "TITLE_MENU_SIZE", "TITLE_MENU_HINT_Y", "TITLE_MENU_HINT",
   "MENU_HINT_SIZE", "COLOR", "VIEW_W", "VIEW_H", "GAME_VERSION",
-  "drawTitleMenu", "drawMenu", "DEBUG_CODE", "DebugCode", "bindings", "GP", "keys", "AudioSys"
+  "drawTitleMenu", "drawMenu", "DEBUG_CODE", "DebugCode", "bindings", "GP", "keys", "AudioSys",
+  "DEBUG_VARS"   // CS018 P2: section (I) derives the debug panel's first selectable row from the registry
 ];
 
 // `audio: true` gives the real keydown listener a live AudioSys (it calls AudioSys.init() up front);
@@ -523,7 +524,11 @@ function build({ audio = true } = {}) {
   for (const ch of A.DEBUG_CODE) A.keydown(ch);     // raw e.key preserves case + shifted symbols
   assert(g.menu.screen === "debug", "I: the full code still opens the hidden debug panel from the title");
   assert(g.paused === true, "I: ...via openDebug(), which pauses (its own sibling-of-openPause contract)");
-  assert(g.menu.index === 0, "I: openDebug resets the cursor to its own first row");
+  // CS018 P2: the code's open path is now enterDebug(), which normalises the cursor onto the first
+  // SELECTABLE row — row 0 is a non-selectable section header, so index 0 would leave the panel cursor-less.
+  const firstDebugRow = A.DEBUG_VARS.findIndex(v => !v.header);
+  assert(g.menu.index === firstDebugRow,
+    `I: opening the panel resets the cursor to its own first selectable row (${firstDebugRow}, got ${g.menu.index})`);
   assert(idx0 === 0, "I: sanity — the title cursor started on row 0, so no nav could hide in that check");
 
   // Backing out of the debug panel from the title must land on the title menu, not a null screen.
