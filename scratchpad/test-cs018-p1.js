@@ -370,7 +370,9 @@ function build(src, windowExtra) {
   eq(Z.levelDef(1).junkCount, 3, "I: levelDef(1).junkCount is 3");
   eq(Z.levelDef(1).maxLargeHunters, 0, "I: levelDef(1).maxLargeHunters is 0 — no large Hunter at level 1 (P4)");
   eq(Z.largeHunterCap(), 0, "I: the live largeHunterCap() agrees with the table at level 1");
-  eq(Z.game.cargoMax, Z.CARGO_BASE, "I: cargoMax still starts at CARGO_BASE (12) — payloadSlots is P5, not yet wired");
+  // REPOINTED BY CS018 P5: payloadSlots is now wired — cargoMax starts at levelDef(1).payloadSlots (8).
+  eq(Z.game.cargoMax, Z.levelDef(1).payloadSlots, "I: cargoMax now starts at levelDef(1).payloadSlots (8) — wired in CS018 P5");
+  eq(Z.game.cargoMax, 8, "I: level 1 cargoMax is 8, not CARGO_BASE (12)");
   assert(!("cycleWave" in Z.game), "I: the CS017 cycle clock is retired (CS018 P4)");
   eq(Z.GAME_VERSION, "1.0.0.17", "I: GAME_VERSION unchanged this phase (bumps in P10)");
 })();

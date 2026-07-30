@@ -80,7 +80,7 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
   "settings", "DEBUG",
-  "WORLD_W", "WORLD_H"];
+  "WORLD_W", "WORLD_H", "CARGO_BASE"];
 
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
@@ -94,7 +94,7 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
   GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
   MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
-  WORLD_W, WORLD_H } = G;
+  WORLD_W, WORLD_H, CARGO_BASE } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -117,6 +117,12 @@ function beginPlaying() {
   // core. The cap's own behaviour (including what a 12-piece clump does when the cap is full) is owned by
   // scratchpad/test-cs018-p4.js. Nothing else here reads game.wave.
   game.wave = CAP_OK_LEVEL;
+  // REPOINTED BY CS018 P5: cargoMax is now GRANTED by levelDef(game.wave).payloadSlots, set only inside
+  // nextWave() — the direct game.wave assignment above does NOT recompute it, so it stays at level 1's
+  // value (8) even though game.wave now reads CAP_OK_LEVEL. This file's tests are about coalescence/
+  // magnet/scoop mechanics, not the payload curve (that's scratchpad/test-cs018-p5.js), so pin cargoMax
+  // back to the old roomy default here, exactly as game.wave is pinned above for the hunter cap.
+  game.cargoMax = CARGO_BASE;
 }
 
 // The level every test in this file runs at: the first level whose large-Hunter cap is at least 2, so a
@@ -841,6 +847,13 @@ console.log("(34) v3.6 P2a: a mass-1 single at 190 px reaches the ship measurabl
   game.powerFx.magnet = 10;
   game.cargoMax = 0;   // block the pickup gate (chain.length(0) < cargoMax(0) is false) so the piece
                         // keeps traveling all the way in instead of hooking onto the chain mid-flight
+  // CS018 P5 fallout: beginPlaying() clears game.debris, and the real wave-clear timer (2.5s on
+  // debris.length===0) fires nextWave() mid-loop over this test's up-to-30s window — nextWave() now
+  // ALSO resets game.cargoMax from levelDef(game.wave).payloadSlots (a real, nonzero level), silently
+  // undoing the cargoMax=0 block above and letting the piece get captured early, which is not what
+  // this test measures. Keep one immortal dummy debris piece so the wave never clears — the same
+  // idiom scratchpad/test-cs018-p4.js's quiet() and test-cs018-p5.js already use for this exact reason.
+  game.debris = [{ x: 1e5, y: 1e5, vx: 0, vy: 0, size: 1, radius: 5, dead: false, update() {}, draw() {} }];
   const g = new Garbage(game.ship.x + 190, game.ship.y, 0, 0);
   game.garbage = [g];
   const arriveAt = 20;      // px — "arrived" proxy, well inside GARBAGE_PICKUP's ballpark

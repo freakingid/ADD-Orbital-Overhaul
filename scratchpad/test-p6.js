@@ -8,9 +8,12 @@
 //  (A) config: CARGO_BASE=12, CARGO_CAP_MAX=24, CARGO_GROW_PER=30 (positive); CHAIN_ITER>=3;
 //      retuned coefficients CARGO_THRUST=0.06 / CARGO_MAXSPD=0.03 / CARGO_MASS=0.07; the old
 //      CHAIN_MAX constant is gone.
-//  (B) cargoMax starts at CARGO_BASE and, driving REAL dock deliveries through update(), grows by
-//      +1 per CARGO_GROW_PER delivered, is bounded by CARGO_CAP_MAX, and never exceeds it; a bump
-//      pushes a "TOW +1" float; startGame resets it to base.
+//  (B) REPOINTED BY CS018 P5 (FORK-CS018-B): the delivery-earned growCap curve this section
+//      originally proved is retired outright — cargoMax is now GRANTED by
+//      levelDef(game.wave).payloadSlots in nextWave(), never by game.stats.delivered. cargoMax
+//      starts at the level-1 table value (8, not CARGO_BASE) and, driving 400 REAL dock deliveries
+//      through update() within the SAME level, never moves and never pushes a "TOW +1" float;
+//      startGame() resets it to the level-1 table value again.
 //  (C) the pickup gate + HUD read game.cargoMax (not a fixed 12): raising cargoMax lets the chain
 //      exceed 12, and the HUD draw is crash-free. A 25th node is refused at the new cap.
 //  (D) the physics retune, MEASURED by driving the real Ship.update: a full chain at CARGO_CAP_MAX
@@ -119,14 +122,17 @@ assert(CHAIN_MAX_GONE, "A: old fixed CHAIN_MAX constant is gone (replaced by car
 assert(near(DOCK_OFFLOAD_INTERVAL, 0.05), `A: DOCK_OFFLOAD_INTERVAL retuned to 0.05 (got ${DOCK_OFFLOAD_INTERVAL})`);
 
 // =====================================================================
-// (B) growing cap driven through REAL dock deliveries
+// (B) REPOINTED BY CS018 P5: the growCap curve is retired — cargoMax is now level-granted and
+// delivery-count-independent. Same real-update()-driven rigor, mirror-image claims.
 // =====================================================================
-console.log("(B) cargoMax growth via real deliveries");
+console.log("(B) cargoMax no longer grows via real deliveries (growCap retired, CS018 P5)");
 startGame();
-assert(game.cargoMax === CARGO_BASE, `B: cargoMax starts at base 12 (got ${game.cargoMax})`);
+assert(game.cargoMax === 8, `B: cargoMax starts at levelDef(1).payloadSlots (8, not CARGO_BASE 12) (got ${game.cargoMax})`);
 
 // Drive real deliveries: park the ship on the dock, keep a node in the chain, force the offload
-// tick each frame, and keep one far debris alive so the wave never clears (no nextWave).
+// tick each frame, and keep one far debris alive so the wave never clears (no nextWave) — a
+// nextWave() mid-run would legitimately change cargoMax via the level table, which is exactly the
+// mechanism this section is proving deliveries alone do NOT touch.
 clearField();
 resetShip();
 game.debris = [{ x: cx + 1800, y: cy + 1800, vx: 0, vy: 0, size: 3, radius: 46,
@@ -135,8 +141,7 @@ game.dock = { x: game.ship.x, y: game.ship.y, radius: DOCK_RADIUS, update() {}, 
 game.deliveryCount = 0;
 
 const capAt = {};                 // delivered-count -> cargoMax observed just after that delivery
-let capBumps = 0;                 // number of frames on which cargoMax increased
-let maxCapSeen = 0;
+let capChanges = 0;               // number of frames on which cargoMax changed at all
 for (let d = 1; d <= 400; d++) {
   if (game.chain.length === 0) game.chain.push({ x: game.ship.x, y: game.ship.y, px: game.ship.x, py: game.ship.y, spin: 0, spinRate: 0, mass: 1 });
   game.ship.x = cx; game.ship.y = cy; game.ship.vx = 0; game.ship.vy = 0;
@@ -145,33 +150,31 @@ for (let d = 1; d <= 400; d++) {
   const capBefore = game.cargoMax;
   update(DT);
   capAt[game.stats.delivered] = game.cargoMax;
-  maxCapSeen = Math.max(maxCapSeen, game.cargoMax);
-  if (game.cargoMax > capBefore) capBumps++;
+  if (game.cargoMax !== capBefore) capChanges++;
 }
-assert(game.stats.delivered >= 360, `B: drove enough deliveries to reach the ceiling (delivered ${game.stats.delivered})`);
-assert(capAt[29] === 12, "B: cap still 12 at 29 delivered (below first threshold)");
-assert(capAt[30] === 13, `B: cap = 13 at exactly 30 delivered (got ${capAt[30]})`);
-assert(capAt[60] === 14, `B: cap = 14 at 60 delivered (got ${capAt[60]})`);
-assert(capAt[360] === 24, `B: cap = 24 (ceiling) at 360 delivered (got ${capAt[360]})`);
-assert(maxCapSeen === CARGO_CAP_MAX, `B: cap never exceeds CARGO_CAP_MAX (max seen ${maxCapSeen})`);
-assert(game.cargoMax === CARGO_CAP_MAX, `B: cargoMax pinned at ceiling after 250 deliveries (got ${game.cargoMax})`);
-assert(capBumps === (CARGO_CAP_MAX - CARGO_BASE), `B: exactly ${CARGO_CAP_MAX - CARGO_BASE} cap increases, one per threshold (got ${capBumps})`);
+assert(game.stats.delivered >= 360, `B: drove enough deliveries to have crossed every OLD threshold (delivered ${game.stats.delivered})`);
+assert(capAt[29] === 8, "B: cap still 8 at 29 delivered (past the old first threshold, still no movement)");
+assert(capAt[30] === 8, `B: cap still 8 at exactly 30 delivered — the OLD growth threshold is now inert (got ${capAt[30]})`);
+assert(capAt[60] === 8, `B: cap still 8 at 60 delivered (got ${capAt[60]})`);
+assert(capAt[360] === 8, `B: cap still 8 at 360 delivered — the OLD ceiling-reaching count no longer matters (got ${capAt[360]})`);
+assert(game.cargoMax === 8, `B: cargoMax unchanged after 360+ deliveries (got ${game.cargoMax})`);
+assert(capChanges === 0, `B: cargoMax changed on ZERO frames across 400 deliveries (got ${capChanges})`);
 
-// A cap bump pushes a "TOW +1" float — verify in isolation (one delivery that crosses a threshold).
+// A delivery crossing the OLD growth threshold pushes NO "TOW +1" float and does NOT bump the cap.
 clearField(); resetShip();
 game.debris = [{ x: cx + 1800, y: cy + 1800, vx: 0, vy: 0, size: 3, radius: 46,
   damage: 50, dead: false, update() { this.x = cx + 1800; this.y = cy + 1800; }, draw() {} }];
-game.stats.delivered = CARGO_GROW_PER - 1;   // next delivery hits the first threshold
-game.cargoMax = CARGO_BASE;
+game.stats.delivered = CARGO_GROW_PER - 1;   // next delivery hits the OLD first threshold
+game.cargoMax = 8;
 game.chain.push({ x: cx, y: cy, px: cx, py: cy, spin: 0, spinRate: 0, mass: 1 });
 game.dock = { x: cx, y: cy, radius: DOCK_RADIUS, update() {}, draw() {} };
 game.offloadTimer = 0;
 update(DT);
-assert(game.cargoMax === CARGO_BASE + 1, `B: crossing a threshold bumps the cap (got ${game.cargoMax})`);
-assert(game.floaters.some(f => (f.text || "").indexOf("TOW") >= 0), "B: a 'TOW +1' float is pushed on the cap increase");
+assert(game.cargoMax === 8, `B: crossing the OLD threshold does NOT bump the cap (got ${game.cargoMax})`);
+assert(!game.floaters.some(f => (f.text || "").indexOf("TOW") >= 0), "B: no 'TOW +1' float is pushed by a delivery anymore");
 
 startGame();
-assert(game.cargoMax === CARGO_BASE, `B: startGame resets cargoMax to base (got ${game.cargoMax})`);
+assert(game.cargoMax === 8, `B: startGame resets cargoMax to levelDef(1).payloadSlots (8, not CARGO_BASE) (got ${game.cargoMax})`);
 
 // =====================================================================
 // (C) pickup gate + HUD read cargoMax

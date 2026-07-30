@@ -4,12 +4,21 @@
 //
 //   node scratchpad/test-cs009-p3.js
 //
-// Checks:
-//  (A) game.cargoFlash arms to HUD_CAP_FLASH at the EXACT frame game.cargoMax increments (driven by
-//      real deliveries crossing CARGO_GROW_PER, not a hand-set cargoMax).
-//  (B) cargoFlash decays to 0 within HUD_CAP_FLASH sec of real time.
-//  (C) startGame() clears cargoFlash.
-//  (D) cargoMax stops growing at CARGO_CAP_MAX even after far more than enough deliveries.
+// REPOINTED BY CS018 P5 (FORK-CS018-B): this file's whole subject at CS009 was the delivery-earned
+// growCap mechanism — cargoMax growing +1 every CARGO_GROW_PER canisters, capped at CARGO_CAP_MAX,
+// with cargoFlash arming on each cap-up. CS018 P5 retires that mechanism outright: cargoMax is now
+// GRANTED by levelDef(game.wave).payloadSlots in nextWave(), never by game.stats.delivered. Every
+// check below is repointed to its mirror-image claim at the same strength, per the CS018 P4
+// precedent (test-cs017-p3.js) for a mechanism retired wholesale rather than weakened or deleted:
+//  (A) many real deliveries within the SAME level do NOT grow game.cargoMax (the growCap block is
+//      gone) and do NOT arm cargoFlash (no delivery-driven cap-up left to arm it).
+//  (B) cargoFlash's OWN decay mechanism is untouched (still used by the Maxed Out latch) — armed
+//      directly (not via a delivery cap-up, which no longer exists) it still decays to 0 within
+//      HUD_CAP_FLASH sec of real time.
+//  (C) startGame() still clears cargoFlash, and resets cargoMax to levelDef(1).payloadSlots (8), not
+//      the historical CARGO_BASE (12).
+//  (D) cargoMax does NOT move away from its level-1 value even after FAR more than the old
+//      more-than-enough-to-cap delivery count — it is now delivery-count-INDEPENDENT.
 
 "use strict";
 const fs = require("fs");
@@ -89,28 +98,30 @@ function tickDock(times) {
   }
 }
 
-// --- (A) Deliver up to CARGO_GROW_PER - 1: cargoMax must NOT have grown yet, flash must be 0. ---
-console.log("(A) cargoFlash arms at the exact frame cargoMax increments");
-assert(game.cargoMax === CARGO_BASE, "sanity: cargoMax starts at CARGO_BASE");
+// --- (A) Many real deliveries within the same level: cargoMax must NOT grow, flash must stay 0. ---
+console.log("(A) real deliveries no longer grow cargoMax or arm cargoFlash (growCap retired, CS018 P5)");
+assert(game.cargoMax === 8, "sanity: cargoMax starts at levelDef(1).payloadSlots (8), not CARGO_BASE");
 fillChain(CARGO_GROW_PER - 1);
 game.deliveryCount = 0; game.offloadTimer = 0;
 tickDock(CARGO_GROW_PER); // deliver CARGO_GROW_PER - 1 canisters (a couple spare ticks to be safe)
 assert(game.stats.delivered === CARGO_GROW_PER - 1, "delivered CARGO_GROW_PER-1 canisters (got " + game.stats.delivered + ")");
-assert(game.cargoMax === CARGO_BASE, "cargoMax has not grown yet (got " + game.cargoMax + ")");
-assert(game.cargoFlash === 0, "cargoFlash is still 0 before the cap-up");
+assert(game.cargoMax === 8, "cargoMax unchanged by deliveries (got " + game.cargoMax + ")");
+assert(game.cargoFlash === 0, "cargoFlash never armed by a delivery (still 0)");
 
-// One more delivery crosses CARGO_GROW_PER -> cargoMax grows by 1, flash arms THIS frame.
+// One more delivery crosses the OLD CARGO_GROW_PER threshold — under the retired mechanism this used
+// to grow the cap and arm the flash; now it must do neither.
 fillChain(1);
 game.offloadTimer = 0;
-tickDock(1); // exactly one update() call: offloadTimer starts at 0, dt > DOCK_OFFLOAD_INTERVAL,
-             // so this single call both delivers the canister AND arms the flash on this frame —
-             // an extra call would immediately decay it, defeating check (A).
+tickDock(1);
 assert(game.stats.delivered === CARGO_GROW_PER, "delivered exactly CARGO_GROW_PER canisters (got " + game.stats.delivered + ")");
-assert(game.cargoMax === CARGO_BASE + 1, "cargoMax grew by 1 (got " + game.cargoMax + ")");
-assert(game.cargoFlash === HUD_CAP_FLASH, "cargoFlash armed to HUD_CAP_FLASH on the cap-up frame (got " + game.cargoFlash + ")");
+assert(game.cargoMax === 8, "cargoMax STILL unchanged crossing the old growth threshold (got " + game.cargoMax + ")");
+assert(game.cargoFlash === 0, "cargoFlash STILL not armed crossing the old growth threshold (got " + game.cargoFlash + ")");
 
-// --- (B) cargoFlash decays to 0 within HUD_CAP_FLASH sec. ---
-console.log("(B) cargoFlash decays to 0 within HUD_CAP_FLASH sec");
+// --- (B) cargoFlash's own decay mechanism is untouched — it still decays within HUD_CAP_FLASH sec of
+// real time once armed (armed directly here, since the delivery-driven cap-up that used to arm it in
+// this file no longer exists; the Maxed Out latch, test-cs018-p5.js §D, is the live arming source now).
+console.log("(B) cargoFlash decays to 0 within HUD_CAP_FLASH sec (decay mechanism itself is unchanged)");
+game.cargoFlash = HUD_CAP_FLASH;
 let t = 0;
 const dt = 1 / 60;
 while (game.cargoFlash > 0 && t < HUD_CAP_FLASH + 1) {
@@ -120,20 +131,21 @@ while (game.cargoFlash > 0 && t < HUD_CAP_FLASH + 1) {
 assert(game.cargoFlash === 0, "cargoFlash reached 0 (got " + game.cargoFlash + ")");
 assert(t <= HUD_CAP_FLASH + dt + 1e-9, "decayed within HUD_CAP_FLASH sec (took " + t.toFixed(3) + "s)");
 
-// --- (C) startGame() clears cargoFlash. ---
-console.log("(C) startGame() clears cargoFlash");
+// --- (C) startGame() clears cargoFlash and resets cargoMax to the level-1 table value. ---
+console.log("(C) startGame() clears cargoFlash and resets cargoMax to levelDef(1).payloadSlots");
 game.cargoFlash = HUD_CAP_FLASH;
 startGame();
 assert(game.cargoFlash === 0, "a fresh run starts with cargoFlash === 0");
-assert(game.cargoMax === CARGO_BASE, "a fresh run resets cargoMax to CARGO_BASE");
+assert(game.cargoMax === 8, "a fresh run resets cargoMax to levelDef(1).payloadSlots (8), not CARGO_BASE (12)");
 
-// --- (D) cargoMax stops growing at CARGO_CAP_MAX. ---
-console.log("(D) cargoMax caps at CARGO_CAP_MAX even with far more than enough deliveries");
+// --- (D) cargoMax is delivery-count-INDEPENDENT: FAR more than the old more-than-enough-to-cap
+// delivery count still leaves it at the level-1 value. ---
+console.log("(D) cargoMax never moves from its level value no matter how many canisters are delivered");
 game.debris = []; game.hunters = []; game.saucers = []; game.bullets = []; game.powerups = []; game.garbage = [];
 game.saucerTimer = 1e9; game.hunterTimer = 1e9; game.healthTimer = 1e9;
 game.ship.invuln = 1e9; game.ship.shieldOn = false;
 game.dock.x = game.ship.x; game.dock.y = game.ship.y;
-const overDeliver = CARGO_GROW_PER * (CARGO_CAP_MAX - CARGO_BASE + 5); // way past the cap
+const overDeliver = CARGO_GROW_PER * (CARGO_CAP_MAX - CARGO_BASE + 5); // the old "way past the cap" count
 let remaining = overDeliver;
 while (remaining > 0) {
   const chunk = Math.min(remaining, 50);
@@ -142,7 +154,8 @@ while (remaining > 0) {
   tickDock(chunk + 1);
   remaining -= chunk;
 }
-assert(game.cargoMax === CARGO_CAP_MAX, "cargoMax capped at CARGO_CAP_MAX (got " + game.cargoMax + ")");
+assert(game.stats.delivered >= overDeliver, `D: (setup) delivered at least ${overDeliver} canisters (got ${game.stats.delivered})`);
+assert(game.cargoMax === 8, "cargoMax is STILL 8 after far more than the old cap-reaching delivery count (got " + game.cargoMax + ")");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

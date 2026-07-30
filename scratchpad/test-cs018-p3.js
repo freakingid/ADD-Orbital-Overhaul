@@ -230,7 +230,8 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   console.log("(E) regression: cargo/hunters/saucers/cycleValue untouched, version unchanged");
   const Y = build(scriptSrc);
   Y.startGame();
-  eq(Y.game.cargoMax, Y.CARGO_BASE, "E: cargoMax still starts at CARGO_BASE (P5 territory, untouched)");
+  // REPOINTED BY CS018 P5: cargoMax is now GRANTED by levelDef(1).payloadSlots (8), not CARGO_BASE (12).
+  eq(Y.game.cargoMax, 8, "E: cargoMax now starts at levelDef(1).payloadSlots (8), not CARGO_BASE (CS018 P5)");
   assert(!("cycle" in Y.game) && !("cycleWave" in Y.game), "E: game.cycle/game.cycleWave are gone (CS018 P4)");
   eq(Y.GAME_VERSION, "1.0.0.17", "E: GAME_VERSION unchanged this phase (bumps in P10)");
 

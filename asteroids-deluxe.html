@@ -356,12 +356,14 @@ const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-
 const GUARD_ABSORB_SPARKS = 7;  // PLAYTEST KNOB: guard-hued particles spat out where a break was absorbed
 const GUARD_CHAIN_WIDTH = 1.8;  // link stroke width while guarded (vs the normal 1.2) — the "armoured" read
 const GUARD_CHAIN_BLUR = 14;    // link glow blur while guarded (vs the normal 6)
-// Tow capacity (B-8): the cap is a runtime value (game.cargoMax) that GROWS during a run from
-// CARGO_BASE toward CARGO_CAP_MAX — capacity is earned by engaging the salvage loop (Pillar 5),
-// not handed out. The old fixed `CHAIN_MAX` (12) is now CARGO_BASE.
-const CARGO_BASE = 12;          // starting tow cap (was CHAIN_MAX)
-const CARGO_CAP_MAX = 24;       // ceiling (v3.4 P1: 20->24); the physics retune below targets "full chain here" ≈ old 12-node feel
-const CARGO_GROW_PER = 30;      // +1 cap per this many canisters recycled (delivered) in the current run
+// Tow capacity (B-8, superseded CS018 P5 / FORK-CS018-B): the cap is a runtime value
+// (game.cargoMax) set from levelDef(game.wave).payloadSlots in nextWave() — GRANTED by level, no
+// longer earned by delivering canisters. CARGO_BASE and CARGO_CAP_MAX survive only as the
+// documented bounds the table's payloadSlots curve targets (8 at level 1, 24 by level 12); neither
+// drives growth anymore. The old fixed `CHAIN_MAX` (12) was the ancestor of CARGO_BASE.
+const CARGO_BASE = 12;          // HISTORICAL (CS018 P5): pre-table level-1 value; the table's level-1 value is 8, not this
+const CARGO_CAP_MAX = 24;       // ceiling — still current: levelDef's payloadSlots tops out here at level 12, and the Maxed Out latch still keys off it
+const CARGO_GROW_PER = 30;      // RETIRED (CS018 P5): the old per-delivery growth rate. Superseded by the levelDef payloadSlots field. No readers remain.
 const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
 // Towed-mass penalty coefficients — ALL FOUR ARE PLAYTEST KNOBS (CS010 §3). The complaint they
 // address: a typical mid-sized haul (~6-12 towed mass) didn't "feel heavy." Background: v3.0 P6 grew
@@ -4511,7 +4513,7 @@ const game = {
   scoopLevel: 0,                                       // PERSISTENT scoop upgrade level 0..SCOOP_MAX_LEVEL (v3.3 P3; NOT a timed effect)
   scoopHits: 0,                                        // running non-lethal-hit tally; every SCOOP_HITS_PER_LEVEL costs a level
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
-  cargoMax: CARGO_BASE,                                // runtime tow cap; grows CARGO_BASE→CARGO_CAP_MAX per canisters delivered (B-8)
+  cargoMax: CARGO_BASE,                                // runtime tow cap; set from levelDef(game.wave).payloadSlots in nextWave() (CS018 P5) — this is only the pre-level-1 default
   cargoFlash: 0,                                       // CS009 P3: >0 for HUD_CAP_FLASH sec after a cap-up —
                                                         // a cap-up SHRINKS the CARGO ring's fraction (same chain,
                                                         // bigger denominator), so without this flash it reads as
@@ -4600,7 +4602,7 @@ function startGame() {
   game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
-  game.cargoMax = CARGO_BASE;      // tow cap resets to base each run; grows with deliveries (B-8)
+  game.cargoMax = CARGO_BASE;      // pre-level-1 default; nextWave() below immediately overwrites it via levelDef(game.wave).payloadSlots (8 at level 1) — CS018 P5
   game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.ship = new Ship();
@@ -4634,6 +4636,9 @@ function nextWave() {
   // per-frame path clean. Runs at wave 1 too (startGame calls nextWave()), so a fresh run starts
   // pinned to difficultyFactor(1) === 0 (foundation layer only) before any track has even loaded.
   MusicSys.setIntensity(difficultyFactor(game.wave));
+  // CS018 P5 / FORK-CS018-B: payload capacity is GRANTED by level, not earned by deliveries. Set on
+  // every level including level 1 (startGame calls nextWave()), so a fresh run starts at 8 slots.
+  game.cargoMax = levelDef(game.wave).payloadSlots;
   game.stats.dmgThisWave = 0; // fresh damage-free window for the new wave (F9 perfect-wave tracking)
   Achievements.lifetime.maxWave = Math.max(Achievements.lifetime.maxWave, game.wave); // Century Club / Master of the Field
   // No Powerups Needed (MAX): best wave reached while still powerup-free this game. Frozen for the
@@ -5985,19 +5990,6 @@ function update(dt) {
         // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
         // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
         game.stats.delivered++;
-        // Tow-capacity progression (B-8): every CARGO_GROW_PER canisters recycled this run raises
-        // the cap by 1, up to CARGO_CAP_MAX. Keyed off the per-run delivered count (increments by 1
-        // here, so the cap climbs at most one step per canister) — a "TOW +1" float marks each bump.
-        const growCap = Math.min(CARGO_CAP_MAX, CARGO_BASE + Math.floor(game.stats.delivered / CARGO_GROW_PER));
-        if (growCap > game.cargoMax) {
-          game.cargoMax = growCap;
-          game.floaters.push(new FloatText("TOW +1", game.ship.x, game.ship.y - 22, COLOR.dock));
-          // CS009 P3 (FORK-2 A): a cap-up SHRINKS the CARGO ring (same chain, bigger denominator) —
-          // arm the flash so the ring reads gold+thick for HUD_CAP_FLASH sec, and drop the reward
-          // text at the dock (where it was earned), not the ship.
-          game.cargoFlash = HUD_CAP_FLASH;
-          game.floaters.push(new FloatText("+1 CAP", game.dock.x, game.dock.y - 22, COLOR.ach));
-        }
         game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
         // v3.6 P3 (Source 3, FORK-2): the recycle hub emits one powerup per visit, the first time
         // a visit's deliveryCount passes through 10 — same "exactly once per visit" idiom as the
@@ -7120,9 +7112,9 @@ function drawHUD() {
   ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
   drawText("HULL", HUD_HULL_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
 
-  // CARGO ring (top-right, beside HULL). FORK-2 A: game.cargoMax is NOT a constant — it grows
-  // CARGO_BASE->CARGO_CAP_MAX at runtime (+1 per CARGO_GROW_PER delivered), so the fraction and the
-  // "/N" label both read it live every frame; never cache it, never substitute a literal.
+  // CARGO ring (top-right, beside HULL). FORK-2 A: game.cargoMax is NOT a constant — it steps
+  // 8->24 at level boundaries per levelDef(game.wave).payloadSlots (CS018 P5), so the fraction and
+  // the "/N" label both read it live every frame; never cache it, never substitute a literal.
   const cargoFull = game.chain.length >= game.cargoMax;
   // Full-cap or a fresh cap-up both mean gold — same idiom as the HULL ring's MAX state: gold means
   // exactly one thing across the whole HUD, "this resource is at its cap; more is wasted."

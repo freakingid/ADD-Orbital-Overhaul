@@ -325,7 +325,8 @@ function quietField() {
   const scoreBefore = game.score;
   const g = plantBonusOnShip();
   assert(game.chain.length === 0, "chain starts empty");
-  assert(game.cargoMax === CARGO_BASE, "cargo cap starts at CARGO_BASE");
+  // REPOINTED BY CS018 P5: cargoMax now starts at levelDef(1).payloadSlots (8), not CARGO_BASE (12).
+  assert(game.cargoMax === 8, "cargo cap starts at levelDef(1).payloadSlots (8), not CARGO_BASE");
   update(1 / 60);
   assert(g.dead === true, "the whole clump fit, so it dies");
   assert(game.chain.length === BONUS_CANISTER_PIECES,
