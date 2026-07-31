@@ -17,8 +17,10 @@
 //      resetGameStats()+save()/load() (lifetime persistence).
 //  (E) The celebration pushes a floater and arms cargoFlash on the 24th delivery; nothing on a
 //      12 or 23 haul.
-//  (F) No new VoiceSys line is emitted by the max-haul path (dockDelivery still fires its
-//      existing dock_20 tier only, once, on the emptying pop).
+//  (F) REPOINTED (CS018 P10): the max-haul path now ALSO fires the Super Mega Delivery's own
+//      dock_24 line (CS018 P9/P10) — dockDelivery still attempts its existing dock_20 tier on the
+//      emptying pop (untouched), but loses the shared cooldown/priority gate to dock_24, which
+//      claims the channel first.
 
 "use strict";
 const fs = require("fs");
@@ -247,7 +249,7 @@ function tickDock(times) {
 
 // ================= (F) no NEW VoiceSys line from the max-haul path ===============================
 (function sectionF() {
-  console.log("(F) max-haul path emits no new VoiceSys line — only the existing dock_20 tier fires, once");
+  console.log("(F) REPOINTED (CS018 P10): max-haul path fires dock_24 (SMD) before dockDelivery's dock_20 attempt, which the gate then drops");
   const sayLog = [];
   const origSay = VoiceSys.say.bind(VoiceSys);
   VoiceSys.say = (id) => { sayLog.push(id); return origSay(id); };
@@ -258,8 +260,9 @@ function tickDock(times) {
   } finally {
     VoiceSys.say = origSay;
   }
-  assert(sayLog.length === 1, "F: exactly one VoiceSys.say() call across the whole 24-delivery visit (got " + sayLog.length + ": " + sayLog.join(",") + ")");
-  assert(sayLog[0] === "dock_20", "F: the one call is the existing dock_20 tier (n=24 >= 20), not a new max-haul-specific line (got " + sayLog[0] + ")");
+  assert(sayLog.length === 2, "F: two VoiceSys.say() calls across the whole 24-delivery visit — the SMD's dock_24 plus dockDelivery's dropped dock_20 attempt (got " + sayLog.length + ": " + sayLog.join(",") + ")");
+  assert(sayLog[0] === "dock_24", "F: the first call is the Super Mega Delivery's own dock_24 line, fired from the SMD trigger, not dockDelivery's chain (got " + sayLog[0] + ")");
+  assert(sayLog[1] === "dock_20", "F: the second call is dockDelivery's existing dock_20 tier attempt (n=24 >= 20), still fired but dropped by the shared cooldown/priority gate (got " + sayLog[1] + ")");
 })();
 
 // ================= (G) headless startGame()/update no-crash with AudioSys.ctx null ===============
