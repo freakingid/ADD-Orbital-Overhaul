@@ -580,8 +580,11 @@ function levelForCap(n) {
   eq(Y.game.waveTime, 0, "H: ...and waveTime itself is zeroed for the new level");
 
   eq(Y.GAME_VERSION, "1.0.0.17", "H: GAME_VERSION unchanged this phase (bumps in P10)");
-  // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 15, "H: DEBUG_VARS still holds P3's 15 value entries (P4 adds none)");
+  // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob. REPOINTED BY CS018 P6
+  // (mirror-image of the old claim, not weakened): the count moved from P3's 15 to 25 there (9 UFO
+  // MOVEMENT + 2 GLOBAL added, 1 retired saucerGapPressure removed) — a P6 fact, not a P4 one, but this
+  // pin has to track the live registry size or it goes stale every time a later phase touches it.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 25, "H: DEBUG_VARS holds 25 value entries as of CS018 P6 (P4 itself added none)");
 })();
 
 // ================= (I) headless smoke =====================

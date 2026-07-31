@@ -460,8 +460,12 @@ function onDebug(A, { playing = false } = {}) {
   const want = {};
   for (const e of B.DEBUG_ENTRIES) {
     g2.menu.index = B.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === e.id);
-    // A value inside [min,max] that is deliberately NOT the default and NOT on the step grid.
-    const v = Math.min(e.max, Math.max(e.min, e.def + e.step * 1.5));
+    // A value inside [min,max] that is deliberately NOT the default and NOT on the step grid. Rounded to
+    // 6 decimals (CS018 P6): raw float arithmetic on some new fine-step levers (e.g. step 0.1 off a
+    // non-round default) produces noise like 1.4500000000000002 — a real typist never enters that many
+    // digits, and DEBUG_ENTRY_MAXLEN (a deliberate held/pasted-key guard, unrelated to this) truncates it
+    // before parseFloat, which is a test-fixture artifact, not a product bug.
+    const v = Math.round(Math.min(e.max, Math.max(e.min, e.def + e.step * 1.5)) * 1e6) / 1e6;
     for (const ch of String(v).split("")) B.debugEntryKey(ch);
     B.menuDebug("confirm");
     want[e.id] = Math.max(e.min, Math.min(e.max, v));

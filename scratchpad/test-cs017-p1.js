@@ -69,6 +69,7 @@ const RETURN = [
   "DebrisSatellite", "HunterSatellite", "Saucer",
   "ramp", "difficultyFactor", "leverScale",
   "levelDef", "junkSpeedMul", "DEBRIS_SPEEDS",              // CS018 P4 (sections B, F)
+  "DEBUG",                                                  // CS018 P6 (section F: tiered saucer gap)
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
   "MusicSys", "AudioSys",
@@ -224,7 +225,7 @@ function build() {
 // Each claim carries its mirror-image control so no direction can pass vacuously, and every expectation is
 // built from the REAL levelDef/junkSpeedMul/ramp helpers, never re-derived arithmetic.
 (function sectionF() {
-  console.log("(F) lever wiring: junk on levelDef, Hunter speed/turn FROZEN, saucer gap still on game.wave");
+  console.log("(F) lever wiring: junk on levelDef, Hunter speed/turn FROZEN, saucer gap now tiered (CS018 P6)");
   const A = build();
   const g = A.game;
   A.startGame();
@@ -270,21 +271,25 @@ function build() {
       }
     }
 
-    // --- STILL ON ramp(): saucer gap. Forces the spawn timer to expire, with Math.random() pinned so
-    // rand(gapMin,gapMax) collapses to gapMin. Reads the ABSOLUTE game.wave until CS018 P6.
+    // --- REPOINTED BY CS018 P6 (mirror-image of the old claim): saucer gap moved OFF ramp()/game.wave
+    // onto the UFO MOVEMENT appearance-frequency TIER + jitteredInterval(). Forces the spawn timer to
+    // expire, with Math.random() pinned so jitteredInterval's rand(lo,hi) collapses to lo (the tier
+    // centre's lower jitter bound) — also pins the smallChance roll false, same as before.
     g.saucers = [];
     g.saucerTimer = -1;
     const savedRandom = Math.random;
-    Math.random = () => 0; // rand(a,b) = a + 0*(b-a) = a -> pins to gapMin; also pins smallChance roll false
+    Math.random = () => 0; // rand(a,b) = a + 0*(b-a) = a -> pins to the jitter lower bound
     try {
       A.update(0); // dt=0: no other accumulator advances, isolates the spawn-timer branch
     } finally {
       Math.random = savedRandom;
     }
     assert(g.saucers.length === 1, `F: level ${w}: forcing the spawn timer produced exactly one saucer`);
-    const expGapMin = A.ramp(A.SAUCER_GAP_FLOOR_MIN, A.SAUCER_GAP_CEIL_MIN, g.wave);
-    assert(Math.abs(g.saucerTimer - expGapMin) < 1e-9,
-      `F: level ${w}: saucer gap (Math.random pinned to 0) expected gapMin=${expGapMin}, got ${g.saucerTimer}`);
+    const tier = A.levelDef(g.wave).ufoAppearFreq;
+    const center = tier === "low" ? A.DEBUG.ufoAppearFreqLow : tier === "high" ? A.DEBUG.ufoAppearFreqHigh : A.DEBUG.ufoAppearFreqNormal;
+    const expGapLo = center * (1 - A.DEBUG.freqJitter / 100);
+    assert(Math.abs(g.saucerTimer - expGapLo) < 1e-9,
+      `F: level ${w}: saucer gap (Math.random pinned to 0) expected the tier's jitter lower bound=${expGapLo}, got ${g.saucerTimer}`);
   }
 
   // The frozen claim, stated globally: every large Hunter sampled across levels 1..12 got the SAME value.

@@ -394,7 +394,7 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   // Sanity that these really are two different builds — otherwise every identity below is vacuous.
   assert(hm[1] !== scriptSrc, "F: the pre-P3 build and the worktree build are genuinely different sources");
 
-  let divergedCount = 0, hunterDiverged = 0;
+  let divergedCount = 0, hunterDiverged = 0, gapDiverged = 0;
   for (let w = 1; w <= 30; w++) {
     const nH = withPinnedRandom(PIN, () => atWave(H, w));
     const nW = withPinnedRandom(PIN, () => atWave(W, w));
@@ -422,11 +422,14 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     assert(probe(H, thrH - 1e-9) === probe(W, thrW - 1e-9) && probe(H, thrH + 1e-9) === probe(W, thrW + 1e-9),
       `F: level ${w}: the pre-P3 and post-P3 builds make the same small/big decision`);
 
-    // --- UNCHANGED: saucer spawn gap. With Math.random pinned to 0, rand(gapMin,gapMax) === gapMin.
+    // --- REPOINTED BY CS018 P6 (CONTROL, mirror-image of the old "UNCHANGED" claim): saucer spawn gap
+    // moved OFF ramp()/game.wave onto the UFO MOVEMENT appearance-frequency TIER + jitteredInterval(), so
+    // it must now DIVERGE from the pre-P3 build, the same way Hunter speed already diverges below.
     const gap = (A) => { A.game.saucers.length = 0; A.game.saucerTimer = -1; A.game.state = "playing"; A.game.paused = false; withPinnedRandom(0, () => A.update(0)); return A.game.saucerTimer; };
     const gH = gap(H), gW = gap(W);
-    assert(gH === gW, `F: level ${w}: saucer spawn gap identical to the pre-P3 build (${gH} vs ${gW})`);
-    assert(gW === W.ramp(W.SAUCER_GAP_FLOOR_MIN, W.SAUCER_GAP_CEIL_MIN, w), `F: level ${w}: spawn gap still samples the ABSOLUTE game.wave`);
+    if (!near(gH, gW)) gapDiverged++;
+    assert(gH === H.ramp(H.SAUCER_GAP_FLOOR_MIN, H.SAUCER_GAP_CEIL_MIN, w),
+      `F: level ${w}: the PRE-P6 pinned build's spawn gap still samples the ABSOLUTE game.wave via ramp() (unaffected by this worktree's P6 change)`);
 
     // --- CONTROL: the repointed levers must actually differ, or "unchanged" means nothing.
     if (nH !== nW) divergedCount++;
@@ -438,7 +441,9 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     `F: CONTROL — junk count genuinely diverges from the pre-P3 build somewhere in levels 1..30 (${divergedCount} levels), so the saucer identities above are a real constraint`);
   assert(hunterDiverged > 0,
     `F: CONTROL — the FROZEN Hunter speed genuinely diverges from the pre-P3 ramped speed (${hunterDiverged} levels)`);
-  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer levers on 0`);
+  assert(gapDiverged > 0,
+    `F: CONTROL (CS018 P6) — the tiered+jittered spawn gap genuinely diverges from the pre-P3 ramped gap (${gapDiverged} levels)`);
+  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer spawn gap on ${gapDiverged}/30 (CS018 P6), fire-mult/small-chance saucer levers on 0`);
 })();
 
 // ================= (G) the TABLE is the count ceiling now ==============================================

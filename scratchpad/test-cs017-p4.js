@@ -1,10 +1,17 @@
 // Headless test for CS017 Phase 4 — the time-in-level saucer pressure axis (FORK-CS017-B -> (b)
 // COMPOSE). The wave-based ramp() value is now the level's OPENING value (t=0); wavePressure() =
-// min(1, game.waveTime / DEBUG.saucerPressureSecs) then tightens aim error toward SAUCER_AIM_ERR_CEIL
-// and shortens the spawn gap toward each bound's own _CEIL, scaled by DEBUG.saucerAimPressure /
-// DEBUG.saucerGapPressure. Both dev-tunable levers live in DEBUG_VARS; setting either to 0 must
-// reproduce pre-P4 behaviour at ANY waveTime (the composition property holds at every game.waveTime,
-// not just 0, once the scale is zeroed).
+// min(1, game.waveTime / DEBUG.saucerPressureSecs) then tightens aim error toward SAUCER_AIM_ERR_CEIL,
+// scaled by DEBUG.saucerAimPressure.
+//
+// REPOINTED BY CS018 P6 (mirror-image of the old claim, not weakened or deleted): the GAP half of this
+// axis is GONE. DEBUG.saucerGapPressure and the ramp()+pressure composition at the spawn-gap site were
+// explicitly retired — the spawn gap now reads the UFO MOVEMENT appearance-frequency TIER +
+// jitteredInterval() instead, and no longer responds to game.waveTime at all. The AIM half is untouched
+// and stays fully on this axis until CS018 P7 retires it too (per that phase's own explicit scope). This
+// file's former per-section gap coverage (byte-identical at t=0, monotonic shortening, saturation,
+// zero-scale reproduction) is replaced by ONE regression control per relevant section proving gap no
+// longer varies with waveTime, and the sanity/D/H sections no longer touch DEBUG.saucerGapPressure
+// (the id no longer exists in DEBUG_VARS — applyDebug() on it now throws).
 //
 //   node scratchpad/test-cs017-p4.js
 //
@@ -12,14 +19,16 @@
 // <script> block, and drive the ACTUAL Saucer/update()/nextWave() — never reimplement the formulas.
 // Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) game.waveTime === 0: aim error and BOTH gap bounds are byte-identical to the pre-P4 wave-only
-//      formula, at several waves (the composition property — a level opens exactly as it does today).
-//  (C) as waveTime grows from 0 toward saucerPressureSecs, aim error tightens (decreases) and both
-//      gap bounds shorten (decrease), monotonically.
-//  (D) with each pressure scale pushed to its max (1), the value saturates at EXACTLY its _CEIL once
-//      waveTime >= saucerPressureSecs, and never overshoots past it for waveTime far beyond that.
-//  (E) with saucerAimPressure/saucerGapPressure forced to 0, the pre-P4 formula holds at EVERY
-//      waveTime sampled (0, 10, 45, 90, 500) — the knobs genuinely disable the axis.
+//  (B) game.waveTime === 0: aim error is byte-identical to the pre-P4 wave-only formula, at several
+//      waves (the composition property — a level opens exactly as it does today). CONTROL: the spawn
+//      gap at waveTime=0 is unaffected either way (CS018 P6) — it is compared against the LIVE tiered
+//      formula, not the retired pre-P4 one.
+//  (C) as waveTime grows from 0 toward saucerPressureSecs, aim error tightens (decreases), monotonically.
+//      CONTROL: the spawn gap does NOT change at all as waveTime grows (CS018 P6 detached it).
+//  (D) with saucerAimPressure pushed to its max (1), aim error saturates at EXACTLY SAUCER_AIM_ERR_CEIL
+//      once waveTime >= saucerPressureSecs, and never overshoots past it for waveTime far beyond that.
+//  (E) with saucerAimPressure forced to 0, the pre-P4 aim formula holds at EVERY waveTime sampled
+//      (0, 10, 45, 90, 500) — the knob genuinely disables the aim axis.
 //  (F) nextWave() resets game.waveTime to 0, which resets the pressure back to the level-opening value.
 //  (G) the fired-bullet aim error under nonzero pressure is read off a REAL Saucer shot via the real
 //      angleTo (the test-cs012-p1.js idiom), compared against the full P4 formula — never recomputed
@@ -72,7 +81,7 @@ function makeLocalStorage() {
 
 const RETURN = [
   "game", "startGame", "nextWave", "update", "Saucer", "angleTo", "ramp", "wavePressure",
-  "DEBUG", "DEBUG_VARS", "applyDebug", "AudioSys",
+  "DEBUG", "DEBUG_VARS", "applyDebug", "AudioSys", "levelDef",
   "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_CEIL_MAX",
 ];
@@ -136,23 +145,24 @@ function actualGap(inst, wave, waveTime, randomVal) {
   return game.saucerTimer;
 }
 
-// Pre-P4 formulas (the level's opening value, unchanged since CS012 P1 / the original F10 build).
+// Pre-P4 formula (the level's opening aim error value, unchanged since CS012 P1 / the original F10 build).
 function preP4Err(inst, wave) {
   const { ramp, SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, SAUCER_ACCURACY_RAMP_SCALE } = inst;
   return ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (wave - 1) * SAUCER_ACCURACY_RAMP_SCALE);
 }
-function preP4GapMin(inst, wave) {
-  const { ramp, SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN } = inst;
-  return ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, wave);
-}
-function preP4GapMax(inst, wave) {
-  const { ramp, SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX } = inst;
-  return ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, wave);
+// CS018 P6: the LIVE gap bounds — the tiered+jittered centre, not the retired ramp()+pressure formula.
+// Used only as a CONTROL in this file, to prove the gap no longer moves with game.waveTime.
+function liveGapBounds(inst, wave) {
+  const { DEBUG, levelDef } = inst;
+  const tier = levelDef(wave).ufoAppearFreq;
+  const center = tier === "low" ? DEBUG.ufoAppearFreqLow : tier === "high" ? DEBUG.ufoAppearFreqHigh : DEBUG.ufoAppearFreqNormal;
+  const j = DEBUG.freqJitter / 100;
+  return { lo: center * (1 - j), hi: center * (1 + j) };
 }
 
-// ================= sanity: the three new DEBUG_VARS entries =====================
+// ================= sanity: the surviving DEBUG_VARS entries (+ the retired one's absence) =====================
 (function sectionSanity() {
-  console.log("(sanity) DEBUG_VARS registry: three new entries, correct shape and defaults");
+  console.log("(sanity) DEBUG_VARS registry: the two surviving pressure entries; saucerGapPressure retired (CS018 P6)");
   const inst = buildInstance();
   const { DEBUG_VARS, DEBUG } = inst;
   const byId = id => DEBUG_VARS.find(v => v.id === id);
@@ -163,16 +173,15 @@ function preP4GapMax(inst, wave) {
   const aimP = byId("saucerAimPressure");
   assert(!!aimP && aimP.def === 0.5 && aimP.min === 0 && aimP.max === 1 && aimP.step === 0.05,
     "sanity: saucerAimPressure def/min/max/step match the spec");
-  const gapP = byId("saucerGapPressure");
-  assert(!!gapP && gapP.def === 0.5 && gapP.min === 0 && gapP.max === 1 && gapP.step === 0.05,
-    "sanity: saucerGapPressure def/min/max/step match the spec");
-  assert(DEBUG.saucerPressureSecs === 90 && DEBUG.saucerAimPressure === 0.5 && DEBUG.saucerGapPressure === 0.5,
-    "sanity: DEBUG seeds from the registry defaults on load");
+  assert(!byId("saucerGapPressure"), "sanity: saucerGapPressure entry is GONE (retired CS018 P6, its consumer moved onto a tier)");
+  assert(DEBUG.saucerPressureSecs === 90 && DEBUG.saucerAimPressure === 0.5,
+    "sanity: DEBUG seeds the two surviving knobs from the registry defaults on load");
+  assert(!("saucerGapPressure" in DEBUG), "sanity: DEBUG.saucerGapPressure no longer exists");
 })();
 
-// ================= (B) waveTime === 0: byte-identical to the pre-P4 formula =====================
+// ================= (B) waveTime === 0: byte-identical to the pre-P4 aim formula =====================
 (function sectionB() {
-  console.log("(B) game.waveTime === 0: aim error + both gap bounds are byte-identical to the pre-P4 formula");
+  console.log("(B) game.waveTime === 0: aim error is byte-identical to the pre-P4 formula");
   const inst = buildInstance();
   for (const wave of [1, 5, 9, 17, 25]) {
     const expectedErr = preP4Err(inst, wave);
@@ -180,21 +189,21 @@ function preP4GapMax(inst, wave) {
     assert(near(actualErr, expectedErr, 1e-9),
       `B: wave ${wave} waveTime=0 aim error ${actualErr} === pre-P4 ${expectedErr}`);
 
-    const expectedGapMin = preP4GapMin(inst, wave);
+    // CONTROL (CS018 P6): the spawn gap at waveTime=0 matches the LIVE tiered+jittered bounds, not the
+    // retired ramp() formula — proving the gap site now reads levelDef()/DEBUG, not game.waveTime.
+    const bounds = liveGapBounds(inst, wave);
     const actualGapMin = actualGap(inst, wave, 0, 0);
-    assert(near(actualGapMin, expectedGapMin, 1e-9),
-      `B: wave ${wave} waveTime=0 gapMin ${actualGapMin} === pre-P4 ${expectedGapMin}`);
-
-    const expectedGapMax = preP4GapMax(inst, wave);
+    assert(near(actualGapMin, bounds.lo, 1e-9),
+      `B: wave ${wave} waveTime=0 gapMin ${actualGapMin} === live tiered lower bound ${bounds.lo}`);
     const actualGapMax = actualGap(inst, wave, 0, 1);
-    assert(near(actualGapMax, expectedGapMax, 1e-9),
-      `B: wave ${wave} waveTime=0 gapMax ${actualGapMax} === pre-P4 ${expectedGapMax}`);
+    assert(near(actualGapMax, bounds.hi, 1e-9),
+      `B: wave ${wave} waveTime=0 gapMax ${actualGapMax} === live tiered upper bound ${bounds.hi}`);
   }
 })();
 
-// ================= (C) monotonic tightening/shortening as waveTime grows =====================
+// ================= (C) aim error tightens monotonically; gap CONTROL: unaffected by waveTime =====================
 (function sectionC() {
-  console.log("(C) as waveTime grows, aim error tightens and both gap bounds shorten, monotonically");
+  console.log("(C) as waveTime grows, aim error tightens monotonically; the spawn gap does not move at all (CS018 P6)");
   const inst = buildInstance();
   const waveTimes = [0, 15, 30, 45, 60, 75, 90, 120, 150];
   for (const wave of [1, 15]) {
@@ -205,75 +214,52 @@ function preP4GapMax(inst, wave) {
     }
     assert(errs[errs.length - 1] < errs[0] - 1e-6, `C: wave ${wave} aim error strictly tightened somewhere across the sample`);
 
+    // CONTROL (CS018 P6): the gap bounds are IDENTICAL at every waveTime sample — proving the spawn-gap
+    // site was fully detached from wavePressure(), not merely retuned.
     const gapMins = waveTimes.map(wt => actualGap(inst, wave, wt, 0));
     const gapMaxs = waveTimes.map(wt => actualGap(inst, wave, wt, 1));
     for (let i = 1; i < gapMins.length; i++) {
-      assert(gapMins[i] <= gapMins[i - 1] + 1e-9,
-        `C: wave ${wave} gapMin at wt=${waveTimes[i]} (${gapMins[i].toFixed(5)}) <= at wt=${waveTimes[i - 1]} (${gapMins[i - 1].toFixed(5)})`);
-      assert(gapMaxs[i] <= gapMaxs[i - 1] + 1e-9,
-        `C: wave ${wave} gapMax at wt=${waveTimes[i]} (${gapMaxs[i].toFixed(5)}) <= at wt=${waveTimes[i - 1]} (${gapMaxs[i - 1].toFixed(5)})`);
+      assert(near(gapMins[i], gapMins[0], 1e-9),
+        `C: wave ${wave} gapMin at wt=${waveTimes[i]} (${gapMins[i].toFixed(5)}) === at wt=0 (${gapMins[0].toFixed(5)}) — waveTime-independent`);
+      assert(near(gapMaxs[i], gapMaxs[0], 1e-9),
+        `C: wave ${wave} gapMax at wt=${waveTimes[i]} (${gapMaxs[i].toFixed(5)}) === at wt=0 (${gapMaxs[0].toFixed(5)}) — waveTime-independent`);
     }
-    assert(gapMins[gapMins.length - 1] < gapMins[0] - 1e-6, `C: wave ${wave} gapMin strictly shortened somewhere across the sample`);
-    assert(gapMaxs[gapMaxs.length - 1] < gapMaxs[0] - 1e-6, `C: wave ${wave} gapMax strictly shortened somewhere across the sample`);
   }
 })();
 
 // ================= (D) saturation at max pressure scale: exactly _CEIL, never overshoots =====================
 (function sectionD() {
-  console.log("(D) with pressure scale forced to 1, saturates at EXACTLY the _CEIL once waveTime >= saucerPressureSecs");
+  console.log("(D) with aim pressure scale forced to 1, saturates at EXACTLY SAUCER_AIM_ERR_CEIL once waveTime >= saucerPressureSecs");
   const inst = buildInstance();
-  const { applyDebug, SAUCER_AIM_ERR_CEIL, SAUCER_GAP_CEIL_MIN, SAUCER_GAP_CEIL_MAX } = inst;
+  const { applyDebug, SAUCER_AIM_ERR_CEIL } = inst;
   applyDebug("saucerAimPressure", 1);
-  applyDebug("saucerGapPressure", 1);
   for (const wave of [1, 9, 25]) {
     for (const wt of [90, 91, 150, 1000, 50000]) {
       const err = actualAimErr(inst, wave, wt);
       assert(near(err, SAUCER_AIM_ERR_CEIL, 1e-6),
         `D: wave ${wave} wt=${wt} aim error (${err}) === SAUCER_AIM_ERR_CEIL (${SAUCER_AIM_ERR_CEIL}) at max pressure scale`);
-      const gapMin = actualGap(inst, wave, wt, 0);
-      assert(near(gapMin, SAUCER_GAP_CEIL_MIN, 1e-6),
-        `D: wave ${wave} wt=${wt} gapMin (${gapMin}) === SAUCER_GAP_CEIL_MIN (${SAUCER_GAP_CEIL_MIN}) at max pressure scale`);
-      const gapMax = actualGap(inst, wave, wt, 1);
-      assert(near(gapMax, SAUCER_GAP_CEIL_MAX, 1e-6),
-        `D: wave ${wave} wt=${wt} gapMax (${gapMax}) === SAUCER_GAP_CEIL_MAX (${SAUCER_GAP_CEIL_MAX}) at max pressure scale`);
     }
   }
   // Never overshoots past _CEIL even at the default (0.5) scale across a huge waveTime.
   applyDebug("saucerAimPressure", 0.5);
-  applyDebug("saucerGapPressure", 0.5);
   for (const wave of [1, 25]) {
     const err = actualAimErr(inst, wave, 1e7);
     assert(err >= SAUCER_AIM_ERR_CEIL - 1e-6, `D: wave ${wave} default-scale aim error (${err}) never overshoots past CEIL (${SAUCER_AIM_ERR_CEIL})`);
-    const gapMin = actualGap(inst, wave, 1e7, 0);
-    assert(gapMin >= SAUCER_GAP_CEIL_MIN - 1e-6, `D: wave ${wave} default-scale gapMin (${gapMin}) never overshoots past CEIL (${SAUCER_GAP_CEIL_MIN})`);
-    const gapMax = actualGap(inst, wave, 1e7, 1);
-    assert(gapMax >= SAUCER_GAP_CEIL_MAX - 1e-6, `D: wave ${wave} default-scale gapMax (${gapMax}) never overshoots past CEIL (${SAUCER_GAP_CEIL_MAX})`);
   }
 })();
 
-// ================= (E) pressure scale === 0 reproduces pre-P4 behaviour at ALL waveTime =====================
+// ================= (E) aim pressure scale === 0 reproduces pre-P4 behaviour at ALL waveTime =====================
 (function sectionE() {
-  console.log("(E) with saucerAimPressure/saucerGapPressure forced to 0, the pre-P4 formula holds at EVERY waveTime");
+  console.log("(E) with saucerAimPressure forced to 0, the pre-P4 aim formula holds at EVERY waveTime");
   const inst = buildInstance();
   const { applyDebug } = inst;
   applyDebug("saucerAimPressure", 0);
-  applyDebug("saucerGapPressure", 0);
   for (const wave of [1, 9, 25]) {
     for (const wt of [0, 10, 45, 90, 500]) {
       const expectedErr = preP4Err(inst, wave);
       const actualErr = actualAimErr(inst, wave, wt);
       assert(near(actualErr, expectedErr, 1e-9),
         `E: wave ${wave} wt=${wt} aim error (${actualErr}) === pre-P4 (${expectedErr}) with the knob at 0`);
-
-      const expectedGapMin = preP4GapMin(inst, wave);
-      const actualGapMin = actualGap(inst, wave, wt, 0);
-      assert(near(actualGapMin, expectedGapMin, 1e-9),
-        `E: wave ${wave} wt=${wt} gapMin (${actualGapMin}) === pre-P4 (${expectedGapMin}) with the knob at 0`);
-
-      const expectedGapMax = preP4GapMax(inst, wave);
-      const actualGapMax = actualGap(inst, wave, wt, 1);
-      assert(near(actualGapMax, expectedGapMax, 1e-9),
-        `E: wave ${wave} wt=${wt} gapMax (${actualGapMax}) === pre-P4 (${expectedGapMax}) with the knob at 0`);
     }
   }
 })();
@@ -323,7 +309,6 @@ function preP4GapMax(inst, wave) {
   const { AudioSys, startGame, update, nextWave, game, applyDebug } = inst;
   assert(AudioSys.ctx === null, "H: sanity — no AudioContext stub means AudioSys.ctx is null");
   applyDebug("saucerAimPressure", 1);
-  applyDebug("saucerGapPressure", 1);
   let threw = null;
   try {
     startGame();

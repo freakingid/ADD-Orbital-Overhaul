@@ -71,6 +71,7 @@ const RETURN = [
   "DEBUG_VARS", "menuDebug", "drawDebug", "debugReturn",
   "ramp", "difficultyFactor", "HUNTER_FLOOR_FRAC",
   "levelDef", "junkSpeedMul", "largeHunterCap",                                        // CS018 P4 repoint
+  "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
   "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "AudioSys"
@@ -166,11 +167,16 @@ const TIER_NAMES = ["low", "normal", "high"];
       assert(row[f] === def[f], `B: wave ${w}: tier "${f}" expected ${def[f]}, got ${row[f]}`);
     }
 
-    // saucerAimErr/saucerGapMin/saucerGapMax: the SAME ramp() calls as the live saucer aim/spawn sites.
+    // saucerAimErr: still the SAME ramp() call as the live saucer aim site (retires in P7).
     const expAimErr = A.ramp(A.SAUCER_AIM_ERR_FLOOR, A.SAUCER_AIM_ERR_CEIL, 1 + (g.wave - 1) * A.SAUCER_ACCURACY_RAMP_SCALE);
-    const expGapMin = A.ramp(A.SAUCER_GAP_FLOOR_MIN, A.SAUCER_GAP_CEIL_MIN, g.wave);
-    const expGapMax = A.ramp(A.SAUCER_GAP_FLOOR_MAX, A.SAUCER_GAP_CEIL_MAX, g.wave);
     assert(Math.abs(row.saucerAimErr - expAimErr) < 1e-9, `B: wave ${w}: saucerAimErr expected ${expAimErr}, got ${row.saucerAimErr}`);
+    // REPOINTED BY CS018 P6 (mirror-image of the old claim): saucerGapMin/saucerGapMax no longer mirror
+    // ramp() — they log the jittered-interval bounds around the ufoAppearFreq TIER centre.
+    const appearTier = def.ufoAppearFreq;
+    const appearCenter = appearTier === "low" ? A.DEBUG.ufoAppearFreqLow : appearTier === "high" ? A.DEBUG.ufoAppearFreqHigh : A.DEBUG.ufoAppearFreqNormal;
+    const appearJitter = A.DEBUG.freqJitter / 100;
+    const expGapMin = appearCenter * (1 - appearJitter);
+    const expGapMax = appearCenter * (1 + appearJitter);
     assert(Math.abs(row.saucerGapMin - expGapMin) < 1e-9, `B: wave ${w}: saucerGapMin expected ${expGapMin}, got ${row.saucerGapMin}`);
     assert(Math.abs(row.saucerGapMax - expGapMax) < 1e-9, `B: wave ${w}: saucerGapMax expected ${expGapMax}, got ${row.saucerGapMax}`);
     assert(row.prevLevelSecs === 0, `B: wave ${w}: prevLevelSecs is 0 when no frames were simulated`);

@@ -160,9 +160,13 @@ function beginPlaying(A) {
 
   function clampCheck(index, e) {
     g.menu.index = index;
-    for (let i = 0; i < 200; i++) A.menuDebug("right");
+    // CS018 P6: a fixed 200 stopped being "more than enough" once wider-range levers (e.g. UFO flight
+    // speed, 20..600 by 2 = 290 steps end-to-end) joined the registry. Scale to the entry's OWN
+    // [min,max]/step span instead of a magic constant, so this stays correct as the registry grows.
+    const n = Math.ceil((e.max - e.min) / e.step) + 10;
+    for (let i = 0; i < n; i++) A.menuDebug("right");
     assert(A.debugShown[e.id] === e.max, `D: ${e.id} clamps at its max ${e.max} (got ${A.debugShown[e.id]})`);
-    for (let i = 0; i < 200; i++) A.menuDebug("left");
+    for (let i = 0; i < n; i++) A.menuDebug("left");
     assert(A.debugShown[e.id] === e.min, `D: ${e.id} clamps at its min ${e.min} (got ${A.debugShown[e.id]})`);
     // one nudge back up from the floor lands exactly one step in.
     A.menuDebug("right");
