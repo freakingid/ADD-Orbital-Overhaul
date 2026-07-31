@@ -59,7 +59,7 @@ them. This is the CS014 lesson made structural.
 | P7 | Saucer weapons (fire rate, accuracy, shot speed) | Sonnet 5 | high | **yes** |
 | P8 | Delivery reward tiers 8/12/16/20 | Sonnet 5 | high | **yes** |
 | P9 | Super Mega Delivery sweep (silent) | Opus 4.8 | xhigh, thinking on | **yes** |
-| ⛔ | **STOP — voice lab pass required** | — | — | — |
+| ✅ | Voice lab gate — CLEARED | — | — | — |
 | P10 | SMD voice line, version bump, doc sweep | Sonnet 5 | high | **yes** |
 
 ---
@@ -613,19 +613,24 @@ board, and the total powerups spawned.
 
 ---
 
-## ⛔ STOP — voice lab pass required before P10
+## ✅ Voice lab gate — CLEARED
 
-P10 adds a Dan line for the Super Mega Delivery. **Paul must compose and
-zero-error-verify the `phon` string in `tools/voice-robot-lab.html` before that
-session runs.** Claude Code never derives, authors or edits `phon` strings.
+P10 adds a Dan line for the Super Mega Delivery. The voice-line gate requires
+that the `phon` string be composed and verified in `tools/voice-robot-lab.html`
+before any build session touches `VOICE_LINES`. **That pass is complete.**
 
-Source document §7.3 suggests *"Super Mega Delivery at your service."* The
-existing `dock_20` line is `"I'm not sure I can count that high."`, so the new
-line should read as an escalation above that.
+| Field | Value |
+| --- | --- |
+| Event key | `dock_24` (matches the shipped `dock_N` convention) |
+| `text` | `Super Mega Delivery at your service.` |
+| `phon` | `S UW1 P ER / M EH1 G AH / D IH L IH1 V ER IY / AE T / Y ER / S ER1 V IH S .` |
 
-Deliver to P10: the final `text` string, the lab-verified `phon` string, and the
-event key (recommended: `dock_24`, matching the existing `dock_N` convention in
-`VOICE_LINES`).
+Verified: 24 tokens, 4 stressed, 1 terminal pause, zero unrecognized symbols
+against the build's 39-entry `PH` table; heard and approved via `VL.speak()`.
+The `D IH L IH1 V ER IY` segment is reused verbatim from the shipped `dock_15`
+line, so it is already proven in Dan's voice.
+
+Claude Code must treat both strings as data to copy, never to derive or adjust.
 
 ---
 
@@ -640,13 +645,17 @@ event key (recommended: `dock_24`, matching the existing `dock_N` convention in
 **Prompt.**
 
 ```
-Final CS018 phase. Paul supplies the lab-verified text and phon strings for the
-Super Mega Delivery voice line — use them EXACTLY as given. Do not derive,
-edit, re-spell or "improve" the phon string; it was composed and zero-error
-verified in tools/voice-robot-lab.html.
+Final CS018 phase.
 
-1. Add a dock_24 entry to VOICE_LINES immediately after dock_20, using the
-   supplied text and phon verbatim.
+1. Add this lab-verified entry to VOICE_LINES immediately after the dock_20
+   entry, matching the surrounding formatting. It was composed and heard in
+   tools/voice-robot-lab.html via VL.speak(). Use both strings EXACTLY as
+   given — do not derive, edit, re-spell, re-stress or "improve" either one.
+
+     dock_24: [
+       { text: "Super Mega Delivery at your service.",
+         phon: "S UW1 P ER / M EH1 G AH / D IH L IH1 V ER IY / AE T / Y ER / S ER1 V IH S ." },
+     ],
 
 2. Fire it from the Super Mega Delivery trigger added in P9 — NOT from
    VoiceSys.dockDelivery's threshold chain. The SMD is a distinct event, not a
