@@ -369,7 +369,9 @@ function onDebug(A, { playing = false } = {}) {
   assert(A.debugShown[target] === 1, `F: an under-min entry clamps to min 1 (got ${A.debugShown[target]})`);
 
   // A typed value is exact — it is NOT snapped to `step`.
-  const frac = "saucerAimPressure";                       // {def:0.5, min:0, max:1, step:0.05}
+  // REPOINTED (CS018 P7): saucerAimPressure retired this phase; ufoDirChangeFreqNormal is the nearest
+  // surviving fractional-step knob (def 1.3, min 0.1, max 10, step 0.1) — same demonstration, same claim.
+  const frac = "ufoDirChangeFreqNormal";                  // {def:1.3, min:0.1, max:10, step:0.1}
   g.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === frac);
   for (const k of ["0", ".", "3", "7"]) A.debugEntryKey(k);
   assert(A.DebugPanel.entry === "0.37", `F: "." is accepted once (got ${A.DebugPanel.entry})`);

@@ -421,8 +421,9 @@ const STAR_NEAR_BRIGHT_MAX = 1.0;
 // nextWave(); every per-level difficulty quantity comes from levelDef() below instead. Do NOT
 // re-derive music intensity from the level table, and do not put a new difficulty lever back on this
 // curve. ramp() (which composes difficultyFactor) still interpolates the remaining direct-ramp
-// levers: the small-saucer chance (permanent), plus the saucer fire/aim pair until CS018 P7 moves
-// those onto tiers — the saucer spawn-gap third of that group moved onto a tier in P6.
+// levers: the small-saucer chance (permanent) and the two disabled leverScale levers (powerup/dock
+// size). CS018 P7 moved the last of the saucer group (fire rate, aim) off ramp() onto levelDef
+// tiers — the whole spawn/fire/aim group is now tier-driven, ending with P6's spawn-gap move.
 const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficultyFactor(wave);
                                 // ~0 at wave 1, ~0.9 by wave 20, plateauing near 1 by ~wave 25.
 // CS017's difficulty CYCLE clock — CYCLE_LENGTH, CYCLE_GAIN, cycleValue(), game.cycle,
@@ -531,9 +532,13 @@ const SAUCER_GAP_CEIL_MAX  = 16;  // full-difficulty longest gap
 const SAUCER_FIRE_INIT  = [0.6, 1.4]; // delay before a saucer's first shot after entering
 const SAUCER_FIRE_BIG   = [0.9, 1.6]; // big saucer reload (fires randomly)
 const SAUCER_FIRE_SMALL = [0.7, 1.1]; // small saucer reload (fires aimed)
+// RETIRED (CS018 P7): superseded by the UFO WEAPONS fire-frequency tier + ufoFireMult() — see
+// rollFireTimer(). No readers remain (grep-confirmed).
 const SAUCER_FIRE_MULT_FLOOR = 1.8;   // wave-1: fire ~1.8× slower (longer between shots)
 const SAUCER_FIRE_MULT_CEIL  = 1.0;   // full difficulty: shipped cadence
 // Small-saucer aim error (rad): wide barely-aimed spray early, tightening to precise late.
+// RETIRED (CS018 P7): superseded by the UFO WEAPONS accuracy tier + ufoAccuracyRad() — see
+// Saucer.update(). No readers remain (grep-confirmed).
 const SAUCER_AIM_ERR_FLOOR = 0.35;    // wave-1 aim error
 const SAUCER_AIM_ERR_CEIL  = 0.09;    // full-difficulty aim error (shipped precision)
 const SAUCER_ACCURACY_RAMP_SCALE = 0.5;  // <1: saucer aim sharpens slower than the global difficulty
@@ -2610,11 +2615,10 @@ const settings = {
 // SECTION HEADER — `{ header: "JUNK" }` — instead of a value. A header has no `id`/`def`, so every loop
 // over VALUES goes through DEBUG_ENTRIES (below), never DEBUG_VARS directly; up/down skip headers so one can
 // never become the selection. Headers are pure grouping: they carry no state and nothing persists for them.
-// NOTE for CS018 P3/P6/P7 — the "SAUCER PRESSURE" header below belonged to three pressure knobs;
-// saucerGapPressure retired early in P6 (its consumer moved onto a tier), the remaining two
-// (saucerPressureSecs, saucerAimPressure) retire WITH the header itself in P7. Its replacements are the
-// JUNK / UFO MOVEMENT / UFO WEAPONS / GLOBAL headers those phases add. A header left behind with no
-// entries under it renders as a stray label; delete it with them.
+// CS018 P3/P6/P7: the old "SAUCER PRESSURE" header and its three pressure knobs (saucerGapPressure,
+// saucerPressureSecs, saucerAimPressure) are fully retired now — replaced by the JUNK / UFO MOVEMENT /
+// UFO WEAPONS / GLOBAL headers those phases added. A header left with no entries under it renders as a
+// stray label, which is why it was deleted along with its last two knobs rather than left empty.
 const DEBUG_VARS = [
   { header: "SHIP" },
   { id: "autoShieldRegenPause", label: "Auto Shield Regen Pause", unit: "ms",
@@ -2636,17 +2640,6 @@ const DEBUG_VARS = [
   // stays in place as the documented pre-P6 shipped value; this knob is the live source of truth now.
   { id: "garbageLifetime", label: "Garbage lifetime", unit: "s",
     def: 10, min: 1, max: 60, step: 1 },
-  // CS017 P4: the time-in-level saucer pressure axis (FORK-CS017-B -> (b) COMPOSE). saucerPressureSecs
-  // is how long a level takes to reach full pressure; the two *Pressure knobs scale how much of the
-  // FLOOR..CEIL gap that pressure closes (0 disables the axis entirely, reproducing pre-P4 behaviour).
-  { header: "SAUCER PRESSURE" },
-  { id: "saucerPressureSecs", label: "Saucer pressure ramp time", unit: "s",
-    def: 90, min: 10, max: 300, step: 5 },
-  { id: "saucerAimPressure", label: "Saucer aim pressure scale", unit: "",
-    def: 0.5, min: 0, max: 1, step: 0.05 },
-  // CS018 P6: saucerGapPressure RETIRED here (ahead of its two SAUCER PRESSURE siblings, which wait
-  // for P7) — its one consumer, the appearance-gap derivation below, was replaced this phase by the
-  // UFO MOVEMENT tier + jitteredInterval(). The header stays until P7 empties it entirely.
   // CS017 P6: the chain-guard powerup's three knobs. chainGuardTime is powerDuration("guard") in TIME
   // mode; chainGuardIntercepts is the seeded powerBudget in COUNT mode (see powerBudgetAmount); both are
   // live values, NOT frozen consts, so the registry entry IS the source of truth for each default.
@@ -2696,11 +2689,39 @@ const DEBUG_VARS = [
     def: 1.3, min: 0.1, max: 10, step: 0.1 },
   { id: "ufoDirChangeFreqHigh", label: "UFO direction change frequency (high)", unit: "s",
     def: 0.8, min: 0.1, max: 10, step: 0.1 },
+  // CS018 P7: UFO weapons, by TIER (§3.1) — the last three of the four INVERTED levers (§3.1, alongside
+  // UFO MOVEMENT's appearance/direction-change pair): all three DESCEND as difficulty rises, so high
+  // holds the SMALLEST number for every field here. ufoFireMult()/ufoAccuracyRad()/ufoShotSpeedPx()
+  // (Helpers section) turn a tier name into the value rollFireTimer()/Saucer.update() consume. Fire
+  // frequency is a MULTIPLIER on the shipped SAUCER_FIRE_BIG/SAUCER_FIRE_SMALL ranges (FLAG-d) — the
+  // build has two per-size ranges a single seconds-centre can't represent — not a jittered interval, so
+  // it deliberately does NOT go through jitteredInterval(). Accuracy is entered in DEGREES (0 = perfectly
+  // accurate) and converted to radians at the call site. normal anchors (1.0x / 20° / 380 px/s) are the
+  // shipped pre-CS018 values — the single source of truth for those defaults.
+  { header: "UFO WEAPONS" },
+  { id: "ufoFireFreqLow", label: "UFO firing frequency (low)", unit: "x",
+    def: 1.8, min: 0.1, max: 4, step: 0.1 },
+  { id: "ufoFireFreqNormal", label: "UFO firing frequency (normal)", unit: "x",
+    def: 1.0, min: 0.1, max: 4, step: 0.1 },
+  { id: "ufoFireFreqHigh", label: "UFO firing frequency (high)", unit: "x",
+    def: 0.7, min: 0.1, max: 4, step: 0.1 },
+  { id: "ufoAccuracyLow", label: "UFO shot accuracy (low)", unit: "deg",
+    def: 30, min: 0, max: 60, step: 5 },
+  { id: "ufoAccuracyNormal", label: "UFO shot accuracy (normal)", unit: "deg",
+    def: 20, min: 0, max: 60, step: 5 },
+  { id: "ufoAccuracyHigh", label: "UFO shot accuracy (high)", unit: "deg",
+    def: 10, min: 0, max: 60, step: 5 },
+  { id: "ufoShotSpeedLow", label: "UFO shot speed (low)", unit: "px/s",
+    def: 300, min: 50, max: 1200, step: 2 },
+  { id: "ufoShotSpeedNormal", label: "UFO shot speed (normal)", unit: "px/s",
+    def: 380, min: 50, max: 1200, step: 2 },
+  { id: "ufoShotSpeedHigh", label: "UFO shot speed (high)", unit: "px/s",
+    def: 470, min: 50, max: 1200, step: 2 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. freqJitter scales every frequency-shaped lever
-  // (appearance + direction-change here; UFO firing frequency joins in P7 — do not write a second
-  // jitter implementation there) as a PERCENTAGE via jitteredInterval() (Helpers section), so it stays
-  // proportional as a tier centre itself shortens. sweepCoalescePause is wired here but has no consumer
-  // yet — the Super Mega Delivery sweep that reads it arrives in P9.
+  // (appearance + direction-change here). UFO firing frequency does NOT join it (FLAG-d, above) — it's a
+  // multiplier on fixed per-size ranges, not a jittered interval, so it stays outside this knob's reach.
+  // sweepCoalescePause is wired here but has no consumer yet — the Super Mega Delivery sweep that reads
+  // it arrives in P9.
   { header: "GLOBAL" },
   { id: "freqJitter", label: "Frequency jitter", unit: "%",
     def: 25, min: 0, max: 90, step: 5 },
@@ -2775,9 +2796,10 @@ const DIFFLOG_FIELDS = [
 // level it describes. The seven tier columns log the TIER NAME ("low"/"normal"/"high"), which is what the
 // table decides; the px/s or seconds behind a name is a DEBUG_VARS knob and is not per-level data.
 // prevLevelSecs is game.waveTime captured by nextWave() BEFORE the reset — how long the level that just
-// ended took (FLAG-k, the field's only reader now that wavePressure is on its way out).
-// saucerAimErr still mirrors the exact ramp() call at the saucer aim site (there is no cached variable to
-// read at nextWave() time); CS018 P7 repoints that site onto a tier and this column follows it there.
+// ended took (FLAG-k, the field's only reader now that wavePressure() is retired).
+// saucerAimErr mirrors the exact ufoAccuracyRad() call at the saucer aim site (there is no cached
+// variable to read at nextWave() time) — REPOINTED in P7 from the retired ramp()+wavePressure() mirror
+// to the tier-derived one, following this column with its consumer rather than leaving it stale.
 // saucerGapMin/saucerGapMax were REPOINTED in P6 (not deleted): they now log the jittered-interval bounds
 // — center*(1 - freqJitter/100) / center*(1 + freqJitter/100) around the ufoAppearFreq tier centre — the
 // same "where the actual sampled timer can land" meaning the old ramp()-based gapMin/gapMax pair had.
@@ -2804,7 +2826,7 @@ function logDifficultySnapshot(junkCount, junkSpeedMul, prevLevelSecs) {
     ufoFireFreq: def.ufoFireFreq,
     ufoAccuracy: def.ufoAccuracy,
     ufoShotSpeed: def.ufoShotSpeed,
-    saucerAimErr: ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE),
+    saucerAimErr: ufoAccuracyRad(), // CS018 P7: tiered, was ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, ...)
     saucerGapMin: appearCenter * (1 - appearJitter),
     saucerGapMax: appearCenter * (1 + appearJitter),
     chainLen: game.chain.length,
@@ -3525,12 +3547,11 @@ function difficultyFactor(wave) {
 function ramp(floor, ceil, wave) {
   return floor + (ceil - floor) * difficultyFactor(wave);
 }
-// CS017 P4 (FORK-CS017-B -> (b) COMPOSE): time-in-level pressure, 0 at level start rising to 1
-// once game.waveTime (P1) reaches DEBUG.saucerPressureSecs. Composes ON TOP of the wave-based
-// opening value at the saucer aim/gap sites — it never replaces it.
-function wavePressure() {
-  return Math.min(1, game.waveTime / DEBUG.saucerPressureSecs);
-}
+// RETIRED (CS018 P7): the time-in-level pressure axis (CS017 P4, FORK-CS017-B -> (b) COMPOSE) is gone —
+// its two consumers (the saucer gap in P6, the saucer aim above) both moved onto levelDef tiers, which
+// read game.wave/game.wave-derived level, not time-in-level. game.waveTime itself is KEPT (FLAG-k) —
+// nextWave() still captures it into prevLevelSecs for the difficulty log — but wavePressure() had no
+// other reader and is deleted outright rather than left retired-in-place, per the phase prompt.
 
 // A difficulty lever scales a quantity from `start` (wave 1) toward `floor` (full difficulty)
 // along the SHIPPED difficultyFactor() curve — levers never get their own curve. When
@@ -3632,6 +3653,33 @@ function ufoZigInterval() {
   const tier = levelDef(game.wave).ufoDirChangeFreq; // "low" | "normal" | "high"
   const center = tier === "low" ? DEBUG.ufoDirChangeFreqLow : tier === "high" ? DEBUG.ufoDirChangeFreqHigh : DEBUG.ufoDirChangeFreqNormal;
   return jitteredInterval(center);
+}
+
+// CS018 P7: UFO firing frequency, by TIER — one of the four INVERTED levers (§3.1): the multiplier goes
+// DOWN as difficulty rises (1.8x slower at "low", 0.7x faster at "high"). A straight multiplier on the
+// shipped SAUCER_FIRE_BIG/SAUCER_FIRE_SMALL per-size ranges (FLAG-d) — NOT a jittered interval, since
+// rollFireTimer() already draws its own rand(range[0], range[1]); a second random draw here would
+// double-randomize the same quantity.
+function ufoFireMult() {
+  const tier = levelDef(game.wave).ufoFireFreq; // "low" | "normal" | "high"
+  return tier === "low" ? DEBUG.ufoFireFreqLow : tier === "high" ? DEBUG.ufoFireFreqHigh : DEBUG.ufoFireFreqNormal;
+}
+
+// CS018 P7: small-saucer shot accuracy, by TIER — INVERTED, same convention (high tier = smallest
+// error). Entered in the panel as DEGREES (0 = perfectly accurate); converted to radians here so every
+// caller gets the unit Saucer.update()'s angleTo()-based aim math already expects. Big saucers never
+// call this — they keep firing rand(0, TAU), unaimed, by design (FLAG-d).
+function ufoAccuracyRad() {
+  const tier = levelDef(game.wave).ufoAccuracy; // "low" | "normal" | "high"
+  const deg = tier === "low" ? DEBUG.ufoAccuracyLow : tier === "high" ? DEBUG.ufoAccuracyHigh : DEBUG.ufoAccuracyNormal;
+  return deg * Math.PI / 180;
+}
+
+// CS018 P7: UFO shot (Bullet) speed, by TIER. Not a frequency lever, so no jitter — one fixed px/s per
+// tier, applied to both saucer sizes' shots alike (the shipped 380 literal was never size-split either).
+function ufoShotSpeedPx() {
+  const tier = levelDef(game.wave).ufoShotSpeed; // "low" | "normal" | "high"
+  return tier === "low" ? DEBUG.ufoShotSpeedLow : tier === "high" ? DEBUG.ufoShotSpeedHigh : DEBUG.ufoShotSpeedNormal;
 }
 
 function wrap(obj) {
@@ -4198,10 +4246,10 @@ class Saucer {
     this.zigTimer = ufoZigInterval(); // CS018 P6: tiered + jittered, was rand(0.8, 1.8)
     this.travel = 0;
   }
-  // Between-shot / first-shot delay for a [min,max] base range, slowed by the F10 fire
-  // multiplier: ~1.8× the shipped interval at wave 1, easing to 1.0× at full difficulty.
+  // Between-shot / first-shot delay for a [min,max] base range, scaled by the CS018 P7 UFO WEAPONS
+  // fire-frequency tier: 1.8x slower at "low", 1.0x (shipped cadence) at "normal", 0.7x faster at "high".
   rollFireTimer(range) {
-    const mult = ramp(SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL, game.wave);
+    const mult = ufoFireMult(); // CS018 P7: tiered, was ramp(SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL, game.wave)
     return rand(range[0], range[1]) * mult;
   }
   update(dt) {
@@ -4221,17 +4269,17 @@ class Saucer {
     if (this.fireTimer <= 0 && !game.ship.dead) {
       let a;
       if (this.small) {
-        // aimed, but the error widens toward a barely-aimed spray at low waves (F10). CS017 P4: the
-        // wave-scaled value is the level's OPENING error; time-in-level (wavePressure) then tightens
-        // it further toward SAUCER_AIM_ERR_CEIL (the tighter/more-precise value) on top of that.
-        const base = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE);
-        const err  = base + (SAUCER_AIM_ERR_CEIL - base) * wavePressure() * DEBUG.saucerAimPressure;
+        // aimed, error widens toward a barely-aimed spray at the "low" tier. CS018 P7: tiered and
+        // converted from degrees to radians at the call site (was ramp()+wavePressure()-driven — see
+        // ufoAccuracyRad()). Big saucers never aim (FLAG-d) — only the small (aimed) saucer reads this.
+        const err = ufoAccuracyRad();
         a = angleTo(this, game.ship) + rand(-err, err);
       } else {
         a = rand(0, TAU); // random
       }
+      const shotSpeed = ufoShotSpeedPx(); // CS018 P7: tiered, was the literal 380
       game.bullets.push(new Bullet(this.x, this.y,
-        Math.cos(a) * 380, Math.sin(a) * 380, true));
+        Math.cos(a) * shotSpeed, Math.sin(a) * shotSpeed, true));
       this.fireTimer = this.rollFireTimer(this.small ? SAUCER_FIRE_SMALL : SAUCER_FIRE_BIG);
     }
   }

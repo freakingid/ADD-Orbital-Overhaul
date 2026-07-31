@@ -580,11 +580,12 @@ function levelForCap(n) {
   eq(Y.game.waveTime, 0, "H: ...and waveTime itself is zeroed for the new level");
 
   eq(Y.GAME_VERSION, "1.0.0.17", "H: GAME_VERSION unchanged this phase (bumps in P10)");
-  // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob. REPOINTED BY CS018 P6
-  // (mirror-image of the old claim, not weakened): the count moved from P3's 15 to 25 there (9 UFO
-  // MOVEMENT + 2 GLOBAL added, 1 retired saucerGapPressure removed) — a P6 fact, not a P4 one, but this
-  // pin has to track the live registry size or it goes stale every time a later phase touches it.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 25, "H: DEBUG_VARS holds 25 value entries as of CS018 P6 (P4 itself added none)");
+  // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob. REPOINTED BY CS018 P6,
+  // then again by P7 (mirror-image of the old claim each time, not weakened): P3's 15 -> P6's 25 (9 UFO
+  // MOVEMENT + 2 GLOBAL added, 1 retired saucerGapPressure removed) -> P7's 32 (9 UFO WEAPONS added, 2
+  // retired saucerPressureSecs/saucerAimPressure removed) — none of these are P4 facts, but this pin has
+  // to track the live registry size or it goes stale every time a later phase touches it.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 32, "H: DEBUG_VARS holds 32 value entries as of CS018 P7 (P4 itself added none)");
 })();
 
 // ================= (I) headless smoke =====================

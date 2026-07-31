@@ -72,7 +72,7 @@ const RETURN = [
   "ramp", "difficultyFactor", "HUNTER_FLOOR_FRAC",
   "levelDef", "junkSpeedMul", "largeHunterCap",                                        // CS018 P4 repoint
   "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
-  "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
+  "ufoAccuracyRad",                                    // CS018 P7 (section B: tiered saucer aim error)
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "AudioSys"
 ];
@@ -167,8 +167,9 @@ const TIER_NAMES = ["low", "normal", "high"];
       assert(row[f] === def[f], `B: wave ${w}: tier "${f}" expected ${def[f]}, got ${row[f]}`);
     }
 
-    // saucerAimErr: still the SAME ramp() call as the live saucer aim site (retires in P7).
-    const expAimErr = A.ramp(A.SAUCER_AIM_ERR_FLOOR, A.SAUCER_AIM_ERR_CEIL, 1 + (g.wave - 1) * A.SAUCER_ACCURACY_RAMP_SCALE);
+    // REPOINTED BY CS018 P7 (mirror-image of the old claim): saucerAimErr no longer mirrors
+    // ramp()+SAUCER_ACCURACY_RAMP_SCALE — it logs the tier-derived ufoAccuracyRad() value directly.
+    const expAimErr = A.ufoAccuracyRad();
     assert(Math.abs(row.saucerAimErr - expAimErr) < 1e-9, `B: wave ${w}: saucerAimErr expected ${expAimErr}, got ${row.saucerAimErr}`);
     // REPOINTED BY CS018 P6 (mirror-image of the old claim): saucerGapMin/saucerGapMax no longer mirror
     // ramp() — they log the jittered-interval bounds around the ufoAppearFreq TIER centre.

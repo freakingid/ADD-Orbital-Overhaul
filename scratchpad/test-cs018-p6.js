@@ -147,9 +147,11 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 
   assert(!X.DEBUG_VARS.some(v => v.id === "saucerGapPressure"), "B: saucerGapPressure entry is gone from DEBUG_VARS");
   assert(!("saucerGapPressure" in X.DEBUG), "B: DEBUG.saucerGapPressure is gone");
-  // The two SAUCER PRESSURE siblings that wait for P7 are still present — only the third knob retired early.
-  assert(X.DEBUG_VARS.some(v => v.id === "saucerPressureSecs"), "B: saucerPressureSecs still present (retires in P7)");
-  assert(X.DEBUG_VARS.some(v => v.id === "saucerAimPressure"), "B: saucerAimPressure still present (retires in P7)");
+  // REPOINTED (CS018 P7): the two SAUCER PRESSURE siblings this file pinned as "still present (retires in
+  // P7)" are now retired too, header included — mirror-image of the claim above.
+  assert(!X.DEBUG_VARS.some(v => v.id === "saucerPressureSecs"), "B: saucerPressureSecs is gone (CS018 P7)");
+  assert(!X.DEBUG_VARS.some(v => v.id === "saucerAimPressure"), "B: saucerAimPressure is gone (CS018 P7)");
+  assert(!X.DEBUG_VARS.some(v => v.header === "SAUCER PRESSURE"), "B: the SAUCER PRESSURE header is gone (CS018 P7)");
 
   // Standing prohibition: no code anywhere may assume low <= normal <= high (two of these three levers
   // descend). A crude but effective proof: normal/high are numerically SMALLER than low for the two
@@ -374,7 +376,10 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   const nEntries = Y.DEBUG_ENTRIES.length;
   const nRows = Y.DEBUG_ROWS.length;
   // 15 pre-P6 value entries (12 baseline + 3 junk speed from P3) - 1 (saucerGapPressure retired) + 11 new = 25.
-  eq(nEntries, 25, `I: DEBUG_ENTRIES count is 25 after P6 (got ${nEntries})`);
+  // REPOINTED (CS018 P7): P7 landed after this test was written and removed 2 more (saucerPressureSecs,
+  // saucerAimPressure) while adding 9 (UFO WEAPONS) -> 25 - 2 + 9 = 32. This file still only PROVES the
+  // P6-era shape (asserted above in section B); this count just needs to stop pinning a now-stale total.
+  eq(nEntries, 32, `I: DEBUG_ENTRIES count is 32 after CS018 P7 (got ${nEntries})`);
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
 })();
 

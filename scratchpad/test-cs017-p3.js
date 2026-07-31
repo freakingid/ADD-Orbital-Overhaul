@@ -84,6 +84,7 @@ const RETURN = [
   "DebrisSatellite", "HunterSatellite", "Saucer",
   "ramp", "difficultyFactor", "leverScale",
   "levelDef", "stepAt", "junkSpeedMul", "JUNK_CYCLE", "PHASE_LEN", "LEVEL_MAX", "DEBUG",
+  "ufoFireMult",                                              // CS018 P7 (section F: tiered fire mult)
   "DEBRIS_SPEED_CAP", "DEBRIS_SPEEDS", "SHIP_MAX_SPEED",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
   "SAUCER_FIRE_MULT_FLOOR", "SAUCER_FIRE_MULT_CEIL",
@@ -380,7 +381,7 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 // the early levels, so the old "waves 1..6 spawn identically" identity is now false BY DESIGN and has been
 // replaced by the assertions that junk count AND Hunter speed both diverge from the pre-P3 build.
 (function sectionF() {
-  console.log("(F) saucer fire mult / small-saucer chance / spawn gap unchanged vs the pre-P3 build");
+  console.log("(F) saucer small-saucer chance unchanged; fire mult + spawn gap DIVERGE from the pre-P3 build (CS018 P6/P7)");
   // The pre-P3 build is commit 683de82 (CS017 P2), the commit immediately before the sawtooth landed.
   // A fixed SHA, deliberately — see this file's header for why `HEAD` was the wrong reference.
   const PRE_P3_REF = "683de82";
@@ -394,17 +395,22 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   // Sanity that these really are two different builds — otherwise every identity below is vacuous.
   assert(hm[1] !== scriptSrc, "F: the pre-P3 build and the worktree build are genuinely different sources");
 
-  let divergedCount = 0, hunterDiverged = 0, gapDiverged = 0;
+  let divergedCount = 0, hunterDiverged = 0, gapDiverged = 0, fireMultDiverged = 0;
   for (let w = 1; w <= 30; w++) {
     const nH = withPinnedRandom(PIN, () => atWave(H, w));
     const nW = withPinnedRandom(PIN, () => atWave(W, w));
 
-    // --- UNCHANGED: saucer fire multiplier. rollFireTimer([1,1]) returns exactly the multiplier.
+    // --- REPOINTED BY CS018 P7 (CONTROL, mirror-image of the old "UNCHANGED" claim): the fire multiplier
+    // moved OFF ramp()/game.wave onto the UFO WEAPONS fire-frequency TIER, so it must now DIVERGE from the
+    // pre-P3 build, the same way Hunter speed and the spawn gap already diverge. rollFireTimer([1,1])
+    // returns exactly the multiplier.
     const fH = withPinnedRandom(PIN, () => new H.Saucer(false).rollFireTimer([1, 1]));
     const fW = withPinnedRandom(PIN, () => new W.Saucer(false).rollFireTimer([1, 1]));
-    assert(fH === fW, `F: level ${w}: saucer fire multiplier identical to the pre-P3 build (${fH} vs ${fW})`);
-    assert(fW === W.ramp(W.SAUCER_FIRE_MULT_FLOOR, W.SAUCER_FIRE_MULT_CEIL, w),
-      `F: level ${w}: fire multiplier still samples the ABSOLUTE game.wave`);
+    if (!near(fH, fW)) fireMultDiverged++;
+    assert(fH === H.ramp(H.SAUCER_FIRE_MULT_FLOOR, H.SAUCER_FIRE_MULT_CEIL, w),
+      `F: level ${w}: the PRE-P7 pinned build's fire multiplier still samples the ABSOLUTE game.wave via ramp() (unaffected by this worktree's P7 change)`);
+    assert(fW === W.ufoFireMult(),
+      `F: level ${w}: the LIVE worktree's fire multiplier is exactly the tier value, not a ramp() sample`);
 
     // --- UNCHANGED: small-saucer chance, probed at the LIVE spawn site. small = Math.random() < smallChance,
     // so pinning Math.random either side of the expected threshold must flip the spawned saucer's type.
@@ -443,7 +449,9 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     `F: CONTROL — the FROZEN Hunter speed genuinely diverges from the pre-P3 ramped speed (${hunterDiverged} levels)`);
   assert(gapDiverged > 0,
     `F: CONTROL (CS018 P6) — the tiered+jittered spawn gap genuinely diverges from the pre-P3 ramped gap (${gapDiverged} levels)`);
-  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer spawn gap on ${gapDiverged}/30 (CS018 P6), fire-mult/small-chance saucer levers on 0`);
+  assert(fireMultDiverged > 0,
+    `F: CONTROL (CS018 P7) — the tiered fire multiplier genuinely diverges from the pre-P3 ramped multiplier (${fireMultDiverged} levels)`);
+  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer spawn gap on ${gapDiverged}/30 (CS018 P6), fire mult on ${fireMultDiverged}/30 (CS018 P7), small-chance saucer lever on 0`);
 })();
 
 // ================= (G) the TABLE is the count ceiling now ==============================================

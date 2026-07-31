@@ -44,6 +44,7 @@ const returnList = [
   "startGame", "update", "game", "keys", "angleTo",
   "Saucer",
   "difficultyFactor", "ramp", "RAMP_WAVES",
+  "levelDef", "ufoAccuracyRad", "ufoFireMult", "DEBUG",           // CS018 P7 (section C, live wiring)
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_CEIL_MAX",
   "SAUCER_FIRE_INIT", "SAUCER_FIRE_BIG", "SAUCER_FIRE_SMALL",
   "SAUCER_FIRE_MULT_FLOOR", "SAUCER_FIRE_MULT_CEIL",
@@ -60,6 +61,7 @@ const {
   startGame, update, game, keys, angleTo,
   Saucer,
   difficultyFactor, ramp, RAMP_WAVES,
+  levelDef, ufoAccuracyRad, ufoFireMult, DEBUG,
   SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MIN, SAUCER_GAP_CEIL_MAX,
   SAUCER_FIRE_INIT, SAUCER_FIRE_BIG, SAUCER_FIRE_SMALL,
   SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL,
@@ -123,6 +125,11 @@ assert(gapCtr1 - gapCtr20 > 7, `B: saucers are >7s less frequent at wave 1 than 
 assert(gapMin20 < 14 && gapMax20 < 18, `B: wave-20 gap has closed toward the shipped ~12-16s cadence (got [${gapMin20.toFixed(1)},${gapMax20.toFixed(1)}])`);
 
 // -- fire-rate multiplier: slower early, easing to 1.0x --
+// NOTE (CS018 P7): this is the raw-wave ramp() curve, still a true statement about that pure helper —
+// but the LIVE Saucer no longer samples it at all for the fire multiplier; it samples the UFO WEAPONS
+// fire-frequency TIER via ufoFireMult(), tested end-to-end against a real Saucer's rollFireTimer() below
+// in section (C), which is what actually reflects live behaviour (same treatment CS012 P1 already gave
+// the aim-error curve two blocks below).
 const fmult1 = ramp(SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL, 1);
 const fmult20 = ramp(SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL, 20);
 console.log(`     fire mult  wave1=${fmult1.toFixed(2)}x   wave20=${fmult20.toFixed(2)}x`);
@@ -152,9 +159,21 @@ assert(chance20 > chance1 && chance20 > 0.55, `B: small (dangerous) saucer is fa
 // =====================================================================
 // (C) end-to-end wiring through a real Saucer
 // =====================================================================
-console.log("(C) end-to-end: real Saucer fired-bullet aim + reload scale with wave");
+// REPOINTED BY CS018 P7 — both C1 (aim) and C2 (reload) used to compare against a wave-continuous
+// ramp() curve. Neither lever reads game.wave through ramp() any more: aim error and the fire
+// multiplier are both UFO WEAPONS TIER values (levelDef(game.wave).ufoAccuracy/.ufoFireFreq), and
+// TIER_STEPS puts levels 1 and 20 in the SAME "low" tier for BOTH levers (accuracy steps at 13, fire
+// frequency at 21) — so "wave 1 vs wave 20" no longer demonstrates a difference for either one. Level
+// 50 is past both breakpoints ("high" tier for both), so the late-game comparison moves there instead;
+// the early-game comparison stays at wave 1.
+console.log("(C) end-to-end: real Saucer fired-bullet aim + reload scale with LEVEL TIER (wave 1 'low' vs wave 50 'high')");
 
 const realRandom = Math.random;
+const LATE_WAVE = 50;
+assert(levelDef(1).ufoAccuracy === "low" && levelDef(LATE_WAVE).ufoAccuracy === "high",
+  "C: sanity — wave 1 is the 'low' accuracy tier, wave 50 is 'high'");
+assert(levelDef(1).ufoFireFreq === "low" && levelDef(LATE_WAVE).ufoFireFreq === "high",
+  "C: sanity — wave 1 is the 'low' fire-frequency tier, wave 50 is 'high'");
 
 // (C1) aim error: force one aimed shot with Math.random pinned to 1 so rand(-e,e) => +e.
 // Ship sits directly +x of the saucer, so angleTo == 0 and the bullet's angle == the error.
@@ -175,16 +194,15 @@ function measureFiredAimError(wave) {
   return Math.atan2(b.vy, b.vx);               // == the applied aim error
 }
 const firedErr1 = measureFiredAimError(1);
-const firedErr20 = measureFiredAimError(20);
-console.log(`     fired aim error  wave1=${firedErr1.toFixed(3)}rad   wave20=${firedErr20.toFixed(3)}rad`);
-// CS012 P1: the live Saucer samples ramp() at a SCALED wave (1 + (wave-1)*SAUCER_ACCURACY_RAMP_SCALE),
-// not the raw wave — so the fired bullet's error is compared against that scaled expectation, not
-// against err1/err20 (the raw-wave curve from section B) directly.
-const scaledErr1 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (1 - 1) * SAUCER_ACCURACY_RAMP_SCALE);
-const scaledErr20 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1 + (20 - 1) * SAUCER_ACCURACY_RAMP_SCALE);
-assert(near(firedErr1, scaledErr1, 1e-6), `C: wave-1 fired bullet carries the ±0.35 aim error (got ${firedErr1.toFixed(4)})`);
-assert(near(firedErr20, scaledErr20, 1e-6), `C: wave-20 fired bullet carries the scaled-wave tightened aim error (got ${firedErr20.toFixed(4)}, exp ${scaledErr20.toFixed(4)})`);
-assert(firedErr1 > firedErr20 * 1.8, "C: the actual fired shot is still meaningfully wider at wave 1 than wave 20 under the slower scaled ramp");
+const firedErrLate = measureFiredAimError(LATE_WAVE);
+console.log(`     fired aim error  wave1=${firedErr1.toFixed(3)}rad   wave${LATE_WAVE}=${firedErrLate.toFixed(3)}rad`);
+game.wave = 1;
+const tierErr1 = ufoAccuracyRad();
+game.wave = LATE_WAVE;
+const tierErrLate = ufoAccuracyRad();
+assert(near(firedErr1, tierErr1, 1e-6), `C: wave-1 fired bullet carries the "low"-tier aim error (got ${firedErr1.toFixed(4)}, exp ${tierErr1.toFixed(4)})`);
+assert(near(firedErrLate, tierErrLate, 1e-6), `C: wave-${LATE_WAVE} fired bullet carries the "high"-tier aim error (got ${firedErrLate.toFixed(4)}, exp ${tierErrLate.toFixed(4)})`);
+assert(firedErr1 > firedErrLate * 1.8, `C: the actual fired shot is still meaningfully wider at wave 1 than wave ${LATE_WAVE} under the tiered accuracy lever`);
 
 // (C2) reload: rollFireTimer() on a real Saucer, Math.random pinned to 0.5 (range midpoint).
 function measureReload(wave, range) {
@@ -197,11 +215,15 @@ function measureReload(wave, range) {
 }
 const mid = (SAUCER_FIRE_SMALL[0] + SAUCER_FIRE_SMALL[1]) / 2;   // rand midpoint
 const reload1 = measureReload(1, SAUCER_FIRE_SMALL);
-const reload20 = measureReload(20, SAUCER_FIRE_SMALL);
-console.log(`     small reload (mid)  wave1=${reload1.toFixed(3)}s   wave20=${reload20.toFixed(3)}s`);
-assert(near(reload1, mid * fmult1, 1e-9), `C: wave-1 reload = midpoint x 1.8 floor mult (got ${reload1.toFixed(4)}, exp ${(mid*fmult1).toFixed(4)})`);
-assert(near(reload20, mid * fmult20, 1e-9), `C: wave-20 reload = midpoint x eased mult (got ${reload20.toFixed(4)})`);
-assert(reload1 > reload20, `C: a wave-1 saucer waits longer between shots than a wave-20 one (${reload1.toFixed(2)}s > ${reload20.toFixed(2)}s)`);
+const reloadLate = measureReload(LATE_WAVE, SAUCER_FIRE_SMALL);
+console.log(`     small reload (mid)  wave1=${reload1.toFixed(3)}s   wave${LATE_WAVE}=${reloadLate.toFixed(3)}s`);
+game.wave = 1;
+const tierMult1 = ufoFireMult();
+game.wave = LATE_WAVE;
+const tierMultLate = ufoFireMult();
+assert(near(reload1, mid * tierMult1, 1e-9), `C: wave-1 reload = midpoint x "low"-tier mult (got ${reload1.toFixed(4)}, exp ${(mid*tierMult1).toFixed(4)})`);
+assert(near(reloadLate, mid * tierMultLate, 1e-9), `C: wave-${LATE_WAVE} reload = midpoint x "high"-tier mult (got ${reloadLate.toFixed(4)}, exp ${(mid*tierMultLate).toFixed(4)})`);
+assert(reload1 > reloadLate, `C: a wave-1 saucer waits longer between shots than a wave-${LATE_WAVE} one (${reload1.toFixed(2)}s > ${reloadLate.toFixed(2)}s)`);
 
 // ---- Summary ----
 console.log(`\n${passed} passed, ${failed} failed`);

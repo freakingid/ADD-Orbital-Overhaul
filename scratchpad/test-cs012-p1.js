@@ -1,24 +1,33 @@
-// Headless test for CS012 Phase 1 — SAUCER_ACCURACY_RAMP_SCALE, the small-saucer aim-error knob
-// (PLANNED-FEATURES-CS012.md FORK-CS012-A -> (a)). Only the wave ARGUMENT passed to the existing
-// `ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, wave)` call changed, to a scaled wave
-// `1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE` — pinning the wave-1 floor exactly while making
+// Headless test originally written for CS012 Phase 1 — SAUCER_ACCURACY_RAMP_SCALE, the small-saucer
+// aim-error knob (PLANNED-FEATURES-CS012.md FORK-CS012-A -> (a)): the wave argument passed to
+// `ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, wave)` was scaled to
+// `1 + (game.wave - 1) * SAUCER_ACCURACY_RAMP_SCALE`, pinning the wave-1 floor exactly while making
 // the small-saucer's aim sharpen more slowly than the global difficulty ramp.
+//
+// **REPOINTED BY CS018 P7 — THE SCALED-WAVE RAMP FORMULA IS GONE.** The whole wave-continuous accuracy
+// axis (SAUCER_AIM_ERR_FLOOR/_CEIL, SAUCER_ACCURACY_RAMP_SCALE, and the wavePressure()-driven tightening
+// that later composed on top of it in CS017 P4) is retired: small-saucer aim error now reads the UFO
+// WEAPONS accuracy TIER (levelDef(game.wave).ufoAccuracy) via ufoAccuracyRad(), one of the four levers
+// that DESCEND as difficulty rises. The three retired constants are kept, unread, as documented historical
+// values (grep-confirmed below), never deleted outright — same "retire in place" convention as every other
+// superseded constant in this codebase. Rather than delete this file's coverage, every section is now the
+// mirror image of what it used to assert, at the same strength, against the same real code:
+//   (B) was "wave-1 identity: the scaled wave collapses to exactly 1, matching ramp(FLOOR,CEIL,1)"
+//       -> level-1 aim error is exactly the "low" tier value (DEBUG.ufoAccuracyLow, in radians) — there
+//          is no scaled-wave collapse any more, because there is no wave-continuous formula left to collapse.
+//   (C) was "err loosens vs. the old unscaled ramp, then tightens continuously and monotonically with wave"
+//       -> err is now a STEP function of LEVEL: perfectly FLAT within a tier band (no continuous tightening
+//          at all), then drops exactly at each of the three tier boundaries (1/13/34) — the mirror image of
+//          "monotonic and continuous" is "monotonic and discontinuous."
+//   (D) was "bounds: SAUCER_AIM_ERR_CEIL <= err <= SAUCER_AIM_ERR_FLOOR, sourced from those two consts"
+//       -> bounds still hold, but now sourced from DEBUG.ufoAccuracyHigh/DEBUG.ufoAccuracyLow (the live
+//          DEBUG_VARS knobs) — the retired consts are provably unread, so nothing here can be measuring them.
+// (A) syntax and (E) the headless smoke are unchanged claims, run against the current code.
 //
 //   node scratchpad/test-cs012-p1.js
 //
 // Standing rule (GDD 5.4): stub window/document/rAF/navigator/localStorage, eval the REAL <script>
 // block, and drive the ACTUAL Saucer.update() fire logic (never reimplement the aim-error formula).
-// Sections:
-//  (A) node --check on the extracted <script>.
-//  (B) Wave-1 identity: the ACTUAL fired-bullet aim error at game.wave = 1 equals the real `ramp`
-//      function's pre-edit call shape (`ramp(FLOOR, CEIL, 1)`) byte-for-byte, since the scaled wave
-//      collapses to exactly 1 there.
-//  (C) Tighter-later: at wave 9 and wave 17, the ACTUAL scaled-wave err is LOOSER (larger) than the
-//      old unscaled `ramp(FLOOR, CEIL, wave)` value at that same wave, and err is monotonically
-//      non-increasing as wave climbs across a wider sample (1,5,9,13,17,25,50).
-//  (D) Bounds: err never drops below SAUCER_AIM_ERR_CEIL nor rises above SAUCER_AIM_ERR_FLOOR, across
-//      the same wave sample.
-//  (E) AudioSys.ctx null: startGame()/update(1/60) must not crash.
 
 "use strict";
 const fs = require("fs");
@@ -66,7 +75,7 @@ function makeLocalStorage() {
 }
 
 const RETURN = [
-  "game", "startGame", "update", "Saucer", "angleTo", "ramp",
+  "game", "startGame", "update", "Saucer", "angleTo", "levelDef", "ufoAccuracyRad", "DEBUG",
   "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
 ];
 
@@ -108,48 +117,81 @@ function actualAimErr(inst, wave) {
   return Math.atan2(Math.sin(diff), Math.cos(diff)); // normalize to (-pi, pi]
 }
 
-// ================= (B) wave-1 identity =====================
+// ================= (retirement) the scaled-wave formula's three consts are unread =====================
 (function () {
-  console.log("(B) wave-1 identity: scaled wave collapses to exactly 1");
-  const inst = buildInstance();
-  const { ramp, SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, SAUCER_ACCURACY_RAMP_SCALE } = inst;
-  assert(SAUCER_ACCURACY_RAMP_SCALE < 1, "B: SAUCER_ACCURACY_RAMP_SCALE is < 1 (sharpens slower)");
-  const scaledWave1 = 1 + (1 - 1) * SAUCER_ACCURACY_RAMP_SCALE;
-  assert(scaledWave1 === 1, "B: scaled wave at game.wave=1 is exactly 1");
-  const expected = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1);
-  const actual = actualAimErr(inst, 1);
-  assert(Math.abs(actual - expected) < 1e-9,
-    `B: wave-1 actual err (${actual}) === pre-edit ramp(FLOOR,CEIL,1) (${expected})`);
+  console.log("(retirement) SAUCER_AIM_ERR_FLOOR/_CEIL and SAUCER_ACCURACY_RAMP_SCALE have zero live readers");
+  // Strip trailing `//` doc comments too (e.g. "was ramp(SAUCER_AIM_ERR_FLOOR, ...)" on a live line
+  // documenting what it replaced) — only actual CODE usage counts as a "reader".
+  const codeOnly = currentSrc.split("\n")
+    .map(l => l.replace(/\/\/.*$/, ""))
+    .filter(l => l.trim() !== "");
+  for (const id of ["SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE"]) {
+    const hits = codeOnly.filter(l => l.includes(id) && !l.trim().startsWith(`const ${id}`));
+    assert(hits.length === 0, `retirement: ${id} has zero readers left (found: ${JSON.stringify(hits)})`);
+    assert((currentSrc.match(new RegExp(`const ${id}\\s*=`, "g")) || []).length === 1,
+      `retirement: ${id} is still defined (documented, unread)`);
+  }
 })();
 
-// ================= (C) tighter-later + monotonic =====================
+// ================= (B) level-1 identity =====================
 (function () {
-  console.log("(C) mid/late waves: new err looser than old unscaled err; monotonic tightening");
+  console.log("(B) level-1 identity: aim error is exactly the 'low' tier value — no scaled-wave collapse left to test");
   const inst = buildInstance();
-  const { ramp, SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL } = inst;
-  for (const wave of [9, 17]) {
-    const oldErr = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, wave);
-    const newErr = actualAimErr(inst, wave);
-    assert(newErr > oldErr,
-      `C: wave ${wave} new err (${newErr}) looser (larger) than old unscaled err (${oldErr})`);
+  const { levelDef, ufoAccuracyRad, DEBUG, game } = inst;
+  assert(levelDef(1).ufoAccuracy === "low", "B: level 1 is the 'low' accuracy tier");
+  game.wave = 1;
+  const expectedRad = DEBUG.ufoAccuracyLow * Math.PI / 180;
+  assert(Math.abs(ufoAccuracyRad() - expectedRad) < 1e-9,
+    `B: ufoAccuracyRad() at level 1 (${ufoAccuracyRad()}) === DEBUG.ufoAccuracyLow in radians (${expectedRad})`);
+  const actual = actualAimErr(inst, 1);
+  assert(Math.abs(actual - expectedRad) < 1e-9,
+    `B: level-1 actual fired-bullet err (${actual}) === the 'low' tier value in radians (${expectedRad})`);
+})();
+
+// ================= (C) a STEP function of level: flat within a tier, drops at each boundary =====================
+(function () {
+  console.log("(C) err is FLAT within a tier band (no continuous tightening) and drops exactly at the tier boundaries (1/13/34)");
+  const inst = buildInstance();
+  const { levelDef } = inst;
+
+  // Flat within a band: several levels sharing the same tier produce byte-identical error.
+  for (const band of [[1, 5, 12], [13, 20, 33], [34, 50, 200]]) {
+    const tier = levelDef(band[0]).ufoAccuracy;
+    const errs = band.map(w => actualAimErr(inst, w));
+    for (const w of band) assert(levelDef(w).ufoAccuracy === tier, `C: level ${w} shares the "${tier}" tier with ${band[0]}`);
+    for (let i = 1; i < errs.length; i++) {
+      assert(Math.abs(errs[i] - errs[0]) < 1e-9,
+        `C: level ${band[i]} err (${errs[i]}) === level ${band[0]} err (${errs[0]}) — flat within the "${tier}" tier`);
+    }
   }
-  const waves = [1, 5, 9, 13, 17, 25, 50];
+
+  // Steps DOWN exactly at each boundary (one of the four inverted levers — high tier holds the SMALLEST error).
+  const boundaries = [[12, 13], [33, 34]];
+  for (const [below, at] of boundaries) {
+    const errBelow = actualAimErr(inst, below), errAt = actualAimErr(inst, at);
+    assert(errAt < errBelow - 1e-9, `C: level ${below}->${at} err drops at the tier boundary (${errBelow} -> ${errAt})`);
+  }
+
+  // Wider sample: monotonically non-increasing across levels 1..63 (no tier ever reverts to a larger error).
+  const waves = [1, 5, 9, 13, 17, 25, 34, 50, 63];
   const errs = waves.map(w => actualAimErr(inst, w));
   for (let i = 1; i < errs.length; i++) {
     assert(errs[i] <= errs[i - 1] + 1e-9,
-      `C: err at wave ${waves[i]} (${errs[i]}) <= err at wave ${waves[i - 1]} (${errs[i - 1]}) (tightens or holds)`);
+      `C: err at level ${waves[i]} (${errs[i]}) <= err at level ${waves[i - 1]} (${errs[i - 1]}) (steps down or holds)`);
   }
 })();
 
-// ================= (D) bounds =====================
+// ================= (D) bounds, now sourced from the live DEBUG_VARS tier knobs =====================
 (function () {
-  console.log("(D) bounds: SAUCER_AIM_ERR_CEIL <= err <= SAUCER_AIM_ERR_FLOOR");
+  console.log("(D) bounds: DEBUG.ufoAccuracyHigh <= err <= DEBUG.ufoAccuracyLow (in radians), not the retired consts");
   const inst = buildInstance();
-  const { SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL } = inst;
-  for (const wave of [1, 2, 5, 9, 13, 17, 25, 50, 200]) {
+  const { DEBUG } = inst;
+  const lowRad = DEBUG.ufoAccuracyLow * Math.PI / 180, highRad = DEBUG.ufoAccuracyHigh * Math.PI / 180;
+  assert(highRad < lowRad, "D: sanity — the high tier genuinely holds a SMALLER error than the low tier (inverted lever)");
+  for (const wave of [1, 2, 5, 9, 13, 17, 25, 34, 50, 200]) {
     const err = actualAimErr(inst, wave);
-    assert(err <= SAUCER_AIM_ERR_FLOOR + 1e-9, `D: wave ${wave} err (${err}) <= FLOOR (${SAUCER_AIM_ERR_FLOOR})`);
-    assert(err >= SAUCER_AIM_ERR_CEIL - 1e-9, `D: wave ${wave} err (${err}) >= CEIL (${SAUCER_AIM_ERR_CEIL})`);
+    assert(err <= lowRad + 1e-9, `D: level ${wave} err (${err}) <= DEBUG.ufoAccuracyLow in radians (${lowRad})`);
+    assert(err >= highRad - 1e-9, `D: level ${wave} err (${err}) >= DEBUG.ufoAccuracyHigh in radians (${highRad})`);
   }
 })();
 
