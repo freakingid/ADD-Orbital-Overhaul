@@ -26,9 +26,10 @@
 //      CHAIN_LINK; bump CHAIN_ITER if exceeded).
 //  (F) v3.4 P1: DOCK_OFFLOAD_INTERVAL = 0.05 (was a bare literal 0.13); a full CARGO_CAP_MAX-node
 //      chain parked at the dock fully offloads, one canister per interval tick.
-//  (G) v3.6 P3 (Source 3, FORK-2): the recycle hub emits exactly one powerup on the delivery that
-//      passes deliveryCount through 10 (a 9-canister visit emits none; the 11th/12th emit no more),
-//      launched from the dock's own position at DOCK_POWERUP_SPEED, plus a floater marking it.
+//  (G) REPOINTED BY CS018 P8: the v3.6 P3 single ===10 emitter this section originally proved is
+//      replaced by four latches at 8/12/16/20, each awarding one powerup (a 9-canister visit now
+//      emits one, at 8; a 12-canister visit emits two, at 8 and 12), each launched from the dock's
+//      own position at DOCK_POWERUP_SPEED, with the floater firing only on the first award (8).
 
 "use strict";
 const fs = require("fs");
@@ -341,9 +342,9 @@ assert(game.stats.delivered === CARGO_CAP_MAX, `F: exactly ${CARGO_CAP_MAX} cani
 assert(ticksToEmpty === CARGO_CAP_MAX, `F: one canister peeled off per DOCK_OFFLOAD_INTERVAL tick (got ${ticksToEmpty} ticks for ${CARGO_CAP_MAX} nodes)`);
 
 // =====================================================================
-// (G) v3.6 P3 (Source 3, FORK-2): recycle-hub powerup emission, per visit
+// (G) CS018 P8: recycle-hub powerup emission, four latches at 8/12/16/20
 // =====================================================================
-console.log("(G) recycle hub emits exactly one powerup per visit, on deliveryCount===10");
+console.log("(G) recycle hub emits one powerup per 8/12/16/20 threshold crossed in a visit");
 
 // Deliver `n` canisters in one visit (forcing an offload each frame) and report what happened.
 // The ship parks just inside the "nearDock" cutoff (DOCK_RADIUS+10 = 54px) but well outside the
@@ -355,6 +356,16 @@ console.log("(G) recycle hub emits exactly one powerup per visit, on deliveryCou
 // builds the chain (fillChain reads the ship's CURRENT position/facing via chainAnchor()) so the
 // tow-chain constraint starts unstretched — moving the ship after the chain exists would yank it
 // right back via the real chain-tug physics.
+// CS018 P8 note: a visit can now emit up to FOUR powerups (8/12/16/20), so an EARLY one (e.g. the
+// 8-piece award) can still be in flight when a LATER delivery in the SAME visit fires — on a random
+// vector, it can wander back inside the ship's pickup radius before the visit ends and get
+// auto-collected, which a single end-of-visit game.powerups.slice() would silently undercount.
+// game.powerups is also REASSIGNED (not mutated) by update()'s own end-of-frame
+// `.filter(p => !p.dead)`, so a push-spy on the array instance would stop firing after frame one.
+// Instead, every new object is captured by identity right after the frame that created it — before
+// it can move again or be picked up in a LATER frame (the pickup-check loop runs at the TOP of
+// update(), ahead of the dock-offload block, so nothing is ever auto-collected the same frame it's
+// born).
 function deliverN(n) {
   clearField(); resetShip();
   game.ship.x = cx + DOCK_RADIUS + 9; game.ship.y = cy; game.ship.vx = 0; game.ship.vy = 0;
@@ -363,31 +374,50 @@ function deliverN(n) {
   game.dock = { x: cx, y: cy, radius: DOCK_RADIUS, update() {}, draw() {} };
   game.deliveryCount = 0;
   fillChain(n);
+  const seen = new Set();
+  const dropped = [];
   for (let i = 0; i < n; i++) {
     game.offloadTimer = 0;
     update(DT);
+    for (const p of game.powerups) {
+      if (seen.has(p)) continue;
+      seen.add(p);
+      dropped.push({ x: p.x, y: p.y, vx: p.vx, vy: p.vy });
+    }
   }
-  return game.powerups.slice();
+  return dropped;
 }
 
-const drops9 = deliverN(9);
-assert(drops9.length === 0, `G: a 9-canister visit emits no hub powerup (got ${drops9.length})`);
+const drops7 = deliverN(7);
+assert(drops7.length === 0, `G: a 7-canister visit emits no hub powerup (got ${drops7.length})`);
 
-const drops10 = deliverN(10);
-assert(drops10.length === 1, `G: a 10-canister visit emits exactly one hub powerup (got ${drops10.length})`);
-assert(near(drops10[0].x, cx) && near(drops10[0].y, cy), "G: the hub powerup launches from the dock's position");
-assert(near(Math.hypot(drops10[0].vx, drops10[0].vy), DOCK_POWERUP_SPEED, 1e-6),
-  `G: the hub powerup launches at DOCK_POWERUP_SPEED (got ${Math.hypot(drops10[0].vx, drops10[0].vy).toFixed(2)})`);
+const drops8 = deliverN(8);
+assert(drops8.length === 1, `G: an 8-canister visit emits exactly one hub powerup (got ${drops8.length})`);
+assert(near(drops8[0].x, cx) && near(drops8[0].y, cy), "G: the hub powerup launches from the dock's position");
+assert(near(Math.hypot(drops8[0].vx, drops8[0].vy), DOCK_POWERUP_SPEED, 1e-6),
+  `G: the hub powerup launches at DOCK_POWERUP_SPEED (got ${Math.hypot(drops8[0].vx, drops8[0].vy).toFixed(2)})`);
 assert(game.floaters.some(f => (f.text || "").length > 0 && f.x === cx && f.y === cy - 22),
-  "G: a floater marks the hub emission at the dock");
+  "G: a floater marks the first (8-piece) hub emission at the dock");
+
+const drops11 = deliverN(11);
+assert(drops11.length === 1, `G: an 11-canister visit still emits only one hub powerup (got ${drops11.length})`);
 
 const drops12 = deliverN(12);
-assert(drops12.length === 1, `G: an 11th/12th canister in the SAME visit emits no more (still ${drops12.length})`);
+assert(drops12.length === 2, `G: a 12-canister visit emits two hub powerups, at 8 and 12 (got ${drops12.length})`);
+
+const drops19 = deliverN(19);
+assert(drops19.length === 3, `G: a 19-canister visit emits three hub powerups, at 8/12/16 (got ${drops19.length})`);
+
+const drops20 = deliverN(20);
+assert(drops20.length === 4, `G: a 20-canister visit emits four hub powerups, at 8/12/16/20 (got ${drops20.length})`);
+
+const drops23 = deliverN(23);
+assert(drops23.length === 4, `G: a 23-canister visit still emits only four (no fifth threshold) (got ${drops23.length})`);
 
 // startGame resets ambient state cleanly for the next visit-count test (deliveryCount already
 // reset per-visit by deliverN; this just confirms no cross-visit leakage of the latch).
-const drops10Again = deliverN(10);
-assert(drops10Again.length === 1, "G: a fresh 10-canister visit emits its own single hub powerup (no carry-over)");
+const drops8Again = deliverN(8);
+assert(drops8Again.length === 1, "G: a fresh 8-canister visit emits its own single hub powerup (no carry-over)");
 
 // =====================================================================
 console.log(`\n${passed} passed, ${failed} failed`);

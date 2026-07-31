@@ -6119,14 +6119,20 @@ function update(dt) {
         // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
         game.stats.delivered++;
         game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
-        // v3.6 P3 (Source 3, FORK-2): the recycle hub emits one powerup per visit, the first time
-        // a visit's deliveryCount passes through 10 — same "exactly once per visit" idiom as the
-        // deliveryCount===12 Heavy Hauler latch just below. Launched from the dock's own position
-        // on a fresh random vector so it clears the dock's footprint before it's collectable.
-        if (game.deliveryCount === 10) {
+        // CS018 P8 (PLANNED-FEATURES-CS018.md §4.3, replaces the v3.6 P3 single ===10 emitter):
+        // four independent "passes through N exactly once per visit" latches — same idiom as the
+        // deliveryCount===12 Heavy Hauler / ===CARGO_CAP_MAX Maxed Out latches below — each awarding
+        // ONE powerup. Cumulatively: 1 for 8-11, 2 for 12-15, 3 for 16-19, 4 for 20-23 delivered.
+        // Each launches from the dock's own position on a fresh random vector, exactly as the old
+        // ===10 emitter did. The "SALVAGE BONUS" floater fires only on the first award (8) so the
+        // dock doesn't repeat identical text four times in one visit.
+        if (game.deliveryCount === 8 || game.deliveryCount === 12 ||
+            game.deliveryCount === 16 || game.deliveryCount === 20) {
           const a = rand(0, TAU);
           dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED);
-          game.floaters.push(new FloatText("SALVAGE BONUS", game.dock.x, game.dock.y - 22, COLOR.dock));
+          if (game.deliveryCount === 8) {
+            game.floaters.push(new FloatText("SALVAGE BONUS", game.dock.x, game.dock.y - 22, COLOR.dock));
+          }
         }
         // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
         // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.

@@ -139,10 +139,10 @@ function fillChain(n) {
 }
 function tickDock(times) {
   for (let i = 0; i < times; i++) {
-    // Clear any powerup dropped by the (unrelated) deliveryCount===10 SALVAGE BONUS mechanic before
-    // it can be picked up — a long delivery run crosses 10 en route to 24, and that pre-existing
-    // system's own collect_* voice line would otherwise confound section F's isolation of the
-    // max-haul path specifically.
+    // Clear any powerup dropped by the (unrelated) deliveryCount===8/12/16/20 SALVAGE BONUS latches
+    // before it can be picked up — a long delivery run crosses all four en route to 24, and that
+    // pre-existing system's own collect_* voice line would otherwise confound section F's isolation
+    // of the max-haul path specifically.
     game.powerups = [];
     game.ship.x = game.dock.x; game.ship.y = game.dock.y; game.ship.vx = 0; game.ship.vy = 0;
     game.waveClearTimer = 0; // keep the empty field from advancing the wave mid-test
