@@ -575,6 +575,11 @@ const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine", "guard"]; // 
 // Below that threshold the roll renormalises over the other five and is byte-identical to pre-P6.
 // Weight 1 puts it in the existing rare tier alongside magnet/engine — a PLAYTEST KNOB, like the rest.
 const POWERUP_DROP_WEIGHTS = { rapid: 3, triple: 3, scoop: 2, magnet: 1, engine: 1, guard: 1 };
+// CS018 P9: hard ceiling on powerups spawned by ONE Super Mega Delivery — the guaranteed six PLUS
+// every per-piece sweep payout (source doc §7.3: "No more than 48 powerups may spawn simultaneously
+// from a sweep"). A FIXED bound, deliberately NOT a DEBUG_VARS knob — the source doc pins it
+// ("Fixed value, not configurable"). See superMegaDelivery() for the reservation bookkeeping.
+const SWEEP_POWERUP_CAP = 48;
 const POWERUP_HEALTH_GAP = [18, 26]; // sec between ambient Health spawns (saucer-like cadence)
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
 const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
@@ -2720,8 +2725,8 @@ const DEBUG_VARS = [
   // CS018 P6: GLOBAL fields — not per-lever tiers. freqJitter scales every frequency-shaped lever
   // (appearance + direction-change here). UFO firing frequency does NOT join it (FLAG-d, above) — it's a
   // multiplier on fixed per-size ranges, not a jittered interval, so it stays outside this knob's reach.
-  // sweepCoalescePause is wired here but has no consumer yet — the Super Mega Delivery sweep that reads
-  // it arrives in P9.
+  // sweepCoalescePause is consumed by the Super Mega Delivery (CS018 P9): superMegaDelivery() copies it
+  // into game.sweepPause, and the coalesceGarbage(dt) call site in update() ticks + honours the pause.
   { header: "GLOBAL" },
   { id: "freqJitter", label: "Frequency jitter", unit: "%",
     def: 25, min: 0, max: 90, step: 5 },
@@ -4641,6 +4646,10 @@ const game = {
   scoopLevel: 0,                                       // PERSISTENT scoop upgrade level 0..SCOOP_MAX_LEVEL (v3.3 P3; NOT a timed effect)
   scoopHits: 0,                                        // running non-lethal-hit tally; every SCOOP_HITS_PER_LEVEL costs a level
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
+  sweepPause: 0,                                       // CS018 P9: sec of Super-Mega-Delivery coalescence
+                                                        // pause remaining (0 = coalescence live). Set by
+                                                        // superMegaDelivery(), ticked+consumed at the
+                                                        // coalesceGarbage(dt) call site in update().
   cargoMax: CARGO_BASE,                                // runtime tow cap; set from levelDef(game.wave).payloadSlots in nextWave() (CS018 P5) — this is only the pre-level-1 default
   cargoFlash: 0,                                       // CS009 P3: >0 for HUD_CAP_FLASH sec after a cap-up —
                                                         // a cap-up SHRINKS the CARGO ring's fraction (same chain,
@@ -4730,6 +4739,7 @@ function startGame() {
   game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
+  game.sweepPause = 0;             // CS018 P9: no sweep coalescence-pause carries into a fresh run
   game.cargoMax = CARGO_BASE;      // pre-level-1 default; nextWave() below immediately overwrites it via levelDef(game.wave).payloadSlots (8 at level 1) — CS018 P5
   game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
   game.deliveryCount = 0; game.offloadTimer = 0;
@@ -5033,6 +5043,61 @@ function spawnHealthPowerup() {
   const a = rand(0, TAU), d = rand(POWERUP_HEALTH_MIN_DIST, POWERUP_HEALTH_MAX_DIST);
   const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
   game.powerups.push(new Powerup(p.x, p.y, "health"));
+}
+
+// CS018 P9: the SUPER MEGA DELIVERY (PLANNED-FEATURES-CS018.md §4.2 + FLAG-g; source doc §7.3/§7.3.1)
+// — the distinct event a full-cap 24-piece dock visit triggers, NOT a fifth reward tier. Three parts.
+// PART 1, the guaranteed set: ONE of each droppable type launches from the dock. A guaranteed floor,
+// not six weighted rolls, so it bypasses dropPowerup() entirely: no POWERUP_DROP_WEIGHTS roll, and no
+// DEBUG.chainGuardMinTow gate — the chain is EMPTY at this instant (the 24th pop just cleared it), so
+// the gate would ALWAYS exclude guard; FORK-CS018-C bypasses it deliberately. The set derives from
+// POWERUP_DROP_WEIGHTS' keys (the drop table) so a future droppable type joins automatically — it is
+// NOT POWERUP_DROP_TYPES, the timed-effect list, which excludes Scoop (see the constants block).
+// PART 2, the sweep — SNAPSHOT SEMANTICS (§7.3.1, the changeset's flagged most-likely bug): every
+// hunter piece alive AT THE TRIGGER INSTANT takes exactly one hit and pays exactly one powerup;
+// fragments created BY the sweep do neither, because they are not in the snapshot. The snapshot is an
+// explicit filtered copy — NOT Array.forEach's fixed-visited-range guarantee, and NOT for...of over
+// game.hunters (the shield-ring site's idiom, which WOULD visit the children destroyHunter appends
+// mid-iteration and cascade the whole board to nothing in one frame — exactly the board-clear this
+// design must avoid).
+// PART 3: the sweep pauses coalescence for DEBUG.sweepCoalescePause sec — see the coalesceGarbage(dt)
+// call site in update() for what "paused" means and why.
+// This is NOT a board clear: N larges become 3N mediums, total threat does not fall, so there is no
+// farming incentive and no cooldown. SILENT this phase — the dock_24 Dan line is P10's (voice-lab-
+// gated); no new floater either (the Maxed Out "MAX HAUL" at the same instant already marks it).
+function superMegaDelivery() {
+  const setTypes = Object.keys(POWERUP_DROP_WEIGHTS);  // rapid, triple, scoop, magnet, engine, guard
+  for (const type of setTypes) {
+    const a = rand(0, TAU);  // fresh random vector per powerup — the reward tiers' launch idiom
+    game.powerups.push(new Powerup(game.dock.x, game.dock.y, type,
+      Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED));
+  }
+
+  const snap = game.hunters.filter(h => !h.dead);  // THE SNAPSHOT — iterate this, never game.hunters
+  // SWEEP_POWERUP_CAP bookkeeping: the ceiling counts the guaranteed set plus every per-piece payout.
+  // A swept LARGE pays its one powerup from INSIDE destroyHunter (the v3.6 P3 large-core drop) — which
+  // is also why the sweep spawns nothing extra for size 3 (FLAG-g: two powerups for one piece would
+  // make the ceiling a lie). Those interior drops can't be stopped once destroyHunter is called, so
+  // their count is RESERVED out of the budget up front and the medium/small payouts spend what's left.
+  // Under the game's own largeHunterCap() (hard ceiling 12) the reservation never exhausts the budget.
+  const pool = setTypes.concat("health");  // sweep rolls ADD Health (ambient-only everywhere else)
+  let budget = SWEEP_POWERUP_CAP - setTypes.length - snap.filter(h => h.size === 3).length;
+  for (const h of snap) {
+    destroyHunter(h, true);      // one hit, resolved exactly as a player shot: score + achievement
+                                 // counters credited (awardScore gates both), normal split + scatter
+    if (h.size === 3) continue;  // FLAG-g: this piece's one powerup just dropped inside destroyHunter
+    if (budget-- > 0) {
+      // FLAT pick over the 7-type pool, rolled independently per piece (source §7.3: "one randomly-
+      // chosen powerup... a scattered mix") — not the weighted dropPowerup roll, and guard is in the
+      // pool ungated for the same chain-is-empty reason as the guaranteed set above. Normal
+      // POWERUP_DECAY float lifetime (no special casing), launched on the piece's own drift — the
+      // same idiom as destroyHunter's large-core drop.
+      const type = pool[Math.floor(Math.random() * pool.length)];
+      game.powerups.push(new Powerup(h.x, h.y, type, h.vx, h.vy));
+    }
+  }
+
+  game.sweepPause = DEBUG.sweepCoalescePause;  // PART 3 — consumed at the coalesceGarbage call site
 }
 
 // Collect a powerup. Health is instant (repair, capped). The four timed effects BANK — a same-type
@@ -6071,7 +6136,15 @@ function update(dt) {
       if (game.chain.length === game.cargoMax) VoiceSys.say("cargo_full");
     }
   }
-  coalesceGarbage(dt); // v3.1 P3: neglected scrap clumps; a 12-piece clump becomes a Hunter
+  // CS018 P9: a Super Mega Delivery pauses coalescence for DEBUG.sweepCoalescePause sec — without
+  // this, N larges splitting at once frees the WHOLE largeHunterCap() and fresh larges convert while
+  // the player is still in the fragment swarm. The pause holds the ENTIRE pass — conversion, merging
+  // AND the attraction that feeds them: pausing only the merge/convert branches while attraction kept
+  // pulling would just pile pieces up inside merge range for a mass conversion the frame the pause
+  // expires, recreating exactly what the pause exists to prevent. Decay clocks are NOT frozen — they
+  // live in Garbage.update(), which runs regardless, so pieces still age out mid-pause.
+  if (game.sweepPause > 0) game.sweepPause -= dt;
+  else coalesceGarbage(dt); // v3.1 P3: neglected scrap clumps; a 12-piece clump becomes a Hunter
   updateChain(dt);
 
   // --- Powerups: field pickups + active-effect countdown (F6) ---
@@ -6157,6 +6230,12 @@ function update(dt) {
           game.floaters.push(new FloatText("MAX HAUL", game.dock.x, game.dock.y - 22, COLOR.ach, 24));
           game.cargoFlash = HUD_CAP_FLASH;
         }
+        // CS018 P9: a full-cap 24-piece visit ALSO triggers the SUPER MEGA DELIVERY — guaranteed
+        // six-type set + the snapshot hunter sweep + the coalescence pause (see superMegaDelivery()).
+        // Same "passes through CARGO_CAP_MAX exactly once per visit" latch as Maxed Out above, kept
+        // as its OWN block: Maxed Out is an achievement latch, this is a game event — and P10 hooks
+        // the dock_24 voice line HERE, not into VoiceSys.dockDelivery's tier chain. SILENT this phase.
+        if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
         Achievements.lifetime.delivered++;
         Achievements.lifetime.deliveryScore += pts;
         game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));

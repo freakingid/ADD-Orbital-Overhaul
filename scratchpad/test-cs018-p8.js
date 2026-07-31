@@ -139,7 +139,12 @@ function deliverN(X, n) {
 (function sectionB() {
   console.log("(B) reward count per visit size — the §4.3 cumulative table (1/2/3/4 at 8/12/16/20)");
   const cases = [
-    [7, 0], [8, 1], [11, 1], [12, 2], [15, 2], [16, 3], [19, 3], [20, 4], [23, 4], [24, 4],
+    // CS018 P9 repointed the [24, 4] forward-pin (this file's original "the SMD is P9's separate
+    // mechanism, untouched here" claim) to its mirror image: a 24-canister visit now awards the four
+    // tier powerups PLUS the Super Mega Delivery's guaranteed one-of-each-droppable set (6) = 10.
+    // deliverN seeds no hunters, so the SMD sweep itself pays nothing here; the sweep's own
+    // accounting is test-cs018-p9.js's subject, not this file's.
+    [7, 0], [8, 1], [11, 1], [12, 2], [15, 2], [16, 3], [19, 3], [20, 4], [23, 4], [24, 10],
   ];
   for (const [n, want] of cases) {
     const X = build();
