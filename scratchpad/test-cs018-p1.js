@@ -20,7 +20,9 @@
 //      step points, never > 12, never decreasing.
 //  (F) item 4 — every tier sequence is monotonic in DIFFICULTY across 1–63 and hits its step points
 //      exactly; stepAt is the single lookup mechanism behind all eight step tables.
-//  (G) item 5 — levelDef(64) … levelDef(500) are field-identical to levelDef(63) except `level`.
+//  (G) item 5 — levelDef(64) … levelDef(500) are field-identical to levelDef(63) except `level`
+//      (REPOINTED BY CS021 P1: and except `archetype`, which reads the UNCLAMPED n on purpose — see
+//      the section for the positive assertion that replaces the removed one).
 //  (H) item 6 — purity: repeat calls deep-equal, fresh object each call, the full-build levelDef
 //      agrees with the bare-sandbox one, and no argument mutation.
 //  (I) CONSUMERS: levelDef is read by exactly the wired consumers (static, comments excluded) AND a real
@@ -239,22 +241,39 @@ const levelDef = PURE.levelDef, stepAt = PURE.stepAt;
 })();
 
 // ================= (G) item 5 — endgame clamp =====================
+// REPOINTED BY CS021 P1 — the field set grew by one and the clamp now has TWO documented exceptions.
+// `archetype` (CS021 P1, FORK-CS021-E) is derived from the UNCLAMPED n exactly like `level`, and that is
+// deliberate: reading the clamped L would freeze level 63's archetype ("orbit", since 63 % 3 === 0) for
+// every level from 63 to infinity, i.e. the endgame would become nothing but orbit levels. The claim is
+// therefore not weakened, it is SPLIT: everything else still clamps at 63, and `archetype` is asserted
+// POSITIVELY below to keep following the every-3rd schedule past the plateau.
 (function sectionG() {
-  console.log("(G) item 5 — levelDef(64) … levelDef(500) field-identical to levelDef(63) except `level`");
+  console.log("(G) item 5 — levelDef(64) … levelDef(500) field-identical to levelDef(63) except `level` + `archetype`");
   const base = levelDef(63);
   const keys = Object.keys(base);
-  assert(keys.length === 3 + 3 + 7, `G: levelDef returns 13 fields (got ${keys.length}: ${keys.join(",")})`);
+  const UNCLAMPED = ["level", "archetype"];   // the two fields that read n, not L
+  assert(keys.length === 4 + 3 + 7, `G: levelDef returns 14 fields (got ${keys.length}: ${keys.join(",")})`);
   for (let n = 64; n <= 500; n++) {
     const d = levelDef(n);
     assert(deepEq(Object.keys(d).sort(), keys.slice().sort()), `G: level ${n} has the same field set as 63`);
     eq(d.level, n, `G: level ${n} reports its UNCLAMPED level`);
-    for (const k of keys) if (k !== "level") assert(deepEq(d[k], base[k]), `G: level ${n} field ${k} matches level 63`);
+    for (const k of keys) if (!UNCLAMPED.includes(k)) assert(deepEq(d[k], base[k]), `G: level ${n} field ${k} matches level 63`);
+    // The replacement for the assertion removed above: the orbit schedule keeps its rhythm past the
+    // endgame plateau instead of latching on level 63's value.
+    eq(d.archetype, n % 3 === 0 ? "orbit" : "field", `G: level ${n} archetype still follows the every-3rd schedule past the plateau`);
   }
+  eq(base.archetype, "orbit", "G: level 63 itself is an orbit level (63 % 3 === 0)");
+  eq(levelDef(64).archetype, "field", "G: level 64 is NOT an orbit level — the plateau does not freeze the archetype");
+  eq(levelDef(65).archetype, "field", "G: level 65 is a field level");
+  eq(levelDef(66).archetype, "orbit", "G: level 66 is the next orbit level");
   // And the extremes.
   for (const n of [1000, 1e6, Infinity]) {
     const d = levelDef(n);
-    for (const k of keys) if (k !== "level") assert(deepEq(d[k], base[k]), `G: level ${n} field ${k} matches level 63`);
+    for (const k of keys) if (!UNCLAMPED.includes(k)) assert(deepEq(d[k], base[k]), `G: level ${n} field ${k} matches level 63`);
   }
+  eq(levelDef(1000).archetype, "field", "G: level 1000 (1000 % 3 === 1) is a field level");
+  eq(levelDef(1e6).archetype, "field", "G: level 1e6 (1e6 % 3 === 1) is a field level");
+  eq(levelDef(Infinity).archetype, "field", "G: levelDef(Infinity) does not throw and falls to \"field\" (NaN % 3 !== 0)");
 })();
 
 // ================= (H) item 6 — purity =====================

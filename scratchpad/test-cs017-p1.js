@@ -121,9 +121,20 @@ function build() {
     assert(g.wave === w, `B: game.wave is the untouched absolute counter (expected ${w}, got ${g.wave})`);
     assert(!("cycle" in g), `B: level ${w}: game.cycle does not exist (the sawtooth is gone)`);
     assert(!("cycleWave" in g), `B: level ${w}: game.cycleWave does not exist (the sawtooth is gone)`);
-    // The ONE clock, proven by its effect: the level's spawned junk count is levelDef(game.wave).junkCount.
-    assert(g.debris.length === A.levelDef(g.wave).junkCount,
-      `B: level ${w}: spawned junk ${g.debris.length} === levelDef(${w}).junkCount ${A.levelDef(w).junkCount}`);
+    // The ONE clock, proven by its effect. REPOINTED BY CS021 P1: levelDef(game.wave) now also decides
+    // the level's ARCHETYPE, and that is still ONE clock — game.wave — not two. A field level's spawned
+    // junk count is still levelDef(game.wave).junkCount; an orbit level's population comes from its
+    // geometry instead, so the effect measured here is the archetype the same single clock produced.
+    const arch = A.levelDef(g.wave).archetype;
+    if (arch === "orbit") {
+      assert(g.debris.length === 40,
+        `B: level ${w}: ORBIT archetype spawned the 40-satellite layout (got ${g.debris.length})`);
+    } else {
+      assert(g.debris.length === A.levelDef(g.wave).junkCount,
+        `B: level ${w}: spawned junk ${g.debris.length} === levelDef(${w}).junkCount ${A.levelDef(w).junkCount}`);
+    }
+    assert(arch === (w % 3 === 0 ? "orbit" : "field"),
+      `B: level ${w}: the archetype is a pure function of the ONE clock (got ${arch})`);
   }
   // CONTROL: the level table is genuinely not a 9-long sawtooth — level 1 and level 10 (same cycleWave
   // under the retired CYCLE_LENGTH 9) do not have to agree, and in fact do not on the shipped table.
@@ -238,18 +249,32 @@ function build() {
     assert(g.wave === w, `F: sanity — game.wave === ${w}`);
 
     // --- TABLE-DRIVEN: junk count + speedMul, exactly as nextWave() spawned them (CS018 P3) ---
-    const expectedCount = A.levelDef(w).junkCount;
-    assert(g.debris.length === expectedCount,
-      `F: level ${w}: junk count expected ${expectedCount}, got ${g.debris.length}`);
+    // REPOINTED BY CS021 P1. The count/speed claim is about the FIELD archetype's drift spawn and is
+    // unchanged there. An ORBIT level's satellites are on a rail: their vx/vy is the instantaneous
+    // orbital tangent (angVel × radius), which has nothing to do with DEBRIS_SPEEDS × junkSpeedMul, so
+    // the tier envelope is a category error for them. They get their own assertion instead of a skip.
     const expectedSpeedMul = A.junkSpeedMul();
-    // Every piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the piece speed
-    // falls inside the rand(0.7,1.3) envelope of the tier-derived multiplier.
-    for (const d of g.debris) {
-      const sp = Math.hypot(d.vx, d.vy);
-      const lo = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 0.7 * 0.999;
-      const hi = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 1.3 * 1.001;
-      assert(sp >= lo && sp <= hi,
-        `F: level ${w}: junk speed ${sp.toFixed(2)} outside the tier envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+    if (A.levelDef(w).archetype === "orbit") {
+      assert(g.debris.length === 40, `F: level ${w}: ORBIT level spawned the 40-satellite layout (got ${g.debris.length})`);
+      for (const d of g.debris) {
+        const sp = Math.hypot(d.vx, d.vy);
+        const want = Math.abs(d.orbitAngVel * d.orbitRadius);
+        assert(Math.abs(sp - want) < 1e-9,
+          `F: level ${w}: orbiting satellite speed ${sp.toFixed(3)} === angVel × radius ${want.toFixed(3)}`);
+      }
+    } else {
+      const expectedCount = A.levelDef(w).junkCount;
+      assert(g.debris.length === expectedCount,
+        `F: level ${w}: junk count expected ${expectedCount}, got ${g.debris.length}`);
+      // Every piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the piece speed
+      // falls inside the rand(0.7,1.3) envelope of the tier-derived multiplier.
+      for (const d of g.debris) {
+        const sp = Math.hypot(d.vx, d.vy);
+        const lo = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 0.7 * 0.999;
+        const hi = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 1.3 * 1.001;
+        assert(sp >= lo && sp <= hi,
+          `F: level ${w}: junk speed ${sp.toFixed(2)} outside the tier envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+      }
     }
 
     // --- FROZEN: Hunter speed/turn — no clock at all (CS018 P4, FLAG-a) ---

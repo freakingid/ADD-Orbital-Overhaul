@@ -40,7 +40,8 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
 const returnList = ["startGame", "update", "draw", "game", "nextWave", "Dock",
   "WORLD_W", "WORLD_H", "VIEW_W", "VIEW_H",
   "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "DOCK_MIN_DIST", "DOCK_MAX_DIST",
-  "STAR_DENSITY", "STAR_COUNT", "dist2"];
+  "STAR_DENSITY", "STAR_COUNT", "dist2",
+  "levelDef"];   // CS021 P1: section (B) is archetype-aware now
 
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
@@ -49,7 +50,7 @@ const wrapped = new Function(
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, game, nextWave, Dock, WORLD_W, WORLD_H, VIEW_W, VIEW_H,
   SPAWN_MIN_DIST, SPAWN_MAX_DIST, DOCK_MIN_DIST, DOCK_MAX_DIST,
-  STAR_DENSITY, STAR_COUNT, dist2 } = G;
+  STAR_DENSITY, STAR_COUNT, dist2, levelDef } = G;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -71,7 +72,17 @@ assert(DOCK_MAX_DIST < SPAWN_MAX_DIST, "A: DOCK_MAX_DIST stays below SPAWN_MAX_D
 
 // =====================================================================
 console.log("(B) Real nextWave() debris spawns land within the clamped ring, many samples");
+// REPOINTED BY CS021 P1: nextWave() has two archetypes now (FORK-CS021-E). A FIELD level still scatters
+// into the [SPAWN_MIN_DIST, SPAWN_MAX_DIST] ring around the SHIP — the original claim, unweakened and
+// still the majority of the samples. An ORBIT level (every 3rd) lays concentric rings around the DOCK
+// instead, so it is checked against ITS world-fit invariant rather than skipped: every satellite sits at
+// exactly its ring radius from the dock measured WRAP-AWARE (which is the property that would break if
+// the generator ever used naive arithmetic), and the outermost satellite edge stays inside the world's
+// wrap-clean radius budget, min(WORLD_W, WORLD_H)/2 - 20. Both archetypes are sampled; neither is
+// allowed to go unchecked, and the sample counts are asserted so a schedule change can't empty either.
 let debrisOk = true, debrisMinSeen = Infinity, debrisMaxSeen = 0;
+let orbitOk = true, orbitEdgeMax = 0, orbitSamples = 0, fieldSamples = 0, orbitWorstErr = 0;
+const orbitEdgeBudget = Math.min(WORLD_W, WORLD_H) / 2 - 20;
 for (let trial = 0; trial < 25; trial++) {
   startGame();
   game.state = "playing"; game.paused = false;
@@ -80,14 +91,29 @@ for (let trial = 0; trial < 25; trial++) {
   game.wave = 1 + Math.floor(Math.random() * 6);
   game.debris = [];
   nextWave();
+  const orbit = levelDef(game.wave).archetype === "orbit";
   for (const d of game.debris) {
-    const dist = Math.sqrt(dist2(d, game.ship));
-    debrisMinSeen = Math.min(debrisMinSeen, dist);
-    debrisMaxSeen = Math.max(debrisMaxSeen, dist);
-    if (dist < SPAWN_MIN_DIST - 1e-6 || dist > SPAWN_MAX_DIST + 1e-6) debrisOk = false;
+    if (orbit) {
+      orbitSamples++;
+      // Wrap-aware distance to the dock must be exactly the satellite's own ring radius.
+      const err = Math.abs(Math.sqrt(dist2(d, game.dock)) - d.orbitRadius);
+      orbitWorstErr = Math.max(orbitWorstErr, err);
+      if (!(d.orbitRadius > 0) || err > 1e-6) orbitOk = false;
+      orbitEdgeMax = Math.max(orbitEdgeMax, d.orbitRadius + d.radius);
+    } else {
+      fieldSamples++;
+      const dist = Math.sqrt(dist2(d, game.ship));
+      debrisMinSeen = Math.min(debrisMinSeen, dist);
+      debrisMaxSeen = Math.max(debrisMaxSeen, dist);
+      if (dist < SPAWN_MIN_DIST - 1e-6 || dist > SPAWN_MAX_DIST + 1e-6) debrisOk = false;
+    }
   }
 }
-assert(debrisOk, `B: every sampled debris spawn within [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] (saw [${debrisMinSeen.toFixed(1)}, ${debrisMaxSeen.toFixed(1)}])`);
+assert(fieldSamples > 0, `B: (control) the sweep actually sampled FIELD-level spawns (${fieldSamples} pieces)`);
+assert(debrisOk, `B: every sampled FIELD debris spawn within [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] (saw [${debrisMinSeen.toFixed(1)}, ${debrisMaxSeen.toFixed(1)}])`);
+assert(orbitSamples > 0, `B: (control) the sweep actually sampled ORBIT-level spawns (${orbitSamples} satellites)`);
+assert(orbitOk, `B: every sampled ORBIT satellite sits at exactly its ring radius from the dock, wrap-aware (worst error ${orbitWorstErr.toExponential(2)} px)`);
+assert(orbitEdgeMax <= orbitEdgeBudget, `B: outermost ORBIT satellite edge ${orbitEdgeMax} within the wrap-clean budget ${orbitEdgeBudget}`);
 
 // =====================================================================
 console.log("(C) Real Dock spawns land within the clamped ring, many samples");

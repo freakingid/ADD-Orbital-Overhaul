@@ -433,6 +433,50 @@ const STAR_NEAR_DENSITY = 22;   // near parallax layer: sparse, per viewport-siz
 const STAR_NEAR_BRIGHT_MIN = 0.55; // near layer reads brighter (closer) than the far layer
 const STAR_NEAR_BRIGHT_MAX = 1.0;
 
+// ---------- CS021 P1: ORBIT LEVELS — the orbit-level archetype (PLANNED-FEATURES-CS021 §1/§4) --------
+// Every ORBIT_LEVEL_EVERY-th level replaces nextWave()'s scatter with concentric rings of size-3
+// DebrisSatellites ORBITING THE DOCK. The schedule constant itself lives with the level table below,
+// beside JUNK_CYCLE — see the note there for why it can't live up here.
+//
+// It is a spawn ARRANGEMENT plus a motion MODE, never a wall: the satellites are ordinary debris —
+// shootable, breakable, harvestable — so shooting a lane open is a legitimate strategy and the whole
+// arrangement erodes into a normal field as it is harvested (FORK-CS021-C2).
+//
+// THE RADII ARE FITTED TO THIS WORLD, NOT DERIVED FROM SATELLITE SIZE. The design handoff derived
+// ringSpacing = satelliteDiameter * 6 and startRadius = satelliteDiameter * 4, which at a 92 px size-3
+// satellite puts the 5th ring at a 2,576 px radius inside a 2560x1440 torus whose largest wrap-clean
+// circle is ~700 px (WORLD_H/2 - 20) — dead on arrival, and even ring 2 would not fit. These four
+// explicit radii put the outermost satellite EDGE at 630 + DEBRIS_RADII[3] = 676 px, inside that
+// budget, and clear a wave-1 dock (radius up to 88) by 180 - 46 - 88 = 46 px at the inner ring.
+const ORBIT_INNER_RADIUS  = 180;  // ring 1 radius, px from the dock
+const ORBIT_RADIUS_STEP   = 150;  // px per further ring; rings 1-4 land at 180 / 330 / 480 / 630
+const ORBIT_RING_COUNT    = 4;    // rings per orbit level (FORK-CS021-B -> 4 rings of size-3 debris)
+// Per-ring density, 0 (one satellite) -> 1 (the tightest fair fit). Non-uniform on purpose so the level
+// has rhythm: tight -> breather -> wide/fast -> tightest. At the shipped geometry this yields counts
+// 6 / 6 / 7 / 21 (40 satellites) with arc gaps 96.5 / 253.6 / 338.9 / 96.5 px.
+const ORBIT_DENSITY       = [0.75, 0.45, 0.35, 0.85];
+// THE FAIRNESS FLOOR, as a multiple of the ship's diameter:
+//     minRequiredGap = max(shipDiameter + ORBIT_SAFETY_MARGIN, shipDiameter * ORBIT_GAP_MULT)
+// At 2.5x a 26 px ship that is 65 px of clear lane between adjacent satellites (the multiplicative half
+// beats the additive 26 + 8 = 34 at every shipped value). Below ~2.5x, threading stops being skill and
+// starts being pixel luck. CS021 P2 makes this occurrence-scaled with a hard 1.8 floor; P1 ships it fixed.
+const ORBIT_GAP_MULT      = 2.5;
+const ORBIT_SAFETY_MARGIN = 8;    // px in the ADDITIVE half of minRequiredGap
+// MOTION (FORK-CS021-C1 -> (b)), rad/s. FIRST-PASS VALUES BY DESIGN: CS021 P3 turns both into debug
+// knobs whose `def` DERIVES from these constants (shown in degrees/second, via toNative), and the
+// playtest gate is where they get settled — the fork resolution is explicit that Paul tunes them live
+// rather than accepting a specced guess. ORBIT_ANG_VEL is deliberately slow: a full revolution in 60 s,
+// which at ring 4 is ~66 px/s of tangential travel, about a size-3 satellite's own drift speed.
+const ORBIT_ANG_VEL       = 6 * Math.PI / 180;  // 6 deg/s
+const ORBIT_FAST_MULT     = 3.0;  // the fast ring's multiplier — ~18 deg/s, ~151 px/s at ring 3's radius
+const ORBIT_FAST_RING     = 3;    // 1-BASED ring number that spins at ORBIT_ANG_VEL * ORBIT_FAST_MULT.
+                                  // Ring 3 is the deliberately SPARSE ring: it trades spatial tightness
+                                  // for timing pressure, which is the whole point of the density curve's dip.
+// FORK-CS021-A -> (c): the rings centre on the dock and THE SHIP IS NEVER REPOSITIONED. Instead, any
+// ring whose band contains the ship rerolls its startAngle until the nearest satellite clears the ship;
+// this bounds the rerolls so a wave start can never hang. See spawnSafeOrbitLayout().
+const ORBIT_SPAWN_TRIES   = 60;
+
 // Difficulty ramp & early-game pacing (F10) — originally the one shared curve that scaled every
 // wave-driven threat parameter from an easy wave-1 floor up to a full-intensity ceiling.
 // CS018 P4 (FLAG-l): RETAINED DELIBERATELY, but its job is now exactly ONE thing — it is the
@@ -460,6 +504,13 @@ const RAMP_WAVES = 8;           // THE knob: larger = slower ramp. Feeds difficu
 const PHASE_LEN  = 21;              // levels per phase; three phases cover levels 1..LEVEL_MAX
 const LEVEL_MAX  = 63;              // levels 64+ reuse level 63's definition unchanged (endgame plateau)
 const JUNK_CYCLE = [3, 5, 9, 13];   // junk count by position in the 4-level cycle, indexed (rel-1) % 4
+// CS021 P1 (FORK-CS021-E): the orbit-level schedule — every ORBIT_LEVEL_EVERY-th level is an ORBIT
+// level (3, 6, 9 … 63, i.e. 21 of the 63) rather than the usual scatter. IT LIVES HERE, apart from the
+// rest of the ORBIT_* geometry block above, for one concrete reason: levelDef() must stay evaluable
+// ALONE in a bare context, and test-cs018-p1.js (B) proves that by slicing the source from this
+// section's banner to levelDef's closing brace and running nothing else. Anything levelDef reads has to
+// be inside that slice. Changing the schedule is a design decision, not a retune (spec §3, FORK-E).
+const ORBIT_LEVEL_EVERY = 3;
 
 // Shared step-table reader: the value of the LAST breakpoint at or below n. Every table below is
 // ascending by level and starts at level 1, so a level under the table's start returns its first value.
@@ -504,6 +555,10 @@ const TIER_STEPS = {
 // PURE: a level number in, a plain object out. `level` is the UNCLAMPED argument (display/telemetry
 // only); every derived field reads the clamped L, so levelDef(64) … levelDef(Infinity) are
 // field-identical to levelDef(63) except for `level`.
+// AMENDED CS021 P1: `archetype` is the ONE exception to that clamp — it reads the unclamped n on
+// purpose, so the every-3rd orbit rhythm survives the endgame plateau instead of latching "orbit"
+// permanently from level 63. levelDef(64+) is therefore field-identical to levelDef(63) except for
+// `level` AND `archetype`. See the field's own comment.
 function levelDef(n) {
   const L     = Math.min(n, LEVEL_MAX);
   const phase = Math.floor((L - 1) / PHASE_LEN) + 1;   // 1..3
@@ -512,6 +567,13 @@ function levelDef(n) {
     level: n,
     phase: phase,
     rel: rel,
+    // CS021 P1 (FORK-CS021-E): "field" (the shipped scatter) or "orbit" (concentric rings around the
+    // dock). THE SECOND FIELD DERIVED FROM THE UNCLAMPED n, alongside `level` — every other field reads
+    // the clamped L, but the every-3rd rhythm has to keep going past the level-63 endgame plateau, and
+    // reading L here would make level 63 AND EVERY LEVEL AFTER IT an orbit level forever. game.wave
+    // stays the ONE difficulty clock: this is a pure function of it, not a second clock and not cycle
+    // state. levelDef(Infinity) yields NaN % 3 !== 0, i.e. "field" — no throw at the extreme.
+    archetype: n % ORBIT_LEVEL_EVERY === 0 ? "orbit" : "field",
     // A phase's LAST level holds 13 rather than restarting the cycle at 3 (spec: rel === 21).
     junkCount: rel === PHASE_LEN ? 13 : JUNK_CYCLE[(rel - 1) % 4],
     // 8 tow slots through level 4, then +2 per level to 24 (= CARGO_CAP_MAX) at level 12, then flat.
@@ -4156,7 +4218,22 @@ class DebrisSatellite {
     }));
   }
   update(dt) {
-    this.x += this.vx * dt; this.y += this.vy * dt;
+    // CS021 P1: ORBIT MOTION MODE (spec §1.3/§4.3). The orbit state — orbitCenter / orbitRadius /
+    // orbitAngle / orbitAngVel — is OPTIONAL and absent on every field-level satellite, every split
+    // child (FORK-CS021-C2) and the title-screen decoration, so with it undefined this is byte-for-byte
+    // the linear drift path it has always been. With it present the ANGLE is integrated and the position
+    // is DERIVED from it, wrap-aware — which makes the RAIL authoritative, not vx/vy: anything that
+    // shoves an orbiting body (shieldDeflect) is overwritten on the very next frame. Sprite spin
+    // (this.angle/this.spin) is a separate, unchanged thing and is deliberately independent of the orbit.
+    if (this.orbitCenter) {
+      this.orbitAngle += this.orbitAngVel * dt;
+      const p = wrapPos({ x: this.orbitCenter.x + Math.cos(this.orbitAngle) * this.orbitRadius,
+                          y: this.orbitCenter.y + Math.sin(this.orbitAngle) * this.orbitRadius });
+      this.x = p.x; this.y = p.y;
+      orbitSyncVelocity(this);   // keep vx/vy honest for everything that only READS them
+    } else {
+      this.x += this.vx * dt; this.y += this.vy * dt;
+    }
     this.angle += this.spin * dt;
     if (this.guardT > 0) this.guardT -= dt;   // CS019 P1: absorb cooldown, see the ctor
     wrap(this);
@@ -4819,6 +4896,183 @@ function startGame() {
   nextWave();
 }
 
+// ---------- CS021 P1: orbit-level layout (PLANNED-FEATURES-CS021 §1.1/§1.2/§4.1) ----------
+// PURE apart from rand(): the caller supplies every number, so the shipped geometry lives in the
+// ORBIT_* constants and this function only does the arithmetic. Per ring:
+//
+//     circumference     = 2π × radius
+//     minRequiredGap    = max(shipDiameter + safetyMargin, shipDiameter × minGapMultiplier)
+//     spacePerSatellite = satelliteDiameter + minRequiredGap
+//     maxCount          = floor(circumference / spacePerSatellite)
+//     count             = clamp(round(1 + density × (maxCount − 1)), 1, maxCount)
+//
+// THE GUARD THE HANDOFF OMITS: a ring whose maxCount comes out below 1 is unfair by construction — a
+// single satellite there would already sit closer than the fairness floor to itself around the loop —
+// so the ring is REJECTED (recorded in `rejected`, no satellites placed) rather than placed with a
+// negative computed gap. It never fires at the shipped geometry; it exists so a future radius/gap
+// retune fails loudly instead of quietly shipping an unpassable ring.
+//
+// `actualGapPx` is an ARC-LENGTH figure (circumference/count − satelliteDiameter). The straight-line
+// gap is marginally smaller at low counts; acceptable at these radii because the floor is already
+// conservative, and the test sweep asserts against the arc figure deliberately.
+//
+// Positions are wrap-aware on the way out (wrapPos), so a dock near a world edge lays its rings across
+// the seam correctly and every satellite's TOROIDAL distance to the centre is exactly its ring radius.
+// satelliteDiameter is passed IN, read from DEBRIS_RADII[3] * 2 at the call site — never a second
+// satellite-size constant.
+function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY, orbitCount,
+                               innerRadius, radiusStep, safetyMargin, minGapMultiplier,
+                               densityByOrbit, baseAngVel, fastRingIndex, fastRingMult }) {
+  const minRequiredGap    = Math.max(shipDiameter + safetyMargin, shipDiameter * minGapMultiplier);
+  const spacePerSatellite = satelliteDiameter + minRequiredGap;
+  const rings = [], rejected = [];
+  for (let i = 0; i < orbitCount; i++) {
+    const radius        = innerRadius + i * radiusStep;
+    const circumference = TAU * radius;
+    const maxCount      = Math.floor(circumference / spacePerSatellite);
+    if (maxCount < 1) { rejected.push({ index: i, radius, circumference, maxCount }); continue; }
+    const density   = densityByOrbit[i];
+    const count     = Math.max(1, Math.min(maxCount, Math.round(1 + density * (maxCount - 1))));
+    const angleStep = TAU / count;
+    const ring = {
+      index: i, radius, circumference, maxCount, density, count, angleStep,
+      startAngle: 0,
+      // The fast ring trades spatial tightness for timing pressure (FORK-CS021-C1).
+      angVel: baseAngVel * (i === fastRingIndex ? fastRingMult : 1),
+      actualGapPx: circumference / count - satelliteDiameter,
+      satellites: [],
+    };
+    // startAngle is randomised per ring so the safe lanes never align into one straight radial path.
+    placeOrbitRing(ring, centerX, centerY, rand(0, angleStep));
+    rings.push(ring);
+  }
+  return {
+    centerX, centerY, rings, rejected, minRequiredGap, spacePerSatellite,
+    satelliteDiameter, shipDiameter,
+    total: rings.reduce((n, r) => n + r.count, 0),
+    outerEdge: rings.length ? rings[rings.length - 1].radius + satelliteDiameter / 2 : 0,
+  };
+}
+
+// (Re)place ONE ring's satellites at `startAngle`. Split out of generateOrbitLayout so the spawn-safety
+// reroll below can rebuild a single ring without regenerating — and so re-randomising — the whole
+// layout: a reroll must move START ANGLES ONLY, leaving counts, radii, densities and velocities
+// byte-identical.
+function placeOrbitRing(ring, centerX, centerY, startAngle) {
+  ring.startAngle = startAngle;
+  ring.satellites.length = 0;
+  for (let k = 0; k < ring.count; k++) {
+    const angle = startAngle + k * ring.angleStep;
+    const p = wrapPos({ x: centerX + Math.cos(angle) * ring.radius,
+                        y: centerY + Math.sin(angle) * ring.radius });
+    ring.satellites.push({ angle, x: p.x, y: p.y });
+  }
+  return ring;
+}
+
+// Wrap-aware distance from `ship` to the nearest satellite of `ring`. Naive subtraction is wrong the
+// moment a ring straddles the world seam, which is exactly the case spawn safety must get right.
+function nearestOrbitDist(ring, ship) {
+  let best = Infinity;
+  for (const s of ring.satellites) best = Math.min(best, dist2(ship, s));
+  return Math.sqrt(best);
+}
+
+// SPAWN SAFETY (FORK-CS021-A -> (c)). The dock keeps its normal placement and THE SHIP IS NEVER MOVED;
+// instead, any ring whose band contains the ship rerolls its startAngle until the nearest satellite
+// clears it. Bounded by ORBIT_SPAWN_TRIES: on exhaustion we log and accept the last roll, because a
+// wave start must never be allowed to loop forever.
+//
+// THE BAND IS DERIVED FROM THE CLEARANCE RULE, NOT INVENTED. If the ship's wrap-aware distance to the
+// centre differs from a ring's radius by at least minRequiredGap, then no rotation of that ring can put
+// any satellite within minRequiredGap of the ship (the radially-aligned satellite is the closest one
+// possible, at exactly that radial offset), so the ring is already safe and there is nothing to reroll.
+//
+// CLEARANCE IS MEASURED CENTRE-TO-CENTRE, and that choice is load-bearing. minRequiredGap is an
+// EDGE-TO-EDGE lane width between two ADJACENT satellites (65 px at the shipped 2.5x); a ship sitting
+// exactly on a ring radius can never be further than half a lane from the nearest satellite's SURFACE,
+// so demanding 65 px of SURFACE clearance would be unsatisfiable by construction (ring 1's best
+// possible roll is 93.2 px centre-to-centre = 34.2 px surface-to-surface) and the bounded loop would
+// always exhaust — the opposite of "safe by construction". Centre-to-centre IS satisfiable for all four
+// shipped rings at every dock distance the Dock class can produce (DOCK_MIN_DIST..DOCK_MAX_DIST,
+// 260-620 px), so the attempt bound is genuine insurance and not the normal path. Recorded in STATUS.md.
+function spawnSafeOrbitLayout(layout, ship) {
+  const gap = layout.minRequiredGap;
+  const centre = { x: layout.centerX, y: layout.centerY };
+  const d = Math.sqrt(dist2(ship, centre));
+  for (const ring of layout.rings) {
+    ring.spawnSafetyTries = 0;
+    ring.spawnSafetyBand  = Math.abs(d - ring.radius) < gap;
+    if (!ring.spawnSafetyBand) { ring.spawnSafetyCleared = true; continue; }
+    while (nearestOrbitDist(ring, ship) < gap && ring.spawnSafetyTries < ORBIT_SPAWN_TRIES) {
+      placeOrbitRing(ring, layout.centerX, layout.centerY, rand(0, ring.angleStep));
+      ring.spawnSafetyTries++;
+    }
+    ring.spawnSafetyCleared = nearestOrbitDist(ring, ship) >= gap;
+    if (!ring.spawnSafetyCleared && typeof console !== "undefined" && console.warn) {
+      console.warn("orbit spawn safety: ring " + (ring.index + 1) + " exhausted " +
+                   ring.spawnSafetyTries + " rerolls; accepting the last roll");
+    }
+  }
+  return layout;
+}
+
+// The instantaneous orbital tangent of a body on a rail: speed = angVel × radius, perpendicular to the
+// centre ray (d/dt of centre + radius·(cos θ, sin θ) is radius·θ'·(−sin θ, cos θ)). Returns null for
+// anything not in orbit motion mode, which is what keeps the split site's handoff a one-line
+// conditional and inert on the field path.
+function orbitTangent(e) {
+  if (!e.orbitCenter) return null;
+  const sp = e.orbitAngVel * e.orbitRadius;
+  return [-Math.sin(e.orbitAngle) * sp, Math.cos(e.orbitAngle) * sp];
+}
+
+// Keep vx/vy telling the truth for a body whose POSITION is driven by the rail. Nothing integrates them
+// while orbitCenter is set, but plenty of code READS them — destroyDebris's garbage kick, shieldDeflect's
+// speed carry, the Hunter/powerup launch idiom — and a stale random drift vector left over from the
+// constructor would make every one of those lie.
+function orbitSyncVelocity(e) {
+  const t = orbitTangent(e);
+  if (t) { e.vx = t[0]; e.vy = t[1]; }
+}
+
+// The orbit-level spawn, called from nextWave()'s archetype branch in place of the scatter loop.
+// Returns the layout so tests (and, later, the P3 debug reroll) can read the geometry that was actually
+// laid down rather than re-deriving it.
+function spawnOrbitWave(speedMul) {
+  const layout = spawnSafeOrbitLayout(generateOrbitLayout({
+    satelliteDiameter: DEBRIS_RADII[3] * 2,   // read HERE, at the call site — never a new constant
+    shipDiameter:      SHIP_RADIUS * 2,
+    centerX:           game.dock.x,
+    centerY:           game.dock.y,
+    orbitCount:        ORBIT_RING_COUNT,
+    innerRadius:       ORBIT_INNER_RADIUS,
+    radiusStep:        ORBIT_RADIUS_STEP,
+    safetyMargin:      ORBIT_SAFETY_MARGIN,
+    minGapMultiplier:  ORBIT_GAP_MULT,
+    densityByOrbit:    ORBIT_DENSITY,
+    baseAngVel:        ORBIT_ANG_VEL,
+    fastRingIndex:     ORBIT_FAST_RING - 1,   // ORBIT_FAST_RING is the human, 1-based ring number
+    fastRingMult:      ORBIT_FAST_MULT,
+  }), game.ship);
+  // orbitCenter is captured ONCE, here, and never re-read (spec §4.3): if a future changeset ever
+  // relocates the dock mid-wave, the rings stay exactly where they were laid down. One shared object
+  // per wave — the rings do not each own a copy, so there is nothing to keep in sync.
+  const centre = { x: layout.centerX, y: layout.centerY };
+  for (const ring of layout.rings) {
+    for (const s of ring.satellites) {
+      const a = new DebrisSatellite(s.x, s.y, 3, speedMul);
+      a.orbitCenter = centre;
+      a.orbitRadius = ring.radius;
+      a.orbitAngle  = s.angle;
+      a.orbitAngVel = ring.angVel;
+      orbitSyncVelocity(a);   // the constructor's random drift is not this body's velocity
+      game.debris.push(a);
+    }
+  }
+  return layout;
+}
+
 function nextWave() {
   game.wave++;
   // CS018 P4: the cycle-clock derivation that used to sit here is gone — game.wave is the ONE
@@ -4850,14 +5104,26 @@ function nextWave() {
   // the old DEBRIS_COUNT_MAX/DEBRIS_COUNT_HARD_MAX clamps are no longer applied at this site.
   const count = levelDef(game.wave).junkCount;
   const speedMul = junkSpeedMul();
-  for (let i = 0; i < count; i++) {
-    // spawn in a ring around the ship's current world position so the wave is
-    // reachable (min distance keeps it off the ship, max keeps it from being
-    // stranded on the far side of the big world)
-    const a = rand(0, TAU);
-    const d = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
-    const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
-    game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
+  // CS021 P1 (FORK-CS021-E): the level table decides the level's ARCHETYPE, and that is the only thing
+  // this branch is. "field" is the shipped scatter below, moved wholesale into the else with nothing
+  // else changed (`git diff -w` reads as a pure indent). "orbit" replaces it with concentric rings
+  // around the dock and deliberately does NOT consume junkCount — an orbit level's population comes
+  // from its geometry, not from the junk cycle, which is why the totals step up so sharply
+  // (FORK-CS021-D accepts that: orbit levels are set-pieces). `count`/`speedMul` stay declared out here
+  // because logDifficultySnapshot() below still reports the LEVEL TABLE's junk count either way, and
+  // the orbit spawn reuses the same speedMul rather than deriving a third one.
+  if (levelDef(game.wave).archetype === "orbit") {
+    spawnOrbitWave(speedMul);
+  } else {
+    for (let i = 0; i < count; i++) {
+      // spawn in a ring around the ship's current world position so the wave is
+      // reachable (min distance keeps it off the ship, max keeps it from being
+      // stranded on the far side of the big world)
+      const a = rand(0, TAU);
+      const d = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
+      const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
+      game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
+    }
   }
   // CS017 P5 — the rare bonus canister (FORK-CS017-D -> (b) PRE-LINKED CLUMP). ONE roll per wave, on
   // the EASING-OFF curve (bonusSpawnChance()): common right after a cycle reset, rare at the cycle's
@@ -4923,8 +5189,16 @@ function destroyDebris(a, awardScore = true) {
     // the other has to move with it. (These two are the only places debris speed is derived — both now
     // just call the shared junkSpeedMul() helper.)
     const speedMul = junkSpeedMul();
+    // CS021 P1 (FORK-CS021-C2 -> (i)): a shattered ORBITING parent hands its children its instantaneous
+    // orbital tangent as vx/vy and NO orbit state — they leave the rail as ordinary drifting debris.
+    // That is what lets an orbit level erode naturally into a normal field as it is harvested: no rail
+    // bookkeeping, no end-of-ring cleanup, nothing to keep a ring's membership in. `tangent` is null for
+    // every field-level parent, so the shipped scatter path is untouched.
+    const tangent = orbitTangent(a);
     for (let i = 0; i < 3; i++) {
-      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speedMul));
+      const child = new DebrisSatellite(a.x, a.y, a.size - 1, speedMul);
+      if (tangent) { child.vx = tangent[0]; child.vy = tangent[1]; }
+      game.debris.push(child);
     }
   }
 }

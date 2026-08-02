@@ -12,6 +12,8 @@
 //  (B) debris COUNT integration: startGame() + real nextWave() calls across levels 1-63, comparing
 //      game.debris.length after each call against the phase prompt's pinned 3,5,9,13 cycle (13 at
 //      every rel-21 level), with the DEBRIS_COUNT_MAX/HARD_MAX clamps confirmed retired (unread).
+//      REPOINTED BY CS021 P1: split by archetype — field levels still spawn junkCount, orbit levels
+//      (every 3rd) spawn the 40-satellite ring layout and deliberately do not consume junkCount.
 //  (C) speedMul PARITY: the two derivation sites (nextWave, destroyDebris) are proven byte-identical
 //      at the source level (both read literally "const speedMul = junkSpeedMul();"), and
 //      junkSpeedMul() is proven correct against a hand-computed tier lookup at low/normal/high levels.
@@ -111,12 +113,43 @@ let X;
     got.push(X.game.debris.length);
   }
   eq(X.game.wave, 63, "B: 63 nextWave() calls (1 from startGame + 62 more) land on level 63");
-  assert(deepEq(got.slice(0, 21), WANT_COUNT_1_21),
-    `B: debris count levels 1-21 === ${WANT_COUNT_1_21.join(",")} (got ${got.slice(0, 21).join(",")})`);
-  console.log("    levels 1-21 debris count: " + got.slice(0, 21).join(","));
-  // The three phase-boundary 13s (rel 21 at levels 21, 42, 63) plus every count matches levelDef directly.
-  for (const n of [21, 42, 63]) eq(got[n - 1], 13, `B: level ${n} (phase boundary) holds 13`);
-  for (let n = 1; n <= 63; n++) eq(got[n - 1], X.levelDef(n).junkCount, `B: level ${n} debris count === levelDef(${n}).junkCount`);
+  // REPOINTED BY CS021 P1 — nextWave() has TWO archetypes now (FORK-CS021-E) and only the "field" one
+  // consumes junkCount. The junk-cycle claim is unchanged and unweakened for every field level; orbit
+  // levels are asserted against THEIR rule instead of being skipped, so nothing goes unchecked:
+  //   - the level TABLE's junkCount column is still the 3/5/9/13 cycle at EVERY level, orbit included
+  //     (the table is untouched by CS021 — the archetype decides whether nextWave reads that column);
+  //   - a field level still spawns exactly junkCount pieces, drift-only, no orbit state;
+  //   - an orbit level spawns the fixed 40-satellite ring layout, every piece carrying orbit state,
+  //     and deliberately NOT junkCount.
+  const ORBIT_TOTAL = 40;   // spec §1.2: 6 + 6 + 7 + 21 at the shipped geometry and gap multiplier
+  const tableCounts = Array.from({ length: 21 }, (_, i) => X.levelDef(i + 1).junkCount);
+  assert(deepEq(tableCounts, WANT_COUNT_1_21),
+    `B: levelDef junkCount COLUMN levels 1-21 === ${WANT_COUNT_1_21.join(",")} (got ${tableCounts.join(",")})`);
+  const fieldCounts = got.slice(0, 21).map((c, i) => X.levelDef(i + 1).archetype === "field" ? c : null);
+  console.log("    levels 1-21 debris count: " + got.slice(0, 21).join(",") +
+              "   (orbit levels: " + got.slice(0, 21).filter((_, i) => X.levelDef(i + 1).archetype === "orbit").join(",") + ")");
+  assert(fieldCounts.every((c, i) => c === null || c === WANT_COUNT_1_21[i]),
+    `B: every FIELD level 1-21 still spawns its junkCount (got ${fieldCounts.join(",")})`);
+  // The three phase-boundary 13s (rel 21 at levels 21, 42, 63). All three are ALSO orbit levels — 21,
+  // 42 and 63 are each divisible by 3 — so the claim is checked where it still lives, in the table's
+  // junkCount column, rather than in a spawn that no longer reads it.
+  for (const n of [21, 42, 63]) {
+    eq(X.levelDef(n).junkCount, 13, `B: level ${n} (phase boundary) still holds 13 in the table's junkCount column`);
+    eq(X.levelDef(n).archetype, "orbit", `B: level ${n} is also an orbit level, which is why its SPAWN no longer reads that 13`);
+  }
+  let orbitLevels = 0, fieldLevels = 0;
+  for (let n = 1; n <= 63; n++) {
+    if (X.levelDef(n).archetype === "orbit") {
+      orbitLevels++;
+      eq(got[n - 1], ORBIT_TOTAL, `B: level ${n} is an ORBIT level and spawns the ${ORBIT_TOTAL}-satellite layout`);
+      assert(got[n - 1] !== X.levelDef(n).junkCount, `B: level ${n} did NOT consume junkCount (${X.levelDef(n).junkCount})`);
+    } else {
+      fieldLevels++;
+      eq(got[n - 1], X.levelDef(n).junkCount, `B: level ${n} debris count === levelDef(${n}).junkCount`);
+    }
+  }
+  eq(orbitLevels, 21, "B: 21 of the 63 levels are orbit levels (every 3rd — FORK-CS021-E)");
+  eq(fieldLevels, 42, "B: the other 42 are field levels, spawning exactly as before");
 
   // The retired clamps are provably unread: static grep, non-comment lines, excluding their own defs.
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));

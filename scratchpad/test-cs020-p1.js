@@ -941,11 +941,19 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // The same staging on both builds, driven through the SAME seeded random sequence. Every hook happens
   // 400px outside the dock's own radius, so nothing is ever tagged incidental and the fix must be
   // invisible: not merely "the score matches", but every stat, every counter, every floater.
+  // REPOINTED BY CS021 P1 — the level climb moved OUT of the measured seeded window, and the seed is
+  // re-armed for the measurement itself. Level 12 became an ORBIT level (levelDef(12).archetype), so on
+  // the way to it the fixed build lays four rings of satellites at levels 3/6/9/12 while the pre-fix
+  // build at PRE_FIX_REF scatters junkCount pieces — a legitimate difference in the SPAWN path that
+  // consumes different amounts of rand() and desynchronises the shared stream before the delivery path
+  // is ever exercised. Re-arming after quiet() (which parks the dock at world centre and clears the
+  // field) restores an identical starting state for both builds, so this control keeps its full
+  // strength exactly where its claim lives: the DELIVERY path. The climb gets its own fixed seed so the
+  // file stays deterministic run to run.
   function run(X) {
+    withRandom(seededRandom(0x11CE172), () => { X.startGame(); toLevel(X, 12); });
+    quiet(X);
     return withRandom(seededRandom(0x5A17A6E), () => {
-      X.startGame();
-      toLevel(X, 12);
-      quiet(X);
       let smdCalls = 0; X.__spySMD(() => { smdCalls++; });
       const track = floaterTracker(X);
       const pw = powerupTracker(X);

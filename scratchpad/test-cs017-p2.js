@@ -159,7 +159,17 @@ const TIER_NAMES = ["low", "normal", "high"];
     assert(row.phase === def.phase, `B: wave ${w}: row.phase expected ${def.phase}, got ${row.phase}`);
     assert(row.rel === def.rel, `B: wave ${w}: row.rel expected ${def.rel}, got ${row.rel}`);
     assert(row.junkCount === def.junkCount, `B: wave ${w}: junkCount expected ${def.junkCount}, got ${row.junkCount}`);
-    assert(g.debris.length === row.junkCount, `B: wave ${w}: sanity — the level actually spawned junkCount pieces`);
+    // REPOINTED BY CS021 P1. The DiffLog's junkCount column still reports what the LEVEL TABLE decides
+    // (asserted immediately above, unchanged); what changed is that only a FIELD level spawns that many
+    // pieces. An ORBIT level (every 3rd — FORK-CS021-E) lays a fixed 40-satellite ring layout around the
+    // dock and deliberately does not consume junkCount, so the sanity check is split rather than dropped.
+    if (def.archetype === "orbit") {
+      assert(g.debris.length === 40, `B: wave ${w}: ORBIT level spawned the 40-satellite layout (got ${g.debris.length})`);
+      assert(g.debris.every(d => !!d.orbitCenter), `B: wave ${w}: every ORBIT-level satellite carries orbit state`);
+    } else {
+      assert(g.debris.length === row.junkCount, `B: wave ${w}: sanity — the FIELD level actually spawned junkCount pieces`);
+      assert(g.debris.every(d => d.orbitCenter === undefined), `B: wave ${w}: no FIELD-level satellite carries orbit state`);
+    }
     assert(Math.abs(row.junkSpeedMul - A.junkSpeedMul()) < 1e-9, `B: wave ${w}: junkSpeedMul matches the live helper`);
     assert(row.maxLargeHunters === def.maxLargeHunters, `B: wave ${w}: maxLargeHunters expected ${def.maxLargeHunters}, got ${row.maxLargeHunters}`);
     assert(row.maxLargeHunters === A.largeHunterCap(), `B: wave ${w}: maxLargeHunters equals the live largeHunterCap()`);
