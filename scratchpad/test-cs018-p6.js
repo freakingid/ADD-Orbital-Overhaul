@@ -379,7 +379,12 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // REPOINTED (CS018 P7): P7 landed after this test was written and removed 2 more (saucerPressureSecs,
   // saucerAimPressure) while adding 9 (UFO WEAPONS) -> 25 - 2 + 9 = 32. This file still only PROVES the
   // P6-era shape (asserted above in section B); this count just needs to stop pinning a now-stale total.
-  eq(nEntries, 32, `I: DEBUG_ENTRIES count is 32 after CS018 P7 (got ${nEntries})`);
+  // REPOINTED AGAIN (CS019 P1): + 1 (chainGuardCooldown, appended to the CHAIN GUARD group) -> 33. Same
+  // claim, same strength — an exact live-registry count — plus the id of the entry that moved it, so a
+  // different silent addition can't satisfy the new number.
+  eq(nEntries, 33, `I: DEBUG_ENTRIES count is 33 after CS019 P1 (got ${nEntries})`);
+  eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
+    "I: ...and the entry CS019 P1 added is chainGuardCooldown");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
 })();
 

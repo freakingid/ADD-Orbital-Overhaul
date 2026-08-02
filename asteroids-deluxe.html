@@ -2649,12 +2649,19 @@ const DEBUG_VARS = [
   // stays in place as the documented pre-P6 shipped value; this knob is the live source of truth now.
   { id: "garbageLifetime", label: "Garbage lifetime", unit: "s",
     def: 10, min: 1, max: 60, step: 1 },
-  // CS017 P6: the chain-guard powerup's three knobs. chainGuardTime is powerDuration("guard") in TIME
-  // mode; chainGuardIntercepts is the seeded powerBudget in COUNT mode (see powerBudgetAmount); both are
-  // live values, NOT frozen consts, so the registry entry IS the source of truth for each default.
-  // chainGuardMinTow is the drop gate — "guard" only enters the dropPowerup roll while the player is
-  // towing at least this many nodes. 0 makes it always-eligible (the un-gated roll), which is the useful
-  // dev setting for exercising the powerup without first building a load.
+  // CS017 P6 (+ CS019 P1): the chain-guard powerup's four knobs. chainGuardTime is powerDuration("guard")
+  // in TIME mode; chainGuardIntercepts is the seeded powerBudget in COUNT mode (see powerBudgetAmount);
+  // both are live values, NOT frozen consts, so the registry entry IS the source of truth for each
+  // default. chainGuardMinTow is the drop gate — "guard" only enters the dropPowerup roll while the
+  // player is towing at least this many nodes. 0 makes it always-eligible (the un-gated roll), which is
+  // the useful dev setting for exercising the powerup without first building a load.
+  //   CS019 P1: chainGuardCooldown is the ABSORB cooldown — how long an absorbed break stamps the SOURCE
+  // hazard's guardT, during which the hazards-vs-chain scan skips it (while the guard is up, and only
+  // while it is up). Before this knob existed a body that stayed overlapping a guarded node re-presented
+  // the same contact every frame, so a default 3-intercept budget burned in 3 frames. 0.75 s covers a
+  // medium-debris pass-through (~0.5 s) as ONE event while still billing a genuinely new approach
+  // seconds later. Its 0.05 step is finer than any sibling's but needs no special handling: the panel's
+  // +/- arithmetic is plain float addition clamped to [min,max], and typed entry is parseFloat.
   { header: "CHAIN GUARD" },
   { id: "chainGuardTime", label: "Chain guard duration", unit: "s",
     def: 30, min: 5, max: 120, step: 5 },
@@ -2662,6 +2669,8 @@ const DEBUG_VARS = [
     def: 3, min: 1, max: 10, step: 1 },
   { id: "chainGuardMinTow", label: "Chain guard min tow", unit: "",
     def: 5, min: 0, max: 24, step: 1 },
+  { id: "chainGuardCooldown", label: "Chain guard cooldown", unit: "s",
+    def: 0.75, min: 0.1, max: 3, step: 0.05 },
   // CS018 P3: junk (debris) satellite speed, by TIER (§3.1) — levelDef's junkSpeed tier name selects
   // one of these three, and junkSpeedMul() (Helpers section) turns the pick into the DEBRIS_SPEEDS[3]
   // multiplier the two speed-derivation sites (nextWave, destroyDebris) share. normal (70) IS
@@ -4098,6 +4107,12 @@ class DebrisSatellite {
     this.angle = rand(0, TAU);          // random spawn rotation (v3.3 item 5 — preserved by the SAT_ART draw path)
     this.spin = rand(-1.2, 1.2);        // random tumble (ditto)
     this.dead = false;
+    // CS019 P1: chain-guard absorb cooldown. A body that gets its break absorbed keeps overlapping the
+    // node it hit (nothing was severed), so without this it would re-present the same contact — and pay
+    // for it — every frame. Stamped in the guard branch of breakChain, skipped by the hazards-vs-chain
+    // scan while it is > 0 AND the guard is up. Bullets deliberately have no equivalent: a hostile round
+    // is marked dead before the break, so it can never re-present.
+    this.guardT = 0;
     // Authored satellite silhouette (v3.3 P2). Pick one archetype per instance (splits
     // re-roll independently), use the simplified `small` variant at the r=13 small tier,
     // then bake a per-instance copy scaled to `this.radius` with a small random per-vertex
@@ -4115,6 +4130,7 @@ class DebrisSatellite {
   update(dt) {
     this.x += this.vx * dt; this.y += this.vy * dt;
     this.angle += this.spin * dt;
+    if (this.guardT > 0) this.guardT -= dt;   // CS019 P1: absorb cooldown, see the ctor
     wrap(this);
   }
   draw() {
@@ -4136,6 +4152,10 @@ class HunterSatellite {
     this.radius = HUNTER_RADII[size];
     this.damage = HUNTER_DAMAGE[size];      // contact damage to the ship (F2/F4)
     this.dead = false;
+    // CS019 P1: chain-guard absorb cooldown — same field, same reason, as DebrisSatellite's (see there).
+    // The homing tiers are the pathological case this exists for: a medium/small that loses contact
+    // re-acquires and comes straight back, so without a cooldown one attack could bill several times.
+    this.guardT = 0;
     // v3.3 P4 (9b, FORK-5): the `bornOfScrap` flag is GONE. Every Hunter of every origin now drops
     // garbage at its tier counts — the v3.2 P3 suppression is reversed. 9a's single-decay is the new
     // governor for the 12-in/66-out amplifier that flag used to close.
@@ -4222,6 +4242,7 @@ class HunterSatellite {
         this.vy = Math.sin(this.heading) * HUNTER_LAST_STAND_SPEED;
       }
     }
+    if (this.guardT > 0) this.guardT -= dt;   // CS019 P1: absorb cooldown, see the ctor
     this.x += this.vx * dt; this.y += this.vy * dt;
     wrap(this);
   }
@@ -5820,7 +5841,12 @@ function updateChain(dt) {
   chain.forEach(wrapNode);
 }
 
-function breakChain(i) { // node i destroyed; everything aft breaks loose
+// CS019 P1: `src` is the SOURCE of the break — the hostile bullet or the debris/Hunter body that caused
+// it — and exists solely so an absorbed break can stamp a persistent source's guardT. It defaults to null
+// so a sourceless call (a direct call from a test harness, or any future caller with no persistent
+// object behind the hit) keeps exactly the pre-CS019 behaviour: absorb, spend once, stamp nothing. A
+// break with no persistent source is a one-shot event and needs no cooldown.
+function breakChain(i, src = null) { // node i destroyed; everything aft breaks loose
   const chain = game.chain;
   const hit = chain[i];
   // CS017 P6 — CHAIN GUARD. This function is the single HOSTILE break choke point: both call sites (a
@@ -5841,6 +5867,10 @@ function breakChain(i) { // node i destroyed; everything aft breaks loose
     game.floaters.push(new FloatText("GUARDED", hit.x, hit.y - 18, POWERUP_COLOR.guard));
     AudioSys.shieldPing();
     VoiceSys.say("chain_guard"); // CS017 P7 — same single choke point: a multi-node hit speaks once
+    // CS019 P1: this contact has now been paid for. Stamping the source is what stops it presenting the
+    // SAME contact again next frame — nothing was severed here, so a body that was overlapping still is.
+    // The scan (not this function) does the skipping; see the hazards-vs-chain pass for why.
+    if (src) src.guardT = DEBUG.chainGuardCooldown;
     return; // no node severed, deliveryCount untouched — the load is byte-identical
   }
   boom(hit.x, hit.y, 1, COLOR.garbage);
@@ -6355,7 +6385,7 @@ function update(dt) {
       if (!b.dead && game.chain.length) {
         for (let i = 0; i < game.chain.length; i++) {
           if (dist2(b, game.chain[i]) < 9 * 9) {
-            b.dead = true; breakChain(i); break;
+            b.dead = true; breakChain(i, b); break;   // CS019 P1: src passed for symmetry; a dead bullet never re-presents
           }
         }
       }
@@ -6410,8 +6440,18 @@ function update(dt) {
       const n = game.chain[i];
       for (const h of chainHazards) {
         if (h.dead) continue;
+        // CS019 P1: a body whose break was just absorbed keeps overlapping (nothing was severed), so it
+        // would otherwise bill the identical contact every frame. Skip it while its stamp holds.
+        //   The skip lives HERE, not at the choke point, because this scan `break chainScan`s on the
+        // FIRST overlapping pair it finds: a stamped hazard sitting on node 0 would consume the scan's
+        // one slot every frame and hide a different, UNSTAMPED hazard genuinely hitting node 5 for the
+        // whole cooldown window. Skipping in the inner loop lets the scan keep looking.
+        //   The powerActive("guard") clause is NOT redundant. If the guard ends mid-contact — the clock
+        // runs out, or the budget is spent on another hazard — a stamped body must cut the chain on the
+        // very next frame. Without it, a stale stamp would grant free passage through an UNPROTECTED tow.
+        if (h.guardT > 0 && powerActive("guard")) continue;
         const r = h.radius + 7;
-        if (dist2(n, h) < r * r) { breakChain(i); break chainScan; }
+        if (dist2(n, h) < r * r) { breakChain(i, h); break chainScan; }
       }
     }
   }

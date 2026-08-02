@@ -749,11 +749,18 @@ function onDebug(A, { playing = false } = {}) {
   // JUNK / UFO MOVEMENT / UFO WEAPONS / GLOBAL headers, plus the two action rows.
   // REPOINTED BY CS018 P3+: the synthetic count is now DERIVED, so this section keeps testing the CS018
   // end-state (32 value rows, §3.1) as real knobs land phase by phase instead of overshooting it.
+  // REPOINTED AGAIN BY CS019 P1: the registry has now GROWN PAST that end-state — chainGuardCooldown is
+  // the 33rd value entry — so a fixed 32 target would ask this section to REMOVE rows and `need` would
+  // go negative. The target now tracks the live registry, with CS018's 32 as its floor. Same claim at
+  // the same strength ("the row model, scroll window and panel height all hold at the full registry"),
+  // and the floor assertion flips to its mirror image: it used to say the registry had not yet reached
+  // 32, it now says it is at or past it. Both are exact bounds on the live count; neither is softer.
   const CS018_VALUE_ROWS = 32;
   const reuse = A.DEBUG_ENTRIES[A.DEBUG_ENTRIES.length - 1];
   const baseRows = rows.length, baseVars = rows.filter(r => r.kind === "var").length;
-  const need = CS018_VALUE_ROWS - baseVars;
-  assert(need >= 0, `M: the live registry has not yet passed CS018's 32 value rows (has ${baseVars})`);
+  const TARGET_VALUE_ROWS = Math.max(CS018_VALUE_ROWS, baseVars);
+  const need = TARGET_VALUE_ROWS - baseVars;
+  assert(baseVars >= CS018_VALUE_ROWS, `M: the live registry is at or past CS018's 32 value rows (has ${baseVars})`);
   const SECTIONS = 4;
   const extra = [];
   for (let s = 0; s < SECTIONS; s++) {
@@ -764,7 +771,7 @@ function onDebug(A, { playing = false } = {}) {
   rows.splice(rows.length - 2, 0, ...extra);
   const ROWS = rows.length, VIS = A.DEBUG_ROWS_VISIBLE, maxTop = ROWS - VIS;
   assert(ROWS === baseRows + extra.length, `M: the enlarged model has ${baseRows + extra.length} rows (got ${ROWS})`);
-  assert(rows.filter(r => r.kind === "var").length === CS018_VALUE_ROWS, `M: ...of which ${CS018_VALUE_ROWS} are value rows, matching CS018 §3.1`);
+  assert(rows.filter(r => r.kind === "var").length === TARGET_VALUE_ROWS, `M: ...of which ${TARGET_VALUE_ROWS} are value rows, at or above CS018 §3.1's 32`);
   assert(ROWS >= 42, `M: at least the 42 rows CS018's end-state implies (got ${ROWS})`);
 
   // Panel height must NOT have grown — that is the whole point of the fixed-height rewrite.

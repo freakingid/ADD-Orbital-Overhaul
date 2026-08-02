@@ -581,11 +581,16 @@ function levelForCap(n) {
 
   eq(Y.GAME_VERSION, "1.0.0.17", "H: GAME_VERSION unchanged this phase (bumps in P10)");
   // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob. REPOINTED BY CS018 P6,
-  // then again by P7 (mirror-image of the old claim each time, not weakened): P3's 15 -> P6's 25 (9 UFO
-  // MOVEMENT + 2 GLOBAL added, 1 retired saucerGapPressure removed) -> P7's 32 (9 UFO WEAPONS added, 2
-  // retired saucerPressureSecs/saucerAimPressure removed) — none of these are P4 facts, but this pin has
-  // to track the live registry size or it goes stale every time a later phase touches it.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 32, "H: DEBUG_VARS holds 32 value entries as of CS018 P7 (P4 itself added none)");
+  // then again by P7, then again by CS019 P1 (mirror-image of the old claim each time, not weakened):
+  // P3's 15 -> P6's 25 (9 UFO MOVEMENT + 2 GLOBAL added, 1 retired saucerGapPressure removed) -> P7's 32
+  // (9 UFO WEAPONS added, 2 retired saucerPressureSecs/saucerAimPressure removed) -> CS019 P1's 33
+  // (chainGuardCooldown appended to the CHAIN GUARD group) — none of these are P4 facts, but this pin has
+  // to track the live registry size or it goes stale every time a later phase touches it. The exact
+  // count is still an exact count; naming the one entry that moved it makes it strictly harder to pass
+  // by accident than the bare number was.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 33, "H: DEBUG_VARS holds 33 value entries as of CS019 P1 (P4 itself added none)");
+  eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,
+    "H: ...and the 33rd is CS019 P1's chainGuardCooldown, not some other silent addition");
 })();
 
 // ================= (I) headless smoke =====================
