@@ -193,10 +193,13 @@ function shippedArgs(X, centerX, centerY) {
   // TRAP 1 — this phase does NOT bump the version. CS021 P5 owns that; when it lands it repoints this
   // assertion to its mirror image (assert GAME_VERSION !== "1.0.0.20"), the standing treatment.
   eq(X.GAME_VERSION, "1.0.0.20", "A: TRAP 1 — GAME_VERSION is untouched by P1 (P5 bumps it to 1.0.0.21)");
-  // TRAP 3 — P1 adds no debug knobs. The ORBIT section is CS021 P3's job; ten entries land there.
+  // TRAP 3 — REPOINTED BY CS021 P3: the ORBIT section (10 knobs) has now landed, taking DEBUG_VARS from
+  // P1's own 34 value entries to 44. What P1 is answerable for — that ITS OWN diff added none — is now
+  // the positive claim that the ORBIT knobs present are exactly P3's ten, not something P1 slipped in.
   const valueEntries = X.DEBUG_VARS.filter(v => !v.header);
-  eq(valueEntries.length, 34, "A: TRAP 3 — DEBUG_VARS still has exactly 34 value entries (P3 takes it to 44)");
-  assert(!valueEntries.some(v => /^orbit/i.test(v.id)), "A: no ORBIT knob has been added ahead of P3");
+  const orbitEntries = valueEntries.filter(v => /^orbit/i.test(v.id));
+  eq(valueEntries.length, 44, "A: TRAP 3 — DEBUG_VARS has 44 value entries (P1's 34 + CS021 P3's 10-entry ORBIT section)");
+  eq(orbitEntries.length, 10, "A: REPOINTED BY CS021 P3 — exactly the ten ORBIT knobs exist (P1 itself still added none)");
 
   // Correction C1: the generator is a plain inlined function, not a module export.
   eq((scriptSrc.match(/function generateOrbitLayout\(/g) || []).length, 1, "A: exactly one generateOrbitLayout definition");

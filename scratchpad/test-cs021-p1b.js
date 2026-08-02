@@ -233,7 +233,8 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
 
   eq(X.GAME_VERSION, "1.0.0.20", "A: TRAP 1 — GAME_VERSION is untouched by P1b (P5 bumps it to 1.0.0.21)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 34, "A: TRAP 3 — DEBUG_VARS still has exactly 34 value entries");
+  // REPOINTED BY CS021 P3: the ORBIT section (10 knobs) landed, taking DEBUG_VARS from 34 to 44.
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 44, "A: TRAP 3 — DEBUG_VARS has exactly 44 value entries (34 + CS021 P3's ORBIT section)");
 
   eq((scriptSrc.match(/function shieldBounce\(/g) || []).length, 1, "A: exactly one shieldBounce definition");
   eq((codeOnly.match(/\bshieldBounce\(/g) || []).length, 2, "A: exactly TWO shieldBounce mentions in live code — the definition and ONE call site");

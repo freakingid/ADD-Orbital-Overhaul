@@ -475,6 +475,11 @@ const STAR_NEAR_BRIGHT_MAX = 1.0;
 const ORBIT_INNER_RADIUS  = 180;  // ring 1 radius, px from the dock
 const ORBIT_RADIUS_STEP   = 150;  // px per further ring; rings 1-4 land at 180 / 330 / 480 / 630
 const ORBIT_RING_COUNT    = 4;    // rings per orbit level (FORK-CS021-B -> 4 rings of size-3 debris)
+// CS021 P3 (FLAG-CS021-a): padding added to the (call-site-derived) satellite diameter to floor the
+// auto-derived radiusStep a debug orbitCount override can produce — see orbitRadiusStepFor()/
+// orbitEffectiveCount() below. 92 (size-3 diameter) + 40 = 132; the shipped 4-ring step (150) clears
+// it comfortably, a requested 5th ring (112.5) does not, which is the geometry FLAG-CS021-a describes.
+const ORBIT_RADIUS_STEP_PAD = 40;
 // Per-ring density, 0 (one satellite) -> 1 (the tightest fair fit). Non-uniform on purpose so the level
 // has rhythm: tight -> breather -> wide/fast -> tightest. At the shipped geometry this yields counts
 // 6 / 6 / 7 / 21 (40 satellites) with arc gaps 96.5 / 253.6 / 338.9 / 96.5 px.
@@ -2427,6 +2432,21 @@ window.addEventListener("keydown", e => {
     return;
   }
 
+  // CS021 P3 (FLAG-CS021-c): the start-angle reroll keybind — raw capture, like the numeric-entry block
+  // just above, since it has no button idiom to hang off DEBUG_ROWS (a canvas-drawn, registry-derived
+  // list — "no new row kind, no button machinery" per the spec). Gated the same way debug-panel-only
+  // actions are gated here: debug screen only, no secret-code capture in flight, no rebind/entry pending
+  // — PLUS no numeric entry pending (a stray "r" mid-typed-number must stay inert, not fire a reroll) and
+  // only while an orbit level's layout is actually live (game.orbitLayout — null on a field level or
+  // before any game has started). Documented on the panel footer, drawDebug().
+  if (game.menu.screen === "debug" && !DebugCode.armed && !game.menu.rebinding && !game.entry &&
+      !debugEntryActive() && game.orbitLayout && k === "r") {
+    e.preventDefault();
+    rerollOrbitStartAngles();
+    AudioSys.ui(false);
+    return;
+  }
+
   // (1) Rebind capture — exclusive; the key never reaches gameplay or nav.
   if (game.menu.rebinding) {
     e.preventDefault();
@@ -2865,6 +2885,40 @@ const DEBUG_VARS = [
     def: 25, min: 0, max: 90, step: 5 },
   { id: "sweepCoalescePause", label: "Coalescence pause after sweep", unit: "s",
     def: 10, min: 0, max: 60, step: 1 },
+  // CS021 P3 (spec §6): the orbit-level archetype's ten live knobs. Every def derives from the ORBIT_*
+  // consts (P1/P2) — never a duplicated literal — so the panel and the shipped geometry can't disagree.
+  // orbitGapMult OVERRIDES the occurrence-scaled curve (orbitGapMult(level), CS021 P2) only while it has
+  // been moved off its own default — see orbitEffectiveGapMult() below; left untouched, every orbit level
+  // still gets its own occurrence-scaled value, not a level-3-forever freeze. orbitCount carries a
+  // `clampShown` hook (the one addition to the generic registry idiom this phase makes, applyDebug()
+  // below) so a requested 5 — ungeometry-fittable at size-3, FLAG-CS021-a — collapses to the achievable
+  // 4 EVERYWHERE at once: what's stored, what's persisted, and what the panel shows, never a silent
+  // mismatch between the slider and the level that actually spawns. orbitDensity1-5 are consumed
+  // first-orbitCount (FLAG-CS021-b); orbitDensity5 has no shipped 5th-ring value to derive from (the
+  // geometry never reaches 5 rings at size-3), so it mirrors ring 4's climax density rather than
+  // inventing a new number. orbitAngVel is the one DEGREES/SECOND knob, following the unit:"ms" +
+  // toNative precedent (autoShieldRegenPause et al.) rather than exposing raw radians.
+  { header: "ORBIT" },
+  { id: "orbitGapMult", label: "Orbit gap multiplier", unit: "",
+    def: ORBIT_GAP_MULT, min: 1.5, max: 4.0, step: 0.05 },
+  { id: "orbitSafetyMargin", label: "Orbit safety margin", unit: "px",
+    def: ORBIT_SAFETY_MARGIN, min: 0, max: 32, step: 2 },
+  { id: "orbitCount", label: "Orbit ring count", unit: "",
+    def: ORBIT_RING_COUNT, min: 3, max: 5, step: 1, clampShown: v => orbitEffectiveCount(v) },
+  { id: "orbitDensity1", label: "Ring 1 density", unit: "",
+    def: ORBIT_DENSITY[0], min: 0, max: 1, step: 0.05 },
+  { id: "orbitDensity2", label: "Ring 2 density", unit: "",
+    def: ORBIT_DENSITY[1], min: 0, max: 1, step: 0.05 },
+  { id: "orbitDensity3", label: "Ring 3 density", unit: "",
+    def: ORBIT_DENSITY[2], min: 0, max: 1, step: 0.05 },
+  { id: "orbitDensity4", label: "Ring 4 density", unit: "",
+    def: ORBIT_DENSITY[3], min: 0, max: 1, step: 0.05 },
+  { id: "orbitDensity5", label: "Ring 5 density", unit: "",
+    def: ORBIT_DENSITY[3], min: 0, max: 1, step: 0.05 },
+  { id: "orbitAngVel", label: "Orbit angular velocity", unit: "°/s",
+    def: ORBIT_ANG_VEL * 180 / Math.PI, min: 0, max: 60, step: 0.5, toNative: v => v * Math.PI / 180 },
+  { id: "orbitFastMult", label: "Fast-ring multiplier", unit: "x",
+    def: ORBIT_FAST_MULT, min: 1.0, max: 6.0, step: 0.1 },
 ];
 // CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
@@ -2890,10 +2944,18 @@ const DEBUG_ROWS = [
 const DebugPanel = { scroll: 0, entry: null };
 const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
 const debugShown = {};   // display-unit values — what the panel shows and what persists in afd_settings_v1.debug
+// CS021 P3: `clampShown` is the one new registry hook this phase adds, alongside `toNative` — an entry
+// may collapse the requested display value to an achievable one BEFORE it is stored, so `debugShown`
+// (what's shown AND what's persisted) can never disagree with what actually gets used. Every entry
+// without one (all 34 pre-CS021 knobs, and 9 of these 10) is unaffected: `e.clampShown` is undefined,
+// so `shown` passes through unchanged, byte-identical to the pre-P3 function. Only `orbitCount` supplies
+// one (FLAG-CS021-a): a requested 5 collapses to the geometry-fittable 4 right here, so the slider, the
+// save file, and the level that actually spawns can never show three different numbers.
 function applyDebug(id, shown) {
   const e = DEBUG_ENTRIES.find(v => v.id === id);
-  debugShown[id] = shown;
-  DEBUG[id] = e.toNative ? e.toNative(shown) : shown;
+  const clamped = e.clampShown ? e.clampShown(shown) : shown;
+  debugShown[id] = clamped;
+  DEBUG[id] = e.toNative ? e.toNative(clamped) : clamped;
 }
 for (const v of DEBUG_ENTRIES) applyDebug(v.id, v.def);   // seed both maps from the registry defaults
 
@@ -4792,6 +4854,9 @@ const game = {
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
   garbage: [], chain: [], floaters: [], dock: null,
+  orbitLayout: null,   // CS021 P3: the live orbit-level layout (spawnOrbitWave's return), null on a field
+                        // level — set unconditionally by every nextWave() call, same as dock just above.
+                        // What the FLAG-CS021-c reroll keybind mutates; see rerollOrbitStartAngles().
   powerups: [],                                        // free-floating Powerup pickups (F6)
   // CS017 P6: every one of these four gains a `guard` key. powerBudget's is the one that matters most —
   // powerActive("guard") reads it in count mode, and a missing key would make the guard read as
@@ -5081,25 +5146,61 @@ function orbitGapMult(level) {
   return Math.max(ORBIT_GAP_MULT_FLOOR, ORBIT_GAP_MULT - (occurrence - 1) * ORBIT_GAP_MULT_STEP);
 }
 
+// CS021 P3 (spec §6, FLAG-CS021-a): "radiusStep auto-derived" — redistributes the SAME outer edge the
+// shipped 4-ring geometry reaches (ORBIT_INNER_RADIUS + (ORBIT_RING_COUNT-1) * ORBIT_RADIUS_STEP = 630,
+// fixed regardless of `count`) evenly across `count - 1` gaps. At the shipped default (count === 4) this
+// reproduces ORBIT_RADIUS_STEP (150) exactly — the geometry table P1/P2 pinned does not move a pixel
+// unless the debug knob is touched. count <= 1 has no gap to derive; returns the shipped step inert.
+function orbitRadiusStepFor(count) {
+  if (count <= 1) return ORBIT_RADIUS_STEP;
+  const outerRadius = ORBIT_INNER_RADIUS + (ORBIT_RING_COUNT - 1) * ORBIT_RADIUS_STEP;
+  return (outerRadius - ORBIT_INNER_RADIUS) / (count - 1);
+}
+// CS021 P3 (FLAG-CS021-a): the orbitCount registry entry's `clampShown` — collapses a requested ring
+// count to the largest one whose auto-derived radiusStep still clears the ORBIT_RADIUS_STEP_PAD floor
+// (132 px at size-3). At the shipped default (4) this is a no-op (150 >= 132); a requested 5 (112.5 px)
+// walks down to 4, the effective max FLAG-CS021-a documents.
+function orbitEffectiveCount(requested) {
+  const floor = DEBRIS_RADII[3] * 2 + ORBIT_RADIUS_STEP_PAD;
+  let count = Math.round(requested);
+  while (count > 1 && orbitRadiusStepFor(count) < floor) count--;
+  return count;
+}
+// CS021 P3 (spec §6 table): the debug slider OVERRIDES orbitGapMult()'s occurrence-scaled curve only
+// while it has been moved off its own default — an untouched knob must not silently freeze every orbit
+// level at the occurrence-1 value (2.5x), which is what unconditionally reading DEBUG.orbitGapMult here
+// would do. Touched, it is used AS-IS (its own [1.5, 4.0] registry range is the only clamp it gets — the
+// occurrence floor/step arithmetic is what it's overriding, not a second ceiling on top of it).
+function orbitEffectiveGapMult(level) {
+  const e = DEBUG_ENTRIES.find(v => v.id === "orbitGapMult");
+  return debugShown.orbitGapMult === e.def ? orbitGapMult(level) : DEBUG.orbitGapMult;
+}
+
 // The orbit-level spawn, called from nextWave()'s archetype branch in place of the scatter loop.
-// Returns the layout so tests (and, later, the P3 debug reroll) can read the geometry that was actually
-// laid down rather than re-deriving it. CS021 P2: gapMult is the caller's OCCURRENCE-SCALED multiplier
-// (orbitGapMult(game.wave)) — the generator itself stays pure and unaware of occurrence.
+// Returns the layout so tests (and the P3 debug reroll, rerollOrbitStartAngles() below) can read the
+// geometry that was actually laid down rather than re-deriving it. CS021 P2: gapMult is the caller's
+// OCCURRENCE-SCALED (or debug-overridden, P3) multiplier — the generator itself stays pure and unaware
+// of occurrence. CS021 P3: every other geometry input now reads its live DEBUG_VARS knob instead of the
+// fixed ORBIT_* const directly; orbitCount is ALREADY geometry-clamped by the time DEBUG.orbitCount is
+// read (applyDebug's clampShown ran at adjustment time), so radiusStep is derived from that clamped
+// value, never the raw requested one.
 function spawnOrbitWave(speedMul, gapMult) {
+  const orbitCount = DEBUG.orbitCount;
   const layout = spawnSafeOrbitLayout(generateOrbitLayout({
     satelliteDiameter: DEBRIS_RADII[3] * 2,   // read HERE, at the call site — never a new constant
     shipDiameter:      SHIP_RADIUS * 2,
     centerX:           game.dock.x,
     centerY:           game.dock.y,
-    orbitCount:        ORBIT_RING_COUNT,
+    orbitCount,
     innerRadius:       ORBIT_INNER_RADIUS,
-    radiusStep:        ORBIT_RADIUS_STEP,
-    safetyMargin:      ORBIT_SAFETY_MARGIN,
+    radiusStep:        orbitRadiusStepFor(orbitCount),   // CS021 P3: auto-derived, FLAG-CS021-a
+    safetyMargin:      DEBUG.orbitSafetyMargin,
     minGapMultiplier:  gapMult,   // CS021 P2: occurrence-scaled — never the fixed ORBIT_GAP_MULT past occurrence 1
-    densityByOrbit:    ORBIT_DENSITY,
-    baseAngVel:        ORBIT_ANG_VEL,
-    fastRingIndex:     ORBIT_FAST_RING - 1,   // ORBIT_FAST_RING is the human, 1-based ring number
-    fastRingMult:      ORBIT_FAST_MULT,
+    densityByOrbit:    [DEBUG.orbitDensity1, DEBUG.orbitDensity2, DEBUG.orbitDensity3,
+                         DEBUG.orbitDensity4, DEBUG.orbitDensity5],   // FLAG-CS021-b: first `orbitCount` consumed
+    baseAngVel:        DEBUG.orbitAngVel,
+    fastRingIndex:     ORBIT_FAST_RING - 1,   // ORBIT_FAST_RING is the human, 1-based ring number; not a knob
+    fastRingMult:      DEBUG.orbitFastMult,
   }), game.ship);
   // orbitCenter is captured ONCE, here, and never re-read (spec §4.3): if a future changeset ever
   // relocates the dock mid-wave, the rings stay exactly where they were laid down. One shared object
@@ -5117,6 +5218,32 @@ function spawnOrbitWave(speedMul, gapMult) {
     }
   }
   return layout;
+}
+
+// CS021 P3 (FLAG-CS021-c): the start-angle reroll — a debug-panel-only action with no button idiom to
+// hang off DEBUG_ROWS (see the keydown listener + drawDebug's footer), so it's a raw keybind reaching
+// straight into the live layout rather than a registry row. Touches ONLY what placeOrbitRing touches —
+// each ring's startAngle and derived satellite positions — so counts/radii/densities/angVel are
+// byte-identical before and after; re-runs the SAME spawnSafeOrbitLayout() pass a fresh spawn gets.
+// Live entities are matched back to their ring by `orbitRadius` (the ring-identity field every other
+// orbit test already keys off) in surviving creation order — a ring that lost members to harvesting
+// simply has fewer of them to reposition; the ones destroyed have no orbit state left to update.
+// Returns false (no-op) off an orbit level, where game.orbitLayout is null.
+function rerollOrbitStartAngles() {
+  const layout = game.orbitLayout;
+  if (!layout) return false;
+  for (const ring of layout.rings) placeOrbitRing(ring, layout.centerX, layout.centerY, rand(0, ring.angleStep));
+  spawnSafeOrbitLayout(layout, game.ship);
+  for (const ring of layout.rings) {
+    const live = game.debris.filter(d => d.orbitRadius === ring.radius);
+    live.forEach((d, i) => {
+      const s = ring.satellites[i];
+      if (!s) return;   // more survivors than the ring's (unchanged) count can't happen, but stay inert if it did
+      d.orbitAngle = s.angle; d.x = s.x; d.y = s.y;
+      orbitSyncVelocity(d);
+    });
+  }
+  return true;
 }
 
 function nextWave() {
@@ -5159,8 +5286,11 @@ function nextWave() {
   // because logDifficultySnapshot() below still reports the LEVEL TABLE's junk count either way, and
   // the orbit spawn reuses the same speedMul rather than deriving a third one.
   if (levelDef(game.wave).archetype === "orbit") {
-    spawnOrbitWave(speedMul, orbitGapMult(game.wave));   // CS021 P2: occurrence-scaled fairness floor (spec §5)
+    // CS021 P3: orbitEffectiveGapMult reads the occurrence-scaled curve (spec §5) UNLESS the debug
+    // slider has been moved off its default, in which case it overrides — spec §6 table.
+    game.orbitLayout = spawnOrbitWave(speedMul, orbitEffectiveGapMult(game.wave));
   } else {
+    game.orbitLayout = null;   // CS021 P3: a field level has no live layout for the reroll keybind to act on
     for (let i = 0; i < count; i++) {
       // spawn in a ring around the ship's current world position so the wave is
       // reachable (min distance keeps it off the ship, max keeps it from being
@@ -7255,9 +7385,12 @@ function drawDebug() {
   }
   const more = (top > 0 ? "▲  " : "    ") + (m.index + 1) + " / " + total + (end < total ? "  ▼" : "    ");
   drawText(more, VIEW_W / 2, y + DEBUG_PANEL_H - 58, 15, COLOR.dim);
+  // CS021 P3 (FLAG-CS021-c): the reroll hint only appears while there's a live orbit layout to reroll —
+  // documented here rather than as a permanent row, since it's a raw keybind with no DEBUG_ROWS entry.
   drawMenuHint(debugEntryActive()
     ? "type value    ENTER / A commit    ESC / B cancel    BKSP delete"
-    : "↑↓ move    ◄► adjust    0-9 type    ENTER / A select    ESC / B back",
+    : "↑↓ move    ◄► adjust    0-9 type    ENTER / A select    ESC / B back" +
+      (game.orbitLayout ? "    R reroll orbit start angles" : ""),
     VIEW_W / 2, y + DEBUG_PANEL_H - 30);
 }
 

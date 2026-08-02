@@ -397,10 +397,13 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   //    (dockComboGrace, under its own DELIVERY header), so 33 -> 34. What P1's trap was really
   //    guarding — that P1 itself invented no towed/incidental knob — is asserted directly below and
   //    is unchanged. The exact count keeps living here so a second unplanned knob still fails. --
+  // REPOINTED AGAIN BY CS021 P3: + 10 (the ORBIT section) -> 44. Same treatment, same strength.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 34, "A: TRAP 3 — DEBUG_VARS holds exactly 34 value entries (33 + CS020 P1b's dockComboGrace)");
+  eq(valueEntries, 44, "A: TRAP 3 — DEBUG_VARS holds exactly 44 value entries (34 + CS021 P3's 10-entry ORBIT section)");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
-    "A: REPOINTED — the one added knob is P1b's dockComboGrace, and nothing else");
+    "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
+  assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 10,
+    "A: REPOINTED BY CS021 P3 — and ten more are the ORBIT section");
   assert(!DEBUG_VARS.some(e => e.id && /incidental|towed|neighborhood/i.test(e.id)),
     "A: no CS020 towed/incidental knob was slipped into the registry (P1's own trap, unchanged)");
 })();

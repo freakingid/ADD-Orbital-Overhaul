@@ -386,11 +386,14 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // different silent addition can't satisfy the new number.
   // REPOINTED AGAIN (CS020 P1b): + 1 (dockComboGrace, under a new DELIVERY header) -> 34. Same claim,
   // same strength, same treatment.
-  eq(nEntries, 34, `I: DEBUG_ENTRIES count is 34 after CS020 P1b (got ${nEntries})`);
+  // REPOINTED AGAIN (CS021 P3): + 10 (the ORBIT section) -> 44. Same claim, same strength, same treatment.
+  eq(nEntries, 44, `I: DEBUG_ENTRIES count is 44 after CS021 P3 (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
-    "I: ...and the entry that moved it from 33 is CS020 P1b's dockComboGrace");
+    "I: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "I: ...and the entry CS019 P1 added is chainGuardCooldown");
+  eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 10,
+    "I: ...and the ten entries that moved it from 34 to 44 are CS021 P3's ORBIT knobs");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
 })();
 

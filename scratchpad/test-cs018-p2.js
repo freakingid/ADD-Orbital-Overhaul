@@ -470,7 +470,11 @@ function onDebug(A, { playing = false } = {}) {
     const v = Math.round(Math.min(e.max, Math.max(e.min, e.def + e.step * 1.5)) * 1e6) / 1e6;
     for (const ch of String(v).split("")) B.debugEntryKey(ch);
     B.menuDebug("confirm");
-    want[e.id] = Math.max(e.min, Math.min(e.max, v));
+    const clamped = Math.max(e.min, Math.min(e.max, v));
+    // REPOINTED BY CS021 P3: orbitCount carries a `clampShown` hook (FLAG-CS021-a) that can collapse the
+    // in-range value further (5, in range, still isn't geometry-fittable and lands on 4) — the same
+    // transform applyDebug()/debugEntryCommit() apply live, so the expectation goes through it too.
+    want[e.id] = e.clampShown ? e.clampShown(clamped) : clamped;
     assert(B.debugShown[e.id] === want[e.id], `G: typed ${v} into ${e.id} -> ${B.debugShown[e.id]}`);
   }
   const after = build({ storage: { "afd_settings_v1": inst2.lsStore[B.STORAGE_KEY] } }).exports;

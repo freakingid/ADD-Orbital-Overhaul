@@ -174,7 +174,11 @@ function beginPlaying(A) {
   }
   // CS018 P2: skip header entries — they have no id/min/max and are not selectable rows. An entry's ROW
   // index is still its index in DEBUG_VARS (DEBUG_ROWS maps the registry 1:1, appending Dump + Back).
-  A.DEBUG_VARS.forEach((e, i) => { if (!e.header && e.id !== "autoShieldRegenPause") clampCheck(i, e); });
+  // REPOINTED BY CS021 P3: also skip orbitCount — it carries a `clampShown` hook (FLAG-CS021-a) that
+  // collapses its displayed value below the registry's own declared `max` (5 -> the geometry-fittable 4),
+  // which is deliberate and is exactly what test-cs021-p3.js §orbitCount asserts; this generic "every
+  // entry clamps at its OWN max" sweep would otherwise fail on the one entry designed not to.
+  A.DEBUG_VARS.forEach((e, i) => { if (!e.header && e.id !== "autoShieldRegenPause" && e.id !== "orbitCount") clampCheck(i, e); });
 })();
 
 // ================= (E) byte-identical to pre-P5 at defaults (fresh build, no knob touched) ============

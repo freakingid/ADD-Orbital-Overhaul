@@ -176,8 +176,14 @@ function atWave(X, w) {
     "A: spawnOrbitWave() feeds the PARAMETER to minGapMultiplier, not a literal");
   assert(!/minGapMultiplier:\s*ORBIT_GAP_MULT,/.test(codeOnly),
     "A: the fixed ORBIT_GAP_MULT no longer reaches minGapMultiplier directly (P1's wiring is gone)");
-  assert(/spawnOrbitWave\(speedMul,\s*orbitGapMult\(game\.wave\)\)/.test(codeOnly),
-    "A: nextWave()'s orbit branch calls spawnOrbitWave with orbitGapMult(game.wave)");
+  // REPOINTED BY CS021 P3: the call site now goes through orbitEffectiveGapMult(), which reads the SAME
+  // orbitGapMult(level) curve unless the debug slider has been moved off its default (spec §6 table) —
+  // untouched (every test in this file, which never calls applyDebug), the two are behaviourally
+  // identical, which is exactly what (C2) below drives and asserts against real nextWave() totals.
+  assert(/spawnOrbitWave\(speedMul,\s*orbitEffectiveGapMult\(game\.wave\)\)/.test(codeOnly),
+    "A: REPOINTED BY CS021 P3 — nextWave()'s orbit branch calls spawnOrbitWave with orbitEffectiveGapMult(game.wave)");
+  eq((scriptSrc.match(/function orbitEffectiveGapMult\(/g) || []).length, 1,
+    "A: REPOINTED BY CS021 P3 — exactly one orbitEffectiveGapMult() definition");
   // Exactly one DEFINITION and one CALL — "spawnOrbitWave(" itself matches both, so count them apart by
   // whether "function " precedes the match.
   const spawnOrbitWaveHits = codeOnly.match(/(function )?spawnOrbitWave\(/g) || [];

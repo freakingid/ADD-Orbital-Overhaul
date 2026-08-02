@@ -338,11 +338,14 @@ function fireOnce(small, wave) {
   // unchanged — an exact count of the live registry, so a silent add or drop still fails — and now also
   // names the entry that moved it. P7's own nine UFO WEAPONS knobs are still pinned by name in section B.
   // REPOINTED AGAIN (CS020 P1b): + 1 (dockComboGrace, under a new DELIVERY header) -> 34.
-  eq(nEntries, 34, `H: DEBUG_ENTRIES count is 34 after CS020 P1b (got ${nEntries})`);
+  // REPOINTED AGAIN (CS021 P3): + 10 (the ORBIT section) -> 44.
+  eq(nEntries, 44, `H: DEBUG_ENTRIES count is 44 after CS021 P3 (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
-    "H: ...and the entry that moved it from 33 is CS020 P1b's dockComboGrace");
+    "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "H: ...and the entry added since P7 is CS019 P1's chainGuardCooldown");
+  eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 10,
+    "H: ...and the ten entries that moved it from 34 to 44 are CS021 P3's ORBIT knobs");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
 
   // logDifficultySnapshot's saucerAimErr column follows the tier-derived value, not the retired ramp() mirror.

@@ -592,11 +592,14 @@ function levelForCap(n) {
   // by accident than the bare number was.
   // REPOINTED BY CS020 P1b: 33 -> 34 (dockComboGrace, under a new DELIVERY header). Same treatment as
   // every repoint above — the exact count, plus the id of the single entry that moved it.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 34, "H: DEBUG_VARS holds 34 value entries as of CS020 P1b (P4 itself added none)");
+  // REPOINTED BY CS021 P3: 34 -> 44 (the ten-entry ORBIT section, under a new ORBIT header).
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 44, "H: DEBUG_VARS holds 44 value entries as of CS021 P3 (P4 itself added none)");
   assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
-    "H: ...and the entry that moved it from 33 is CS020 P1b's dockComboGrace");
+    "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,
     "H: ...and the 33rd is CS019 P1's chainGuardCooldown, not some other silent addition");
+  eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 10,
+    "H: ...and the ten entries that moved it from 34 to 44 are CS021 P3's ORBIT knobs");
 })();
 
 // ================= (I) headless smoke =====================

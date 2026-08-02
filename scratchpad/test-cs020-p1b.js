@@ -381,9 +381,11 @@ const dockBlockCode = stripComments(dockBlockSrc);
   eq((codeSrc.match(/const DOCK_COMBO_GRACE\s*=/g) || []).length, 1, "A: declared exactly once");
 
   // -- the knob: 33 -> 34, its own DELIVERY header, placed after CHAIN GUARD --
+  // REPOINTED BY CS021 P3: 34 -> 44 (the ORBIT section). This phase's own claim — that P1b adds exactly
+  // one knob — is unaffected; the count just has to track the live registry or it goes stale.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 34, "A: DEBUG_VARS holds 34 value entries (33 -> 34; CS020 P1b adds exactly one knob)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 34, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 44, "A: DEBUG_VARS holds 44 value entries (33 -> 34 this phase; CS021 P3 -> 44)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 44, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");
