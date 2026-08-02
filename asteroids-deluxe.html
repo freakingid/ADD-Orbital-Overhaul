@@ -128,6 +128,30 @@ const SHIELD_DRAIN = 0.55;      // energy/sec while on
 const SHIELD_RECHARGE = 0.12;   // energy/sec while off
 const SHIELD_HIT_COST = 0.22;   // energy per deflection
 const SHIELD_RADIUS = 26;
+// CS021 P1b — THE SHIP BOUNCES OFF A HAZARD IT CANNOT PUSH. shieldDeflect() below shoves the HAZARD
+// and never touches the ship, which works for every free-moving body but not for a CS021 orbiting
+// satellite: that one's position is re-derived from its orbit angle every frame, so the shove is
+// undone before it can separate and the same contact re-presents every frame. Measured on the P1
+// build: five deflects in five consecutive frames, the whole shield meter gone in 0.10 s against
+// 1.38 s of ordinary SHIELD_DRAIN, and no way to push clear. A body on a rail is effectively
+// infinite mass, so the whole exchange goes to the SHIP instead — see shieldBounce().
+// ELASTIC, and computed in the SATELLITE'S FRAME so a fast ring genuinely flings you: the approaching
+// component of the RELATIVE velocity is reflected, then the satellite's own tangential velocity is
+// added back. Restitution 1.0 is literally "reflect incoming speed" — you get back exactly what you
+// brought. PLAYTEST KNOB: lower it if a ring reads like a trampoline.
+const SHIELD_BOUNCE_RESTITUTION = 1.0;
+// PLAYTEST KNOB, px/s. THE SEPARATION FLOOR: the minimum outward speed a bounce always leaves behind.
+// A reflection alone does nothing for a ship whose RELATIVE velocity has no approaching component —
+// one at rest, one riding alongside, one already moving away — and the overlap push only buys 2 px of
+// clearance, so anything that closes those 2 px re-presents the same contact on the next frame.
+// MEASURED, not assumed (deflect events over 5 s, meter held full, floor 120 vs floor 0):
+//     parked radially, ring 1 ................ 1 vs 1   (the push alone happens to suffice)
+//     parked in the satellite's PATH, ring 1 .. 1 vs 2   (it sweeps back into you)
+//     parked radially, THRUST HELD into it .... 2 vs 5   (you push yourself back in)
+//     parked radially, 12-node tow ............ 1 vs 2   (CARGO_TUG drags you back in)
+// So it earns its place in exactly the cases a player creates on purpose. Well under KNOCKBACK_SPEED
+// (250): a graze should nudge, not launch — the elastic term is what makes a hard hit hurt.
+const SHIELD_BOUNCE_MIN = 120;
 const AUTO_SHIELD_SCORE_PENALTY = 500; // PLAYTEST KNOB — score lost per auto-save. Flat (FLAG-4d).
 const AUTO_SHIELD_REGEN_PAUSE = 1.0; // sec — passive regen freezes this long after an auto-save. PLAYTEST KNOB (>= HIT_STUN_DURATION guarantees no recharge between i-frame end and next hit).
 
@@ -4223,8 +4247,9 @@ class DebrisSatellite {
     // child (FORK-CS021-C2) and the title-screen decoration, so with it undefined this is byte-for-byte
     // the linear drift path it has always been. With it present the ANGLE is integrated and the position
     // is DERIVED from it, wrap-aware — which makes the RAIL authoritative, not vx/vy: anything that
-    // shoves an orbiting body (shieldDeflect) is overwritten on the very next frame. Sprite spin
-    // (this.angle/this.spin) is a separate, unchanged thing and is deliberately independent of the orbit.
+    // shoves an orbiting body has its shove overwritten on the very next frame. That is WHY CS021 P1b
+    // exists — the shield used to try exactly that, so the ship bounces off instead (see shieldBounce).
+    // Sprite spin (this.angle/this.spin) is a separate, unchanged thing, independent of the orbit.
     if (this.orbitCenter) {
       this.orbitAngle += this.orbitAngVel * dt;
       const p = wrapPos({ x: this.orbitCenter.x + Math.cos(this.orbitAngle) * this.orbitRadius,
@@ -5973,6 +5998,53 @@ function shieldDeflect(obj) {
   AudioSys.shieldPing();
 }
 
+// CS021 P1b: shieldDeflect's MIRROR IMAGE, for a hazard that cannot be pushed. Everything shieldDeflect
+// does to the hazard, this does to the SHIP — separate to just outside contact, take the velocity
+// change, pay the same SHIELD_HIT_COST, count the same deflect, make the same sound. The hazard is left
+// COMPLETELY untouched: an orbiting satellite stays on its rail, which is the whole point of the orbit
+// archetype (FORK-CS021-C2 keeps rings intact; knocking one off its rail would be a different game).
+//
+// The reflection is done in the HAZARD'S OWN FRAME, not the world frame, which is what makes the fast
+// ring feel different from the slow ones: subtract the satellite's tangential velocity, reflect the
+// APPROACHING part of what's left, then add the satellite's velocity back. Sweep into a satellite
+// travelling the other way and you leave much faster than you arrived; ride alongside one and barely
+// anything happens. Only the approaching component is reflected — a ship already moving away is not
+// yanked backwards.
+//
+// The FLOOR is applied last and is not optional (see SHIELD_BOUNCE_MIN): reflection alone leaves a
+// stationary ship stationary, and a stationary ship in contact is exactly the case this whole function
+// exists to fix.
+function shieldBounce(obj) {
+  // Outward contact normal, hazard -> ship. angleTo is wrap-aware; a ship exactly on the hazard's
+  // centre yields atan2(0,0) === 0, i.e. a defined direction rather than a NaN.
+  const a  = angleTo(obj, game.ship);
+  const nx = Math.cos(a), ny = Math.sin(a);
+  // Relative velocity, in the hazard's frame.
+  let ux = game.ship.vx - obj.vx, uy = game.ship.vy - obj.vy;
+  const un = ux * nx + uy * ny;
+  if (un < 0) {                                   // approaching: reflect that component
+    ux -= (1 + SHIELD_BOUNCE_RESTITUTION) * un * nx;
+    uy -= (1 + SHIELD_BOUNCE_RESTITUTION) * un * ny;
+  }
+  game.ship.vx = ux + obj.vx;
+  game.ship.vy = uy + obj.vy;
+  // Guarantee real separation, so one contact costs ONE deflect instead of one per frame.
+  const outward = game.ship.vx * nx + game.ship.vy * ny;
+  if (outward < SHIELD_BOUNCE_MIN) {
+    game.ship.vx += (SHIELD_BOUNCE_MIN - outward) * nx;
+    game.ship.vy += (SHIELD_BOUNCE_MIN - outward) * ny;
+  }
+  // Push the SHIP out of overlap — the mirror of shieldDeflect's own separation step. wrap() is the
+  // same helper Ship.update() ends on, so a bounce across the world seam lands the ship exactly where
+  // an ordinary crossing would; the tow chain's solver is wrap-aware and needs nothing special.
+  game.ship.x = obj.x + nx * (SHIELD_RADIUS + obj.radius + 2);
+  game.ship.y = obj.y + ny * (SHIELD_RADIUS + obj.radius + 2);
+  wrap(game.ship);
+  game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
+  game.stats.deflects++;   // Shield Surfer (F9): same event, same counter, as a deflect
+  AudioSys.shieldPing();
+}
+
 // ---------- Tow chain physics ----------
 // Verlet nodes with position-based distance constraints, wrap-aware.
 // The ship is the (mostly) kinematic head; nodes trail serpentine behind.
@@ -6770,6 +6842,12 @@ function update(dt) {
             game.stats.deflects++; // Shield Surfer (F9): a homing Hunter killed on the shield
             AudioSys.shieldPing();
             destroyHunter(h);
+          } else if (h.orbitCenter) {
+            // CS021 P1b: a hazard ON A RAIL cannot be pushed — its position is re-derived from its
+            // orbit angle every frame, so shieldDeflect's shove is undone before it separates. Bounce
+            // the SHIP instead. Same gate as the motion mode itself (one concept, not two), so this
+            // branch is unreachable for every free-moving hazard and shieldDeflect below is untouched.
+            shieldBounce(h);
           } else {
             shieldDeflect(h);
           }

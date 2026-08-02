@@ -433,8 +433,12 @@ const WANT_RINGS = [
     close(d.angle, b.spin + d.spin * DT * FRAMES, `E: satellite ${i}: sprite spin advanced independently`, 1e-9);
   });
 
-  // THE RAIL IS AUTHORITATIVE. Shoving an orbiting body (what shieldDeflect does) is overwritten on the
-  // next frame — worth pinning because it is an emergent consequence of the motion mode, not an accident.
+  // THE RAIL IS AUTHORITATIVE. Any shove applied to an orbiting body is overwritten on the next frame —
+  // worth pinning because it is an emergent consequence of the motion mode, not an accident. NOTE FOR
+  // READERS OF THE HISTORY: this used to say "what shieldDeflect does". CS021 P1b is exactly that
+  // consequence being dealt with — the shield no longer tries to push a rail-borne satellite at all, it
+  // bounces the SHIP instead (see test-cs021-p1b.js). The property asserted here is unchanged and is
+  // what P1b's fix rests on.
   const d0 = X.game.debris.find(d => !!d.orbitCenter);
   d0.x += 500; d0.y -= 500; d0.vx = 9999; d0.vy = -9999;
   X.update(DT);
