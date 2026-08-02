@@ -7,13 +7,12 @@ Target: `"1.0.0.20"`, bumped in **P2**.
 Set the model with `/model` before pasting. Paste the pre-session preamble, then
 the phase's prompt, verbatim. Paul commits and pushes; Claude Code never pushes.
 
-**Deliberate sequencing.** P1 ships the whole behavioural change with **no
-version bump and no GDD edit**, so it goes straight into Paul's hands for a
-playtest. P2 runs *after* that playtest, folds in whatever it found, and does the
-version + doc sweep. Don't run P2 until the playtest is done.
+**Sequence.** P1 → gate (**passed**) → **P1b** → gate → P2. P1 and P1b both ship
+with no version bump and no GDD edit, so each goes straight into Paul's hands. P2
+runs last and owns version + docs.
 
-**Line numbers below are estimates taken against commit `09d443f` — they drift.
-Every prompt instructs a re-grep by symbol before editing.**
+**Line numbers are estimates against `09d443f` — they drift, and P1 has already
+moved them. Every prompt instructs a re-grep by symbol before editing.**
 
 ---
 
@@ -21,16 +20,16 @@ Every prompt instructs a re-grep by symbol before editing.**
 
 | Fork | Resolution |
 |---|---|
-| **FORK-CS020-A** | ✅ **Per-node `towed` tag**, set at capture. Not a count snapshot — the chain is LIFO and a snapshot credits the wrong pieces. |
+| **FORK-CS020-A** | ✅ **Per-node `towed` tag**, set at capture. Not a count snapshot — the chain is LIFO. |
 | **FORK-CS020-B** | ✅ **Incidentals count toward nothing** — not `stats.delivered`, not `lifetime.delivered`, not `bestCombo`, not `deliveryCount`. |
 | **FORK-CS020-C** | ✅ **An incidental pays flat `DOCK_BASE_SCORE` (50).** No new constant. |
 | **FORK-CS020-D** | ✅ **`DOCK_OFFLOAD_INTERVAL` untouched** at 0.05 s. |
-| **FLAG-CS020-a** | ✅ Incidentals do not advance `pacifistStreak` (and do not break it). |
-| **FLAG-CS020-b** | ✅ Incidental points do not enter `lifetime.deliveryScore`. |
-| **FLAG-CS020-c** | ⏳ `REPAIR_MILESTONE` farming residual — **playtest question**, see the gate. |
-| **FLAG-CS020-d** | ✅ Incidentals keep their `FloatText`. Look-call, playtest may revisit. |
-| **FLAG-CS020-e** | ✅ Incidentals call `AudioSys.deliver(1)` — flat, not combo-pitched. |
-| **FLAG-CS020-f** | ✅ No grace period for a straggler hooked on the way in. Playtest decides. |
+| **FORK-CS020-E** | ✅ **One effort = one chain, delivered in one go.** Terminated by a *towed hook*, not by moving; plus a grace window, knob in **ms**. |
+| **FLAG-CS020-a/b** | ✅ Incidentals touch neither `pacifistStreak` nor `lifetime.deliveryScore`. |
+| **FLAG-CS020-c/d/e/f** | ✅ **All cleared at the P1 gate.** No `DOCK_INCIDENTAL_SCORE`, no floater change, no audio change, no tag grace period. |
+| **FLAG-CS020-g** | ✅ `DOCK_COMBO_GRACE` ships at **4.0 s / 4000 ms**, not 2000 — spec §2.4 shows 2 s fails the case it exists for. Retune at the P1b gate. |
+| **FLAG-CS020-h** | ✅ The window runs whenever outside the ring, regardless of chain contents. |
+| **FLAG-CS020-i** | ⛔ No HUD combo readout. Real gap, **out of scope**, CS021. |
 
 ---
 
@@ -38,8 +37,9 @@ Every prompt instructs a re-grep by symbol before editing.**
 
 | Phase | Model | Effort | Why |
 |---|---|---|---|
-| **P1** | Opus 4.8 | xhigh + thinking | The LIFO ordering property, the annulus reasoning, the `!== false` default across a 22-file seeding surface, and a mutation-tested suite. Small diff, high reasoning density. |
-| **P2** | Sonnet 5 | high | Retune (if any), version bump, doc sweep. Mechanical. |
+| **P1** | Opus 4.8 | xhigh + thinking | ✅ Shipped. |
+| **P1b** | Opus 4.8 | xhigh + thinking | Deletes a reset and replaces it with two cooperating rules; the `deliveryCount ≤ cargoMax` guarantee has to be *proved by test*, and a wrong tag/reset interaction silently reopens the P1 exploit. Small diff, high reasoning density. |
+| **P2** | Sonnet 5 | high | Retune, version bump, doc sweep. Mechanical. |
 
 ---
 
@@ -54,7 +54,7 @@ READ WHOLE, first, before any code:
   PLANNED-FEATURES-CS020.md
   IMPLEMENTATION-PHASES-CS020.md
 
-GREP ONLY, never read whole (it is ~7,670 lines):
+GREP ONLY, never read whole (it is ~7,700 lines):
   asteroids-deluxe.html
   ORBITAL-OVERHAUL-GDD.md   (P2 only; grep to the section, then read that section)
 
@@ -62,11 +62,11 @@ DO NOT READ, DO NOT OPEN, AT ALL:
   GDD-VERSION-HISTORY.md    (P2 opens it ONLY to append, never to read for context)
   archive/
   PLANNED-FEATURES-CS019.md, IMPLEMENTATION-PHASES-CS019.md
-  DIFFICULTY-LEVERS.md      (CS020 does not touch it — see spec §4)
+  DIFFICULTY-LEVERS.md      (CS020 does not touch it — see spec §6)
   tools/                    (no voice work in this changeset)
 
-Anchors in the phase prompt are ESTIMATES against commit 09d443f. Re-grep every
-one by SYMBOL NAME before editing. Never navigate by line number.
+Anchors in the phase prompt are ESTIMATES and P1 has already moved them. Re-grep
+every one by SYMBOL NAME before editing. Never navigate by line number.
 
 If a genuine design decision surfaces that PLANNED-FEATURES-CS020.md does not
 cover, STOP and surface it. Do not invent design and do not quietly pick an
@@ -75,210 +75,206 @@ interpretation.
 
 ---
 
-## P1 — the towed/incidental split
+## P1 — the towed/incidental split ✅ SHIPPED
+
+Spec §4. Committed and playtested. Gate result: FLAG-c, -d, -e and -f all cleared;
+the parking exploit is dead in play. The gate also surfaced the §2 defect, which
+is what P1b exists for.
+
+---
+
+## P1b — the one-effort rule
 
 **Model: Opus 4.8, xhigh, thinking on.**
-**Ships silent on version and docs: no `GAME_VERSION` bump, no GDD edit, no
-`DIFFICULTY-LEVERS.md` edit. P2 owns all of those.**
+**No `GAME_VERSION` bump, no GDD edit, no `DIFFICULTY-LEVERS.md` edit. P2 owns those.**
 
 ```
-CS020 Phase 1 — split dock deliveries into TOWED and INCIDENTAL.
+CS020 Phase 1b — make a delivery run ONE EFFORT: one chain, delivered in one go.
 
 ultrathink
 
-THE BUG. A ship parked inside the recycling dock's neighbourhood never resets
-game.deliveryCount, because the only reset in the offload block sits in the else
-branch behind a distance test (dock.radius + 40). Garbage that wanders into a
-parked ship therefore keeps feeding an unbounded combo whose per-canister award
-is 50 + 25*(n-1). Measured at commit 09d443f: 60 seconds parked at level 1 yields
-5,650,000 points from 600 canisters, versus 107,000 for 240 canisters of
-legitimate level-12 play. It also fires the Super Mega Delivery at level 1, where
-payloadSlots is 8 and a 24-piece tow is impossible. See PLANNED-FEATURES-CS020.md
-§1 for the full measurement and §3 for the mechanism.
+THE BUG. game.deliveryCount is reset by DISTANCE — the dock block's else branch
+zeroes it once the ship passes dock.radius + 40. So a ship that skirts the dock,
+delivers part of its load and swings back out loses the whole run even though the
+SAME chain is still in tow. Measured at 09d443f: an 8-piece load delivered as
+3-then-5 scores 725 instead of 1100, and at level 12 a full 24-piece load
+delivered across one skirt reaches 21, so the Super Mega Delivery NEVER FIRES.
+The cliff is exact and unhysteretic: exit to radius+39 keeps the run, radius+41
+destroys it. This predates CS020 — P1 did not cause it.
 
-BEFORE ANY EDIT: independently reproduce the exploit. Write a throwaway probe
-that parks a ship just inside the offload cutoff at level 1, feeds one fresh
-Garbage piece every 6 frames, runs 3600 real update(1/60) frames, and prints
-final score, deliveryCount, stats.delivered, and whether superMegaDelivery fired.
-Confirm the numbers above before changing anything. If they disagree, STOP and
-report — do not proceed on a diagnosis you could not reproduce.
+Read PLANNED-FEATURES-CS020.md §2 and §5 in full before touching anything.
 
-RE-GREP THESE BY SYMBOL FIRST (estimates against 09d443f):
-  the garbage-pickup capture gate  ~L6114   `game.chain.length < game.cargoMax`
-  the single-piece push            ~L6131   `game.chain.push({`
-  the clump-scoop push             ~L6149   `game.chain.push({`
-  the dock-offload block           ~L6221   `--- Recycling dock offload ---`
-  the pop                          ~L6227   `const node = game.chain.pop();`
-  the combo reset                  ~L6295   `dock.radius + 40`
-  Garbage.fromNode                          (confirm it reads only x, y, mass)
-  VoiceSys.dockDelivery call site  ~L6288
-  DOCK_BASE_SCORE / DOCK_BONUS_STEP / DOCK_OFFLOAD_INTERVAL
+BEFORE ANY EDIT: independently reproduce. Write a throwaway probe that seeds an
+8-node chain, holds the ship at dock.radius-20 for 12 frames, holds it at
+dock.radius+200 for 30 frames, then returns for 40 frames, and prints
+deliveryCount and score. Confirm 5 / 725 against a clean pass of 8 / 1100. Then
+do the same at level 12 with a 24-node chain and confirm the SMD does not fire.
+If the numbers disagree, STOP and report — do not proceed on a diagnosis you
+could not reproduce.
 
-FIVE EDITS, all in asteroids-deluxe.html.
+WHY THE OBVIOUS FIX IS WRONG. Swapping the reset for a grace timer and cancelling
+it on re-entry REOPENS THE P1 EXPLOIT at a wider radius. MAGNET_RANGE is 380px
+and the ring is 128px from dock center, so a player hovering at 130px is OUTSIDE
+the ring (their pickups tag `towed`) while reaching garbage out to 510px. Fill,
+dip inside 98px, offload at escalating rates, drift out, and the timer carries the
+combo across trips without bound. THE TIMER CANNOT BE THE SAFETY MECHANISM.
 
-(1) Hoist the bare literal. Add, beside DOCK_BASE_SCORE / DOCK_BONUS_STEP:
+TWO COOPERATING RULES. Neither works alone.
 
-      const DOCK_NEIGHBORHOOD_PAD = 40;
+RE-GREP THESE BY SYMBOL FIRST:
+  the pickup capture gate + the `inRing` const P1 added
+  the dock block            `--- Recycling dock offload ---`
+  the else branch           `game.offloadTimer = 0;`
+  the distance reset        `dock.radius + 40`  (or DOCK_NEIGHBORHOOD_PAD post-P1)
+  DOCK_NEIGHBORHOOD_PAD, DEBUG_VARS, the `{ header: "CHAIN GUARD" }` entry
+  the game object literal   `deliveryCount: 0, offloadTimer: 0,`
+  startGame's reset of the same
+  autoShieldRegenPause / garbageAttractDelay   (the ms + toNative idiom to copy)
 
-    with a comment saying it is px past dock.radius and that it defines the
-    region in which the delivery combo survives. Repoint the existing combo-reset
-    test to read it. After this edit there must be ZERO bare `dock.radius + 40`
-    occurrences left in the file. The `+ 10` offload radius is a DIFFERENT number
-    and stays exactly as it is — do not hoist it, do not unify them.
+RULE 1 — THE HOOK RESET. This is the one that makes the counter safe. In the
+pickup capture gate, beside the `towed` tag P1 added, using the SAME `inRing`
+const (do not recompute it, do not use a different radius):
 
-(2) Tag at capture. Inside the capture gate, ABOVE the pieces===1 / clump branch
-    — the same placement the CS017 P5 bonus-canister award already uses, so one
-    expression covers both push paths:
+  // CS020 P1b: gathering again starts a NEW effort. An INCIDENTAL never does this —
+  // it is neutral to the counter in both directions (FORK-CS020-B).
+  if (!inRing) game.deliveryCount = 0;
 
-      const pad = game.dock ? game.dock.radius + DOCK_NEIGHBORHOOD_PAD : 0;
-      const inRing = !!game.dock && dist2(game.ship, game.dock) < pad * pad;
+THE `!inRing` GUARD IS LOAD-BEARING. Resetting on EVERY hook would mean a magnet
+grab at the dock kills a player's own run mid-offload — the exact unfairness this
+phase exists to remove.
 
-    THE RADIUS IS LOAD-BEARING AND IT IS NOT THE OFFLOAD RADIUS. Read
-    PLANNED-FEATURES-CS020.md §3.2 before you write this line. Using
-    dock.radius + 10 leaves a farmable annulus: a player hovering 20px out hooks
-    pieces tagged `towed` (outside +10) while never travelling far enough to
-    reset the combo (inside +40), then drifts in and offloads the whole farm at
-    escalating rates. +40 is the only radius under which "tagged incidental" and
-    "combo not reset" are the same region.
+This yields a guarantee the build has never had, and you must ASSERT it, not
+assume it: between any two resets only nodes already in the chain can be counted,
+and the pickup gate bounds the chain at game.cargoMax, therefore
+deliveryCount <= cargoMax STRUCTURALLY. Maxed Out at 24 becomes reachable only at
+level 12+ because it CANNOT be reached otherwise.
 
-(3) Both push sites gain `towed: !inRing` alongside `mass`. The clump-scoop loop
-    pushes `take` nodes — every one of them gets the same tag; the expression is
-    computed once, outside the loop, not re-evaluated per node.
+RULE 2 — THE GRACE WINDOW. Delete the distance-based reset entirely. Add:
 
-(4) Split the offload block. After the pop:
+  const DOCK_COMBO_GRACE = 4.0;  // sec a delivery run survives outside the dock neighbourhood
 
-      const towed = node.towed !== false;   // absent => towed
+  (beside DOCK_BASE_SCORE / DOCK_BONUS_STEP / DOCK_NEIGHBORHOOD_PAD)
 
-    THE `!== false` FORM IS LOAD-BEARING, NOT STYLE. 22 files under scratchpad/
-    seed chain nodes as bare object literals with no `towed` field. A truthiness
-    test would silently reclassify all of them as incidentals and turn most of
-    the delivery suite red for no behavioural reason. Same defensive-default
-    reasoning as breakChain(i, src = null) in CS019 P1. Prove it by test.
+New run state `comboGrace: 0` in the game object literal beside
+`deliveryCount: 0, offloadTimer: 0,` and zeroed in startGame alongside them.
 
-    The ENTIRE existing body of the offload block moves unchanged into
-    `if (towed) { ... }`. Do not reorder, retune or "tidy" anything inside it —
-    a reviewer must be able to read the diff as a pure indent plus a new else.
+HOIST the window logic to the TOP of the `if (game.dock) {` block, so it evaluates
+every frame independent of the offload branch — NOT inside the else, or it will
+not run while the ship is actively delivering:
 
-    ONE THING MOVES INTO THAT BRANCH THAT IS CURRENTLY AT ITS BOTTOM:
+  const npad = game.dock.radius + DOCK_NEIGHBORHOOD_PAD;
+  if (!game.ship.dead && dist2(game.ship, game.dock) > npad * npad) {
+    game.comboGrace -= dt;
+    if (game.comboGrace <= 0) game.deliveryCount = 0;
+  } else {
+    game.comboGrace = DEBUG.dockComboGrace;   // inside the ring: run safe, window re-armed
+  }
 
-      if (game.chain.length === 0) VoiceSys.dockDelivery(game.deliveryCount);
+The offload block's else branch is then only `game.offloadTimer = 0;`.
 
-    It must be inside the towed branch. A parked ship empties its chain on EVERY
-    incidental pop (hook one, pop it, length is 0 again), so leaving it outside
-    has Dan sizing up a haul twenty times a second.
+RE-ARM AT THE RING (dock.radius + DOCK_NEIGHBORHOOD_PAD), NOT the offload radius
+(+10). Once back inside the neighbourhood the run is safe indefinitely and the
+player can take their time closing the last 30px. Loitering there is harmless —
+pickups are incidentals, nothing advances.
 
-    The new else branch, in full:
+THE DEBUG KNOB. The `unit: "ms"` + toNative idiom ALREADY EXISTS
+(autoShieldRegenPause, garbageAttractDelay). Copy it exactly. Add a new section
+header after CHAIN GUARD:
 
-      } else {
-        addScore(DOCK_BASE_SCORE);
-        game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, node.x, node.y, COLOR.dock));
-        AudioSys.deliver(1);
-      }
+  { header: "DELIVERY" },
+  { id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
+    def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
 
-    `game.offloadTimer = DOCK_OFFLOAD_INTERVAL;` runs for BOTH branches — put it
-    after the if/else, not inside either.
+DEBUG_VARS count 33 -> 34. DOCK_COMBO_GRACE stays in place as the documented
+shipped value (CS015 P5 registry idiom). Persistence is the EXISTING additive
+afd_settings_v1.debug path with known-value-else-default validation. NO SCHEMA
+BUMP — afd_settings_v1 / afd_scores_v1 / afd_achievements_v2 are frozen keys.
 
-(5) Nothing else. Do NOT add a deliveryCount clamp, do NOT gate the SMD trigger
-    separately, do NOT touch the CS018 P8 reward latches, the Heavy Hauler ===12
-    latch, the Maxed Out ===CARGO_CAP_MAX latch, superMegaDelivery(), breakChain,
-    scatterChain, Garbage.fromNode, the pickup gate's cargoMax test, or
-    DOCK_OFFLOAD_INTERVAL. Every one of those is already correct once incidentals
-    stop advancing the counter — that is the entire point of fixing it at the
-    counter. Adding a second guard anywhere would create two sources of truth.
+WHY 4.0 s AND NOT 2.0. Simulating Ship.update's real integrator, a 180-degree turn
+at SHIP_TURN 4.2 costs 0.75 s before thrust can even begin; a sharp pilot exiting
+at 100 px/s with a light load is outside for 1.9-2.1 s, and a normal pilot exiting
+at 200-300 px/s with a real load is outside for 2.8-3.8 s. A 2,000 ms window would
+fail almost every real skirt — the exact case this phase exists to fix. Since
+Rule 1 is what bounds the counter, a generous window costs nothing. Paul retunes
+at the gate; do not second-guess the default here.
 
-WHAT AN INCIDENTAL DOES NOT TOUCH (FORK-CS020-B, FLAG-a, FLAG-b — assert all of
-these, do not merely arrange for them):
-  game.deliveryCount, game.stats.delivered, game.stats.bestCombo,
-  game.stats.pacifistStreak / pacifistBest, game.stats.speedRecycler,
-  Achievements.lifetime.delivered, .bestDeliveredGame, .deliveryScore,
-  .fullChains, .heavyHaulerEvents, .pacifistTowEvents,
-  game.stats.fullChainVisit, game.stats.maxChainVisit, game.cargoFlash.
+DO NOT: add a deliveryCount clamp, gate the SMD trigger separately, touch the
+CS018 P8 reward latches, Heavy Hauler ===12, Maxed Out ===CARGO_CAP_MAX,
+superMegaDelivery(), breakChain, scatterChain (both still zero the counter and
+both are correct), the `towed` tag radius, DOCK_OFFLOAD_INTERVAL, or the pickup
+gate's cargoMax test. Every consumer is already correct once the counter is right.
 
-BASELINE FIRST. Sweep every scratchpad/test-*.js at 09d443f BEFORE editing and
-record the failure count. The suite has been red at HEAD more than once
-(CS018 P3, CS019 P1). Expect the test-p5.js flake at roughly 1 run in 15. Any
-file that fails after this phase must be diffed against that baseline before it
-is called a regression.
+NEW TEST: scratchpad/test-cs020-p1b.js. Drive the REAL startGame / update /
+pickup gate / offload path. Reimplement nothing. Cover
+PLANNED-FEATURES-CS020.md §8.2 items 1-13. The ones that carry the phase:
 
-NEW TEST: scratchpad/test-cs020-p1.js. Drive the REAL startGame / update /
-pickup gate / dock-offload path. Reimplement nothing. Cover, at minimum,
-PLANNED-FEATURES-CS020.md §6 items 1-12. The ones that carry the phase:
+  - THE BUG CLOSED: 8 towed, deliver 3, out to 200px for 1 s, return -> 8 / 1100,
+    identical to a clean pass. Pin the pre-fix 5 / 725 against the FIXED SHA
+    09d443f as a permanent red control. A fixed SHA, never HEAD.
+  - THE LEVEL-12 HEADLINE: 24 load, one skirt inside the window -> reaches 24,
+    SMD FIRES (spy it). Pre-fix control: 21, no SMD.
+  - THE CAP: across a long randomized session under a SEEDED RNG (hooks at random
+    distances, random excursions, random offloads), assert
+    deliveryCount <= game.cargoMax ON EVERY FRAME. This is the guarantee; assert
+    it, do not argue it.
+  - THE 130px FARM IS DEAD: hover just outside the ring, hook to capacity, dip
+    inside 98px, offload, repeat x5 all within the grace window -> peak combo
+    never exceeds cargoMax, total score equals five honest full loads.
+  - THE WINDOW IS THE KNOB: drive DEBUG.dockComboGrace, not the constant. At 0,
+    expiry is immediate; at 10 s, a 9-second excursion preserves the run.
+  - P1 NOT REGRESSED: re-run the P1 park scenario — still bounded, zero latches,
+    no SMD.
 
-  - THE REGRESSION: the level-1 60-second park, with the pre-fix 5,650,000
-    pinned against the FIXED SHA 09d443f as a permanent red control. A fixed
-    SHA, never HEAD — the test-cs017-p3.js trap CS017 P6 had to repoint.
-  - THE ANNULUS: hover at dock.radius + 20, hook 20 pieces, drift inside +10,
-    offload — all 20 incidental, deliveryCount ends 0. This is the test that
-    fails if someone later "simplifies" the tag radius to +10.
-  - THE LIFO PROPERTY: arrive with a full towed load, hook one incidental DURING
-    the offload window, assert the incidental (which pops FIRST) takes flat 50
-    while every towed node keeps its escalating award.
-  - THE LATCHES: 40 incidentals fire zero P8 reward powerups, no Heavy Hauler,
-    no Maxed Out, and superMegaDelivery is never called (spy it). A real
-    24-piece towed visit at level 12 still does all four.
-  - BYTE-IDENTITY CONTROL: a run that never hooks inside the neighbourhood is
-    bit-identical to the pre-fix build under a shared seeded RNG. The fix must be
-    invisible to normal play.
+MUTATION-TEST THE SUITE. Each must fail it on a BEHAVIOURAL assertion, not merely
+a source pin: dropping the hook reset; resetting on every hook including
+incidentals; re-arming at the offload radius instead of the ring; making the grace
+timer the only guard (must fail the 130px farm test); toNative returning v instead
+of v/1000. Report which assertion caught each. If dropping the hook reset leaves
+the cap test green, THE TEST IS WRONG — fix the test.
 
-MUTATION-TEST THE SUITE. Each of these must fail it, on BEHAVIOURAL assertions
-and not merely on source pins: dropping the tag from the clump-scoop push; using
-+10 instead of +40; using truthiness instead of !== false; leaving
-VoiceSys.dockDelivery outside the towed branch; implementing the rejected
-count-snapshot design (snapshot chain.length on arrival, first N pops escalate).
-Report which assertion caught each.
-
-REPOINTING. Any pre-existing test that breaks: repoint to the MIRROR-IMAGE claim
-at the same strength, never weaken and never delete, with a "REPOINTED BY CS020
-P1" note saying what it used to assert and why the new assertion is the same
-claim. If a file breaks for a reason unrelated to this phase, check the baseline
-sweep before touching it.
+REPOINTING. The P1 suite pinned DOCK_NEIGHBORHOOD_PAD at ONE reader; it now has
+two. Repoint to the mirror-image claim, never weaken, with a "REPOINTED BY CS020
+P1b" note. No existing test hardcodes radius+40, so the surface is small. Baseline
+sweep at the P1 commit BEFORE editing; diff any failure against it before calling
+it a regression.
 
 TRAPS:
-  1. GAME_VERSION stays "1.0.0.19". P2 bumps it. Do not touch it, and do not
-     touch any test's version pin.
-  2. Do not edit ORBITAL-OVERHAUL-GDD.md, GDD-VERSION-HISTORY.md or
-     DIFFICULTY-LEVERS.md. P2 owns the first two; CS020 never touches the third.
-  3. DEBUG_VARS gains nothing. The count stays 33. Assert it.
+  1. GAME_VERSION stays "1.0.0.19". P2 bumps it. Do not touch it or any version pin.
+  2. Do not edit the GDD, GDD-VERSION-HISTORY.md, or DIFFICULTY-LEVERS.md.
+  3. returnToDefaults() resets BINDINGS ONLY — it must not touch dockComboGrace.
+     Assert this.
   4. Delete the diagnostic probe before committing. It is not a test.
 
 REPORT, in STATUS.md and in your reply:
-  - the probe's pre-fix numbers and the same scenario's post-fix numbers
-  - the baseline failure count vs. the post-phase failure count, per file
+  - the probe's pre-fix and post-fix numbers for both scenarios
+  - the baseline vs post-phase failure count, per file
   - which mutants were caught by which assertion
+  - the observed maximum deliveryCount across the randomized cap test
   - anything that surprised you
 
 Commit (do not push):
-  CS020 P1: dock deliveries split into towed and incidental — kills the parked-combo exploit
+  CS020 P1b: a delivery run is one effort — towed-hook reset plus a tunable grace window
 ```
 
 ---
 
-## ⛔ PLAYTEST GATE — between P1 and P2
+## ⛔ PLAYTEST GATE — between P1b and P2
 
-**P2 must not run until Paul has played the P1 build.** P2's whole value is
-carrying what the playtest found; running it early wastes the phase.
+Four questions:
 
-Four questions, in priority order:
+1. **FLAG-CS020-g — the window.** Skirt the dock at speed with a real load, several
+   times, at different exit velocities. Does 4,000 ms cover a normal overshoot-and-
+   return? Drag `Delivery one-effort window` in the debug panel until it feels
+   right and report the number. This is the one value P2 exists to carry.
+2. **The one-effort rule in play.** Does losing the run when you *gather again*
+   mid-delivery (spec §5.4) ever read as unfair, or is it invisible?
+3. **The cap.** Does the combo ceiling now reading as exactly the payload capacity
+   change how a full 24-load feels at level 12 — better, or anticlimactic?
+4. **P1 still good.** Does the parking behaviour still feel right after P1b, or did
+   the one-effort rule make in-ring cleanup feel pointless?
 
-1. **FLAG-CS020-c — the repair residual.** Park at the dock with a Magnet and a
-   drained hull. Does the flat 50/canister income repair you faster than combat
-   damages you? `REPAIR_MILESTONE` is 10,000 points and grants 25 HP. If parking
-   reads as a healing station, the answer is a new `DOCK_INCIDENTAL_SCORE`
-   constant at ~10–15 — a one-line change P2 can carry.
-2. **FLAG-CS020-f — the straggler.** Tow a load in with a Magnet running. Does a
-   piece that gets dragged in during the final approach visibly lose its
-   multiplier, and does that read as unfair or as invisible? If unfair, the fix
-   is a grace window and it is *not* a P2 change — it is CS021.
-3. **FLAG-CS020-d/e — the feedback.** At high incidental throughput, are the
-   floaters legible or is it confetti? Does the flat `AudioSys.deliver(1)` read
-   as "recycled" or as "broken"?
-4. **The feel of the fix overall.** Does parking still feel like a reasonable
-   thing to do — clearing the board against the Kessler loop — or does it now
-   feel pointless? Pointless would be a real loss; the mechanic was a nice find
-   and the goal was to bound it, not kill it.
-
-For each: **"no change"** is a complete and useful answer. P2's standing rule is
-that a line saying no change means nothing there gets touched.
+**"No change" is a complete and useful answer.** P2's standing rule: a line saying
+no change means nothing there gets touched.
 
 ---
 
@@ -290,64 +286,61 @@ that a line saying no change means nothing there gets touched.
 CS020 Phase 2 — the closing phase. Retune from playtest, bump the version, sweep
 the docs. NO NEW MECHANICS.
 
-(1) RETUNE, from Paul's playtest answers only. If a line says "no change",
-    change nothing there — do not tidy, do not "improve while you're in here".
-    The only tunable this phase may introduce is DOCK_INCIDENTAL_SCORE, and only
-    if the playtest asked for it (FLAG-CS020-c). If it does: a named constant
-    beside DOCK_BASE_SCORE, read at the one incidental addScore site, with the
-    FloatText using the same constant. Not a DEBUG_VARS knob — it is a scoring
-    rule, not a difficulty lever.
+(1) RETUNE from Paul's gate answers only. If a line says "no change", change
+    nothing there — do not tidy, do not improve while you are in here. Realistically
+    this is one number: DOCK_COMBO_GRACE and the matching DEBUG_VARS `def`. THEY
+    MUST MOVE TOGETHER — def is DOCK_COMBO_GRACE * 1000, and a mismatch means the
+    panel shows a default the code does not use. Assert they agree.
 
-(2) GAME_VERSION "1.0.0.19" -> "1.0.0.20". GREP THE WHOLE REPO for the old
-    literal rather than trusting any file list in this doc. This has caught an
-    extra pin in every round that ran it: CS016 P5 found three where the prompt
-    named two, CS017 P7 found four, CS019 P2 found seven. Bump both the
-    console.log label and the assert message string in each live pin. Leave
-    HEADER-COMMENT narratives alone — a comment describing what an older phase
-    historically bumped to stays true.
+(2) GAME_VERSION "1.0.0.19" -> "1.0.0.20". GREP THE WHOLE REPO for the old literal
+    rather than trusting any file list in this doc. This has caught an extra pin in
+    every round that ran it: CS016 P5 found three where the prompt named two,
+    CS017 P7 found four, CS019 P2 found seven — and CS020 has added two test files
+    since. Bump both the console.log label and the assert message string in each
+    live pin. Leave HEADER-COMMENT narratives alone.
 
     Repoint, do not weaken, any test asserting GAME_VERSION is "unchanged this
-    phase (bumps in P2)" — including test-cs020-p1.js's own. The established
-    treatment is the mirror image: assert !== the old literal, which is the same
-    exact-historical-pin claim at the same strength, pointed at what is now true.
+    phase (bumps in P2)" — including test-cs020-p1.js's and test-cs020-p1b.js's
+    own. The established treatment is the mirror image: assert !== the old literal.
 
 (3) GDD. Grep to each section, read that section, edit in place.
-    - §2.10: the towed-vs-incidental rule. What earns the combo; what an
+    - §2.10: the delivery run as ONE EFFORT. What earns the combo; what an
       incidental pays; the LIFO reasoning for tagging at capture rather than
-      snapshotting a count; DOCK_NEIGHBORHOOD_PAD and why it is the combo-reset
-      radius and not the offload radius.
-    - §2.10.2: the payload curve is now genuinely load-bearing for the SMD and
-      the CS018 P8 reward tiers, because deliveryCount can no longer be fed from
-      outside a tow.
-    - §2.17: Maxed Out is now effectively a level-12+ achievement; Recycling
+      snapshotting a count; the towed-hook terminator; the grace window; and the
+      deliveryCount <= cargoMax guarantee that falls out of it.
+    - §2.10.2: the payload curve is now the HARD CEILING on the combo, and is
+      load-bearing for the SMD and the CS018 P8 reward tiers.
+    - §2.17: Maxed Out is a level-12+ achievement BY CONSTRUCTION; Recycling
       Magnate and Salvage King are no longer farmable at the dock.
-    - Architecture Map: Constants row gains DOCK_NEIGHBORHOOD_PAD; the chain-node
-      shape gains `towed`.
-    - The top-of-file Current-build line. Every round-closing phase has rewritten
-      it (CS017 P7, CS018 P10, CS019 P2); check one of those commits' diffs if
-      the shape is unclear.
-    DESCRIBE SHIPPED BEHAVIOUR ONLY. Nothing from the playtest-gate list that was
-    not built enters the GDD.
+    - §2.19: the Debug Options section gains the DELIVERY section and the
+      one-effort knob (34 knobs).
+    - Architecture Map: Constants gain DOCK_NEIGHBORHOOD_PAD and DOCK_COMBO_GRACE;
+      run state gains comboGrace; the chain-node shape gains `towed`.
+    - The top-of-file Current-build line. Every round-closing phase rewrites it
+      (CS017 P7, CS018 P10, CS019 P2) — check one of those diffs for the shape.
+    DESCRIBE SHIPPED BEHAVIOUR ONLY. Nothing from the gate lists that was not built
+    enters the GDD — in particular NOT the HUD combo readout (FLAG-CS020-i, CS021).
 
-(4) GDD-VERSION-HISTORY.md: ONE consolidated CS020 (P1+P2) entry, appended. This
-    is the only reason to open that file — do not read it for context. Note in
-    passing, do not fix: CS018 still has no entry there (CS019 P2 found the gap
-    and correctly left it). Not this changeset's job either.
+(4) GDD-VERSION-HISTORY.md: ONE consolidated CS020 (P1 + P1b + P2) entry, appended.
+    This is the only reason to open that file — do not read it for context. Note in
+    passing, do not fix: CS018 still has no entry there (CS019 P2 found the gap and
+    correctly left it). Not this changeset's job either.
 
-(5) DIFFICULTY-LEVERS.md: DO NOT EDIT. CS020 adds no lever. Confirm by grep that
+(5) DIFFICULTY-LEVERS.md: DO NOT EDIT. dockComboGrace is a feel knob on a scoring
+    rule, not a difficulty lever — it scales with nothing. Confirm by grep that
     nothing in it references the delivery combo, and say so in the report.
 
-(6) ARCHIVE. Move PLANNED-FEATURES-CS019.md and IMPLEMENTATION-PHASES-CS019.md
-    to archive/. Check first whether it has already been done — CS019 P2 found
-    CS018's docs already moved by CS019 P1's own prerequisite step. If they are
-    already there, verify and move nothing.
+(6) ARCHIVE. Move PLANNED-FEATURES-CS019.md and IMPLEMENTATION-PHASES-CS019.md to
+    archive/. Check first whether it has already been done — CS019 P2 found CS018's
+    docs already moved by CS019 P1's own prerequisite step. If already there,
+    verify and move nothing.
 
 (7) FULL REGRESSION, run twice consecutively for determinism. Report file count,
-    assertion count and failures. Diff any failure against the P1 baseline before
+    assertion count and failures. Diff any failure against the P1b baseline before
     calling it a regression.
 
 Commit (do not push):
-  CS020 P2: incidental retune, version 1.0.0.20, doc sweep
+  CS020 P2: one-effort window retune, version 1.0.0.20, doc sweep
 ```
 
 ---
@@ -360,8 +353,8 @@ Commit (do not push):
 **Do not attach:** `GDD-VERSION-HISTORY.md`, `archive/`, the CS019 planning docs,
 `DIFFICULTY-LEVERS.md`, `tools/`.
 
-**Before P1:** commit both CS020 planning docs to repo root. Archiving the CS019
-docs is P2's item (6), matching the CS017→CS018 and CS018→CS019 precedent.
+**Before P1b:** commit the updated CS020 planning docs to repo root, so the P1b
+session reads the §2 / §5 / §8.2 material rather than the P1-era version.
 
-**Note:** `ultrathink` appears inside P1's prompt text itself, not in a meta-note
+**Note:** `ultrathink` appears inside P1b's prompt text itself, not in a meta-note
 — that is the only placement that takes effect in Claude Code.

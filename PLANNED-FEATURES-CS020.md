@@ -1,75 +1,60 @@
 # PLANNED FEATURES — CS020
 
-**Changeset scope: one exploit.** A ship parked inside the recycling dock's
-neighbourhood keeps its delivery combo alive indefinitely, so garbage that
-wanders into the ship while parked earns escalating combo score, advances every
-delivery-keyed achievement latch, and triggers the Super Mega Delivery at levels
-where the player's payload capacity could never have carried 24 pieces. This
-changeset fixes that and nothing else.
+**Changeset scope: the delivery combo.** Two defects in the same counter — the
+second found by playtesting the fix for the first.
+
+- **§1, fixed in P1 (shipped, playtested).** A ship parked inside the recycling
+  dock's neighbourhood keeps its combo alive indefinitely, so garbage that
+  wanders into it earns escalating score, advances every delivery-keyed
+  achievement latch, and fires the Super Mega Delivery at levels where the
+  player's payload could never have carried 24 pieces.
+- **§2, fixed in P1b.** A ship that skirts the dock, delivers part of its load
+  and swings back out loses the whole run — the counter restarts even though the
+  same chain is still in tow, and a single skirt costs a level-12 player the SMD
+  outright.
+
+Nothing else is in scope.
 
 Base build: CS019 P2, `GAME_VERSION "1.0.0.19"`, commit `09d443f`.
 Target: `"1.0.0.20"`, bumped in **P2**.
 
+**Phase map.** P1 → playtest gate (passed) → P1b → playtest gate → P2.
+
 ---
 
-## 1. The exploit
+## 1. The parking exploit (P1)
 
 ### 1.1 What Paul observed
 
 > "Once Dan's ship enters the recycle ring to drop off payload, as long as the
 > ship is still in the recycle ring, any new garbage pieces that hit the ship
 > automatically get dropped off for recycling. […] those new garbage pieces seem
-> to keep counting in the score streak that happens if you deliver multiple
-> pieces at once. This allows the player to game the multiple-delivery system for
-> score, and most drastically for the supermega delivery, especially if the
-> player has the magnet powerup."
-
-Confirmed in full, and it is larger than the observation.
+> to keep counting in the score streak […] especially if the player has the
+> magnet powerup."
 
 ### 1.2 The mechanism
 
 Three shipped facts compose into it.
 
-**(a) `game.deliveryCount` has no ceiling and only one reset.** It increments
-once per `chain.pop()` in the dock-offload block, and the only reset in that
-block is in the `else` branch, gated on distance:
+**(a) `game.deliveryCount` has no ceiling and one distance-gated reset.** It
+increments once per `chain.pop()` in the dock-offload block; the only reset there
+sits in the `else` branch behind `dist2 > (dock.radius + 40)²`. A ship that never
+travels that far never resets.
 
-```js
-} else {
-  game.offloadTimer = 0;
-  // combo resets once you leave the dock's neighborhood
-  if (!game.ship.dead &&
-      dist2(game.ship, game.dock) > (game.dock.radius + 40) * (game.dock.radius + 40)) {
-    game.deliveryCount = 0;
-  }
-}
-```
-
-A ship that never travels further than `dock.radius + 40` never resets. (The
-other two resets — `breakChain` and `scatterChain` — require taking a hit, which
-a parked ship can largely avoid, and trivially so under a Chain Guard.)
-
-**(b) The per-canister award is linear in an unbounded counter.**
-
-```js
-const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);  // 50 + 25(n−1)
-```
-
-Summed over a visit that is total ≈ `12.5n²`. Quadratic, uncapped.
+**(b) The award is linear in an unbounded counter.**
+`pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (deliveryCount − 1)` — 50 + 25(n−1),
+summing to ≈ `12.5n²` over a visit. Quadratic, uncapped.
 
 **(c) The dock accepts 20 canisters per second.** `DOCK_OFFLOAD_INTERVAL` is
-`0.05`. Parking is not merely possible, it is the highest-throughput scoring
-action in the game.
-
-The pickup gate never blocks a parked ship either — it tests
-`game.chain.length < game.cargoMax`, and the chain is being drained at 20/s, so
-there is always room regardless of the level's payload cap.
+`0.05`. The pickup gate never blocks a parked ship either — it tests
+`game.chain.length < game.cargoMax`, and the chain is draining at 20/s, so there
+is always room regardless of the level's payload cap.
 
 ### 1.3 Measured, against the real build
 
-Driven through the real `update()` dock-offload path at commit `09d443f`. Ship
-parked just inside the offload cutoff, one fresh garbage piece fed every 6 frames
-(≈10/s — roughly what a magnet park looks like, and well under the 20/s ceiling):
+Driven through the real `update()` path at `09d443f`. Ship parked just inside the
+offload cutoff, one fresh piece fed every 6 frames (≈10/s, well under the 20/s
+ceiling):
 
 | Scenario | Canisters | Score |
 |---|---:|---:|
@@ -77,178 +62,297 @@ parked just inside the offload cutoff, one fresh garbage piece fed every 6 frame
 | Level 1, parked 30 s | 300 | 1,513,750 |
 | Level 1, parked 60 s | 600 | 5,650,000 |
 | Level 12, parked 60 s | 600 | 5,650,000 |
-| **Control — 10 separate full-cap visits at level 12, played as designed** | 240 | **107,000** |
+| **Control — 10 full-cap visits at level 12, played as designed** | 240 | **107,000** |
 
-The 600th canister alone is worth 15,025 points. Legitimate play at level 12
-averages ~446 points per canister. The park's level makes no difference to the
-score at all, which is itself the tell: the exploit is entirely decoupled from
-the difficulty curve.
+The 600th canister alone pays 15,025. Legitimate level-12 play averages ~446 per
+canister. The park's level makes no difference to the score at all, which is the
+tell: the exploit is entirely decoupled from the difficulty curve.
 
 ### 1.4 The consequence that is not about score
 
-**The Super Mega Delivery's level gate is bypassed.** The SMD trigger is
-
-```js
-if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
-```
-
-`CARGO_CAP_MAX` is 24, but `levelDef(n).payloadSlots` is **8 at levels 1–4** and
-does not reach 24 until level 12. Parking therefore lets a level-1 player fire
-the full SMD — the guaranteed six-type powerup set, the snapshot Hunter sweep
-with kills credited, and the `sweepCoalescePause` — with a payload capacity of 8.
-Confirmed firing at level 1 in the probe.
-
-That is CS018 FORK-B (payload slots are **granted by level**, starting at 8)
-being routed around. The SMD was scoped as the reward for a capability the player
-has to reach level 12 to possess. The same reasoning applies, less dramatically,
-to the CS018 P8 reward tiers at 8/12/16/20 and to the Heavy Hauler / Maxed Out
-latches.
+`if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();` — `CARGO_CAP_MAX`
+is 24, but `levelDef(n).payloadSlots` is **8 at levels 1–4** and does not reach 24
+until level 12. Parking fires the full SMD — the guaranteed six-type powerup set,
+the snapshot Hunter sweep, the `sweepCoalescePause` — at level 1. Confirmed in the
+probe. That is CS018 FORK-B being routed around.
 
 ### 1.5 The consequence that persists across runs
 
-`game.stats.bestCombo`, `game.stats.delivered`,
-`Achievements.lifetime.delivered`, `Achievements.lifetime.bestDeliveredGame` and
-`Achievements.lifetime.deliveryScore` all inflate. Unlike score, the lifetime
-figures do not reset — a single parked run permanently distorts Recycling
-Magnate, Salvage King and Ton of Scrap.
+`stats.bestCombo`, `stats.delivered`, `Achievements.lifetime.delivered`,
+`.bestDeliveredGame` and `.deliveryScore` all inflate. The lifetime figures never
+reset, so one parked run permanently distorts Recycling Magnate, Salvage King and
+Ton of Scrap.
 
 ### 1.6 Why the CS018 "depth is fine" precedent does not apply
 
-CS018 accepted a difficulty reduction at level 63 on the grounds that players are
-not reaching level 63. That reasoning does not transfer: this is reachable at
-level 1, inside the first minute, by anyone who picks up a Magnet near the dock.
+CS018 accepted a difficulty reduction at level 63 because players are not reaching
+level 63. This is reachable at level 1, inside the first minute, by anyone who
+picks up a Magnet near the dock.
 
 ---
 
-## 2. Resolved forks
+## 2. The one-effort defect (P1b)
+
+### 2.1 What Paul observed
+
+> "If the ship legitimately has more than one piece of garbage in tow, then
+> reaches the recycle hub to begin offloading, but flies out of the recycle hub
+> before all those pieces are delivered, then the delivery count starts over.
+> […] this shows as a problem when the ship happens to just skirt the recycle hub
+> a little bit, with only enough time to deliver a few of the towed garbage
+> pieces."
+
+**This predates CS020.** The `radius + 40` reset has always behaved this way; P1
+did not cause it, it only prompted a hard look at delivery scoring.
+
+### 2.2 Measured
+
+Ship at `dock.radius − 20`, 8-piece towed load, deliver 3, step out, return:
+
+```
+dock.radius = 88   (DOCK_RADIUS 44, LEVER_DOCK_SIZE disabled ⇒ permanent 2×)
+offload zone < 98 px      combo reset > 128 px      offload rate 20/s
+
+CLEAN PASS    : deliveryCount 8,  score 1100
+SKIRT + RETURN: deliveryCount 5,  score 725      (the same 8 pieces)
+```
+
+The cliff is exact and unhysteretic:
+
+| Exit distance | Final `deliveryCount` | Score |
+|---|---:|---:|
+| 127 px (`radius + 39`) | 8 | 1100 |
+| **129 px (`radius + 41`)** | **5** | **725** |
+| 208 px (`radius + 120`) | 5 | 725 |
+
+One frame past 128 px and the run is gone. The level-12 case is the one that
+matters:
+
+```
+LEVEL 12, full 24-piece load:
+  clean     : deliveryCount 24, score 8100, SMD fires: TRUE
+  one skirt : deliveryCount 21, score 6525, SMD fires: FALSE
+```
+
+**A single skirt costs the Super Mega Delivery outright.** The player towed 24,
+delivered 24, and the `=== CARGO_CAP_MAX` trigger never fired.
+
+### 2.3 Why a grace timer alone is not the fix
+
+The obvious repair — swap the reset for a countdown, cancel it on re-entry —
+reopens the exploit at a wider radius.
+
+`MAGNET_RANGE` is 380 px; the ring is 128 px from dock centre. A player hovering
+at 130 px is *outside* the ring, so their pickups tag `towed` under P1, and they
+reach garbage out to 510 px. Fill, dip inside 98 px, offload at escalating rates,
+drift back out, and the timer carries the combo across. The counter climbs
+across trips without bound — the annulus, at 60 px of travel for the entire cost.
+
+**The timer cannot be the safety mechanism.** Something else has to bound the
+counter, and then the timer is free to be as generous as feel requires.
+
+### 2.4 How long is a real turnaround?
+
+Simulating `Ship.update`'s actual integrator (`SHIP_TURN` 4.2, `SHIP_THRUST` 340,
+`SHIP_DRAG` 0.35, `SHIP_MAX_SPEED` 520, with the `CARGO_THRUST`/`CARGO_MAXSPD`
+towed-mass penalties), seconds spent outside the 128 px ring before getting back
+in:
+
+| Exit speed | cargo 0 | cargo 5 | cargo 12 | cargo 20 |
+|---|---:|---:|---:|---:|
+| **react 0.2 s (sharp pilot)** | | | | |
+| 100 px/s | 1.90 | 1.95 | 2.03 | 2.12 |
+| 200 px/s | 2.43 | 2.53 | 2.67 | 2.82 |
+| 300 px/s | 2.92 | 3.05 | 3.23 | 3.45 |
+| **react 0.5 s (normal pilot)** | | | | |
+| 200 px/s | 2.80 | 2.90 | 3.03 | 3.18 |
+| 300 px/s | 3.28 | 3.42 | 3.60 | 3.80 |
+| 400 px/s | 3.72 | 3.88 | 4.12 | 4.42 |
+
+A 180° turn at `SHIP_TURN` costs **0.75 s before thrust can even begin**, then
+reaction, then killing the outbound velocity, then the trip back.
+
+**A 2,000 ms window would fail in almost every real skirt** — including the exact
+case that prompted the fix. Hence `DOCK_COMBO_GRACE` ships at **4.0 s**. Since the
+hook-reset (§5.1) is what bounds the counter, a generous window costs nothing.
+
+---
+
+## 3. Resolved forks
 
 | Fork | Resolution |
 |---|---|
-| **FORK-CS020-A** | ✅ **Per-node `towed` tag.** Discriminate at the moment of capture, not by counting pops. See §3.1 for why a count snapshot is wrong. |
-| **FORK-CS020-B** | ✅ **In-ring pickups count toward nothing.** Not `game.stats.delivered`, not `Achievements.lifetime.delivered`, not `bestCombo`, not `deliveryCount`. Paul's framing: they are *incidentals*, not part of the work Dan has to do to deliver garbage. |
-| **FORK-CS020-C** | ✅ **An incidental pays flat `DOCK_BASE_SCORE` (50).** No new constant. A canister is a canister; what an incidental does not earn is the *combo*. |
-| **FORK-CS020-D** | ✅ **`DOCK_OFFLOAD_INTERVAL` stays at 0.05.** Deliberately untouched — see §4. |
+| **FORK-CS020-A** | ✅ **Per-node `towed` tag**, set at capture. Not a count snapshot — the chain is LIFO and a snapshot credits the wrong pieces (§4.1). |
+| **FORK-CS020-B** | ✅ **In-ring pickups count toward nothing.** Not `stats.delivered`, not `lifetime.delivered`, not `bestCombo`, not `deliveryCount`. They are *incidentals*, not part of the work Dan has to do. |
+| **FORK-CS020-C** | ✅ **An incidental pays flat `DOCK_BASE_SCORE` (50).** No new constant. |
+| **FORK-CS020-D** | ✅ **`DOCK_OFFLOAD_INTERVAL` stays at 0.05.** See §6. |
+| **FORK-CS020-E** | ✅ **A delivery run is ONE EFFORT: one chain, delivered in one go.** Terminated by *gathering again* (a towed hook), not by moving. Plus a grace window so a skirt-and-return is still one effort. Exposed as a debug knob in **milliseconds**. |
 
 ### Flags (best-guess, review at playtest)
 
 | Flag | Call |
 |---|---|
-| **FLAG-CS020-a** | An incidental does **not** advance `game.stats.pacifistStreak`. It does not *break* it either — only firing does that (`game.stats.pacifistStreak = 0` in the fire path). Incidentals are neutral to Pacifist Tow / Zen Master. |
-| **FLAG-CS020-b** | An incidental's 50 points do **not** flow into `Achievements.lifetime.deliveryScore`. Consistent with FORK-CS020-B, but note this is the one exclusion arguably at odds with the achievement's own wording ("Earn 10,000 points from dock deliveries"). Ton of Scrap stays comfortably reachable either way. |
-| **FLAG-CS020-c** | The residual: incidentals still route through `addScore()`, which trips the `REPAIR_MILESTONE` hull repair every 10,000 points. At the 20/s ceiling that is 1,000 pts/s → a 25 HP repair every 10 s. In practice the rate is bounded by garbage *availability*, not by the offload interval, so the real figure is much lower — but this is a genuine consequence of FORK-CS020-C that was not costed when it was resolved. **Watch it in playtest.** If it matters, the fix is a smaller `DOCK_INCIDENTAL_SCORE` constant, a one-line change. |
-| **FLAG-CS020-d** | An incidental still pushes its own `FloatText`. At high throughput that is up to 20 floaters/second. Kept, because the player should see they are being paid — but it is a look-call. |
-| **FLAG-CS020-e** | `AudioSys.deliver(n)` pitches with the combo. An incidental calls `AudioSys.deliver(1)` — audible, but flat, so the rising delivery run stays the sound of an actual haul. |
-| **FLAG-CS020-f** | A piece hooked while the ship is inside the neighbourhood but still coasting in — e.g. a magnet-dragged straggler that lands at 35 px from the dock edge — is tagged incidental and loses its multiplier. Ship without a grace period; playtest decides whether it reads unfairly. |
+| **FLAG-CS020-a** | An incidental does **not** advance `pacifistStreak`, and does not break it either — only firing does that. Incidentals are neutral to Pacifist Tow / Zen Master. |
+| **FLAG-CS020-b** | An incidental's 50 points do **not** enter `lifetime.deliveryScore`. The one exclusion arguably at odds with Ton of Scrap's own wording; reachable either way. |
+| **FLAG-CS020-c** | ✅ **Cleared at the P1 gate.** The `REPAIR_MILESTONE` farming residual did not bite in play. No `DOCK_INCIDENTAL_SCORE` constant. |
+| **FLAG-CS020-d** | ✅ **Cleared at the P1 gate.** Incidental `FloatText` density is legible. |
+| **FLAG-CS020-e** | ✅ **Cleared at the P1 gate.** `AudioSys.deliver(1)` reads correctly. |
+| **FLAG-CS020-f** | ✅ **Cleared at the P1 gate.** The straggler-on-approach case did not read as unfair. No grace period on the tag. |
+| **FLAG-CS020-g** | `DOCK_COMBO_GRACE` default **4.0 s / 4000 ms**, not the 2,000 ms first proposed — §2.4 shows 2 s fails the case it exists for. Retune at the P1b gate. |
+| **FLAG-CS020-h** | The grace window runs whenever the ship is outside the ring, **regardless of whether the chain is empty**. Simpler than gating on chain contents, and provably equivalent: with an empty chain there is nothing left to count, and the next towed hook resets anyway. |
+| **FLAG-CS020-i** | There is still **no HUD readout of `deliveryCount` anywhere in the build**. The combo is invisible except through floaters and Dan's line, and it now survives across trips. A real gap, deliberately **out of scope** — CS021. |
 
 ---
 
-## 3. The mechanism
+## 4. The mechanism — P1 (shipped)
 
-### 3.1 Why a per-node tag and not a count snapshot
+### 4.1 Why a per-node tag and not a count snapshot
 
-The obvious implementation of "only the load I towed in earns multipliers" is to
-snapshot `game.chain.length` on arrival and let the first N pops escalate. **That
-credits the wrong pieces.**
+The chain is LIFO. The offload takes the tail
+(`const node = game.chain.pop(); // canisters peel off from the tail`) and both
+pickup sites `push()` to that same tail, so **a piece hooked while parked jumps
+the queue and is delivered first**. Any count-based scheme spends the snapshot's
+escalation budget on the in-ring pickups and demotes the genuinely towed ones.
+Tagging at capture is immune to ordering, needs no arrival event, costs one field.
 
-The chain is LIFO. The offload block takes the tail:
+### 4.2 The tag
 
-```js
-const node = game.chain.pop(); // canisters peel off from the tail
-```
-
-and both pickup sites `push()` to that same tail. A piece hooked while parked
-therefore **jumps the queue and is delivered first**. Any count-based scheme
-spends the snapshot's escalation budget on the in-ring pickups and demotes the
-genuinely towed ones.
-
-Tagging the node at capture is immune to ordering, needs no arrival event, and
-costs one field.
-
-### 3.2 The tag
-
-Hoist the existing bare literal:
+`DOCK_NEIGHBORHOOD_PAD = 40` hoists the bare literal. Inside the capture gate,
+above the single/clump branch (the CS017 P5 bonus-canister placement idiom, so one
+expression covers both push paths):
 
 ```js
-const DOCK_NEIGHBORHOOD_PAD = 40;  // px past dock.radius: the combo's "still at the dock" region
-```
-
-and repoint the existing combo-reset test at `~L6295` to use it, so the two sites
-provably share one number.
-
-In the garbage-pickup block, immediately inside the capture gate and **above**
-the single/clump branch (the same placement idiom the CS017 P5 bonus-canister
-award already uses, so both push paths are covered by one expression):
-
-```js
-// CS020: a node is TOWED if it was hooked OUTSIDE the dock's neighbourhood.
 const pad = game.dock ? game.dock.radius + DOCK_NEIGHBORHOOD_PAD : 0;
 const inRing = !!game.dock && dist2(game.ship, game.dock) < pad * pad;
 ```
 
-Both `game.chain.push({...})` sites gain `towed: !inRing` alongside `mass`.
+Both `game.chain.push({...})` sites carry `towed: !inRing`.
 
-**The radius choice is load-bearing.** It must be the *combo-reset* radius
-(`+40`), not the *offload* radius (`+10`). Using `+10` leaves a farmable annulus:
-a player hovering 20 px out would hook pieces tagged `towed` (they are outside
-`+10`) while never travelling far enough to reset the combo (they are inside
-`+40`), then drift in and offload the whole farm at escalating rates. `+40` is
-the only radius under which "tagged incidental" and "combo not reset" describe
-the same region, leaving no gap.
+**Why `+40` and not the `+10` offload radius.** Under P1 alone this was the only
+radius under which "tagged incidental" and "combo not reset" described the same
+region; `+10` left a farmable annulus. **P1b supersedes that argument** — the
+hook-reset caps the counter at `cargoMax` regardless of tag radius — but `+40`
+stays, now for a different and equally good reason: at `+10`, a parked player's
+magnet grabs would tag `towed` and therefore *reset their own combo* continuously.
+`+40` keeps a parked ship's pickups neutral.
 
-### 3.3 The read, and its default
+### 4.3 The read, and its default
 
 ```js
-const node = game.chain.pop();
 const towed = node.towed !== false;   // absent ⇒ towed
 ```
 
-**The `!== false` form is deliberate and load-bearing.** 22 files under
-`scratchpad/` seed chain nodes directly as object literals without a `towed`
-field; a truthiness test would silently reclassify every one of them as an
-incidental and turn most of the delivery suite red for no behavioural reason.
-This is the same defensive-default reasoning that made `breakChain(i, src = null)`
-work in CS019 P1, and it is verified by test rather than assumed.
+**Load-bearing.** 22 files under `scratchpad/` seed chain nodes as bare object
+literals with no `towed` field; a truthiness test silently reclassifies all of
+them as incidentals. Same defensive-default reasoning as `breakChain(i, src = null)`
+in CS019 P1. `Garbage.fromNode(n)` reads only `n.x`, `n.y`, `n.mass`, so a severed
+node carries no stale tag back into the world.
 
-`Garbage.fromNode(n)` reads only `n.x`, `n.y` and `n.mass`, so a severed node
-carries no stale tag back into the world; a re-hooked piece is re-tagged at its
-new capture. No change needed there.
+### 4.4 The offload split
 
-### 3.4 The offload split
+The whole existing body moves unchanged into `if (towed) { … }`; the else branch is
+`addScore(DOCK_BASE_SCORE)`, its own `FloatText`, and `AudioSys.deliver(1)`.
+`game.offloadTimer = DOCK_OFFLOAD_INTERVAL` runs for both.
+`VoiceSys.dockDelivery` moved **inside** the towed branch — a parked ship empties
+its chain on every incidental pop, so leaving it outside had Dan sizing up a haul
+twenty times a second.
 
-The entire existing body of the offload block moves, unchanged, into a
-`if (towed) { … }` branch. The `else` branch is new and short:
+Everything keyed on `deliveryCount` is then correct with no further edits: the
+CS018 P8 reward tiers at 8/12/16/20, Heavy Hauler `=== 12`, Maxed Out
+`=== CARGO_CAP_MAX`, and the SMD trigger.
+
+---
+
+## 5. The mechanism — P1b
+
+### 5.1 The rule that does the work
+
+> **A towed hook ends the current effort.** When a piece is captured with
+> `!inRing`, `game.deliveryCount = 0`.
+
+The combo now means *"pieces from the load I brought."* Its terminator is starting
+to gather again, not moving.
+
+One line, inside the capture gate beside the tag:
 
 ```js
-} else {
-  // CS020: an incidental — hooked inside the dock's neighbourhood, not towed in. It recycles
-  // and it pays, but it is not part of the haul: no combo, no delivery stats, no latches.
-  addScore(DOCK_BASE_SCORE);
-  game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, node.x, node.y, COLOR.dock));
-  AudioSys.deliver(1);
+// CS020 P1b: gathering again starts a NEW effort. An INCIDENTAL never does this —
+// it is neutral to the counter in both directions (FORK-CS020-B).
+if (!inRing) game.deliveryCount = 0;
+```
+
+**This is what makes the counter safe, and it yields a guarantee P1 never had:**
+
+> Between any two resets, only nodes already in the chain can be counted, and the
+> pickup gate bounds the chain at `game.cargoMax`. Therefore
+> **`deliveryCount ≤ cargoMax`, structurally.**
+
+Maxed Out at 24 now requires level 12 because it *cannot* be reached otherwise —
+a stronger property than policing each consumer. The annulus farm of §2.3 dies
+with it: a player hovering at 130 px resets on every hook, so each trip delivers
+at most one payload's worth.
+
+### 5.2 The grace window
+
+`DOCK_NEIGHBORHOOD_PAD` regains its second reader. The distance-based reset is
+**deleted** and replaced by a countdown, hoisted to the top of the dock block so it
+evaluates on every frame independent of the offload branch:
+
+```js
+const DOCK_COMBO_GRACE = 4.0;  // sec a delivery run survives outside the dock neighbourhood
+```
+
+```js
+if (game.dock) {
+  // CS020 P1b / FORK-CS020-E: one effort = one chain delivered in one go. It survives LEAVING
+  // the dock — a skirt-and-return is still one effort — for DEBUG.dockComboGrace seconds. It does
+  // NOT survive gathering again; that reset lives at the pickup gate. Ship-dead is excluded so a
+  // corpse neither decays nor re-arms (scatterChain already zeroed the counter).
+  const npad = game.dock.radius + DOCK_NEIGHBORHOOD_PAD;
+  if (!game.ship.dead && dist2(game.ship, game.dock) > npad * npad) {
+    game.comboGrace -= dt;
+    if (game.comboGrace <= 0) game.deliveryCount = 0;
+  } else {
+    game.comboGrace = DEBUG.dockComboGrace;   // inside the ring: the run is safe, window re-armed
+  }
+  … nearDock / offload as before, its else branch now only `game.offloadTimer = 0;` …
 }
-game.offloadTimer = DOCK_OFFLOAD_INTERVAL;   // both branches
 ```
 
-Everything keyed on `game.deliveryCount` is then correct **without further
-edits**, because incidentals never advance it: the CS018 P8 reward tiers at
-8/12/16/20, the Heavy Hauler `=== 12` latch, the Maxed Out `=== CARGO_CAP_MAX`
-latch, and the Super Mega Delivery trigger. That is the point of fixing this at
-the counter rather than at each consumer.
+New run state `comboGrace: 0` sits beside `deliveryCount: 0, offloadTimer: 0` in
+the game object literal, and is zeroed in `startGame()` alongside them.
 
-**One consumer does need moving explicitly:**
+**Re-arming happens at the ring (128 px), not the offload zone (98 px).** Once the
+player is back inside the neighbourhood the run is safe indefinitely and they can
+take their time closing the last 30 px. Loitering there is harmless: pickups are
+incidentals, so nothing advances.
+
+### 5.3 The debug knob
+
+The `unit: "ms"` + `toNative` idiom already exists (`autoShieldRegenPause`,
+`garbageAttractDelay`), so this is the established pattern, not a novelty:
 
 ```js
-if (game.chain.length === 0) VoiceSys.dockDelivery(game.deliveryCount);
+{ header: "DELIVERY" },
+{ id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
+  def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
 ```
 
-This must live inside the towed branch. A parked ship empties its chain on
-*every* incidental pop (hook one, pop it, length is 0 again), so leaving it
-outside would have Dan sizing up a 24-piece haul twenty times a second. It is a
-pre-existing noise source that the fix should close while it is here.
+New `{ header: "DELIVERY" }` section placed after `CHAIN GUARD` (chain-adjacent,
+and leaves room for future delivery knobs). `DEBUG_VARS` count **33 → 34**.
+`DOCK_COMBO_GRACE` stays in place as the documented shipped value, per the
+CS015 P5 registry idiom. Persistence is the existing additive
+`afd_settings_v1.debug` path with known-value-else-default validation — **no schema
+bump**.
 
-### 3.5 Reachability audit — nothing becomes unreachable
+### 5.4 Where this is stricter than the literal ask
 
-Verified against the live achievement definitions.
+Skirt with 8, deliver 3, hook one stray on the way back: the combo resets, and the
+5 originals deliver at 1…5 rather than 4…8. The player topped up mid-run, so it is
+a new run. This is the load-bearing rule that keeps the counter capped, and it is
+the one case where the originals might have been expected to survive.
+
+### 5.5 Reachability audit — nothing becomes unreachable
 
 | Achievement | Requirement | Under CS020 |
 |---|---|---|
@@ -257,126 +361,123 @@ Verified against the live achievement definitions.
 | Speed Recycler | first canister within 60 s | `stats.delivered === 1` latch; unaffected |
 | Pacifist Tow / Zen Master | 5-delivery no-fire streak | 5 ≤ 8; reachable from level 1 |
 | Heavy Hauler / Long Haul / Freight Baron | `deliveryCount === 12` | Needs `payloadSlots` ≥ 12 → level 6+ |
-| Maxed Out | `deliveryCount === 24` | Needs level 12+ — **which is the original intent** |
+| Maxed Out | `deliveryCount === 24` | Needs level 12+ — **and now cannot be reached any other way** |
 | Salvage King | up to 200 canisters, one game | ~9 full 24-loads; a grind, which is what a top tier is |
 | Recycling Magnate | up to 100,000 lifetime | Genuinely slower — it *was* farmable, and should not have been |
 | Ton of Scrap | 10,000 lifetime delivery score | Two or three good games; unaffected in practice |
 
-Two are worth stating out loud rather than burying: **Maxed Out becomes a
-level-12+ achievement**, and **Recycling Magnate's top tiers get materially
-harder**. Both are the fix working as intended, not collateral damage.
+P1b makes these **easier**, not harder, relative to the P1-only build: a skirting
+player no longer loses Heavy Hauler and Maxed Out to a counter restart.
 
 ---
 
-## 4. Deliberately not changing
+## 6. Deliberately not changing
 
-- **`DOCK_OFFLOAD_INTERVAL` (0.05 s).** It is a documented playtest knob and it
-  is what makes parking *efficient*, but it is not what makes parking *pay*.
-  Slowing it would change the feel of every legitimate delivery to fix nothing
-  the tag does not already fix. Resolved as FORK-CS020-D; revisit only if
-  FLAG-CS020-c bites.
-- **The pickup gate.** In-ring pickups still get hooked, still get recycled,
-  still clear the board. Blocking them would fight the Kessler loop — neglected
-  garbage coalescing into Hunters is the game's central pressure, and the player
-  should never be discouraged from clearing it.
-- **`breakChain` / `scatterChain`.** Both still zero `deliveryCount`; both
-  correct as-is.
-- **The combo-reset radius itself.** `+40` keeps its value; it is only being
-  hoisted to a named constant because a second site now reads it.
-- **`DIFFICULTY-LEVERS.md`.** No row. This is a scoring-eligibility rule, not a
-  difficulty lever, and FORK-CS020-C adds no tunable constant. If FLAG-CS020-c
-  forces a `DOCK_INCIDENTAL_SCORE` later, that would be the moment to reconsider
-  — and even then it is arguably still not a lever.
+- **`DOCK_OFFLOAD_INTERVAL` (0.05 s).** A documented playtest knob, and what makes
+  parking efficient — but not what makes it *pay*. Slowing it changes the feel of
+  every legitimate delivery to fix nothing the tag does not already fix.
+- **The pickup gate.** In-ring pickups still hook, recycle and clear the board.
+  Blocking them would fight the Kessler loop.
+- **`breakChain` / `scatterChain`.** Both still zero `deliveryCount`. A chain break
+  genuinely disrupts the load; the guard absorb correctly does not reset.
+- **The tag radius.** `+40` keeps its value — see §4.2 for the new reason.
+- **`DIFFICULTY-LEVERS.md`.** No row. `dockComboGrace` is a feel knob on a scoring
+  rule, not a difficulty lever, and it scales with nothing.
+- **A HUD combo readout.** FLAG-CS020-i. Real, deliberately CS021.
 
 ---
 
-## 5. Retirement ledger
+## 7. Retirement ledger
 
-Nothing retires. One bare literal (`40`) is hoisted to `DOCK_NEIGHBORHOOD_PAD`
-and its one existing reader repointed. No constant loses its last reader, no
-symbol is deleted, no `DEBUG_VARS` entry is added or removed (count stays 33).
-
----
-
-## 6. Test plan
-
-New file `scratchpad/test-cs020-p1.js`, driving the **real** `startGame()`,
-`update()`, pickup gate and dock-offload path. Nothing under test reimplemented.
-
-1. **`node --check`** on the extracted `<script>`.
-2. **Source pins.** `DOCK_NEIGHBORHOOD_PAD` defined once; exactly two readers
-   (the tag expression and the combo reset), with no surviving bare
-   `dock.radius + 40`. Both `game.chain.push` sites carry `towed:`. The offload
-   read is the `!== false` form, not a truthiness test. `VoiceSys.dockDelivery`
-   is inside the towed branch.
-3. **THE REGRESSION — the exploit is dead.** Reproduce §1.3's level-1 60-second
-   park through the real `update()` loop and assert the score is bounded by
-   `towed-load escalation + 50 × incidentals`, not the quadratic 5,650,000. Pin
-   the pre-fix number against the **fixed SHA `09d443f`** (never `HEAD`) as a
-   permanent red control, per the `test-cs019-p1.js` §B3 idiom.
-4. **The tag itself.** A piece hooked at `dock.radius + 41` is `towed: true`; at
-   `dock.radius + 39`, `towed: false`. Both the single-piece and the clump-scoop
-   push paths tag correctly, and a clump scoop tags **all** `take` nodes
-   identically. The Scoop mouth and a magnet-assisted hook tag the same way as a
-   plain hook — the tag is computed once at the gate, above the branch.
-5. **The annulus is closed.** Hover at `dock.radius + 20`, hook 20 pieces, drift
-   inside `+10`, offload: all 20 are incidentals, `deliveryCount` ends at 0.
-   This is the test that would fail if someone "simplified" the tag radius to
-   `+10`.
-6. **The LIFO ordering property.** Arrive with a full towed load, hook one
-   incidental *during* the offload window, and assert the incidental — which
-   pops **first** — takes flat 50 while every towed node keeps its escalating
-   award. A mutant implementing the count-snapshot design must fail this.
-7. **The default.** A hand-seeded node with no `towed` field delivers as towed.
-   A node with `towed: undefined` likewise. Only an explicit `false` demotes.
-8. **Latches.** A parked ship that pops 40 incidentals fires **zero** CS018 P8
-   reward powerups, does not trip Heavy Hauler, does not trip Maxed Out, and does
-   **not** call `superMegaDelivery()`. A genuine 24-piece towed visit at level 12
-   still does all four. This is §1.4 closed, asserted behaviourally.
-9. **Stats.** Across a park: `stats.delivered`, `lifetime.delivered`,
-   `bestCombo`, `lifetime.bestDeliveredGame`, `lifetime.deliveryScore` and
-   `pacifistStreak` are all byte-unchanged; `game.score` moved by exactly
-   `50 × n`. FLAG-CS020-a and -b asserted, not assumed.
-10. **Dan stays quiet.** A 40-incidental park produces zero
-    `VoiceSys.dockDelivery` calls (spied); a real towed haul still produces
-    exactly one, on the pop that empties the chain.
-11. **Byte-identity control.** A run in which the ship never hooks anything
-    inside the neighbourhood produces bit-identical score, stats and latch
-    behaviour to the pre-fix build under a shared seeded RNG. The fix must be
-    invisible to normal play.
-12. **`AudioSys.ctx` null smoke** across the full park cycle.
-
-**Mutation-test the suite.** Each of these deliberate breakages must fail it, on
-behavioural assertions and not merely on source pins: dropping the tag from the
-clump-scoop push; using `+10` instead of `+40`; using truthiness instead of
-`!== false`; leaving `VoiceSys.dockDelivery` outside the towed branch;
-implementing the rejected count-snapshot design.
-
-**Baseline first.** The suite was red at `HEAD` more than once in CS018/CS019.
-Sweep `scratchpad/test-*.js` at `09d443f` **before** editing anything and record
-the failure count, so this changeset's blast radius is measured rather than
-inferred. Expect the `test-p5.js` flake (~1 run in 15).
-
-**Expected repoint surface.** Thirteen files touch `deliveryCount`; seven touch
-the delivery stats. The `!== false` default should keep nearly all of them green,
-since they seed nodes directly. Repoint to the mirror-image claim, never weaken
-or delete — the standing convention.
+- **Retired:** the distance-based combo reset in the dock block's `else` branch
+  (`if (dist2 > (dock.radius + 40)²) game.deliveryCount = 0;`). Replaced by the
+  towed-hook reset (§5.1) plus the grace window (§5.2). No constant loses its last
+  reader — `DOCK_NEIGHBORHOOD_PAD` gains a new one in the same phase.
+- **Added:** `DOCK_COMBO_GRACE`, `game.comboGrace`, `DEBUG_VARS.dockComboGrace`,
+  one `{ header: "DELIVERY" }`. `DEBUG_VARS` 33 → 34.
+- No symbol deleted, no localStorage key touched, no schema bump.
 
 ---
 
-## 7. Docs (P2 only)
+## 8. Test plan
 
-- **GDD §2.10** — the delivery/combo rule gains the towed-vs-incidental
-  distinction: what earns the combo, what an incidental pays, and the LIFO
-  reasoning for tagging at capture.
-- **GDD §2.10.2** — a note that the payload curve is now genuinely load-bearing
-  for the SMD and the reward tiers, because the counter can no longer be fed
-  from outside a tow.
-- **GDD §2.17** — Maxed Out is a level-12+ achievement; Recycling Magnate and
-  Salvage King are no longer farmable at the dock.
-- **Architecture Map** — Constants row gains `DOCK_NEIGHBORHOOD_PAD`; the chain-
-  node shape gains `towed`.
-- **`GDD-VERSION-HISTORY.md`** — one consolidated CS020 (P1+P2) entry.
-  **Note in passing: CS018 still has no entry there** — CS019 P2 found the gap
-  and correctly left it alone. Still not this changeset's job.
-- **`DIFFICULTY-LEVERS.md`** — untouched, per §4.
+### 8.1 P1 — `scratchpad/test-cs020-p1.js` (written, green)
+
+Source pins; the level-1 60-second park pinned against the **fixed SHA `09d443f`**
+as a permanent red control; the tag boundary at `±1 px`; both push paths and the
+clump-scoop's `take` nodes; the LIFO ordering property; the `!== false` default;
+the latch suite; the stats suite; Dan's silence; a byte-identity control; an
+`AudioSys.ctx` null smoke.
+
+### 8.2 P1b — `scratchpad/test-cs020-p1b.js` (new)
+
+Same discipline: drive the real `startGame` / `update` / pickup gate / offload
+path, reimplement nothing.
+
+1. **`node --check`.**
+2. **Source pins.** No surviving distance-based `deliveryCount = 0` in the dock
+   block. `DOCK_NEIGHBORHOOD_PAD` has exactly two readers (the tag, the grace
+   gate). `DEBUG_VARS.length` accounts for 34 knobs plus headers.
+   `dockComboGrace` carries `unit: "ms"` and `toNative: v => v / 1000`.
+3. **THE BUG, closed.** 8 towed, deliver 3, exit to 200 px for 1 s, return:
+   `deliveryCount` reaches **8**, score **1100** — identical to the clean pass.
+   Pin the pre-fix `5` / `725` against `09d443f` as a permanent red control.
+4. **The level-12 headline.** Full 24 load, one skirt inside the window: reaches
+   24, SMD **fires**. Pre-fix control: 21, no SMD.
+5. **The window expires.** Same scenario, out for `grace + 0.5 s`: counter resets,
+   remaining pieces deliver from 1. Boundary-probe at `grace ± 1 frame`.
+6. **The window is the knob.** Set `DEBUG.dockComboGrace` to 0 → expiry is
+   immediate. Set it to 10 s → a 9-second excursion still preserves the run. The
+   test drives the knob, not the constant.
+7. **THE CAP — the property that replaces the annulus argument.** Across a long
+   randomized session (hooks at random distances, random excursions, random
+   offloads, seeded RNG), assert `deliveryCount <= game.cargoMax` on **every
+   frame**. This is §5.1's guarantee, asserted rather than argued.
+8. **The hook-reset discriminates.** A hook at `dock.radius + 41` resets the
+   counter; a hook at `dock.radius + 39` does not (and does not count, per P1).
+9. **The 130 px farm is dead.** Hover just outside the ring, hook to capacity, dip
+   inside 98 px, offload, repeat ×5 within the grace window: peak combo never
+   exceeds `cargoMax` and total score matches five honest full loads.
+10. **P1 is not regressed.** Re-run the P1 park scenario: still bounded, still
+    zero latches, still no SMD.
+11. **Ship death.** `scatterChain` zeroes the counter; the grace timer neither
+    decays nor re-arms while `ship.dead`.
+12. **Persistence.** `dockComboGrace` round-trips through `afd_settings_v1.debug`;
+    a garbage stored value falls back to default; `returnToDefaults()` does not
+    touch it (it resets **bindings only**).
+13. **`AudioSys.ctx` null smoke** across a full skirt-and-return cycle.
+
+**Mutation-test the suite.** Each must fail it on a **behavioural** assertion, not
+merely a source pin: dropping the hook-reset (keeps §8.2.7 green? then the test is
+wrong); resetting on *every* hook including incidentals; re-arming at the offload
+radius instead of the ring; making the grace timer the only guard (must fail
+§8.2.9); `toNative` returning `v` instead of `v / 1000`.
+
+**Baseline first.** Sweep `scratchpad/test-*.js` at the P1 commit before editing
+and record the failure count. Expect the `test-p5.js` flake (~1 run in 15).
+
+**Expected repoint surface.** No existing test hardcodes `radius + 40`, so it is
+small. The P1 suite's `DOCK_NEIGHBORHOOD_PAD` reader-count pin was written when
+there was one reader and needs repointing to two. Repoint to the mirror-image
+claim, never weaken or delete.
+
+---
+
+## 9. Docs (P2 only)
+
+- **GDD §2.10** — the delivery run as **one effort**: what earns the combo, what an
+  incidental pays, the LIFO reasoning for tagging at capture, the towed-hook
+  terminator, the grace window, and the `deliveryCount ≤ cargoMax` guarantee.
+- **GDD §2.10.2** — the payload curve is now genuinely load-bearing for the SMD and
+  the reward tiers, and is now the *hard ceiling* on the combo.
+- **GDD §2.17** — Maxed Out is a level-12+ achievement by construction; Recycling
+  Magnate and Salvage King are no longer farmable at the dock.
+- **GDD §2.19** — the Debug Options section header gains the `DELIVERY` section and
+  the one-effort knob (34 knobs).
+- **Architecture Map** — Constants gain `DOCK_NEIGHBORHOOD_PAD` and
+  `DOCK_COMBO_GRACE`; run state gains `comboGrace`; the chain-node shape gains
+  `towed`.
+- **`GDD-VERSION-HISTORY.md`** — one consolidated CS020 (P1 + P1b + P2) entry.
+  **Note in passing: CS018 still has no entry there** — CS019 P2 found the gap and
+  correctly left it alone. Still not this changeset's job.
+- **`DIFFICULTY-LEVERS.md`** — untouched, per §6.
