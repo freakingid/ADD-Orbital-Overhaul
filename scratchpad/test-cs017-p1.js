@@ -73,6 +73,11 @@ const RETURN = [
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
   "MusicSys", "AudioSys",
+  // CS021 P2 REPOINT (sections B, F): the orbit archetype's total is occurrence-scaled now, not the
+  // fixed 40 P1 shipped — orbitTotalAt() below recomputes it from these.
+  "generateOrbitLayout", "orbitGapMult", "SHIP_RADIUS", "DEBRIS_RADII",
+  "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
+  "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT",
   // A scope probe, so section (E) can ask "does this identifier exist at all?" without the factory's
   // own return statement throwing a ReferenceError on a retired symbol. Direct eval keeps the script
   // block's lexical scope, so this sees exactly what the game's own code would see.
@@ -105,6 +110,29 @@ function build() {
   return factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, localStorageStub);
 }
 
+// CS021 P2 REPOINT helper (sections B, F): P1 shipped ONE gap multiplier for every occurrence, so a real
+// orbit wave always spawned exactly 40 satellites; P2 makes it occurrence-scaled (orbitGapMult), so the
+// total now climbs to 45 by the floor. Recompute the expectation from the SAME generator + multiplier
+// nextWave() is wired to, rather than restating a level-40 literal that is only true at occurrence 1.
+// Consumes its own rand() draws (placeOrbitRing's startAngle) but never reads them back, so it does not
+// disturb any Math.random() sequencing the surrounding assertions depend on.
+function orbitTotalAt(A, level) {
+  return A.generateOrbitLayout({
+    satelliteDiameter: A.DEBRIS_RADII[3] * 2,
+    shipDiameter:      A.SHIP_RADIUS * 2,
+    centerX: 0, centerY: 0,
+    orbitCount:        A.ORBIT_RING_COUNT,
+    innerRadius:       A.ORBIT_INNER_RADIUS,
+    radiusStep:        A.ORBIT_RADIUS_STEP,
+    safetyMargin:      A.ORBIT_SAFETY_MARGIN,
+    minGapMultiplier:  A.orbitGapMult(level),
+    densityByOrbit:    A.ORBIT_DENSITY,
+    baseAngVel:        A.ORBIT_ANG_VEL,
+    fastRingIndex:     A.ORBIT_FAST_RING - 1,
+    fastRingMult:      A.ORBIT_FAST_MULT,
+  }).total;
+}
+
 // ================= (B) the cycle clock is RETIRED; game.wave alone drives the level table ==============
 // REPOINTED BY CS018 P4 (was: "nextWave() derives cycle/cycleWave as a CYCLE_LENGTH=9 sawtooth"). The
 // mirror image of the original claim, at the same strength: across the same 28 levels, game.wave is still
@@ -127,8 +155,9 @@ function build() {
     // geometry instead, so the effect measured here is the archetype the same single clock produced.
     const arch = A.levelDef(g.wave).archetype;
     if (arch === "orbit") {
-      assert(g.debris.length === 40,
-        `B: level ${w}: ORBIT archetype spawned the 40-satellite layout (got ${g.debris.length})`);
+      const wantTotal = orbitTotalAt(A, w);   // CS021 P2: occurrence-scaled, no longer always 40
+      assert(g.debris.length === wantTotal,
+        `B: level ${w}: ORBIT archetype spawned the ${wantTotal}-satellite layout (got ${g.debris.length})`);
     } else {
       assert(g.debris.length === A.levelDef(g.wave).junkCount,
         `B: level ${w}: spawned junk ${g.debris.length} === levelDef(${w}).junkCount ${A.levelDef(w).junkCount}`);
@@ -255,7 +284,8 @@ function build() {
     // the tier envelope is a category error for them. They get their own assertion instead of a skip.
     const expectedSpeedMul = A.junkSpeedMul();
     if (A.levelDef(w).archetype === "orbit") {
-      assert(g.debris.length === 40, `F: level ${w}: ORBIT level spawned the 40-satellite layout (got ${g.debris.length})`);
+      const wantTotal = orbitTotalAt(A, w);   // CS021 P2: occurrence-scaled, no longer always 40
+      assert(g.debris.length === wantTotal, `F: level ${w}: ORBIT level spawned the ${wantTotal}-satellite layout (got ${g.debris.length})`);
       for (const d of g.debris) {
         const sp = Math.hypot(d.vx, d.vy);
         const want = Math.abs(d.orbitAngVel * d.orbitRadius);

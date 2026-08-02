@@ -114,6 +114,9 @@ const RETURN = [
   "ORBIT_LEVEL_EVERY", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_RING_COUNT",
   "ORBIT_DENSITY", "ORBIT_GAP_MULT", "ORBIT_SAFETY_MARGIN", "ORBIT_ANG_VEL",
   "ORBIT_FAST_MULT", "ORBIT_FAST_RING", "ORBIT_SPAWN_TRIES",
+  // CS021 P2 REPOINT (section D): orbitGapMult is the occurrence-scaled multiplier that supersedes the
+  // fixed ORBIT_GAP_MULT past occurrence 1 — needed to recompute D's expected total per level.
+  "orbitGapMult",
   // shared world/entity constants the assertions derive from (never a restated literal)
   "DEBRIS_RADII", "DEBRIS_SPEEDS", "SHIP_RADIUS", "SHIP_MAX_HP", "DOCK_RADIUS", "LEVER_DOCK_SIZE",
   "WORLD_W", "WORLD_H", "TAU", "dist2", "wrapPos", "rand",
@@ -343,6 +346,17 @@ const WANT_RINGS = [
   console.log(`    tightest lane across all 21 occurrences: ${worstGap.toFixed(2)} px (floor ${shipDiameter * X.ORBIT_GAP_MULT}); widest edge ${worstEdge} px (budget ${budget})`);
 })();
 
+// CS021 P2 REPOINT helper (section D): P1 shipped ONE gap multiplier for every occurrence, so a real
+// orbit wave always spawned exactly 40 satellites; P2 makes it occurrence-scaled (orbitGapMult), climbing
+// the total to 45 by the floor (occurrence 8 / level 24). Recompute the expectation from the SAME
+// generator + multiplier nextWave() is wired to, rather than restating a level-40 literal that was only
+// ever true at occurrence 1. Total does not depend on startAngle/centre, so any fixed seed/centre works.
+function expectedOrbitTotal(X, level) {
+  const L = withRandom(seededRandom(0xE0E0 + level), () =>
+    X.generateOrbitLayout({ ...shippedArgs(X, 1280, 720), minGapMultiplier: X.orbitGapMult(level) }));
+  return L.total;
+}
+
 // ================= (D) FIELD LEVELS ARE UNTOUCHED — spec §8 item 5 =====================
 (function sectionD() {
   console.log("(D) field levels: spawn path behaviourally identical");
@@ -363,7 +377,10 @@ const WANT_RINGS = [
         assert(X.game.debris.every(d => Math.hypot(d.vx, d.vy) > 0), `D: level ${n}: every field satellite has drift velocity`);
       } else {
         orbitLevels++;
-        eq(spawned, 40, `D: level ${n}: orbit level spawned 40, not junkCount ${def.junkCount}`);
+        // CS021 P2 REPOINT: was `eq(spawned, 40, ...)` — the total is occurrence-scaled now (spec §5),
+        // so only occurrence 1 (level 3) still spawns exactly 40; deeper occurrences climb toward 45.
+        const wantTotal = expectedOrbitTotal(X, n);
+        eq(spawned, wantTotal, `D: level ${n}: orbit level spawned ${wantTotal}, not junkCount ${def.junkCount}`);
         assert(spawned !== def.junkCount, `D: level ${n}: junkCount was NOT consumed`);
       }
     }

@@ -483,9 +483,15 @@ const ORBIT_DENSITY       = [0.75, 0.45, 0.35, 0.85];
 //     minRequiredGap = max(shipDiameter + ORBIT_SAFETY_MARGIN, shipDiameter * ORBIT_GAP_MULT)
 // At 2.5x a 26 px ship that is 65 px of clear lane between adjacent satellites (the multiplicative half
 // beats the additive 26 + 8 = 34 at every shipped value). Below ~2.5x, threading stops being skill and
-// starts being pixel luck. CS021 P2 makes this occurrence-scaled with a hard 1.8 floor; P1 ships it fixed.
-const ORBIT_GAP_MULT      = 2.5;
-const ORBIT_SAFETY_MARGIN = 8;    // px in the ADDITIVE half of minRequiredGap
+// starts being pixel luck. CS021 P2 (spec §5): ORBIT_GAP_MULT is the OCCURRENCE-1 value (level 3) — the
+// multiplier actually fed to the orbit spawn is orbitGapMult(level) below, which decays by
+// ORBIT_GAP_MULT_STEP per further occurrence of the archetype and is clamped at the hard
+// ORBIT_GAP_MULT_FLOOR (below that, threading stops being skill even with the fairness math otherwise
+// intact). The floor lands at occurrence 8 (level 24) and holds through level 63.
+const ORBIT_GAP_MULT       = 2.5;
+const ORBIT_GAP_MULT_FLOOR = 1.8;  // hard absolute floor under difficulty scaling (FLAG-CS021-d)
+const ORBIT_GAP_MULT_STEP  = 0.1;  // multiplier lost per occurrence past the first
+const ORBIT_SAFETY_MARGIN  = 8;    // px in the ADDITIVE half of minRequiredGap
 // MOTION (FORK-CS021-C1 -> (b)), rad/s. FIRST-PASS VALUES BY DESIGN: CS021 P3 turns both into debug
 // knobs whose `def` DERIVES from these constants (shown in degrees/second, via toNative), and the
 // playtest gate is where they get settled — the fork resolution is explicit that Paul tunes them live
@@ -5061,10 +5067,25 @@ function orbitSyncVelocity(e) {
   if (t) { e.vx = t[0]; e.vy = t[1]; }
 }
 
+// CS021 P2 (spec §5): the fairness floor TIGHTENS per OCCURRENCE of the orbit archetype, not per level —
+// occurrence = level / ORBIT_LEVEL_EVERY, so level 3 is occurrence 1 (the base ORBIT_GAP_MULT, 2.5x),
+// level 6 is occurrence 2, and so on, clamped at the hard ORBIT_GAP_MULT_FLOOR (1.8x, reached at
+// occurrence 8 / level 24 and held through 63). ONE variable scales — densities and both angular
+// velocities stay fixed across occurrences (the handoff's own "change one variable at a time" rule); this
+// is the SOLE occurrence-scaled input to generateOrbitLayout(). Pure function of `level`, mirroring
+// levelDef()'s own purity; called from nextWave()'s orbit branch with game.wave. Do NOT push this read
+// down into the generator itself — it stays pure and unaware of occurrence, which is the seam P3's debug
+// override turns on next.
+function orbitGapMult(level) {
+  const occurrence = level / ORBIT_LEVEL_EVERY;
+  return Math.max(ORBIT_GAP_MULT_FLOOR, ORBIT_GAP_MULT - (occurrence - 1) * ORBIT_GAP_MULT_STEP);
+}
+
 // The orbit-level spawn, called from nextWave()'s archetype branch in place of the scatter loop.
 // Returns the layout so tests (and, later, the P3 debug reroll) can read the geometry that was actually
-// laid down rather than re-deriving it.
-function spawnOrbitWave(speedMul) {
+// laid down rather than re-deriving it. CS021 P2: gapMult is the caller's OCCURRENCE-SCALED multiplier
+// (orbitGapMult(game.wave)) — the generator itself stays pure and unaware of occurrence.
+function spawnOrbitWave(speedMul, gapMult) {
   const layout = spawnSafeOrbitLayout(generateOrbitLayout({
     satelliteDiameter: DEBRIS_RADII[3] * 2,   // read HERE, at the call site — never a new constant
     shipDiameter:      SHIP_RADIUS * 2,
@@ -5074,7 +5095,7 @@ function spawnOrbitWave(speedMul) {
     innerRadius:       ORBIT_INNER_RADIUS,
     radiusStep:        ORBIT_RADIUS_STEP,
     safetyMargin:      ORBIT_SAFETY_MARGIN,
-    minGapMultiplier:  ORBIT_GAP_MULT,
+    minGapMultiplier:  gapMult,   // CS021 P2: occurrence-scaled — never the fixed ORBIT_GAP_MULT past occurrence 1
     densityByOrbit:    ORBIT_DENSITY,
     baseAngVel:        ORBIT_ANG_VEL,
     fastRingIndex:     ORBIT_FAST_RING - 1,   // ORBIT_FAST_RING is the human, 1-based ring number
@@ -5138,7 +5159,7 @@ function nextWave() {
   // because logDifficultySnapshot() below still reports the LEVEL TABLE's junk count either way, and
   // the orbit spawn reuses the same speedMul rather than deriving a third one.
   if (levelDef(game.wave).archetype === "orbit") {
-    spawnOrbitWave(speedMul);
+    spawnOrbitWave(speedMul, orbitGapMult(game.wave));   // CS021 P2: occurrence-scaled fairness floor (spec §5)
   } else {
     for (let i = 0; i < count; i++) {
       // spawn in a ring around the ship's current world position so the wave is

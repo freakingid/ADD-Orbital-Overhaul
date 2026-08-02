@@ -74,8 +74,33 @@ const RETURN = [
   "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
   "ufoAccuracyRad",                                    // CS018 P7 (section B: tiered saucer aim error)
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
-  "AudioSys"
+  "AudioSys",
+  // CS021 P2 REPOINT (section B): the orbit archetype's total is occurrence-scaled now, not the fixed 40
+  // P1 shipped — orbitTotalAt() below recomputes it from these.
+  "generateOrbitLayout", "orbitGapMult", "SHIP_RADIUS", "DEBRIS_RADII",
+  "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
+  "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT"
 ];
+
+// CS021 P2 REPOINT helper (section B): see test-cs017-p1.js's identical helper for the full rationale —
+// the total now climbs from 40 (occurrence 1) to 45 (the floor), recomputed from the same generator +
+// occurrence-scaled multiplier nextWave() is wired to, rather than a restated level-40 literal.
+function orbitTotalAt(A, level) {
+  return A.generateOrbitLayout({
+    satelliteDiameter: A.DEBRIS_RADII[3] * 2,
+    shipDiameter:      A.SHIP_RADIUS * 2,
+    centerX: 0, centerY: 0,
+    orbitCount:        A.ORBIT_RING_COUNT,
+    innerRadius:       A.ORBIT_INNER_RADIUS,
+    radiusStep:        A.ORBIT_RADIUS_STEP,
+    safetyMargin:      A.ORBIT_SAFETY_MARGIN,
+    minGapMultiplier:  A.orbitGapMult(level),
+    densityByOrbit:    A.ORBIT_DENSITY,
+    baseAngVel:        A.ORBIT_ANG_VEL,
+    fastRingIndex:     A.ORBIT_FAST_RING - 1,
+    fastRingMult:      A.ORBIT_FAST_MULT,
+  }).total;
+}
 
 // documentStub.createElement is tag-aware (unlike earlier CS015/CS017-P1 tests, which always returned
 // the canvas stub): "a" gets a real-enough anchor object (href/download/click) so the dump's download
@@ -164,7 +189,8 @@ const TIER_NAMES = ["low", "normal", "high"];
     // pieces. An ORBIT level (every 3rd — FORK-CS021-E) lays a fixed 40-satellite ring layout around the
     // dock and deliberately does not consume junkCount, so the sanity check is split rather than dropped.
     if (def.archetype === "orbit") {
-      assert(g.debris.length === 40, `B: wave ${w}: ORBIT level spawned the 40-satellite layout (got ${g.debris.length})`);
+      const wantTotal = orbitTotalAt(A, g.wave);   // CS021 P2: occurrence-scaled, no longer always 40
+      assert(g.debris.length === wantTotal, `B: wave ${w}: ORBIT level spawned the ${wantTotal}-satellite layout (got ${g.debris.length})`);
       assert(g.debris.every(d => !!d.orbitCenter), `B: wave ${w}: every ORBIT-level satellite carries orbit state`);
     } else {
       assert(g.debris.length === row.junkCount, `B: wave ${w}: sanity — the FIELD level actually spawned junkCount pieces`);

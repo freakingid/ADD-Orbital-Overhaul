@@ -81,7 +81,32 @@ const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "lev
                 "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE",
                 "CARGO_BASE", "GAME_VERSION",
                 // CS018 P4: the cycle clock is retired, so section (E) probes for its ABSENCE instead.
-                'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'];
+                'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
+                // CS021 P2 REPOINT (section B): the orbit archetype's total is occurrence-scaled now, not
+                // the fixed 40 P1 shipped — orbitTotalAt() below recomputes it from these.
+                "generateOrbitLayout", "orbitGapMult", "SHIP_RADIUS", "DEBRIS_RADII",
+                "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
+                "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT"];
+
+// CS021 P2 REPOINT helper (section B): see test-cs017-p1.js's identical helper for the full rationale —
+// the total now climbs from 40 (occurrence 1) to 45 (the floor), recomputed from the same generator +
+// occurrence-scaled multiplier nextWave() is wired to, rather than a restated level-40 literal.
+function orbitTotalAt(A, level) {
+  return A.generateOrbitLayout({
+    satelliteDiameter: A.DEBRIS_RADII[3] * 2,
+    shipDiameter:      A.SHIP_RADIUS * 2,
+    centerX: 0, centerY: 0,
+    orbitCount:        A.ORBIT_RING_COUNT,
+    innerRadius:       A.ORBIT_INNER_RADIUS,
+    radiusStep:        A.ORBIT_RADIUS_STEP,
+    safetyMargin:      A.ORBIT_SAFETY_MARGIN,
+    minGapMultiplier:  A.orbitGapMult(level),
+    densityByOrbit:    A.ORBIT_DENSITY,
+    baseAngVel:        A.ORBIT_ANG_VEL,
+    fastRingIndex:     A.ORBIT_FAST_RING - 1,
+    fastRingMult:      A.ORBIT_FAST_MULT,
+  }).total;
+}
 function build(src, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});
   const factory = new Function(
@@ -119,9 +144,9 @@ let X;
   //   - the level TABLE's junkCount column is still the 3/5/9/13 cycle at EVERY level, orbit included
   //     (the table is untouched by CS021 — the archetype decides whether nextWave reads that column);
   //   - a field level still spawns exactly junkCount pieces, drift-only, no orbit state;
-  //   - an orbit level spawns the fixed 40-satellite ring layout, every piece carrying orbit state,
-  //     and deliberately NOT junkCount.
-  const ORBIT_TOTAL = 40;   // spec §1.2: 6 + 6 + 7 + 21 at the shipped geometry and gap multiplier
+  //   - an orbit level spawns its ring layout, every piece carrying orbit state, and deliberately NOT
+  //     junkCount. CS021 P2 REPOINT: the total is occurrence-scaled now (40 at occurrence 1, up to 45 at
+  //     the floor), not the flat 40 P1 shipped — checked per-level via orbitTotalAt() below.
   const tableCounts = Array.from({ length: 21 }, (_, i) => X.levelDef(i + 1).junkCount);
   assert(deepEq(tableCounts, WANT_COUNT_1_21),
     `B: levelDef junkCount COLUMN levels 1-21 === ${WANT_COUNT_1_21.join(",")} (got ${tableCounts.join(",")})`);
@@ -141,7 +166,8 @@ let X;
   for (let n = 1; n <= 63; n++) {
     if (X.levelDef(n).archetype === "orbit") {
       orbitLevels++;
-      eq(got[n - 1], ORBIT_TOTAL, `B: level ${n} is an ORBIT level and spawns the ${ORBIT_TOTAL}-satellite layout`);
+      const wantTotal = orbitTotalAt(X, n);   // CS021 P2: occurrence-scaled, no longer always 40
+      eq(got[n - 1], wantTotal, `B: level ${n} is an ORBIT level and spawns the ${wantTotal}-satellite layout`);
       assert(got[n - 1] !== X.levelDef(n).junkCount, `B: level ${n} did NOT consume junkCount (${X.levelDef(n).junkCount})`);
     } else {
       fieldLevels++;

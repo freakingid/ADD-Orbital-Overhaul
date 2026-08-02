@@ -93,7 +93,12 @@ const RETURN = [
   "DiffLog", "AudioSys",
   // Scope probe (same idiom as test-cs017-p1 §E): asks "does this identifier exist at all?" without the
   // factory's own return statement throwing a ReferenceError on a retired symbol.
-  'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'
+  'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
+  // CS021 P2 REPOINT (sections B, B4b, G): the orbit archetype's total is occurrence-scaled now, not the
+  // fixed 40 P1 shipped — orbitTotalAt() below recomputes it from these.
+  "generateOrbitLayout", "orbitGapMult", "SHIP_RADIUS", "DEBRIS_RADII",
+  "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
+  "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT"
 ];
 
 // The pre-P3 build has none of the CS017 P3 constants, so section (F) builds it with its own narrower list.
@@ -161,7 +166,26 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 // than from the junk cycle — 6 + 6 + 7 + 21 satellites at the shipped geometry (spec §1.2). Sections
 // (B), (C) and (G) split on levelDef(w).archetype so each archetype is checked against ITS OWN rule;
 // nothing here is skipped or weakened, and the level table's junkCount column is untouched by CS021.
-const ORBIT_TOTAL = 40;
+// CS021 P2 REPOINT: the total is no longer a flat 40 at every occurrence — orbitGapMult() decays the
+// fairness floor per occurrence, climbing the total to 45 by occurrence 8 (level 24) and holding it there.
+// orbitTotalAt() recomputes the expectation from the SAME generator + occurrence-scaled multiplier
+// nextWave() is wired to, rather than restating a literal that was only ever true at occurrence 1.
+function orbitTotalAt(A, level) {
+  return A.generateOrbitLayout({
+    satelliteDiameter: A.DEBRIS_RADII[3] * 2,
+    shipDiameter:      A.SHIP_RADIUS * 2,
+    centerX: 0, centerY: 0,
+    orbitCount:        A.ORBIT_RING_COUNT,
+    innerRadius:       A.ORBIT_INNER_RADIUS,
+    radiusStep:        A.ORBIT_RADIUS_STEP,
+    safetyMargin:      A.ORBIT_SAFETY_MARGIN,
+    minGapMultiplier:  A.orbitGapMult(level),
+    densityByOrbit:    A.ORBIT_DENSITY,
+    baseAngVel:        A.ORBIT_ANG_VEL,
+    fastRingIndex:     A.ORBIT_FAST_RING - 1,
+    fastRingMult:      A.ORBIT_FAST_MULT,
+  }).total;
+}
 
 // ================= (B) the junk cycle: rises, resets — and deliberately does NOT spiral ===============
 // REPOINTED BY CS018 P3/P4. The sawtooth's rise-and-reset shape SURVIVED the changeset, on a shorter clock
@@ -198,8 +222,9 @@ const ORBIT_TOTAL = 40;
     assert(row0.junkCount === table[w], `B: level ${w}: DiffLog.junkCount (${row0.junkCount}) === the table's column (${table[w]})`);
     if (A.levelDef(w).archetype === "orbit") {
       orbitLevels++;
-      assert(count[w] === ORBIT_TOTAL,
-        `B: level ${w} is an ORBIT level and spawns the ${ORBIT_TOTAL}-satellite ring layout (got ${count[w]})`);
+      const wantTotal = orbitTotalAt(A, w);   // CS021 P2: occurrence-scaled, no longer always 40
+      assert(count[w] === wantTotal,
+        `B: level ${w} is an ORBIT level and spawns the ${wantTotal}-satellite ring layout (got ${count[w]})`);
       assert(A.game.debris.every(d => !!d.orbitCenter), `B: level ${w}: every ORBIT-level satellite carries orbit state`);
     } else {
       fieldLevels++;
@@ -255,7 +280,8 @@ const ORBIT_TOTAL = 40;
     assert(A.levelDef(w).archetype === "orbit", `B4b: (setup) level ${w} is still an orbit level past the plateau`);
     assert(A.levelDef(w).junkCount === A.levelDef(A.LEVEL_MAX).junkCount,
       `B4b: level ${w} still carries the level-${A.LEVEL_MAX} plateau count in the table`);
-    assert(n === ORBIT_TOTAL, `B4b: level ${w} spawns the ${ORBIT_TOTAL}-satellite ring layout (got ${n})`);
+    const wantTotal = orbitTotalAt(A, w);   // CS021 P2: occurrence-scaled (these are all well past the floor)
+    assert(n === wantTotal, `B4b: level ${w} spawns the ${wantTotal}-satellite ring layout (got ${n})`);
   }
   console.log(`  junk count, levels 1-21: table ${Array.from({ length: 21 }, (_, i) => table[i + 1]).join(",")}` +
               `  spawned ${Array.from({ length: 21 }, (_, i) => count[i + 1]).join(",")}`);
@@ -547,7 +573,8 @@ const ORBIT_TOTAL = 40;
       `G: level ${w}: the logged count is the table's column and stays <= ${TABLE_MAX} (got ${logged})`);
     if (A.levelDef(w).archetype === "orbit") {
       orbitSeen++;
-      assert(n === ORBIT_TOTAL, `G: level ${w}: ORBIT level spawns the ${ORBIT_TOTAL}-satellite layout (got ${n})`);
+      const wantTotal = orbitTotalAt(A, w);   // CS021 P2: occurrence-scaled, no longer always 40
+      assert(n === wantTotal, `G: level ${w}: ORBIT level spawns the ${wantTotal}-satellite layout (got ${n})`);
     } else {
       assert(n <= TABLE_MAX, `G: level ${w}: spawned ${n} <= the table's own ceiling (${TABLE_MAX})`);
       assert(logged === n, `G: level ${w}: the logged count matches what spawned`);
@@ -565,7 +592,7 @@ const ORBIT_TOTAL = 40;
     const n = withPinnedRandom(PIN, () => atWave(A, w));
     assert(Number.isFinite(A.levelDef(w).junkCount) && A.levelDef(w).junkCount === A.levelDef(A.LEVEL_MAX).junkCount,
       `G: level ${w}: the table still carries the level-${A.LEVEL_MAX} plateau count`);
-    const want = A.levelDef(w).archetype === "orbit" ? ORBIT_TOTAL : A.levelDef(A.LEVEL_MAX).junkCount;
+    const want = A.levelDef(w).archetype === "orbit" ? orbitTotalAt(A, w) : A.levelDef(A.LEVEL_MAX).junkCount;
     assert(Number.isFinite(n) && n === want,
       `G: level ${w} (${A.levelDef(w).archetype}): ${n} pieces — the plateau, unchanged`);
   }
