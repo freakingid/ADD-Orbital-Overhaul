@@ -417,9 +417,9 @@ const dockBlockCode = stripComments(dockBlockSrc);
   assert(A.DEBUG_ROWS.some(r => r.kind === "header" && r.label === "DELIVERY"),
     "A: DELIVERY renders as a header row");
 
-  // -- TRAP 1: the version does NOT move this phase.
+  // -- TRAP 1: the version did not move in P1b.
   //    REPOINTED BY CS020 P2: the established treatment is the mirror image — assert !== the old literal.
-  eq(GAME_VERSION, "1.0.0.19", "A: TRAP 1 — GAME_VERSION is unchanged this phase (bumps in P2)");
+  assert(GAME_VERSION !== "1.0.0.19", "A: TRAP 1 — GAME_VERSION has moved past what P1b shipped (bumped in P2)");
 
   // -- TRAP 3: returnToDefaults() is BINDINGS ONLY. Pinned in source and, in (K), by behaviour. --
   const rtd = scriptSrc.slice(scriptSrc.indexOf("function returnToDefaults() {"));

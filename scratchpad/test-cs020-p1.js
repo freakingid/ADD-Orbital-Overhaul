@@ -389,8 +389,9 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   assert(!/towed/.test(scriptSrc.slice(scriptSrc.indexOf("static fromNode(n)"), scriptSrc.indexOf("static fromNode(n)") + 300)),
     "A: Garbage.fromNode does not mention towed");
 
-  // -- TRAP 1: the version does not move this phase --
-  eq(GAME_VERSION, "1.0.0.19", "A: TRAP 1 — GAME_VERSION is unchanged this phase (bumps in P2)");
+  // -- TRAP 1: the version did not move in P1 — REPOINTED BY CS020 P2, mirror image not weakened:
+  //    P2 is the phase that bumps it, so the claim now is that it has moved past what P1 shipped. --
+  assert(GAME_VERSION !== "1.0.0.19", "A: TRAP 1 — GAME_VERSION has moved past what P1 shipped (bumped in P2)");
   // -- TRAP 3: the debug registry gains nothing IN P1.
   //    REPOINTED BY CS020 P1b, to the mirror image and not weakened: P1b adds exactly ONE knob
   //    (dockComboGrace, under its own DELIVERY header), so 33 -> 34. What P1's trap was really
