@@ -371,7 +371,9 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   eq(Y.game.cargoMax, 8, "I: cargoMax still starts at 8 (CS018 P5, untouched by P6)");
   eq(Y.levelDef(5).junkCount, 3, "I: junk count table untouched by P6");
   eq(Y.levelDef(5).maxLargeHunters, 1, "I: hunter cap table untouched by P6");
-  eq(Y.GAME_VERSION, "1.0.0.17", "I: GAME_VERSION unchanged this phase (bumps in P10)");
+  // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
+  // the version has since moved past what P6 (this phase) shipped.
+  assert(Y.GAME_VERSION !== "1.0.0.17", "I: GAME_VERSION has moved past what P6 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
 
   const nEntries = Y.DEBUG_ENTRIES.length;
   const nRows = Y.DEBUG_ROWS.length;

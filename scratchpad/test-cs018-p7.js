@@ -327,7 +327,9 @@ function fireOnce(small, wave) {
   eq(Y.levelDef(5).junkCount, 3, "H: junk count table untouched by P7");
   eq(Y.levelDef(5).maxLargeHunters, 1, "H: hunter cap table untouched by P7");
   eq(Y.levelDef(1).ufoFlightSpeed, "low", "H: UFO MOVEMENT tiers (P6) untouched by P7");
-  eq(Y.GAME_VERSION, "1.0.0.17", "H: GAME_VERSION unchanged this phase (bumps in P10)");
+  // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
+  // the version has since moved past what P7 (this phase) shipped.
+  assert(Y.GAME_VERSION !== "1.0.0.17", "H: GAME_VERSION has moved past what P7 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
 
   const nEntries = Y.DEBUG_ENTRIES.length;
   const nRows = Y.DEBUG_ROWS.length;

@@ -374,7 +374,10 @@ function build(src, windowExtra) {
   eq(Z.game.cargoMax, Z.levelDef(1).payloadSlots, "I: cargoMax now starts at levelDef(1).payloadSlots (8) — wired in CS018 P5");
   eq(Z.game.cargoMax, 8, "I: level 1 cargoMax is 8, not CARGO_BASE (12)");
   assert(!("cycleWave" in Z.game), "I: the CS017 cycle clock is retired (CS018 P4)");
-  eq(Z.GAME_VERSION, "1.0.0.17", "I: GAME_VERSION unchanged this phase (bumps in P10)");
+  // REPOINTED BY CS019 P2: the "unchanged this phase (bumps in P10)" claim is now historically
+  // scoped and stale — P10 bumped it, and CS019 P2 has bumped it again since. Mirror image: the
+  // version has moved past what P1 (this phase) shipped, not "still 1.0.0.17".
+  assert(Z.GAME_VERSION !== "1.0.0.17", "I: GAME_VERSION has moved past what P1 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
 })();
 
 // ================= summary =====================

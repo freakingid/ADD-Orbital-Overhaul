@@ -338,9 +338,11 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
     "A: chainGuardIntercepts is unchanged (3 / [1,10] / 1) — retuning it is deliberately deferred to P2 (FLAG-CS019-b)");
   assert(mt.def === 5 && mt.min === 0 && mt.max === 24 && mt.step === 1, "A: chainGuardMinTow is unchanged (5 / [0,24] / 1)");
 
-  // TRAP 2: this phase does NOT bump the version. P2 owns that, after the playtest.
-  assert(GAME_VERSION === "1.0.0.18",
-    `A: GAME_VERSION is unchanged this phase (bumps in P2), still "1.0.0.18" (got "${GAME_VERSION}")`);
+  // TRAP 2 (historical): P1 did NOT bump the version; P2 owned that, after the playtest, exactly as
+  // predicted. REPOINTED BY CS019 P2: mirror image of "unchanged this phase (bumps in P2)" — the
+  // version has since moved past what P1 shipped.
+  assert(GAME_VERSION !== "1.0.0.18",
+    `A: GAME_VERSION has moved past what P1 shipped (1.0.0.18) — bumped in P2 (got "${GAME_VERSION}")`);
 
   // --- guardT placement: the two BODY classes only ------------------------------------------------
   const B = build();

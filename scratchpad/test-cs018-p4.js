@@ -579,7 +579,9 @@ function levelForCap(n) {
     "H: prevLevelSecs logs the FINISHED level's duration (waveTime captured before the reset)");
   eq(Y.game.waveTime, 0, "H: ...and waveTime itself is zeroed for the new level");
 
-  eq(Y.GAME_VERSION, "1.0.0.17", "H: GAME_VERSION unchanged this phase (bumps in P10)");
+  // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
+  // the version has since moved past what P4 (this phase) shipped.
+  assert(Y.GAME_VERSION !== "1.0.0.17", "H: GAME_VERSION has moved past what P4 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
   // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob. REPOINTED BY CS018 P6,
   // then again by P7, then again by CS019 P1 (mirror-image of the old claim each time, not weakened):
   // P3's 15 -> P6's 25 (9 UFO MOVEMENT + 2 GLOBAL added, 1 retired saucerGapPressure removed) -> P7's 32

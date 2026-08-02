@@ -233,7 +233,9 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // REPOINTED BY CS018 P5: cargoMax is now GRANTED by levelDef(1).payloadSlots (8), not CARGO_BASE (12).
   eq(Y.game.cargoMax, 8, "E: cargoMax now starts at levelDef(1).payloadSlots (8), not CARGO_BASE (CS018 P5)");
   assert(!("cycle" in Y.game) && !("cycleWave" in Y.game), "E: game.cycle/game.cycleWave are gone (CS018 P4)");
-  eq(Y.GAME_VERSION, "1.0.0.17", "E: GAME_VERSION unchanged this phase (bumps in P10)");
+  // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
+  // the version has since moved past what P3 (this phase) shipped.
+  assert(Y.GAME_VERSION !== "1.0.0.17", "E: GAME_VERSION has moved past what P3 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
 
   // REPOINTED BY CS018 P4: P3 left cycleValue() with exactly four call sites and pinned that as proof it
   // had not touched hunters or the log. P4 retired the whole cycle clock, so the successor claim is that
