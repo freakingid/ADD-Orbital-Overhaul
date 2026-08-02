@@ -590,7 +590,11 @@ function levelForCap(n) {
   // to track the live registry size or it goes stale every time a later phase touches it. The exact
   // count is still an exact count; naming the one entry that moved it makes it strictly harder to pass
   // by accident than the bare number was.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 33, "H: DEBUG_VARS holds 33 value entries as of CS019 P1 (P4 itself added none)");
+  // REPOINTED BY CS020 P1b: 33 -> 34 (dockComboGrace, under a new DELIVERY header). Same treatment as
+  // every repoint above — the exact count, plus the id of the single entry that moved it.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 34, "H: DEBUG_VARS holds 34 value entries as of CS020 P1b (P4 itself added none)");
+  assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
+    "H: ...and the entry that moved it from 33 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,
     "H: ...and the 33rd is CS019 P1's chainGuardCooldown, not some other silent addition");
 })();

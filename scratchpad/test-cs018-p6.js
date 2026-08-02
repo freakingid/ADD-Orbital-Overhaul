@@ -384,7 +384,11 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // REPOINTED AGAIN (CS019 P1): + 1 (chainGuardCooldown, appended to the CHAIN GUARD group) -> 33. Same
   // claim, same strength — an exact live-registry count — plus the id of the entry that moved it, so a
   // different silent addition can't satisfy the new number.
-  eq(nEntries, 33, `I: DEBUG_ENTRIES count is 33 after CS019 P1 (got ${nEntries})`);
+  // REPOINTED AGAIN (CS020 P1b): + 1 (dockComboGrace, under a new DELIVERY header) -> 34. Same claim,
+  // same strength, same treatment.
+  eq(nEntries, 34, `I: DEBUG_ENTRIES count is 34 after CS020 P1b (got ${nEntries})`);
+  assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
+    "I: ...and the entry that moved it from 33 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "I: ...and the entry CS019 P1 added is chainGuardCooldown");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);

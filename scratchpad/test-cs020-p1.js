@@ -297,10 +297,20 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   eq(decl, 1, "A: DOCK_NEIGHBORHOOD_PAD is declared exactly once");
   eq(DOCK_NEIGHBORHOOD_PAD, 40, "A: DOCK_NEIGHBORHOOD_PAD is 40 (the value the bare literal had)");
   const readers = (scriptSrc.match(/DOCK_NEIGHBORHOOD_PAD/g) || []).length - decl;
-  // Two READERS in code, plus the mentions inside the two explanatory comments. Count the code ones
-  // by looking for the arithmetic form specifically.
-  const arith = (scriptSrc.match(/dock\.radius \+ DOCK_NEIGHBORHOOD_PAD/g) || []).length;
-  eq(arith, 2, "A: exactly two `dock.radius + DOCK_NEIGHBORHOOD_PAD` readers (the tag and the combo reset)");
+  // Two READERS in code, plus the mentions inside the explanatory comments. Count the code ones by
+  // looking for the arithmetic form specifically.
+  // REPOINTED BY CS020 P1b, to the mirror image and not weakened. The count is still exactly 2, but
+  // the PAIR changed: P1b retires the distance-based combo reset and replaces it with the grace
+  // window's arm/decay gate, which reads the same pad. P1b also documents both readers in block
+  // comments that name the arithmetic, so the count is now taken over comment-stripped source —
+  // otherwise prose about a reader scores as a reader. See test-cs020-p1b.js (A) for the full pin.
+  const codeOnly = scriptSrc.replace(/\/\/[^\n]*/g, "");
+  const arith = (codeOnly.match(/dock\.radius \+ DOCK_NEIGHBORHOOD_PAD/g) || []).length;
+  eq(arith, 2, "A: exactly two `dock.radius + DOCK_NEIGHBORHOOD_PAD` readers (REPOINTED: the tag and the GRACE GATE)");
+  assert(/const npad = game\.dock\.radius \+ DOCK_NEIGHBORHOOD_PAD;/.test(codeOnly),
+    "A: REPOINTED — one of the two is CS020 P1b's grace gate, which is what replaced the distance reset");
+  assert(!/combo resets once you leave the dock's neighborhood/.test(scriptSrc),
+    "A: REPOINTED — the distance-based combo reset this file was written against is retired (CS020 P1b)");
   assert(readers >= 2, `A: DOCK_NEIGHBORHOOD_PAD is actually referenced (got ${readers} non-declaration mentions)`);
   eq((scriptSrc.match(/radius \+ 40/g) || []).length, 0,
     "A: ZERO bare `radius + 40` occurrences survive anywhere in the file");
@@ -381,11 +391,17 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
 
   // -- TRAP 1: the version does not move this phase --
   eq(GAME_VERSION, "1.0.0.19", "A: TRAP 1 — GAME_VERSION is unchanged this phase (bumps in P2)");
-  // -- TRAP 3: the debug registry gains nothing --
+  // -- TRAP 3: the debug registry gains nothing IN P1.
+  //    REPOINTED BY CS020 P1b, to the mirror image and not weakened: P1b adds exactly ONE knob
+  //    (dockComboGrace, under its own DELIVERY header), so 33 -> 34. What P1's trap was really
+  //    guarding — that P1 itself invented no towed/incidental knob — is asserted directly below and
+  //    is unchanged. The exact count keeps living here so a second unplanned knob still fails. --
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 33, "A: TRAP 3 — DEBUG_VARS still holds exactly 33 value entries; CS020 adds no knob");
+  eq(valueEntries, 34, "A: TRAP 3 — DEBUG_VARS holds exactly 34 value entries (33 + CS020 P1b's dockComboGrace)");
+  assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
+    "A: REPOINTED — the one added knob is P1b's dockComboGrace, and nothing else");
   assert(!DEBUG_VARS.some(e => e.id && /incidental|towed|neighborhood/i.test(e.id)),
-    "A: no CS020 knob was slipped into the registry");
+    "A: no CS020 towed/incidental knob was slipped into the registry (P1's own trap, unchanged)");
 })();
 
 // ================= (B) THE REGRESSION =====================

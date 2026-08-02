@@ -395,14 +395,25 @@ const DOCK_RADIUS = 44;
 const LEVER_DOCK_SIZE = { enabled: false, start: 2.0, floor: 1.0 };
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
 const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
-// CS020: px PAST dock.radius — the dock's "neighborhood", the region in which the delivery combo
-// SURVIVES. Two readers, and they must be the same number: the combo reset (you have to leave the
-// neighborhood for game.deliveryCount to zero) and the towed/incidental tag at capture (a piece
-// hooked INSIDE the neighborhood was never towed in, so it earns no combo). Deliberately NOT the
-// dock's +10 offload radius, which is a different, smaller number and stays as it is: at +10 a
-// player hovering 20px out would hook pieces tagged `towed` while never travelling far enough to
-// reset the combo, then drift in and offload the whole farm at escalating rates. See GDD 2.10.
+// CS020: px PAST dock.radius — the dock's "neighborhood". Two readers, and they must be the same
+// number: the towed/incidental tag at capture (a piece hooked INSIDE the neighborhood was never
+// towed in, so it earns no combo) and the CS020 P1b grace window's arm/decay gate (inside the
+// neighborhood a delivery run is safe indefinitely; outside it the run is on a countdown).
+// Deliberately NOT the dock's +10 offload radius, which is a different, smaller number and stays as
+// it is: at +10 a parked player's own magnet grabs would tag `towed` and therefore reset their own
+// combo continuously (the P1b hook reset below). +40 keeps a parked ship's pickups neutral.
+// See GDD 2.10.
 const DOCK_NEIGHBORHOOD_PAD = 40;
+// CS020 P1b (FORK-CS020-E): sec a delivery run survives OUTSIDE the dock's neighborhood before
+// game.deliveryCount zeroes. A delivery run is ONE EFFORT — one chain, delivered in one go — and a
+// skirt-and-return is still one effort, so leaving the dock mid-offload must not destroy the run.
+// 4.0 s, not the 2.0 first proposed: a 180-degree turn at SHIP_TURN costs 0.75 s before thrust can
+// even begin, and a normal pilot exiting at 200-300 px/s with a real load is outside for 2.8-3.8 s
+// (spec 2.4's integrator table), so a 2 s window would fail almost every real skirt — the exact case
+// this exists for. THE TIMER IS NOT THE SAFETY MECHANISM: what bounds the counter is the towed-hook
+// reset at the pickup gate, which is why a generous window costs nothing here. Live value is
+// DEBUG.dockComboGrace (DEBUG_VARS, DELIVERY section); this const is the shipped default it derives.
+const DOCK_COMBO_GRACE = 4.0;
 const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare literal 0.13). sec between
                                      // canisters peeling off at the dock.
 const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of the hub's per-visit
@@ -2679,6 +2690,15 @@ const DEBUG_VARS = [
     def: 5, min: 0, max: 24, step: 1 },
   { id: "chainGuardCooldown", label: "Chain guard cooldown", unit: "s",
     def: 0.75, min: 0.1, max: 3, step: 0.05 },
+  // CS020 P1b: the delivery combo's one-effort grace window — how long a delivery run survives while
+  // the ship is outside the dock's neighborhood. Same `unit: "ms"` + `toNative: v => v / 1000` idiom
+  // as autoShieldRegenPause / garbageAttractDelay: the panel shows and persists milliseconds, the
+  // consumer (the dock block's grace gate) reads seconds. DOCK_COMBO_GRACE stays in place as the
+  // documented shipped value and this `def` derives from it, so the two can never disagree.
+  // Its own section header, chain-adjacent, with room for future delivery knobs.
+  { header: "DELIVERY" },
+  { id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
+    def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
   // CS018 P3: junk (debris) satellite speed, by TIER (§3.1) — levelDef's junkSpeed tier name selects
   // one of these three, and junkSpeedMul() (Helpers section) turns the pick into the DEBRIS_SPEEDS[3]
   // multiplier the two speed-derivation sites (nextWave, destroyDebris) share. normal (70) IS
@@ -4689,6 +4709,10 @@ const game = {
                                                         // bigger denominator), so without this flash it reads as
                                                         // a bug instead of a promotion. Decayed in update().
   deliveryCount: 0, offloadTimer: 0,
+  comboGrace: 0,                                       // CS020 P1b: sec of one-effort grace left while the ship is
+                                                        // OUTSIDE the dock's neighborhood. Re-armed to
+                                                        // DEBUG.dockComboGrace every frame the ship is inside it;
+                                                        // when it runs out, game.deliveryCount zeroes.
   score: 0, wave: 0,
   // `wave` is the ABSOLUTE player-facing level counter and the ONE difficulty clock's input — every
   // achievement, the HUD LEVEL readout, high-score records, musicStateFor and levelDef() read it.
@@ -4776,6 +4800,7 @@ function startGame() {
   game.cargoMax = CARGO_BASE;      // pre-level-1 default; nextWave() below immediately overwrites it via levelDef(game.wave).payloadSlots (8 at level 1) — CS018 P5
   game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
   game.deliveryCount = 0; game.offloadTimer = 0;
+  game.comboGrace = 0;             // CS020 P1b: no one-effort grace carries into a fresh run
   game.ship = new Ship();
   game.hudHull = game.ship.hp / SHIP_MAX_HP;   // CS009 P1: no drain animation on a fresh run
   game.camera = { x: game.ship.x, y: game.ship.y };
@@ -6142,6 +6167,17 @@ function update(dt) {
       // the escalation on the in-ring pickups and demote the genuinely towed load. See GDD 2.10.
       const pad = game.dock ? game.dock.radius + DOCK_NEIGHBORHOOD_PAD : 0;
       const inRing = !!game.dock && dist2(game.ship, game.dock) < pad * pad;
+      // CS020 P1b: gathering again starts a NEW effort. An INCIDENTAL never does this —
+      // it is neutral to the counter in both directions (FORK-CS020-B).
+      // THE `!inRing` GUARD IS LOAD-BEARING: resetting on EVERY hook would mean a magnet grab at the
+      // dock kills a player's own run mid-offload — the exact unfairness this phase exists to remove.
+      // This is also what BOUNDS the counter, and the bound is structural rather than policed:
+      // between any two resets only nodes already in the chain can be counted, and the pickup gate
+      // above bounds the chain at game.cargoMax, therefore deliveryCount <= cargoMax. That is what
+      // makes Maxed Out (=== CARGO_CAP_MAX) a level-12+ achievement BY CONSTRUCTION, and what kills
+      // the farmable annulus a grace window alone would open (hover just outside the ring with a
+      // 380px magnet, fill, dip in, offload, repeat — every hook out there now resets).
+      if (!inRing) game.deliveryCount = 0;
       if (g.pieces === 1) {
         // A single hooks onto the chain as one node (unchanged behavior).
         g.dead = true;
@@ -6239,6 +6275,27 @@ function update(dt) {
 
   // --- Recycling dock offload ---
   if (game.dock) {
+    // CS020 P1b / FORK-CS020-E: one effort = one chain delivered in one go. It survives LEAVING the
+    // dock — a skirt-and-return is still one effort — for DEBUG.dockComboGrace seconds. It does NOT
+    // survive gathering again; that reset lives at the pickup gate, and it is the reset that BOUNDS
+    // the counter (this timer must never be the safety mechanism — see DOCK_COMBO_GRACE).
+    // HOISTED to the top of the dock block deliberately: it has to evaluate every frame, independent
+    // of the offload branch, or it would not run while the ship is actively delivering. Re-arming
+    // happens at the RING (dock.radius + DOCK_NEIGHBORHOOD_PAD), not the +10 offload radius — once
+    // back inside the neighborhood the run is safe indefinitely and the player can take their time
+    // closing the last 30px. Loitering there is harmless: pickups in here are incidentals, so nothing
+    // advances. Ship-dead is excluded from the DECAY arm so a corpse's run can never be timed out
+    // mid-death (scatterChain has already zeroed the counter anyway, which is why the dead ship
+    // falling into the re-arm branch is a harmless no-op rather than a second rule).
+    // Replaces the old distance-based reset that lived in the offload
+    // block's else branch, which destroyed a run the instant the ship crossed the ring.
+    const npad = game.dock.radius + DOCK_NEIGHBORHOOD_PAD;
+    if (!game.ship.dead && dist2(game.ship, game.dock) > npad * npad) {
+      game.comboGrace -= dt;
+      if (game.comboGrace <= 0) game.deliveryCount = 0;
+    } else {
+      game.comboGrace = DEBUG.dockComboGrace;   // inside the ring: the run is safe, window re-armed
+    }
     const nearDock = !game.ship.dead &&
       dist2(game.ship, game.dock) < (game.dock.radius + 10) * (game.dock.radius + 10);
     if (nearDock && game.chain.length > 0) {
@@ -6327,12 +6384,6 @@ function update(dt) {
       }
     } else {
       game.offloadTimer = 0;
-      // combo resets once you leave the dock's neighborhood (CS020: the bare 40 is now
-      // DOCK_NEIGHBORHOOD_PAD, shared with the towed/incidental tag at the pickup gate)
-      const pad = game.dock.radius + DOCK_NEIGHBORHOOD_PAD;
-      if (!game.ship.dead && dist2(game.ship, game.dock) > pad * pad) {
-        game.deliveryCount = 0;
-      }
     }
   }
 

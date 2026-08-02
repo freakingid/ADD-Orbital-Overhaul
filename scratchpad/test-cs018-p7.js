@@ -337,7 +337,10 @@ function fireOnce(small, wave) {
   // REPOINTED (CS019 P1): + 1 (chainGuardCooldown, appended to the CHAIN GUARD group) -> 33. The claim is
   // unchanged — an exact count of the live registry, so a silent add or drop still fails — and now also
   // names the entry that moved it. P7's own nine UFO WEAPONS knobs are still pinned by name in section B.
-  eq(nEntries, 33, `H: DEBUG_ENTRIES count is 33 after CS019 P1 (got ${nEntries})`);
+  // REPOINTED AGAIN (CS020 P1b): + 1 (dockComboGrace, under a new DELIVERY header) -> 34.
+  eq(nEntries, 34, `H: DEBUG_ENTRIES count is 34 after CS020 P1b (got ${nEntries})`);
+  assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
+    "H: ...and the entry that moved it from 33 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "H: ...and the entry added since P7 is CS019 P1's chainGuardCooldown");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
