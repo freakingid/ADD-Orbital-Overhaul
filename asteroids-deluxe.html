@@ -395,6 +395,14 @@ const DOCK_RADIUS = 44;
 const LEVER_DOCK_SIZE = { enabled: false, start: 2.0, floor: 1.0 };
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
 const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
+// CS020: px PAST dock.radius — the dock's "neighborhood", the region in which the delivery combo
+// SURVIVES. Two readers, and they must be the same number: the combo reset (you have to leave the
+// neighborhood for game.deliveryCount to zero) and the towed/incidental tag at capture (a piece
+// hooked INSIDE the neighborhood was never towed in, so it earns no combo). Deliberately NOT the
+// dock's +10 offload radius, which is a different, smaller number and stays as it is: at +10 a
+// player hovering 20px out would hook pieces tagged `towed` while never travelling far enough to
+// reset the combo, then drift in and offload the whole farm at escalating rates. See GDD 2.10.
+const DOCK_NEIGHBORHOOD_PAD = 40;
 const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare literal 0.13). sec between
                                      // canisters peeling off at the dock.
 const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of the hub's per-visit
@@ -6125,12 +6133,22 @@ function update(dt) {
         addScore(BONUS_CANISTER_SCORE);
         game.floaters.push(new FloatText("+" + BONUS_CANISTER_SCORE, g.x, g.y, COLOR.garbageBonus));
       }
+      // CS020: a node is TOWED if it was hooked OUTSIDE the dock's neighborhood, and an INCIDENTAL if
+      // it was hooked inside it. Computed HERE — once, at the moment of capture, above the single/clump
+      // branch so ONE expression covers both push paths (the same placement idiom as the bonus-canister
+      // award directly above). Tagging at capture rather than counting pops at the dock is load-bearing:
+      // the chain is LIFO and both push sites append to the tail the offload pops from, so a piece
+      // hooked while parked JUMPS THE QUEUE and is delivered first — any count-based scheme would spend
+      // the escalation on the in-ring pickups and demote the genuinely towed load. See GDD 2.10.
+      const pad = game.dock ? game.dock.radius + DOCK_NEIGHBORHOOD_PAD : 0;
+      const inRing = !!game.dock && dist2(game.ship, game.dock) < pad * pad;
       if (g.pieces === 1) {
         // A single hooks onto the chain as one node (unchanged behavior).
         g.dead = true;
         game.chain.push({
           x: g.x, y: g.y, px: g.x, py: g.y,
-          spin: g.spin, spinRate: g.spinRate, mass: g.mass  // carry towing weight onto the node (F5)
+          spin: g.spin, spinRate: g.spinRate, mass: g.mass,  // carry towing weight onto the node (F5)
+          towed: !inRing                                     // CS020: earns the delivery combo (see above)
         });
         AudioSys.pickup();
         // Count-based Magnet expiry (B-5): spend one budget per canister HOOKED — counted at the hook,
@@ -6148,7 +6166,9 @@ function update(dt) {
         for (let k = 0; k < take; k++) {
           game.chain.push({
             x: g.x, y: g.y, px: g.x, py: g.y,
-            spin: g.spin, spinRate: g.spinRate, mass: pMass
+            spin: g.spin, spinRate: g.spinRate, mass: pMass,
+            towed: !inRing         // CS020: one scoop is one capture — every `take` node gets the
+                                   // SAME tag, from the expression computed once above the branch
           });
         }
         AudioSys.pickup();
@@ -6225,74 +6245,92 @@ function update(dt) {
       game.offloadTimer -= dt;
       if (game.offloadTimer <= 0) {
         const node = game.chain.pop(); // canisters peel off from the tail
-        game.deliveryCount++;
-        const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
-        addScore(pts);
-        // Achievement stats (F9): per-game delivered count (Scrap Runner) + best combo this visit
-        // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
-        // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
-        game.stats.delivered++;
-        game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
-        // CS018 P8 (PLANNED-FEATURES-CS018.md §4.3, replaces the v3.6 P3 single ===10 emitter):
-        // four independent "passes through N exactly once per visit" latches — same idiom as the
-        // deliveryCount===12 Heavy Hauler / ===CARGO_CAP_MAX Maxed Out latches below — each awarding
-        // ONE powerup. Cumulatively: 1 for 8-11, 2 for 12-15, 3 for 16-19, 4 for 20-23 delivered.
-        // Each launches from the dock's own position on a fresh random vector, exactly as the old
-        // ===10 emitter did. The "SALVAGE BONUS" floater fires only on the first award (8) so the
-        // dock doesn't repeat identical text four times in one visit.
-        if (game.deliveryCount === 8 || game.deliveryCount === 12 ||
-            game.deliveryCount === 16 || game.deliveryCount === 20) {
-          const a = rand(0, TAU);
-          dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED);
-          if (game.deliveryCount === 8) {
-            game.floaters.push(new FloatText("SALVAGE BONUS", game.dock.x, game.dock.y - 22, COLOR.dock));
+        // CS020: TOWED (hooked outside the dock neighborhood, the work of an actual haul) vs INCIDENTAL
+        // (hooked while already parked in it). `!== false` is load-bearing, not style: a node with no
+        // `towed` field at all — which is every chain node any older test seeds by hand — defaults to
+        // TOWED, so absence never silently demotes a delivery. Only an explicit false demotes.
+        const towed = node.towed !== false;   // absent => towed
+        if (towed) {
+          game.deliveryCount++;
+          const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
+          addScore(pts);
+          // Achievement stats (F9): per-game delivered count (Scrap Runner) + best combo this visit
+          // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
+          // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
+          game.stats.delivered++;
+          game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
+          // CS018 P8 (PLANNED-FEATURES-CS018.md §4.3, replaces the v3.6 P3 single ===10 emitter):
+          // four independent "passes through N exactly once per visit" latches — same idiom as the
+          // deliveryCount===12 Heavy Hauler / ===CARGO_CAP_MAX Maxed Out latches below — each awarding
+          // ONE powerup. Cumulatively: 1 for 8-11, 2 for 12-15, 3 for 16-19, 4 for 20-23 delivered.
+          // Each launches from the dock's own position on a fresh random vector, exactly as the old
+          // ===10 emitter did. The "SALVAGE BONUS" floater fires only on the first award (8) so the
+          // dock doesn't repeat identical text four times in one visit.
+          if (game.deliveryCount === 8 || game.deliveryCount === 12 ||
+              game.deliveryCount === 16 || game.deliveryCount === 20) {
+            const a = rand(0, TAU);
+            dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED);
+            if (game.deliveryCount === 8) {
+              game.floaters.push(new FloatText("SALVAGE BONUS", game.dock.x, game.dock.y - 22, COLOR.dock));
+            }
           }
+          // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
+          // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.
+          Achievements.lifetime.bestDeliveredGame = Math.max(Achievements.lifetime.bestDeliveredGame, game.stats.delivered);
+          game.stats.pacifistStreak++;
+          game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
+          // Zen Master (lifetime, per-EVENT): each haul whose no-fire delivery streak REACHES 5 counts once.
+          // pacifistStreak passes through 5 exactly once per haul (firing resets it to 0), so === 5 latches
+          // once; a longer haul (6,7,…) doesn't re-fire, and a fresh 5-streak after firing is a new event.
+          if (game.stats.pacifistStreak === 5) Achievements.lifetime.pacifistTowEvents++;
+          if (game.stats.delivered === 1 && game.stats.gameTime <= 60) game.stats.speedRecycler = true;
+          // Heavy Hauler (weekly) + The Long Haul (lifetime fullChains) + Freight Baron (lifetime, per-EVENT):
+          // a FIXED >=12-in-one-visit milestone, deliberately decoupled from the growing game.cargoMax
+          // (FLAG A-5-a / B-8-b) — deliveryCount passes through 12 exactly once per qualifying visit, so all
+          // three latch once per visit.
+          if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; Achievements.lifetime.heavyHaulerEvents++; }
+          // Maxed Out (lifetime, CS012 P3): deliveryCount passes through CARGO_CAP_MAX exactly once per
+          // qualifying visit (same "passes through" latch idiom as the ===12 check above). Celebration
+          // (floater + gold ring pulse) fires at this same instant — no voice line (deferred, FORK-CS012-B b).
+          if (game.deliveryCount === CARGO_CAP_MAX) {
+            game.stats.maxChainVisit = true;
+            game.floaters.push(new FloatText("MAX HAUL", game.dock.x, game.dock.y - 22, COLOR.ach, 24));
+            game.cargoFlash = HUD_CAP_FLASH;
+          }
+          // CS018 P9: a full-cap 24-piece visit ALSO triggers the SUPER MEGA DELIVERY — guaranteed
+          // six-type set + the snapshot hunter sweep + the coalescence pause (see superMegaDelivery()).
+          // Same "passes through CARGO_CAP_MAX exactly once per visit" latch as Maxed Out above, kept
+          // as its OWN block: Maxed Out is an achievement latch, this is a game event — and P10 hooks
+          // the dock_24 voice line HERE, not into VoiceSys.dockDelivery's tier chain. SILENT this phase.
+          if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
+          Achievements.lifetime.delivered++;
+          Achievements.lifetime.deliveryScore += pts;
+          game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
+          AudioSys.deliver(game.deliveryCount);
+          // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
+          // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
+          // THE LATCH, no flag needed) and deliveryCount is intact at this instant. 1–4 pieces says nothing.
+          // breakChain()/scatterChain() also zero deliveryCount but never reach here, so they stay silent.
+          if (game.chain.length === 0) VoiceSys.dockDelivery(game.deliveryCount);
+        } else {
+          // CS020: an incidental. It recycles and it PAYS — a canister is a canister — but it is not part
+          // of the haul, so it earns no combo and touches nothing else: not game.deliveryCount, not the
+          // delivery stats, not the lifetime counters, and therefore none of the deliveryCount-keyed
+          // latches downstream (the 8/12/16/20 reward tiers, Heavy Hauler, Maxed Out, the Super Mega
+          // Delivery). Fixing it AT THE COUNTER is what keeps those correct without a second guard.
+          // AudioSys.deliver(1) deliberately, not the combo pitch: audible, but flat.
+          addScore(DOCK_BASE_SCORE);
+          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, node.x, node.y, COLOR.dock));
+          AudioSys.deliver(1);
         }
-        // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
-        // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.
-        Achievements.lifetime.bestDeliveredGame = Math.max(Achievements.lifetime.bestDeliveredGame, game.stats.delivered);
-        game.stats.pacifistStreak++;
-        game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
-        // Zen Master (lifetime, per-EVENT): each haul whose no-fire delivery streak REACHES 5 counts once.
-        // pacifistStreak passes through 5 exactly once per haul (firing resets it to 0), so === 5 latches
-        // once; a longer haul (6,7,…) doesn't re-fire, and a fresh 5-streak after firing is a new event.
-        if (game.stats.pacifistStreak === 5) Achievements.lifetime.pacifistTowEvents++;
-        if (game.stats.delivered === 1 && game.stats.gameTime <= 60) game.stats.speedRecycler = true;
-        // Heavy Hauler (weekly) + The Long Haul (lifetime fullChains) + Freight Baron (lifetime, per-EVENT):
-        // a FIXED >=12-in-one-visit milestone, deliberately decoupled from the growing game.cargoMax
-        // (FLAG A-5-a / B-8-b) — deliveryCount passes through 12 exactly once per qualifying visit, so all
-        // three latch once per visit.
-        if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; Achievements.lifetime.heavyHaulerEvents++; }
-        // Maxed Out (lifetime, CS012 P3): deliveryCount passes through CARGO_CAP_MAX exactly once per
-        // qualifying visit (same "passes through" latch idiom as the ===12 check above). Celebration
-        // (floater + gold ring pulse) fires at this same instant — no voice line (deferred, FORK-CS012-B b).
-        if (game.deliveryCount === CARGO_CAP_MAX) {
-          game.stats.maxChainVisit = true;
-          game.floaters.push(new FloatText("MAX HAUL", game.dock.x, game.dock.y - 22, COLOR.ach, 24));
-          game.cargoFlash = HUD_CAP_FLASH;
-        }
-        // CS018 P9: a full-cap 24-piece visit ALSO triggers the SUPER MEGA DELIVERY — guaranteed
-        // six-type set + the snapshot hunter sweep + the coalescence pause (see superMegaDelivery()).
-        // Same "passes through CARGO_CAP_MAX exactly once per visit" latch as Maxed Out above, kept
-        // as its OWN block: Maxed Out is an achievement latch, this is a game event — and P10 hooks
-        // the dock_24 voice line HERE, not into VoiceSys.dockDelivery's tier chain. SILENT this phase.
-        if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
-        Achievements.lifetime.delivered++;
-        Achievements.lifetime.deliveryScore += pts;
-        game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
-        AudioSys.deliver(game.deliveryCount);
-        // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
-        // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
-        // THE LATCH, no flag needed) and deliveryCount is intact at this instant. 1–4 pieces says nothing.
-        // breakChain()/scatterChain() also zero deliveryCount but never reach here, so they stay silent.
-        if (game.chain.length === 0) VoiceSys.dockDelivery(game.deliveryCount);
         game.offloadTimer = DOCK_OFFLOAD_INTERVAL;
       }
     } else {
       game.offloadTimer = 0;
-      // combo resets once you leave the dock's neighborhood
-      if (!game.ship.dead &&
-          dist2(game.ship, game.dock) > (game.dock.radius + 40) * (game.dock.radius + 40)) {
+      // combo resets once you leave the dock's neighborhood (CS020: the bare 40 is now
+      // DOCK_NEIGHBORHOOD_PAD, shared with the towed/incidental tag at the pickup gate)
+      const pad = game.dock.radius + DOCK_NEIGHBORHOOD_PAD;
+      if (!game.ship.dead && dist2(game.ship, game.dock) > pad * pad) {
         game.deliveryCount = 0;
       }
     }
