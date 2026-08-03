@@ -124,20 +124,26 @@ Four phases and one blocking playtest gate. One session per phase, one commit pe
 
 ## ⛔ PLAYTEST GATE — blocking, P4 must not run until answered
 
-Write answers into `STATUS.md`'s Playtest asks section before P4's session. P4 retunes from actual answers only, never an invented interpretation (the CS020 P2 precedent).
+Play levels **3, 6, 9, 12** (one full pass of the ramp), ideally one past the 1.8 floor at **24**. Answers go in `STATUS.md` before P4's session.
 
-Play through at minimum levels 3, 6, 9 and 12 — one full pass of the ramp — and ideally one level past the 1.8 floor at 24.
+All four densities and both orbit velocities are live sliders in the hidden Debug panel's ORBIT section. **Retune in-session and report the number you landed on, not a yes/no.** If an answer needs a FEATURE rather than a constant move, say so and P4 stops (the CS021 P5 precedent).
 
-1. **The ramp.** Does one ring at level 3, two at 6, three at 9, four at 12 read as the shell closing in, or as four unrelated levels? This is the whole bet of FORK-CS022-E.
-2. **Level 3 specifically.** 22 satellites in one sparse outer shell plus 5 ordinary scatter, in a world four times today's. Does the shell read as a *place* — something you're inside — or as distant scenery you can ignore until the field is clear?
-3. **The world change itself.** You cross from a normal level into one four times the size and back again, twice every three levels. Is the transition perceptible? Should it be? Right now nothing announces it.
-4. **Carried junk after a transition (FLAG-CS022-k).** Fly an orbit level with a lot of standing garbage, clear it, and watch what the next field level looks like. Everything beyond 660 px got pulled to that radius along its own bearing — does that read as a shell of debris at arm's length, or as an obvious artefact? Does it trigger a wave of coalescence?
-5. **Ring 4 after the halving (FLAG-CS022-c).** 276 px lanes where CS021 had 92. Too sparse to register as a ring at all?
-6. **The fast ring at level 6 (FLAG-CS022-b).** Ring 3 is the first moving ring the player ever meets. Does motion arriving one occurrence late land as a second surprise, or just as inconsistency?
-7. **Frame rate in a browser.** This is the one the headless gate cannot answer: `draw()` is not in the measured loop and `shadowBlur` scales with exactly these counts. Watch for hitching during a full harvest at level 21+, and especially at the moment of death on a part-harvested orbit level — that is where the standing-garbage peak lands.
-8. **Everything CS021's gate never got to ask.** Q2–Q8 of that round are still open and are answerable for the first time: the shield bounce off a rail (`SHIELD_BOUNCE_RESTITUTION` 1.0, `SHIELD_BOUNCE_MIN` 120), `ORBIT_ANG_VEL` 6 °/s and `ORBIT_FAST_MULT` 3.0, inbound passes with a full tow, and whether the `COMBO n/N` readout reads at a glance mid-haul.
+### New in CS022
 
-**The values P4 exists to carry:** the four densities, `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT`, the two shield-bounce knobs, and — if the ramp's shape is wrong rather than its numbers — the ramp itself. All four densities and both velocities are live sliders in the hidden Debug panel's ORBIT section; retune in-session and report the numbers you landed on rather than a yes/no.
+1. **The ramp.** One ring at 3, two at 6, three at 9, four at 12. Does it read as the shell closing in, or as four unrelated levels? *This is the whole bet of FORK-CS022-E.*
+2. **Level 3.** 22 satellites in one shell at radius 1288, plus 5 ordinary scatter, in a world four times normal. A place you are inside, or scenery you ignore until the field is clear?
+3. **The world change.** You cross into a 4× world and back, twice every three levels. Is it perceptible? Should anything announce it?
+4. **Carried junk after a transition (FLAG-CS022-k).** Clear an orbit level with a lot of garbage standing. Everything past 660 px got pulled to that radius along its own bearing — debris at arm's length, or an obvious artefact? Does it set off a wave of coalescence?
+
+### Carried over from CS021 — all seven were unanswerable last round because the rings were too tight
+
+5. **The curve's shape.** Lanes are now 101 / 216 / 305 / 232 px. Does that read as a shape, or as noise? Ring 4 was the 92 px climax and is now second-*widest* — does it still register as a ring at all? *(knob: the four densities)*
+6. **The fast ring.** Ring 3, first seen at level 6 rather than 3. Does the timing pressure land, or read as unfair? *(report where you leave `ORBIT_ANG_VEL` 6 °/s and `ORBIT_FAST_MULT` 3.0)*
+7. **Ring contact.** Take a hit inbound with a full tow — satisfying bounce, or does it take control away? And did any wave start put you too close to a ring? *(knobs: `SHIELD_BOUNCE_RESTITUTION` 1.0, `SHIELD_BOUNCE_MIN` 120. Ring 3 throws a parked ship at 302 px/s, ring 1 at 120. Only ring 1 can now contain the ship, so the spawn half only bites from level 12.)*
+8. **Set-piece or grind.** 76–84 satellites at level 12+ against a normal field's 13. Any Hunter-pressure spike out of the harvest cascade?
+9. **The schedule.** 21 orbit levels in 63. Still special at occurrence 5, or repetitive? *(a schedule change is CS023, not a P4 retune — but record the answer now)*
+10. **Frame rate.** `update()` is a non-issue — 0.674 ms median at the 84-satellite peak, 1,158 peak entities. **`draw()` is untested and `shadowBlur` scales with exactly these counts.** Watch a full harvest at level 21+, and the instant of death on a part-harvested orbit level (9,374 entities), which is where the standing-garbage peak lands.
+11. **HUD.** Does `COMBO n/N` read at a glance mid-haul, or do you want the grace-window countdown after all?
 
 ---
 
