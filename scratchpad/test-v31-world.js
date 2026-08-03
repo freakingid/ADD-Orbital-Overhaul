@@ -114,8 +114,15 @@ console.log("(B) Real nextWave() debris spawns land within the clamped ring, man
 // the generator ever used naive arithmetic), and the outermost satellite edge stays inside the world's
 // wrap-clean radius budget, min(WORLD_W, WORLD_H)/2 - 20. Both archetypes are sampled; neither is
 // allowed to go unchecked, and the sample counts are asserted so a schedule change can't empty either.
+//
+// REPOINTED BY CS022 P3 (spec §1.4, FORK-CS022-F): an orbit level now ALSO spawns levelDef(n-1).junkCount
+// ordinary scatter satellites on top of its rings, so "which invariant applies" is a PER-ENTITY question
+// (does it carry orbit state?) and no longer a per-LEVEL one. Dispatching on the level, as this loop used
+// to, fed the field component's undefined orbitRadius into the ring check and produced NaN. Both
+// populations are now checked with their own rule, on both archetypes, and both sample counts are pinned.
 let debrisOk = true, debrisMinSeen = Infinity, debrisMaxSeen = 0;
 let orbitOk = true, orbitEdgeSlackMin = Infinity, orbitSamples = 0, fieldSamples = 0, orbitWorstErr = 0;
+let orbitFieldSamples = 0;   // CS022 P3: scatter satellites sampled ON an orbit level (the field component)
 let sizeOk = true;
 for (let trial = 0; trial < 25; trial++) {
   startGame();
@@ -126,14 +133,13 @@ for (let trial = 0; trial < 25; trial++) {
   game.wave = 1 + Math.floor(Math.random() * 6);
   game.debris = [];
   nextWave();
-  const orbit = levelDef(game.wave).archetype === "orbit";
   // REPOINTED BY CS022 P1: the budget is now read off the LIVE world, not the load-time snapshot —
   // nextWave() has just resized to 5120x2880 if this turned out to be an orbit level.
   const [liveW, liveH] = liveDims();
   const orbitEdgeBudget = Math.min(liveW, liveH) / 2 - 20;
   if (game.worldSize !== worldSizeFor(game.wave)) sizeOk = false;
   for (const d of game.debris) {
-    if (orbit) {
+    if (d.orbitCenter) {   // CS022 P3: per-ENTITY, not per-level — an orbit level carries both populations
       orbitSamples++;
       // Wrap-aware distance to the dock must be exactly the satellite's own ring radius.
       const err = Math.abs(Math.sqrt(dist2(d, game.dock)) - d.orbitRadius);
@@ -142,6 +148,7 @@ for (let trial = 0; trial < 25; trial++) {
       orbitEdgeSlackMin = Math.min(orbitEdgeSlackMin, orbitEdgeBudget - (d.orbitRadius + d.radius));
     } else {
       fieldSamples++;
+      if (levelDef(game.wave).archetype === "orbit") orbitFieldSamples++;
       const dist = Math.sqrt(dist2(d, game.ship));
       debrisMinSeen = Math.min(debrisMinSeen, dist);
       debrisMaxSeen = Math.max(debrisMaxSeen, dist);
@@ -149,9 +156,13 @@ for (let trial = 0; trial < 25; trial++) {
     }
   }
 }
-assert(fieldSamples > 0, `B: (control) the sweep actually sampled FIELD-level spawns (${fieldSamples} pieces)`);
-assert(debrisOk, `B: every sampled FIELD debris spawn within [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] (saw [${debrisMinSeen.toFixed(1)}, ${debrisMaxSeen.toFixed(1)}])`);
-assert(orbitSamples > 0, `B: (control) the sweep actually sampled ORBIT-level spawns (${orbitSamples} satellites)`);
+assert(fieldSamples > 0, `B: (control) the sweep actually sampled SCATTER spawns (${fieldSamples} pieces)`);
+assert(debrisOk, `B: every sampled SCATTER debris spawn within [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] (saw [${debrisMinSeen.toFixed(1)}, ${debrisMaxSeen.toFixed(1)}])`);
+assert(orbitSamples > 0, `B: (control) the sweep actually sampled RAIL-BORNE satellites (${orbitSamples} satellites)`);
+// CS022 P3 control: the scatter samples above are no longer field-levels-only — an orbit level
+// contributes its fieldCount component to exactly the same [SPAWN_MIN_DIST, SPAWN_MAX_DIST] claim.
+assert(orbitFieldSamples > 0,
+  `B: (control) at least one ORBIT level's field component was sampled and checked by the scatter rule (${orbitFieldSamples} pieces)`);
 assert(orbitOk, `B: every sampled ORBIT satellite sits at exactly its ring radius from the dock, wrap-aware (worst error ${orbitWorstErr.toExponential(2)} px)`);
 assert(orbitEdgeSlackMin >= 0, "B: outermost ORBIT satellite edge stays within the LIVE world's wrap-clean budget");
 assert(sizeOk, "B: every sampled level ran at the world size its archetype asks for (CS022 P1)");

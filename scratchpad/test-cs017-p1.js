@@ -75,7 +75,7 @@ const RETURN = [
   "MusicSys", "AudioSys",
   // CS021 P2 REPOINT (sections B, F): the orbit archetype's total is occurrence-scaled now, not the
   // fixed 40 P1 shipped — orbitTotalAt() below recomputes it from these.
-  "generateOrbitLayout", "orbitGapMult", "SHIP_RADIUS", "DEBRIS_RADII",
+  "generateOrbitLayout", "orbitGapMult", "activeRingsFor", "SHIP_RADIUS", "DEBRIS_RADII",
   "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
   "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT",
   // A scope probe, so section (E) can ask "does this identifier exist at all?" without the factory's
@@ -116,8 +116,17 @@ function build() {
 // nextWave() is wired to, rather than restating a level-40 literal that is only true at occurrence 1.
 // Consumes its own rand() draws (placeOrbitRing's startAngle) but never reads them back, so it does not
 // disturb any Math.random() sequencing the surrounding assertions depend on.
+// EXTENDED BY CS022 P3 — the third rewrite of this helper, and the reason it is a helper at all: it
+// recomputes what an orbit level's nextWave() ACTUALLY SPAWNS from the same generator, ramp and level
+// table the shipped code is wired to, so a geometry or schedule move fails as a wiring mismatch rather
+// than as a stale literal. Two parts are new this changeset:
+//   * THE RING RAMP (FORK-CS022-E) — activeRingsFor(level) selects rings outermost-first, so occurrence 1
+//     lays only ring 4 and all four are present from occurrence 4 (level 12) onward;
+//   * THE FIELD COMPONENT (FORK-CS022-F) — levelDef(level).fieldCount ordinary scatter satellites ON TOP
+//     of the rings, which is exactly what retires CS021's "junkCount is not consumed on an orbit level"
+//     rule (spec Correction C6) and is why this returns a SUM rather than layout.total.
 function orbitTotalAt(A, level) {
-  return A.generateOrbitLayout({
+  const ringTotal = A.generateOrbitLayout({
     satelliteDiameter: A.DEBRIS_RADII[3] * 2,
     shipDiameter:      A.SHIP_RADIUS * 2,
     centerX: 0, centerY: 0,
@@ -130,7 +139,9 @@ function orbitTotalAt(A, level) {
     baseAngVel:        A.ORBIT_ANG_VEL,
     fastRingIndex:     A.ORBIT_FAST_RING - 1,
     fastRingMult:      A.ORBIT_FAST_MULT,
+    activeRings:       A.activeRingsFor(level),   // CS022 P3: the ramp, read from the shipped helper
   }).total;
+  return ringTotal + A.levelDef(level).fieldCount; // CS022 P3: rings PLUS the field component
 }
 
 // ================= (B) the cycle clock is RETIRED; game.wave alone drives the level table ==============
@@ -282,16 +293,41 @@ function orbitTotalAt(A, level) {
     // unchanged there. An ORBIT level's satellites are on a rail: their vx/vy is the instantaneous
     // orbital tangent (angVel × radius), which has nothing to do with DEBRIS_SPEEDS × junkSpeedMul, so
     // the tier envelope is a category error for them. They get their own assertion instead of a skip.
+    //
+    // REPOINTED BY CS022 P3 (spec §1.4, FORK-CS022-F): an orbit level now spawns BOTH populations —
+    // ramped rings plus levelDef(n-1).junkCount ordinary scatter satellites — so "which speed rule
+    // applies" is a PER-ENTITY question keyed on orbit state, not a per-LEVEL one. Dispatching on the
+    // level, as this branch used to, fed the field component's undefined orbitAngVel into the rail rule
+    // and produced NaN. Each population is now checked by ITS OWN rule, and the field component on an
+    // orbit level is checked by exactly the same tier envelope a field level's scatter is.
     const expectedSpeedMul = A.junkSpeedMul();
+    const tierEnvelope = (d, label) => {
+      const sp = Math.hypot(d.vx, d.vy);
+      const lo = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 0.7 * 0.999;
+      const hi = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 1.3 * 1.001;
+      assert(sp >= lo && sp <= hi,
+        `F: level ${w}: ${label} speed ${sp.toFixed(2)} outside the tier envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+    };
     if (A.levelDef(w).archetype === "orbit") {
-      const wantTotal = orbitTotalAt(A, w);   // CS021 P2: occurrence-scaled, no longer always 40
+      const wantTotal = orbitTotalAt(A, w);   // CS022 P3: rings (ramped) + the field component
       assert(g.debris.length === wantTotal, `F: level ${w}: ORBIT level spawned the ${wantTotal}-satellite layout (got ${g.debris.length})`);
+      let railBorne = 0, scatter = 0;
       for (const d of g.debris) {
-        const sp = Math.hypot(d.vx, d.vy);
-        const want = Math.abs(d.orbitAngVel * d.orbitRadius);
-        assert(Math.abs(sp - want) < 1e-9,
-          `F: level ${w}: orbiting satellite speed ${sp.toFixed(3)} === angVel × radius ${want.toFixed(3)}`);
+        if (d.orbitCenter) {
+          railBorne++;
+          const sp = Math.hypot(d.vx, d.vy);
+          const want = Math.abs(d.orbitAngVel * d.orbitRadius);
+          assert(Math.abs(sp - want) < 1e-9,
+            `F: level ${w}: orbiting satellite speed ${sp.toFixed(3)} === angVel × radius ${want.toFixed(3)}`);
+        } else {
+          scatter++;
+          tierEnvelope(d, "orbit-level FIELD COMPONENT junk");
+        }
       }
+      assert(scatter === A.levelDef(w).fieldCount,
+        `F: level ${w}: the field component is exactly levelDef(${w}).fieldCount (${A.levelDef(w).fieldCount}, got ${scatter})`);
+      assert(railBorne === wantTotal - scatter,
+        `F: level ${w}: ...and the remaining ${railBorne} satellites are all rail-borne`);
     } else {
       const expectedCount = A.levelDef(w).junkCount;
       assert(g.debris.length === expectedCount,

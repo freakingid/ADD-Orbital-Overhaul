@@ -99,7 +99,11 @@ let PURE = null;
   vm.createContext(sandbox);
   noThrow(() => {
     vm.runInContext(block +
-      "\n;globalThis.__X = { PHASE_LEN, LEVEL_MAX, JUNK_CYCLE, HUNTER_CAP_STEPS, TIER_STEPS, stepAt, levelDef };",
+      // CS022 P3: ORBIT_RING_COUNT joins the exported set. levelDef's new `orbitRings` column clamps
+      // against it, so — exactly like ORBIT_LEVEL_EVERY before it — it had to be MOVED INTO this slice;
+      // pulling it out here is what proves it really is inside, not merely reachable in the full build.
+      "\n;globalThis.__X = { PHASE_LEN, LEVEL_MAX, JUNK_CYCLE, HUNTER_CAP_STEPS, TIER_STEPS, stepAt, levelDef," +
+      "\n                     ORBIT_LEVEL_EVERY, ORBIT_RING_COUNT };",
       sandbox, { filename: "cs018-levelDef-block.js" });
   }, "B: the block evaluates standalone (no dependency on anything outside it)");
   PURE = sandbox.__X || null;
@@ -108,6 +112,18 @@ let PURE = null;
   if (!PURE) return;
   noThrow(() => { PURE.levelDef(1); }, "B: levelDef(1) is callable with NO game state in scope (purity)");
   noThrow(() => { PURE.levelDef(63); }, "B: levelDef(63) is callable in the bare context");
+  // CS022 P3 (FLAG-CS022-e): THE RECURSION SURVIVES THE SLICE. levelDef now calls ITSELF once, on an
+  // orbit level, to read the previous level's junkCount — so the slice has to contain everything the
+  // recursive branch touches, ORBIT_RING_COUNT included. An orbit level in the bare context is the
+  // direct proof, and the extremes prove the recursion terminates rather than merely not throwing here.
+  eq(PURE.ORBIT_LEVEL_EVERY, 3, "B: ORBIT_LEVEL_EVERY is defined INSIDE the slice (CS021 P1's own reason)");
+  eq(PURE.ORBIT_RING_COUNT, 4, "B: ORBIT_RING_COUNT is defined INSIDE the slice too (CS022 P3, same reason)");
+  noThrow(() => { PURE.levelDef(3); }, "B: levelDef(3) — an ORBIT level, so the recursive branch — is callable in the bare context");
+  eq(PURE.levelDef(3).fieldCount, PURE.levelDef(2).junkCount, "B: ...and the recursion returns the PREVIOUS level's junkCount");
+  eq(PURE.levelDef(3).orbitRings, 1, "B: ...and orbitRings resolves against the in-slice ORBIT_RING_COUNT");
+  for (const n of [0, -3, 63, 66, 500, 1e6, Infinity, NaN]) {
+    noThrow(() => { PURE.levelDef(n); }, `B: levelDef(${n}) terminates in the bare context (the recursion is at most one deep)`);
+  }
 
   // "Callable before startGame()" — the bare context has never had startGame() defined at all.
   assert(!("startGame" in sandbox), "B: the bare context has no startGame (so levelDef precedes it)");
@@ -247,12 +263,23 @@ const levelDef = PURE.levelDef, stepAt = PURE.stepAt;
 // every level from 63 to infinity, i.e. the endgame would become nothing but orbit levels. The claim is
 // therefore not weakened, it is SPLIT: everything else still clamps at 63, and `archetype` is asserted
 // POSITIVELY below to keep following the every-3rd schedule past the plateau.
+//
+// REPOINTED AGAIN BY CS022 P3 — two more columns (spec §4.5), and only ONE of them is a third exception.
+// `orbitRings` reads the unclamped n for exactly `archetype`'s reason and IS one: level 63 is an orbit
+// level with 4 rings and level 64 is a field level with 0, so it cannot be plateau-identical. It gets the
+// same treatment — exempted from the clamp claim, then asserted POSITIVELY below against the ramp rule.
+// `fieldCount` is deliberately NOT exempted, and that is a real assertion rather than an oversight:
+// although it is written in terms of n, it reads junkCount through the internal L clamp, so from level
+// 63 onward every level — orbit or field — yields levelDef(63).junkCount === 13. It is plateau-identical
+// and is left inside the clamp claim, where a future change that broke that would be caught.
 (function sectionG() {
-  console.log("(G) item 5 — levelDef(64) … levelDef(500) field-identical to levelDef(63) except `level` + `archetype`");
+  console.log("(G) item 5 — levelDef(64) … levelDef(500) field-identical to levelDef(63) except `level`, `archetype`, `orbitRings`");
   const base = levelDef(63);
   const keys = Object.keys(base);
-  const UNCLAMPED = ["level", "archetype"];   // the two fields that read n, not L
-  assert(keys.length === 4 + 3 + 7, `G: levelDef returns 14 fields (got ${keys.length}: ${keys.join(",")})`);
+  const UNCLAMPED = ["level", "archetype", "orbitRings"];   // the three fields that read n, not L
+  assert(keys.length === 4 + 2 + 3 + 7, `G: levelDef returns 16 fields (got ${keys.length}: ${keys.join(",")})`);
+  // CS022 P3: the two new columns exist and are the two the field count grew by.
+  assert(keys.includes("orbitRings") && keys.includes("fieldCount"), "G: the two CS022 P3 columns are present");
   for (let n = 64; n <= 500; n++) {
     const d = levelDef(n);
     assert(deepEq(Object.keys(d).sort(), keys.slice().sort()), `G: level ${n} has the same field set as 63`);
@@ -261,6 +288,12 @@ const levelDef = PURE.levelDef, stepAt = PURE.stepAt;
     // The replacement for the assertion removed above: the orbit schedule keeps its rhythm past the
     // endgame plateau instead of latching on level 63's value.
     eq(d.archetype, n % 3 === 0 ? "orbit" : "field", `G: level ${n} archetype still follows the every-3rd schedule past the plateau`);
+    // CS022 P3: the ramp column, asserted positively for the same reason — one ring per occurrence,
+    // capped at ORBIT_RING_COUNT, still moving past the plateau instead of latching on level 63's value.
+    eq(d.orbitRings, n % 3 === 0 ? Math.min(n / 3, PURE.ORBIT_RING_COUNT) : 0,
+      `G: level ${n} orbitRings still follows the ramp past the plateau`);
+    // ...and the column that IS plateau-identical, said out loud rather than left implicit.
+    eq(d.fieldCount, 13, `G: level ${n} fieldCount is pinned at 13 by the internal L clamp`);
   }
   eq(base.archetype, "orbit", "G: level 63 itself is an orbit level (63 % 3 === 0)");
   eq(levelDef(64).archetype, "field", "G: level 64 is NOT an orbit level — the plateau does not freeze the archetype");
@@ -357,12 +390,36 @@ function build(src, windowExtra) {
   // "nobody invents a second clock", not "the literal string game.wave appears", so the exemption is
   // narrow — that one helper, by name — and it is paid for with the two assertions below, which pin
   // that every CALL of worldSizeFor passes game.wave and that no other parameterised reader exists.
+  //
+  // REPOINTED AGAIN BY CS022 P3, and again narrowly. levelDef now calls ITSELF once — `levelDef(n - 1)`,
+  // to give an orbit level the previous level's scatter count (spec §1.4/§4.5). A SELF-call is not a
+  // consumer of the table and structurally cannot be a second clock: its argument is levelDef's own
+  // parameter, so whatever clock the outermost caller used is the only one in play. It is exempted by
+  // EXACT TEXT rather than by a loosened pattern, and paid for by the three assertions below: exactly one
+  // such site exists, it lives inside levelDef's own body, and its argument is literally `n - 1`.
+  const SELF_CALL = "levelDef(n - 1)";
   const PARAM_READERS = ["worldSizeFor"];   // helpers allowed to read levelDef(<their own level param>)
   const paramReaderRe = new RegExp(`^function (?:${PARAM_READERS.join("|")})\\s*\\(`);
-  let exempted = 0;
+  let exempted = 0, selfCalls = 0;
   for (const site of callSites) {
+    if (site.includes(SELF_CALL)) { selfCalls++; continue; }
     if (paramReaderRe.test(site) || /^return levelDef\(level\)\./.test(site)) { exempted++; continue; }
     assert(/levelDef\(game\.wave\)/.test(site), `I: call site reads levelDef(game.wave): ${site}`);
+  }
+  // The self-call exemption, paid for.
+  eq(selfCalls, 1, "I: exactly ONE self-recursive levelDef site (CS022 P3's fieldCount column)");
+  eq((codeOnly.join("\n").match(/levelDef\(n - 1\)/g) || []).length, 1,
+    "I: ...and `levelDef(n - 1)` appears exactly once in the whole build");
+  {
+    // ...and it is INSIDE levelDef's own body — not some other function that happens to name its
+    // argument `n`, which would be a genuine second reader wearing the exemption's clothes.
+    const lines = codeOnly;
+    const defLine  = lines.findIndex(l => l.startsWith("function levelDef(n) {"));
+    const selfLine = lines.findIndex(l => l.includes(SELF_CALL));
+    let endLine = -1;
+    for (let i = defLine + 1; i < lines.length; i++) if (lines[i] === "}") { endLine = i; break; }
+    assert(defLine >= 0 && selfLine > defLine && selfLine < endLine,
+      "I: the self-call sits inside levelDef's own body, between its signature and its closing brace");
   }
   assert(exempted > 0, "I: (control) the parameterised-reader exemption actually matched something (CS022 P1's worldSizeFor)");
   // ...and the exemption cannot hide a second clock: every CALL of the exempt helper passes game.wave.

@@ -77,7 +77,7 @@ const RETURN = [
   "AudioSys",
   // CS021 P2 REPOINT (section B): the orbit archetype's total is occurrence-scaled now, not the fixed 40
   // P1 shipped — orbitTotalAt() below recomputes it from these.
-  "generateOrbitLayout", "orbitGapMult", "SHIP_RADIUS", "DEBRIS_RADII",
+  "generateOrbitLayout", "orbitGapMult", "activeRingsFor", "SHIP_RADIUS", "DEBRIS_RADII",
   "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
   "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT"
 ];
@@ -85,8 +85,17 @@ const RETURN = [
 // CS021 P2 REPOINT helper (section B): see test-cs017-p1.js's identical helper for the full rationale —
 // the total now climbs from 40 (occurrence 1) to 45 (the floor), recomputed from the same generator +
 // occurrence-scaled multiplier nextWave() is wired to, rather than a restated level-40 literal.
+// EXTENDED BY CS022 P3 — the third rewrite of this helper, and the reason it is a helper at all: it
+// recomputes what an orbit level's nextWave() ACTUALLY SPAWNS from the same generator, ramp and level
+// table the shipped code is wired to, so a geometry or schedule move fails as a wiring mismatch rather
+// than as a stale literal. Two parts are new this changeset:
+//   * THE RING RAMP (FORK-CS022-E) — activeRingsFor(level) selects rings outermost-first, so occurrence 1
+//     lays only ring 4 and all four are present from occurrence 4 (level 12) onward;
+//   * THE FIELD COMPONENT (FORK-CS022-F) — levelDef(level).fieldCount ordinary scatter satellites ON TOP
+//     of the rings, which is exactly what retires CS021's "junkCount is not consumed on an orbit level"
+//     rule (spec Correction C6) and is why this returns a SUM rather than layout.total.
 function orbitTotalAt(A, level) {
-  return A.generateOrbitLayout({
+  const ringTotal = A.generateOrbitLayout({
     satelliteDiameter: A.DEBRIS_RADII[3] * 2,
     shipDiameter:      A.SHIP_RADIUS * 2,
     centerX: 0, centerY: 0,
@@ -99,7 +108,9 @@ function orbitTotalAt(A, level) {
     baseAngVel:        A.ORBIT_ANG_VEL,
     fastRingIndex:     A.ORBIT_FAST_RING - 1,
     fastRingMult:      A.ORBIT_FAST_MULT,
+    activeRings:       A.activeRingsFor(level),   // CS022 P3: the ramp, read from the shipped helper
   }).total;
+  return ringTotal + A.levelDef(level).fieldCount; // CS022 P3: rings PLUS the field component
 }
 
 // documentStub.createElement is tag-aware (unlike earlier CS015/CS017-P1 tests, which always returned
@@ -186,12 +197,27 @@ const TIER_NAMES = ["low", "normal", "high"];
     assert(row.junkCount === def.junkCount, `B: wave ${w}: junkCount expected ${def.junkCount}, got ${row.junkCount}`);
     // REPOINTED BY CS021 P1. The DiffLog's junkCount column still reports what the LEVEL TABLE decides
     // (asserted immediately above, unchanged); what changed is that only a FIELD level spawns that many
-    // pieces. An ORBIT level (every 3rd — FORK-CS021-E) lays a fixed 40-satellite ring layout around the
-    // dock and deliberately does not consume junkCount, so the sanity check is split rather than dropped.
+    // pieces. An ORBIT level (every 3rd — FORK-CS021-E) lays a ring layout around the dock, so the
+    // sanity check is split rather than dropped.
+    //
+    // REPOINTED AGAIN BY CS022 P3, and this is the reversal spec Correction C6 names. An orbit level now
+    // ALSO spawns levelDef(n-1).junkCount ordinary scatter satellites on top of its rings, so "every
+    // satellite carries orbit state" is false by design. The claim becomes the SPLIT it always should
+    // have been: the rail-borne population is exactly the ramp's ring total, the stateless population is
+    // exactly the field component, and together they are the whole spawn. The DiffLog row above still
+    // reports the level's OWN junkCount, which is now unread by the spawn (FLAG-CS022-g) and is still
+    // asserted, because that column means "what the table says".
     if (def.archetype === "orbit") {
-      const wantTotal = orbitTotalAt(A, g.wave);   // CS021 P2: occurrence-scaled, no longer always 40
+      const wantTotal = orbitTotalAt(A, g.wave);   // CS022 P3: rings (ramped) + the field component
       assert(g.debris.length === wantTotal, `B: wave ${w}: ORBIT level spawned the ${wantTotal}-satellite layout (got ${g.debris.length})`);
-      assert(g.debris.every(d => !!d.orbitCenter), `B: wave ${w}: every ORBIT-level satellite carries orbit state`);
+      const railBorne = g.debris.filter(d => !!d.orbitCenter).length;
+      const scatter   = g.debris.length - railBorne;
+      assert(scatter === def.fieldCount,
+        `B: wave ${w}: the stateless population is exactly fieldCount (${def.fieldCount}, got ${scatter})`);
+      assert(railBorne === wantTotal - def.fieldCount,
+        `B: wave ${w}: ...and the rest (${railBorne}) all carry orbit state — the two populations account for the whole spawn`);
+      assert(def.fieldCount === A.levelDef(g.wave - 1).junkCount,
+        `B: wave ${w}: fieldCount is the PREVIOUS level's junkCount (spec §1.4)`);
     } else {
       assert(g.debris.length === row.junkCount, `B: wave ${w}: sanity — the FIELD level actually spawned junkCount pieces`);
       assert(g.debris.every(d => d.orbitCenter === undefined), `B: wave ${w}: no FIELD-level satellite carries orbit state`);

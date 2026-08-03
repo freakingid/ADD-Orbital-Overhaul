@@ -76,6 +76,7 @@ function makeCtxStub() {
 const RETURN = [
   "game", "startGame", "update", "nextWave", "levelDef",
   "generateOrbitLayout", "spawnOrbitWave", "orbitGapMult",
+  "activeRingsFor",   // CS022 P3: the ring ramp — (B)/(C) recompute their expectations from it
   "ORBIT_LEVEL_EVERY", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_RING_COUNT",
   "ORBIT_DENSITY", "ORBIT_GAP_MULT", "ORBIT_GAP_MULT_FLOOR", "ORBIT_GAP_MULT_STEP",
   "ORBIT_SAFETY_MARGIN", "ORBIT_ANG_VEL", "ORBIT_FAST_MULT", "ORBIT_FAST_RING",
@@ -173,8 +174,13 @@ function atWave(X, w) {
   // generator itself must stay unaware of occurrence; only the CALL SITE changes).
   assert(!/generateOrbitLayout[\s\S]{0,50}orbitGapMult/.test(codeOnly),
     "A: generateOrbitLayout() itself does not call orbitGapMult — it stays pure, unaware of occurrence");
-  assert(/function spawnOrbitWave\(speedMul,\s*gapMult\)/.test(codeOnly),
-    "A: spawnOrbitWave() takes gapMult as its second parameter");
+  // REPOINTED BY CS022 P3: a THIRD parameter, activeRings — the ring ramp, resolved at the same call
+  // site and for the same reason. The P2 seam is widened by one argument, not breached: the generator
+  // still knows nothing about occurrence, which is the assertion immediately above.
+  assert(/function spawnOrbitWave\(speedMul,\s*gapMult,\s*activeRings\)/.test(codeOnly),
+    "A: spawnOrbitWave() takes gapMult as its second parameter and activeRings as its third");
+  assert(!/generateOrbitLayout[\s\S]{0,80}activeRingsFor/.test(codeOnly),
+    "A: generateOrbitLayout() itself does not call activeRingsFor — the ramp arrives as an argument");
   assert(/minGapMultiplier:\s*gapMult,/.test(codeOnly),
     "A: spawnOrbitWave() feeds the PARAMETER to minGapMultiplier, not a literal");
   assert(!/minGapMultiplier:\s*ORBIT_GAP_MULT,/.test(codeOnly),
@@ -183,8 +189,8 @@ function atWave(X, w) {
   // orbitGapMult(level) curve unless the debug slider has been moved off its default (spec §6 table) —
   // untouched (every test in this file, which never calls applyDebug), the two are behaviourally
   // identical, which is exactly what (C2) below drives and asserts against real nextWave() totals.
-  assert(/spawnOrbitWave\(speedMul,\s*orbitEffectiveGapMult\(game\.wave\)\)/.test(codeOnly),
-    "A: REPOINTED BY CS021 P3 — nextWave()'s orbit branch calls spawnOrbitWave with orbitEffectiveGapMult(game.wave)");
+  assert(/spawnOrbitWave\(speedMul,\s*orbitEffectiveGapMult\(game\.wave\),\s*activeRingsFor\(game\.wave\)\)/.test(codeOnly),
+    "A: REPOINTED BY CS022 P3 — nextWave()'s orbit branch calls spawnOrbitWave with orbitEffectiveGapMult(game.wave) AND activeRingsFor(game.wave)");
   eq((scriptSrc.match(/function orbitEffectiveGapMult\(/g) || []).length, 1,
     "A: REPOINTED BY CS021 P3 — exactly one orbitEffectiveGapMult() definition");
   // Exactly one DEFINITION and one CALL — "spawnOrbitWave(" itself matches both, so count them apart by
@@ -228,47 +234,69 @@ function atWave(X, w) {
 
   // ONE VARIABLE SCALES (spec §5): the density curve and both angular velocities are read as CONSTANTS,
   // not functions of level — orbitGapMult() is the only level-dependent input to the generator.
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.85]",
+  // REPOINTED BY CS022 P3: ring 4's density halved (FORK-CS022-G). The CLAIM here has nothing to do with
+  // that value — it is that the curve is a FIXED array rather than a function of level — so it is
+  // restated at the new value and the "not derived from orbitGapMult" source check below carries the
+  // actual weight.
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]",
     "B: ORBIT_DENSITY is still the fixed curve — untouched by occurrence scaling");
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
   assert(!/ORBIT_DENSITY\s*=\s*[^,;]*orbitGapMult/.test(codeOnly) && !/ORBIT_ANG_VEL\s*=\s*[^,;]*orbitGapMult/.test(codeOnly),
     "B: (source) neither the density curve nor the base angular velocity is derived from orbitGapMult");
   // Two real orbit waves at different occurrences: same density-derived ring shape, same angVel per ring,
   // only the SPACING differs.
+  //
+  // REPOINTED BY CS022 P3: the two probe levels must both be FULL-RAMP levels. Level 3 now lays ring 4
+  // alone (FORK-CS022-E), so comparing 3 against 24 would compare a one-element velocity set against a
+  // three-element one and fail for a reason that has nothing to do with occurrence scaling. Level 12 is
+  // the first full one; both it and 24 are read from the ramp itself rather than assumed. The undefined
+  // entries the field component contributes are filtered out — a scatter satellite has no orbitAngVel.
   withRandom(seededRandom(0xB2B2), () => {
     X.startGame();
-    atWave(X, 3);
-    const angVel3 = [...new Set(X.game.debris.map(d => d.orbitAngVel))].sort((a, b) => a - b);
-    atWave(X, 24);
-    const angVel24 = [...new Set(X.game.debris.map(d => d.orbitAngVel))].sort((a, b) => a - b);
-    eq(JSON.stringify(angVel3), JSON.stringify(angVel24),
-      "B: the SET of ring angular velocities at level 3 and level 24 is identical (angVel does not scale)");
+    let full = 3;
+    while (X.activeRingsFor(full).length < X.ORBIT_RING_COUNT) full += X.ORBIT_LEVEL_EVERY;
+    const velsAt = lvl => {
+      atWave(X, lvl);
+      return [...new Set(X.game.debris.filter(d => !!d.orbitCenter).map(d => d.orbitAngVel))].sort((a, b) => a - b);
+    };
+    const angVelFull = velsAt(full);
+    const angVel24   = velsAt(24);
+    eq(angVelFull.length, 2, `B: (setup) a full-ramp level (${full}) shows exactly two distinct angular velocities — base and fast`);
+    eq(JSON.stringify(angVelFull), JSON.stringify(angVel24),
+      `B: the SET of ring angular velocities at level ${full} and level 24 is identical (angVel does not scale)`);
   });
 })();
 
 // ================= (C) SATELLITE TOTALS across the scaling range =====================
+// REPOINTED BY CS022 P3. This section's subject is the OCCURRENCE CURVE — what changes when only the
+// fairness multiplier moves — so (C1) and (C3) keep feeding the pure generator ALL FOUR rings and vary
+// nothing but gapMult, which is still exactly the isolation the claim needs. Only the numbers move:
+// 40 -> 65 at occurrence 1 and 45 -> 71 at the floor, because the radii are 460/276 now.
+//
+// (C2) is different: it drives the REAL nextWave(), so it sees the ramp AND the field component too, and
+// its expectations are recomputed from activeRingsFor()/levelDef() rather than restated.
 (function sectionC() {
-  console.log("(C) satellite totals: 40 at occurrence 1, 45 at the floor, maxCount widening 7/13/19/25 -> 8/14/21/28");
+  console.log("(C) satellite totals: 65 at occurrence 1, 71 at the floor, maxCount widening 18/29/40/51 -> 20/33/45/58");
   const X = build();
 
-  // -- (C1) the pure generator, fed orbitGapMult() directly --
+  // -- (C1) the pure generator, fed orbitGapMult() directly, with EVERY ring active --
   const L1  = withRandom(seededRandom(0xC001), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(3))));
   const L24 = withRandom(seededRandom(0xC024), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(24))));
   const L63 = withRandom(seededRandom(0xC063), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(63))));
 
-  eq(L1.total, 40, "C1: occurrence 1 (level 3) totals 40 (unchanged from P1)");
-  eq(L24.total, 45, "C1: occurrence 8 (level 24, the floor) totals 45");
-  eq(L63.total, 45, "C1: occurrence 21 (level 63) still totals 45 — held at the floor");
+  eq(L1.total, 65, "C1: occurrence 1's multiplier over all four rings totals 65");
+  eq(L24.total, 71, "C1: occurrence 8 (level 24, the floor) totals 71");
+  eq(L63.total, 71, "C1: occurrence 21 (level 63) still totals 71 — held at the floor");
 
-  const WANT_MAXCOUNT_1  = [7, 13, 19, 25];
-  const WANT_MAXCOUNT_24 = [8, 14, 21, 28];
-  const WANT_COUNT_24    = [6, 7, 8, 24];
+  const WANT_MAXCOUNT_1  = [18, 29, 40, 51];
+  const WANT_MAXCOUNT_24 = [20, 33, 45, 58];
+  const WANT_COUNT_24    = [15, 15, 16, 25];
   L1.rings.forEach((r, i) => eq(r.maxCount, WANT_MAXCOUNT_1[i], `C1: occurrence 1 ring ${i + 1} maxCount unchanged at ${WANT_MAXCOUNT_1[i]}`));
   L24.rings.forEach((r, i) => {
     eq(r.maxCount, WANT_MAXCOUNT_24[i], `C1: occurrence 8 ring ${i + 1} maxCount widened to ${WANT_MAXCOUNT_24[i]}`);
     eq(r.count, WANT_COUNT_24[i], `C1: occurrence 8 ring ${i + 1} count is ${WANT_COUNT_24[i]}`);
   });
-  eq(L63.rings.map(r => r.maxCount).join("/"), WANT_MAXCOUNT_24.join("/"), "C1: level 63's maxCounts match the floor's (8/14/21/28)");
+  eq(L63.rings.map(r => r.maxCount).join("/"), WANT_MAXCOUNT_24.join("/"), `C1: level 63's maxCounts match the floor's (${WANT_MAXCOUNT_24.join("/")})`);
 
   // The density curve itself never changed — only maxCount (a function of gapMult) moved, which is what
   // pushes round(1 + density * (maxCount - 1)) to a new integer for rings 2-4.
@@ -279,24 +307,41 @@ function atWave(X, w) {
   //    generator fed a hand-picked value. This is what proves spawnOrbitWave() really receives
   //    orbitGapMult(game.wave) rather than still being hardwired to the fixed ORBIT_GAP_MULT (in which
   //    case every occurrence would still total 40, exactly the P1 behaviour this phase supersedes).
+  //    REPOINTED BY CS022 P3: a real spawn now also carries the RAMP and the FIELD COMPONENT, so the
+  //    expected total is the ramped ring layout plus levelDef(n).fieldCount, both read from the shipped
+  //    helpers. The per-ring granular proof survives intact at a full-ramp level; level 3 additionally
+  //    gets its own assertion, because "one ring, and it is the OUTERMOST one" is the ramp's whole claim.
   withRandom(seededRandom(0xC2C2), () => {
     X.startGame();
+    const wantAt = lvl => withRandom(seededRandom(0xC2A0 + lvl), () => X.generateOrbitLayout(
+      { ...shippedArgs(X, 1280, 720, X.orbitGapMult(lvl)), activeRings: X.activeRingsFor(lvl) })).total
+      + X.levelDef(lvl).fieldCount;
     const n3  = atWave(X, 3);
     const n24 = atWave(X, 24);
     const n63 = atWave(X, 63);
-    eq(n3, 40, "C2: a REAL level-3 wave (occurrence 1) spawns 40 satellites");
-    eq(n24, 45, "C2: a REAL level-24 wave (occurrence 8, the floor) spawns 45 satellites");
-    eq(n63, 45, "C2: a REAL level-63 wave (occurrence 21) spawns 45 satellites");
+    eq(n3, wantAt(3),  `C2: a REAL level-3 wave (occurrence 1) spawns ${wantAt(3)} — one ring plus the field component`);
+    eq(n24, wantAt(24), `C2: a REAL level-24 wave (occurrence 8, the floor) spawns ${wantAt(24)}`);
+    eq(n63, wantAt(63), `C2: a REAL level-63 wave (occurrence 21) spawns ${wantAt(63)}`);
 
-    // Per-ring counts from the REAL spawn at the floor, grouped by orbitRadius (the ring identity),
-    // matching (6, 7, 8, 24) exactly — the granular proof, not just the total.
+    // Per-ring counts from the REAL level-63 spawn (a full-ramp level at the floor), grouped by
+    // orbitRadius (the ring identity). The field component has no orbitRadius and is excluded here — it
+    // is asserted as its own population instead.
     const byRadius = {};
-    for (const d of X.game.debris) byRadius[d.orbitRadius] = (byRadius[d.orbitRadius] || 0) + 1;
+    for (const d of X.game.debris) if (d.orbitCenter) byRadius[d.orbitRadius] = (byRadius[d.orbitRadius] || 0) + 1;
     const radii = Object.keys(byRadius).map(Number).sort((a, b) => a - b);
     eq(radii.length, 4, "C2: (setup) the real level-63 wave has four distinct ring radii");
     const gotCounts = radii.map(r => byRadius[r]);
     eq(JSON.stringify(gotCounts), JSON.stringify(WANT_COUNT_24),
-      `C2: the REAL spawn's per-ring counts at the floor are 6/7/8/24 (got ${gotCounts.join("/")})`);
+      `C2: the REAL spawn's per-ring counts at the floor are ${WANT_COUNT_24.join("/")} (got ${gotCounts.join("/")})`);
+    eq(X.game.debris.length - radii.reduce((n, r) => n + byRadius[r], 0), X.levelDef(63).fieldCount,
+      "C2: ...and the remainder is exactly levelDef(63).fieldCount");
+
+    // The RAMP itself, at the real spawn: occurrence 1 lays exactly ONE ring, and it is ring 4.
+    atWave(X, 3);
+    const r3 = [...new Set(X.game.debris.filter(d => !!d.orbitCenter).map(d => d.orbitRadius))];
+    eq(r3.length, 1, "C2: a REAL level-3 wave lays exactly ONE ring (FORK-CS022-E)");
+    eq(r3[0], X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP,
+      "C2: ...and it is the OUTERMOST one — the ramp fills from the outside in");
   });
 
   // -- (C3) the climb is MONOTONIC (non-decreasing) across occurrences 1..21, from 40 up to 45, never
@@ -306,10 +351,10 @@ function atWave(X, w) {
     const level = occ * 3;
     const L = withRandom(seededRandom(0xC300 + occ), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(level))));
     assert(L.total >= prevTotal, `C3: occurrence ${occ} (level ${level}): total ${L.total} is non-decreasing (prev ${prevTotal})`);
-    assert(L.total >= 40 && L.total <= 45, `C3: occurrence ${occ}: total ${L.total} stays within [40, 45]`);
+    assert(L.total >= L1.total && L.total <= L24.total, `C3: occurrence ${occ}: total ${L.total} stays within [${L1.total}, ${L24.total}]`);
     prevTotal = L.total;
   }
-  eq(prevTotal, 45, "C3: the climb really does reach 45 by occurrence 21");
+  eq(prevTotal, 71, "C3: the climb really does reach 71 by occurrence 21");
 })();
 
 // ================= (D) THE FAIRNESS SWEEP RE-RUN — spec §8 items 1-4, occurrence-scaled ===============

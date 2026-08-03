@@ -125,6 +125,9 @@ const RETURN = [
   // deterministically; worldDims/WORLD_SIZE_* are how sections that place things near a seam read the
   // LIVE torus period rather than the load-time WORLD_W/WORLD_H snapshot above.
   "killShip", "worldDims", "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT",
+  // CS022 P3: the ring ramp. Every expectation about what an orbit level lays down is now recomputed
+  // from these two rather than restated, so the ramp and the field component are wiring checks.
+  "activeRingsFor", "spawnFieldSatellites",
 ];
 
 function build({ audio = true, store = {} } = {}) {
@@ -170,6 +173,21 @@ function atWave(X, w) {
   X.nextWave();
   return X.game.debris.length;
 }
+// CS022 P3: the first orbit level at which the ring RAMP is complete — every ring present. Several
+// sections below (the motion mode, the split handoff, the wrap sweep) need all four rings on the field
+// at once, and CS022's ramp means level 3 no longer has them: occurrence 1 lays ring 4 alone. Derived
+// from the shipped activeRingsFor() rather than restated as "12", so a ramp retune carries these setups
+// with it instead of silently degenerating them into single-ring probes.
+function firstFullRampLevel(X) {
+  for (let n = X.ORBIT_LEVEL_EVERY; n <= 63; n += X.ORBIT_LEVEL_EVERY)
+    if (X.activeRingsFor(n).length === X.ORBIT_RING_COUNT) return n;
+  throw new Error("no orbit level within 1..63 reaches a full ring set");
+}
+// The four shipped ring radii, in index order — derived, never restated.
+function shippedRadii(X) {
+  return Array.from({ length: X.ORBIT_RING_COUNT }, (_, i) => X.ORBIT_INNER_RADIUS + i * X.ORBIT_RADIUS_STEP);
+}
+
 // The shipped generator arguments, exactly as spawnOrbitWave() assembles them. Centre/ship are the
 // caller's so a section can place them wherever it needs.
 function shippedArgs(X, centerX, centerY) {
@@ -234,48 +252,76 @@ function shippedArgs(X, centerX, centerY) {
     "A: still exactly TWO byte-identical `const speedMul = junkSpeedMul();` sites");
 
   // The archetype is derived from the ONE clock and from nothing else.
-  assert(/archetype: n % ORBIT_LEVEL_EVERY === 0 \? "orbit" : "field"/.test(codeOnly),
+  // REPOINTED BY CS022 P3: the EXPRESSION is byte-unchanged, but it moved out of levelDef's object
+  // literal into a local — three columns read it now (itself, orbitRings, fieldCount) and an object
+  // literal cannot see its own properties. The claim is unweakened: the same derivation, plus a pin that
+  // the column really is that local rather than a second, divergent copy of the rule.
+  assert(/const archetype = n % ORBIT_LEVEL_EVERY === 0 \? "orbit" : "field";/.test(codeOnly),
     "A: levelDef derives archetype from n alone — one clock, no cycle state");
+  assert(/^\s*archetype: archetype,$/m.test(codeOnly),
+    "A: ...and the archetype COLUMN is that local, not a second copy of the expression");
+  eq((codeOnly.match(/n % ORBIT_LEVEL_EVERY === 0/g) || []).length, 1,
+    "A: the every-3rd rule is written exactly once in the whole build");
   // REPOINTED BY CS022 P1: there are TWO archetype consumers now, and the second one is the point of
   // that phase — worldSizeFor() picks the torus period off the same archetype the spawn branch reads
   // (FORK-CS022-C: world size is archetype-keyed, not a level-table column). The claim is re-stated at
   // full strength rather than loosened to a bare count: BOTH sites are named, and nothing else reads it.
+  //
+  // REPOINTED AGAIN BY CS022 P3: four sites now, and the count is deliberately SPLIT rather than raised,
+  // because two of them are a different kind of thing. levelDef's own `orbitRings` and `fieldCount`
+  // columns read the LOCAL pinned above — they are internal derivations of the table, not readers of it,
+  // and they cannot be a second clock because they see only levelDef's own argument. The EXTERNAL
+  // consumers of the archetype column are still exactly the two CS022 P1 named, and both are pinned by
+  // their full text so a third could not slip in unnamed.
   const archetypeSites = codeOnly.split("\n").map(l => l.trim()).filter(l => /archetype === "orbit"/.test(l));
-  eq(archetypeSites.length, 2, "A: exactly two consumers of the archetype (the spawn branch + CS022 P1's worldSizeFor)");
-  assert(archetypeSites.some(l => /^if \(levelDef\(game\.wave\)\.archetype === "orbit"\)/.test(l)),
+  eq(archetypeSites.length, 4, "A: exactly four archetype tests in the build (2 internal to levelDef, 2 external consumers)");
+  const internalSites = archetypeSites.filter(l => /^(orbitRings|fieldCount): archetype === "orbit"/.test(l));
+  eq(internalSites.length, 2, "A: two of them are levelDef's OWN columns, reading its local — not consumers");
+  const externalSites = archetypeSites.filter(l => !internalSites.includes(l));
+  eq(externalSites.length, 2, "A: exactly two consumers of the archetype (the spawn branch + CS022 P1's worldSizeFor)");
+  assert(externalSites.some(l => /^if \(levelDef\(game\.wave\)\.archetype === "orbit"\)/.test(l)),
     "A: consumer 1 is nextWave()'s spawn branch, still reading levelDef(game.wave)");
-  assert(archetypeSites.some(l => /^return levelDef\(level\)\.archetype === "orbit" \? WORLD_SIZE_ORBIT : WORLD_SIZE_FIELD;$/.test(l)),
+  assert(externalSites.some(l => /^return levelDef\(level\)\.archetype === "orbit" \? WORLD_SIZE_ORBIT : WORLD_SIZE_FIELD;$/.test(l)),
     "A: consumer 2 is CS022 P1's worldSizeFor, and it only picks a world size");
 
   // The bounded loop cannot become unbounded by a later edit without failing here.
   assert(/ring\.spawnSafetyTries < ORBIT_SPAWN_TRIES/.test(codeOnly), "A: the reroll loop is bounded by ORBIT_SPAWN_TRIES");
 })();
 
-// ================= (B) THE §1.2 GEOMETRY TABLE =====================
+// ================= (B) THE GEOMETRY TABLE =====================
 // Pinned exactly, against a layout produced by the REAL generator with the REAL shipped constants. The
 // spec's own table is the expectation; a retune of any ORBIT_* constant must move this section too.
 // `gap` is the spec table's PUBLISHED figure, to its stated 1-decimal precision; the exact arithmetic
 // (circumference/count − satelliteDiameter) is asserted separately at full double precision, so a drift
 // fails against both the document and the formula.
+//
+// REPOINTED BY CS022 P3 from CS021 §1.2's 180/150 table to CS022 §1.3's 460/276 one, which is what the
+// CS021 playtest gate's Q1 asked for and what CS022 P1's bigger orbit world exists to accommodate. This
+// section deliberately keeps generating ALL FOUR RINGS (shippedArgs passes no `activeRings`), because
+// what it pins is the GEOMETRY — radii, maxCounts, densities, counts, lanes — which the ramp SELECTS
+// from and never re-spaces. The ramp's own per-occurrence table is §4.7 and is driven through a real
+// nextWave() in test-cs022-p3.js; the two are cross-checked at the foot of this section.
 const WANT_RINGS = [
-  // radius, maxCount, density, count, actualGapPx (arc, as published in §1.2)
-  { radius: 180, maxCount: 7,  density: 0.75, count: 6,  gap: 96.5 },
-  { radius: 330, maxCount: 13, density: 0.45, count: 6,  gap: 253.6 },
-  { radius: 480, maxCount: 19, density: 0.35, count: 7,  gap: 338.8 },
-  { radius: 630, maxCount: 25, density: 0.85, count: 21, gap: 96.5 },
+  // radius, maxCount, density, count, actualGapPx (arc) — at the base ORBIT_GAP_MULT (occurrence 1)
+  { radius: 460,  maxCount: 18, density: 0.75, count: 14, gap: 114.4 },
+  { radius: 736,  maxCount: 29, density: 0.45, count: 14, gap: 238.3 },
+  { radius: 1012, maxCount: 40, density: 0.35, count: 15, gap: 331.9 },
+  { radius: 1288, maxCount: 51, density: 0.42, count: 22, gap: 275.9 },
 ];
 (function sectionB() {
-  console.log("(B) the §1.2 geometry table, pinned exactly");
+  console.log("(B) the CS022 §1.3 geometry table, pinned exactly");
   const X = build();
   const L = withRandom(seededRandom(0xB0B0), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720)));
 
   // The inputs, so a constant drifting away from the spec fails HERE rather than three sections later.
-  eq(X.ORBIT_INNER_RADIUS, 180, "B: innerRadius 180");
-  eq(X.ORBIT_RADIUS_STEP, 150, "B: radiusStep 150");
+  eq(X.ORBIT_INNER_RADIUS, 460, "B: innerRadius 460 — 5 large-satellite diameters (gate Q1, FORK-CS022-A)");
+  eq(X.ORBIT_RADIUS_STEP, 276, "B: radiusStep 276 — 3 large-satellite diameters");
+  eq(X.ORBIT_INNER_RADIUS, 5 * X.DEBRIS_RADII[3] * 2, "B: ...and 460 really is 5 x the satellite diameter, not a coincidence");
+  eq(X.ORBIT_RADIUS_STEP, 3 * X.DEBRIS_RADII[3] * 2, "B: ...and 276 really is 3 x it");
   eq(X.ORBIT_RING_COUNT, 4, "B: 4 rings (FORK-CS021-B)");
   eq(X.ORBIT_GAP_MULT, 2.5, "B: gap multiplier 2.5 (P1 ships it fixed; P2 makes it occurrence-scaled)");
   eq(X.ORBIT_SAFETY_MARGIN, 8, "B: safety margin 8");
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.85]", "B: the density curve is the shipped [0.75, 0.45, 0.35, 0.85]");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]", "B: the density curve is the shipped [0.75, 0.45, 0.35, 0.42] (FORK-CS022-G halved ring 4)");
   eq(X.DEBRIS_RADII[3] * 2, 92, "B: size-3 satellite diameter is 92 px (DEBRIS_RADII[3] * 2)");
   eq(X.SHIP_RADIUS * 2, 26, "B: ship diameter is 26 px (SHIP_RADIUS * 2)");
 
@@ -293,7 +339,7 @@ const WANT_RINGS = [
     eq(r.maxCount, w.maxCount, `B: ring ${i + 1} maxCount`);
     eq(r.density, w.density, `B: ring ${i + 1} density`);
     eq(r.count, w.count, `B: ring ${i + 1} COUNT`);
-    close(r.actualGapPx, w.gap, `B: ring ${i + 1} actualGapPx matches §1.2's published figure`, 0.05);
+    close(r.actualGapPx, w.gap, `B: ring ${i + 1} actualGapPx matches the published figure`, 0.05);
     close(r.actualGapPx, X.TAU * w.radius / w.count - X.DEBRIS_RADII[3] * 2,
       `B: ring ${i + 1} actualGapPx === circumference/count − satelliteDiameter, exactly`, 1e-9);
     eq(r.satellites.length, w.count, `B: ring ${i + 1} placed exactly its count`);
@@ -301,8 +347,15 @@ const WANT_RINGS = [
     close(r.angleStep, X.TAU / w.count, `B: ring ${i + 1} angleStep = TAU / count`);
     r.satellites.forEach((s, k) => close(s.angle, r.startAngle + k * r.angleStep, `B: ring ${i + 1} satellite ${k} angle`));
   });
-  eq(L.total, 40, "B: 40 size-3 satellites in total at first occurrence (FORK-CS021-D — the bonanza is deliberate)");
-  eq(L.outerEdge, 676, "B: outermost satellite EDGE is 630 + 46 = 676 px");
+  eq(L.total, 65, "B: 65 size-3 satellites with ALL FOUR rings at the base multiplier (the ramp is what keeps a real level under this)");
+  eq(L.outerEdge, 1334, "B: outermost satellite EDGE is 1288 + 46 = 1334 px");
+  // The budget that edge has to clear is the ORBIT world's, never the live WORLD_H (which is 1440
+  // whenever a field level is on screen). This is the constraint that made CS022 P1 a prerequisite.
+  const orbitBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
+  eq(orbitBudget, 1420, "B: the orbit world's wrap-clean budget is 1420 px");
+  assert(L.outerEdge <= orbitBudget, `B: 1334 px clears it with ${orbitBudget - L.outerEdge} px to spare`);
+  assert(L.outerEdge > X.worldDims(X.WORLD_SIZE_FIELD)[1] / 2 - 20,
+    "B: (control) and it does NOT fit the FIELD world — the bigger orbit world is load-bearing, not cosmetic");
 
   // The fast ring, and only the fast ring.
   L.rings.forEach((r, i) => {
@@ -315,12 +368,35 @@ const WANT_RINGS = [
   // Ring 3 is the SPARSEST by arc gap, which is the rhythm the curve exists to produce.
   assert(L.rings[2].actualGapPx === Math.max(...L.rings.map(r => r.actualGapPx)),
     "B: ring 3 has the widest lanes of the four — sparse in space, tight in time");
+  // CS022 P3 (Correction C7 / FLAG-CS022-c): the halving reversed ring 4's character. It used to be the
+  // TIGHTEST ring and the level's climax; it is now the SECOND-widest, and ring 1 is the only tight one
+  // left. Asserted rather than merely commented, because the constants block's rhythm line says so.
+  const byGap = L.rings.slice().sort((a, b) => a.actualGapPx - b.actualGapPx).map(r => r.index);
+  assert(byGap[0] === 0, "B: ring 1 is now the TIGHTEST ring (Correction C7 — the curve reads tight -> breather -> widest -> wide)");
+  assert(byGap[3] === 2 && byGap[2] === 3, "B: ...and ring 4 is the second-widest, not the tightest it used to be");
 
-  // §1.2's stated clearances.
+  // §1.3's stated clearances. The dock is 88 px at EVERY wave (Correction C2 — LEVER_DOCK_SIZE ships
+  // disabled, so leverScale returns its 2.0 start), which is why one probe wave is representative.
   const satR = X.DEBRIS_RADII[3];
   const wave1Dock = X.DOCK_RADIUS * X.leverScale(X.LEVER_DOCK_SIZE, 1);
-  eq(wave1Dock, 88, "B: a wave-1 dock's radius is 88 px (DOCK_RADIUS 44 x the 2x size lever)");
-  eq(X.ORBIT_INNER_RADIUS - satR - wave1Dock, 46, "B: inner-ring clearance over a wave-1 dock is 46 px");
+  eq(wave1Dock, 88, "B: a dock's radius is 88 px (DOCK_RADIUS 44 x the 2x size lever)");
+  eq(X.ORBIT_INNER_RADIUS - satR - wave1Dock, 326, "B: inner-ring clearance over an 88 px dock is 326 px (was 46 at the CS021 geometry)");
+
+  // CS022 P3 — the ramp SELECTS from exactly these rings and never re-spaces them. Cross-check against
+  // the un-ramped table above: at every occurrence, each active ring's radius is one of these four, and
+  // the outermost active ring is always ring 4 (the ramp fills from the outside in).
+  const RADII = WANT_RINGS.map(w => w.radius);
+  for (const level of [3, 6, 9, 12, 21, 63]) {
+    const R = withRandom(seededRandom(0xB0B1 + level), () => X.generateOrbitLayout({
+      ...shippedArgs(X, 1280, 720), minGapMultiplier: X.orbitGapMult(level), activeRings: X.activeRingsFor(level) }));
+    assert(R.rings.every(r => r.radius === RADII[r.index]),
+      `B: level ${level}: every active ring sits at its ORIGINAL radius — the ramp does not re-space`);
+    eq(R.rings.length + R.inactive.length, X.ORBIT_RING_COUNT,
+      `B: level ${level}: active + inactive accounts for every ring`);
+    eq(R.rings[R.rings.length - 1].index, X.ORBIT_RING_COUNT - 1,
+      `B: level ${level}: the outermost ring is always present — the ramp fills from the outside in`);
+    eq(R.outerEdge, 1334, `B: level ${level}: the outer edge is 1334 px at every occurrence`);
+  }
   console.log("    " + L.rings.map(r => `R${r.index + 1} r=${r.radius} n=${r.count}/${r.maxCount} gap=${r.actualGapPx.toFixed(1)}px v=${(r.angVel * 180 / Math.PI).toFixed(1)}deg/s`).join("  "));
 })();
 
@@ -330,7 +406,11 @@ const WANT_RINGS = [
   const X = build();
   const shipDiameter = X.SHIP_RADIUS * 2;
   const satR = X.DEBRIS_RADII[3];
-  const budget = X.WORLD_H / 2 - 20;                                  // the wrap-clean radius budget
+  // REPOINTED BY CS022 P3: the budget must be the ORBIT world's (worldDims(WORLD_SIZE_ORBIT)), not the
+  // load-time WORLD_H snapshot — that is the FIELD size (1440 -> 700) and an orbit level has not run in
+  // it since CS022 P1. This is the same trap CS022 P1's sweep caught in test-cs021-p2.js §D; it went
+  // unnoticed here only because CS021's 676 px edge happened to clear 700 as well.
+  const budget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;         // the wrap-clean radius budget
   const wave1Dock = X.DOCK_RADIUS * X.leverScale(X.LEVER_DOCK_SIZE, 1);
   let orbitLevels = 0, worstGap = Infinity, worstEdge = 0;
   for (let n = 1; n <= 63; n++) {
@@ -353,25 +433,30 @@ const WANT_RINGS = [
     // item 3 — the Correction-C3 failure can never regress in
     assert(L.outerEdge <= budget, `C: level ${n}: outermost satellite edge ${L.outerEdge} <= ${budget}`);
     worstEdge = Math.max(worstEdge, L.outerEdge);
-    // item 4 — the inner ring clears a wave-1 dock
+    // item 4 — the inner ring clears the (permanently 88 px, Correction C2) dock
     assert(X.ORBIT_INNER_RADIUS - satR >= wave1Dock,
-      `C: level ${n}: innerRadius - satRadius (${X.ORBIT_INNER_RADIUS - satR}) >= wave-1 dock radius (${wave1Dock})`);
+      `C: level ${n}: innerRadius - satRadius (${X.ORBIT_INNER_RADIUS - satR}) >= dock radius (${wave1Dock})`);
     eq(L.rejected.length, 0, `C: level ${n}: no ring was rejected`);
-    eq(L.total, 40, `C: level ${n}: 40 satellites (P1 is pre-scaling — every occurrence is identical)`);
+    eq(L.inactive.length, 0, `C: level ${n}: the un-ramped control really does place all four rings`);
+    eq(L.total, 65, `C: level ${n}: 65 satellites un-ramped and un-scaled (this is the control P2/P3 move away from)`);
   }
   eq(orbitLevels, 21, "C: 21 orbit levels across 1..63 (FORK-CS021-E — every 3rd)");
   console.log(`    tightest lane across all 21 occurrences: ${worstGap.toFixed(2)} px (floor ${shipDiameter * X.ORBIT_GAP_MULT}); widest edge ${worstEdge} px (budget ${budget})`);
 })();
 
-// CS021 P2 REPOINT helper (section D): P1 shipped ONE gap multiplier for every occurrence, so a real
-// orbit wave always spawned exactly 40 satellites; P2 makes it occurrence-scaled (orbitGapMult), climbing
-// the total to 45 by the floor (occurrence 8 / level 24). Recompute the expectation from the SAME
-// generator + multiplier nextWave() is wired to, rather than restating a level-40 literal that was only
-// ever true at occurrence 1. Total does not depend on startAngle/centre, so any fixed seed/centre works.
-function expectedOrbitTotal(X, level) {
-  const L = withRandom(seededRandom(0xE0E0 + level), () =>
-    X.generateOrbitLayout({ ...shippedArgs(X, 1280, 720), minGapMultiplier: X.orbitGapMult(level) }));
-  return L.total;
+// CS021 P2 REPOINT helper (section D), EXTENDED BY CS022 P3. P1 shipped ONE gap multiplier for every
+// occurrence, so a real orbit wave always spawned exactly 40 satellites; P2 made it occurrence-scaled
+// (orbitGapMult) and P3 added both the RING RAMP (activeRingsFor — outermost first, one more ring per
+// occurrence) and the FIELD COMPONENT (levelDef(n).fieldCount ordinary scatter satellites on top of the
+// rings, spec §1.4 / Correction C6). All three are recomputed from the SAME helpers nextWave() is wired
+// to rather than restated as literals, so this stays a wiring check. Returns both halves so section (D)
+// can assert the split as well as the total; neither depends on startAngle/centre, so any seed works.
+function expectedOrbitSpawn(X, level) {
+  const ringTotal = withRandom(seededRandom(0xE0E0 + level), () =>
+    X.generateOrbitLayout({ ...shippedArgs(X, 1280, 720),
+      minGapMultiplier: X.orbitGapMult(level), activeRings: X.activeRingsFor(level) })).total;
+  const fieldCount = X.levelDef(level).fieldCount;
+  return { ringTotal, fieldCount, total: ringTotal + fieldCount };
 }
 
 // ================= (D) FIELD LEVELS ARE UNTOUCHED — spec §8 item 5 =====================
@@ -394,11 +479,20 @@ function expectedOrbitTotal(X, level) {
         assert(X.game.debris.every(d => Math.hypot(d.vx, d.vy) > 0), `D: level ${n}: every field satellite has drift velocity`);
       } else {
         orbitLevels++;
-        // CS021 P2 REPOINT: was `eq(spawned, 40, ...)` — the total is occurrence-scaled now (spec §5),
-        // so only occurrence 1 (level 3) still spawns exactly 40; deeper occurrences climb toward 45.
-        const wantTotal = expectedOrbitTotal(X, n);
-        eq(spawned, wantTotal, `D: level ${n}: orbit level spawned ${wantTotal}, not junkCount ${def.junkCount}`);
-        assert(spawned !== def.junkCount, `D: level ${n}: junkCount was NOT consumed`);
+        // CS021 P2 REPOINT: was `eq(spawned, 40, ...)` — the total is occurrence-scaled now (spec §5).
+        // CS022 P3 REPOINT: it is ALSO ramped, and it now carries a field component, so the expectation
+        // is a sum of two independently-derived halves and both are asserted separately below.
+        const want = expectedOrbitSpawn(X, n);
+        eq(spawned, want.total, `D: level ${n}: orbit level spawned ${want.total} (${want.ringTotal} ring + ${want.fieldCount} field)`);
+        const railBorne = X.game.debris.filter(d => !!d.orbitCenter).length;
+        eq(railBorne, want.ringTotal, `D: level ${n}: exactly ${want.ringTotal} satellites are rail-borne`);
+        eq(spawned - railBorne, want.fieldCount, `D: level ${n}: exactly ${want.fieldCount} carry NO orbit state (the field component)`);
+        // REPOINTED BY CS022 P3, spec Correction C6 — the exact reversal of CS021's rule. An orbit level
+        // DOES consume a junk-cycle column now; it is the PREVIOUS level's, never its own.
+        eq(def.fieldCount, X.levelDef(n - 1).junkCount,
+          `D: level ${n}: the consumed column is levelDef(${n - 1}).junkCount, not levelDef(${n}).junkCount`);
+        assert(X.levelDef(n - 1).archetype === "field",
+          `D: level ${n}: ...and level ${n - 1} is a FIELD level, so that column is always a real junk-cycle value`);
       }
     }
     eq(fieldLevels, 42, "D: 42 field levels");
@@ -407,10 +501,12 @@ function expectedOrbitTotal(X, level) {
 
   // levelDef is unchanged in every other column: the whole table, compared field by field against the
   // values CS018 P1 pinned, with `archetype` the only addition.
-  const KEYS = ["level", "phase", "rel", "archetype", "junkCount", "payloadSlots", "maxLargeHunters",
+  const KEYS = ["level", "phase", "rel", "archetype", "junkCount", "orbitRings", "fieldCount",
+                "payloadSlots", "maxLargeHunters",
                 "junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq", "ufoFireFreq",
                 "ufoAccuracy", "ufoShotSpeed"];
-  eq(Object.keys(X.levelDef(1)).length, 14, "D: levelDef returns 14 fields (13 + archetype)");
+  // REPOINTED BY CS022 P3: 14 -> 16 (spec §4.5 adds orbitRings and fieldCount).
+  eq(Object.keys(X.levelDef(1)).length, 16, "D: levelDef returns 16 fields (13 + archetype + the two CS022 P3 columns)");
   assert(Object.keys(X.levelDef(1)).every(k => KEYS.includes(k)), "D: and no unexpected field appeared");
   const WANT_JUNK_1_21 = [3, 5, 9, 13, 3, 5, 9, 13, 3, 5, 9, 13, 3, 5, 9, 13, 3, 5, 9, 13, 13];
   const WANT_PAY_1_13  = [8, 8, 8, 8, 10, 12, 14, 16, 18, 20, 22, 24, 24];
@@ -434,17 +530,30 @@ function expectedOrbitTotal(X, level) {
 (function sectionE() {
   console.log("(E) orbit motion mode through REAL update(1/60) frames");
   const X = build();
-  withRandom(seededRandom(0x0B17), () => { X.startGame(); atWave(X, 3); });
+  // REPOINTED BY CS022 P3: staged at the first FULL-RAMP orbit level, not at level 3. Occurrence 1 lays
+  // ring 4 alone (FORK-CS022-E), and ring 4 is not the fast ring — so a level-3 setup would quietly stop
+  // exercising the fast-ring assertion at the foot of this section, which is exactly the kind of silent
+  // degeneration CS022 P1's sweep caught elsewhere. The motion mode itself is level-independent.
+  const LVL = firstFullRampLevel(X);
+  withRandom(seededRandom(0x0B17), () => { X.startGame(); atWave(X, LVL); });
   X.game.state = "playing"; X.game.paused = false;
-  eq(X.game.debris.length, 40, "E: (setup) a real level-3 wave has 40 satellites");
+  const wantE = expectedOrbitSpawn(X, LVL);
+  eq(X.game.debris.length, wantE.total, `E: (setup) a real level-${LVL} wave has ${wantE.total} satellites`);
+  eq(X.activeRingsFor(LVL).length, X.ORBIT_RING_COUNT, `E: (setup) level ${LVL} is a FULL-ramp level — all four rings present`);
 
-  const sample = X.game.debris[0];
+  const sample = X.game.debris.find(d => !!d.orbitCenter);
   const centre = sample.orbitCenter;
   assert(!!centre, "E: an orbit-level satellite carries orbitCenter");
   eq(centre.x, X.game.dock.x, "E: the rings are centred on the DOCK's x");
   eq(centre.y, X.game.dock.y, "E: the rings are centred on the DOCK's y");
-  assert(X.game.debris.every(d => d.orbitCenter === centre),
-    "E: every satellite shares ONE captured centre object (captured at generation, never re-read)");
+  // REPOINTED BY CS022 P3: only the RAIL-BORNE satellites share the captured centre — the field
+  // component (spec §1.4) has no orbit state at all, and its count is asserted alongside so the filter
+  // can never quietly select nothing.
+  const railBorne = X.game.debris.filter(d => !!d.orbitCenter);
+  eq(railBorne.length, wantE.ringTotal, "E: (setup) the rail-borne population is exactly the ramp's ring total");
+  eq(X.game.debris.length - railBorne.length, wantE.fieldCount, "E: (setup) ...and the rest is exactly the field component");
+  assert(railBorne.every(d => d.orbitCenter === centre),
+    "E: every RAIL-BORNE satellite shares ONE captured centre object (captured at generation, never re-read)");
 
   // Angle advance and derived position, over 60 real frames.
   const before = X.game.debris.map(d => ({ a: d.orbitAngle, spin: d.angle, r: d.orbitRadius, w: d.orbitAngVel }));
@@ -492,17 +601,25 @@ function expectedOrbitTotal(X, level) {
   close(plain.angle, pa + pspin * DT, "E: drift path — sprite spin, unchanged", 1e-12);
 
   // The fast ring really moves faster on the field, not just in the layout object.
+  // REPOINTED BY CS022 P3: radii read from the shipped constants, never restated — 180/330/480/630
+  // became 460/736/1012/1288 this phase and hardcoding them again would just re-arm the same trap.
   const byRadius = {};
   for (const d of X.game.debris) if (d.orbitCenter) byRadius[d.orbitRadius] = Math.abs(d.orbitAngVel);
-  assert(byRadius[480] > byRadius[180] && byRadius[480] > byRadius[330] && byRadius[480] > byRadius[630],
-    "E: the ring-3 satellites on the field carry the fast angular velocity");
+  const RAD = shippedRadii(X);
+  const fastR = RAD[X.ORBIT_FAST_RING - 1];
+  eq(Object.keys(byRadius).length, X.ORBIT_RING_COUNT, "E: (setup) all four ring radii are represented on the field");
+  assert(RAD.every(r => r === fastR || byRadius[fastR] > byRadius[r]),
+    `E: the ring-${X.ORBIT_FAST_RING} satellites on the field carry the fast angular velocity`);
 })();
 
 // ================= (F) THE SPLIT — the tangent handoff =====================
 (function sectionF() {
   console.log("(F) the split: children inherit the orbital tangent and NO orbit state");
   const X = build();
-  withRandom(seededRandom(0x5717), () => { X.startGame(); atWave(X, 3); });
+  // REPOINTED BY CS022 P3: staged at the first FULL-RAMP level for the same reason as (E) — level 3 now
+  // has one ring, so "one parent from each of the four rings" could not be satisfied there.
+  const X_LVL = firstFullRampLevel(X);
+  withRandom(seededRandom(0x5717), () => { X.startGame(); atWave(X, X_LVL); });
   X.game.state = "playing"; X.game.paused = false;
 
   // Take one satellite from each ring so both angular velocities are covered.
@@ -510,6 +627,7 @@ function expectedOrbitTotal(X, level) {
   for (const d of X.game.debris) if (d.orbitCenter && !perRing[d.orbitRadius]) perRing[d.orbitRadius] = d;
   const radii = Object.keys(perRing).map(Number).sort((a, b) => a - b);
   eq(radii.length, 4, "F: (setup) one parent sampled from each of the four rings");
+  assert(radii.every((r, i) => r === shippedRadii(X)[i]), "F: (setup) ...and they are the four shipped radii");
 
   for (const r of radii) {
     const parent = perRing[r];
@@ -604,10 +722,20 @@ function expectedOrbitTotal(X, level) {
 (function sectionH() {
   console.log("(H) wrap correctness: a dock near a world edge still lays exact rings");
   const X = build();
+  // REPOINTED BY CS022 P3. The corners USED to be read off X.WORLD_W/X.WORLD_H — the load-time FIELD
+  // snapshot (2560x1440). That was already the wrong period after CS022 P1 (an orbit level runs at
+  // 5120x2880) and it only kept passing because CS021's outermost radius, 630, still fitted a 720 px
+  // half-height. At 1288 it does not: wrapPos folds a ring that big in a 1440-tall world, and the
+  // toroidal-distance claim breaks for the right reason. The world is driven to an orbit level FIRST
+  // and the corners are read off the LIVE period, which is the standing CS022 P1 idiom.
+  withRandom(seededRandom(0x5EA12), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
+  eq(X.game.worldSize, X.WORLD_SIZE_ORBIT, "H: (setup) the probe runs at the ORBIT world size, where these radii fit");
+  const [W, H] = X.worldDims(X.game.worldSize);
   const corners = [
-    { x: 5, y: 5 }, { x: X.WORLD_W - 5, y: 5 }, { x: 5, y: X.WORLD_H - 5 },
-    { x: X.WORLD_W - 5, y: X.WORLD_H - 5 }, { x: 0, y: 0 }, { x: X.WORLD_W - 1, y: X.WORLD_H / 2 },
+    { x: 5, y: 5 }, { x: W - 5, y: 5 }, { x: 5, y: H - 5 },
+    { x: W - 5, y: H - 5 }, { x: 0, y: 0 }, { x: W - 1, y: H / 2 },
   ];
+  const RING_TOTAL = withRandom(seededRandom(0x5EA11), () => X.generateOrbitLayout(shippedArgs(X, W / 2, H / 2))).total;
   let naiveWorst = 0, toroidalWorst = 0, samples = 0;
   for (const c of corners) {
     const L = withRandom(seededRandom(0x5EA13 + c.x), () => X.generateOrbitLayout(shippedArgs(X, c.x, c.y)));
@@ -615,7 +743,7 @@ function expectedOrbitTotal(X, level) {
       for (const s of r.satellites) {
         samples++;
         // Every emitted position is folded into [0, WORLD) by wrapPos.
-        assert(s.x >= 0 && s.x < X.WORLD_W && s.y >= 0 && s.y < X.WORLD_H,
+        assert(s.x >= 0 && s.x < W && s.y >= 0 && s.y < H,
           `H: satellite position is inside the world box (${s.x.toFixed(1)}, ${s.y.toFixed(1)})`);
         // TOROIDAL distance to the centre is exactly the ring radius.
         const toro = Math.sqrt(X.dist2(s, { x: c.x, y: c.y }));
@@ -627,7 +755,7 @@ function expectedOrbitTotal(X, level) {
       }
     }
   }
-  assert(samples === 6 * 40, `H: (setup) 240 satellites sampled across six edge/corner docks (got ${samples})`);
+  assert(samples === 6 * RING_TOTAL, `H: (setup) ${6 * RING_TOTAL} satellites sampled across six edge/corner docks (got ${samples})`);
   assert(naiveWorst > 100, `H: CONTROL — naive (non-wrap) arithmetic is off by ${naiveWorst.toFixed(1)} px on these layouts, so it would FAIL the assertion above`);
   assert(toroidalWorst < 1e-6, `H: the wrap-aware measurement is exact (worst error ${toroidalWorst.toExponential(2)} px)`);
 
@@ -657,15 +785,21 @@ function expectedOrbitTotal(X, level) {
            Math.min(X.game.dock.y, liveH - X.game.dock.y) <= X.DOCK_MAX_DIST,
       "H: (setup) the dock landed within DOCK_MAX_DIST of a world seam, so its rings straddle it");
   });
-  eq(X.game.debris.length, 40, "H: a real seam-side orbit wave still spawns 40");
+  // REPOINTED BY CS022 P3: the level-6 wave is ramped (two rings) and carries a field component, so the
+  // count is recomputed rather than pinned at 40, and the ring assertions below filter to the rail-borne
+  // population — a scatter satellite has no orbitRadius to compare against.
+  const want6 = expectedOrbitSpawn(X, 6);
+  eq(X.game.debris.length, want6.total, `H: a real seam-side orbit wave spawns ${want6.total} (${want6.ringTotal} ring + ${want6.fieldCount} field)`);
+  const rail6 = X.game.debris.filter(d => !!d.orbitCenter);
+  eq(rail6.length, want6.ringTotal, "H: ...of which the rail-borne population is the ramp's ring total");
   // CONTROL: at least one of those satellites must be on the far side of the seam from the dock, so
   // naive arithmetic would be off by (about) a whole world period — otherwise the "real seam-side"
   // claim below is just the mid-world case with a different label.
-  const realNaiveWorst = X.game.debris.reduce((m, d) =>
+  const realNaiveWorst = rail6.reduce((m, d) =>
     Math.max(m, Math.abs(Math.hypot(d.x - X.game.dock.x, d.y - X.game.dock.y) - d.orbitRadius)), 0);
   assert(realNaiveWorst > 100,
     `H: CONTROL — on the REAL seam-side spawn, naive arithmetic is off by ${realNaiveWorst.toFixed(1)} px`);
-  for (const d of X.game.debris) {
+  for (const d of rail6) {
     close(Math.sqrt(X.dist2(d, X.game.dock)), d.orbitRadius, "H: real spawn: toroidal distance to the dock === ring radius", 1e-6);
   }
   console.log(`    worst toroidal error ${toroidalWorst.toExponential(2)} px; naive arithmetic would be off by up to ${naiveWorst.toFixed(1)} px`);
@@ -675,7 +809,14 @@ function expectedOrbitTotal(X, level) {
 (function sectionI() {
   console.log("(I) spawn safety: the reroll clears the ship, and the bound really terminates");
   const X = build();
-  const CX = 1280, CY = 720;
+  // REPOINTED BY CS022 P3, same reason as (H): these probes place a ship at a RING RADIUS around a fixed
+  // centre and then measure wrap-aware distances, so they only mean anything in a world whose wrap-clean
+  // circle contains the outermost ring. At 1288 px that is the ORBIT world, not the load-time field
+  // snapshot the centre used to be hardcoded to.
+  withRandom(seededRandom(0x5AFD), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
+  eq(X.game.worldSize, X.WORLD_SIZE_ORBIT, "I: (setup) the probes run at the ORBIT world size");
+  const [IW, IH] = X.worldDims(X.game.worldSize);
+  const CX = IW / 2, CY = IH / 2;
 
   // 1. THE SHIP SEEDED EXACTLY ON A RING BAND. Every ring radius, many angles: the layout that comes
   //    back must clear the ship by at least minRequiredGap on EVERY ring, and the ring the ship is on
@@ -784,8 +925,13 @@ function expectedOrbitTotal(X, level) {
     return withRandom(seededRandom(seed), () => {
       X.startGame();
       atWave(X, 3);
-      return X.game.debris.map(d =>
-        `${d.x.toFixed(9)},${d.y.toFixed(9)},${d.orbitRadius},${d.orbitAngle.toFixed(9)},${d.orbitAngVel.toFixed(9)}`
+      // REPOINTED BY CS022 P3: an orbit level's debris array now holds BOTH populations, and the field
+      // component has no orbit state to stringify. The snapshot covers both — a rail-borne satellite by
+      // its full orbit state, a scatter satellite by its position and drift velocity — so determinism is
+      // still asserted over every entity the wave laid down, not just the rings.
+      return X.game.debris.map(d => d.orbitCenter
+        ? `R:${d.x.toFixed(9)},${d.y.toFixed(9)},${d.orbitRadius},${d.orbitAngle.toFixed(9)},${d.orbitAngVel.toFixed(9)}`
+        : `F:${d.x.toFixed(9)},${d.y.toFixed(9)},${d.vx.toFixed(9)},${d.vy.toFixed(9)}`
       ).join("|") + "#" + X.game.dock.x.toFixed(9) + "," + X.game.dock.y.toFixed(9);
     });
   }
@@ -882,7 +1028,12 @@ function expectedOrbitTotal(X, level) {
   const death = probe(3, 0x9001, false);
 
   // Only the shape is asserted, so the probe can never silently become vacuous.
-  eq(orbit.spawned, 40, "K: (validity) the orbit probe really started from a 40-satellite wave");
+  // REPOINTED BY CS022 P3: level 3 is occurrence 1, so the ramp lays ring 4 ALONE plus the field
+  // component — 27, not 40. Recomputed rather than re-pinned. This probe is deliberately left at level
+  // 3; the PEAK case (level 21, 84 satellites) is the CS022 frame-budget GATE and lives in
+  // test-cs022-p3.js §H, where it gates on a deterministic counter rather than on wall time.
+  eq(orbit.spawned, expectedOrbitSpawn(build(), 3).total,
+    `K: (validity) the orbit probe really started from a full level-3 wave (${orbit.spawned} satellites)`);
   eq(field.spawned, 13, "K: (validity) the field control really started from a 13-satellite wave");
   assert(orbit.frames > 60 && field.frames > 60, "K: (validity) both probes ran a real number of frames");
   assert(orbit.peak > field.peak, "K: (validity) the orbit level really is the heavier load");

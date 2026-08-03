@@ -84,15 +84,24 @@ const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "lev
                 'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
                 // CS021 P2 REPOINT (section B): the orbit archetype's total is occurrence-scaled now, not
                 // the fixed 40 P1 shipped — orbitTotalAt() below recomputes it from these.
-                "generateOrbitLayout", "orbitGapMult", "SHIP_RADIUS", "DEBRIS_RADII",
+                "generateOrbitLayout", "orbitGapMult", "activeRingsFor", "SHIP_RADIUS", "DEBRIS_RADII",
                 "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
                 "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT"];
 
 // CS021 P2 REPOINT helper (section B): see test-cs017-p1.js's identical helper for the full rationale —
 // the total now climbs from 40 (occurrence 1) to 45 (the floor), recomputed from the same generator +
 // occurrence-scaled multiplier nextWave() is wired to, rather than a restated level-40 literal.
+// EXTENDED BY CS022 P3 — the third rewrite of this helper, and the reason it is a helper at all: it
+// recomputes what an orbit level's nextWave() ACTUALLY SPAWNS from the same generator, ramp and level
+// table the shipped code is wired to, so a geometry or schedule move fails as a wiring mismatch rather
+// than as a stale literal. Two parts are new this changeset:
+//   * THE RING RAMP (FORK-CS022-E) — activeRingsFor(level) selects rings outermost-first, so occurrence 1
+//     lays only ring 4 and all four are present from occurrence 4 (level 12) onward;
+//   * THE FIELD COMPONENT (FORK-CS022-F) — levelDef(level).fieldCount ordinary scatter satellites ON TOP
+//     of the rings, which is exactly what retires CS021's "junkCount is not consumed on an orbit level"
+//     rule (spec Correction C6) and is why this returns a SUM rather than layout.total.
 function orbitTotalAt(A, level) {
-  return A.generateOrbitLayout({
+  const ringTotal = A.generateOrbitLayout({
     satelliteDiameter: A.DEBRIS_RADII[3] * 2,
     shipDiameter:      A.SHIP_RADIUS * 2,
     centerX: 0, centerY: 0,
@@ -105,7 +114,9 @@ function orbitTotalAt(A, level) {
     baseAngVel:        A.ORBIT_ANG_VEL,
     fastRingIndex:     A.ORBIT_FAST_RING - 1,
     fastRingMult:      A.ORBIT_FAST_MULT,
+    activeRings:       A.activeRingsFor(level),   // CS022 P3: the ramp, read from the shipped helper
   }).total;
+  return ringTotal + A.levelDef(level).fieldCount; // CS022 P3: rings PLUS the field component
 }
 function build(src, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});

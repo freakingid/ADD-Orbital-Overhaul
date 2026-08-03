@@ -93,6 +93,8 @@ const RETURN = [
   "game", "settings", "startGame", "update", "nextWave", "levelDef",
   "generateOrbitLayout", "spawnOrbitWave", "orbitGapMult", "orbitEffectiveGapMult",
   "orbitEffectiveCount", "orbitRadiusStepFor", "rerollOrbitStartAngles", "placeOrbitRing",
+  // CS022 P3: the ring ramp, plus the world-size table §F budgets the re-armed clamp against.
+  "activeRingsFor", "worldDims", "WORLD_SIZE_ORBIT",
   "ORBIT_LEVEL_EVERY", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_RADIUS_STEP_PAD", "ORBIT_RING_COUNT",
   "ORBIT_DENSITY", "ORBIT_GAP_MULT", "ORBIT_GAP_MULT_FLOOR", "ORBIT_GAP_MULT_STEP",
   "ORBIT_SAFETY_MARGIN", "ORBIT_ANG_VEL", "ORBIT_FAST_MULT", "ORBIT_FAST_RING",
@@ -216,8 +218,10 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
     assert(spawnBody.includes(frag), `A: spawnOrbitWave() consumes ${frag}`);
   }
   assert(!/radiusStep:\s*ORBIT_RADIUS_STEP,/.test(spawnBody), "A: the fixed ORBIT_RADIUS_STEP no longer reaches radiusStep directly");
-  assert(/spawnOrbitWave\(speedMul,\s*orbitEffectiveGapMult\(game\.wave\)\)/.test(codeOnly),
-    "A: nextWave()'s orbit branch calls spawnOrbitWave with orbitEffectiveGapMult(game.wave)");
+  // REPOINTED BY CS022 P3: the call site gained a third argument, activeRingsFor(game.wave) — the ring
+  // ramp, resolved at the same seam gapMult is.
+  assert(/spawnOrbitWave\(speedMul,\s*orbitEffectiveGapMult\(game\.wave\),\s*activeRingsFor\(game\.wave\)\)/.test(codeOnly),
+    "A: nextWave()'s orbit branch calls spawnOrbitWave with orbitEffectiveGapMult(game.wave) AND activeRingsFor(game.wave)");
 
   // game.orbitLayout: declared in the literal, set unconditionally by both nextWave() branches.
   assert(/orbitLayout:\s*null,/.test(codeOnly), "A: game.orbitLayout is declared in the game literal");
@@ -395,60 +399,91 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
 // pure function past the registry's own ceiling (see test-cs022-p2.js §C/§D for the dedicated formula
 // coverage at both geometries — this file only re-proves the ONE thing that changed for its own scope:
 // the real, wired-in debug-panel clamp and a real spawn's geometry).
+// REPOINTED AGAIN BY CS022 P3, and this is exactly the re-arming CS022 P2's own STATUS note predicted:
+// at P2's still-CS021 geometry (180/150) the 1420 px budget was so generous that NOTHING in the debug
+// panel's [3,5] range clamped and the walk-down first bit at a requested 9. At P3's 460/276 geometry a
+// 5th ring would sit at 1564 with an edge of 1610 px, so a requested 5 walks back down to 4 — the rule
+// is unchanged, the geometry it measures is not. The second change is the RAMP: an orbit level lays one
+// ring per occurrence, so a real spawn only shows every requested ring at a FULL-ramp level, and
+// activeRingsFor() composes with the knob rather than ignoring it (FLAG-CS022-h) — asserted directly.
 (function sectionF() {
-  console.log("(F) orbitCount clamp is now budget-derived (CS022 P2) — nothing in [3,5] clamps at this geometry");
+  console.log("(F) orbitCount clamp is budget-derived (CS022 P2) and RE-ARMED at CS022 P3's geometry");
   const B = build();
   const X = B.exports;
 
-  eq(X.orbitRadiusStepFor(4), 150, "F: radiusStep at count 4 still reproduces the shipped ORBIT_RADIUS_STEP exactly");
-  eq(X.orbitRadiusStepFor(3), 150, "F: radiusStep at count 3 no longer widens (was 225 under the retired rule) — CS022 P2 holds the step fixed");
+  eq(X.orbitRadiusStepFor(4), X.ORBIT_RADIUS_STEP, "F: radiusStep at count 4 still reproduces the shipped ORBIT_RADIUS_STEP exactly");
+  eq(X.orbitRadiusStepFor(3), X.ORBIT_RADIUS_STEP, "F: radiusStep at count 3 no longer widens (was 225 under the retired rule) — CS022 P2 holds the step fixed");
+  eq(X.ORBIT_RADIUS_STEP, 276, "F: ...which at the CS022 P3 geometry is 276 px");
 
   X.applyDebug("orbitCount", 5);
-  eq(X.debugShown.orbitCount, 5, "F: requesting 5 is NO LONGER clamped at this geometry (was 4 under the retired step-pad rule)");
-  eq(X.DEBUG.orbitCount, 5, "F: ...and DEBUG agrees");
+  eq(X.debugShown.orbitCount, 4, "F: requesting 5 is clamped to 4 again — the CS022 P3 geometry re-arms the budget rule");
+  eq(X.DEBUG.orbitCount, 4, "F: ...and DEBUG agrees");
 
   X.saveSettings();
   const reload = build({ storage: { [X.STORAGE_KEY]: B.lsStore[X.STORAGE_KEY] } }).exports;
-  eq(reload.debugShown.orbitCount, 5, "F: the persisted value is the requested 5, unclamped");
+  eq(reload.debugShown.orbitCount, 4, "F: the persisted value is the CLAMPED 4, never the requested 5 — clampShown's whole point");
 
   // A count of 3 was already achievable under the retired rule and still is under the new one.
   X.applyDebug("orbitCount", 3);
   eq(X.debugShown.orbitCount, 3, "F: 3 is still not clamped — comfortably achievable");
 
-  // The walk-down rule itself still exists — it just takes a far larger request to trigger it now that
-  // the budget, not a step-pad, is the ceiling. Driven directly against the raw function past the
-  // registry's own [3,5] range, which the debug panel never requests but the pure function has no
-  // opinion about.
-  eq(X.orbitEffectiveCount(8), 8, "F: orbitEffectiveCount(8): edge 1276px still clears the 1420px orbit-world budget");
-  eq(X.orbitEffectiveCount(9), 8, "F: orbitEffectiveCount(9): edge 1426px would not — walks down to 8");
+  // The boundary, driven directly against the raw function. The registry's own [3,5] range now brackets
+  // it, which is the state spec §6 describes.
+  const budget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
+  const edgeAt = c => X.ORBIT_INNER_RADIUS + (c - 1) * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
+  eq(edgeAt(4), 1334, "F: (arithmetic) a 4-ring outer edge is 1334px");
+  eq(edgeAt(5), 1610, "F: (arithmetic) a 5-ring outer edge would be 1610px");
+  assert(edgeAt(4) <= budget && edgeAt(5) > budget, `F: 1334 fits the ${budget}px orbit-world budget and 1610 does not`);
+  eq(X.orbitEffectiveCount(4), 4, "F: orbitEffectiveCount(4): accepted outright");
+  eq(X.orbitEffectiveCount(5), 4, "F: orbitEffectiveCount(5): walks down to 4, the first that fits");
+  eq(X.orbitEffectiveCount(20), 4, "F: orbitEffectiveCount(20): a wild request lands on the same 4");
 
-  // The fairness sweep, re-run at the (no-longer-clamped) 5-ring and 3-ring geometries via a REAL spawn —
-  // spec §8 items 1-4, at the shipped gapMult (2.5, occurrence 1, level 3). Radii now use the FIXED step
-  // at every count (Correction C3), so a 3-ring request no longer reaches out to the old 4-ring edge.
-  function fairnessSweep(X, level) {
-    atWave(X, level);
-    return X.game.orbitLayout;
+  // The fairness sweep, re-run at the clamped and 3-ring geometries via a REAL spawn — spec §8 items 1-4.
+  // CS022 P3: the probe level must be one where the RAMP has finished laying the requested count, or the
+  // spawn shows fewer rings than the knob asked for and the assertion measures the ramp instead of the
+  // knob. fullRampLevel() reads that off activeRingsFor() rather than assuming level 12.
+  function fullRampLevel(X) {
+    const want = X.orbitEffectiveCount(X.DEBUG.orbitCount);
+    let n = X.ORBIT_LEVEL_EVERY;
+    while (n <= 63 && X.activeRingsFor(n).length < want) n += X.ORBIT_LEVEL_EVERY;
+    return n;
   }
-  X.applyDebug("orbitCount", 5); // -> no longer clamped: 5 rings actually spawn now
-  let L = fairnessSweep(X, 3);
-  eq(L.rings.length, 5, "F: orbitCount 5: five rings actually spawned (no longer clamped to 4)");
-  eq(L.rings.map(r => r.radius).join(","), "180,330,480,630,780", "F: 5-ring radii: the fixed 150px step throughout, per Correction C3");
+  function fairnessSweep(X) {
+    const lvl = fullRampLevel(X);
+    atWave(X, lvl);
+    return { L: X.game.orbitLayout, lvl };
+  }
+  X.applyDebug("orbitCount", 5); // -> clamped to 4
+  let { L, lvl } = fairnessSweep(X);
+  eq(L.rings.length, 4, "F: orbitCount 5 -> 4: four rings actually spawned (clamped, then fully ramped)");
+  eq(L.rings.map(r => r.radius).join(","), "460,736,1012,1288", "F: 4-ring radii: the fixed 276px step throughout, per Correction C3");
+  eq(L.inactive.length, 0, `F: at level ${lvl} the ramp has finished — no ring is inactive`);
   for (const r of L.rings) {
-    assert(r.actualGapPx >= X.SHIP_RADIUS * 2 * X.orbitEffectiveGapMult(3) - 1e-9,
-      `F: 5-ring geometry ring r=${r.radius}: actualGapPx (${r.actualGapPx.toFixed(1)}) clears the fairness floor`);
-    assert(r.maxCount >= 1, `F: 5-ring geometry ring r=${r.radius}: maxCount >= 1`);
+    assert(r.actualGapPx >= X.SHIP_RADIUS * 2 * X.orbitEffectiveGapMult(lvl) - 1e-9,
+      `F: 4-ring geometry ring r=${r.radius}: actualGapPx (${r.actualGapPx.toFixed(1)}) clears the fairness floor`);
+    assert(r.maxCount >= 1, `F: 4-ring geometry ring r=${r.radius}: maxCount >= 1`);
   }
-  eq(L.outerEdge, 826, "F: orbitCount 5's outer edge is 780 + 46 = 826px (was a fixed 676px under the retired rule)");
+  eq(L.outerEdge, 1334, "F: the clamped 4-ring outer edge is 1288 + 46 = 1334px");
 
   X.applyDebug("orbitCount", 3);
-  L = fairnessSweep(X, 3);
+  ({ L, lvl } = fairnessSweep(X));
   eq(L.rings.length, 3, "F: orbitCount 3: three rings actually spawned");
-  eq(L.rings.map(r => r.radius).join(","), "180,330,480", "F: 3-ring radii: the fixed 150px step (was 180,405,630 under the retired outer-edge-fixed rule)");
+  eq(L.rings.map(r => r.radius).join(","), "460,736,1012", "F: 3-ring radii: the fixed 276px step (was 180,405,630 under the retired outer-edge-fixed rule)");
   for (const r of L.rings) {
-    assert(r.actualGapPx >= X.SHIP_RADIUS * 2 * X.orbitEffectiveGapMult(3) - 1e-9,
+    assert(r.actualGapPx >= X.SHIP_RADIUS * 2 * X.orbitEffectiveGapMult(lvl) - 1e-9,
       `F: 3-ring geometry ring r=${r.radius}: actualGapPx (${r.actualGapPx.toFixed(1)}) clears the fairness floor`);
     assert(r.maxCount >= 1, `F: 3-ring geometry ring r=${r.radius}: maxCount >= 1`);
   }
+  // FLAG-CS022-h: the ramp COUNTS DOWN FROM THE EFFECTIVE COUNT, so at orbitCount 3 it completes an
+  // occurrence earlier and its indices are [2], [2,1], [2,1,0] — never [3,...]. The knob and the ramp
+  // compose; neither overrides the other.
+  eq(JSON.stringify(X.activeRingsFor(3)),  "[2]",     "F: orbitCount 3, occurrence 1: activeRings is [2] — the outermost of THREE");
+  eq(JSON.stringify(X.activeRingsFor(6)),  "[2,1]",   "F: orbitCount 3, occurrence 2: [2,1]");
+  eq(JSON.stringify(X.activeRingsFor(9)),  "[2,1,0]", "F: orbitCount 3, occurrence 3: [2,1,0] — complete one occurrence earlier");
+  eq(JSON.stringify(X.activeRingsFor(12)), "[2,1,0]", "F: orbitCount 3, occurrence 4: held, never a fourth ring");
+  X.applyDebug("orbitCount", X.ORBIT_RING_COUNT);
+  eq(JSON.stringify(X.activeRingsFor(3)),  "[3]",       "F: back at the shipped count, occurrence 1 is [3]");
+  eq(JSON.stringify(X.activeRingsFor(12)), "[3,2,1,0]", "F: ...and occurrence 4 is the full [3,2,1,0]");
 })();
 
 // ================= (G) densities consumed first-orbitCount (FLAG-CS021-b) =====================
@@ -461,9 +496,19 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   ["orbitDensity1", "orbitDensity2", "orbitDensity3", "orbitDensity4", "orbitDensity5"].forEach((id, i) =>
     X.applyDebug(id, FP[i]));
 
+  // REPOINTED BY CS022 P3: the spawn has to happen at a FULL-RAMP level, or the ramp (not the density
+  // registry) decides how many rings are on the board and this section measures the wrong thing. The
+  // per-ring density → per-knob mapping it actually tests is unchanged.
+  function fullRampSpawn(X) {
+    const want = X.orbitEffectiveCount(X.DEBUG.orbitCount);
+    let n = X.ORBIT_LEVEL_EVERY;
+    while (n <= 63 && X.activeRingsFor(n).length < want) n += X.ORBIT_LEVEL_EVERY;
+    atWave(X, n);
+    return X.game.orbitLayout;
+  }
+
   X.applyDebug("orbitCount", 3);
-  atWave(X, 3);
-  const L3 = X.game.orbitLayout;
+  const L3 = fullRampSpawn(X);
   eq(L3.rings.length, 3, "G: three rings spawned at orbitCount 3");
   L3.rings.forEach((r, i) => close(r.density, FP[i], `G: ring ${i + 1} density === orbitDensity${i + 1} (first-3 consumed)`));
 
@@ -471,14 +516,12 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   // them again and re-spawning: the first three rings' densities (and therefore counts) must not move.
   X.applyDebug("orbitDensity4", 0.05);
   X.applyDebug("orbitDensity5", 0.05);
-  atWave(X, 3);
-  const L3b = X.game.orbitLayout;
+  const L3b = fullRampSpawn(X);
   L3b.rings.forEach((r, i) => close(r.density, FP[i], `G: changing orbitDensity4/5 left ring ${i + 1} (of 3) untouched`));
 
   // Now widen to 4 rings — ring 4 picks up orbitDensity4's LATEST value (0.05), never a stale copy.
   X.applyDebug("orbitCount", 4);
-  atWave(X, 3);
-  const L4 = X.game.orbitLayout;
+  const L4 = fullRampSpawn(X);
   eq(L4.rings.length, 4, "G: four rings spawned at orbitCount 4");
   close(L4.rings[3].density, 0.05, "G: ring 4 now consumes orbitDensity4's current value");
 })();
@@ -524,34 +567,52 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   console.log("(I) reroll: startAngle moves, counts/radii/density/angVel byte-identical, spawn safety re-runs");
   const X = build().exports;
 
-  atWave(X, 3);
+  // REPOINTED BY CS022 P3, three ways. (1) Staged at a FULL-RAMP level so the reroll is exercised across
+  // every ring rather than the single ring occurrence 1 now lays. (2) `snap` is keyed by RING INDEX, not
+  // by array position — the two used to coincide and no longer do the moment the ramp drops a ring, and
+  // the mismatch was a crash, not a soft failure. (3) The entity assertions filter to the RAIL-BORNE
+  // population: an orbit level's field component (spec §1.4) has no orbit state for the reroll to touch,
+  // and its untouched-ness is asserted separately below.
+  let RAMP_LVL = X.ORBIT_LEVEL_EVERY;
+  while (RAMP_LVL <= 63 && X.activeRingsFor(RAMP_LVL).length < X.ORBIT_RING_COUNT) RAMP_LVL += X.ORBIT_LEVEL_EVERY;
+  atWave(X, RAMP_LVL);
   const L = X.game.orbitLayout;
   assert(!!L, "I: (setup) game.orbitLayout is live after a real orbit-level spawn");
-  eq(X.game.debris.length, 40, "I: (setup) the shipped default totals 40 satellites");
+  eq(L.rings.length, X.ORBIT_RING_COUNT, `I: (setup) level ${RAMP_LVL} is a full-ramp level — all four rings live`);
+  const railBorne = X.game.debris.filter(d => !!d.orbitCenter);
+  const scatter   = X.game.debris.filter(d => !d.orbitCenter);
+  eq(railBorne.length, L.total, "I: (setup) the rail-borne population is exactly the layout's total");
+  eq(scatter.length, X.levelDef(RAMP_LVL).fieldCount, "I: (setup) ...and the rest is the level's field component");
 
-  const snap = L.rings.map(r => ({ radius: r.radius, count: r.count, maxCount: r.maxCount, density: r.density,
-                                    angVel: r.angVel, gap: r.actualGapPx, angleStep: r.angleStep, start: r.startAngle }));
-  const entitySnap = X.game.debris.map(d => ({ r: d.orbitRadius, w: d.orbitAngVel, x: d.x, y: d.y, a: d.orbitAngle }));
+  const snap = {};
+  for (const r of L.rings) snap[r.index] = { radius: r.radius, count: r.count, maxCount: r.maxCount, density: r.density,
+                                    angVel: r.angVel, gap: r.actualGapPx, angleStep: r.angleStep, start: r.startAngle };
+  const entitySnap = railBorne.map(d => ({ r: d.orbitRadius, w: d.orbitAngVel, x: d.x, y: d.y, a: d.orbitAngle }));
+  const scatterSnap = scatter.map(d => ({ x: d.x, y: d.y, vx: d.vx, vy: d.vy }));
 
   const ok = X.rerollOrbitStartAngles();
   assert(ok === true, "I: rerollOrbitStartAngles() reports success on a live orbit level");
 
-  L.rings.forEach((r, i) => {
-    eq(r.radius, snap[i].radius, `I: reroll left ring ${i + 1} radius alone`);
-    eq(r.count, snap[i].count, `I: reroll left ring ${i + 1} count alone`);
-    eq(r.maxCount, snap[i].maxCount, `I: reroll left ring ${i + 1} maxCount alone`);
-    eq(r.density, snap[i].density, `I: reroll left ring ${i + 1} density alone`);
-    eq(r.angVel, snap[i].angVel, `I: reroll left ring ${i + 1} angVel alone`);
-    eq(r.actualGapPx, snap[i].gap, `I: reroll left ring ${i + 1} gap alone`);
-    eq(r.angleStep, snap[i].angleStep, `I: reroll left ring ${i + 1} angleStep alone`);
+  L.rings.forEach(r => {
+    const s = snap[r.index];
+    eq(r.radius, s.radius, `I: reroll left ring ${r.index + 1} radius alone`);
+    eq(r.count, s.count, `I: reroll left ring ${r.index + 1} count alone`);
+    eq(r.maxCount, s.maxCount, `I: reroll left ring ${r.index + 1} maxCount alone`);
+    eq(r.density, s.density, `I: reroll left ring ${r.index + 1} density alone`);
+    eq(r.angVel, s.angVel, `I: reroll left ring ${r.index + 1} angVel alone`);
+    eq(r.actualGapPx, s.gap, `I: reroll left ring ${r.index + 1} gap alone`);
+    eq(r.angleStep, s.angleStep, `I: reroll left ring ${r.index + 1} angleStep alone`);
   });
   assert(L.rings.some(r => r.startAngle !== snap[r.index].start), "I: (control) at least one ring's startAngle DID move");
 
   // Live entities: orbitRadius/orbitAngVel are byte-identical (ring identity + speed untouched); at
   // least one entity's angle/position genuinely moved to match the new layout.
-  eq(X.game.debris.length, 40, "I: reroll spawned/destroyed nothing — still 40 satellites");
+  const railAfter = X.game.debris.filter(d => !!d.orbitCenter);
+  const scatterAfter = X.game.debris.filter(d => !d.orbitCenter);
+  eq(railAfter.length, entitySnap.length, "I: reroll spawned/destroyed nothing — the same rail-borne satellites");
+  eq(scatterAfter.length, scatterSnap.length, "I: ...and the same field-component satellites");
   let posChanged = 0;
-  X.game.debris.forEach((d, i) => {
+  railAfter.forEach((d, i) => {
     eq(d.orbitRadius, entitySnap[i].r, `I: entity ${i}: orbitRadius unchanged by reroll`);
     eq(d.orbitAngVel, entitySnap[i].w, `I: entity ${i}: orbitAngVel unchanged by reroll`);
     close(Math.sqrt(X.dist2(d, d.orbitCenter)), d.orbitRadius,
@@ -559,6 +620,14 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
     if (d.x !== entitySnap[i].x || d.y !== entitySnap[i].y) posChanged++;
   });
   assert(posChanged > 0, "I: (control) at least one entity's position actually moved");
+  // CS022 P3: the reroll matches live entities by orbitRadius, so the field component — which has none —
+  // must be left completely alone. Asserted rather than assumed.
+  scatterAfter.forEach((d, i) => {
+    eq(d.x, scatterSnap[i].x, `I: field-component satellite ${i}: x untouched by the reroll`);
+    eq(d.y, scatterSnap[i].y, `I: field-component satellite ${i}: y untouched by the reroll`);
+    eq(d.vx, scatterSnap[i].vx, `I: field-component satellite ${i}: vx untouched`);
+    eq(d.vy, scatterSnap[i].vy, `I: field-component satellite ${i}: vy untouched`);
+  });
 
   // Spawn safety re-ran: every ring's spawnSafetyCleared flag is set (the pass touched every ring).
   assert(L.rings.every(r => typeof r.spawnSafetyCleared === "boolean"), "I: spawn safety re-ran on every ring (spawnSafetyCleared set)");
@@ -570,19 +639,26 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
 
   // PARTIAL HARVEST: destroy a couple of satellites, then reroll must still succeed and must not throw
   // or misplace the SURVIVORS — every survivor stays exactly on its own ring.
+  // REPOINTED BY CS022 P3: staged at a full-ramp level and counted from the live layout, and the
+  // survivor loop filters to rail-borne bodies — a field-component satellite has no orbitCenter to
+  // measure a ring distance from.
   const Z = build().exports;
-  atWave(Z, 3);
-  const victims = Z.game.debris.filter(d => d.orbitRadius === Z.game.orbitLayout.rings[0].radius).slice(0, 2);
+  atWave(Z, RAMP_LVL);
+  const zRing0 = Z.game.orbitLayout.rings[0];
+  const zBefore = Z.game.debris.length;
+  const victims = Z.game.debris.filter(d => d.orbitRadius === zRing0.radius).slice(0, 2);
+  eq(victims.length, 2, "I: (setup) two ring-1 satellites selected for removal");
   victims.forEach(v => { v.dead = true; });
   Z.game.debris = Z.game.debris.filter(d => !d.dead);
-  eq(Z.game.debris.length, 38, "I: (setup) two ring-1 satellites removed, 38 remain");
+  eq(Z.game.debris.length, zBefore - 2, `I: (setup) two ring-1 satellites removed, ${zBefore - 2} remain`);
   const ok2 = Z.rerollOrbitStartAngles();
   assert(ok2 === true, "I: reroll succeeds after a partial harvest");
   for (const d of Z.game.debris) {
+    if (!d.orbitCenter) continue;
     close(Math.sqrt(Z.dist2(d, d.orbitCenter)), d.orbitRadius, "I: every SURVIVOR is still exactly on its ring after a post-harvest reroll", 1e-6);
   }
-  const ring1Left = Z.game.debris.filter(d => d.orbitRadius === Z.game.orbitLayout.rings[0].radius).length;
-  eq(ring1Left, 4, "I: ring 1 still has its 4 surviving members (6 - 2), none duplicated or dropped");
+  const ring1Left = Z.game.debris.filter(d => d.orbitRadius === zRing0.radius).length;
+  eq(ring1Left, zRing0.count - 2, `I: ring 1 still has its ${zRing0.count - 2} surviving members (${zRing0.count} - 2), none duplicated or dropped`);
 })();
 
 // ================= (J) the reroll KEYBIND, through the REAL keydown listener =====================
@@ -646,7 +722,11 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   eq(X.DEBUG.orbitAngVel, Math.PI / 6, "K: (setup) DEBUG.orbitAngVel holds the native rad/s");
 
   X.startGame();
-  atWave(X, 3);
+  // REPOINTED BY CS022 P3: staged at a FULL-RAMP level. Level 3 lays ring 4 alone now (FORK-CS022-E), so
+  // rings[0]/rings[2] — a slow ring and the fast one — are simply not both on the board there.
+  let kLvl = X.ORBIT_LEVEL_EVERY;
+  while (kLvl <= 63 && X.activeRingsFor(kLvl).length < X.ORBIT_RING_COUNT) kLvl += X.ORBIT_LEVEL_EVERY;
+  atWave(X, kLvl);
   X.game.state = "playing"; X.game.paused = false;   // update() early-returns off "playing" — same idiom as test-cs021-p1.js §E
   const ring1 = X.game.orbitLayout.rings[0]; // NOT the fast ring
   const ring3 = X.game.orbitLayout.rings[2]; // the fast ring (ORBIT_FAST_RING = 3)
@@ -670,18 +750,24 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   // REPOINTED BY CS021 P5 — mirror image, same reason as §A's TRAP 1 above.
   assert(X.GAME_VERSION !== "1.0.0.20", "L: GAME_VERSION off the pre-CS021 baseline");
 
+  // REPOINTED BY CS022 P3: the touchstone table moves to the §4.7 figures — 40/45/45 was the CS021
+  // geometry with every ring present at every occurrence. The three totals are the spec's own numbers
+  // and are pinned as literals HERE on purpose (this section is the regression touchstone), while
+  // test-cs022-p3.js §B derives the same table from the shipped helpers at every orbit level 3..63.
   const n3  = atWave(X, 3);
   const n24 = atWave(X, 24);
   const n63 = atWave(X, 63);
-  eq(n3, 40, "L: level 3 (occurrence 1) still spawns 40 at shipped defaults");
-  eq(n24, 45, "L: level 24 (the floor) still spawns 45 at shipped defaults");
-  eq(n63, 45, "L: level 63 still spawns 45 at shipped defaults");
+  eq(n3, 27, "L: level 3 (occurrence 1) spawns 27 at shipped defaults — one ring (22) plus 5 field");
+  eq(n24, 76, "L: level 24 (the floor) spawns 76 — four rings (71) plus 5 field");
+  eq(n63, 84, "L: level 63 spawns 84 — the peak (71 ring + 13 field)");
 
   const byRadius = {};
-  for (const d of X.game.debris) byRadius[d.orbitRadius] = (byRadius[d.orbitRadius] || 0) + 1;
+  for (const d of X.game.debris) if (d.orbitCenter) byRadius[d.orbitRadius] = (byRadius[d.orbitRadius] || 0) + 1;
   const radii = Object.keys(byRadius).map(Number).sort((a, b) => a - b);
-  eq(radii.join(","), "180,330,480,630", "L: shipped default radii unchanged at level 63");
-  eq(radii.map(r => byRadius[r]).join(","), "6,7,8,24", "L: shipped default per-ring counts unchanged at the floor");
+  eq(radii.join(","), "460,736,1012,1288", "L: shipped default radii at level 63");
+  eq(radii.map(r => byRadius[r]).join(","), "15,15,16,25", "L: shipped default per-ring counts at the floor");
+  eq(X.game.debris.length - radii.reduce((n, r) => n + byRadius[r], 0), X.levelDef(63).fieldCount,
+    "L: ...and the remainder is exactly levelDef(63).fieldCount");
 })();
 
 console.log(`\n${passed} passed, ${failed} failed`);

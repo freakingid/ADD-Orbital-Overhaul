@@ -127,12 +127,19 @@ const RETURN = [
   "SHIELD_RADIUS", "SHIP_RADIUS", "SHIELD_HIT_COST", "SHIELD_DRAIN", "SHIELD_RECHARGE",
   "DEBRIS_RADII", "SHIP_MAX_HP", "KNOCKBACK_SPEED", "WORLD_W", "WORLD_H", "TAU",
   "AudioSys", "GAME_VERSION", "DEBUG_VARS",
+  // CS022 P3: both builds have these (CS021 P1 shipped them), so they stay on the SHARED list — which
+  // is the point: each build resolves a ring index against its own geometry, 180/150 or 460/276.
+  "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_RING_COUNT", "ORBIT_LEVEL_EVERY",
 ];
 // CS022 P1: worldDims joins the FIXED-build-only list rather than RETURN — it does not exist at
 // PRE_FIX_REF, and the RETURN list above is shared with that older build. Sections (I)/(J) need it
 // because they place things at a WORLD SEAM on an ORBIT level, where the live torus is 5120x2880
 // while this file's destructured WORLD_W/WORLD_H are a load-time snapshot of the field size.
-const FIXED_EXTRA = ["shieldBounce", "SHIELD_BOUNCE_RESTITUTION", "SHIELD_BOUNCE_MIN", "worldDims"];
+// CS022 P3: activeRingsFor + the two geometry constants join the same FIXED-build-only list, for the
+// same reason. Section (B)'s cases name a RING BY INDEX now rather than by a hardcoded radius, and each
+// build resolves that index against its OWN geometry and its OWN ramp — see ringCaseFor() below.
+const FIXED_EXTRA = ["shieldBounce", "SHIELD_BOUNCE_RESTITUTION", "SHIELD_BOUNCE_MIN", "worldDims",
+                     "activeRingsFor"];
 
 const SPIES = [
   "__spyPing(fn) { const o = AudioSys.shieldPing; AudioSys.shieldPing = fn; return o; }",
@@ -215,9 +222,34 @@ function placeShipAt(X, h, d) {
   X.game.ship.y = h.y + Math.sin(ang) * d;
   X.game.ship.vx = 0; X.game.ship.vy = 0;
 }
+// CS022 P3: resolve a RING INDEX (0-based) into the { level, radius } that build actually puts it at.
+// The two builds this file compares no longer agree on either: PRE_FIX_REF (CS021 P1) has radii
+// 180/330/480/630 with all four rings present from level 3, while the CS022 build has 460/736/1012/1288
+// and a RAMP that lays them outermost-first, one per occurrence — so ring 1 does not exist until level
+// 12. Naming a ring by index and letting each build answer for itself keeps section (B)'s comparison
+// about the SHIELD BEHAVIOUR, which is what it has always been about, instead of about geometry.
+function ringCaseFor(X, ringIndex) {
+  const radius = X.ORBIT_INNER_RADIUS + ringIndex * X.ORBIT_RADIUS_STEP;
+  let level = X.ORBIT_LEVEL_EVERY;
+  if (X.activeRingsFor) {            // CS022 build: walk up to the first occurrence carrying this ring
+    while (level <= 63 && X.activeRingsFor(level).indexOf(ringIndex) === -1) level += X.ORBIT_LEVEL_EVERY;
+    if (level > 63) throw new Error("ring " + ringIndex + " never becomes active");
+  }
+  return { level, radius };
+}
+// Stage a hazard on a ring named by INDEX, resolving level + radius against that build's own geometry.
+function stageRing(X, ringIndex) {
+  const c = ringCaseFor(X, ringIndex);
+  const h = stage(X, c.level, ds => ds.find(d => d.orbitRadius === c.radius));
+  if (!h) throw new Error(`no satellite on ring index ${ringIndex} (radius ${c.radius}) at level ${c.level}`);
+  return h;
+}
+
 // The probe that found the defect, run against whichever build is handed in.
-function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
-  const h = stage(X, level, ds => ringRadius ? ds.find(d => d.orbitRadius === ringRadius) : ds[0]);
+function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
+  const h = (ringIndex === null || ringIndex === undefined)
+    ? stage(X, level, ds => ds[0])
+    : stageRing(X, ringIndex);
   placeShipAt(X, h, startDist);
   let deflectFrames = 0, shieldGoneFrame = null, hits = 0;
   for (let f = 1; f <= frames; f++) {
@@ -284,10 +316,12 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
 // ================= (B) THE REGRESSION, CLOSED =====================
 (function sectionB() {
   console.log("(B) the regression: fixed build vs. the pinned P1 build at " + PRE_FIX_REF);
+  // REPOINTED BY CS022 P3: rings named by INDEX, not by a hardcoded radius or level — ringCaseFor()
+  // resolves both against whichever build is running (see its comment). The claims below are unchanged.
   const CASES = [
-    { name: "ORBIT ring 1 (slow), ship at 68 px — the shield-only annulus", level: 3, ringRadius: 180, startDist: 68 },
-    { name: "ORBIT ring 1, ship at 50 px — the unshielded hitbox also reaches", level: 3, ringRadius: 180, startDist: 50 },
-    { name: "ORBIT ring 3 (fast), ship at 68 px", level: 3, ringRadius: 480, startDist: 68 },
+    { name: "ORBIT ring 1 (slow), ship at 68 px — the shield-only annulus", ringIndex: 0, startDist: 68 },
+    { name: "ORBIT ring 1, ship at 50 px — the unshielded hitbox also reaches", ringIndex: 0, startDist: 50 },
+    { name: "ORBIT ring 3 (fast), ship at 68 px", ringIndex: 2, startDist: 68 },
   ];
   for (const c of CASES) {
     const pre = contactRun(buildPreFix(), c);
@@ -316,7 +350,7 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
 
   // The FIELD control is the yardstick, and it must be IDENTICAL on both builds — this phase changes
   // nothing for a hazard that can be pushed.
-  const fieldCase = { name: "FIELD control, ordinary drifting size-3", level: 4, ringRadius: null, startDist: 68 };
+  const fieldCase = { name: "FIELD control, ordinary drifting size-3", level: 4, ringIndex: null, startDist: 68 };
   const preField = contactRun(buildPreFix(), fieldCase);
   const fixField = contactRun(build(), fieldCase);
   eq(fixField.deflectFrames, preField.deflectFrames, "B: FIELD control: deflect count identical on both builds");
@@ -358,10 +392,10 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
     };
   }
 
-  for (const ring of [180, 480]) {              // one slow ring and the fast one
-    const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === ring));
+  for (const ring of [0, 2]) {                  // one slow ring index and the fast one (CS022 P3: by INDEX)
+    const h = stageRing(X, ring);
     const a = X.angleTo(h, { x: h.x + 1, y: h.y });   // any reference; recomputed per bounce below
-    const label = `ring r=${ring}`;
+    const label = `ring idx ${ring}`;
     // A spread of incoming velocities: head-on fast, head-on slow, oblique, tangential, and receding.
     const cases = [];
     for (const speed of [400, 220, 60, 0]) {
@@ -413,8 +447,8 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   // component to reflect — so a pure sideswipe correctly does nothing at all. (My first draft used the
   // radial placement and measured both rings as identical: the right answer to the wrong question.)
   const swept = {};
-  for (const ring of [180, 480]) {
-    const sat = stage(X, 3, ds => ds.find(d => d.orbitRadius === ring));
+  for (const ring of [0, 2]) {   // CS022 P3: ring INDICES
+    const sat = stageRing(X, ring);
     const tangential = Math.hypot(sat.vx, sat.vy);
     const dirA = Math.atan2(sat.vy, sat.vx);
     X.game.ship.x = sat.x + Math.cos(dirA) * (X.SHIELD_RADIUS + sat.radius - 4);
@@ -424,22 +458,22 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
     const wantElastic = (1 + X.SHIELD_BOUNCE_RESTITUTION) * tangential;
     if (wantElastic >= X.SHIELD_BOUNCE_MIN) {
       close(r.speedAfter, wantElastic,
-        `C: ring r=${ring}: a sweeping satellite shoves a parked ship at 2x its own ${tangential.toFixed(1)} px/s`, 1e-6);
+        `C: ring idx ${ring}: a sweeping satellite shoves a parked ship at 2x its own ${tangential.toFixed(1)} px/s`, 1e-6);
     } else {
       close(r.speedAfter, X.SHIELD_BOUNCE_MIN,
-        `C: ring r=${ring}: too slow to out-push the floor (2x${tangential.toFixed(1)} < ${X.SHIELD_BOUNCE_MIN}), so the floor governs`, 1e-6);
+        `C: ring idx ${ring}: too slow to out-push the floor (2x${tangential.toFixed(1)} < ${X.SHIELD_BOUNCE_MIN}), so the floor governs`, 1e-6);
     }
   }
-  assert(swept[480].after > swept[180].after * 2,
+  assert(swept[2].after > swept[0].after * 2,
     `C: the FAST ring shoves a parked ship far harder than a slow one ` +
-    `(${swept[480].after.toFixed(1)} vs ${swept[180].after.toFixed(1)} px/s) — working in the hazard's frame is what carries that`);
-  console.log(`    swept while parked: ring 1 (${swept[180].tangential.toFixed(1)} px/s) throws you at ` +
-    `${swept[180].after.toFixed(1)} px/s; ring 3 (${swept[480].tangential.toFixed(1)} px/s) throws you at ${swept[480].after.toFixed(1)} px/s`);
+    `(${swept[2].after.toFixed(1)} vs ${swept[0].after.toFixed(1)} px/s) — working in the hazard's frame is what carries that`);
+  console.log(`    swept while parked: ring 1 (${swept[0].tangential.toFixed(1)} px/s) throws you at ` +
+    `${swept[0].after.toFixed(1)} px/s; ring 3 (${swept[2].tangential.toFixed(1)} px/s) throws you at ${swept[2].after.toFixed(1)} px/s`);
 
   // And the mirror, which is the same physics seen from the other side: a purely TANGENTIAL approach is
   // a sideswipe with no normal component, so the reflection is a no-op and only the floor acts. That is
   // true on the fast ring exactly as on the slow ones, by design.
-  const fast = stage(X, 3, ds => ds.find(d => d.orbitRadius === 480));
+  const fast = stageRing(X, 2);   // CS022 P3: the fast ring, by index
   assert(Math.hypot(fast.vx, fast.vy) > 100, `C: (setup) the fast ring's satellite really is moving`);
   placeShipAt(X, fast, X.SHIELD_RADIUS + fast.radius - 4);   // radial: normal perpendicular to its velocity
   const along = bounceOnce(fast, fast.vx, fast.vy);          // riding with it: zero relative velocity
@@ -455,39 +489,39 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
 // ================= (D) THE SEPARATION FLOOR =====================
 (function sectionD() {
   console.log("(D) the floor: a stationary ship gets ONE bounce, not one per frame");
-  for (const ring of [180, 330, 480, 630]) {
+  for (const ring of [0, 1, 2, 3]) {   // CS022 P3: ring INDICES
     const X = build();
-    const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === ring));
+    const h = stageRing(X, ring);
     placeShipAt(X, h, X.SHIELD_RADIUS + h.radius - 4);   // stationary, inside the shield contact radius
-    eq(X.game.ship.vx, 0, `D: ring r=${ring}: (setup) the ship starts at rest`);
+    eq(X.game.ship.vx, 0, `D: ring idx ${ring}: (setup) the ship starts at rest`);
     let deflectFrames = 0;
     for (let f = 0; f < 180; f++) {
       const before = X.game.stats.deflects;
       X.update(1 / 60);
       if (X.game.stats.deflects > before) deflectFrames++;
     }
-    eq(deflectFrames, 1, `D: ring r=${ring}: a stationary ship in contact is bounced exactly ONCE in 3 s`);
+    eq(deflectFrames, 1, `D: ring idx ${ring}: a stationary ship in contact is bounced exactly ONCE in 3 s`);
   }
   // The energy claim, measured over a SHORT window so the reading is not swamped by SHIELD_DRAIN — the
   // shield costs 0.55/s just to hold, which empties the meter in 1.8 s regardless of contacts, so a
   // 3 s window above can say nothing about hit costs. Ten frames is long enough to catch a repeat and
   // short enough that the arithmetic is exact.
-  for (const ring of [180, 480]) {
+  for (const ring of [0, 2]) {   // CS022 P3: ring INDICES
     const X = build();
-    const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === ring));
+    const h = stageRing(X, ring);
     placeShipAt(X, h, X.SHIELD_RADIUS + h.radius - 4);
     const FR = 10;
     for (let f = 0; f < FR; f++) X.update(1 / 60);
     const wantHold = X.SHIELD_DRAIN * (FR / 60);
     close(X.game.ship.energy, 1 - X.SHIELD_HIT_COST - wantHold,
-      `D: ring r=${ring}: over 10 frames the meter paid ONE SHIELD_HIT_COST plus the ordinary hold cost`, 1e-9);
+      `D: ring idx ${ring}: over 10 frames the meter paid ONE SHIELD_HIT_COST plus the ordinary hold cost`, 1e-9);
     assert(X.game.ship.energy > 1 - 2 * X.SHIELD_HIT_COST - wantHold,
-      `D: ring r=${ring}: ...and provably not two or more (energy ${X.game.ship.energy.toFixed(4)})`);
+      `D: ring idx ${ring}: ...and provably not two or more (energy ${X.game.ship.energy.toFixed(4)})`);
   }
   // The floor really is what does it: the outward speed immediately after a from-rest bounce is exactly
   // SHIELD_BOUNCE_MIN, because a ship at rest has no approaching component to reflect.
   const X = build();
-  const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === 180));
+  const h = stageRing(X, 0);   // CS022 P3: ring 1, by index
   placeShipAt(X, h, X.SHIELD_RADIUS + h.radius - 4);
   const a = X.angleTo(h, X.game.ship);
   X.shieldBounce(h);
@@ -508,7 +542,7 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   // without this the count would be truncated by the drain rather than measuring re-contact.
   function contactEvents({ ring, placement, thrust = false, chain = false, frames = 300 }) {
     const Y = build();
-    const h = stage(Y, 3, ds => ds.find(d => d.orbitRadius === ring));
+    const h = stageRing(Y, ring);
     const d = Y.SHIELD_RADIUS + h.radius - 4;
     const ang = placement === "radial" ? h.orbitAngle : Math.atan2(h.vy, h.vx);
     Y.game.ship.x = h.x + Math.cos(ang) * d;
@@ -529,11 +563,11 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
     }
     return events;
   }
-  eq(contactEvents({ ring: 180, placement: "swept" }), 1,
+  eq(contactEvents({ ring: 0, placement: "swept" }), 1,
     "D: parked in a slow satellite's PATH: one contact event in 5 s (two without the floor)");
-  eq(contactEvents({ ring: 180, placement: "radial", thrust: true }), 2,
+  eq(contactEvents({ ring: 0, placement: "radial", thrust: true }), 2,
     "D: flying INTO the ring under held thrust: two contact events in 5 s (five without the floor)");
-  eq(contactEvents({ ring: 180, placement: "radial", chain: true }), 1,
+  eq(contactEvents({ ring: 0, placement: "radial", chain: true }), 1,
     "D: arriving with a 12-node tow whose CARGO_TUG pulls back in: one event in 5 s (two without the floor)");
 })();
 
@@ -541,7 +575,7 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
 (function sectionE() {
   console.log("(E) the hazard is left completely alone — the ring stays intact");
   const X = build();
-  const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === 480));
+  const h = stageRing(X, 2);   // CS022 P3: the fast ring, by index
   placeShipAt(X, h, X.SHIELD_RADIUS + h.radius - 4);
   X.game.ship.vx = -300; X.game.ship.vy = 120;
   const snap = { x: h.x, y: h.y, vx: h.vx, vy: h.vy, angle: h.angle, spin: h.spin,
@@ -552,16 +586,16 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   close(Math.sqrt(X.dist2(h, h.orbitCenter)), h.orbitRadius, "E: and it is still exactly on its rail", 1e-6);
 
   // Over a real contact through update(), across every ring, the satellite never leaves its ring.
-  for (const ring of [180, 330, 480, 630]) {
+  for (const ring of [0, 1, 2, 3]) {   // CS022 P3: ring INDICES
     const Y = build();
-    const s = stage(Y, 3, ds => ds.find(d => d.orbitRadius === ring));
+    const s = stageRing(Y, ring);
     placeShipAt(Y, s, Y.SHIELD_RADIUS + s.radius - 4);
     let worst = 0;
     for (let f = 0; f < 300; f++) {
       Y.update(1 / 60);
       worst = Math.max(worst, Math.abs(Math.sqrt(Y.dist2(s, s.orbitCenter)) - s.orbitRadius));
     }
-    assert(worst < 1e-6, `E: ring r=${ring}: the satellite never left its rail across 300 frames (worst ${worst.toExponential(2)} px)`);
+    assert(worst < 1e-6, `E: ring idx ${ring}: the satellite never left its rail across 300 frames (worst ${worst.toExponential(2)} px)`);
   }
 })();
 
@@ -620,7 +654,7 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
 (function sectionH() {
   console.log("(H) one cost, one deflect, one ping per bounce");
   const X = build();
-  const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === 180));
+  const h = stageRing(X, 0);   // CS022 P3: ring 1, by index
   placeShipAt(X, h, X.SHIELD_RADIUS + h.radius - 4);
   let pings = 0;
   X.__spyPing(() => { pings++; });
@@ -645,7 +679,7 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   console.log("(I) a laden ship survives a bounce, including one across the world seam");
   for (const seam of [false, true]) {
     const X = build();
-    const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === 180));
+    const h = stageRing(X, 0);   // CS022 P3: ring 1, by index
     const [W, H] = X.worldDims(X.game.worldSize);   // the LIVE torus period at this level
     if (seam) {
       // Move the whole rail to the world edge so the bounce pushes the ship across it.
@@ -681,7 +715,7 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
 (function sectionJ() {
   console.log("(J) a bounce off a satellite sitting on the world seam");
   const X = build();
-  const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === 180));
+  const h = stageRing(X, 0);   // CS022 P3: ring 1, by index
   // REPOINTED BY CS022 P1: the seam is the LIVE world's, and an orbit level's world is 5120x2880.
   const [W, H] = X.worldDims(X.game.worldSize);
   // Put the satellite itself at the very corner of the world.
@@ -719,7 +753,7 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   // The same claim through the REAL update() path rather than a direct call, so the seam case is proven
   // end to end: after a real bounce the ship must be FURTHER from the satellite than it started.
   const Y = build();
-  const h2 = stage(Y, 3, ds => ds.find(d => d.orbitRadius === 180));
+  const h2 = stageRing(Y, 0);   // CS022 P3: ring 1, by index
   h2.x = 3; h2.y = 3;
   const [W2, H2] = Y.worldDims(Y.game.worldSize);   // CS022 P1: the live period again, for the same reason
   Y.game.ship.x = W2 - 42; Y.game.ship.y = H2 - 42;
@@ -742,8 +776,9 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
       X.game.wave = 2; X.game.debris.length = 0; X.nextWave();
       X.game.state = "playing"; X.game.paused = false;
       X.input.shield = () => true;
-      // Park the ship right on ring 1 so it is in and out of contact for the whole run.
-      const sat = X.game.debris.find(d => d.orbitRadius === 180);
+      // Park the ship right on the OUTERMOST ring so it is in and out of contact for the whole run.
+      // CS022 P3: level 3 lays ring 4 alone (the ramp), so ring 1 is not on the board here.
+      const sat = X.game.debris.find(d => d.orbitRadius === X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP);
       X.game.ship.x = sat.x; X.game.ship.y = sat.y;
       X.game.ship.vx = 0; X.game.ship.vy = 0;
       for (let i = 0; i < 300; i++) { X.game.ship.energy = 1.0; X.update(1 / 60); X.draw(); }

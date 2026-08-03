@@ -279,17 +279,20 @@ console.log("(A) source pins: the mutable world, the both-places rule, ordering,
   eq(X.GAME_VERSION, "1.0.0.21", "A: TRAP 1 — GAME_VERSION unchanged at 1.0.0.21 (P4 owns the bump)");
 
   // --- TRAP 3: no ORBIT_* constant and no orbit-spawn change ------------------------------------------
-  eq(X.ORBIT_INNER_RADIUS, 180, "A: TRAP 3 — ORBIT_INNER_RADIUS untouched (P3 owns 460)");
-  eq(X.ORBIT_RADIUS_STEP, 150, "A: TRAP 3 — ORBIT_RADIUS_STEP untouched (P3 owns 276)");
-  eq(X.ORBIT_RING_COUNT, 4, "A: TRAP 3 — ORBIT_RING_COUNT untouched");
-  eq(X.ORBIT_GAP_MULT, 2.5, "A: TRAP 3 — ORBIT_GAP_MULT untouched");
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.85]", "A: TRAP 3 — ORBIT_DENSITY untouched (P3 owns the halving)");
-  assert(!/activeRings/.test(codeOnly), "A: TRAP 3 — generateOrbitLayout has gained no activeRings filter yet");
+  // REPOINTED BY CS022 P3, the standing mirror-image treatment: P1's claim was about ITS OWN diff, and
+  // P3 is the phase that owns every one of these. Each "not yet" becomes its positive successor at the
+  // same strength, so the file still fails loudly if the ramp is ever reverted or half-reverted.
+  eq(X.ORBIT_INNER_RADIUS, 460, "A: REPOINTED BY CS022 P3 — ORBIT_INNER_RADIUS is now 460 (was 180 through P2)");
+  eq(X.ORBIT_RADIUS_STEP, 276, "A: REPOINTED BY CS022 P3 — ORBIT_RADIUS_STEP is now 276 (was 150 through P2)");
+  eq(X.ORBIT_RING_COUNT, 4, "A: ORBIT_RING_COUNT untouched (P3 relocated its declaration, not its value)");
+  eq(X.ORBIT_GAP_MULT, 2.5, "A: ORBIT_GAP_MULT untouched — the occurrence curve is not part of CS022");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]", "A: REPOINTED BY CS022 P3 — ring 4's density halved (FORK-CS022-G)");
+  assert(/activeRings/.test(codeOnly), "A: REPOINTED BY CS022 P3 — generateOrbitLayout has gained the activeRings filter");
   const genBody = codeOnly.slice(codeOnly.indexOf("function generateOrbitLayout(")).split("\n}\n")[0];
-  assert(genBody.length > 200 && !/inactive/.test(genBody),
-    "A: TRAP 3 — ...and generateOrbitLayout has gained no `inactive` return array");
-  assert(!/function activeRingsFor\(/.test(codeOnly), "A: TRAP 3 — activeRingsFor does not exist yet");
-  assert(!/function spawnFieldSatellites\(/.test(codeOnly), "A: TRAP 3 — the field-spawn extraction is P3's, not this phase's");
+  assert(genBody.length > 200 && /inactive/.test(genBody),
+    "A: REPOINTED BY CS022 P3 — ...and generateOrbitLayout returns an `inactive` array");
+  assert(/function activeRingsFor\(/.test(codeOnly), "A: REPOINTED BY CS022 P3 — activeRingsFor exists");
+  assert(/function spawnFieldSatellites\(/.test(codeOnly), "A: REPOINTED BY CS022 P3 — the field-spawn extraction has landed");
   assert(/rand\(SPAWN_MIN_DIST, SPAWN_MAX_DIST\)/.test(codeOnly),
     "A: TRAP 3 — the field spawn is still the shipped ship-relative ring, in place");
 

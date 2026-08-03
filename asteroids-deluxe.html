@@ -507,15 +507,27 @@ const STAR_NEAR_BRIGHT_MAX = 1.0;
 // shootable, breakable, harvestable — so shooting a lane open is a legitimate strategy and the whole
 // arrangement erodes into a normal field as it is harvested (FORK-CS021-C2).
 //
-// THE RADII ARE FITTED TO THIS WORLD, NOT DERIVED FROM SATELLITE SIZE. The design handoff derived
-// ringSpacing = satelliteDiameter * 6 and startRadius = satelliteDiameter * 4, which at a 92 px size-3
-// satellite puts the 5th ring at a 2,576 px radius inside a 2560x1440 torus whose largest wrap-clean
-// circle is ~700 px (WORLD_H/2 - 20) — dead on arrival, and even ring 2 would not fit. These four
-// explicit radii put the outermost satellite EDGE at 630 + DEBRIS_RADII[3] = 676 px, inside that
-// budget, and clear a wave-1 dock (radius up to 88) by 180 - 46 - 88 = 46 px at the inner ring.
-const ORBIT_INNER_RADIUS  = 180;  // ring 1 radius, px from the dock
-const ORBIT_RADIUS_STEP   = 150;  // px per further ring; rings 1-4 land at 180 / 330 / 480 / 630
-const ORBIT_RING_COUNT    = 4;    // rings per orbit level (FORK-CS021-B -> 4 rings of size-3 debris)
+// THE RADII ARE DERIVED FROM SATELLITE SIZE AND FITTED TO THE *ORBIT-LEVEL* WORLD (CS022 P3, gate Q1 +
+// FORK-CS022-A). CS021 shipped 180/150 — four radii fitted to the FIELD world's ~700 px wrap-clean
+// circle — and its playtest gate came back saying the rings sat too close to the dock and were all too
+// tight. The spacing Q1 asked for is: ring 1 five large-satellite diameters out from the dock, every
+// further ring three more, measured CENTRE-TO-CENTRE (FORK-CS022-A; the edge-to-edge readings need a
+// size-25 world). At DEBRIS_RADII[3] * 2 = 92 px that is 5 x 92 = 460 and 3 x 92 = 276, putting the four
+// rings at 460 / 736 / 1012 / 1288 and the OUTERMOST SATELLITE EDGE at 1288 + 46 = 1,334 px.
+//
+// That is why CS022 P1 exists: 1,334 px does not fit the field world (budget 700 px), so an ORBIT level
+// runs at WORLD_SIZE_ORBIT (5120x2880), whose wrap-clean budget is 2880/2 - 20 = 1,420 px. 1,334 against
+// 1,420 — four rings fit, and they fit from the FIRST occurrence. THE WORLD SIZE DOES NOT RAMP EVEN
+// THOUGH THE RINGS DO (activeRingsFor(), spec §1.2). Ring 1 clears the permanent 88 px dock (radius
+// DOCK_RADIUS x 2 at every level — LEVER_DOCK_SIZE ships disabled, Correction C2) by 460 - 46 - 88 =
+// 326 px, against CS021's 46 px. Anything re-deriving these must budget against worldDims(
+// WORLD_SIZE_ORBIT), never the live WORLD_H — see orbitEffectiveCount() for the same rule.
+const ORBIT_INNER_RADIUS  = 460;  // ring 1 radius, px from the dock — 5 large-satellite diameters (5 x 92)
+const ORBIT_RADIUS_STEP   = 276;  // px per further ring (3 x 92); rings 1-4 land at 460 / 736 / 1012 / 1288
+// ORBIT_RING_COUNT IS NOT DECLARED HERE ANY MORE. CS022 P3 moved it down into the LEVEL PROGRESSION
+// TABLE block, beside ORBIT_LEVEL_EVERY, because levelDef()'s new `orbitRings` column reads it and
+// levelDef must stay evaluable ALONE in a bare context — the identical reason ORBIT_LEVEL_EVERY lives
+// there. Its value (4) and its meaning are unchanged; see the note at its new home.
 // CS021 P3 (FLAG-CS021-a). RETIRED IN CS022 P2 (spec Correction C3, §6/§9): orbitEffectiveCount() now
 // clamps against the wrap-clean BUDGET (worldDims(WORLD_SIZE_ORBIT)) rather than this step-pad floor —
 // once orbitRadiusStepFor() holds ORBIT_RADIUS_STEP fixed, the step can no longer narrow as count rises,
@@ -523,9 +535,21 @@ const ORBIT_RING_COUNT    = 4;    // rings per orbit level (FORK-CS021-B -> 4 ri
 // DEBRIS_COUNT_MAX precedent, CS018 P3). No readers remain.
 const ORBIT_RADIUS_STEP_PAD = 40;
 // Per-ring density, 0 (one satellite) -> 1 (the tightest fair fit). Non-uniform on purpose so the level
-// has rhythm: tight -> breather -> wide/fast -> tightest. At the shipped geometry this yields counts
-// 6 / 6 / 7 / 21 (40 satellites) with arc gaps 96.5 / 253.6 / 338.9 / 96.5 px.
-const ORBIT_DENSITY       = [0.75, 0.45, 0.35, 0.85];
+// has rhythm: tight -> breather -> widest -> wide.
+//
+// CS022 P3 (FORK-CS022-G, Correction C7): that rhythm line USED to read "tight -> breather -> wide/fast
+// -> tightest", which was true at CS021's 180/150 geometry — ring 4's lane was 96.5 px there and it was
+// the level's climax. Ring 4's density is now HALVED (0.85 -> 0.42), taken on FRAME BUDGET rather than on
+// fairness: at the new radii the shipped curve put 44 satellites on ring 4 alone and a level-21 peak of
+// 108, and the standing-garbage load a full harvest produces scales with that. The halving is exact at
+// both ends of the occurrence curve — 44 -> 22 at level 3, 49 -> 25 at the 1.8 floor — and takes the peak
+// level total to 84. The consequence is that ring 4's lane goes 92 -> 276 px, making it the second-WIDEST
+// ring rather than the tightest; ring 1's 101 px is now the only tight ring left (FLAG-CS022-c).
+//
+// At the shipped geometry, with every ring active (occurrence 4+), this yields counts 15 / 14 / 15 / 23
+// at level 12 rising to 15 / 15 / 16 / 25 at the floor. All four are live debug sliders (CS021 P3) and
+// are the first lever if the frame budget or the feel says so.
+const ORBIT_DENSITY       = [0.75, 0.45, 0.35, 0.42];
 // THE FAIRNESS FLOOR, as a multiple of the ship's diameter:
 //     minRequiredGap = max(shipDiameter + ORBIT_SAFETY_MARGIN, shipDiameter * ORBIT_GAP_MULT)
 // At 2.5x a 26 px ship that is 65 px of clear lane between adjacent satellites (the multiplicative half
@@ -543,9 +567,10 @@ const ORBIT_SAFETY_MARGIN  = 8;    // px in the ADDITIVE half of minRequiredGap
 // knobs whose `def` DERIVES from these constants (shown in degrees/second, via toNative), and the
 // playtest gate is where they get settled — the fork resolution is explicit that Paul tunes them live
 // rather than accepting a specced guess. ORBIT_ANG_VEL is deliberately slow: a full revolution in 60 s,
-// which at ring 4 is ~66 px/s of tangential travel, about a size-3 satellite's own drift speed.
+// which at CS022 P3's ring-4 radius (1288) is ~135 px/s of tangential travel — the px/s figures scale
+// with the radii, so this whole paragraph's numbers moved when the geometry did, the °/s did not.
 const ORBIT_ANG_VEL       = 6 * Math.PI / 180;  // 6 deg/s
-const ORBIT_FAST_MULT     = 3.0;  // the fast ring's multiplier — ~18 deg/s, ~151 px/s at ring 3's radius
+const ORBIT_FAST_MULT     = 3.0;  // the fast ring's multiplier — ~18 deg/s, ~318 px/s at ring 3's radius
 const ORBIT_FAST_RING     = 3;    // 1-BASED ring number that spins at ORBIT_ANG_VEL * ORBIT_FAST_MULT.
                                   // Ring 3 is the deliberately SPARSE ring: it trades spatial tightness
                                   // for timing pressure, which is the whole point of the density curve's dip.
@@ -588,6 +613,11 @@ const JUNK_CYCLE = [3, 5, 9, 13];   // junk count by position in the 4-level cyc
 // section's banner to levelDef's closing brace and running nothing else. Anything levelDef reads has to
 // be inside that slice. Changing the schedule is a design decision, not a retune (spec §3, FORK-E).
 const ORBIT_LEVEL_EVERY = 3;
+// CS022 P3 (FLAG-CS022-e): rings per orbit level (FORK-CS021-B -> 4 rings of size-3 debris). MOVED HERE
+// from the ORBIT_* geometry block above, for exactly the reason stated for ORBIT_LEVEL_EVERY: levelDef()'s
+// new `orbitRings` column clamps against it, and anything levelDef reads has to be inside that slice.
+// The value and the meaning are unchanged — this is a relocation, not a retune.
+const ORBIT_RING_COUNT = 4;
 
 // Shared step-table reader: the value of the LAST breakpoint at or below n. Every table below is
 // ascending by level and starts at level 1, so a level under the table's start returns its first value.
@@ -632,27 +662,59 @@ const TIER_STEPS = {
 // PURE: a level number in, a plain object out. `level` is the UNCLAMPED argument (display/telemetry
 // only); every derived field reads the clamped L, so levelDef(64) … levelDef(Infinity) are
 // field-identical to levelDef(63) except for `level`.
-// AMENDED CS021 P1: `archetype` is the ONE exception to that clamp — it reads the unclamped n on
+// AMENDED CS021 P1: `archetype` is an exception to that clamp — it reads the unclamped n on
 // purpose, so the every-3rd orbit rhythm survives the endgame plateau instead of latching "orbit"
-// permanently from level 63. levelDef(64+) is therefore field-identical to levelDef(63) except for
-// `level` AND `archetype`. See the field's own comment.
+// permanently from level 63. AMENDED AGAIN CS022 P3: `orbitRings` reads the unclamped n for the same
+// reason and is the third such field. `fieldCount` does NOT need to be listed: past level 63 the
+// internal L clamp pins it at levelDef(63).junkCount === 13 at every level, orbit or field, so it is
+// plateau-identical even though it is written in terms of n. levelDef(64+) is therefore field-identical
+// to levelDef(63) except for `level`, `archetype` and `orbitRings`. See each field's own comment.
 function levelDef(n) {
   const L     = Math.min(n, LEVEL_MAX);
   const phase = Math.floor((L - 1) / PHASE_LEN) + 1;   // 1..3
   const rel   = L - PHASE_LEN * (phase - 1);           // 1..21, the level's position within its phase
+  // CS021 P1 (FORK-CS021-E): "field" (the shipped scatter) or "orbit" (concentric rings around the
+  // dock). THE SECOND FIELD DERIVED FROM THE UNCLAMPED n, alongside `level` — every other field reads
+  // the clamped L, but the every-3rd rhythm has to keep going past the level-63 endgame plateau, and
+  // reading L here would make level 63 AND EVERY LEVEL AFTER IT an orbit level forever. game.wave
+  // stays the ONE difficulty clock: this is a pure function of it, not a second clock and not cycle
+  // state. levelDef(Infinity) yields NaN % 3 !== 0, i.e. "field" — no throw at the extreme.
+  // CS022 P3: HOISTED out of the object literal below into a local, because THREE columns now read it
+  // (itself, orbitRings, fieldCount) and an object literal cannot see its own properties. The
+  // expression is byte-unchanged; only where it is written moved.
+  const archetype = n % ORBIT_LEVEL_EVERY === 0 ? "orbit" : "field";
+  // A phase's LAST level holds 13 rather than restarting the cycle at 3 (spec: rel === 21).
+  // CS022 P3: hoisted for the same reason — fieldCount reads it on a field level.
+  const junkCount = rel === PHASE_LEN ? 13 : JUNK_CYCLE[(rel - 1) % 4];
   const def = {
     level: n,
     phase: phase,
     rel: rel,
-    // CS021 P1 (FORK-CS021-E): "field" (the shipped scatter) or "orbit" (concentric rings around the
-    // dock). THE SECOND FIELD DERIVED FROM THE UNCLAMPED n, alongside `level` — every other field reads
-    // the clamped L, but the every-3rd rhythm has to keep going past the level-63 endgame plateau, and
-    // reading L here would make level 63 AND EVERY LEVEL AFTER IT an orbit level forever. game.wave
-    // stays the ONE difficulty clock: this is a pure function of it, not a second clock and not cycle
-    // state. levelDef(Infinity) yields NaN % 3 !== 0, i.e. "field" — no throw at the extreme.
-    archetype: n % ORBIT_LEVEL_EVERY === 0 ? "orbit" : "field",
-    // A phase's LAST level holds 13 rather than restarting the cycle at 3 (spec: rel === 21).
-    junkCount: rel === PHASE_LEN ? 13 : JUNK_CYCLE[(rel - 1) % 4],
+    archetype: archetype,
+    junkCount: junkCount,
+    // CS022 P3 (spec §1.2/§4.5, FORK-CS022-E): HOW MANY of the ORBIT_RING_COUNT rings this orbit level
+    // lays down — one more per OCCURRENCE of the archetype, so ring 4 alone at level 3, rings 4+3 at 6,
+    // 4+3+2 at 9, all four from level 12 onward. Derived from the UNCLAMPED n exactly like `archetype`,
+    // and for the same reason: the rhythm has to survive the level-63 plateau. 0 on a field level.
+    // THE RAMP SELECTS RINGS, IT DOES NOT RE-SPACE THEM — ring 4 sits at 1288 px whether or not rings
+    // 1-3 exist. This column is what the TABLE says; the live spawn goes through activeRingsFor(),
+    // which additionally composes with the orbitCount debug knob (FLAG-CS022-h) and therefore cannot
+    // live in a pure function that reads no state.
+    orbitRings: archetype === "orbit" ? Math.min(n / ORBIT_LEVEL_EVERY, ORBIT_RING_COUNT) : 0,
+    // CS022 P3 (spec §1.4, FORK-CS022-F): the number of ORDINARY scatter satellites the level spawns.
+    // On a field level that is simply its own junkCount. On an ORBIT level it is THE PREVIOUS LEVEL'S
+    // junkCount — an orbit level now carries a field component ON TOP OF its rings, which RETIRES
+    // CS021's "junkCount is not consumed on an orbit level" rule (Correction C6). The orbit level's own
+    // junkCount column is now unread by the spawn path, though logDifficultySnapshot still reports it
+    // (FLAG-CS022-g: that column means "what the table says").
+    //
+    // THE ONE RECURSIVE CALL IN THIS FUNCTION, AND IT TERMINATES BY CONSTRUCTION: orbit levels are
+    // every ORBIT_LEVEL_EVERY-th, so n - 1 is never itself an orbit level when n is, and the branch
+    // cannot be taken twice. levelDef(Infinity) resolves to "field" (NaN % 3 !== 0) so the extreme
+    // never enters it at all. Past level 63 the internal L clamp pins this at levelDef(63).junkCount
+    // === 13, consistent with the plateau. It is a SELF-call, not a table consumer — everything it
+    // needs is already inside this block, so the bare-context slice still evaluates.
+    fieldCount: archetype === "orbit" ? levelDef(n - 1).junkCount : junkCount,
     // 8 tow slots through level 4, then +2 per level to 24 (= CARGO_CAP_MAX) at level 12, then flat.
     // Replaces the delivery-earned growCap curve (FORK-CS018-B); consumed in P5.
     payloadSlots: L <= 4 ? 8 : L >= 12 ? 24 : 8 + (L - 4) * 2,
@@ -5162,12 +5224,20 @@ function startGame() {
 // satellite-size constant.
 function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY, orbitCount,
                                innerRadius, radiusStep, safetyMargin, minGapMultiplier,
-                               densityByOrbit, baseAngVel, fastRingIndex, fastRingMult }) {
+                               densityByOrbit, baseAngVel, fastRingIndex, fastRingMult, activeRings }) {
   const minRequiredGap    = Math.max(shipDiameter + safetyMargin, shipDiameter * minGapMultiplier);
   const spacePerSatellite = satelliteDiameter + minRequiredGap;
-  const rings = [], rejected = [];
+  const rings = [], rejected = [], inactive = [];
   for (let i = 0; i < orbitCount; i++) {
     const radius        = innerRadius + i * radiusStep;
+    // CS022 P3 (spec §4.4): THE RING FILTER. `activeRings` is an optional array of 0-BASED ring indices;
+    // absent or null means every ring, which is the pre-CS022 behaviour byte-for-byte. The skip lands
+    // AFTER `radius` and BEFORE `maxCount` on purpose, so an inactive ring's radius is still known and
+    // reported. `inactive` is a NEW returned array and is deliberately NOT folded into `rejected`:
+    // `rejected` means "this ring is unfair by construction" (the maxCount guard below) and several
+    // tests read it with exactly that meaning. Every other per-ring quantity — radius, density, angVel,
+    // fastRingIndex — keeps its ORIGINAL index, so ring 4 is ring 4 whether or not rings 1-3 exist.
+    if (activeRings && activeRings.indexOf(i) === -1) { inactive.push({ index: i, radius }); continue; }
     const circumference = TAU * radius;
     const maxCount      = Math.floor(circumference / spacePerSatellite);
     if (maxCount < 1) { rejected.push({ index: i, radius, circumference, maxCount }); continue; }
@@ -5187,9 +5257,11 @@ function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY
     rings.push(ring);
   }
   return {
-    centerX, centerY, rings, rejected, minRequiredGap, spacePerSatellite,
+    centerX, centerY, rings, rejected, inactive, minRequiredGap, spacePerSatellite,
     satelliteDiameter, shipDiameter,
     total: rings.reduce((n, r) => n + r.count, 0),
+    // `rings` holds only ACTIVE rings, in ascending index order, so this is the OUTERMOST ACTIVE ring's
+    // satellite edge — 1,334 px at every occurrence, since the ramp fills from the outside in.
     outerEdge: rings.length ? rings[rings.length - 1].radius + satelliteDiameter / 2 : 0,
   };
 }
@@ -5315,6 +5387,27 @@ function orbitEffectiveCount(requested) {
          ORBIT_INNER_RADIUS + (count - 1) * ORBIT_RADIUS_STEP + DEBRIS_RADII[3] > orbitBudget) count--;
   return count;
 }
+// CS022 P3 (spec §1.2/§4.4, FORK-CS022-E): THE RING RAMP. Rather than every ring appearing at the first
+// occurrence, ONE RING IS ADDED PER OCCURRENCE OF THE ARCHETYPE, OUTERMOST FIRST — [3], [3,2], [3,2,1],
+// [3,2,1,0] — complete at occurrence 4 (level 12) and held from there through 63 and past the plateau.
+// Radii never move: this SELECTS rings, it does not re-space them, so ring 4 sits at 1288 px at level 3
+// exactly as it does at level 63.
+//
+// NO NEW CONSTANT AND NO NEW CLOCK. Occurrence is CS021 P2's own derivation, level / ORBIT_LEVEL_EVERY,
+// the same coarse tick orbitGapMult() above reads — game.wave stays the ONE difficulty clock.
+//
+// IT COMPOSES WITH THE orbitCount DEBUG KNOB RATHER THAN IGNORING IT (FLAG-CS022-h): the count it walks
+// down from is the EFFECTIVE ring count, so a requested 3 gives [2], [2,1], [2,1,0] and completes at
+// occurrence 3 instead of 4. No knob is added for the ramp itself. orbitEffectiveCount() is idempotent
+// at this call — applyDebug()'s clampShown has already run on every write to DEBUG.orbitCount — so this
+// can never disagree with the ring count spawnOrbitWave() actually lays down.
+function activeRingsFor(level) {
+  const count = orbitEffectiveCount(DEBUG.orbitCount);
+  const n = Math.max(1, Math.min(Math.floor(level / ORBIT_LEVEL_EVERY), count));
+  const rings = [];
+  for (let i = 0; i < n; i++) rings.push(count - 1 - i);   // outermost first
+  return rings;
+}
 // CS021 P3 (spec §6 table): the debug slider OVERRIDES orbitGapMult()'s occurrence-scaled curve only
 // while it has been moved off its own default — an untouched knob must not silently freeze every orbit
 // level at the occurrence-1 value (2.5x), which is what unconditionally reading DEBUG.orbitGapMult here
@@ -5333,7 +5426,7 @@ function orbitEffectiveGapMult(level) {
 // fixed ORBIT_* const directly; orbitCount is ALREADY geometry-clamped by the time DEBUG.orbitCount is
 // read (applyDebug's clampShown ran at adjustment time), so radiusStep is derived from that clamped
 // value, never the raw requested one.
-function spawnOrbitWave(speedMul, gapMult) {
+function spawnOrbitWave(speedMul, gapMult, activeRings) {
   const orbitCount = DEBUG.orbitCount;
   const layout = spawnSafeOrbitLayout(generateOrbitLayout({
     satelliteDiameter: DEBRIS_RADII[3] * 2,   // read HERE, at the call site — never a new constant
@@ -5350,6 +5443,9 @@ function spawnOrbitWave(speedMul, gapMult) {
     baseAngVel:        DEBUG.orbitAngVel,
     fastRingIndex:     ORBIT_FAST_RING - 1,   // ORBIT_FAST_RING is the human, 1-based ring number; not a knob
     fastRingMult:      DEBUG.orbitFastMult,
+    activeRings,       // CS022 P3: the CALLER's ramp (spec §4.4/§4.6) — resolved at the call site exactly
+                       // like gapMult, so the generator stays pure and still knows nothing about
+                       // occurrence. This is the P2/P1 seam, widened by one argument, not breached.
   }), game.ship);
   // orbitCenter is captured ONCE, here, and never re-read (spec §4.3): if a future changeset ever
   // relocates the dock mid-wave, the rings stay exactly where they were laid down. One shared object
@@ -5395,6 +5491,24 @@ function rerollOrbitStartAngles() {
   return true;
 }
 
+// CS022 P3 (spec §4.6): the FIELD SCATTER, extracted VERBATIM out of nextWave()'s field branch so both
+// archetypes can call it — a field level spawns its own junkCount this way, and an orbit level now
+// spawns levelDef(n - 1).junkCount of them ON TOP OF its rings (spec §1.4, FORK-CS022-F). The body is a
+// pure extraction: `git diff -w` on the field branch reads as an indent change, and test-cs022-p3.js
+// §E pins that against the pre-P3 commit rather than trusting the eye. Ship-relative and wrap-aware, so
+// it is correct at either world size without knowing which one it is running in.
+function spawnFieldSatellites(n, speedMul) {
+  for (let i = 0; i < n; i++) {
+    // spawn in a ring around the ship's current world position so the wave is
+    // reachable (min distance keeps it off the ship, max keeps it from being
+    // stranded on the far side of the big world)
+    const a = rand(0, TAU);
+    const d = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
+    const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
+    game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
+  }
+}
+
 function nextWave() {
   game.wave++;
   // CS018 P4: the cycle-clock derivation that used to sit here is gone — game.wave is the ONE
@@ -5435,28 +5549,27 @@ function nextWave() {
   const count = levelDef(game.wave).junkCount;
   const speedMul = junkSpeedMul();
   // CS021 P1 (FORK-CS021-E): the level table decides the level's ARCHETYPE, and that is the only thing
-  // this branch is. "field" is the shipped scatter below, moved wholesale into the else with nothing
-  // else changed (`git diff -w` reads as a pure indent). "orbit" replaces it with concentric rings
-  // around the dock and deliberately does NOT consume junkCount — an orbit level's population comes
-  // from its geometry, not from the junk cycle, which is why the totals step up so sharply
-  // (FORK-CS021-D accepts that: orbit levels are set-pieces). `count`/`speedMul` stay declared out here
-  // because logDifficultySnapshot() below still reports the LEVEL TABLE's junk count either way, and
+  // this branch is. "field" is the shipped scatter, now living in spawnFieldSatellites() above with its
+  // body byte-unchanged. "orbit" adds concentric rings around the dock.
+  //
+  // CS022 P3 (spec §1.4, Correction C6) RETIRES CS021's rule that an orbit level does not consume
+  // junkCount. It still does not consume its OWN — it spawns levelDef(n - 1).junkCount ordinary scatter
+  // satellites (the `fieldCount` column) IN ADDITION to its rings, through the very same call the field
+  // branch makes. Since orbit levels are every 3rd, n - 1 is never itself an orbit level, so that column
+  // always reads a real field level's junk cycle. `count`/`speedMul` stay declared out here because
+  // logDifficultySnapshot() below still reports the LEVEL TABLE's own junk count either way — on an
+  // orbit level that figure is now unread by the spawn, which is FLAG-CS022-g and is deliberate — and
   // the orbit spawn reuses the same speedMul rather than deriving a third one.
   if (levelDef(game.wave).archetype === "orbit") {
     // CS021 P3: orbitEffectiveGapMult reads the occurrence-scaled curve (spec §5) UNLESS the debug
     // slider has been moved off its default, in which case it overrides — spec §6 table.
-    game.orbitLayout = spawnOrbitWave(speedMul, orbitEffectiveGapMult(game.wave));
+    // CS022 P3: activeRingsFor() is the ring RAMP (spec §4.4), resolved at this call site for the same
+    // reason gapMult is — the generator stays pure and unaware of occurrence.
+    game.orbitLayout = spawnOrbitWave(speedMul, orbitEffectiveGapMult(game.wave), activeRingsFor(game.wave));
+    spawnFieldSatellites(levelDef(game.wave).fieldCount, speedMul);
   } else {
     game.orbitLayout = null;   // CS021 P3: a field level has no live layout for the reroll keybind to act on
-    for (let i = 0; i < count; i++) {
-      // spawn in a ring around the ship's current world position so the wave is
-      // reachable (min distance keeps it off the ship, max keeps it from being
-      // stranded on the far side of the big world)
-      const a = rand(0, TAU);
-      const d = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
-      const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
-      game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
-    }
+    spawnFieldSatellites(count, speedMul);
   }
   // CS017 P5 — the rare bonus canister (FORK-CS017-D -> (b) PRE-LINKED CLUMP). ONE roll per wave, on
   // the EASING-OFF curve (bonusSpawnChance()): common right after a cycle reset, rare at the cycle's

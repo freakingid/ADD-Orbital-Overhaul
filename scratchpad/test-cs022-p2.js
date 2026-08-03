@@ -137,18 +137,22 @@ const X = build();
   // TRAP 1 — GAME_VERSION does not move this phase.
   eq(X.GAME_VERSION, "1.0.0.21", "A: TRAP 1 — GAME_VERSION unchanged (P4 owns the bump to 1.0.0.22)");
 
-  // TRAP 2 — no ORBIT_* constant value moved.
-  eq(X.ORBIT_INNER_RADIUS, 180, "A: TRAP 2 — ORBIT_INNER_RADIUS untouched (P3 owns 460)");
-  eq(X.ORBIT_RADIUS_STEP, 150, "A: TRAP 2 — ORBIT_RADIUS_STEP untouched (P3 owns 276)");
-  eq(X.ORBIT_RING_COUNT, 4, "A: TRAP 2 — ORBIT_RING_COUNT untouched");
-  eq(X.ORBIT_GAP_MULT, 2.5, "A: TRAP 2 — ORBIT_GAP_MULT untouched");
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.85]", "A: TRAP 2 — ORBIT_DENSITY untouched (P3 owns the halving)");
+  // TRAP 2 — REPOINTED BY CS022 P3, the standing mirror-image treatment. P2 asserted that ITS OWN diff
+  // moved no ORBIT_* constant; P3 is the phase that owns them and has now moved three, so the surviving
+  // claim is that they landed on the values P2's own section (D) predicted — the same numbers, read from
+  // the other side. ORBIT_RING_COUNT and ORBIT_GAP_MULT genuinely did not move and stay as they were.
+  eq(X.ORBIT_INNER_RADIUS, 460, "A: REPOINTED BY CS022 P3 — ORBIT_INNER_RADIUS is now 460 (was 180 through P2)");
+  eq(X.ORBIT_RADIUS_STEP, 276, "A: REPOINTED BY CS022 P3 — ORBIT_RADIUS_STEP is now 276 (was 150 through P2)");
+  eq(X.ORBIT_RING_COUNT, 4, "A: ORBIT_RING_COUNT untouched (P3 relocated its declaration, not its value)");
+  eq(X.ORBIT_GAP_MULT, 2.5, "A: ORBIT_GAP_MULT untouched — the occurrence curve is not part of CS022");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]", "A: REPOINTED BY CS022 P3 — ring 4's density halved 0.85 -> 0.42 (FORK-CS022-G)");
 
-  // TRAP 3 — no ramp / levelDef / nextWave material has landed yet (that's P3's).
-  assert(!/activeRings/.test(codeOnly), "A: TRAP 3 — no activeRings filter yet");
-  assert(!/fieldCount/.test(codeOnly), "A: TRAP 3 — levelDef has no fieldCount column yet");
-  assert(!/orbitRings/.test(codeOnly), "A: TRAP 3 — levelDef has no orbitRings column yet");
-  assert(!/function spawnFieldSatellites\(/.test(codeOnly), "A: TRAP 3 — the field-spawn extraction is P3's, not this phase's");
+  // TRAP 3 — REPOINTED BY CS022 P3, same treatment: P2 asserted none of the ramp material existed YET.
+  // P3 landed all four pieces, so each "not yet" becomes its positive successor at the same strength.
+  assert(/activeRings/.test(codeOnly), "A: REPOINTED BY CS022 P3 — the activeRings ring filter now exists");
+  assert(/fieldCount/.test(codeOnly), "A: REPOINTED BY CS022 P3 — levelDef now carries a fieldCount column");
+  assert(/orbitRings/.test(codeOnly), "A: REPOINTED BY CS022 P3 — levelDef now carries an orbitRings column");
+  assert(/function spawnFieldSatellites\(/.test(codeOnly), "A: REPOINTED BY CS022 P3 — the field-spawn extraction has landed");
   eq((codeOnly.match(/function levelDef\(/g) || []).length, 1, "A: exactly one levelDef definition, unchanged in count");
 })();
 
@@ -160,16 +164,22 @@ const X = build();
   }
   // The RETIRED CS021 P3 formula, restated here ONLY as a control to prove count 4's answer didn't move —
   // this is the formula orbitRadiusStepFor(count) used to compute, not a copy of what it computes now.
+  // REPOINTED BY CS022 P3: the two literals below were 150 / 225 at P2's still-CS021 geometry. The CLAIM
+  // is unchanged and is deliberately NOT weakened — the retired rule still reproduces the shipped step
+  // exactly at the shipped count and still widens it at any other — but the numbers it produces are now
+  // 276 / 414, and they are derived from the live constants rather than restated, so a future geometry
+  // move cannot make this control silently stale again. 414 is the figure spec Correction C3 names.
   function retiredFormula(count) {
     if (count <= 1) return X.ORBIT_RADIUS_STEP;
     const outerRadius = X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP;
     return (outerRadius - X.ORBIT_INNER_RADIUS) / (count - 1);
   }
-  eq(retiredFormula(4), 150, "B: (control) the retired formula's own count-4 answer was 150");
+  eq(retiredFormula(4), X.ORBIT_RADIUS_STEP, "B: (control) the retired formula's own count-4 answer is still the shipped step");
+  eq(retiredFormula(4), 276, "B: (control) ...which at the CS022 P3 geometry is 276 (was 150 through P2)");
   eq(X.orbitRadiusStepFor(4), retiredFormula(4), "B: count 4 is bit-identical to the pre-P2 (retired) value — the shipped geometry did not move");
   // ...but the retired formula and the new rule now DISAGREE everywhere else, proving P2 is a real change.
-  eq(retiredFormula(3), 225, "B: (control) the retired formula widened count 3 to 225");
-  assert(X.orbitRadiusStepFor(3) !== retiredFormula(3), "B: the new rule disagrees with the retired one at count 3 (150 vs 225) — Correction C3 in effect");
+  eq(retiredFormula(3), 414, "B: (control) the retired formula widens count 3 to 414 — spec Correction C3's own figure");
+  assert(X.orbitRadiusStepFor(3) !== retiredFormula(3), "B: the new rule disagrees with the retired one at count 3 (276 vs 414) — Correction C3 in effect");
 })();
 
 // == (C) orbitEffectiveCount at the CS021 (live) geometry: cross-validate a local expectation function ==
@@ -193,19 +203,38 @@ function expectedEffectiveCount(innerRadius, step, satRadius, budget, requested)
     eq(X.orbitEffectiveCount(requested), want, `C: orbitEffectiveCount(${requested}) matches the budget-derived expectation (${want})`);
   }
 
-  // The concrete boundary at THIS geometry: every registry count (3-5) and quite a few beyond it are
-  // untouched — the walk-down only shows up well past the debug panel's own [3,5] ceiling.
-  eq(X.orbitEffectiveCount(5), 5, "C: requested 5 is NOT clamped at the shipped geometry (edge 826px clears 1420px) — unlike the retired rule's 5->4");
-  eq(X.orbitEffectiveCount(8), 8, "C: requested 8 still fits (edge 1276px)");
-  eq(X.orbitEffectiveCount(9), 8, "C: requested 9 does not (edge 1426px) — walks down to 8, the first that fits");
-  eq(X.orbitEffectiveCount(20), 8, "C: a wildly over-requested count still lands on the same 8");
+  // The concrete boundary at THIS geometry.
+  //
+  // REPOINTED BY CS022 P3, and this is the repoint P2's own STATUS note predicted verbatim. At the
+  // still-CS021 180/150 geometry the 1420px budget was so generous that NOTHING in the debug panel's own
+  // [3,5] range clamped — the walk-down first bit at a requested 9, well past the registry ceiling. P3's
+  // 460/276 geometry RE-ARMS exactly the same rule where the spec (§6) says it should: 4 rings fit at an
+  // edge of 1334px, a 5th would sit at 1610px, so a requested 5 now walks back down to 4. The rule did
+  // not change between P2 and P3 — only the geometry it is measuring did — which is why the sweep above
+  // (1..20 against the cross-validated helper) is the load-bearing assertion and these four are its
+  // named boundary cases. The two literals are read off the live constants below, never restated.
+  const edge4 = X.ORBIT_INNER_RADIUS + 3 * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
+  const edge5 = X.ORBIT_INNER_RADIUS + 4 * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
+  assert(edge4 <= orbitBudget, `C: the shipped 4-ring outer edge (${edge4}px) clears the ${orbitBudget}px budget`);
+  assert(edge5 > orbitBudget, `C: a 5th ring's edge (${edge5}px) would not`);
+  eq(X.orbitEffectiveCount(4), 4, "C: requested 4 — the shipped ORBIT_RING_COUNT — is accepted outright");
+  eq(X.orbitEffectiveCount(5), 4, "C: requested 5 walks down to 4 at the CS022 P3 geometry (the clamp is armed again)");
+  eq(X.orbitEffectiveCount(20), 4, "C: a wildly over-requested count lands on the same 4");
+  eq(X.orbitEffectiveCount(X.ORBIT_RING_COUNT), X.ORBIT_RING_COUNT,
+    "C: the shipped ring count is a FIXED POINT of the clamp — activeRingsFor() can rely on that");
 })();
 
-// =========== (D) the SAME cross-validated helper, fed the not-yet-landed CS022 (460/276) geometry ======
+// =========== (D) the SAME cross-validated helper, at the CS022 (460/276) geometry ======================
+// REPOINTED BY CS022 P3. Written at P2 as documented arithmetic for a geometry that had not landed yet,
+// with 460/276 deliberately restated as literals rather than read from X. Those constants ARE the shipped
+// build now, so the section keeps its literals (they are the spec's own figures, and pinning them here is
+// what makes a silent geometry drift fail loudly) and gains the assertion that the build agrees with them.
 (function sectionD() {
-  console.log("(D) CS022 (460/276) geometry, as documented arithmetic — not an exercise of live code (P3 owns these constants)");
-  const orbitBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20; // 1420, same world either way — only the ring geometry is hypothetical here
-  const CS022_INNER = 460, CS022_STEP = 276; // PLANNED-FEATURES-CS022.md §1.3 — P3 lands these; NOT read from X
+  console.log("(D) the CS022 (460/276) geometry — P2's predicted arithmetic, now cross-checked against the live constants");
+  const orbitBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20; // 1420
+  const CS022_INNER = 460, CS022_STEP = 276; // PLANNED-FEATURES-CS022.md §1.3 — spec literals, on purpose
+  eq(X.ORBIT_INNER_RADIUS, CS022_INNER, "D: the shipped ORBIT_INNER_RADIUS is the spec's 460 (P2 predicted it, P3 landed it)");
+  eq(X.ORBIT_RADIUS_STEP, CS022_STEP, "D: the shipped ORBIT_RADIUS_STEP is the spec's 276");
 
   const edge4 = CS022_INNER + 3 * CS022_STEP + X.DEBRIS_RADII[3];
   const edge5 = CS022_INNER + 4 * CS022_STEP + X.DEBRIS_RADII[3];
@@ -217,7 +246,14 @@ function expectedEffectiveCount(innerRadius, step, satRadius, budget, requested)
   eq(expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], orbitBudget, 4), 4,
     "D: at the CS022 geometry, requesting 4 is accepted outright");
   eq(expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], orbitBudget, 5), 4,
-    "D: at the CS022 geometry, requesting 5 walks down to 4 — the boundary the shipped rule protects once P3 lands");
+    "D: at the CS022 geometry, requesting 5 walks down to 4 — the boundary the shipped rule now protects");
+  // ...and the LIVE function agrees with the helper at every count, which is the claim P2 could only
+  // make as arithmetic and P3 can make against the real code.
+  for (let requested = 1; requested <= 20; requested++) {
+    eq(X.orbitEffectiveCount(requested),
+       expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], orbitBudget, requested),
+       `D: the LIVE orbitEffectiveCount(${requested}) matches the spec-geometry helper`);
+  }
 })();
 
 // ============================ (E) ORBIT_RADIUS_STEP_PAD: zero readers ================================
