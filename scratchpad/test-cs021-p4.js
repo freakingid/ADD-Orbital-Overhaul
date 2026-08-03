@@ -226,7 +226,8 @@ const comboBlockCode = stripComments(comboBlockSrc);
   eq(HUD_FX_BASE_Y, 640, "A: HUD_FX_BASE_Y (powerup stack floor) unmoved");
   eq(HUD_FX_ROW_H, 40, "A: HUD_FX_ROW_H unmoved");
 
-  eq(GAME_VERSION, "1.0.0.20", "A: GAME_VERSION untouched (TRAP 1 — P5 bumps it)");
+  // TRAP 1 — REPOINTED BY CS021 P5: the bump has landed, so this becomes its mirror image.
+  assert(GAME_VERSION !== "1.0.0.20", "A: GAME_VERSION moved off the pre-CS021 baseline (P5 bumped it)");
 })();
 
 // ================= (B) the CS020 P1b 8/1100 scenario =================

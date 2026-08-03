@@ -172,8 +172,9 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   const X = build().exports;
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
 
-  // TRAP 1 — this phase does NOT bump the version. P5 owns that.
-  eq(X.GAME_VERSION, "1.0.0.20", "A: TRAP 1 — GAME_VERSION is untouched by P3 (P5 bumps it to 1.0.0.21)");
+  // TRAP 1 — REPOINTED BY CS021 P5: P5 has bumped the version to "1.0.0.21", so P3's "untouched by me"
+  // pin becomes its mirror image — off the pre-CS021 baseline.
+  assert(X.GAME_VERSION !== "1.0.0.20", "A: TRAP 1 — GAME_VERSION moved off the pre-CS021 baseline (P5 bumped it)");
 
   // Registry shape: 44 value entries, nine headers, one of them "ORBIT" holding exactly the ten ids.
   const values = X.DEBUG_VARS.filter(v => !v.header);
@@ -644,7 +645,8 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   console.log("(L) regression: default totals table unchanged, DEBUG_ROWS count, real spawn byte-identical to P1/P2");
   const X = build().exports;
 
-  eq(X.GAME_VERSION, "1.0.0.20", "L: GAME_VERSION still untouched");
+  // REPOINTED BY CS021 P5 — mirror image, same reason as §A's TRAP 1 above.
+  assert(X.GAME_VERSION !== "1.0.0.20", "L: GAME_VERSION off the pre-CS021 baseline");
 
   const n3  = atWave(X, 3);
   const n24 = atWave(X, 24);

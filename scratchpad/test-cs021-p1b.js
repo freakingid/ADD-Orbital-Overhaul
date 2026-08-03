@@ -232,7 +232,8 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   const X = build();
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
 
-  eq(X.GAME_VERSION, "1.0.0.20", "A: TRAP 1 — GAME_VERSION is untouched by P1b (P5 bumps it to 1.0.0.21)");
+  // TRAP 1 — REPOINTED BY CS021 P5: the bump has landed, so this becomes its mirror image.
+  assert(X.GAME_VERSION !== "1.0.0.20", "A: TRAP 1 — GAME_VERSION moved off the pre-CS021 baseline (P5 bumped it)");
   // REPOINTED BY CS021 P3: the ORBIT section (10 knobs) landed, taking DEBUG_VARS from 34 to 44.
   eq(X.DEBUG_VARS.filter(v => !v.header).length, 44, "A: TRAP 3 — DEBUG_VARS has exactly 44 value entries (34 + CS021 P3's ORBIT section)");
 

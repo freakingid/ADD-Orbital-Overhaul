@@ -149,8 +149,8 @@ function atWave(X, w) {
   const X = build();
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
 
-  // TRAP 1 — this phase does NOT bump the version. P5 owns that.
-  eq(X.GAME_VERSION, "1.0.0.20", "A: TRAP 1 — GAME_VERSION is untouched by P2 (P5 bumps it to 1.0.0.21)");
+  // TRAP 1 — REPOINTED BY CS021 P5: the bump has landed, so this becomes its mirror image.
+  assert(X.GAME_VERSION !== "1.0.0.20", "A: TRAP 1 — GAME_VERSION moved off the pre-CS021 baseline (P5 bumped it)");
 
   // The occurrence-scaled multiplier exists exactly once, and reads exactly the constants spec §5 names.
   eq((scriptSrc.match(/function orbitGapMult\(/g) || []).length, 1, "A: exactly one orbitGapMult definition");

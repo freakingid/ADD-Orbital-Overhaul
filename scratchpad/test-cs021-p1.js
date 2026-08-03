@@ -190,9 +190,10 @@ function shippedArgs(X, centerX, centerY) {
   const X = build();
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
 
-  // TRAP 1 — this phase does NOT bump the version. CS021 P5 owns that; when it lands it repoints this
-  // assertion to its mirror image (assert GAME_VERSION !== "1.0.0.20"), the standing treatment.
-  eq(X.GAME_VERSION, "1.0.0.20", "A: TRAP 1 — GAME_VERSION is untouched by P1 (P5 bumps it to 1.0.0.21)");
+  // TRAP 1 — REPOINTED BY CS021 P5, the standing treatment this comment itself predicted. P1 asserted
+  // that its own diff did NOT bump the version; P5 has now bumped it to "1.0.0.21", so the surviving
+  // claim is the mirror image — the build is no longer on the pre-CS021 baseline.
+  assert(X.GAME_VERSION !== "1.0.0.20", "A: TRAP 1 — GAME_VERSION moved off the pre-CS021 baseline (P5 bumped it)");
   // TRAP 3 — REPOINTED BY CS021 P3: the ORBIT section (10 knobs) has now landed, taking DEBUG_VARS from
   // P1's own 34 value entries to 44. What P1 is answerable for — that ITS OWN diff added none — is now
   // the positive claim that the ORBIT knobs present are exactly P3's ten, not something P1 slipped in.
