@@ -516,10 +516,11 @@ const STAR_NEAR_BRIGHT_MAX = 1.0;
 const ORBIT_INNER_RADIUS  = 180;  // ring 1 radius, px from the dock
 const ORBIT_RADIUS_STEP   = 150;  // px per further ring; rings 1-4 land at 180 / 330 / 480 / 630
 const ORBIT_RING_COUNT    = 4;    // rings per orbit level (FORK-CS021-B -> 4 rings of size-3 debris)
-// CS021 P3 (FLAG-CS021-a): padding added to the (call-site-derived) satellite diameter to floor the
-// auto-derived radiusStep a debug orbitCount override can produce — see orbitRadiusStepFor()/
-// orbitEffectiveCount() below. 92 (size-3 diameter) + 40 = 132; the shipped 4-ring step (150) clears
-// it comfortably, a requested 5th ring (112.5) does not, which is the geometry FLAG-CS021-a describes.
+// CS021 P3 (FLAG-CS021-a). RETIRED IN CS022 P2 (spec Correction C3, §6/§9): orbitEffectiveCount() now
+// clamps against the wrap-clean BUDGET (worldDims(WORLD_SIZE_ORBIT)) rather than this step-pad floor —
+// once orbitRadiusStepFor() holds ORBIT_RADIUS_STEP fixed, the step can no longer narrow as count rises,
+// so this floor can never bind again. Left defined, unread, as a documented historical value (the
+// DEBRIS_COUNT_MAX precedent, CS018 P3). No readers remain.
 const ORBIT_RADIUS_STEP_PAD = 40;
 // Per-ring density, 0 (one satellite) -> 1 (the tightest fair fit). Non-uniform on purpose so the level
 // has rhythm: tight -> breather -> wide/fast -> tightest. At the shipped geometry this yields counts
@@ -5289,24 +5290,29 @@ function orbitGapMult(level) {
   return Math.max(ORBIT_GAP_MULT_FLOOR, ORBIT_GAP_MULT - (occurrence - 1) * ORBIT_GAP_MULT_STEP);
 }
 
-// CS021 P3 (spec §6, FLAG-CS021-a): "radiusStep auto-derived" — redistributes the SAME outer edge the
-// shipped 4-ring geometry reaches (ORBIT_INNER_RADIUS + (ORBIT_RING_COUNT-1) * ORBIT_RADIUS_STEP = 630,
-// fixed regardless of `count`) evenly across `count - 1` gaps. At the shipped default (count === 4) this
-// reproduces ORBIT_RADIUS_STEP (150) exactly — the geometry table P1/P2 pinned does not move a pixel
-// unless the debug knob is touched. count <= 1 has no gap to derive; returns the shipped step inert.
+// CS022 P2 (Correction C3): the ring SPACING is the invariant, not the outer edge. Paul's stated
+// spacing (ORBIT_RADIUS_STEP) is a design constant; where the outer ring lands is the CONSEQUENCE of
+// that spacing and the ring count, not the other way round. The RETIRED CS021 P3 rule redistributed a
+// fixed outer edge (ORBIT_INNER_RADIUS + (ORBIT_RING_COUNT-1) * ORBIT_RADIUS_STEP) evenly across
+// `count - 1` gaps, which reproduced ORBIT_RADIUS_STEP bit-for-bit only at the shipped count (4) and
+// silently widened the spacing at any other count (225 px at a requested 3 — not the specified 150).
+// `count` no longer changes the result at all; kept as a parameter only because every caller passes one.
 function orbitRadiusStepFor(count) {
-  if (count <= 1) return ORBIT_RADIUS_STEP;
-  const outerRadius = ORBIT_INNER_RADIUS + (ORBIT_RING_COUNT - 1) * ORBIT_RADIUS_STEP;
-  return (outerRadius - ORBIT_INNER_RADIUS) / (count - 1);
+  return ORBIT_RADIUS_STEP;
 }
-// CS021 P3 (FLAG-CS021-a): the orbitCount registry entry's `clampShown` — collapses a requested ring
-// count to the largest one whose auto-derived radiusStep still clears the ORBIT_RADIUS_STEP_PAD floor
-// (132 px at size-3). At the shipped default (4) this is a no-op (150 >= 132); a requested 5 (112.5 px)
-// walks down to 4, the effective max FLAG-CS021-a documents.
+// CS022 P2 (spec §6/§9): the orbitCount registry entry's `clampShown`, redefined against the WRAP-CLEAN
+// BUDGET now that the step above is held fixed — the retired step-pad floor (ORBIT_RADIUS_STEP_PAD)
+// never binds once the step can't narrow under a higher requested count. Walks a requested ring count
+// down while its outermost satellite EDGE would exceed the largest wrap-clean circle available to an
+// orbit level. Deliberately reads worldDims(WORLD_SIZE_ORBIT) — the size an orbit level actually RUNS
+// at — rather than the live WORLD_H, which is 1440 whenever a FIELD level is on screen (CS022 P1) and
+// would clamp this knob to nonsense mid-run; this is the one place in the changeset a world dimension
+// is read from the size table instead of the live variable.
 function orbitEffectiveCount(requested) {
-  const floor = DEBRIS_RADII[3] * 2 + ORBIT_RADIUS_STEP_PAD;
+  const orbitBudget = worldDims(WORLD_SIZE_ORBIT)[1] / 2 - 20;
   let count = Math.round(requested);
-  while (count > 1 && orbitRadiusStepFor(count) < floor) count--;
+  while (count > 1 &&
+         ORBIT_INNER_RADIUS + (count - 1) * ORBIT_RADIUS_STEP + DEBRIS_RADII[3] > orbitBudget) count--;
   return count;
 }
 // CS021 P3 (spec §6 table): the debug slider OVERRIDES orbitGapMult()'s occurrence-scaled curve only

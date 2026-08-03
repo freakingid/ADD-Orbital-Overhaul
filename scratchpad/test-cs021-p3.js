@@ -11,7 +11,11 @@
 // makes to applyDebug()): a requested value collapses to the largest ring count whose auto-derived
 // radiusStep still clears the ORBIT_RADIUS_STEP_PAD floor (132 px at size-3) — 5 collapses to 4, and the
 // collapse is visible EVERYWHERE at once (debugShown, DEBUG, and what's persisted), never a silent
-// mismatch. orbitGapMult's slider OVERRIDES orbitGapMult(level)'s occurrence curve only while it has been
+// mismatch. REPOINTED BY CS022 P2 (Correction C3, spec §6/§9): the paragraph above describes CS021 P3's
+// original rule, now RETIRED — orbitRadiusStepFor() holds ORBIT_RADIUS_STEP fixed regardless of count,
+// and clampShown's underlying orbitEffectiveCount() clamps against the orbit-world wrap-clean budget
+// instead of this step-pad floor. See section F below for the repointed behaviour and its own note.
+// orbitGapMult's slider OVERRIDES orbitGapMult(level)'s occurrence curve only while it has been
 // moved off its own default (orbitEffectiveGapMult()). Densities are consumed first-`orbitCount`
 // (FLAG-CS021-b). The start-angle reroll (FLAG-CS021-c) is a raw "r" keybind, live only on the debug
 // screen while an orbit level's layout exists (game.orbitLayout) — it re-randomises every ring's
@@ -28,8 +32,11 @@
 //  (C) every knob driven through the REAL applyDebug / menuDebug ◄► / typed-entry commit path
 //  (D) persistence round-trip through afd_settings_v1.debug, including bad-value fallbacks per field
 //  (E) returnToDefaults() — bindings only; orbit knobs survive untouched
-//  (F) the orbitCount clamp: request 5, get 4 EVERYWHERE (shown/native/persisted), radiusStep
-//      auto-derives, and the fairness sweep still passes at the clamped geometry
+//  (F) the orbitCount clamp — REPOINTED BY CS022 P2 (Correction C3, spec §6/§9): the clamp is now
+//      budget-derived against the orbit-world wrap-clean budget instead of the retired step-pad floor.
+//      At today's still-CS021 geometry (180/150) nothing in the registry's [3,5] range clamps any more;
+//      radiusStep is now a fixed value regardless of count, and the fairness sweep is re-run at the
+//      (no-longer-clamped) 5-ring and 3-ring geometries.
 //  (G) densities consumed first-orbitCount (FLAG-CS021-b) — a real spawn proves it, not just the formula
 //  (H) orbitGapMult overrides the occurrence curve only while touched (spec §6 table)
 //  (I) the reroll: layout-level invariants (counts/radii/density/angVel byte-identical, startAngle
@@ -377,51 +384,66 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   assert(X.DEFAULT_BINDINGS.thrust.keys[0] !== "k", "E: (control) the default itself was never 'k'");
 })();
 
-// ================= (F) the orbitCount clamp: request 5, get 4 everywhere =====================
+// ========= (F) the orbitCount clamp — REPOINTED BY CS022 P2 (Correction C3, spec §6/§9) ==============
+// CS021 P3 shipped this section asserting a step-pad-derived clamp: request 5, get 4 everywhere, and
+// orbitRadiusStepFor(3) widening to 225. CS022 P2 retired both halves of that rule — orbitRadiusStepFor
+// now holds ORBIT_RADIUS_STEP fixed at every count, and orbitEffectiveCount's clampShown now walks
+// against the orbit-world WRAP-CLEAN BUDGET (worldDims(WORLD_SIZE_ORBIT)) instead of the step-pad floor.
+// At the geometry still live today (ORBIT_INNER_RADIUS 180 / ORBIT_RADIUS_STEP 150 — P3 owns 460/276),
+// that budget (1420px) has so much headroom that nothing in the registry's own [3,5] range clamps any
+// more; this section proves that directly, and proves the walk-down itself still exists by driving the
+// pure function past the registry's own ceiling (see test-cs022-p2.js §C/§D for the dedicated formula
+// coverage at both geometries — this file only re-proves the ONE thing that changed for its own scope:
+// the real, wired-in debug-panel clamp and a real spawn's geometry).
 (function sectionF() {
-  console.log("(F) orbitCount clamp: request 5 -> 4 (shown/native/persisted), fairness holds at the clamped geometry");
+  console.log("(F) orbitCount clamp is now budget-derived (CS022 P2) — nothing in [3,5] clamps at this geometry");
   const B = build();
   const X = B.exports;
 
+  eq(X.orbitRadiusStepFor(4), 150, "F: radiusStep at count 4 still reproduces the shipped ORBIT_RADIUS_STEP exactly");
+  eq(X.orbitRadiusStepFor(3), 150, "F: radiusStep at count 3 no longer widens (was 225 under the retired rule) — CS022 P2 holds the step fixed");
+
   X.applyDebug("orbitCount", 5);
-  eq(X.debugShown.orbitCount, 4, "F: requesting 5 clamps debugShown to 4 (FLAG-CS021-a)");
-  eq(X.DEBUG.orbitCount, 4, "F: ...and DEBUG agrees");
-  eq(X.orbitRadiusStepFor(4), 150, "F: radiusStep at count 4 reproduces the shipped ORBIT_RADIUS_STEP exactly");
+  eq(X.debugShown.orbitCount, 5, "F: requesting 5 is NO LONGER clamped at this geometry (was 4 under the retired step-pad rule)");
+  eq(X.DEBUG.orbitCount, 5, "F: ...and DEBUG agrees");
 
   X.saveSettings();
   const reload = build({ storage: { [X.STORAGE_KEY]: B.lsStore[X.STORAGE_KEY] } }).exports;
-  eq(reload.debugShown.orbitCount, 4, "F: the persisted value is already the clamped 4, not the requested 5");
+  eq(reload.debugShown.orbitCount, 5, "F: the persisted value is the requested 5, unclamped");
 
-  // A count of 3 IS achievable — radiusStep widens, not narrows, when fewer rings are asked for.
+  // A count of 3 was already achievable under the retired rule and still is under the new one.
   X.applyDebug("orbitCount", 3);
-  eq(X.debugShown.orbitCount, 3, "F: 3 is not clamped — comfortably achievable");
-  eq(X.orbitRadiusStepFor(3), 225, "F: radiusStep at count 3 widens to 225");
+  eq(X.debugShown.orbitCount, 3, "F: 3 is still not clamped — comfortably achievable");
 
-  // The fairness sweep, re-run at the CLAMPED (4) and the reduced (3) geometry via a REAL spawn — spec
-  // §8 items 1-4, at the shipped gapMult (2.5, occurrence 1, level 3).
+  // The walk-down rule itself still exists — it just takes a far larger request to trigger it now that
+  // the budget, not a step-pad, is the ceiling. Driven directly against the raw function past the
+  // registry's own [3,5] range, which the debug panel never requests but the pure function has no
+  // opinion about.
+  eq(X.orbitEffectiveCount(8), 8, "F: orbitEffectiveCount(8): edge 1276px still clears the 1420px orbit-world budget");
+  eq(X.orbitEffectiveCount(9), 8, "F: orbitEffectiveCount(9): edge 1426px would not — walks down to 8");
+
+  // The fairness sweep, re-run at the (no-longer-clamped) 5-ring and 3-ring geometries via a REAL spawn —
+  // spec §8 items 1-4, at the shipped gapMult (2.5, occurrence 1, level 3). Radii now use the FIXED step
+  // at every count (Correction C3), so a 3-ring request no longer reaches out to the old 4-ring edge.
   function fairnessSweep(X, level) {
     atWave(X, level);
-    const gapMult = X.orbitEffectiveGapMult(level);
-    const shipDia = X.SHIP_RADIUS * 2;
-    for (const d of X.game.debris) {
-      if (!d.orbitCenter) continue;
-    }
     return X.game.orbitLayout;
   }
-  X.applyDebug("orbitCount", 5); // -> clamps to 4, the shipped geometry
+  X.applyDebug("orbitCount", 5); // -> no longer clamped: 5 rings actually spawn now
   let L = fairnessSweep(X, 3);
-  eq(L.rings.length, 4, "F: clamped orbitCount(5->4): four rings actually spawned");
+  eq(L.rings.length, 5, "F: orbitCount 5: five rings actually spawned (no longer clamped to 4)");
+  eq(L.rings.map(r => r.radius).join(","), "180,330,480,630,780", "F: 5-ring radii: the fixed 150px step throughout, per Correction C3");
   for (const r of L.rings) {
     assert(r.actualGapPx >= X.SHIP_RADIUS * 2 * X.orbitEffectiveGapMult(3) - 1e-9,
-      `F: clamped geometry ring r=${r.radius}: actualGapPx (${r.actualGapPx.toFixed(1)}) clears the fairness floor`);
-    assert(r.maxCount >= 1, `F: clamped geometry ring r=${r.radius}: maxCount >= 1`);
+      `F: 5-ring geometry ring r=${r.radius}: actualGapPx (${r.actualGapPx.toFixed(1)}) clears the fairness floor`);
+    assert(r.maxCount >= 1, `F: 5-ring geometry ring r=${r.radius}: maxCount >= 1`);
   }
-  eq(L.outerEdge, 676, "F: clamped orbitCount(5->4) reproduces the shipped 676px outer edge exactly");
+  eq(L.outerEdge, 826, "F: orbitCount 5's outer edge is 780 + 46 = 826px (was a fixed 676px under the retired rule)");
 
   X.applyDebug("orbitCount", 3);
   L = fairnessSweep(X, 3);
   eq(L.rings.length, 3, "F: orbitCount 3: three rings actually spawned");
-  eq(L.rings.map(r => r.radius).join(","), "180,405,630", "F: 3-ring radii: innerRadius, +225, +450");
+  eq(L.rings.map(r => r.radius).join(","), "180,330,480", "F: 3-ring radii: the fixed 150px step (was 180,405,630 under the retired outer-edge-fixed rule)");
   for (const r of L.rings) {
     assert(r.actualGapPx >= X.SHIP_RADIUS * 2 * X.orbitEffectiveGapMult(3) - 1e-9,
       `F: 3-ring geometry ring r=${r.radius}: actualGapPx (${r.actualGapPx.toFixed(1)}) clears the fairness floor`);
