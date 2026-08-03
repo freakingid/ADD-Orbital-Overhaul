@@ -301,7 +301,7 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // Minor = tweaks to existing systems. Patch = bug fixes, where "bug" includes the game not doing what
 // the design intends. Changeset = the CS### number, monotonically increasing, never resets — the 4th
 // segment IS the changeset number (this build shipped in CS010).
-const GAME_VERSION = "1.0.0.21";
+const GAME_VERSION = "1.0.0.22";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -553,12 +553,13 @@ const ORBIT_DENSITY       = [0.75, 0.45, 0.35, 0.42];
 // THE FAIRNESS FLOOR, as a multiple of the ship's diameter:
 //     minRequiredGap = max(shipDiameter + ORBIT_SAFETY_MARGIN, shipDiameter * ORBIT_GAP_MULT)
 // At 2.5x a 26 px ship that is 65 px of clear lane between adjacent satellites (the multiplicative half
-// beats the additive 26 + 8 = 34 at every shipped value). Below ~2.5x, threading stops being skill and
-// starts being pixel luck. CS021 P2 (spec §5): ORBIT_GAP_MULT is the OCCURRENCE-1 value (level 3) — the
-// multiplier actually fed to the orbit spawn is orbitGapMult(level) below, which decays by
-// ORBIT_GAP_MULT_STEP per further occurrence of the archetype and is clamped at the hard
-// ORBIT_GAP_MULT_FLOOR (below that, threading stops being skill even with the fairness math otherwise
-// intact). The floor lands at occurrence 8 (level 24) and holds through level 63.
+// beats the additive 26 + 8 = 34 at every shipped value). CS022 (spec C1): this floor's job is "never a
+// solid wall," not "always a passable lane for a skilled pilot" — the satellites exist to be destroyed,
+// not threaded past, so the number below is a fairness minimum, not a difficulty-vs-skill dial. CS021 P2
+// (spec §5): ORBIT_GAP_MULT is the OCCURRENCE-1 value (level 3) — the multiplier actually fed to the
+// orbit spawn is orbitGapMult(level) below, which decays by ORBIT_GAP_MULT_STEP per further occurrence
+// of the archetype and is clamped at the hard ORBIT_GAP_MULT_FLOOR, the point past which the gap would
+// stop being a fair minimum at all. The floor lands at occurrence 8 (level 24) and holds through level 63.
 const ORBIT_GAP_MULT       = 2.5;
 const ORBIT_GAP_MULT_FLOOR = 1.8;  // hard absolute floor under difficulty scaling (FLAG-CS021-d)
 const ORBIT_GAP_MULT_STEP  = 0.1;  // multiplier lost per occurrence past the first

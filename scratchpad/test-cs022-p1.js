@@ -274,9 +274,9 @@ console.log("(A) source pins: the mutable world, the both-places rule, ordering,
   assert(/const STAR_NEAR_COUNT = Math\.round\(STAR_NEAR_DENSITY\);/.test(codeOnly),
     "A: TRAP — the near layer's count is still the bare density, unscaled by any world size");
 
-  // --- TRAP 1: the version does not move this phase ---------------------------------------------------
+  // --- TRAP 1: REPOINTED BY CS022 P4 — the bump has landed, so this becomes its mirror image. ----------
   const X = seededBuild(0xA001);
-  eq(X.GAME_VERSION, "1.0.0.21", "A: TRAP 1 — GAME_VERSION unchanged at 1.0.0.21 (P4 owns the bump)");
+  assert(X.GAME_VERSION !== "1.0.0.21", "A: TRAP 1 — GAME_VERSION moved off the pre-CS022 baseline (P4 bumped it)");
 
   // --- TRAP 3: no ORBIT_* constant and no orbit-spawn change ------------------------------------------
   // REPOINTED BY CS022 P3, the standing mirror-image treatment: P1's claim was about ITS OWN diff, and

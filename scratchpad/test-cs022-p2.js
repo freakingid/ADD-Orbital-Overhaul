@@ -134,8 +134,8 @@ const X = build();
   const padOccurrences = (codeOnly.match(/ORBIT_RADIUS_STEP_PAD/g) || []).length;
   eq(padOccurrences, 1, "A: ORBIT_RADIUS_STEP_PAD appears exactly once in non-comment code — its own declaration, no readers");
 
-  // TRAP 1 — GAME_VERSION does not move this phase.
-  eq(X.GAME_VERSION, "1.0.0.21", "A: TRAP 1 — GAME_VERSION unchanged (P4 owns the bump to 1.0.0.22)");
+  // TRAP 1 — REPOINTED BY CS022 P4: the bump has landed, so this becomes its mirror image.
+  assert(X.GAME_VERSION !== "1.0.0.21", "A: TRAP 1 — GAME_VERSION moved off the pre-CS022 baseline (P4 bumped it)");
 
   // TRAP 2 — REPOINTED BY CS022 P3, the standing mirror-image treatment. P2 asserted that ITS OWN diff
   // moved no ORBIT_* constant; P3 is the phase that owns them and has now moved three, so the surviving

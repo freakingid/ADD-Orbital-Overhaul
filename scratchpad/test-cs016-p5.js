@@ -15,7 +15,7 @@
 // modulo keeps that a proper carousel if a third tab is ever added. §C asserts the wrap explicitly.
 //
 // Sections:
-//  (A) node --check on the extracted <script>; GAME_VERSION === "1.0.0.21" (live pin, tracks HEAD).
+//  (A) node --check on the extracted <script>; GAME_VERSION === "1.0.0.22" (live pin, tracks HEAD).
 //  (B) Entry defaults to the Weekly tab with scroll 0 — on a SECOND entry too, after the first entry
 //      has been left on the Lifetime tab and scrolled.
 //  (C) left/right switch tabs in both directions and WRAP at both ends; every switch resets
@@ -184,7 +184,7 @@ function openTab(id) {
 
 // ================= (A2) GAME_VERSION pin =====================
 (function sectionA() {
-  assert(GAME_VERSION === "1.0.0.21", `A: GAME_VERSION is exactly "1.0.0.21" (got "${GAME_VERSION}")`);
+  assert(GAME_VERSION === "1.0.0.22", `A: GAME_VERSION is exactly "1.0.0.22" (got "${GAME_VERSION}")`);
   assert(/^\d+\.\d+\.\d+\.\d+$/.test(GAME_VERSION), "A: GAME_VERSION keeps the unprefixed Major.Minor.Patch.Changeset shape");
   // Table shape: exactly two tabs, the first one being the default the entry reset names.
   assert(ACH_TABS.length === 2, `A: ACH_TABS carries exactly two tabs (got ${ACH_TABS.length})`);
