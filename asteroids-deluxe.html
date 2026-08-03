@@ -298,6 +298,12 @@ const HUD_RING_SEG_GAP = 0.12;  // CS012 P2: radians of empty gap between adjace
                                  // drawRingSegments (the Scoop segmented-ring primitive). PLAYTEST KNOB.
 const HUD_FX_GLYPH_R = 9;       // radius of the glyph drawn inside a powerup row's ring
 const HUD_FX_LOW = 3;           // sec remaining at/under which a timed powerup row shows the low warning
+// CS021 P4: delivery-combo readout (closes FLAG-CS020-i). Left column, under Score/Level — those two
+// use bare literals (30,46)/(30,62) predating the CS009 HUD naming convention, but this is a new
+// mechanic, so it gets named knobs per CLAUDE.md rather than joining them as a third bare literal.
+const HUD_COMBO_X = 30;         // same left margin as Score/Level
+const HUD_COMBO_Y = 84;         // baseline y, beneath "LEVEL n" (62); PLAYTEST KNOB, first-pass spacing
+const HUD_COMBO_SIZE = 18;      // smaller than LEVEL (22) so a 3rd line doesn't compete with it
 const HUD_PULSE_HZ = 1.2;       // CS010 P3: the FLAT pulse rate for NON-HP alarms ONLY — the cargo-gold
                                  // ring and the powerup low-timer row. Anything keyed on LOW_HP_THRESHOLD
                                  // (the critical-hull ring, the corner glow, the audio siren) instead
@@ -7919,6 +7925,18 @@ function drawHUD() {
   // nextWave() / difficultyFactor() / every achievement keying off game.wave are UNCHANGED — this is
   // a display label only ("level" is player-facing vocabulary, "wave" stays the code term).
   drawText("LEVEL " + game.wave, 30, 62, 22, COLOR.text, "left");
+
+  // CS021 P4: delivery-combo readout, closes FLAG-CS020-i. DISPLAY ONLY — reads game.deliveryCount and
+  // game.cargoMax exactly as the dock-offload block (update(), above) already tracks them; nothing here
+  // writes either field or keeps a second copy of the counter. Shown whenever an effort is live and gone
+  // the instant it isn't: the dock block already zeroes game.deliveryCount on all three routes an effort
+  // can end — a towed hook outside the ring (a fresh gather resets the old one), the DOCK_COMBO_GRACE
+  // window expiring, and scatterChain on ship death — so `> 0` alone tracks every one of them without
+  // this readout duplicating any route logic. Ships PLAIN per spec §10 — no grace-window countdown.
+  if (game.deliveryCount > 0) {
+    drawText("COMBO " + game.deliveryCount + "/" + game.cargoMax,
+      HUD_COMBO_X, HUD_COMBO_Y, HUD_COMBO_SIZE, COLOR.dock, "left");
+  }
 
   // CS009 P2: the hull + shield fill bars are gone from the left column — they are now the HULL ring in
   // the top-right corner (drawn below). Left column top-to-bottom is now Score, Level, Cargo, Powerups.
