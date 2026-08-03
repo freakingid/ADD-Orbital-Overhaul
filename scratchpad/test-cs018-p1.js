@@ -350,8 +350,26 @@ function build(src, windowExtra) {
   eq((codeOnly.join("\n").match(/function levelDef\(/g) || []).length, 1, "I: exactly one levelDef definition");
   // Every reader passes game.wave — levelDef's domain is n >= 1 and game.wave is the 1-based level
   // counter, so a reader passing anything else would be a bug the phase prompts explicitly warn about.
+  //
+  // REPOINTED BY CS022 P1, and deliberately NOT weakened. CS022 adds worldSizeFor(level), a PURE helper
+  // that takes the level as a parameter and reads levelDef(level) — the shape the spec (§4.1) asks for,
+  // so a size can be asked about a level other than the current one. The claim being protected is
+  // "nobody invents a second clock", not "the literal string game.wave appears", so the exemption is
+  // narrow — that one helper, by name — and it is paid for with the two assertions below, which pin
+  // that every CALL of worldSizeFor passes game.wave and that no other parameterised reader exists.
+  const PARAM_READERS = ["worldSizeFor"];   // helpers allowed to read levelDef(<their own level param>)
+  const paramReaderRe = new RegExp(`^function (?:${PARAM_READERS.join("|")})\\s*\\(`);
+  let exempted = 0;
   for (const site of callSites) {
+    if (paramReaderRe.test(site) || /^return levelDef\(level\)\./.test(site)) { exempted++; continue; }
     assert(/levelDef\(game\.wave\)/.test(site), `I: call site reads levelDef(game.wave): ${site}`);
+  }
+  assert(exempted > 0, "I: (control) the parameterised-reader exemption actually matched something (CS022 P1's worldSizeFor)");
+  // ...and the exemption cannot hide a second clock: every CALL of the exempt helper passes game.wave.
+  for (const name of PARAM_READERS) {
+    const calls = codeOnly.join("\n").match(new RegExp(`(?<!function )\\b${name}\\s*\\(([^)]*)\\)`, "g")) || [];
+    assert(calls.length > 0, `I: ${name} is actually called`);
+    for (const c of calls) assert(/\(game\.wave\)/.test(c), `I: ${name} is only ever called with game.wave: ${c}`);
   }
 
   // The full build exposes the same function, and it agrees with the bare-sandbox one everywhere.

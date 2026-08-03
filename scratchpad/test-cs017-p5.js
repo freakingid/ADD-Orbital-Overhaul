@@ -98,6 +98,9 @@ const RETURN = [
   "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE", "BONUS_RING_PAD",
   "levelDef", "JUNK_CYCLE", "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "GARBAGE_PICKUP", "SCOOP_SPILL_KICK",
   "HUNTER_COALESCE_COUNT", "GARBAGE_MERGE_DIST", "COLOR", "CARGO_BASE", "WORLD_W", "WORLD_H",
+  // CS022 P1: WORLD_W/WORLD_H above are a LOAD-TIME SNAPSHOT (the field size). This sweep walks orbit
+  // levels too, where the live world is 5120x2880, so the world-bounds check reads the live period.
+  "worldDims",
 ];
 
 // AudioContext ctor omitted -> AudioSys.ctx stays null (the (H) case).
@@ -116,8 +119,11 @@ const {
   bonusSpawnChance, dist2, shortDelta, DEBUG, AudioSys, settings,
   BONUS_CANISTER_PIECES, BONUS_CANISTER_SCORE, BONUS_SPAWN_CHANCE_EARLY, BONUS_SPAWN_CHANCE_LATE,
   levelDef, JUNK_CYCLE, SPAWN_MIN_DIST, SPAWN_MAX_DIST, GARBAGE_PICKUP, SCOOP_SPILL_KICK,
-  HUNTER_COALESCE_COUNT, COLOR, CARGO_BASE, WORLD_W, WORLD_H,
+  HUNTER_COALESCE_COUNT, COLOR, CARGO_BASE, WORLD_W, WORLD_H, worldDims,
 } = A;
+
+// CS022 P1: the LIVE torus period (worldDims(game.worldSize)), not the load-time snapshot above.
+const liveDims = () => worldDims(game.worldSize);
 
 // Run `fn` with Math.random pinned to a fixed value (or a supplied generator), then restore it.
 function withRandom(valueOrFn, fn) {
@@ -171,7 +177,10 @@ const bonusOf = arr => arr.filter(g => g.bonus);
     assert(d >= SPAWN_MIN_DIST - 1e-6 && d <= SPAWN_MAX_DIST + 1e-6,
       `wave ${wave}: placed in the [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] ring around the ship (d=${d.toFixed(2)})`);
     assert(near(d, SPAWN_MIN_DIST), `wave ${wave}: with random pinned to 0 the ring distance is exactly SPAWN_MIN_DIST`);
-    assert(b.x >= 0 && b.x <= WORLD_W && b.y >= 0 && b.y <= WORLD_H,
+    // REPOINTED BY CS022 P1: the bounds are the LIVE world's, not the load-time snapshot's. This sweep
+    // includes orbit levels (every 3rd), where nextWave() has just resized the torus to 5120x2880.
+    const [liveW, liveH] = liveDims();
+    assert(b.x >= 0 && b.x <= liveW && b.y >= 0 && b.y <= liveH,
       `wave ${wave}: placement wrapped into world bounds (wrapPos)`);
   }
   // The placement is not accidentally distance-fixed: a mid-range random puts it mid-ring. game.wave is

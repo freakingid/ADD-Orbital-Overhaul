@@ -51,7 +51,11 @@ const returnList = [
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS",
   "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN",
   "difficultyFactor", "angleTo",
-  "WORLD_W", "WORLD_H"
+  "WORLD_W", "WORLD_H",
+  // CS022 P1: WORLD_W/WORLD_H are a load-time SNAPSHOT now (the field size). Section (D) drives real
+  // nextWave() calls through orbit levels (21, 63), which resize the torus to 5120x2880 — so (H2),
+  // which places the ship relative to the seam, guards that it is running in the world it thinks it is.
+  "WORLD_SIZE_FIELD"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -67,7 +71,7 @@ const {
   HUNTER_GARBAGE, HUNTER_SMALL_MASS,
   HUNTER_LAST_STAND_SPEED, HUNTER_LAST_STAND_TURN,
   difficultyFactor, angleTo,
-  WORLD_W, WORLD_H
+  WORLD_W, WORLD_H, WORLD_SIZE_FIELD
 } = A;
 
 const DT = 1 / 60;
@@ -330,6 +334,12 @@ game.wave = 3;
   // few px across the seam) so the turn radius (HUNTER_LAST_STAND_SPEED/HUNTER_LAST_STAND_TURN =
   // 100 px) is small relative to the gap, letting the slow turn actually converge instead of
   // orbiting a target that's closer than its own turn radius.
+  // CS022 P1 GUARD: this placement is expressed in the load-time WORLD_W snapshot, which is only the
+  // live period while the game is on a FIELD level. Section (D)'s last real nextWave() lands on level
+  // 200 (a field level) and (H) sets game.wave = 3 by assignment (which never resizes), so the world IS
+  // field-sized here — but that was true by luck rather than by construction, so it is now asserted.
+  assert(game.worldSize === WORLD_SIZE_FIELD,
+    `H2: (guard) the sim is at the FIELD world size, so WORLD_W really is the live seam (got ${game.worldSize})`);
   const shipX = WORLD_W - 160, coreX = shipX - 1400;
   game.ship.x = shipX; game.ship.y = 1000;
   const core = new HunterSatellite(coreX, 1000, 3, 0);

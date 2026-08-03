@@ -80,6 +80,9 @@ const RETURN = [
   "ORBIT_DENSITY", "ORBIT_GAP_MULT", "ORBIT_GAP_MULT_FLOOR", "ORBIT_GAP_MULT_STEP",
   "ORBIT_SAFETY_MARGIN", "ORBIT_ANG_VEL", "ORBIT_FAST_MULT", "ORBIT_FAST_RING",
   "DEBRIS_RADII", "SHIP_RADIUS", "WORLD_W", "WORLD_H", "TAU", "dist2", "wrapPos", "DOCK_RADIUS", "LEVER_DOCK_SIZE",
+  // CS022 P1: WORLD_W/WORLD_H above are a load-time snapshot of the FIELD size. Orbit geometry is
+  // budgeted against the ORBIT size, which is read from the size table, never from the live variable.
+  "worldDims", "WORLD_SIZE_ORBIT",
   "leverScale", "AudioSys", "GAME_VERSION", "DEBUG_VARS",
 ];
 
@@ -315,7 +318,14 @@ function atWave(X, w) {
   const X = build();
   const shipDiameter = X.SHIP_RADIUS * 2;
   const satR = X.DEBRIS_RADII[3];
-  const budget = X.WORLD_H / 2 - 20;
+  // REPOINTED BY CS022 P1. This is the WRAP-CLEAN RADIUS BUDGET an ORBIT level's geometry has to fit
+  // inside, so it must be derived from the size an orbit level actually RUNS at — worldDims(
+  // WORLD_SIZE_ORBIT), i.e. 2880/2 - 20 = 1420 — and NOT from the live WORLD_H, which is 1440 whenever
+  // a field level is on screen (and is what this file's load-time snapshot holds). Before CS022 the two
+  // were the same number and the distinction did not exist; it does now, and reading the snapshot here
+  // would silently hold the geometry to a 700 px budget it is no longer subject to.
+  const [, orbitWorldH] = X.worldDims(X.WORLD_SIZE_ORBIT);
+  const budget = orbitWorldH / 2 - 20;
   const wave1Dock = X.DOCK_RADIUS * X.leverScale(X.LEVER_DOCK_SIZE, 1);
   const absoluteFloorPx = shipDiameter * X.ORBIT_GAP_MULT_FLOOR;   // the TRUE, fixed fairness floor (46.8 px)
 

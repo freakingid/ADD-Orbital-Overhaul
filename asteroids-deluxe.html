@@ -99,9 +99,39 @@
 
 // ---------- Constants ----------
 // The world is a large wrapping torus; the viewport is a camera window onto it.
-const WORLD_W = 2560, WORLD_H = 1440;   // simulation space (the wrap boundary)
 const VIEW_W = 1280, VIEW_H = 720;      // visible viewport = canvas size
+// CS022 P1 (spec §4.1, FORK-CS022-B/C): THE TORUS PERIOD IS NO LONGER FIXED. A world "size" counts
+// VIEWPORT-SIZED SCREENS OF AREA — size 4 is 2x2 viewports (2560x1440, every build through CS021),
+// size 16 is 4x4 (5120x2880, what four rings at CS022's 276 px spacing need). The size is chosen by
+// the LEVEL'S ARCHETYPE (worldSizeFor), not by a level-table column and not by a ramp, so game.wave
+// stays the ONE difficulty clock. FORK-CS022-B: this is a general seam with two values wired — a
+// finer per-level scheme later is a data change, not a re-plumb.
+//
+// CONSEQUENCE, and the whole reason this block carries a warning: WORLD_W/WORLD_H are `let` now.
+// ANY VALUE DERIVED FROM THEM AND CACHED AT MODULE LOAD IS A BUG. STAR_COUNT/`stars` was the only
+// one and §4.3 handles it (generated once for WORLD_SIZE_MAX, filtered per world into starsActive).
+// Everything else reads them live, inside a function, which is what makes the resize safe.
+const WORLD_SIZE_FIELD = 4;             // field levels: 2560x1440 — deliberately UNCHANGED from the
+                                        // v3.1 P1 shrink (spec C4: the bigger world was tried and
+                                        // rejected, and the spawn/dock rings are flat constants that
+                                        // would just leave more dead space in it)
+const WORLD_SIZE_ORBIT = 16;            // orbit levels: 5120x2880
+const WORLD_SIZE_MAX = Math.max(WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT); // largest size in the table; the
+                                        // starfield is generated once for THIS (§4.3/FLAG-CS022-d)
+let WORLD_W = 2560, WORLD_H = 1440;     // simulation space (the wrap boundary). WAS `const` through
+                                        // CS021. Boots at the FIELD size and must always equal
+                                        // worldDims(WORLD_SIZE_FIELD) — asserted headlessly.
 const TAU = Math.PI * 2;
+
+// CS022 P1 (§4.1): a size in viewport-areas -> [width, height]. sqrt because `size` counts AREA, so
+// size 4 is a 2x screen linear scale and size 16 a 4x one; both land on exact integers.
+function worldDims(size) { const k = Math.sqrt(size); return [VIEW_W * k, VIEW_H * k]; }
+
+// CS022 P1 (FORK-CS022-C): the level's ARCHETYPE picks the size. A pure function of the level number,
+// evaluated fresh at every wave boundary — never a stored schedule.
+function worldSizeFor(level) {
+  return levelDef(level).archetype === "orbit" ? WORLD_SIZE_ORBIT : WORLD_SIZE_FIELD;
+}
 
 const SHIP_TURN = 4.2;          // rad/sec — the design-default turn rate (before the player scale)
 // Player rotation-speed preference (CS010 §10b): a multiplier over SHIP_TURN, adjustable on the
@@ -452,7 +482,12 @@ const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of 
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
 const SPAWN_MIN_DIST = 220;     // new debris satellites: nearest allowed to the ship
-const SPAWN_MAX_DIST = 640;     // new debris satellites: farthest from the ship (stay reachable; clamped to min(WORLD_W,WORLD_H)/2-60 = 660 for the 2560x1440 world)
+const SPAWN_MAX_DIST = 640;     // new debris satellites: farthest from the ship (stay reachable; clamped
+                                // to the reachable radius min(WORLD_W,WORLD_H)/2-60, which is 660 at
+                                // WORLD_SIZE_FIELD and 1380 at WORLD_SIZE_ORBIT — CS022 P1 (spec C5)
+                                // corrects the old comment's claim that 660 is "the" limit. Both this
+                                // and DOCK_MAX_DIST are FLAT constants that do NOT scale with world
+                                // size, and they clear either figure; only this comment moved.
 const DOCK_MIN_DIST = 260;      // recycling dock: nearest allowed to the ship
 const DOCK_MAX_DIST = 620;      // recycling dock: farthest from the ship (stay reachable; kept below SPAWN_MAX_DIST)
 const STAR_DENSITY = 80;        // background stars per viewport-sized area of world
@@ -4858,6 +4893,11 @@ const game = {
   menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
+  // CS022 P1: the world size the sim is CURRENTLY running at (WORLD_SIZE_FIELD | WORLD_SIZE_ORBIT).
+  // nextWave() compares worldSizeFor(game.wave) against this and resizes only on a real change.
+  // Declared in BOTH this literal and startGame()'s reset per the standing CS016 P3 rule (STATUS.md
+  // Known issues): a field that lands in only one of the two is `undefined` for a whole run.
+  worldSize: WORLD_SIZE_FIELD,
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
   garbage: [], chain: [], floaters: [], dock: null,
   orbitLayout: null,   // CS021 P3: the live orbit-level layout (spawnOrbitWave's return), null on a field
@@ -4941,6 +4981,96 @@ const game = {
   caption: { text: "", life: 0, dur: 0 }
 };
 
+// ---------- CS022 P1: per-archetype world size (PLANNED-FEATURES-CS022 §4.1/§4.2/§4.3) ----------
+// Set the torus period and rebuild the active starfield. IT MOVES NOTHING: every entity keeps the
+// world coordinates it already had. That is deliberate — it is the right call at startGame() (the
+// field is empty) and the wrong one mid-run, which is exactly why resizeWorld() exists and is the
+// only thing nextWave() ever calls.
+function applyWorldSize(size) {
+  const [w, h] = worldDims(size);
+  WORLD_W = w; WORLD_H = h;
+  game.worldSize = size;
+  rebuildStarsActive();   // §4.3: filter the once-generated max-size sky down to this world
+}
+
+// Change the world size UNDER A LIVE FIELD (spec §4.2, FORK-CS022-D). nextWave() clears nothing, so
+// garbage, Hunters, saucers, powerups, the tow chain and the ship all cross every level boundary;
+// changing the torus period under them is the hard part of this changeset.
+//
+// THE SIX STEPS ARE ORDERED AND THE ORDER IS LOAD-BEARING. The snapshot measures with the OLD period
+// and the placement lands in the NEW one, so steps 1 and 4 straddle the dimension assignment in
+// step 2 and cannot be reordered around it. shortDelta/wrapPos both read the live WORLD_W/WORLD_H.
+//
+// Rejected alternatives, for the record: a bare wrap() re-home (a carried Hunter can materialise
+// 200 px from the ship on the shrink) and clearing the field at a transition (that would retire
+// CS015 P3's carried-pressure design 42 times a run).
+function resizeWorld(newSize) {
+  const ship = game.ship;
+
+  // ---- 1. SNAPSHOT, with the OLD period ----------------------------------------------------------
+  // Every carried body's wrap-aware offset from the ship. Bullets are deliberately NOT in this list
+  // (spec §4.2 enumerates the bodies); they are short-lived, wrap() folds them on the next frame, and
+  // nothing measures from them. Noted in STATUS.md rather than silently widened.
+  const bodies = [game.debris, game.hunters, game.saucers, game.garbage, game.powerups,
+                  game.particles, game.floaters];
+  const snap = [];
+  for (const arr of bodies) {
+    for (const e of arr) {
+      const [dx, dy] = shortDelta(ship.x, ship.y, e.x, e.y);
+      snap.push({ e, dx, dy });
+    }
+  }
+  // The chain is snapshotted HERE too, for the same old-period reason — a node that straddles the
+  // seam has a raw coordinate a whole period away from the ship's, and only shortDelta knows that.
+  const chainSnap = game.chain.map(n => {
+    const [dx, dy] = shortDelta(ship.x, ship.y, n.x, n.y);
+    return { n, dx, dy };
+  });
+
+  // ---- 2. APPLY the new dimensions ---------------------------------------------------------------
+  applyWorldSize(newSize);
+
+  // ---- 3. CENTRE THE SHIP ------------------------------------------------------------------------
+  // Absolute world coordinates are imperceptible — the camera follows the ship, and the only absolute
+  // reference, the starfield, was just rebuilt in step 2 — and the centre guarantees maximum clearance
+  // in the new world in both directions.
+  ship.x = WORLD_W / 2; ship.y = WORLD_H / 2;
+
+  // ---- 4. RE-PLACE each body ---------------------------------------------------------------------
+  // BEARING is kept exactly; MAGNITUDE is min(d, dmax). dmax is the same reachable-radius clamp v3.1
+  // P1 derived for the spawn rings, for the same reason — 660 at WORLD_SIZE_FIELD, 1380 at
+  // WORLD_SIZE_ORBIT. On the GROW almost nothing binds (old max reach 1,468 px against 1,380); on the
+  // SHRINK a great deal does, and an over-range body is pulled ALONG ITS OWN BEARING to the edge of
+  // the new world rather than teleported by one period. FLAG-CS022-k: that parks the whole over-range
+  // band in a shell at exactly dmax; monotone compression of the band is the fix if it reads badly,
+  // and it is a one-expression change at this site.
+  const dmax = Math.min(WORLD_W, WORLD_H) / 2 - 60;
+  for (const s of snap) {
+    const d = Math.hypot(s.dx, s.dy);
+    const k = d > dmax ? dmax / d : 1;   // d === 0 can never reach this branch (0 > dmax is false)
+    const p = wrapPos({ x: ship.x + s.dx * k, y: ship.y + s.dy * k });
+    s.e.x = p.x; s.e.y = p.y;
+  }
+
+  // ---- 5. TRANSLATE THE CHAIN --------------------------------------------------------------------
+  // Never scaled and never clamped: a tow is RIGID relative to its tug, and the whole chain spans at
+  // most CARGO_CAP_MAX * CHAIN_LINK = 480 px, comfortably inside dmax at either size — so keeping the
+  // offset verbatim can never place a node outside the new world and no wrapNode() call is needed.
+  // Each node's px/py shift by the IDENTICAL delta as its x/y, so the implied verlet velocity
+  // (n.x - n.px, which updateChain integrates next frame) survives the move — wrapNode's own contract
+  // from v3.1 P2, asserted directly rather than assumed.
+  for (const c of chainSnap) {
+    const ddx = (ship.x + c.dx) - c.n.x;
+    const ddy = (ship.y + c.dy) - c.n.y;
+    c.n.x += ddx; c.n.y += ddy;
+    c.n.px += ddx; c.n.py += ddy;
+  }
+
+  // ---- 6. SYNC THE CAMERA ------------------------------------------------------------------------
+  // So a draw() landing between this resize and the next update() can't show a stale view.
+  game.camera.x = ship.x; game.camera.y = ship.y;
+}
+
 function startGame() {
   game.state = "playing";
   game.paused = false;
@@ -4980,6 +5110,13 @@ function startGame() {
   game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
   game.deliveryCount = 0; game.offloadTimer = 0;
   game.comboGrace = 0;             // CS020 P1b: no one-effort grace carries into a fresh run
+  // CS022 P1: a fresh run always starts in the FIELD-sized world, and this line MUST precede
+  // `new Ship()` below — Ship.reset() reads WORLD_W/2 and WORLD_H/2 directly, so a run started after
+  // dying on an orbit level would otherwise spawn at the stale 5120x2880 world's centre and then be
+  // sitting outside the 2560x1440 one. It also re-sets game.worldSize (the CS016 P3 both-places rule)
+  // and rebuilds the active starfield. applyWorldSize MOVES NOTHING — there is nothing to move here:
+  // every entity array was emptied a few lines above.
+  applyWorldSize(WORLD_SIZE_FIELD);
   game.ship = new Ship();
   game.hudHull = game.ship.hp / SHIP_MAX_HP;   // CS009 P1: no drain animation on a fresh run
   game.camera = { x: game.ship.x, y: game.ship.y };
@@ -5275,6 +5412,14 @@ function nextWave() {
   // wave the player reached before ever touching a powerup. (FLAG A-1-b — a MAX counter, not a sum.)
   if (game.stats.powerupsPicked === 0)
     Achievements.lifetime.maxWaveNoPowerup = Math.max(Achievements.lifetime.maxWaveNoPowerup, game.wave);
+  // CS022 P1 (§4.1/§4.2): the torus period is a function of the level's ARCHETYPE, so it can change at
+  // every wave boundary — up at every 3rd level and back down at the level after, 42 times in a
+  // 63-level run. THIS SITE IS THE ONLY CORRECT ONE and both halves of that are load-bearing: it must
+  // run AFTER game.wave++ (worldSizeFor reads the NEW level) and BEFORE `new Dock()` on the next line
+  // (dock placement is ship-relative and wrap-aware, so it needs both the new period and the
+  // re-centred ship). Only a real change resizes — a field level following a field level moves nothing.
+  const nextWorldSize = worldSizeFor(game.wave);
+  if (nextWorldSize !== game.worldSize) resizeWorld(nextWorldSize);
   game.dock = new Dock(); // recycling dock relocates each wave
   // F3 first-pass balance: trimmed from min(4+wave, 11) to offset the ~8x higher garbage
   // volume from guaranteed 3-per-tier drops. (v3.2 P3: garbage no longer decays; density is now
@@ -7702,11 +7847,29 @@ function drawToasts() {
 // Background stars scattered across the whole world (count scales with world area
 // to preserve the original on-screen density). Drawn in screen space, wrap-aware,
 // so the field scrolls seamlessly and never shows a tiling repeat or an edge seam.
-const STAR_COUNT = Math.round(STAR_DENSITY * (WORLD_W * WORLD_H) / (VIEW_W * VIEW_H));
+//
+// CS022 P1 (§4.3, FLAG-CS022-d): GENERATE ONCE FOR THE LARGEST SIZE, FILTER PER WORLD. WORLD_W/WORLD_H
+// are mutable now, so an area-derived count cached at module load would be stale the moment the world
+// grew — this was the ONLY such cache in the file. `stars` is therefore laid over
+// worldDims(WORLD_SIZE_MAX) once, and applyWorldSize() rebuilds `starsActive` as the subset inside the
+// CURRENT world. Because the distribution is uniform, that subset's count is the area-derived value for
+// whatever size is live (~320 at size 4, all 1280 at size 16) with no scaling — and, more to the point,
+// THE SKY IS STABLE ACROSS TRANSITIONS: a size-4 sky is literally a sub-region of the size-16 sky
+// rather than a fresh roll every level. The filter runs once per transition, never per frame.
+const [STAR_WORLD_W, STAR_WORLD_H] = worldDims(WORLD_SIZE_MAX);
+const STAR_COUNT = Math.round(STAR_DENSITY * (STAR_WORLD_W * STAR_WORLD_H) / (VIEW_W * VIEW_H));
 const stars = [];
 for (let i = 0; i < STAR_COUNT; i++) {
-  stars.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, s: rand(1, 1.8), a: rand(STAR_BRIGHT_MIN, STAR_BRIGHT_MAX) });
+  stars.push({ x: Math.random() * STAR_WORLD_W, y: Math.random() * STAR_WORLD_H, s: rand(1, 1.8), a: rand(STAR_BRIGHT_MIN, STAR_BRIGHT_MAX) });
 }
+// The far stars inside the CURRENT world — what drawStarfield()'s far loop iterates. Mutated IN PLACE
+// (never reassigned) so the array identity is stable for anything holding a reference to it.
+const starsActive = [];
+function rebuildStarsActive() {
+  starsActive.length = 0;
+  for (const st of stars) if (st.x < WORLD_W && st.y < WORLD_H) starsActive.push(st);
+}
+rebuildStarsActive();   // module load: the FIELD-sized world the game boots in
 
 // Near parallax layer — sparse, brighter, tiled in *screen* space (not world-fixed) so it can
 // move at a fraction of the camera offset without needing toroidal wrap math (FLAG B-3-a).
@@ -7721,8 +7884,10 @@ for (let i = 0; i < STAR_NEAR_COUNT; i++) {
 function drawStarfield() {
   const cam = game.camera;
 
-  // Far layer: world-fixed, 1.0x camera offset, wrap-aware (unchanged reference layer).
-  for (const st of stars) {
+  // Far layer: world-fixed, 1.0x camera offset, wrap-aware (unchanged reference layer). CS022 P1:
+  // iterates starsActive — the subset of `stars` inside the CURRENT world (§4.3). A star outside it
+  // would be measured by shortDelta against the wrong period and could smear across the seam.
+  for (const st of starsActive) {
     const [dx, dy] = shortDelta(cam.x, cam.y, st.x, st.y);
     if (Math.abs(dx) > VIEW_W / 2 || Math.abs(dy) > VIEW_H / 2) continue;
     ctx.fillStyle = `rgba(120, 160, 210, ${st.a})`;

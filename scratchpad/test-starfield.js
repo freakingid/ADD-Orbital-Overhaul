@@ -53,13 +53,16 @@ const lsStore = {};
 global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
   setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: k => { delete lsStore[k]; } };
 
-const returnList = ["startGame", "update", "draw", "game", "drawStarfield", "stars", "starsNear",
+// CS022 P1: `starsActive` is the subset of `stars` inside the CURRENT world — what drawStarfield()'s
+// far loop actually iterates now (spec §4.3). `stars` itself is laid over the LARGEST world size, so a
+// star drawn from it is not necessarily on the board; every far-layer render check reads starsActive.
+const returnList = ["startGame", "update", "draw", "game", "drawStarfield", "stars", "starsActive", "starsNear",
   "STAR_DENSITY", "STAR_PARALLAX_FACTOR", "STAR_BRIGHT_MIN", "STAR_BRIGHT_MAX",
   "STAR_NEAR_BRIGHT_MIN", "STAR_NEAR_BRIGHT_MAX", "VIEW_W", "VIEW_H", "WORLD_W", "WORLD_H"];
 const factory = new Function("window", "document", "performance", "requestAnimationFrame", "navigator",
   scriptSrc + "\n;return { " + returnList.join(", ") + " };");
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
-const { startGame, update, draw, game, drawStarfield, stars, starsNear,
+const { startGame, update, draw, game, drawStarfield, stars, starsActive, starsNear,
   STAR_PARALLAX_FACTOR, STAR_BRIGHT_MIN, STAR_BRIGHT_MAX,
   STAR_NEAR_BRIGHT_MIN, STAR_NEAR_BRIGHT_MAX, VIEW_W, VIEW_H, WORLD_W, WORLD_H } = A;
 
@@ -81,6 +84,11 @@ console.log("(B) two layers exist, near layer sparser than far layer");
 assert(Array.isArray(stars) && stars.length > 0, "B: far layer populated");
 assert(Array.isArray(starsNear) && starsNear.length > 0, "B: near layer populated");
 assert(starsNear.length < stars.length, "B: near layer is sparser than the far layer");
+// CS022 P1: the drawn far layer is the ACTIVE subset, and it is a real, non-empty subset of `stars`.
+assert(Array.isArray(starsActive) && starsActive.length > 0, "B: the active far subset is populated");
+assert(starsActive.length <= stars.length, "B: the active far subset never exceeds the generated pool");
+assert(starsActive.every(s => stars.includes(s)), "B: every active far star is one of the generated stars (a subset, not a re-roll)");
+assert(starsNear.length < starsActive.length, "B: near layer is sparser than the DRAWN far layer too");
 
 // =====================================================================
 console.log("(C) per-star brightness within configured range");
@@ -133,7 +141,10 @@ assert(renderedNear, "D: computed near-layer formula matches an actual rendered 
 // Far layer, by contrast, IS world-fixed: directly compute one specific far star's world->screen
 // mapping via the same shortDelta the real code uses, at two camera positions comfortably inside
 // the viewport bounds (so it's never culled either time), and confirm it moves 1:1 with the camera.
-const farStar = stars[0];
+// REPOINTED BY CS022 P1: read the probe star out of starsActive, not `stars`. `stars` is generated for
+// the LARGEST world size, so stars[0] may lie outside the live 2560x1440 board and would (correctly)
+// never be drawn at all — the far-layer claim is about what is ON the board.
+const farStar = starsActive[0];
 game.camera.x = farStar.x; game.camera.y = farStar.y; // dead-center: dx=dy=0, definitely on-screen
 reset(); drawStarfield();
 const farCallAtCenter = calls.find(c => c.fillStyle && c.fillStyle.includes("120, 160, 210") &&

@@ -8,7 +8,17 @@
 //  (A) WORLD_W/WORLD_H are 2560/1440; SPAWN_MAX_DIST/DOCK_MAX_DIST clamped; mins unchanged.
 //  (B) Many real nextWave() debris spawns land within [SPAWN_MIN_DIST, SPAWN_MAX_DIST] of the ship.
 //  (C) Many real Dock spawns land within [DOCK_MIN_DIST, DOCK_MAX_DIST] of the ship.
-//  (D) STAR_COUNT is the area-derived value for the new 2560x1440 world (density preserved).
+//  (D) STAR_COUNT is the area-derived value for the LARGEST world size (density preserved).
+//
+// REPOINTED BY CS022 P1. WORLD_W/WORLD_H are `let` now and change with the level's archetype
+// (worldDims(WORLD_SIZE_FIELD) = 2560x1440, worldDims(WORLD_SIZE_ORBIT) = 5120x2880), so:
+//   * this file's destructured WORLD_W/WORLD_H are a SNAPSHOT taken at module load — i.e. the FIELD
+//     size, which is what the game boots in and what startGame() re-applies. Every place that needs
+//     the size the sim is CURRENTLY running at goes through liveDims() below instead.
+//   * (A) still pins 2560/1440, but now as "the FIELD-level size", derived from worldDims() rather
+//     than restated as bare literals.
+//   * (D)'s area derivation moves to WORLD_SIZE_MAX, since `stars` is generated once for the largest
+//     world in the table and filtered per world into starsActive (spec §4.3 / FLAG-CS022-d).
 
 "use strict";
 const fs = require("fs");
@@ -41,7 +51,10 @@ const returnList = ["startGame", "update", "draw", "game", "nextWave", "Dock",
   "WORLD_W", "WORLD_H", "VIEW_W", "VIEW_H",
   "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "DOCK_MIN_DIST", "DOCK_MAX_DIST",
   "STAR_DENSITY", "STAR_COUNT", "dist2",
-  "levelDef"];   // CS021 P1: section (B) is archetype-aware now
+  "levelDef",   // CS021 P1: section (B) is archetype-aware now
+  // CS022 P1: the world-size seam. worldDims + game.worldSize are how a test reads the size the sim
+  // is CURRENTLY running at — the destructured WORLD_W/WORLD_H below are only a load-time snapshot.
+  "worldDims", "worldSizeFor", "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT", "WORLD_SIZE_MAX"];
 
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
@@ -50,7 +63,11 @@ const wrapped = new Function(
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, game, nextWave, Dock, WORLD_W, WORLD_H, VIEW_W, VIEW_H,
   SPAWN_MIN_DIST, SPAWN_MAX_DIST, DOCK_MIN_DIST, DOCK_MAX_DIST,
-  STAR_DENSITY, STAR_COUNT, dist2, levelDef } = G;
+  STAR_DENSITY, STAR_COUNT, dist2, levelDef,
+  worldDims, worldSizeFor, WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT, WORLD_SIZE_MAX } = G;
+
+// CS022 P1: the LIVE torus period, read off the game's own state rather than a stale snapshot.
+const liveDims = () => worldDims(game.worldSize);
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -60,14 +77,31 @@ function assert(cond, msg) {
 
 // =====================================================================
 console.log("(A) World dimensions + clamped spawn/dock constants");
-assert(WORLD_W === 2560, "A: WORLD_W is 2560");
-assert(WORLD_H === 1440, "A: WORLD_H is 1440");
+// REPOINTED BY CS022 P1: 2560x1440 is now "the FIELD-level world", not "the world". The claim is
+// unweakened — it is the size the game boots in, the size startGame() re-applies, and the size every
+// one of the 42 field levels runs at — but it is stated as the size table's own value rather than a
+// bare literal, so a retune of WORLD_SIZE_FIELD fails loudly here instead of silently.
+const [FIELD_W, FIELD_H] = worldDims(WORLD_SIZE_FIELD);
+assert(WORLD_W === 2560, "A: WORLD_W boots at 2560 (the FIELD-level world)");
+assert(WORLD_H === 1440, "A: WORLD_H boots at 1440 (the FIELD-level world)");
+assert(FIELD_W === 2560 && FIELD_H === 1440, "A: worldDims(WORLD_SIZE_FIELD) is exactly 2560x1440");
+assert(WORLD_W === FIELD_W && WORLD_H === FIELD_H, "A: the boot dimensions ARE the field-level dimensions");
+const [ORBIT_W, ORBIT_H] = worldDims(WORLD_SIZE_ORBIT);
+assert(ORBIT_W === 5120 && ORBIT_H === 2880, "A: worldDims(WORLD_SIZE_ORBIT) is exactly 5120x2880");
+assert(worldSizeFor(1) === WORLD_SIZE_FIELD && worldSizeFor(3) === WORLD_SIZE_ORBIT,
+  "A: worldSizeFor picks the size off the level's archetype (level 1 field, level 3 orbit)");
 assert(SPAWN_MIN_DIST === 220, "A: SPAWN_MIN_DIST unchanged at 220");
 assert(SPAWN_MAX_DIST === 640, "A: SPAWN_MAX_DIST clamped to 640");
 assert(DOCK_MIN_DIST === 260, "A: DOCK_MIN_DIST unchanged at 260");
 assert(DOCK_MAX_DIST === 620, "A: DOCK_MAX_DIST clamped to 620");
-const bindingLimit = Math.min(WORLD_W, WORLD_H) / 2 - 60;
-assert(SPAWN_MAX_DIST <= bindingLimit, "A: SPAWN_MAX_DIST within min(WORLD_W,WORLD_H)/2-60");
+// CS022 P1 (spec C5/§7): the two flat constants must clear the reachable-radius limit at BOTH sizes,
+// since neither scales with the world. 660 at field size, 1380 at orbit size.
+const bindingLimit = Math.min(FIELD_W, FIELD_H) / 2 - 60;
+const orbitLimit   = Math.min(ORBIT_W, ORBIT_H) / 2 - 60;
+assert(bindingLimit === 660 && orbitLimit === 1380, "A: the reachable-radius limit is 660 at field size and 1380 at orbit size");
+assert(SPAWN_MAX_DIST <= bindingLimit, "A: SPAWN_MAX_DIST within min(W,H)/2-60 at the FIELD size (the binding one)");
+assert(SPAWN_MAX_DIST <= orbitLimit && DOCK_MAX_DIST <= orbitLimit,
+  "A: both flat spawn/dock maxima also clear the ORBIT size's limit (spec §7 — they do not scale)");
 assert(DOCK_MAX_DIST < SPAWN_MAX_DIST, "A: DOCK_MAX_DIST stays below SPAWN_MAX_DIST");
 
 // =====================================================================
@@ -81,17 +115,23 @@ console.log("(B) Real nextWave() debris spawns land within the clamped ring, man
 // wrap-clean radius budget, min(WORLD_W, WORLD_H)/2 - 20. Both archetypes are sampled; neither is
 // allowed to go unchecked, and the sample counts are asserted so a schedule change can't empty either.
 let debrisOk = true, debrisMinSeen = Infinity, debrisMaxSeen = 0;
-let orbitOk = true, orbitEdgeMax = 0, orbitSamples = 0, fieldSamples = 0, orbitWorstErr = 0;
-const orbitEdgeBudget = Math.min(WORLD_W, WORLD_H) / 2 - 20;
+let orbitOk = true, orbitEdgeSlackMin = Infinity, orbitSamples = 0, fieldSamples = 0, orbitWorstErr = 0;
+let sizeOk = true;
 for (let trial = 0; trial < 25; trial++) {
   startGame();
   game.state = "playing"; game.paused = false;
+  // startGame() has just re-applied the FIELD size, so the snapshot is the live period at this point.
   game.ship.x = Math.random() * WORLD_W;
   game.ship.y = Math.random() * WORLD_H;
   game.wave = 1 + Math.floor(Math.random() * 6);
   game.debris = [];
   nextWave();
   const orbit = levelDef(game.wave).archetype === "orbit";
+  // REPOINTED BY CS022 P1: the budget is now read off the LIVE world, not the load-time snapshot —
+  // nextWave() has just resized to 5120x2880 if this turned out to be an orbit level.
+  const [liveW, liveH] = liveDims();
+  const orbitEdgeBudget = Math.min(liveW, liveH) / 2 - 20;
+  if (game.worldSize !== worldSizeFor(game.wave)) sizeOk = false;
   for (const d of game.debris) {
     if (orbit) {
       orbitSamples++;
@@ -99,7 +139,7 @@ for (let trial = 0; trial < 25; trial++) {
       const err = Math.abs(Math.sqrt(dist2(d, game.dock)) - d.orbitRadius);
       orbitWorstErr = Math.max(orbitWorstErr, err);
       if (!(d.orbitRadius > 0) || err > 1e-6) orbitOk = false;
-      orbitEdgeMax = Math.max(orbitEdgeMax, d.orbitRadius + d.radius);
+      orbitEdgeSlackMin = Math.min(orbitEdgeSlackMin, orbitEdgeBudget - (d.orbitRadius + d.radius));
     } else {
       fieldSamples++;
       const dist = Math.sqrt(dist2(d, game.ship));
@@ -113,7 +153,8 @@ assert(fieldSamples > 0, `B: (control) the sweep actually sampled FIELD-level sp
 assert(debrisOk, `B: every sampled FIELD debris spawn within [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] (saw [${debrisMinSeen.toFixed(1)}, ${debrisMaxSeen.toFixed(1)}])`);
 assert(orbitSamples > 0, `B: (control) the sweep actually sampled ORBIT-level spawns (${orbitSamples} satellites)`);
 assert(orbitOk, `B: every sampled ORBIT satellite sits at exactly its ring radius from the dock, wrap-aware (worst error ${orbitWorstErr.toExponential(2)} px)`);
-assert(orbitEdgeMax <= orbitEdgeBudget, `B: outermost ORBIT satellite edge ${orbitEdgeMax} within the wrap-clean budget ${orbitEdgeBudget}`);
+assert(orbitEdgeSlackMin >= 0, "B: outermost ORBIT satellite edge stays within the LIVE world's wrap-clean budget");
+assert(sizeOk, "B: every sampled level ran at the world size its archetype asks for (CS022 P1)");
 
 // =====================================================================
 console.log("(C) Real Dock spawns land within the clamped ring, many samples");
@@ -131,9 +172,18 @@ for (let trial = 0; trial < 200; trial++) {
 assert(dockOk, `C: every sampled dock spawn within [${DOCK_MIN_DIST}, ${DOCK_MAX_DIST}] (saw [${dockMinSeen.toFixed(1)}, ${dockMaxSeen.toFixed(1)}])`);
 
 // =====================================================================
-console.log("(D) STAR_COUNT is the area-derived value for the new world size (density preserved)");
-const expectedStarCount = Math.round(STAR_DENSITY * (WORLD_W * WORLD_H) / (VIEW_W * VIEW_H));
-assert(STAR_COUNT === expectedStarCount, `D: STAR_COUNT (${STAR_COUNT}) matches STAR_DENSITY*area/viewport formula (${expectedStarCount})`);
+console.log("(D) STAR_COUNT is the area-derived value for the LARGEST world size (density preserved)");
+// REPOINTED BY CS022 P1 (spec §4.3, FLAG-CS022-d): `stars` is generated ONCE, for WORLD_SIZE_MAX, and
+// applyWorldSize() filters it into starsActive per world. The area formula is unchanged — only the
+// area it is evaluated over moved, because an area derived from the now-mutable WORLD_W/WORLD_H and
+// cached at module load is exactly the bug this changeset had to remove.
+const [MAX_W, MAX_H] = worldDims(WORLD_SIZE_MAX);
+const expectedStarCount = Math.round(STAR_DENSITY * (MAX_W * MAX_H) / (VIEW_W * VIEW_H));
+assert(STAR_COUNT === expectedStarCount, `D: STAR_COUNT (${STAR_COUNT}) matches STAR_DENSITY*maxArea/viewport formula (${expectedStarCount})`);
+assert(WORLD_SIZE_MAX === Math.max(WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT),
+  "D: WORLD_SIZE_MAX really is the largest size in the table (so no world can ever want more stars than exist)");
+assert(STAR_COUNT === Math.round(STAR_DENSITY * WORLD_SIZE_MAX),
+  "D: ...which is just STAR_DENSITY per viewport-sized screen, WORLD_SIZE_MAX screens of them");
 assert(STAR_DENSITY === 80, "D: STAR_DENSITY untouched at 80 (P1 v3.0 value)");
 
 // =====================================================================

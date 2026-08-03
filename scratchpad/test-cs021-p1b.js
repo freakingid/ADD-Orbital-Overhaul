@@ -128,7 +128,11 @@ const RETURN = [
   "DEBRIS_RADII", "SHIP_MAX_HP", "KNOCKBACK_SPEED", "WORLD_W", "WORLD_H", "TAU",
   "AudioSys", "GAME_VERSION", "DEBUG_VARS",
 ];
-const FIXED_EXTRA = ["shieldBounce", "SHIELD_BOUNCE_RESTITUTION", "SHIELD_BOUNCE_MIN"];
+// CS022 P1: worldDims joins the FIXED-build-only list rather than RETURN — it does not exist at
+// PRE_FIX_REF, and the RETURN list above is shared with that older build. Sections (I)/(J) need it
+// because they place things at a WORLD SEAM on an ORBIT level, where the live torus is 5120x2880
+// while this file's destructured WORLD_W/WORLD_H are a load-time snapshot of the field size.
+const FIXED_EXTRA = ["shieldBounce", "SHIELD_BOUNCE_RESTITUTION", "SHIELD_BOUNCE_MIN", "worldDims"];
 
 const SPIES = [
   "__spyPing(fn) { const o = AudioSys.shieldPing; AudioSys.shieldPing = fn; return o; }",
@@ -632,16 +636,22 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
 })();
 
 // ================= (I) THE TOW CHAIN =====================
+// REPOINTED BY CS022 P1: stage(X, 3, …) drives to an ORBIT level, and an orbit level now runs in a
+// 5120x2880 torus (spec §4.1) — so "the world edge" and "the normal wrapped position band" must be
+// read off the LIVE period via worldDims(game.worldSize), not off this file's load-time WORLD_W/WORLD_H
+// snapshot (which is the FIELD size, 2560x1440, and would have put the "seam" case a full 2560 px
+// inside the board — the seam would never have been crossed and the test would have passed vacuously).
 (function sectionI() {
   console.log("(I) a laden ship survives a bounce, including one across the world seam");
   for (const seam of [false, true]) {
     const X = build();
     const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === 180));
+    const [W, H] = X.worldDims(X.game.worldSize);   // the LIVE torus period at this level
     if (seam) {
       // Move the whole rail to the world edge so the bounce pushes the ship across it.
       const dx = -h.x + 2, dy = -h.y + 2;
-      h.orbitCenter.x = ((h.orbitCenter.x + dx) % X.WORLD_W + X.WORLD_W) % X.WORLD_W;
-      h.orbitCenter.y = ((h.orbitCenter.y + dy) % X.WORLD_H + X.WORLD_H) % X.WORLD_H;
+      h.orbitCenter.x = ((h.orbitCenter.x + dx) % W + W) % W;
+      h.orbitCenter.y = ((h.orbitCenter.y + dy) % H + H) % H;
       X.update(1 / 60);   // let the rail re-derive the satellite's position from the moved centre
     }
     placeShipAt(X, h, X.SHIELD_RADIUS + h.radius - 4);
@@ -660,8 +670,8 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
     assert(Number.isFinite(X.game.ship.x) && Number.isFinite(X.game.ship.y) &&
            Number.isFinite(X.game.ship.vx) && Number.isFinite(X.game.ship.vy),
       `I: ${seam ? "seam" : "mid-world"}: the ship's position and velocity stayed finite`);
-    assert(X.game.ship.x >= -60 && X.game.ship.x <= X.WORLD_W + 60 &&
-           X.game.ship.y >= -60 && X.game.ship.y <= X.WORLD_H + 60,
+    assert(X.game.ship.x >= -60 && X.game.ship.x <= W + 60 &&
+           X.game.ship.y >= -60 && X.game.ship.y <= H + 60,
       `I: ${seam ? "seam" : "mid-world"}: the ship is inside the normal wrapped position band ` +
       `(${X.game.ship.x.toFixed(1)}, ${X.game.ship.y.toFixed(1)})`);
   }
@@ -672,10 +682,12 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   console.log("(J) a bounce off a satellite sitting on the world seam");
   const X = build();
   const h = stage(X, 3, ds => ds.find(d => d.orbitRadius === 180));
+  // REPOINTED BY CS022 P1: the seam is the LIVE world's, and an orbit level's world is 5120x2880.
+  const [W, H] = X.worldDims(X.game.worldSize);
   // Put the satellite itself at the very corner of the world.
   h.x = 1; h.y = 1;
   // Approach it from "the other side" of the seam, i.e. from a large coordinate.
-  X.game.ship.x = X.WORLD_W - 40; X.game.ship.y = X.WORLD_H - 40;
+  X.game.ship.x = W - 40; X.game.ship.y = H - 40;
   X.game.ship.vx = 0; X.game.ship.vy = 0;
   const dBefore = Math.sqrt(X.dist2(X.game.ship, h));
   assert(dBefore < X.SHIELD_RADIUS + h.radius,
@@ -688,8 +700,8 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   X.shieldBounce(h);
   const dAfter = Math.sqrt(X.dist2(X.game.ship, h));
   close(dAfter, X.SHIELD_RADIUS + h.radius + 2, "J: the ship separated to exactly the contact radius + 2, measured toroidally", 1e-6);
-  assert(X.game.ship.x >= -60 && X.game.ship.x <= X.WORLD_W + 60 &&
-         X.game.ship.y >= -60 && X.game.ship.y <= X.WORLD_H + 60,
+  assert(X.game.ship.x >= -60 && X.game.ship.x <= W + 60 &&
+         X.game.ship.y >= -60 && X.game.ship.y <= H + 60,
     `J: and it landed inside the normal wrapped position band (${X.game.ship.x.toFixed(1)}, ${X.game.ship.y.toFixed(1)})`);
 
   // THE DIRECTION IS THE REAL CLAIM, and distance alone cannot test it: a naive (non-wrap) normal still
@@ -709,7 +721,8 @@ function contactRun(X, { level, ringRadius, startDist, frames = 600 }) {
   const Y = build();
   const h2 = stage(Y, 3, ds => ds.find(d => d.orbitRadius === 180));
   h2.x = 3; h2.y = 3;
-  Y.game.ship.x = Y.WORLD_W - 42; Y.game.ship.y = Y.WORLD_H - 42;
+  const [W2, H2] = Y.worldDims(Y.game.worldSize);   // CS022 P1: the live period again, for the same reason
+  Y.game.ship.x = W2 - 42; Y.game.ship.y = H2 - 42;
   Y.game.ship.vx = 0; Y.game.ship.vy = 0;
   const d0 = Math.sqrt(Y.dist2(Y.game.ship, h2));
   Y.update(1 / 60);

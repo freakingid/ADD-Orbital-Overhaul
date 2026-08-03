@@ -118,9 +118,13 @@ const RETURN = [
   // fixed ORBIT_GAP_MULT past occurrence 1 — needed to recompute D's expected total per level.
   "orbitGapMult",
   // shared world/entity constants the assertions derive from (never a restated literal)
-  "DEBRIS_RADII", "DEBRIS_SPEEDS", "SHIP_RADIUS", "SHIP_MAX_HP", "DOCK_RADIUS", "LEVER_DOCK_SIZE",
+  "DEBRIS_RADII", "DEBRIS_SPEEDS", "SHIP_RADIUS", "SHIP_MAX_HP", "DOCK_RADIUS", "LEVER_DOCK_SIZE", "DOCK_MAX_DIST",
   "WORLD_W", "WORLD_H", "TAU", "dist2", "wrapPos", "rand",
   "AudioSys", "GAME_VERSION", "DEBUG", "DEBUG_VARS", "DEBUG_ENTRIES",
+  // CS022 P1: killShip is how section (K)'s worst-case variant now reaches the death spectacle
+  // deterministically; worldDims/WORLD_SIZE_* are how sections that place things near a seam read the
+  // LIVE torus period rather than the load-time WORLD_W/WORLD_H snapshot above.
+  "killShip", "worldDims", "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT",
 ];
 
 function build({ audio = true, store = {} } = {}) {
@@ -232,7 +236,16 @@ function shippedArgs(X, centerX, centerY) {
   // The archetype is derived from the ONE clock and from nothing else.
   assert(/archetype: n % ORBIT_LEVEL_EVERY === 0 \? "orbit" : "field"/.test(codeOnly),
     "A: levelDef derives archetype from n alone — one clock, no cycle state");
-  eq((codeOnly.match(/archetype === "orbit"/g) || []).length, 1, "A: exactly one consumer of the archetype in the spawn path");
+  // REPOINTED BY CS022 P1: there are TWO archetype consumers now, and the second one is the point of
+  // that phase — worldSizeFor() picks the torus period off the same archetype the spawn branch reads
+  // (FORK-CS022-C: world size is archetype-keyed, not a level-table column). The claim is re-stated at
+  // full strength rather than loosened to a bare count: BOTH sites are named, and nothing else reads it.
+  const archetypeSites = codeOnly.split("\n").map(l => l.trim()).filter(l => /archetype === "orbit"/.test(l));
+  eq(archetypeSites.length, 2, "A: exactly two consumers of the archetype (the spawn branch + CS022 P1's worldSizeFor)");
+  assert(archetypeSites.some(l => /^if \(levelDef\(game\.wave\)\.archetype === "orbit"\)/.test(l)),
+    "A: consumer 1 is nextWave()'s spawn branch, still reading levelDef(game.wave)");
+  assert(archetypeSites.some(l => /^return levelDef\(level\)\.archetype === "orbit" \? WORLD_SIZE_ORBIT : WORLD_SIZE_FIELD;$/.test(l)),
+    "A: consumer 2 is CS022 P1's worldSizeFor, and it only picks a world size");
 
   // The bounded loop cannot become unbounded by a later edit without failing here.
   assert(/ring\.spawnSafetyTries < ORBIT_SPAWN_TRIES/.test(codeOnly), "A: the reroll loop is bounded by ORBIT_SPAWN_TRIES");
@@ -619,12 +632,39 @@ function expectedOrbitTotal(X, level) {
   assert(toroidalWorst < 1e-6, `H: the wrap-aware measurement is exact (worst error ${toroidalWorst.toExponential(2)} px)`);
 
   // The same thing end to end, through the REAL nextWave() with the dock forced onto the seam.
+  //
+  // REPOINTED BY CS022 P1, and this one had gone VACUOUS rather than merely stale. The old form parked
+  // the ship at (2, WORLD_H - 3) and then drove level 2 -> 3; under CS022 that transition RESIZES the
+  // world (field 2560x1440 -> orbit 5120x2880) and resizeWorld() re-centres the ship, so by the time
+  // the dock was placed the ship was at (2560, 1440) and the dock nowhere near a seam. The seam was
+  // never crossed and the check passed for the wrong reason.
+  //
+  // The fix uses the mechanism rather than fighting it: go to level 3 FIRST (that transition does the
+  // growing), then put the ship on the LIVE world's seam, then drive 3 -> 6. Both are orbit levels, so
+  // worldSizeFor is unchanged across that boundary, nextWave() does NOT resize, the ship stays exactly
+  // where it was put, and the dock is placed ship-relative right on top of the seam — which is the
+  // condition this check has always been about.
   withRandom(seededRandom(0x5EA14), () => {
     X.startGame();
-    X.game.ship.x = 2; X.game.ship.y = X.WORLD_H - 3;
-    atWave(X, 3);
+    atWave(X, 3);                                        // grows the world; re-centres the ship
+    const [liveW, liveH] = X.worldDims(X.game.worldSize);
+    eq(X.game.worldSize, X.WORLD_SIZE_ORBIT, "H: (setup) level 3 really is running at the orbit world size");
+    X.game.ship.x = 2; X.game.ship.y = liveH - 3;        // hard against the LIVE seam
+    atWave(X, 6);                                        // orbit -> orbit: no resize, the ship stays put
+    assert(X.game.ship.x === 2 && X.game.ship.y === liveH - 3,
+      "H: (setup) an orbit->orbit transition does NOT resize, so the ship stayed on the seam");
+    assert(Math.min(X.game.dock.x, liveW - X.game.dock.x) <= X.DOCK_MAX_DIST ||
+           Math.min(X.game.dock.y, liveH - X.game.dock.y) <= X.DOCK_MAX_DIST,
+      "H: (setup) the dock landed within DOCK_MAX_DIST of a world seam, so its rings straddle it");
   });
   eq(X.game.debris.length, 40, "H: a real seam-side orbit wave still spawns 40");
+  // CONTROL: at least one of those satellites must be on the far side of the seam from the dock, so
+  // naive arithmetic would be off by (about) a whole world period — otherwise the "real seam-side"
+  // claim below is just the mid-world case with a different label.
+  const realNaiveWorst = X.game.debris.reduce((m, d) =>
+    Math.max(m, Math.abs(Math.hypot(d.x - X.game.dock.x, d.y - X.game.dock.y) - d.orbitRadius)), 0);
+  assert(realNaiveWorst > 100,
+    `H: CONTROL — on the REAL seam-side spawn, naive arithmetic is off by ${realNaiveWorst.toFixed(1)} px`);
   for (const d of X.game.debris) {
     close(Math.sqrt(X.dist2(d, X.game.dock)), d.orbitRadius, "H: real spawn: toroidal distance to the dock === ring radius", 1e-6);
   }
@@ -715,9 +755,16 @@ function expectedOrbitTotal(X, level) {
   let waves = 0, worst = Infinity;
   withRandom(seededRandom(0x5B03), () => {
     X.startGame();
+    atWave(X, 3);   // CS022 P1: pay the ONE field->orbit resize up front. Every atWave(X, 3) after this
+                    // is an orbit->orbit transition, so no resize runs and the random ship placement
+                    // below actually survives into the spawn instead of being re-centred.
     for (let i = 0; i < 120; i++) {
-      X.game.ship.x = Math.random() * X.WORLD_W;
-      X.game.ship.y = Math.random() * X.WORLD_H;
+      // REPOINTED BY CS022 P1: sample the LIVE world (5120x2880 on an orbit level), not the load-time
+      // WORLD_W/WORLD_H snapshot — which would have confined all 120 samples to one quadrant and left
+      // the far seams untested.
+      const [liveW, liveH] = X.worldDims(X.game.worldSize);
+      X.game.ship.x = Math.random() * liveW;
+      X.game.ship.y = Math.random() * liveH;
       atWave(X, 3);
       waves++;
       for (const d of X.game.debris) worst = Math.min(worst, Math.sqrt(X.dist2(d, X.game.ship)));
@@ -762,6 +809,9 @@ function expectedOrbitTotal(X, level) {
 // argues from. Only the shape of the run is asserted (that it really happened); the costs are printed.
 (function sectionK() {
   console.log("(K) frame-budget probe (FLAG-CS021-h) — REPORTED, not gated");
+  // CS022 P1: the frame the death variant pulls the trigger on. 60 frames in — past JIT warm-up, and
+  // with killEvery = 6 exactly 10 of the 40 satellites harvested, i.e. a genuinely part-harvested ring.
+  const DEATH_AT_FRAME = 60;
   function probe(level, seed, keepAlive = true) {
     const X = build();
     withRandom(seededRandom(seed), () => { X.startGame(); atWave(X, level); });
@@ -782,6 +832,14 @@ function expectedOrbitTotal(X, level) {
         // "gameover", and the probe silently measures nothing. Topping the hull up outside the timed
         // region keeps the FULL update path (collisions included) running for every frame measured.
         if (keepAlive) X.game.ship.hp = X.SHIP_MAX_HP;
+        // REPOINTED BY CS022 P1. The death variant used to rely on that same ambient contact damage
+        // KILLING the ship — which it no longer does: an orbit level now runs in a 5120x2880 world
+        // (spec §4.1), so debris that drifts off no longer wraps back around into a parked ship within
+        // the probe's window, and the "let it die" variant silently degenerated into the keepAlive one
+        // (caught by the validity assertion below, which is exactly what it is there for). The kill is
+        // now EXPLICIT and deterministic: the real killShip() on a fixed frame, while the ring is still
+        // mostly intact, which is the "part-harvested orbit level" case the worst-case figure is about.
+        else if (frames === DEATH_AT_FRAME) X.killShip();
         const t0 = process.hrtime.bigint();
         X.update(1 / 60);
         const dtNs = process.hrtime.bigint() - t0;
@@ -847,7 +905,7 @@ function expectedOrbitTotal(X, level) {
     `median frame cost ${(orbit.medianMs / field.medianMs).toFixed(2)}x, ` +
     `worst frame ${(orbit.worstMs / field.worstMs).toFixed(2)}x   [REPORTED, not gated — see STATUS.md]`);
   assert(death.peak > orbit.peak, "K: (validity) the death-shockwave variant really is the heavier peak");
-  console.log(`    WORST CASE — level 3 orbit, ship allowed to die (death shockwave detonates the ring at once):`);
+  console.log(`    WORST CASE — level 3 orbit, real killShip() at frame ${DEATH_AT_FRAME} on a part-harvested ring (death shockwave detonates the rest at once):`);
   console.log(`      PEAK ENTITIES ${death.peak}  (debris ${death.peakDebris} / garbage ${death.peakGarbage} / particles ${death.peakParticles}), ` +
     `median ${death.medianMs.toFixed(3)} ms, p99 ${death.p99Ms.toFixed(3)} ms, worst ${death.worstMs.toFixed(3)} ms ` +
     `(most of that run is updateDeath()/gameover, which is a much cheaper path than update())`);

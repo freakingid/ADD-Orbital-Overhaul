@@ -133,10 +133,13 @@ const RETURN = [
   "scatterChain", "dist2", "Garbage", "FloatText", "AudioSys", "VoiceSys", "Achievements",
   "DEBUG", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "applyDebug", "debugShown",
   "saveSettings", "loadSettings", "returnToDefaults", "GAME_VERSION", "STORAGE_KEY",
-  "DOCK_BASE_SCORE", "DOCK_BONUS_STEP", "DOCK_OFFLOAD_INTERVAL", "DOCK_RADIUS",
+  "DOCK_BASE_SCORE", "DOCK_BONUS_STEP", "DOCK_OFFLOAD_INTERVAL", "DOCK_RADIUS", "DOCK_MAX_DIST",
   "CARGO_CAP_MAX", "SHIP_MAX_HP", "TAU", "WORLD_W", "WORLD_H",
+
 ];
-const FIXED_EXTRA = ["DOCK_NEIGHBORHOOD_PAD", "DOCK_COMBO_GRACE"];
+// CS022 P1: worldDims belongs on the FIXED-build-only list, not RETURN — RETURN is shared with the
+// PRE_FIX_REF build, which predates the world-size seam and has no such symbol.
+const FIXED_EXTRA = ["DOCK_NEIGHBORHOOD_PAD", "DOCK_COMBO_GRACE", "worldDims"];
 
 // superMegaDelivery is a plain function declaration, so its binding is mutable and the
 // `if (deliveryCount === CARGO_CAP_MAX) superMegaDelivery();` call site resolves it at call time —
@@ -206,7 +209,23 @@ function quiet(X) {
   // Park the dock dead centre of the world. Dock() places itself on a random ring around the ship, so
   // without this a run staged 600px out could straddle the world wrap and every distance assertion
   // below would be measuring the seam instead of the mechanic.
+  // REVIEWED AND DELIBERATELY LEFT ALONE BY CS022 P1. toLevel() reaches level 12, an ORBIT level, where
+  // the live torus is 5120x2880 (spec §4.1) — so (WORLD_W/2, WORLD_H/2) read off this file's load-time
+  // FIELD-size snapshot is no longer literally the centre there. It does not need to be: the parking
+  // exists solely to keep the dock clear of the wrap seam, and (1280, 720) is 1280 px from the nearest
+  // x seam and 720 px from the nearest y seam in EITHER world — far outside anything this file measures.
+  // Re-pointing it to the live centre was tried and reverted: section (J) compares floater world
+  // coordinates byte-for-byte against the PRE_FIX_REF build, which has no world-size seam and would
+  // stay at (1280, 720), so moving only the fixed build breaks a cross-build identity that is about the
+  // MECHANIC, not about absolute coordinates. The seam clearance is asserted below instead of assumed.
   X.game.dock.x = X.WORLD_W / 2; X.game.dock.y = X.WORLD_H / 2;
+  {
+    const [lw, lh] = X.worldDims ? X.worldDims(X.game.worldSize) : [X.WORLD_W, X.WORLD_H];
+    const clear = Math.min(X.game.dock.x, lw - X.game.dock.x, X.game.dock.y, lh - X.game.dock.y);
+    if (!(clear >= X.DOCK_MAX_DIST)) throw new Error(
+      `quiet(): the parked dock is only ${clear} px from a world seam in a ${lw}x${lh} world — ` +
+      `position assertions would be measuring the seam (CS022 P1 guard)`);
+  }
   X.game.debris.length = 1;
   X.game.debris[0] = { x: 1e5, y: 1e5, vx: 0, vy: 0, size: 1, radius: 5, dead: false, update() {}, draw() {} };
   X.game.hunters.length = 0; X.game.saucers.length = 0; X.game.bullets.length = 0;
