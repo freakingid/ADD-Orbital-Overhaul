@@ -403,9 +403,10 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // -- the knob: 33 -> 34, its own DELIVERY header, placed after CHAIN GUARD --
   // REPOINTED BY CS021 P3: 34 -> 44 (the ORBIT section). This phase's own claim — that P1b adds exactly
   // one knob — is unaffected; the count just has to track the live registry or it goes stale.
+  // REPOINTED BY CS023 P4: 44 -> 46 (orbitGravityAccel, debrisBounceRestitution). Same reasoning.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 44, "A: DEBUG_VARS holds 44 value entries (33 -> 34 this phase; CS021 P3 -> 44)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 44, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 46, "A: DEBUG_VARS holds 46 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 46, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");

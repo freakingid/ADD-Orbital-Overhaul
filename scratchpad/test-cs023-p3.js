@@ -564,12 +564,25 @@ function saucerAt(X, x, y, small) {
     const afterExec = codeOnly.slice(codeOnly.indexOf("function debrisBounce(a, b) {"),
       codeOnly.indexOf("\n}\n", codeOnly.indexOf("function debrisBounce(a, b) {")))
       .split("\n").filter(l => l.trim() && !l.trim().startsWith("//")).map(l => l.trim());
-    eq(beforeExec.length, afterExec.length, "A: debrisBounce's executable line COUNT is unchanged (rename only, no new logic)");
+    // REPOINTED BY CS023 P4: P4 fills the "CS023 P4 SEAM" P2 left at the top of this helper with exactly
+    // ONE new executable line — the drifting clear. Both sides are compared with that line removed, so the
+    // claim this file is answerable for (P3's own change was a RENAME, no new logic) keeps its strength
+    // whether HEAD is P3 or P4, rather than going stale the moment P4 lands.
+    const P4_LINE = "a.drifting = b.drifting = false;";
+    const strip = arr => arr.filter(l => l !== P4_LINE);
+    eq(strip(beforeExec).length, strip(afterExec).length,
+      "A: debrisBounce's executable line COUNT is unchanged apart from CS023 P4's one specced drifting clear");
+    assert(afterExec.filter(l => l === P4_LINE).length <= 1,
+      "A: ...and that clear appears at most once");
   }
 
   // --- TRAPs ---
   eq(X.GAME_VERSION, "1.0.0.22", "A: TRAP 1 — GAME_VERSION unchanged");
-  eq(X.DEBUG_ENTRIES.length, 44, "A: TRAP 4 — the debug registry is still exactly 44 value entries");
+  // REPOINTED BY CS023 P4: 44 -> 46. P3's own claim — that IT added no knob — is what this guarded, and
+  // the exact live count keeps guarding it.
+  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 4 — the debug registry is exactly 46 value entries after CS023 P4");
+  assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
+    "A: TRAP 4 — ...and P3 still contributed none of them");
   {
     // RAW source both sides (not codeOnly) — these must be byte-unchanged including their comments.
     const bodyOf = (src, sig) => { const i = src.indexOf(sig); return src.slice(i, src.indexOf("\n}\n", i)); };

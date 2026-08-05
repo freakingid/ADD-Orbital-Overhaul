@@ -358,9 +358,16 @@ const shippedRadii = X =>
   assert(/const fastIdx = fastRingIndices \|\| \[\];/.test(gen),
     "A: ...normalised once outside the ring loop, with absent behaving as empty");
   assert(/fastRingIndices:\s*ORBIT_FAST_RING\.map\(n => n - 1\)/.test(codeOnly),
-    "A: spawnOrbitWave maps the 1-based list to 0-based indices — the ONE consumer");
-  eq((codeOnly.match(/ORBIT_FAST_RING/g) || []).length, 2,
-    "A: ORBIT_FAST_RING has exactly two source mentions — its declaration and that one consumer");
+    "A: spawnOrbitWave maps the 1-based list to 0-based indices — the spawn's ONE consumer");
+  // REPOINTED BY CS023 P4: 2 -> 3. The spec's own retirement ledger (§8) named exactly this third reader
+  // when it widened the constant's type — "the one consumer, the one generator test, AND THE DRIFT'S CAP
+  // (C14) all move." maxOrbitSpeed() must scan the fast-ring list to find which ring is actually fastest,
+  // so it reads ORBIT_FAST_RING directly. A FOURTH mention would still be worth failing over.
+  eq((codeOnly.match(/ORBIT_FAST_RING/g) || []).length, 3,
+    "A: REPOINTED (P4 landed) — ORBIT_FAST_RING has exactly three source mentions: its declaration, " +
+    "spawnOrbitWave's map, and maxOrbitSpeed's ring scan");
+  assert(/ORBIT_FAST_RING\.indexOf\(i \+ 1\)/.test(codeOnly),
+    "A: ...and the third is a MEMBERSHIP test over the 1-based list, exactly like the generator's");
 
   // --- resizeWorld's grow comment, corrected per spec C7 --------------------------------------------
   const rw = scriptSrc.slice(scriptSrc.indexOf("function resizeWorld(newSize)"));
@@ -825,11 +832,16 @@ const WANT_14 = {   // level: [ring, field, total]
   // its mirror image (`!== "1.0.0.22"`), exactly as CS022's own files were treated by CS022 P4.
   eq(X.GAME_VERSION, "1.0.0.22", "I: TRAP 1 — GAME_VERSION is unchanged at 1.0.0.22 (P5 bumps it)");
 
-  // TRAP 3 — the registry stays at 44. P4 adds two; nothing is added here.
-  eq(X.DEBUG_ENTRIES.length, 44, "I: TRAP 3 — the debug registry is still 44 value entries");
-  assert(!X.DEBUG_ENTRIES.some(e => /gravity|bounce|drift|fastRing/i.test(e.id)),
-    "I: TRAP 3 — none of CS023 P2/P4's future knobs has crept in early");
-  eq(X.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 10, "I: TRAP 3 — still exactly ten ORBIT knobs");
+  // TRAP 3 — REPOINTED BY CS023 P4, to its positive successor rather than deleted (the standing
+  // mirror-image treatment). P4 added exactly the TWO knobs this trap always named it would, APPENDED to
+  // the ORBIT section (FLAG-CS023-o); what P1 is answerable for — that ITS OWN diff added none — is now
+  // the positive claim that the two present are exactly P4's, and no third one crept in with them.
+  eq(X.DEBUG_ENTRIES.length, 46, "I: REPOINTED (P4 landed) — the debug registry is 46 value entries");
+  eq(X.DEBUG_ENTRIES.filter(e => /gravity|bounce|drift|fastRing/i.test(e.id)).map(e => e.id).join(","),
+    "orbitGravityAccel,debrisBounceRestitution",
+    "I: REPOINTED (P4 landed) — and they are exactly CS023 P4's two, in that order");
+  eq(X.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 11,
+    "I: TRAP 3 — eleven orbit-prefixed knobs: P3's ten plus P4's orbitGravityAccel, and no more");
   // The density knobs' defaults follow the shipped constant automatically — the registry convention.
   for (let i = 0; i < 4; i++) {
     const d = X.DEBUG_ENTRIES.find(e => e.id === `orbitDensity${i + 1}`);
@@ -848,9 +860,18 @@ const WANT_14 = {   // level: [ring, field, total]
     "I: REPOINTED (P2 landed) — debrisBounce is defined exactly once");
   eq((codeOnly.match(/^const DEBRIS_MASS = /gm) || []).length, 1,
     "I: REPOINTED (P2 landed) — DEBRIS_MASS is declared exactly once");
-  assert(!/\bdrifting\b/.test(codeOnly), "I: TRAP — no `drifting` field yet (P4)");
-  assert(!/ORBIT_GRAVITY/.test(codeOnly), "I: TRAP — no ORBIT_GRAVITY_* constants yet (P4)");
-  assert(!/maxOrbitSpeed/.test(codeOnly), "I: TRAP — no maxOrbitSpeed helper yet (P4)");
+  // REPOINTED BY CS023 P4 — the same mirror-image treatment P2 got above: "the symbol does not exist
+  // yet" becomes "the symbol exists exactly once", which is the same claim read from the other end and
+  // keeps this file guarding against a SECOND definition creeping in later.
+  eq((codeOnly.match(/const ORBIT_GRAVITY_TRIGGER_R = /g) || []).length, 1,
+    "I: REPOINTED (P4 landed) — ORBIT_GRAVITY_TRIGGER_R is declared exactly once");
+  eq((codeOnly.match(/const ORBIT_GRAVITY_TARGET_R  = /g) || []).length, 1,
+    "I: REPOINTED (P4 landed) — ORBIT_GRAVITY_TARGET_R is declared exactly once");
+  eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 1,
+    "I: REPOINTED (P4 landed) — maxOrbitSpeed is defined exactly once");
+  eq((codeOnly.match(/function updateDebrisDrift\(/g) || []).length, 1,
+    "I: REPOINTED (P4 landed) — updateDebrisDrift is defined exactly once");
+  assert(/\bdrifting\b/.test(codeOnly), "I: REPOINTED (P4 landed) — the `drifting` field is now real");
   // REPOINTED BY CS023 P3: destroySaucer's awardScore parameter has now landed, exactly as this trap
   // always named it would — flipped to its positive successor rather than deleted.
   assert(/function destroySaucer\(s, awardScore = true\) \{/.test(codeOnly),

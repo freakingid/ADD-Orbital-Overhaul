@@ -335,12 +335,19 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
 
   // --- TRAP 1 / TRAP 4
   eq(X.GAME_VERSION, "1.0.0.22", "A: TRAP 1 — GAME_VERSION unchanged (P5 bumps it)");
-  eq(X.DEBUG_ENTRIES.length, 44, "A: TRAP 4 — the debug registry is still 44 value entries");
-  assert(!X.DEBUG_ENTRIES.some(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)),
-    "A: TRAP 4 — debrisBounceRestitution is P4's knob and has not crept in early");
-  assert(!/\bdrifting\b/.test(codeOnly), "A: TRAP — the P4 `drifting` field is not stubbed (spec: leave the seam, not a stub)");
-  assert(!/ORBIT_GRAVITY/.test(codeOnly), "A: TRAP — no ORBIT_GRAVITY_* constants yet (P4)");
-  assert(!/maxOrbitSpeed/.test(codeOnly), "A: TRAP — no maxOrbitSpeed helper yet (P4)");
+  // TRAP 4 — REPOINTED BY CS023 P4, to its positive successors rather than deleted: every one of these
+  // named P4 as the phase that would land the symbol, and P4 has.
+  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 4 REPOINTED — the debug registry is 46 value entries after P4");
+  eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
+    "orbitGravityAccel,debrisBounceRestitution",
+    "A: TRAP 4 REPOINTED — debrisBounceRestitution landed as P4's knob, beside orbitGravityAccel, and nothing else did");
+  assert(/\bdrifting\b/.test(codeOnly), "A: REPOINTED — the P4 `drifting` field is now real, not a stub");
+  eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 1, "A: REPOINTED — maxOrbitSpeed is defined exactly once");
+  assert(/ORBIT_GRAVITY_TRIGGER_R/.test(codeOnly) && /ORBIT_GRAVITY_TARGET_R/.test(codeOnly),
+    "A: REPOINTED — both ORBIT_GRAVITY_* radii landed");
+  // The seam this file reserved is FILLED, by exactly the one line it reserved it for.
+  eq((codeOnly.match(/a\.drifting = b\.drifting = false;/g) || []).length, 1,
+    "A: REPOINTED — debrisBounce's P4 seam holds exactly the one specced clear line");
   // REPOINTED BY CS023 P3: destroySaucer's awardScore parameter has now landed, exactly as this trap
   // always named it would — flipped to its positive successor rather than deleted.
   assert(/function destroySaucer\(s, awardScore = true\) \{/.test(codeOnly),
@@ -518,9 +525,12 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   }
 
   // ---- THE OTHER HALF OF THE ENERGY CLAIM: a SANDBOX build at restitution 0.5.
-  // DEBRIS_BOUNCE_RESTITUTION has no debug knob this phase (TRAP 4 — it is P4's), so "strictly
-  // decreasing below 1.0" is checked against a build whose constant is edited, exactly as CS023 P1 §D
-  // exercised fast-ring lists it does not ship. The edit is one literal and is named here.
+  // "Strictly decreasing below 1.0" is checked against a build whose CONSTANT is edited, exactly as
+  // CS023 P1 §D exercised fast-ring lists it does not ship. The edit is one literal and is named here.
+  // NOTE (CS023 P4): debrisBounce now reads DEBUG.debrisBounceRestitution rather than the constant, and
+  // this sandbox goes on working UNCHANGED precisely because of the registry convention — the constant is
+  // the entry's `def`, so patching it re-seeds the knob and the live value follows. That is the whole
+  // reason the knob was wired that way rather than left as a dead slider.
   const LOSSY_SRC = scriptSrc.replace("const DEBRIS_BOUNCE_RESTITUTION = 1.0;", "const DEBRIS_BOUNCE_RESTITUTION = 0.5;");
   assert(LOSSY_SRC !== scriptSrc, "B: (sandbox) the restitution literal was found and replaced");
   const L = withRandom(seededRandom(0xB999), () => buildFrom(LOSSY_SRC));

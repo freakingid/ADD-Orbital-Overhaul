@@ -224,8 +224,10 @@ function shippedArgs(X, centerX, centerY) {
   // the positive claim that the ORBIT knobs present are exactly P3's ten, not something P1 slipped in.
   const valueEntries = X.DEBUG_VARS.filter(v => !v.header);
   const orbitEntries = valueEntries.filter(v => /^orbit/i.test(v.id));
-  eq(valueEntries.length, 44, "A: TRAP 3 — DEBUG_VARS has 44 value entries (P1's 34 + CS021 P3's 10-entry ORBIT section)");
-  eq(orbitEntries.length, 10, "A: REPOINTED BY CS021 P3 — exactly the ten ORBIT knobs exist (P1 itself still added none)");
+  // REPOINTED AGAIN BY CS023 P4: + 2 (orbitGravityAccel, debrisBounceRestitution), one of which is
+  // orbit-prefixed. P1's own claim — that ITS diff added no knob — is unchanged and still what this guards.
+  eq(valueEntries.length, 46, "A: TRAP 3 — DEBUG_VARS has 46 value entries (P1's 34 + CS021 P3's ORBIT section + CS023 P4's two)");
+  eq(orbitEntries.length, 11, "A: REPOINTED BY CS021 P3 / CS023 P4 — P3's ten ORBIT knobs plus P4's orbitGravityAccel (P1 itself still added none)");
 
   // Correction C1: the generator is a plain inlined function, not a module export.
   eq((scriptSrc.match(/function generateOrbitLayout\(/g) || []).length, 1, "A: exactly one generateOrbitLayout definition");

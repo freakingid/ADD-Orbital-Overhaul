@@ -185,16 +185,23 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   // pin becomes its mirror image — off the pre-CS021 baseline.
   assert(X.GAME_VERSION !== "1.0.0.20", "A: TRAP 1 — GAME_VERSION moved off the pre-CS021 baseline (P5 bumped it)");
 
-  // Registry shape: 44 value entries, nine headers, one of them "ORBIT" holding exactly the ten ids.
+  // Registry shape: 46 value entries, nine headers, one of them "ORBIT" opening with exactly P3's ten ids.
+  // REPOINTED BY CS023 P4: the registry grew to 46 and BOTH new entries were APPENDED to the ORBIT section
+  // (FLAG-CS023-o), so this file's claim becomes a PREFIX claim rather than an equality one — P3's ten ids
+  // are still the first ten of that section, in P3's order, which is exactly what append-only means and is
+  // what this was really guarding. The section's full membership is pinned by test-cs023-p4.js.
   const values = X.DEBUG_VARS.filter(v => !v.header);
   const headers = X.DEBUG_VARS.filter(v => v.header).map(v => v.header);
-  eq(values.length, 44, "A: DEBUG_VARS holds 44 value entries (34 + the 10-entry ORBIT section)");
+  eq(values.length, 46, "A: DEBUG_VARS holds 46 value entries (34 + P3's 10-entry ORBIT section + CS023 P4's two)");
   eq(headers.length, 9, "A: nine section headers");
   assert(headers.includes("ORBIT"), "A: an ORBIT section header exists");
   const orbitIdx = X.DEBUG_VARS.findIndex(v => v.header === "ORBIT");
   const orbitVals = [];
   for (let i = orbitIdx + 1; i < X.DEBUG_VARS.length && !X.DEBUG_VARS[i].header; i++) orbitVals.push(X.DEBUG_VARS[i]);
-  eq(orbitVals.map(v => v.id).join(","), ORBIT_IDS.join(","), "A: the ORBIT section holds exactly the ten spec ids, in order");
+  eq(orbitVals.slice(0, ORBIT_IDS.length).map(v => v.id).join(","), ORBIT_IDS.join(","),
+    "A: the ORBIT section OPENS with exactly the ten spec ids, in order (CS023 P4 appended two after them)");
+  eq(orbitVals.slice(ORBIT_IDS.length).map(v => v.id).join(","), "orbitGravityAccel,debrisBounceRestitution",
+    "A: ...and the only ids after them are CS023 P4's two, appended and never inserted");
 
   // DEBUG_ROWS derives from DEBUG_VARS + the two trailing rows — never a hardcoded count.
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 2, "A: DEBUG_ROWS is DEBUG_VARS plus Dump + Back");

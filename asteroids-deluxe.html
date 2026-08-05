@@ -208,8 +208,12 @@ const DEBRIS_GARBAGE = 4;       // canisters emitted at EVERY tier's destruction
 const DEBRIS_MASS = { 3: 9, 2: 3, 1: 1 };
 // Restitution of a satellite-vs-satellite bounce. 1.0 mirrors SHIELD_BOUNCE_RESTITUTION and means the
 // same thing — the pair gets back exactly the closing speed it brought, so kinetic energy is conserved
-// along the contact normal. PLAYTEST KNOB: lower it if the shell reads like a pinball table. (CS023 P4
-// exposes it as a live debug slider; deliberately NOT a knob yet.)
+// along the contact normal. PLAYTEST KNOB: lower it if the shell reads like a pinball table.
+// CS023 P4 DID WHAT P2's NOTE HERE SAID IT WOULD — this is now a LIVE DEBUG SLIDER
+// (debrisBounceRestitution). The constant stays the registry entry's `def` and debrisBounce() reads
+// DEBUG.debrisBounceRestitution at the site, which is the convention every ORBIT knob already follows:
+// moving this constant moves the knob's default with it, and the shipped behaviour is byte-identical
+// until the slider is actually touched.
 const DEBRIS_BOUNCE_RESTITUTION = 1.0;
 // The separation floor, px/s (FLAG-CS023-f) — SHIELD_BOUNCE_MIN's reason exactly, scaled to satellite
 // speeds. Reflection alone leaves two touching STATIONARY bodies touching, so without a floor a contact
@@ -642,6 +646,31 @@ const ORBIT_FAST_RING     = [2, 4];  // rings 2 and 4 spin at ORBIT_ANG_VEL * OR
 // ring whose band contains the ship rerolls its startAngle until the nearest satellite clears the ship;
 // this bounds the rerolls so a wave start can never hang. See spawnSafeOrbitLayout().
 const ORBIT_SPAWN_TRIES   = 60;
+// CS023 P4 (spec §1.5/§4.7, FORK-CS023-B/C): THE INWARD DRIFT. Once the shell's interior is empty, every
+// FREE debris body left in the world is pulled back toward the ring-3 radius, so the player is never
+// hunting a 3840x2160 torus for the last two satellites. Read the whole of §4.7 before touching this —
+// most of what it says is what the mechanic is NOT. It never reads or writes orbitCenter / orbitRadius /
+// orbitAngle / orbitAngVel, never touches game.orbitLayout, and NEVER MOVES A BODY THAT IS ON A RAIL:
+// orbiting satellites participate in the TRIGGER and in nothing else, and the two radii below are used
+// purely as REFERENCE DISTANCES. The rings themselves never move; what moves is the junk that has drifted
+// out to the far side of the world.
+//
+// BOTH RADII ARE DERIVED AND ARE NEVER WRITTEN AS 814 AND 676, so a future geometry retune carries them:
+// the trigger IS ring 4's radius and the target IS ring 3's, and they stay those rings whatever the
+// geometry becomes. The ring COUNT is deliberately not read here — these are distances, not a ring
+// lookup, so a debug orbitCount below 4 leaves them exactly where they are: they describe the
+// ARCHETYPE's shell, not the rings tonight's level happens to have laid down.
+const ORBIT_GRAVITY_TRIGGER_R = ORBIT_INNER_RADIUS + 3 * ORBIT_RADIUS_STEP;  // 814 px — ring 4's radius
+const ORBIT_GRAVITY_TARGET_R  = ORBIT_INNER_RADIUS + 2 * ORBIT_RADIUS_STEP;  // 676 px — ring 3's radius
+// px/s^2 toward the dock. FLAG-CS023-d: THE ONE PURE GUESS LEFT IN THE MECHANIC — maxOrbitSpeed()'s cap
+// below is DERIVED from the game's own motion constants, this is not. At 30 px/s^2 a piece needs 8.5 s and
+// 1,090 px of fall to reach the 255.7 px/s cap, so the cap binds only for pieces starting beyond ~1,766 px
+// from the dock (real on a torus whose farthest point is 2,203 px away, but not the common case).
+// Live debug slider (orbitGravityAccel); 0 disables the drift outright, which is the gate's A/B.
+// FLAG-CS023-e: FLAT — NO FALLOFF AND NO DAMPING, unlike MAGNET_PULL. The Magnet ramps with proximity and
+// applies MAGNET_DAMP because it is a precision tool for hooking one canister; a proximity ramp here would
+// make the FAR pieces this mechanic exists for the slowest to arrive. The cap is what bounds it instead.
+const ORBIT_GRAVITY_ACCEL     = 30;
 
 // Difficulty ramp & early-game pacing (F10) — originally the one shared curve that scaled every
 // wave-driven threat parameter from an easy wave-1 floor up to a full-intensity ceiling.
@@ -3087,6 +3116,20 @@ const DEBUG_VARS = [
     def: ORBIT_ANG_VEL * 180 / Math.PI, min: 0, max: 60, step: 0.5, toNative: v => v * Math.PI / 180 },
   { id: "orbitFastMult", label: "Fast-ring multiplier", unit: "x",
     def: ORBIT_FAST_MULT, min: 1.0, max: 6.0, step: 0.1 },
+  // CS023 P4 (spec §4.8, FLAG-CS023-o): the changeset's two knobs, APPENDED AFTER the existing ORBIT
+  // entries and never inserted among them — a registry entry's ORDER fixes its row index in DEBUG_ROWS,
+  // so inserting rather than appending silently moves every row below it. Both `def`s derive from the
+  // shipped constant, as every ORBIT entry above already does, so a P5 retune of the constant carries the
+  // knob automatically and the panel can never disagree with the build.
+  //   orbitGravityAccel at 0 disables the inward drift outright — that is the playtest gate's A/B, and it
+  // is why the range starts at 0 rather than at a "sensible" minimum.
+  //   NO KNOB IS ADDED FOR THE DRIFT'S SPEED CAP. maxOrbitSpeed() derives it from orbitAngVel,
+  // orbitFastMult and orbitCount — three knobs that already exist — so retuning the orbit motion moves the
+  // cap automatically. A fourth knob here could only ever disagree with the three it was copied from.
+  { id: "orbitGravityAccel", label: "Debris inward gravity", unit: "px/s²",
+    def: ORBIT_GRAVITY_ACCEL, min: 0, max: 200, step: 5 },
+  { id: "debrisBounceRestitution", label: "Satellite bounce restitution", unit: "",
+    def: DEBRIS_BOUNCE_RESTITUTION, min: 0, max: 1.5, step: 0.05 },
 ];
 // CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
@@ -4463,6 +4506,14 @@ class DebrisSatellite {
     // scan while it is > 0 AND the guard is up. Bullets deliberately have no equivalent: a hostile round
     // is marked dead before the break, so it can never re-present.
     this.guardT = 0;
+    // CS023 P4 (spec §4.7): `drifting` IS DELIBERATELY NOT DECLARED HERE. It is the same OPTIONAL-FIELD
+    // idiom as orbitCenter/orbitRadius/orbitAngle/orbitAngVel above — absent (and therefore falsy) on
+    // every satellite until updateDebrisDrift() arms one, and cleared back to false by arrival or by
+    // debrisBounce(). Initialising it in the constructor would be the one thing that breaks FLAG-CS023-c:
+    // destroyDebris()'s three children are fresh objects, so "a split child of an armed parent is NOT
+    // armed" is true BY CONSTRUCTION here rather than by a rule somewhere else remembering to clear it.
+    // Nothing on the field path reads it, so a field level, a title-screen decoration and every split
+    // child are byte-for-byte what they were before this phase.
     // Authored satellite silhouette (v3.3 P2). Pick one archetype per instance (splits
     // re-roll independently), use the simplified `small` variant at the r=13 small tier,
     // then bake a per-instance copy scaled to `this.radius` with a small random per-vertex
@@ -6621,11 +6672,16 @@ function shieldBounce(obj) {
 //     clears at DEBRIS_BOUNCE_MIN x dt = 0.67 px per frame and the pair re-bills for seconds, which is
 //     the very re-billing the floor is here to prevent.
 function debrisBounce(a, b) {
-  // CS023 P4 SEAM. The single line `a.drifting = b.drifting = false;` drops in HERE, at the top, before
-  // the rail dispatch — two of the four "direction is changed" release conditions Paul named (contact
-  // with another satellite, contact with a UFO) both converge on this one helper, which is why they are
-  // one line rather than two (spec §4.7). Nothing is stubbed this phase: no body carries the field, no
-  // branch reads it, and the helper's behaviour is complete without it.
+  // CS023 P4 SEAM — NOW FILLED, and it is the one line P2 reserved this spot for. Two of the four
+  // "direction is changed" release conditions Paul named — contact with another satellite, and contact
+  // with a UFO — both converge on this one helper, which is why they are ONE line rather than two
+  // (spec §4.7). It sits at the very TOP, BEFORE the rail dispatch, on purpose: a drifting body that
+  // touches anything at all has had its direction changed, whether or not the contact went on to move it,
+  // so the FIXED/FIXED no-op below disarms too. Writing `drifting` onto a Saucer partner is an inert
+  // write — updateDebrisDrift() iterates game.debris and nothing else ever reads the field off a saucer.
+  // The other two interrupts (a player shot, a ship ram) need no code at all: both DESTROY the body, and
+  // destroyDebris()'s children are fresh DebrisSatellites with `drifting` absent (FLAG-CS023-c).
+  a.drifting = b.drifting = false;
   // CS023 P3: a Saucer partner (§4.6, UFO<->debris) is treated as FIXED here too, alongside a rail-borne
   // satellite — not because it is a rail, but because it has no `size`/mass entry (`DEBRIS_MASS[undefined]`
   // would NaN the FREE/FREE branch below) and, per Paul's resolution, is meant to act as an immovable body
@@ -6647,8 +6703,10 @@ function debrisBounce(a, b) {
     let ux = f.vx - r.vx, uy = f.vy - r.vy;         // relative velocity, in the RAIL BODY'S frame
     const un = ux * nx + uy * ny;
     if (un < 0) {                                   // approaching: reflect that component
-      ux -= (1 + DEBRIS_BOUNCE_RESTITUTION) * un * nx;
-      uy -= (1 + DEBRIS_BOUNCE_RESTITUTION) * un * ny;
+      // CS023 P4: the live knob, not the constant — DEBUG.debrisBounceRestitution seeds from
+      // DEBRIS_BOUNCE_RESTITUTION, so this is byte-identical until the slider is moved.
+      ux -= (1 + DEBUG.debrisBounceRestitution) * un * nx;
+      uy -= (1 + DEBUG.debrisBounceRestitution) * un * ny;
     }
     f.vx = ux + r.vx;
     f.vy = uy + r.vy;
@@ -6678,7 +6736,7 @@ function debrisBounce(a, b) {
     // restitution 1.0 the kinetic energy change works out to exactly zero, and below 1.0 to exactly
     // -(1 - e^2) * un^2 / (2 * invSum), i.e. strictly negative. Reduces to "swap the normal components"
     // when the two masses are equal.
-    const jn = -(1 + DEBRIS_BOUNCE_RESTITUTION) * un / invSum;
+    const jn = -(1 + DEBUG.debrisBounceRestitution) * un / invSum;   // CS023 P4: the live knob (see above)
     a.vx += (jn / ma) * nx; a.vy += (jn / ma) * ny;
     b.vx -= (jn / mb) * nx; b.vy -= (jn / mb) * ny;
   }
@@ -6699,6 +6757,118 @@ function debrisBounce(a, b) {
     a.x += nx * overlap * aShare;         a.y += ny * overlap * aShare;
     b.x -= nx * overlap * (1 - aShare);   b.y -= ny * overlap * (1 - aShare);
     wrap(a); wrap(b);
+  }
+}
+
+// CS023 P4 (spec §4.7, Correction C14): THE DRIFT'S SPEED CAP — the fastest tangential speed any
+// satellite reaches on a rail, i.e. max over rings of angVel x radius. 255.7 px/s at the shipped
+// constants (ring 4, the outer fast ring). The number is not a tuning guess: it is the game's own
+// existing maximum, which is the whole justification for capping there. Nothing the drift delivers is
+// moving faster than something the player has already had to read on a rail.
+//
+// IT MUST SCAN EVERY RING, AND "JUST USE THE OUTERMOST ONE" IS A LATENT BUG RATHER THAN A SHORTCUT.
+// angVel is NOT uniform — ORBIT_FAST_RING multiplies some rings by ORBIT_FAST_MULT — so the maximum does
+// not have to fall on the largest radius. At the shipped 1-based list [2, 4] it happens to (ring 4,
+// 255.7 px/s); at a list of [1, 2] it falls on RING 2 at 169.0 px/s while the OUTERMOST ring only reaches
+// 85.2. CS023 P1 made that list arbitrary-length, so this is a live hazard, not a hypothetical one.
+//
+// A HELPER RATHER THAN A CONSTANT, because it depends on three LIVE debug knobs — orbitAngVel,
+// orbitFastMult and orbitCount — so a playtest-gate retune of the orbit motion carries the cap with it
+// and the cap needs no knob of its own (spec §4.8). It reads NO game state and no level: the cap is a
+// property of the ARCHETYPE ("the fastest a satellite ever moves in orbit"), not of whichever rings the
+// ramp has laid down at this occurrence, so it is a pure function of the registry plus the geometry
+// constants and is callable before startGame(). At orbitAngVel 0 it returns 0, which correctly means
+// "nothing may close on the dock at all".
+//
+// CALLED ONCE PER FRAME from updateDebrisDrift() and passed down — never once per body, which would be
+// this scan times up to ~250 bodies for a value that cannot change within a frame.
+function maxOrbitSpeed() {
+  const count = orbitEffectiveCount(DEBUG.orbitCount);   // the ring count that actually fits, as the ramp reads it
+  const step  = orbitRadiusStepFor(count);
+  let best = 0;
+  for (let i = 0; i < count; i++) {
+    // ORBIT_FAST_RING holds HUMAN, 1-BASED ring numbers, so ring index i is named i + 1 — membership over
+    // the whole list, any length, empty included, which is the same test generateOrbitLayout() makes.
+    const angVel = DEBUG.orbitAngVel * (ORBIT_FAST_RING.indexOf(i + 1) !== -1 ? DEBUG.orbitFastMult : 1);
+    best = Math.max(best, angVel * (ORBIT_INNER_RADIUS + i * step));
+  }
+  return best;
+}
+
+// CS023 P4 (spec §1.5/§4.7, FORK-CS023-B/C/H): THE INWARD DRIFT PASS. One call per frame from update(),
+// placed after every entity's update(dt) and before the collision passes. In Paul's words: once satellites
+// get sparse they should be moved into an area of interest for the player, rather than leaving the player
+// hunting a large level for something to shoot.
+//
+// WHAT THIS IS NOT, because the pull toward touching the rails is strong and the spec forbids it: it acts
+// on FREE bodies only, it never reads or writes orbitCenter / orbitRadius / orbitAngle / orbitAngVel
+// except to EXCLUDE a rail-borne body from arming, it never touches game.orbitLayout beyond the one gate
+// below, and it never moves a body that is on a rail. The two radii are REFERENCE DISTANCES. Hunters do
+// not drift — they home; garbage canisters do not drift — they coalesce. Only game.debris is in scope.
+function updateDebrisDrift(dt) {
+  // FORK-CS023-H: ORBIT LEVELS ONLY for CS023. The trigger and the target ARE orbit geometry (814/676 px)
+  // and a field world is only 2560x1440, so on a field level the force would be on almost permanently and
+  // would quietly re-centre 42 of the 63 levels on the dock. Widening it is a one-line gate change and is
+  // playtest gate question 14. (In practice no armed piece can even reach a field level: the wave-clear
+  // condition is game.debris.length === 0, so the field is empty at every transition.) The dock half is
+  // belt-and-braces — game.orbitLayout is non-null only while a dock exists, but this pass reads game.dock
+  // three times and must never be the thing that throws.
+  if (!game.orbitLayout || !game.dock) return;
+
+  // ---- ARM ---------------------------------------------------------------------------------------
+  // FLAG-CS023-a: THE TRIGGER COUNTS ALL LIVE DEBRIS, ORBITING AND FREE. The shell has to be harvested
+  // before the outer stragglers are summoned, rather than the force fighting the level from its very first
+  // frame. Ring 4 sits at EXACTLY ORBIT_GRAVITY_TRIGGER_R, so a ring-4 satellite is never "closer than"
+  // the trigger and the shell can never block itself on its own outermost ring.
+  //   dist2 throughout, never raw subtraction: an 814 px shell around a dock anywhere within 814 px of an
+  // edge straddles the seam, which on an orbit level is the normal case rather than the edge case.
+  let blocked = false;
+  for (const d of game.debris) {
+    if (d.dead) continue;
+    if (dist2(d, game.dock) < ORBIT_GRAVITY_TRIGGER_R * ORBIT_GRAVITY_TRIGGER_R) { blocked = true; break; }
+  }
+  if (!blocked) {
+    for (const d of game.debris) {
+      // `d.orbitCenter` is the ONLY orbit state this whole mechanic reads, and it reads it to EXCLUDE a
+      // body, never to move one. A rail-borne satellite is never armed, at any distance.
+      if (d.dead || d.orbitCenter) continue;
+      if (dist2(d, game.dock) > ORBIT_GRAVITY_TARGET_R * ORBIT_GRAVITY_TARGET_R) d.drifting = true;
+    }
+  }
+
+  // ---- FORCE -------------------------------------------------------------------------------------
+  // DELIBERATELY OUTSIDE THE `blocked` GATE ABOVE. FLAG-CS023-b: arming is STICKY AND PER-PIECE — a piece
+  // armed on the triggering frame keeps its force until it arrives or is interrupted, even though the
+  // global condition goes false the moment the first piece crosses 814 px. That is Paul's "they will
+  // continue it until their direction is changed" made literal, and it is what stops the whole population
+  // oscillating on and off around the trigger radius. Gating the force here would let the first arrival
+  // freeze every other piece in mid-flight.
+  const cap = maxOrbitSpeed();   // ONCE per frame, never once per body — it cannot change within a frame
+  for (const d of game.debris) {
+    if (!d.drifting || d.dead) continue;
+    const [dx, dy] = shortDelta(d.x, d.y, game.dock.x, game.dock.y);   // toward the dock, wrap-aware
+    const dist = Math.hypot(dx, dy) || 0.0001;
+    if (dist <= ORBIT_GRAVITY_TARGET_R) {
+      // ARRIVED — released, AND IT KEEPS EVERYTHING IT ACCUMULATED. It does not stop, park, or join a
+      // ring: what arrives is a loose MOVING population coasting on through the shell region, which is the
+      // whole point (spec §1.5) — a level that decays rather than depletes. Because the cap held all the
+      // way in, it cannot arrive faster than a satellite on the outer fast ring.
+      d.drifting = false;
+      continue;
+    }
+    const ux = dx / dist, uy = dy / dist;
+    // AN ACCELERATION ADDED TO vx/vy, NEVER A VELOCITY OVERRIDE: the piece keeps its own drift and has the
+    // pull bent into it. Flat, no falloff, no damping (FLAG-CS023-e) — the cap is what bounds it.
+    d.vx += ux * DEBUG.orbitGravityAccel * dt;
+    d.vy += uy * DEBUG.orbitGravityAccel * dt;
+    // CAP THE INWARD RADIAL COMPONENT ONLY. Project the velocity onto the toward-dock unit vector and
+    // subtract just the excess along that axis; TANGENTIAL MOTION IS THE BODY'S OWN DRIFT AND IS
+    // UNTOUCHED, so a piece that was already travelling sideways keeps doing so and its TOTAL speed may
+    // legitimately sit above the cap. This bounds how fast the field closes in, not how the pieces move
+    // once they are here. A released or never-armed body is clamped by nothing except the standing
+    // DEBRIS_SPEED_CAP guard rail, which this can never approach.
+    const vr = d.vx * ux + d.vy * uy;
+    if (vr > cap) { const excess = vr - cap; d.vx -= excess * ux; d.vy -= excess * uy; }
   }
 }
 
@@ -7121,6 +7291,14 @@ function update(dt) {
   game.floaters.forEach(f => f.update(dt));
   game.caption.life -= dt; // CS011 P2: age Dan's on-screen caption (drawCaption gates on life > 0)
   if (game.dock) game.dock.update(dt);
+
+  // --- The inward drift (CS023 P4, spec §1.5/§4.7) ---
+  // ONE call, once per frame. AFTER every entity's update(dt) — so a rail-borne body is tested for the
+  // trigger at THIS frame's derived position rather than last frame's — and BEFORE every collision pass,
+  // so a piece the drift has just armed, accelerated or released is collided with in the state this
+  // frame's physics gave it. Inert on field levels (FORK-CS023-H) and inert on an orbit level until the
+  // shell's interior is empty.
+  updateDebrisDrift(dt);
 
   // --- Salvage pickup & chain physics ---
   // Magnet (F6): while active, pull free garbage within an extended radius toward the ship (a real

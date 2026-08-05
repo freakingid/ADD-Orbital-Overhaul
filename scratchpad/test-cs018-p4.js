@@ -593,13 +593,17 @@ function levelForCap(n) {
   // REPOINTED BY CS020 P1b: 33 -> 34 (dockComboGrace, under a new DELIVERY header). Same treatment as
   // every repoint above — the exact count, plus the id of the single entry that moved it.
   // REPOINTED BY CS021 P3: 34 -> 44 (the ten-entry ORBIT section, under a new ORBIT header).
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 44, "H: DEBUG_VARS holds 44 value entries as of CS021 P3 (P4 itself added none)");
+  // REPOINTED BY CS023 P4: 44 -> 46 (orbitGravityAccel + debrisBounceRestitution, APPENDED to the ORBIT
+  // section). Same treatment as every repoint above — the exact live count, plus the ids that moved it.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 46, "H: DEBUG_VARS holds 46 value entries as of CS023 P4 (P4 itself added none)");
   assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,
     "H: ...and the 33rd is CS019 P1's chainGuardCooldown, not some other silent addition");
-  eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 10,
-    "H: ...and the ten entries that moved it from 34 to 44 are CS021 P3's ORBIT knobs");
+  eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 11,
+    "H: ...ten of the entries that moved it from 34 to 44 are CS021 P3's ORBIT knobs, plus CS023 P4's orbitGravityAccel");
+  eq(Y.DEBUG_VARS.filter(v => v.id === "orbitGravityAccel" || v.id === "debrisBounceRestitution").length, 2,
+    "H: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs");
 })();
 
 // ================= (I) headless smoke =====================

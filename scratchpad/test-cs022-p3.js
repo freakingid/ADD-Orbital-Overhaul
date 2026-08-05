@@ -333,7 +333,10 @@ function shippedRadii(X) {
   assert(X.GAME_VERSION !== "1.0.0.21", "A: TRAP 1 — GAME_VERSION moved off the pre-CS022 baseline (P4 bumped it)");
 
   // --- TRAP 3: no new debug knob for the ramp; the registry stays at 44 ------------------------------
-  eq(X.DEBUG_ENTRIES.length, 44, "A: TRAP 3 — the debug registry is still 44 value entries");
+  // REPOINTED BY CS023 P4: the registry grew to 46 (orbitGravityAccel, debrisBounceRestitution). What
+  // THIS phase's trap was guarding — that CS022 P3's ramp added no knob of its own — is asserted directly
+  // below and is unchanged; the count tracks the live registry or it goes stale.
+  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 3 — the debug registry is 46 value entries after CS023 P4");
   assert(!X.DEBUG_ENTRIES.some(e => /ramp|activeRing|orbitRings/i.test(e.id)),
     "A: TRAP 3 — no ramp knob was added (the ramp is derived, not dialled)");
   // orbitDensity4's `def` follows the shipped const automatically — the registry convention, verified.
