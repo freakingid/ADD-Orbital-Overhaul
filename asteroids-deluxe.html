@@ -5807,11 +5807,17 @@ function destroyHunter(h, awardScore = true) {
 // on the saucer's own velocity (v3.6 P3, Source 1 — every UFO, large or small). The single choke
 // point for both saucer-kill sites (player bullet, shield body contact), which were previously
 // copy-pasted.
-function destroySaucer(s) {
+// CS023 P3 (C13 / FORK-CS023-E/F): `awardScore` gates addScore + BOTH achievement counters and NOTHING
+// else — dropPowerup stays unconditional, mirroring destroyDebris/destroyHunter's existing contract
+// exactly (a satellite-killed UFO still drops its powerup). The two pre-existing callers pass nothing,
+// so they default to true and are byte-unchanged.
+function destroySaucer(s, awardScore = true) {
   s.dead = true;
-  addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
-  Achievements.lifetime.saucerKills++;                 // Saucer Hunter (F9)
-  if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
+  if (awardScore) {
+    addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
+    Achievements.lifetime.saucerKills++;                 // Saucer Hunter (F9)
+    if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
+  }
   boom(s.x, s.y, 2, COLOR.saucer);
   AudioSys.saucer(false);
   dropPowerup(s.x, s.y, s.vx, s.vy);
@@ -6620,13 +6626,22 @@ function debrisBounce(a, b) {
   // with another satellite, contact with a UFO) both converge on this one helper, which is why they are
   // one line rather than two (spec §4.7). Nothing is stubbed this phase: no body carries the field, no
   // branch reads it, and the helper's behaviour is complete without it.
-  const aRail = !!a.orbitCenter, bRail = !!b.orbitCenter;
-  if (aRail && bRail) return;                       // C11 — unreachable at the shipped geometry
+  // CS023 P3: a Saucer partner (§4.6, UFO<->debris) is treated as FIXED here too, alongside a rail-borne
+  // satellite — not because it is a rail, but because it has no `size`/mass entry (`DEBRIS_MASS[undefined]`
+  // would NaN the FREE/FREE branch below) and, per Paul's resolution, is meant to act as an immovable body
+  // in this exchange: it is already `dead` by the time this is called (destroySaucer(s, false) runs first),
+  // so only the satellite's resulting motion is real. This is what makes "a rail-borne satellite is
+  // untouched and a free one is knocked off course" (spec §4.6) fall out of the SAME two branches below —
+  // rail-borne satellite + saucer takes the FIXED/FIXED no-op, free satellite + saucer takes the
+  // FREE/FIXED branch with the satellite alone in the `f` role — with no new branch and no saucer mass.
+  const aFixed = !!a.orbitCenter || a instanceof Saucer, bFixed = !!b.orbitCenter || b instanceof Saucer;
+  if (aFixed && bFixed) return;                      // C11 (rail/rail) or a rail-borne satellite vs a saucer
 
-  if (aRail !== bRail) {
-    // FREE vs RAIL-BORNE. shieldBounce's exact shape, with `f` in the ship's role and `r` in the
-    // hazard's. Everything below writes to `f`; `r` is never read for anything but its own state.
-    const f = aRail ? b : a, r = aRail ? a : b;
+  if (aFixed !== bFixed) {
+    // FREE vs FIXED (rail-borne satellite OR a saucer). shieldBounce's exact shape, with `f` in the
+    // ship's role and `r` in the hazard's. Everything below writes to `f`; `r` is never read for
+    // anything but its own state.
+    const f = aFixed ? b : a, r = aFixed ? a : b;
     const ang = angleTo(r, f);                      // outward contact normal, rail -> free (wrap-aware)
     const nx = Math.cos(ang), ny = Math.sin(ang);
     let ux = f.vx - r.vx, uy = f.vy - r.vy;         // relative velocity, in the RAIL BODY'S frame
@@ -7498,6 +7513,13 @@ function update(dt) {
           // Close Shave (F9): survived a Hunter collision with under 10 HP left (still alive).
           if (applied && h instanceof HunterSatellite && !game.ship.dead && game.ship.hp < 10)
             game.stats.closeShave = true;
+          // CS023 P3 (§1.1/§4.3, FORK-CS023-E): the contact is mutual — the hazard dies too. `false` =
+          // no score, no achievement counters (the existing awardScore contract — C13 — so garbage/
+          // splits/powerups still drop). NOT gated on `applied` (FLAG-CS023-k): an auto-shield save
+          // returns false but the collision still physically happened. damageShip runs FIRST because it
+          // reads h.x/h.y for the knockback vector. The i-frame (this whole block's `invuln <= 0` gate)
+          // is the rate limiter, capping this to once per HIT_STUN_DURATION.
+          if (h instanceof HunterSatellite) destroyHunter(h, false); else destroyDebris(h, false);
         }
       }
     }
@@ -7509,7 +7531,11 @@ function update(dt) {
         if (game.ship.shieldOn) {
           game.stats.deflects++;                            // Shield Surfer (F9): saucer rammed into the shield
           destroySaucer(s);
-        } else damageShip(s.damage, s.x, s.y);
+        } else {
+          damageShip(s.damage, s.x, s.y);
+          // CS023 P3: mutual damage, same rule as the hazards above — no score, drops unchanged.
+          destroySaucer(s, false);
+        }
       }
     }
   }
@@ -7572,6 +7598,23 @@ function update(dt) {
       if (b.dead) continue;
       const r = a.radius + b.radius;
       if (dist2(a, b) < r * r) debrisBounce(a, b);
+    }
+  }
+
+  // --- Collisions: UFO vs debris (CS023 P3, spec §1.1/§4.6) ---
+  // A saucer that flies into a satellite destroys the saucer, no score (C13/FORK-CS023-E) — and the
+  // satellite bounces off it, disarmed, if it was free; a rail-borne satellite is untouched, exactly the
+  // same asymmetry the pass above already gives two satellites. destroySaucer(s, false) runs FIRST — the
+  // saucer being dead by then does not matter, debrisBounce only reads its x/y/vx/vy this frame — then
+  // debrisBounce(a, s) treats the saucer as a FIXED body (see the comment at debrisBounce's own dispatch):
+  // it has no size/mass, and per Paul's resolution it acts as an immovable wall the satellite bounces off,
+  // not as a participant in a mass-weighted exchange. `break` out of the inner loop: one saucer dies once.
+  for (const s of game.saucers) {
+    if (s.dead) continue;
+    for (const a of game.debris) {
+      if (a.dead) continue;
+      const r = s.radius + a.radius;
+      if (dist2(s, a) < r * r) { destroySaucer(s, false); debrisBounce(a, s); break; }
     }
   }
 

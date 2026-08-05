@@ -537,8 +537,16 @@ function orbitTotalAt(A, level) {
     const thrH = H.ramp(H.SAUCER_SMALL_CHANCE_FLOOR, H.SAUCER_SMALL_CHANCE_CEIL, w);
     const thrW = W.ramp(W.SAUCER_SMALL_CHANCE_FLOOR, W.SAUCER_SMALL_CHANCE_CEIL, w);
     assert(thrH === thrW, `F: level ${w}: small-saucer chance identical to the pre-P3 build (${thrH} vs ${thrW})`);
+    // REPOINTED BY CS023 P3: this probe is about the small/big SPAWN DECISION only, but P3 added a
+    // UFO<->debris collision pass (spec §4.6) that runs inside this same update(0) call — with
+    // Math.random() PINNED to a constant, the freshly-spawned saucer's (fixed) entry position can
+    // coincidentally overlap a leftover debris/Hunter satellite from `atWave()`'s real spawn, and P3's
+    // pass would destroy it and filter it out of game.saucers before this function ever reads it,
+    // reporting null instead of true/false. Clear debris/hunters too, so the probe measures ONLY the
+    // spawn decision, undisturbed by physics this section was never testing.
     const probe = (A, p) => {
       A.game.saucers.length = 0; A.game.saucerTimer = -1;
+      A.game.debris.length = 0; A.game.hunters.length = 0;
       A.game.state = "playing"; A.game.paused = false;
       withPinnedRandom(p, () => A.update(0));
       return A.game.saucers.length === 1 ? A.game.saucers[0].small : null;

@@ -851,7 +851,10 @@ const WANT_14 = {   // level: [ring, field, total]
   assert(!/\bdrifting\b/.test(codeOnly), "I: TRAP — no `drifting` field yet (P4)");
   assert(!/ORBIT_GRAVITY/.test(codeOnly), "I: TRAP — no ORBIT_GRAVITY_* constants yet (P4)");
   assert(!/maxOrbitSpeed/.test(codeOnly), "I: TRAP — no maxOrbitSpeed helper yet (P4)");
-  assert(!/function destroySaucer\(s, awardScore/.test(codeOnly), "I: TRAP — destroySaucer has not gained its parameter yet (P3)");
+  // REPOINTED BY CS023 P3: destroySaucer's awardScore parameter has now landed, exactly as this trap
+  // always named it would — flipped to its positive successor rather than deleted.
+  assert(/function destroySaucer\(s, awardScore = true\) \{/.test(codeOnly),
+    "I: REPOINTED (P3 landed) — destroySaucer now takes awardScore = true");
 
   // TRAP 4 — FIELD LEVELS COME OUT BYTE-IDENTICAL. Pinned BEHAVIOURALLY against the pre-P1 build under
   // one shared seed, not by eye: eight real field waves, every satellite's position, velocity, size and

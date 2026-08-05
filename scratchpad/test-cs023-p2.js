@@ -261,9 +261,12 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     "A: no naive Math.hypot/Math.atan2 over raw coordinate differences anywhere in the helper");
 
   // --- the rail gate is `orbitCenter`, the SAME field the motion mode and shieldBounce already use
-  assert(/const aRail = !!a\.orbitCenter, bRail = !!b\.orbitCenter;/.test(fnBody),
-    "A: rail state is read off orbitCenter — one concept, not two (the CS021 P1b rule)");
-  assert(/if \(aRail && bRail\) return;/.test(fnBody), "A: rail/rail is an explicit early no-op (C11)");
+  // REPOINTED BY CS023 P3: aRail/bRail -> aFixed/bFixed (P3 also treats a Saucer partner as fixed, to
+  // close the saucer-mass gap this file's own section (H) flagged), but the underlying orbitCenter read
+  // and the rail/rail no-op are unchanged in substance — only the variable names moved.
+  assert(/const aFixed = !!a\.orbitCenter \|\| a instanceof Saucer, bFixed = !!b\.orbitCenter \|\| b instanceof Saucer;/.test(fnBody),
+    "A: rail state is STILL read off orbitCenter — one concept, not two (the CS021 P1b rule) — now OR'd with a Saucer check (P3)");
+  assert(/if \(aFixed && bFixed\) return;/.test(fnBody), "A: rail/rail (or rail/saucer) is still an explicit early no-op (C11)");
   assert(/if \(a\.orbitCenter\)/.test(bodyOf(scriptSrc, "  update(dt) {\n    // CS021 P1: ORBIT MOTION MODE")) ||
          /this\.orbitCenter/.test(codeOnly), "A: ...and it is the same field DebrisSatellite.update() gates its motion mode on");
 
@@ -284,8 +287,14 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     assert(iDebrisUpdate > 0 && iDebrisUpdate < iPass, "A: the pass runs AFTER every debris has had its update(dt) (§4.5)");
     assert(iChainScan > 0 && iChainScan < iPass, "A: the pass runs after the hazards-vs-chain scan");
     assert(iPass < iCleanup, "A: ...and before the end-of-frame dead-filter");
-    // Nothing but comments between the pass and Cleanup — "immediately before" is the spec's word.
-    const between = codeOnly.slice(codeOnly.indexOf("\n", iPass), iCleanup);
+    // REPOINTED BY CS023 P3: "immediately before Cleanup" is no longer true by itself — P3 inserted its
+    // own UFO<->debris pass between this one and Cleanup (spec §4.6). What's still true, and what this
+    // now checks, is that NOTHING but this loop's own closing braces sits between P2's pass and WHICHEVER
+    // comes next — P3's pass if it's present, Cleanup otherwise — so a later phase inserting its own pass
+    // here in turn will need the identical repoint, not a redesign.
+    const iNext = codeOnly.indexOf("for (const s of game.saucers) {\n    if (s.dead) continue;\n    for (const a of game.debris) {", iPass);
+    const boundary = iNext > 0 ? iNext : iCleanup;
+    const between = codeOnly.slice(codeOnly.indexOf("\n", iPass), boundary);
     assert(between.replace(/[}\s]/g, "") === "", "A: ...IMMEDIATELY before it — only the loop's closing braces in between");
   }
   // Both sides' dead flags are checked explicitly, because the pass runs BEFORE the filter.
@@ -298,19 +307,30 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     assert(!fnBody.includes(forbidden), `A: TRAP 3 — debrisBounce contains no reference to ${forbidden}`);
   }
   {
-    // ...and neither does the pass. Sliced from the pass's own banner to its closing brace.
+    // ...and neither does the pass. Sliced from the pass's own banner to ITS OWN closing brace — the
+    // outer loop's "\n  }\n" (2-space indent) immediately after the inner loop starts, NOT the next
+    // known landmark further down: REPOINTED BY CS023 P3, which inserts its own UFO<->debris pass right
+    // after this one and before Cleanup, so "const hadSaucer" is no longer adjacent to this pass's end.
     const iBanner = codeOnly.indexOf("  for (let i = 0; i < game.debris.length; i++) {");
-    const passSrc = codeOnly.slice(iBanner, codeOnly.indexOf("const hadSaucer", iBanner));
+    const iInner = codeOnly.indexOf("for (let j = i + 1", iBanner);
+    const passSrc = codeOnly.slice(iBanner, codeOnly.indexOf("\n  }\n", iInner));
     for (const forbidden of ["damageShip", "destroySaucer", "destroyHunter", "destroyDebris",
                              "game.ship", "game.saucers", "game.hunters", "game.garbage", "game.chain"]) {
       assert(!passSrc.includes(forbidden), `A: TRAP 3 — the pass contains no reference to ${forbidden}`);
     }
   }
-  // The hazards-vs-ship block is byte-unchanged: P3 owns the mutual-damage rule, not this phase.
+  // REPOINTED BY CS023 P3: this block is NO LONGER byte-unchanged from pre-P2 HEAD — P3, exactly the
+  // very next phase this comment always named, added the mutual-damage kill calls here. The positive-
+  // successor check: the block now carries P3's three kill call sites. (P2's OWN diff, already landed,
+  // never touched this block — that historical fact doesn't need re-proving against a moving HEAD.)
   {
     const sliceOf = src => { const i = src.indexOf("  // --- Collisions: hazards vs ship ---");
                              return src.slice(i, src.indexOf("  // --- Hazards vs tow chain", i)); };
-    eq(sliceOf(scriptSrc), sliceOf(preSrc), "A: TRAP 3 — the hazards-vs-ship block is BYTE-UNCHANGED (P3 owns it)");
+    const block = sliceOf(scriptSrc);
+    assert(/if \(h instanceof HunterSatellite\) destroyHunter\(h, false\); else destroyDebris\(h, false\);/.test(block),
+      "A: TRAP 3 REPOINTED — P3 landed: the hazards-vs-ship block now destroys the hazard too, awardScore=false");
+    assert(/destroySaucer\(s, false\);/.test(block),
+      "A: TRAP 3 REPOINTED — ...and the saucer sub-loop does too");
   }
 
   // --- TRAP 1 / TRAP 4
@@ -321,7 +341,10 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   assert(!/\bdrifting\b/.test(codeOnly), "A: TRAP — the P4 `drifting` field is not stubbed (spec: leave the seam, not a stub)");
   assert(!/ORBIT_GRAVITY/.test(codeOnly), "A: TRAP — no ORBIT_GRAVITY_* constants yet (P4)");
   assert(!/maxOrbitSpeed/.test(codeOnly), "A: TRAP — no maxOrbitSpeed helper yet (P4)");
-  assert(!/function destroySaucer\(s, awardScore/.test(codeOnly), "A: TRAP — destroySaucer has not gained its parameter yet (P3)");
+  // REPOINTED BY CS023 P3: destroySaucer's awardScore parameter has now landed, exactly as this trap
+  // always named it would — flipped to its positive successor rather than deleted.
+  assert(/function destroySaucer\(s, awardScore = true\) \{/.test(codeOnly),
+    "A: TRAP REPOINTED — destroySaucer now takes awardScore = true (P3 landed)");
   // The P4 SEAM is a documented comment, not code — assert both halves of that.
   assert(/CS023 P4 SEAM/.test(scriptSrc), "A: the P4 seam is named in a comment at the top of debrisBounce");
   assert(scriptSrc.indexOf("CS023 P4 SEAM") > scriptSrc.indexOf("function debrisBounce(a, b) {"),

@@ -138,7 +138,16 @@ for (let i = 0; i < 10; i++) {
 assert(game.ship.invuln > 0, "b: still stunned after 10 frames (<1s window)");
 // once the stun window clears, damage lands again
 game.ship.invuln = 0;
-rockB.x = game.ship.x + 6; rockB.y = game.ship.y; rockB.vx = 0; rockB.vy = 0;
+// REPOINTED BY CS023 P3: an unshielded ram now destroys the hazard on first contact (mutual damage,
+// spec §1.1/§4.3), so `rockB` was already split into 3 mediums (born AT the contact point, spec F3) and
+// removed from game.debris on frame 1 — repositioning the dead, detached `rockB` reference no longer
+// overlaps anything real. A FRESH hazard is what this sub-test actually needs: it is testing the ship's
+// hit-stun timing, not one hazard's persistence across two non-consecutive hits. Clear the field first —
+// otherwise the three leftover mediums (still parked at the old contact point) would overlap the ship
+// too, and being earlier in game.debris than the fresh large one, the FIRST (and only, in one HIT_STUN_
+// DURATION) damageShip application would land DMG_MEDIUM instead of the DMG_LARGE this assertion checks.
+game.debris.length = 0;
+place(new DebrisSatellite(0, 0, 3, 1), game.debris);
 update(DT);
 assert(game.ship.hp === hpAfterFirst - DMG_LARGE, "b: damage resumes after stun clears");
 

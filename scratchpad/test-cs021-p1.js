@@ -587,6 +587,12 @@ function expectedOrbitSpawn(X, level) {
   // Angle advance and derived position, over 60 real frames.
   const before = X.game.debris.map(d => ({ a: d.orbitAngle, spin: d.angle, r: d.orbitRadius, w: d.orbitAngVel }));
   const FRAMES = 60, DT = 1 / 60;
+  // REPOINTED BY CS023 P3: this section measures orbit motion, not ram outcomes, but a field-component
+  // satellite drifting into the stationary ship over a full second of real play can now (P3's mutual
+  // damage) destroy it mid-loop, reordering game.debris and breaking this section's index-aligned
+  // before/after comparison — a scenario this section was never about. Pin the ship's i-frame for the
+  // whole measurement so the hazards-vs-ship block never fires here; it decays at most DT*FRAMES = 1s.
+  X.game.ship.invuln = 1e6;
   for (let i = 0; i < FRAMES; i++) X.update(DT);
   X.game.debris.forEach((d, i) => {
     if (i >= before.length) return;
