@@ -22,6 +22,29 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
 
 - **Read `STATUS.md` first**, every session, before any code. Update it at the
   **end** of every session: what changed, and any architectural decision made.
+- **`STATUS.md` is a rolling window, not an ever-growing log — keep roughly the
+  last 3 changesets live; prune the rest into `archive/STATUS-HISTORY.md`.**
+  Every session that closes out a changeset (the version-bump/doc-sweep phase)
+  should check `STATUS.md`'s size and, if the oldest changeset it still covers
+  is more than ~3 rounds behind the one just shipped, move that oldest
+  changeset's entries out of every section (`Working / verified`, `Known
+  issues`, `Balance notes`, `Next up`, `Playtest asks`) and append them,
+  **newest-first, each entry its own paragraph**, to
+  `archive/STATUS-HISTORY.md` under that section's own heading there. Do not
+  summarize or shorten while moving — a straight relocation, so the archive
+  stays a faithful record. `archive/STATUS-HISTORY.md` is **never** attached
+  to or read during a normal session (same rule as `GDD-VERSION-HISTORY.md`
+  and `archive/`'s planning docs) — pull it in only if a session genuinely
+  needs pre-archive history.
+- **Never let two changeset entries land on the same physical line.** Every
+  `STATUS.md` entry — the top rolling recap, and every bullet in every
+  section — gets its own paragraph break (`\n\n`) before the next one is
+  prepended or appended. If you're editing `STATUS.md` with a shell append
+  (`>>`, `echo`, `cat <<EOF`) rather than a normal file edit, double-check the
+  written entry actually starts on its own new paragraph — a missing trailing
+  newline here is what let years of entries fuse into a single 160 KB line
+  in mid-2026, which is what necessitated the archive split in the first
+  place. Don't repeat it.
 - **Commit per phase, on `main`.** Unlike some of Paul's other projects, this
   one *does* want you to commit. Each phase (see `IMPLEMENTATION-PHASES.md`)
   ends as its own commit — code and doc updates together — so a regression can
@@ -67,7 +90,11 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   phases, each with a ready-to-paste prompt, required testing, and a
   suggested commit message. Same `CS###` naming convention as above.
 - `CLAUDE.md` (this file) — non-negotiables, conventions, code map.
-- `STATUS.md` — build **reality** + decisions. You maintain it.
+- `STATUS.md` — build **reality** + decisions, for roughly the last 3
+  changesets. You maintain it. Older entries live in
+  `archive/STATUS-HISTORY.md` (same not-session-context rule as
+  `GDD-VERSION-HISTORY.md`) — see the size-management rule under
+  Non-negotiables.
 
 ## Tech + test conventions
 
