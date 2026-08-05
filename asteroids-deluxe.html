@@ -198,6 +198,26 @@ const DEBRIS_RADII  = { 3: 46, 2: 26, 1: 13 };
 const DEBRIS_SCORE  = { 3: 20, 2: 50, 1: 100 };
 const DEBRIS_GARBAGE = 4;       // canisters emitted at EVERY tier's destruction (F3). PLAYTEST KNOB:
                                  // 3->4 in v3.4 P1, compensating field supply for the Hunter-side garbage cut (FORK-1(b)).
+// CS023 P2 (spec §4.8, FORK-CS023-D) — SATELLITE-vs-SATELLITE COLLISION. Three numbers, all of them
+// read by debrisBounce() and by nothing else in the file.
+// MASS IS CONSERVED THROUGH THE 3-WAY SPLIT THE GAME ALREADY PERFORMS, which is where 9/3/1 comes from
+// rather than from a fit: a large is 9 and becomes three mediums of 3; a medium is 3 and becomes three
+// smalls of 1. Shattering a body therefore leaves the total mass on the board unchanged, and the 9:1
+// ratio is what makes a small RICOCHET off a large instead of shoving it. Keyed by `size` on the same
+// 3/2/1 tier convention as DEBRIS_RADII / DEBRIS_SCORE / DEBRIS_DAMAGE.
+const DEBRIS_MASS = { 3: 9, 2: 3, 1: 1 };
+// Restitution of a satellite-vs-satellite bounce. 1.0 mirrors SHIELD_BOUNCE_RESTITUTION and means the
+// same thing — the pair gets back exactly the closing speed it brought, so kinetic energy is conserved
+// along the contact normal. PLAYTEST KNOB: lower it if the shell reads like a pinball table. (CS023 P4
+// exposes it as a live debug slider; deliberately NOT a knob yet.)
+const DEBRIS_BOUNCE_RESTITUTION = 1.0;
+// The separation floor, px/s (FLAG-CS023-f) — SHIELD_BOUNCE_MIN's reason exactly, scaled to satellite
+// speeds. Reflection alone leaves two touching STATIONARY bodies touching, so without a floor a contact
+// re-bills every frame; and CS023 creates that case on purpose, because destroyDebris() births its three
+// children at the PARENT'S OWN POSITION and a shattered rail-borne parent hands all three the SAME
+// tangent, which would otherwise leave a permanently coincident stack. 40 rather than the ship's 120
+// because satellites move at 18-267 px/s where the ship reaches 520.
+const DEBRIS_BOUNCE_MIN = 40;
 
 const SAUCER_SCORE = { big: 200, small: 1000 };
 
@@ -6549,6 +6569,124 @@ function shieldBounce(obj) {
   AudioSys.shieldPing();
 }
 
+// CS023 P2 (spec §1.2/§4.4, FORK-CS023-D): shieldBounce's SIBLING, for two SATELLITES rather than a
+// satellite and the ship. Same three-step shape, the same three load-bearing properties, and the same
+// rail asymmetry — a body whose position is re-derived from its orbit angle every frame cannot be
+// pushed, so the rail stays authoritative and the FREE body is the only thing that moves.
+//
+// THREE CASES, dispatched on the SAME `orbitCenter` field the motion mode and shieldBounce already gate
+// on. One concept, not two: anything that becomes rail-borne gets the right behaviour for free.
+//   free / free  — a mass-weighted elastic exchange along the contact normal (DEBRIS_MASS, restitution
+//                  DEBRIS_BOUNCE_RESTITUTION). Momentum is conserved exactly; at restitution 1.0 so is
+//                  kinetic energy, until the floor pays for the contact it exists to end.
+//   free / rail  — shieldBounce's EXACT shape with the free body in the ship's role: reflect its
+//                  approaching component IN THE RAIL BODY'S FRAME, apply the floor, push it out of
+//                  overlap, wrap() it. The rail body is left COMPLETELY untouched.
+//   rail / rail  — a NO-OP. Correction C11: rings are ORBIT_RADIUS_STEP (138 px) apart and a large
+//                  satellite is 92 px across, so two rail-borne bodies clear each other by 46 px and
+//                  cannot touch; same-ring bodies hold a fixed angular spacing at a shared angVel. The
+//                  branch is only reachable under a debug orbitCount / orbitAngVel change. Specced and
+//                  asserted, never tuned against — and CS023 keeps it true, because P4's drift moves
+//                  only FREE bodies and never re-radiuses a rail.
+//
+// THE THREE PROPERTIES CARRIED OVER FROM shieldBounce VERBATIM, and why each is load-bearing here too:
+//   1. ONLY THE APPROACHING COMPONENT IS REFLECTED. A body already separating is never yanked
+//      backwards — without that, a pair that has just been resolved is re-reflected on the next frame
+//      and oscillates in contact instead of leaving.
+//   2. THE SEPARATION FLOOR IS APPLIED LAST AND IS NOT OPTIONAL. Reflection alone leaves two touching
+//      STATIONARY bodies touching, which is exactly the case this exists to fix — see DEBRIS_BOUNCE_MIN
+//      for the case CS023 creates on purpose.
+//   3. EVERY MEASUREMENT IS WRAP-AWARE — angleTo for the normal, dist2 for the distance, wrap() after
+//      the push. On an orbit level the rings straddle the seam routinely (an 814 px outer ring around a
+//      dock anywhere within 814 px of an edge of a 3840x2160 torus is over one), so naive subtraction is
+//      not a theoretical risk here. A pair sitting on exactly the same point yields atan2(0,0) === 0,
+//      i.e. a defined direction rather than a NaN — shieldBounce's own documented property.
+//
+// TWO THINGS shieldBounce NEVER HAS TO ANSWER AND THIS DOES. Both are DERIVED from the mass-weighted
+// rule rather than chosen, because with two movable bodies shieldBounce's own form is not even defined:
+//   * THE FLOOR IS ON THE RELATIVE SEPARATION SPEED in the free/free case, applied as equal-and-opposite
+//     impulses, so momentum survives the floor as well as the reflection. shieldBounce puts its floor on
+//     the SHIP's world-frame outward component because its partner is immovable by construction — and
+//     the free/RAIL branch below keeps that world-frame form byte-for-byte, because there the partner
+//     genuinely is immovable. Same situation, same arithmetic; different situation, derived arithmetic.
+//   * THE OVERLAP PUSH IS SPLIT BY MASS, heavier moving less — the positional statement of the same 9:1
+//     ratio. shieldBounce PLACES the ship absolutely at contact distance because the hazard cannot move,
+//     and the free/RAIL branch does exactly that, unchanged. Without a positional push a deep overlap
+//     clears at DEBRIS_BOUNCE_MIN x dt = 0.67 px per frame and the pair re-bills for seconds, which is
+//     the very re-billing the floor is here to prevent.
+function debrisBounce(a, b) {
+  // CS023 P4 SEAM. The single line `a.drifting = b.drifting = false;` drops in HERE, at the top, before
+  // the rail dispatch — two of the four "direction is changed" release conditions Paul named (contact
+  // with another satellite, contact with a UFO) both converge on this one helper, which is why they are
+  // one line rather than two (spec §4.7). Nothing is stubbed this phase: no body carries the field, no
+  // branch reads it, and the helper's behaviour is complete without it.
+  const aRail = !!a.orbitCenter, bRail = !!b.orbitCenter;
+  if (aRail && bRail) return;                       // C11 — unreachable at the shipped geometry
+
+  if (aRail !== bRail) {
+    // FREE vs RAIL-BORNE. shieldBounce's exact shape, with `f` in the ship's role and `r` in the
+    // hazard's. Everything below writes to `f`; `r` is never read for anything but its own state.
+    const f = aRail ? b : a, r = aRail ? a : b;
+    const ang = angleTo(r, f);                      // outward contact normal, rail -> free (wrap-aware)
+    const nx = Math.cos(ang), ny = Math.sin(ang);
+    let ux = f.vx - r.vx, uy = f.vy - r.vy;         // relative velocity, in the RAIL BODY'S frame
+    const un = ux * nx + uy * ny;
+    if (un < 0) {                                   // approaching: reflect that component
+      ux -= (1 + DEBRIS_BOUNCE_RESTITUTION) * un * nx;
+      uy -= (1 + DEBRIS_BOUNCE_RESTITUTION) * un * ny;
+    }
+    f.vx = ux + r.vx;
+    f.vy = uy + r.vy;
+    const outward = f.vx * nx + f.vy * ny;          // the floor, last and not optional
+    if (outward < DEBRIS_BOUNCE_MIN) {
+      f.vx += (DEBRIS_BOUNCE_MIN - outward) * nx;
+      f.vy += (DEBRIS_BOUNCE_MIN - outward) * ny;
+    }
+    // Push the FREE body out of overlap. The 2 px is shieldBounce's own separation epsilon, carried over
+    // verbatim: the pass tests against radius + radius, so landing at + 2 guarantees the next frame's
+    // test fails rather than re-presenting the identical contact.
+    f.x = r.x + nx * (r.radius + f.radius + 2);
+    f.y = r.y + ny * (r.radius + f.radius + 2);
+    wrap(f);
+    return;
+  }
+
+  // FREE vs FREE — the mass-weighted elastic exchange. `n` points b -> a, i.e. outward for `a`, which is
+  // shieldBounce's convention with `a` in the ship's role and `b` in the hazard's.
+  const ma = DEBRIS_MASS[a.size], mb = DEBRIS_MASS[b.size];
+  const invSum = 1 / ma + 1 / mb;
+  const ang = angleTo(b, a);
+  const nx = Math.cos(ang), ny = Math.sin(ang);
+  const un = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;   // relative normal speed; negative is approaching
+  if (un < 0) {
+    // The standard normal impulse. Equal and opposite, so momentum is conserved for any mass pair; at
+    // restitution 1.0 the kinetic energy change works out to exactly zero, and below 1.0 to exactly
+    // -(1 - e^2) * un^2 / (2 * invSum), i.e. strictly negative. Reduces to "swap the normal components"
+    // when the two masses are equal.
+    const jn = -(1 + DEBRIS_BOUNCE_RESTITUTION) * un / invSum;
+    a.vx += (jn / ma) * nx; a.vy += (jn / ma) * ny;
+    b.vx -= (jn / mb) * nx; b.vy -= (jn / mb) * ny;
+  }
+  // The floor, last and not optional — on the RELATIVE separation speed, as another equal-and-opposite
+  // impulse pair, so it cannot break momentum the way a per-body world-frame version would.
+  const sep = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+  if (sep < DEBRIS_BOUNCE_MIN) {
+    const jf = (DEBRIS_BOUNCE_MIN - sep) / invSum;
+    a.vx += (jf / ma) * nx; a.vy += (jf / ma) * ny;
+    b.vx -= (jf / mb) * nx; b.vy -= (jf / mb) * ny;
+  }
+  // Push out of overlap, the overlap split by mass so the heavier body moves less. Same 2 px epsilon and
+  // the same reason as the rail branch above; dist2 is wrap-aware, so a pair straddling the seam is
+  // separated along the short way round rather than teleported across the world.
+  const overlap = (a.radius + b.radius + 2) - Math.sqrt(dist2(a, b));
+  if (overlap > 0) {
+    const aShare = mb / (ma + mb);
+    a.x += nx * overlap * aShare;         a.y += ny * overlap * aShare;
+    b.x -= nx * overlap * (1 - aShare);   b.y -= ny * overlap * (1 - aShare);
+    wrap(a); wrap(b);
+  }
+}
+
 // ---------- Tow chain physics ----------
 // Verlet nodes with position-based distance constraints, wrap-aware.
 // The ship is the (mostly) kinematic head; nodes trail serpentine behind.
@@ -7408,6 +7546,32 @@ function update(dt) {
       if (!a.dead && dist2(b, a) < a.radius * a.radius) {
         b.dead = true; destroyDebris(a, false); break;
       }
+    }
+  }
+
+  // --- Collisions: debris vs debris (CS023 P2, spec §1.2/§4.5) ---
+  // Satellites stop passing through each other. Deliberately the SAME pair-walk idiom as
+  // coalesceGarbage's — i over the array, j from i + 1 — so every unordered pair is visited exactly once
+  // and the frame-budget instrument already knows how to count it. This is the build's SECOND O(n^2)
+  // pass, and it is affordable only because CS023 P1 cut the shell ~5x (FLAG-CS023-g).
+  //   It iterates the LIVE array rather than a spread copy, unlike the hazards-vs-ship and
+  // hazards-vs-chain scans above: nothing here creates or destroys an entity, so there is no
+  // children-pushed-mid-iteration hazard for a copy to protect against, and a copy would only cost a
+  // per-frame allocation.
+  //   PLACEMENT IS LOAD-BEARING IN BOTH DIRECTIONS. It runs AFTER every debris has had its update(dt),
+  // so a rail-borne body is tested at THIS frame's derived position rather than last frame's, and after
+  // every pass that can mark a body dead; and it runs BEFORE the end-of-frame dead-filter, so `dead` is
+  // checked explicitly on both sides.
+  //   GARBAGE CANISTERS DO NOT BOUNCE. coalesceGarbage and the whole Garbage system are a different
+  // mechanic and are untouched (spec §7) — canisters coalesce, which is their own thing.
+  for (let i = 0; i < game.debris.length; i++) {
+    const a = game.debris[i];
+    if (a.dead) continue;
+    for (let j = i + 1; j < game.debris.length; j++) {
+      const b = game.debris[j];
+      if (b.dead) continue;
+      const r = a.radius + b.radius;
+      if (dist2(a, b) < r * r) debrisBounce(a, b);
     }
   }
 

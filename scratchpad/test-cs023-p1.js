@@ -838,11 +838,19 @@ const WANT_14 = {   // level: [ring, field, total]
   }
 
   // TRAP 2 — no collision pass, no bounce helper, no drift field. Those are P2/P3/P4.
-  assert(!/function debrisBounce\(/.test(codeOnly), "I: TRAP — no debrisBounce helper yet (P2)");
+  //
+  // REPOINTED BY CS023 P2 — the standing mirror-image treatment (CS022 P3 gave CS022 P1's TRAP 3 exactly
+  // this). The two P2 pins are now their POSITIVE successors rather than being deleted: "the symbol does
+  // not exist yet" and "the symbol exists exactly once" are the same claim read from opposite ends, and
+  // keeping the positive form here means this file goes on guarding against a second definition. The P3
+  // and P4 pins below are untouched and still hold.
+  eq((codeOnly.match(/function debrisBounce\(/g) || []).length, 1,
+    "I: REPOINTED (P2 landed) — debrisBounce is defined exactly once");
+  eq((codeOnly.match(/^const DEBRIS_MASS = /gm) || []).length, 1,
+    "I: REPOINTED (P2 landed) — DEBRIS_MASS is declared exactly once");
   assert(!/\bdrifting\b/.test(codeOnly), "I: TRAP — no `drifting` field yet (P4)");
   assert(!/ORBIT_GRAVITY/.test(codeOnly), "I: TRAP — no ORBIT_GRAVITY_* constants yet (P4)");
   assert(!/maxOrbitSpeed/.test(codeOnly), "I: TRAP — no maxOrbitSpeed helper yet (P4)");
-  assert(!/DEBRIS_MASS/.test(codeOnly), "I: TRAP — no DEBRIS_MASS table yet (P2)");
   assert(!/function destroySaucer\(s, awardScore/.test(codeOnly), "I: TRAP — destroySaucer has not gained its parameter yet (P3)");
 
   // TRAP 4 — FIELD LEVELS COME OUT BYTE-IDENTICAL. Pinned BEHAVIOURALLY against the pre-P1 build under
