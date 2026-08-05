@@ -200,8 +200,10 @@ const ORBIT_IDS = ["orbitGapMult", "orbitSafetyMargin", "orbitCount",
   for (let i = orbitIdx + 1; i < X.DEBUG_VARS.length && !X.DEBUG_VARS[i].header; i++) orbitVals.push(X.DEBUG_VARS[i]);
   eq(orbitVals.slice(0, ORBIT_IDS.length).map(v => v.id).join(","), ORBIT_IDS.join(","),
     "A: the ORBIT section OPENS with exactly the ten spec ids, in order (CS023 P4 appended two after them)");
-  eq(orbitVals.slice(ORBIT_IDS.length).map(v => v.id).join(","), "orbitGravityAccel,debrisBounceRestitution",
-    "A: ...and the only ids after them are CS023 P4's two, appended and never inserted");
+  // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15). The row is still the first
+  // of the two appended entries, still never inserted; only its id changed.
+  eq(orbitVals.slice(ORBIT_IDS.length).map(v => v.id).join(","), "debrisDriftAccel,debrisBounceRestitution",
+    "A: P4B — the only ids after the ten spec ids are CS023 P4's two (the first RENAMED by P4B), appended and never inserted");
 
   // DEBUG_ROWS derives from DEBUG_VARS + the two trailing rows — never a hardcoded count.
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 2, "A: DEBUG_ROWS is DEBUG_VARS plus Dump + Back");

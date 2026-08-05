@@ -419,12 +419,14 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   //    is unchanged. The exact count keeps living here so a second unplanned knob still fails. --
   // REPOINTED AGAIN BY CS021 P3: + 10 (the ORBIT section) -> 44. Same treatment, same strength.
   // REPOINTED AGAIN BY CS023 P4: + 2 (orbitGravityAccel, debrisBounceRestitution) -> 46.
+  // REPOINTED AGAIN BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
+  // orbit-scoped). Count stays 46, row unmoved; only the id (and its /^orbit/i membership) changes.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
   eq(valueEntries, 46, "A: TRAP 3 — DEBUG_VARS holds exactly 46 value entries (34 + CS021 P3's ORBIT section + CS023 P4's two)");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
-  assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 11,
-    "A: REPOINTED BY CS021 P3 / CS023 P4 — ten more are the ORBIT section, plus P4's orbitGravityAccel");
+  assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 10,
+    "A: P4B — exactly CS021 P3's ten ORBIT knobs match /^orbit/i now; debrisDriftAccel (ex-orbitGravityAccel) no longer does");
   assert(!DEBUG_VARS.some(e => e.id && /incidental|towed|neighborhood/i.test(e.id)),
     "A: no CS020 towed/incidental knob was slipped into the registry (P1's own trap, unchanged)");
 })();

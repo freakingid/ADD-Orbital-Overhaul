@@ -404,6 +404,7 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // REPOINTED BY CS021 P3: 34 -> 44 (the ORBIT section). This phase's own claim — that P1b adds exactly
   // one knob — is unaffected; the count just has to track the live registry or it goes stale.
   // REPOINTED BY CS023 P4: 44 -> 46 (orbitGravityAccel, debrisBounceRestitution). Same reasoning.
+  // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15). Count unaffected.
   const valueEntries = DEBUG_ENTRIES.length;
   eq(valueEntries, 46, "A: DEBUG_VARS holds 46 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46)");
   eq(DEBUG_VARS.filter(e => !e.header).length, 46, "A: ...and DEBUG_ENTRIES agrees with the registry");

@@ -336,7 +336,8 @@ function shippedRadii(X) {
   // REPOINTED BY CS023 P4: the registry grew to 46 (orbitGravityAccel, debrisBounceRestitution). What
   // THIS phase's trap was guarding — that CS022 P3's ramp added no knob of its own — is asserted directly
   // below and is unchanged; the count tracks the live registry or it goes stale.
-  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 3 — the debug registry is 46 value entries after CS023 P4");
+  // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15). Count unaffected.
+  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 3 — the debug registry is 46 value entries after CS023 P4B");
   assert(!X.DEBUG_ENTRIES.some(e => /ramp|activeRing|orbitRings/i.test(e.id)),
     "A: TRAP 3 — no ramp knob was added (the ramp is derived, not dialled)");
   // orbitDensity4's `def` follows the shipped const automatically — the registry convention, verified.

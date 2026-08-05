@@ -836,12 +836,15 @@ const WANT_14 = {   // level: [ring, field, total]
   // mirror-image treatment). P4 added exactly the TWO knobs this trap always named it would, APPENDED to
   // the ORBIT section (FLAG-CS023-o); what P1 is answerable for — that ITS OWN diff added none — is now
   // the positive claim that the two present are exactly P4's, and no third one crept in with them.
+  // REPOINTED AGAIN BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
+  // orbit-scoped, so its id no longer starts with "orbit"). Still the same two entries, same order,
+  // same row; only the id — and therefore the /^orbit/i count — changes.
   eq(X.DEBUG_ENTRIES.length, 46, "I: REPOINTED (P4 landed) — the debug registry is 46 value entries");
   eq(X.DEBUG_ENTRIES.filter(e => /gravity|bounce|drift|fastRing/i.test(e.id)).map(e => e.id).join(","),
-    "orbitGravityAccel,debrisBounceRestitution",
-    "I: REPOINTED (P4 landed) — and they are exactly CS023 P4's two, in that order");
-  eq(X.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 11,
-    "I: TRAP 3 — eleven orbit-prefixed knobs: P3's ten plus P4's orbitGravityAccel, and no more");
+    "debrisDriftAccel,debrisBounceRestitution",
+    "I: P4B — and they are exactly CS023 P4's two, in that order (the first RENAMED by P4B)");
+  eq(X.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 10,
+    "I: P4B — ten orbit-prefixed knobs: exactly P3's ten, since debrisDriftAccel no longer matches");
   // The density knobs' defaults follow the shipped constant automatically — the registry convention.
   for (let i = 0; i < 4; i++) {
     const d = X.DEBUG_ENTRIES.find(e => e.id === `orbitDensity${i + 1}`);
@@ -863,10 +866,11 @@ const WANT_14 = {   // level: [ring, field, total]
   // REPOINTED BY CS023 P4 — the same mirror-image treatment P2 got above: "the symbol does not exist
   // yet" becomes "the symbol exists exactly once", which is the same claim read from the other end and
   // keeps this file guarding against a SECOND definition creeping in later.
-  eq((codeOnly.match(/const ORBIT_GRAVITY_TRIGGER_R = /g) || []).length, 1,
-    "I: REPOINTED (P4 landed) — ORBIT_GRAVITY_TRIGGER_R is declared exactly once");
-  eq((codeOnly.match(/const ORBIT_GRAVITY_TARGET_R  = /g) || []).length, 1,
-    "I: REPOINTED (P4 landed) — ORBIT_GRAVITY_TARGET_R is declared exactly once");
+  // REPOINTED AGAIN BY CS023 P4B: ORBIT_GRAVITY_* -> DEBRIS_DRIFT_* (spec C15).
+  eq((codeOnly.match(/const DEBRIS_DRIFT_TRIGGER_R = /g) || []).length, 1,
+    "I: P4B — DEBRIS_DRIFT_TRIGGER_R (ex-ORBIT_GRAVITY_TRIGGER_R) is declared exactly once");
+  eq((codeOnly.match(/const DEBRIS_DRIFT_TARGET_R  = /g) || []).length, 1,
+    "I: P4B — DEBRIS_DRIFT_TARGET_R (ex-ORBIT_GRAVITY_TARGET_R) is declared exactly once");
   eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 1,
     "I: REPOINTED (P4 landed) — maxOrbitSpeed is defined exactly once");
   eq((codeOnly.match(/function updateDebrisDrift\(/g) || []).length, 1,

@@ -337,14 +337,16 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   eq(X.GAME_VERSION, "1.0.0.22", "A: TRAP 1 — GAME_VERSION unchanged (P5 bumps it)");
   // TRAP 4 — REPOINTED BY CS023 P4, to its positive successors rather than deleted: every one of these
   // named P4 as the phase that would land the symbol, and P4 has.
-  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 4 REPOINTED — the debug registry is 46 value entries after P4");
+  // REPOINTED AGAIN BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel, ORBIT_GRAVITY_* -> DEBRIS_DRIFT_*
+  // (spec C15 — the drift is not orbit-scoped). Same two entries, same order, same row; only the names.
+  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 4 REPOINTED — the debug registry is 46 value entries after P4B");
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
-    "orbitGravityAccel,debrisBounceRestitution",
-    "A: TRAP 4 REPOINTED — debrisBounceRestitution landed as P4's knob, beside orbitGravityAccel, and nothing else did");
+    "debrisDriftAccel,debrisBounceRestitution",
+    "A: P4B — debrisBounceRestitution landed as P4's knob, beside debrisDriftAccel (ex-orbitGravityAccel), and nothing else did");
   assert(/\bdrifting\b/.test(codeOnly), "A: REPOINTED — the P4 `drifting` field is now real, not a stub");
   eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 1, "A: REPOINTED — maxOrbitSpeed is defined exactly once");
-  assert(/ORBIT_GRAVITY_TRIGGER_R/.test(codeOnly) && /ORBIT_GRAVITY_TARGET_R/.test(codeOnly),
-    "A: REPOINTED — both ORBIT_GRAVITY_* radii landed");
+  assert(/DEBRIS_DRIFT_TRIGGER_R/.test(codeOnly) && /DEBRIS_DRIFT_TARGET_R/.test(codeOnly),
+    "A: P4B — both DEBRIS_DRIFT_* radii (ex-ORBIT_GRAVITY_*) landed");
   // The seam this file reserved is FILLED, by exactly the one line it reserved it for.
   eq((codeOnly.match(/a\.drifting = b\.drifting = false;/g) || []).length, 1,
     "A: REPOINTED — debrisBounce's P4 seam holds exactly the one specced clear line");

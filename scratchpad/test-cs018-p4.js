@@ -595,15 +595,18 @@ function levelForCap(n) {
   // REPOINTED BY CS021 P3: 34 -> 44 (the ten-entry ORBIT section, under a new ORBIT header).
   // REPOINTED BY CS023 P4: 44 -> 46 (orbitGravityAccel + debrisBounceRestitution, APPENDED to the ORBIT
   // section). Same treatment as every repoint above — the exact live count, plus the ids that moved it.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 46, "H: DEBUG_VARS holds 46 value entries as of CS023 P4 (P4 itself added none)");
+  // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
+  // orbit-scoped, so its id no longer says "orbit"). The count stays 46 and the row does not move; only
+  // the id, and therefore its membership in an `/^orbit/i` filter, changes.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 46, "H: DEBUG_VARS holds 46 value entries as of CS023 P4B (P4B itself renamed one, added none)");
   assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,
     "H: ...and the 33rd is CS019 P1's chainGuardCooldown, not some other silent addition");
-  eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 11,
-    "H: ...ten of the entries that moved it from 34 to 44 are CS021 P3's ORBIT knobs, plus CS023 P4's orbitGravityAccel");
-  eq(Y.DEBUG_VARS.filter(v => v.id === "orbitGravityAccel" || v.id === "debrisBounceRestitution").length, 2,
-    "H: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs");
+  eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 10,
+    "H: P4B — exactly CS021 P3's ten ORBIT knobs match /^orbit/i now; debrisDriftAccel (ex-orbitGravityAccel) no longer does");
+  eq(Y.DEBUG_VARS.filter(v => v.id === "debrisDriftAccel" || v.id === "debrisBounceRestitution").length, 2,
+    "H: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs (the first RENAMED by P4B)");
 })();
 
 // ================= (I) headless smoke =====================

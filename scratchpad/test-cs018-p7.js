@@ -340,15 +340,17 @@ function fireOnce(small, wave) {
   // REPOINTED AGAIN (CS020 P1b): + 1 (dockComboGrace, under a new DELIVERY header) -> 34.
   // REPOINTED AGAIN (CS021 P3): + 10 (the ORBIT section) -> 44.
   // REPOINTED AGAIN (CS023 P4): + 2 (orbitGravityAccel, debrisBounceRestitution) -> 46.
-  eq(nEntries, 46, `H: DEBUG_ENTRIES count is 46 after CS023 P4 (got ${nEntries})`);
+  // REPOINTED AGAIN (CS023 P4B): orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
+  // orbit-scoped). Count stays 46, row unmoved; only the id (and its /^orbit/i membership) changes.
+  eq(nEntries, 46, `H: DEBUG_ENTRIES count is 46 after CS023 P4B (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "H: ...and the entry added since P7 is CS019 P1's chainGuardCooldown");
-  eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 11,
-    "H: ...ten of them are CS021 P3's ORBIT knobs, plus CS023 P4's orbitGravityAccel");
-  eq(Y.DEBUG_ENTRIES.filter(e => e.id === "orbitGravityAccel" || e.id === "debrisBounceRestitution").length, 2,
-    "H: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs");
+  eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 10,
+    "H: P4B — exactly CS021 P3's ten ORBIT knobs match /^orbit/i now; debrisDriftAccel (ex-orbitGravityAccel) no longer does");
+  eq(Y.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel" || e.id === "debrisBounceRestitution").length, 2,
+    "H: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs (the first RENAMED by P4B)");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
 
   // logDifficultySnapshot's saucerAimErr column follows the tier-derived value, not the retired ramp() mirror.

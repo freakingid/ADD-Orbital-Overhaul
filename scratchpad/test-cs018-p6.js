@@ -388,15 +388,17 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // same strength, same treatment.
   // REPOINTED AGAIN (CS021 P3): + 10 (the ORBIT section) -> 44. Same claim, same strength, same treatment.
   // REPOINTED AGAIN (CS023 P4): + 2 (orbitGravityAccel, debrisBounceRestitution) -> 46.
-  eq(nEntries, 46, `I: DEBUG_ENTRIES count is 46 after CS023 P4 (got ${nEntries})`);
+  // REPOINTED AGAIN (CS023 P4B): orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
+  // orbit-scoped). Count stays 46, row unmoved; only the id (and its /^orbit/i membership) changes.
+  eq(nEntries, 46, `I: DEBUG_ENTRIES count is 46 after CS023 P4B (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "I: ...and the entry CS019 P1 added is chainGuardCooldown");
-  eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 11,
-    "I: ...ten of them are CS021 P3's ORBIT knobs, plus CS023 P4's orbitGravityAccel");
-  eq(Y.DEBUG_ENTRIES.filter(e => e.id === "orbitGravityAccel" || e.id === "debrisBounceRestitution").length, 2,
-    "I: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs");
+  eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 10,
+    "I: P4B — exactly CS021 P3's ten ORBIT knobs match /^orbit/i now; debrisDriftAccel (ex-orbitGravityAccel) no longer does");
+  eq(Y.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel" || e.id === "debrisBounceRestitution").length, 2,
+    "I: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs (the first RENAMED by P4B)");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
 })();
 
