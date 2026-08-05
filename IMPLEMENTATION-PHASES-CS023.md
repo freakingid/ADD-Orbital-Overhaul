@@ -4,6 +4,8 @@
 **Baseline:** public repo HEAD `6654ef6`, `GAME_VERSION "1.0.0.22"`. CS022 is fully shipped and pushed; the attached build is byte-identical to HEAD.
 **Ships:** `"1.0.0.23"` (bumped in P5 only).
 
+> **AMENDED 2026-08-05, after P4 shipped and before the gate:** FORK-H was resolved the wrong way. **The drift runs on every level, not orbit levels only.** Corrected by **Phase 4b** below, which runs before the playtest gate. P4's prompt is left intact as the historical record of what was built; do not re-run it.
+
 Five phases and one blocking playtest gate. One session per phase, one commit per phase, on `main`. Paul commits and pushes himself — Claude Code never pushes.
 
 **Dependency order is strict.**
@@ -147,6 +149,8 @@ Five phases and one blocking playtest gate. One session per phase, one commit pe
 
 ## Phase 4 — The inward drift
 
+> ⚠️ **SUPERSEDED IN PART BY PHASE 4B.** This prompt shipped with `game.orbitLayout === null` as an early return, scoping the drift to orbit levels. That was wrong (spec C15). The text below is preserved as the record of what was built; **P4b is the correction and is the one to run.**
+
 **Goal:** once the shell's interior is clear, loose debris is pulled back toward the ring-3 radius — no faster than a satellite moves on the outer fast ring — so the player is never hunting an empty world.
 
 **Model:** Opus 4.8, xhigh effort, thinking on.
@@ -185,6 +189,40 @@ Five phases and one blocking playtest gate. One session per phase, one commit pe
 
 ---
 
+## Phase 4b — The drift is not orbit-only
+
+**Goal:** remove the archetype gate P4 shipped, and rename the constants that caused it. Small, surgical, and it must land **before** the playtest gate — otherwise 42 of 63 levels get judged with the mechanic switched off.
+
+**Model:** Sonnet 5, high effort.
+
+### Paste-ready prompt
+
+> Implement CS023 Phase 4b per `PLANNED-FEATURES-CS023.md` Correction **C15** and the re-resolved **FORK-CS023-H**. This is a correction to P4, which shipped the drift scoped to orbit levels. It should not be scoped at all.
+>
+> **The mechanic is about distance from the dock, not about archetype.** The ring radii were only ever a convenient way to name 814 px and 676 px — they supply the numbers, they do not scope the behaviour. Re-grep every P4 anchor by symbol before editing.
+>
+> 1. **Delete the archetype gate** from the arming pass — the `game.orbitLayout === null` early return goes. `update()` already early-returns unless `game.state === "playing"`, and `game.dock` is created by every `nextWave()`, so there is no title-screen or null-dock path to worry about; a defensive `if (!game.dock) return;` is in-idiom and free. Nothing else in the pass changes: same trigger radius, same target radius, same "any live debris, orbiting or free" trigger population, same sticky per-piece arming, same disarm sites. On a field level no body ever carries orbit state, so the "no orbit state" clause is simply always true there.
+>
+> 2. **Rename the constants** — `ORBIT_GRAVITY_TRIGGER_R` / `ORBIT_GRAVITY_TARGET_R` / `ORBIT_GRAVITY_ACCEL` become `DEBRIS_DRIFT_TRIGGER_R` / `DEBRIS_DRIFT_TARGET_R` / `DEBRIS_DRIFT_ACCEL`. **Keep the derivation from `ORBIT_INNER_RADIUS` + a multiple of `ORBIT_RADIUS_STEP`** — that is where the numbers legitimately come from, and it is how they stay in step with a geometry retune. Add the comment that says so explicitly, because the `ORBIT_` prefix is what made a universal mechanic read as archetype-scoped once already and a comment is cheaper than a second occurrence.
+>
+> 3. **Rename the debug knob id** `orbitGravityAccel` → `debrisDriftAccel`, label "Debris inward drift". **Leave it physically where it is**, appended inside the ORBIT block: moving it would insert mid-registry and shift every row index below, which is exactly what append-only discipline prevents. Add a one-line comment recording that the position is a layout artefact, not a scoping claim. The registry count stays **46**.
+>
+>    Note the one real cost, and do not try to avoid it: renaming the id orphans whatever value is saved under the old key in `afd_settings_v1.debug`. Under the standing known-value-else-default rule the unknown key is ignored and the new one takes its default — one slider resets once. **No migration, no schema bump, no compatibility shim.**
+>
+> 4. **`maxOrbitSpeed()` is unchanged and keeps its name.** It genuinely is a statement about orbital speeds — the cap's whole justification is "no faster than a satellite moves on a rail" — and it returns the same 255.7 px/s on every level because it reads constants, not the live layout. **Do not add a field-level variant.** On a field level the longest possible armed fall is 792 px, worth ~218 px/s, so the cap simply never binds there (C15); that is the correct behaviour, not a gap.
+>
+> **Tests** — extend `scratchpad/test-cs023-p4.js` rather than adding a new file; this is a correction to P4, not a new feature, and splitting it would leave the wrong assertions sitting in the older file.
+>
+> **The critical work is INVERTING P4's existing field-level assertions, not appending new ones.** P4's file asserts that the pass is inert on a field level. That assertion is now backwards and will pass for the wrong reason if it is merely deleted. Find it, invert it, and leave a `CORRECTED BY CS023 P4B` note beside it — the standing repoint idiom. Then prove on a **real field level**, driven through `startGame` and `nextWave` and not staged by hand: nothing armed while any live debris sits inside 814 px of the dock; every free body beyond 676 px armed on the frame after the last inside-body dies; the same radii as on an orbit level; arrival, release and all four disarm paths behaving identically; **and the cap never binding across the longest fall the field world permits.**
+>
+> Also assert there is **no reachable reference to `game.orbitLayout`** anywhere in the drift path, and that the three renamed constants have zero readers under their old names.
+>
+> **TRAP 1:** `GAME_VERSION` unchanged; docs untouched — P5 owns them, and its prompt already carries this correction. **TRAP 2:** the registry count stays 46 and no entry moves position. **TRAP 3:** do not "simplify" by folding the trigger and target radii into literals now that they are not orbit-named — the derivation is the point. **TRAP 4:** nothing about P1, P2 or P3 is in scope; this is one deleted gate, three renamed constants, one renamed knob id, and a set of inverted assertions.
+
+**Commit:** `CS023 P4b: drift applies on every level, not orbit-only — gate removed, ORBIT_GRAVITY_* renamed DEBRIS_DRIFT_*`
+
+---
+
 ## ⛔ PLAYTEST GATE — blocking, P5 must not run until answered
 
 Play levels **3, 6, 9 and 12** for one full pass of the ramp, plus **21** for a full field component on top. Play at least one orbit level to a **full harvest** — the only way to see the drift at all. Answers go in `STATUS.md` before P5's session.
@@ -209,10 +247,10 @@ Four densities, both orbit velocities, gravity acceleration and bounce restituti
 
 ### The drift
 
-11. **Does it read at all?** The trigger fires only once nothing is left inside 814 px, which is late in a level. Did the outer junk come back to you, or did the level just end? *(knob: `orbitGravityAccel`, a guess at 30 px/s² — set it to 0 for the A/B)*
+11. **Does it read at all?** The trigger fires only once nothing is left inside 814 px, which is late in a level. Did the outer junk come back to you, or did the level just end? *(knob: `debrisDriftAccel`, a guess at 30 px/s² — set it to 0 for the A/B)*
 12. **Is the pull fast enough, and is the cap right?** Pieces accelerate to at most 255.7 px/s inward — the outer fast ring's own speed — and coast on through the shell region when released. Too slow to matter, or does the field genuinely re-form around you? *If it is slow, raise the acceleration first; the cap only binds for pieces starting beyond ~1,766 px from the dock.*
 13. **The interrupts.** Shooting a drifting piece, ramming one, or watching two collide mid-drift — does that read as knocking something off course, or does it just look like the pull switched off?
-14. **Field levels (FORK-CS023-H).** The drift is orbit-only for now. Having played both, does a field level want it too? *This is the deliberate open question from the fork ledger.*
+14. **The drift on FIELD levels** (P4b). It runs everywhere now, and the field world is smaller — 46% of it sits beyond the 814 px trigger, versus 75% of an orbit world. Does the cleanup tail of a field level improve as much as an orbit level's does, or does pulling everything to 676 px around the dock feel cramped on the smaller map? *One radius serves both worlds right now; if the field wants its own, that is a CS024 decision, not a P5 retune.*
 
 ### Frame rate
 
@@ -230,15 +268,15 @@ Four densities, both orbit velocities, gravity acceleration and bounce restituti
 
 > Implement CS023 Phase 5 — the closing phase. **No new logic.** Read the gate answers in `STATUS.md`'s Playtest asks section and retune from those only; if an answer is "no change," change nothing (the CS020 P2 / CS022 P4 precedent). If an answer asks for something that is a FEATURE rather than a constant move, **surface it and stop**.
 >
-> 1. **Retune** whatever the gate settled: the four densities, `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT`, `ORBIT_GRAVITY_ACCEL`, `DEBRIS_BOUNCE_RESTITUTION`, `DEBRIS_BOUNCE_MIN`, `DEBRIS_MASS`. Registry `def`s derive from the shipped consts, so a const move carries the knob automatically — verify, don't assume. **Note that moving `ORBIT_ANG_VEL` or `ORBIT_FAST_MULT` also moves the drift's speed cap** (spec C14); say so wherever you record the retune.
+> 1. **Retune** whatever the gate settled: the four densities, `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT`, `DEBRIS_DRIFT_ACCEL`, `DEBRIS_BOUNCE_RESTITUTION`, `DEBRIS_BOUNCE_MIN`, `DEBRIS_MASS`. Registry `def`s derive from the shipped consts, so a const move carries the knob automatically — verify, don't assume. **Note that moving `ORBIT_ANG_VEL` or `ORBIT_FAST_MULT` also moves the drift's speed cap** (spec C14); say so wherever you record the retune.
 >
-> 2. **`GAME_VERSION` `"1.0.0.22"` → `"1.0.0.23"`.** Grep the repo whole rather than trusting any list: CS021 P5 predicted eight-plus-four pins and found eleven, and CS022 P4's sweep touched twelve files against a prompt naming five. Live pins that track HEAD get both their console label and their assert message bumped; this changeset's own four test files get the standing mirror-image repoint (`assert GAME_VERSION !== "1.0.0.22"`) with a `REPOINTED BY CS023 P5` note. Files already asserting `!== "1.0.0.21"` stay correct forever — leave them. Historical header-comment narratives are left alone (CS018 P10 / CS020 P2 precedent).
+> 2. **`GAME_VERSION` `"1.0.0.22"` → `"1.0.0.23"`.** Grep the repo whole rather than trusting any list: CS021 P5 predicted eight-plus-four pins and found eleven, and CS022 P4's sweep touched twelve files against a prompt naming five. Live pins that track HEAD get both their console label and their assert message bumped; this changeset's own four test files (P4's now also carrying P4b) get the standing mirror-image repoint (`assert GAME_VERSION !== "1.0.0.22"`) with a `REPOINTED BY CS023 P5` note. Files already asserting `!== "1.0.0.21"` stay correct forever — leave them. Historical header-comment narratives are left alone (CS018 P10 / CS020 P2 precedent).
 >
-> 3. **GDD — shipped behaviour only.** **§2.13.1** needs the archetype **restated, not amended**: every geometry number moved (radii 460/736/1012/1288 → 400/538/676/814, outer edge 1,334 → 860 against a 1,060 px budget, dock clearance 326 → 266, corridors 184 → 46, density → flat 0.12, the full shell 84 peak → 16), the ramp now runs **innermost-first** with the §1.4 table, the fast ring is a **list**, and the inward drift with its derived cap is new. **§2.11.1** takes the size-9 orbit world and the corrected `dmax`. **§3.1 collision conventions** gains three new passes in its documented pass order — satellite↔satellite, UFO↔satellite, and the mutual-damage rule on hazard↔ship — plus the "the hazard dies too, and scores nothing" clause on its `damageShip` bullet, and a line recording that `awardScore` gates score and stats but never drops (spec C13). **§2.19** takes the registry 44 → 46 with both new knobs. Architecture Map: Constants row gains `DEBRIS_MASS`/`DEBRIS_BOUNCE_*`/`ORBIT_GRAVITY_*`; Entity classes gains `DebrisSatellite.drifting`; Flow functions gains `debrisBounce`, `maxOrbitSpeed` and the arming pass.
+> 3. **GDD — shipped behaviour only.** **§2.13.1** needs the archetype **restated, not amended**: every geometry number moved (radii 460/736/1012/1288 → 400/538/676/814, outer edge 1,334 → 860 against a 1,060 px budget, dock clearance 326 → 266, corridors 184 → 46, density → flat 0.12, the full shell 84 peak → 16), the ramp now runs **innermost-first** with the §1.4 table, the fast ring is a **list**, and the inward drift with its derived cap is new. **The drift is documented as level-agnostic** — §2.13.1 is the orbit section, so the drift's own description belongs in the general debris/level material with only a pointer from §2.13.1, or a future reader will re-scope it exactly as P4 did (spec C15). **§2.11.1** takes the size-9 orbit world and the corrected `dmax`. **§3.1 collision conventions** gains three new passes in its documented pass order — satellite↔satellite, UFO↔satellite, and the mutual-damage rule on hazard↔ship — plus the "the hazard dies too, and scores nothing" clause on its `damageShip` bullet, and a line recording that `awardScore` gates score and stats but never drops (spec C13). **§2.19** takes the registry 44 → 46 with both new knobs. Architecture Map: Constants row gains `DEBRIS_MASS`/`DEBRIS_BOUNCE_*`/`DEBRIS_DRIFT_*`; Entity classes gains `DebrisSatellite.drifting`; Flow functions gains `debrisBounce`, `maxOrbitSpeed` and the arming pass.
 >
-> 4. **`DIFFICULTY-LEVERS.md`** — the orbit world size row takes 16 → 9; the **orbit ring ramp row takes the inversion and is promoted to the archetype's escalation axis** (spec C5/§5); the orbit-gap-multiplier row records C5 — the curve still runs and buys one satellite in the whole game; the orbit density row takes the flat curve. **Two new rows:** debris inward drift (noting the cap tracks the orbit motion knobs) and satellite bounce.
+> 4. **`DIFFICULTY-LEVERS.md`** — the orbit world size row takes 16 → 9; the **orbit ring ramp row takes the inversion and is promoted to the archetype's escalation axis** (spec C5/§5); the orbit-gap-multiplier row records C5 — the curve still runs and buys one satellite in the whole game; the orbit density row takes the flat curve. **Two new rows:** debris inward drift (noting it applies on **every** level, and that the cap tracks the orbit motion knobs but never binds on a field level) and satellite bounce.
 >
-> 5. **`GDD-VERSION-HISTORY.md`** — one consolidated CS023 (P1–P5) entry appended. Open only to append; never read for context.
+> 5. **`GDD-VERSION-HISTORY.md`** — one consolidated CS023 (P1–P5, including P4b) entry appended. Open only to append; never read for context.
 >
 > 6. **`STATUS.md` size check**, per `CLAUDE.md`'s rolling-window rule: this closes CS023, so if the oldest changeset still covered is more than ~3 rounds behind, relocate it into `archive/STATUS-HISTORY.md` — **a straight relocation, newest-first, each entry its own paragraph, never summarized**. Double-check every written entry starts on its own paragraph; a missing trailing newline is what fused years of entries into one 160 KB line in mid-2026.
 >
@@ -258,6 +296,7 @@ Four densities, both orbit velocities, gravity acceleration and bounce restituti
 | P2 | Opus 4.8 | xhigh + thinking + `ultrathink` | New physics with a wrap-aware asymmetry, plus a second O(n²) pass whose ceilings must be derived before they are measured |
 | P3 | Sonnet 5 | high | Four one-line insertions and one parameter, against a helper P2 already proved and a contract C13 already established. The care is all in the traps, and they are explicit |
 | P4 | Opus 4.8 | xhigh + thinking + `ultrathink` | An arm/release lifecycle whose failure mode is silence, a cap whose obvious shortcut is wrong (C14), and a strong pull toward touching the rails that the spec explicitly forbids |
+| P4b | Sonnet 5 | high | One deleted gate and three renames — but the real work is finding and *inverting* P4's field-level assertions rather than deleting them, which is a well-established idiom in this suite |
 | P5 | Sonnet 5 | high | Mechanical, but the version-pin sweep has undercounted in four consecutive changesets — grep, don't trust |
 
 `ultrathink` must appear inside the message text itself, not in a meta-note, to take effect.
