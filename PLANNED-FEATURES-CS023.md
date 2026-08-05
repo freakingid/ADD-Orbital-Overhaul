@@ -6,7 +6,7 @@
 
 ✅ **ALL FORKS RESOLVED** (§3). Implementation-ready.
 
-> **AMENDED 2026-08-05, after P4 shipped:** FORK-H is re-resolved — **the drift runs on EVERY level, not orbit levels only.** The orbit radii were only ever a way of naming two distances. Corrected by **Phase 4b**; see C15.
+> **AMENDED 2026-08-05 (two rounds).** (1) `ORBIT_RADIUS_STEP` **138 → 200** — the rings were too tightly packed to read as separate orbits; corrected by **Phase 4c**, see C16. (2) FORK-H is re-resolved — **the drift runs on EVERY level, not orbit levels only.** The orbit radii were only ever a way of naming two distances. Corrected by **Phase 4b**; see C15.
 
 ---
 
@@ -43,25 +43,25 @@ From the orbit lab, with `ORBIT_FAST_RING` hand-edited (C3):
 |---|---|---|---|
 | `WORLD_SIZE_ORBIT` | 16 (5120×2880) | **9** (3840×2160) | budget 1,420 → **1,060 px** |
 | `ORBIT_INNER_RADIUS` | 460 | **400** | dock centre to ring 1 centre |
-| `ORBIT_RADIUS_STEP` | 276 | **138** | 1.5 × the 92 px large-satellite diameter |
+| `ORBIT_RADIUS_STEP` | 276 | **200** | P4c: 138 packed the rings into one 506 px band |
 | `ORBIT_RING_COUNT` | 4 | 4 | unchanged |
-| ring radii | 460/736/1012/1288 | **400 / 538 / 676 / 814** | outer satellite edge **860 px** vs a 1,060 px budget |
+| ring radii | 460/736/1012/1288 | **400 / 600 / 800 / 1000** | outer satellite edge **1,046 px** vs a 1,060 px budget — **14 px of headroom**, see C16 |
 | `ORBIT_DENSITY` | [0.75,0.45,0.35,0.42] | **[0.12, 0.12, 0.12, 0.12]** | flat — the rhythm is gone |
-| radial corridors | 326/184/184/184 | **266 / 46 / 46 / 46 px** | first figure is clearance over the 88 px dock |
+| radial corridors | 326/184/184/184 | **266 / 108 / 108 / 108 px** | first figure is clearance over the 88 px dock |
 | `ORBIT_FAST_RING` | `3` | **`[2, 4]`** | a *list*, not a number — C3, FORK-G ✅ |
 | `ORBIT_GAP_MULT` etc. | 2.5 / 1.8 / 0.1 / 8 | unchanged | but see C5 — the curve is now nearly inert |
 | `ORBIT_ANG_VEL` / `_FAST_MULT` | 6 °/s / 3.0 | unchanged | still first-pass, still gate material |
 
-CS022 shipped 27 satellites at level 3 rising to a peak of 84. **CS023's full shell is 15 satellites rising to 16, across the entire 63-level game** (C5) — a 5× cut that is what pays for two new O(n²)-shaped passes in §1.1 and §1.2.
+CS022 shipped 27 satellites at level 3 rising to a peak of 84. **CS023's full shell is 18 satellites, flat across the entire 63-level game** (C5) — a 5× cut that is what pays for two new O(n²)-shaped passes in §1.1 and §1.2.
 
 Per-ring tangential speeds at the shipped motion constants, which the drift's cap in §1.5 is derived from:
 
 | Ring | Radius | Angular velocity | Tangential speed |
 |---|---|---|---|
 | 1 | 400 | 6 °/s | 41.9 px/s |
-| **2** | 538 | **18 °/s (fast)** | **169.0 px/s** |
-| 3 | 676 | 6 °/s | 70.8 px/s |
-| **4** | 814 | **18 °/s (fast)** | **255.7 px/s** ← the fastest a satellite ever moves in orbit |
+| **2** | 600 | **18 °/s (fast)** | **188.5 px/s** |
+| 3 | 800 | 6 °/s | 83.8 px/s |
+| **4** | 1000 | **18 °/s (fast)** | **314.2 px/s** ← the fastest a satellite ever moves in orbit |
 
 ### 1.4 The rings arrive innermost first (FORK-A ✅)
 
@@ -70,10 +70,10 @@ CS022's ramp is **inverted**, not retired. One ring per occurrence of the archet
 | Occurrence | Level | Rings | Ring sats | Field sats | **Level total** | Lanes (px) |
 |---|---|---|---|---|---|---|
 | 1 | 3 | ring 1 | 3 | 5 | **8** | 746 |
-| 2 | 6 | rings 1, 2 | 3/3 = 6 | 3 | **9** | 746/1035 |
-| 3 | 9 | rings 1, 2, 3 | 3/4/4 = 11 | 13 | **24** | 746/753/970 |
-| 4 | 12 | all four | 3/4/4/5 = 16 | 9 | **25** | 746/753/970/931 |
-| 5–21 | 15 … 63 | all four, held | 16, flat | 3–13 | **19–29** | as above |
+| 2 | 6 | rings 1, 2 | 3/4 = 7 | 3 | **10** | 746/850 |
+| 3 | 9 | rings 1, 2, 3 | 3/4/5 = 12 | 13 | **25** | 746/850/913 |
+| 4 | 12 | all four | 3/4/5/6 = 18 | 9 | **27** | 746/850/913/955 |
+| 5–21 | 15 … 63 | all four, held | 18, flat | 3–13 | **21–31** | as above |
 
 Radii never move — the ramp **selects** rings, it does not re-space them. Ring 1 sits at 400 px whether or not rings 2–4 exist, which is the point: **level 3's shell is 266 px off the dock, right where the player already is.** That is the direct answer to the dead-space complaint the outermost-first ramp produced.
 
@@ -83,13 +83,13 @@ Two consequences worth naming. **The ramp is now the archetype's escalation axis
 
 This is **not** about the orbiting satellites. It is about every *free* piece — the field component, split children, anything knocked off a rail — of any size.
 
-> When nothing is left within **ring 4's radius (814 px)** of the dock, a gravity-like force switches on for every free debris satellite and pulls it inward toward **ring 3's radius (676 px)**. A piece stops feeling the force once it reaches that distance, or the moment something changes its direction.
+> When nothing is left within **ring 4's radius (1,000 px)** of the dock, a gravity-like force switches on for every free debris satellite and pulls it inward toward **ring 3's radius (800 px)**. A piece stops feeling the force once it reaches that distance, or the moment something changes its direction.
 
 The purpose, in Paul's words: *once satellites get sparse, move them into an area of interest for the player, so the player isn't bored hunting around a large level for something to shoot.* The rings themselves never move. What moves is the junk that has drifted out to the far side of a 3840×2160 world.
 
-The force is an **acceleration**, not a velocity override: a piece keeps its own drift and has the inward pull added to it, so what arrives at 676 px is a loose, moving population rather than a tidy ring.
+The force is an **acceleration**, not a velocity override: a piece keeps its own drift and has the inward pull added to it, so what arrives at 800 px is a loose, moving population rather than a tidy ring.
 
-**The inward speed is capped at the fastest speed any satellite reaches in orbit** — 255.7 px/s at the shipped constants (ring 4, the outer fast ring). The cap is on the *inward radial component only*; tangential motion is untouched, so a piece that was already travelling sideways keeps doing so. Nothing that arrives is moving faster than something the player has already had to deal with on a rail, which is the whole justification for the number: it is not a tuning guess, it is the game's own existing maximum. See §4.7 and C14.
+**The inward speed is capped at the fastest speed any satellite reaches in orbit** — 314.2 px/s at the shipped constants (ring 4, the outer fast ring). The cap is on the *inward radial component only*; tangential motion is untouched, so a piece that was already travelling sideways keeps doing so. Nothing that arrives is moving faster than something the player has already had to deal with on a rail, which is the whole justification for the number: it is not a tuning guess, it is the game's own existing maximum. See §4.7 and C14.
 
 Every interrupt Paul named — hitting another satellite, hitting a UFO, taking a player shot, hitting the ship — is a rule this changeset is already adding. That is why the four parts of the request are one design: §1.1 and §1.2 are what interrupt the drift, and the drift is what makes §1.1 and §1.2 happen more than once a level.
 
@@ -109,20 +109,20 @@ Each is settled by the build's own contract or arithmetic; none is a design choi
 
 **C3 — `ORBIT_FAST_RING = [2, 4]` changes the constant's type, and the lab cannot have produced it.** ✅ *Confirmed by Paul: the type change is wanted, so any number of fast rings can be named.* `tools/orbit-lab.html` holds `fastRing` as a scalar and its dump emits a number; the array is a hand-edit. In the build the constant is consumed at exactly one site — `fastRingIndex: ORBIT_FAST_RING - 1` in `spawnOrbitWave` — and tested inside `generateOrbitLayout` as `i === fastRingIndex`. Both become set membership over a **0-based index list**, with the constant staying human 1-based.
 
-**C4 — "at level 3: 15 satellites" is the lab's all-rings-active readout; the lab does not model the ramp.** The lab's `level` slider drives only `orbitGapMult`. Under the inverted ramp (§1.4) level 3 lays **ring 1 alone — 3 satellites** and the 15-satellite figure is what a level 12+ shell holds. The lab remains correct about geometry and wrong about counts-per-level, by construction; do not treat its total as a per-level target.
+**C4 — "at level 3: 15 satellites" is the lab's all-rings-active readout; the lab does not model the ramp.** The lab's `level` slider drives only `orbitGapMult`. Under the inverted ramp (§1.4) level 3 lays **ring 1 alone — 3 satellites**, and after P4c's respacing a level 12+ shell holds 18 rather than the lab's 15. The lab remains correct about geometry and wrong about counts-per-level, by construction; do not treat its total as a per-level target.
 
-**C5 — At density 0.12 the occurrence curve is nearly inert, and this is arithmetic, not opinion.** The generator picks counts in two steps: `maxCount = floor(circumference / spacePerSatellite)`, then `count = round(1 + density × (maxCount − 1))`. Density is *the fraction of available room actually used*. The occurrence curve acts only on the first step — `ORBIT_GAP_MULT` 2.5 → 1.8 shrinks `spacePerSatellite` 157 → 138.8 px, raising `maxCount` ~13%:
+**C5 — At density 0.12 the occurrence curve is completely inert, and this is arithmetic, not opinion.** *(P4c strengthened this: at step 138 the curve bought one satellite across the whole game; at step 200 it buys none at all.)* The generator picks counts in two steps: `maxCount = floor(circumference / spacePerSatellite)`, then `count = round(1 + density × (maxCount − 1))`. Density is *the fraction of available room actually used*. The occurrence curve acts only on the first step — `ORBIT_GAP_MULT` 2.5 → 1.8 shrinks `spacePerSatellite` 157 → 138.8 px, raising `maxCount` ~13%:
 
 | gapMult | `spacePerSatellite` | `maxCount` (rings 1–4) | `1 + 0.12 × (maxCount−1)` | rounded |
 |---|---|---|---|---|
-| 2.50 (level 3) | 157.0 | 16 / 21 / 27 / 32 | 2.80 / 3.40 / 4.12 / 4.72 | **3 / 3 / 4 / 5** |
-| 1.80 (level 24+) | 138.8 | 18 / 24 / 30 / 36 | 3.04 / 3.76 / 4.48 / 5.20 | **3 / 4 / 4 / 5** |
+| 2.50 (level 3) | 157.0 | 16 / 24 / 32 / 40 | 2.80 / 3.76 / 4.72 / 5.68 | **3 / 4 / 5 / 6** |
+| 1.80 (level 24+) | 138.8 | 18 / 27 / 36 / 45 | 3.04 / 4.12 / 5.20 / 6.28 | **3 / 4 / 5 / 6** |
 
-The 13% gain is 13% *of the 0.12 term* — half a satellite on ring 4, eaten by rounding. Only ring 2 sits near enough to a boundary to tick over. The same `maxCount` move at CS022's 0.85 density moved ring 4 by four satellites (27 → 31); at 0.12 it moves it by zero.
+The 13% gain is 13% *of the 0.12 term* — well under a satellite per ring, eaten by rounding on **all four**. The same `maxCount` move at CS022's 0.85 density moved ring 4 by five satellites; at 0.12 it moves it by zero. **The full shell is 18 satellites at level 3 and 18 at level 63.**
 
-**Consequence:** `orbitGapMult()`, `ORBIT_GAP_MULT_FLOOR` and `ORBIT_GAP_MULT_STEP` keep running and stop being observable. This is **largely answered by FORK-A's inversion** — escalation now comes from ring *count* (levels 3 → 12) rather than ring *density* — leaving levels 12–63 deliberately flat at 16 ring satellites. Recorded so nobody later retunes a silent curve, or deletes a working mechanism because one density array quieted it. The four density sliders are the dial if the flat tail reads as repetitive.
+**Consequence:** `orbitGapMult()`, `ORBIT_GAP_MULT_FLOOR` and `ORBIT_GAP_MULT_STEP` keep running and stop being observable. This is **largely answered by FORK-A's inversion** — escalation now comes from ring *count* (levels 3 → 12) rather than ring *density* — leaving levels 12–63 deliberately flat at 18 ring satellites. Recorded so nobody later retunes a silent curve, or deletes a working mechanism because one density array quieted it. The four density sliders are the dial if the flat tail reads as repetitive.
 
-**C6 — `orbitEffectiveCount(5)` now returns 5, not 4, and `orbitDensity5` becomes a live knob for the first time.** At the new geometry: 4 rings → 860 px, **5 rings → 998 px**, both inside the 1,060 px size-9 budget; 6 rings → 1,136 px, out. The registry's `orbitCount` entry already allows `max: 5`, so a requested 5 stops collapsing to 4. Under the inverted ramp a 5-ring request completes at occurrence 5 (level 15) instead of 4.
+**C6 — `orbitEffectiveCount(5)` still returns 4, and `orbitDensity5` stays dead. ⚠️ This correction was REVERSED by P4c.** At step 138 a 5th ring fitted (998 px inside the 1,060 px budget) and this section said so. **At step 200 it does not:** 4 rings reach 1,046 px and 5 would reach 1,246 px, well outside. The registry's `orbitCount` entry still allows `max: 5`, and a requested 5 silently collapses back to 4 exactly as it did before CS023. `orbitDensity5` has still never been read by a shipped spawn. Any test that P1 wrote asserting the 5-ring case as a *change* from CS022 is now asserting the wrong thing and must be inverted, not deleted.
 
 **C7 — `dmax` on the orbit transition drops 1,380 → 1,020 px, and the CS022 comment in `resizeWorld` overstates how little binds on the grow.** It reads *"On the GROW almost nothing binds (old max reach 1,468 px against 1,380)."* Against 1,020 a materially larger band of carried bodies gets pulled in along its own bearing. Mechanism unchanged and correct; the comment is wrong, and FLAG-CS022-k's `dmax` shell now applies in **both** directions rather than mostly on the shrink.
 
@@ -132,29 +132,39 @@ The 13% gain is 13% *of the 0.12 term* — half a satellite on ring 4, eaten by 
 
 **C10 — Shielded contact is out of scope.** Paul's sentence is premised on the ship taking damage. Shielded contact already has three deliberate outcomes (homing Hunters die and split; rail-borne hazards bounce the *ship* via `shieldBounce`; free hazards are deflected via `shieldDeflect`), all argued in CS021 P1b. **None of them changes.** Flagged rather than assumed, because "collisions now hurt both sides" reads like it should apply everywhere.
 
-**C11 — Two rail-borne satellites cannot touch at the shipped geometry.** Rings are 138 px apart and a large satellite is 92 px across, leaving 46 px of clearance; same-ring bodies hold a fixed angular spacing at a shared `angVel`. The bounce pass's ring-vs-ring branch is therefore **unreachable in normal play** and only becomes live under a debug `orbitCount`/`orbitAngVel` change. Spec it, assert the impossibility, do not tune against it. *(This stays true under CS023 — §1.5's drift moves free pieces only, so no body ever crosses a rail radius while itself on a rail.)*
+**C11 — Two rail-borne satellites cannot touch at the shipped geometry.** Rings are 200 px apart and a large satellite is 92 px across, leaving 108 px of clearance; same-ring bodies hold a fixed angular spacing at a shared `angVel`. The bounce pass's ring-vs-ring branch is therefore **unreachable in normal play** and only becomes live under a debug `orbitCount`/`orbitAngVel` change. Spec it, assert the impossibility, do not tune against it. *(This stays true under CS023 — §1.5's drift moves free pieces only, so no body ever crosses a rail radius while itself on a rail.)*
 
 **C12 — There is genuinely no debris-vs-debris pass to extend.** FLAG-CS022-a states it explicitly. §1.2 is new code, not a widened filter, and it is the changeset's second O(n²) pass alongside `coalesceGarbage`. That flag also predicted the consequence CS023 now fixes: field satellites spawning overlapped with a ring satellite, previously "cosmetic and self-resolving."
 
 **C13 — `awardScore = false` already means "no score and no stats, but every drop still happens," and CS023 must not redefine it.** `destroyDebris(a, false)` still emits `DEBRIS_GARBAGE` canisters and still splits; `destroyHunter(h, false)` still drops its tier's canisters, still splits three ways, and **still drops a powerup at the large tier** — that `dropPowerup` call sits deliberately outside the `awardScore` gate. FORK-E (rams award no score) and FORK-F (a satellite-killed UFO still drops a powerup) are therefore **the same rule, already shipped**, and `destroySaucer`'s new parameter must gate exactly what its two siblings gate: `addScore` and the achievement counters, never `dropPowerup`. Writing it any other way would make one member of a three-function family mean something different from the other two.
 
-**C14 — The drift's speed cap must scan every ring, not assume the outermost one is fastest.** Tangential speed is `angVel × radius`, and `angVel` is not uniform — the fast-ring list multiplies some rings by `ORBIT_FAST_MULT`. At the shipped `[2, 4]` the maximum does happen to fall on ring 4 (255.7 px/s), but at a list of `[1, 2]` it would fall on **ring 2** (169.0 px/s), not on the outermost ring's 85.2. Now that `ORBIT_FAST_RING` is arbitrary-length (C3), a "just use the outer ring" shortcut is a latent bug the moment the list changes.
+**C14 — The drift's speed cap must scan every ring, not assume the outermost one is fastest.** Tangential speed is `angVel × radius`, and `angVel` is not uniform — the fast-ring list multiplies some rings by `ORBIT_FAST_MULT`. At the shipped `[2, 4]` the maximum does happen to fall on ring 4 (314.2 px/s), but at a list of `[1, 2]` it would fall on **ring 2** (188.5 px/s), not on the outermost ring's 104.7. Now that `ORBIT_FAST_RING` is arbitrary-length (C3), a "just use the outer ring" shortcut is a latent bug the moment the list changes.
 
 **C15 — The drift is NOT orbit-specific, and the reasoning that made it look orbit-specific was wrong.** The original FORK-H recommendation argued that on a field level the force *"would be on almost permanently and would quietly re-centre 42 of 63 levels on the dock."* Measured against the real worlds, that is false in both halves:
 
 | | Field world (2560×1440) | Orbit world (3840×2160) |
 |---|---|---|
 | Max wrap-aware distance from the dock | 1,469 px | 2,203 px |
-| Share of the world inside the 814 px trigger | 54% | 25% |
-| **Share beyond it — the dead zone the drift reclaims** | **46%** | **75%** |
-| Longest possible armed fall | 792 px | 1,527 px |
-| Speed on arrival at 676 px (a = 30 px/s²) | 218 px/s | 256 px/s (**capped**) |
+| Share of the world inside the 1,000 px trigger | 71% | 38% |
+| **Share beyond it — the dead zone the drift reclaims** | **29%** | **62%** |
+| Longest possible armed fall | 669 px | 1,403 px |
+| Speed on arrival at 800 px (a = 30 px/s²) | 200 px/s | 290 px/s |
 
-The trigger requires that **nothing** is inside 814 px of the dock. Field debris spawns ship-relative (`SPAWN_MIN_DIST` 220 to `SPAWN_MAX_DIST` 640 from a ship that itself starts 260–620 px from the dock), so a field level reliably has something inside that radius for most of its length. The force therefore arms **late, in the cleanup tail** — precisely the stretch the mechanic exists to fix, and the same moment it arms on an orbit level.
+*(The percentages above are P4c's. At step 138 the reclaimed dead zone was 46% / 75%; widening the rings pushed the trigger from 814 px to 1,000 px and shrank it — see C16, which is the one place P4c made something worse.)*
 
-Two useful consequences fall out. The cap **never binds on a field level** (218 px/s against a 255.7 px/s ceiling), so it is orbit-scale machinery that sits quietly inert on the smaller world rather than something needing a per-archetype variant. And `update()` already early-returns unless `game.state === "playing"`, while `game.dock` is created by every `nextWave()` — so dropping the gate exposes no title-screen or null-dock path.
+The trigger requires that **nothing** is inside the trigger radius of the dock. Field debris spawns ship-relative (`SPAWN_MIN_DIST` 220 to `SPAWN_MAX_DIST` 640 from a ship that itself starts 260–620 px from the dock), so a field level reliably has something inside that radius for most of its length. The force therefore arms **late, in the cleanup tail** — precisely the stretch the mechanic exists to fix, and the same moment it arms on an orbit level.
+
+One useful consequence falls out: `update()` already early-returns unless `game.state === "playing"`, while `game.dock` is created by every `nextWave()` — so dropping the gate exposes no title-screen or null-dock path.
 
 The naming is what caused the misread, so P4b renames `ORBIT_GRAVITY_*` to `DEBRIS_DRIFT_*`. **The radii keep deriving from the ring geometry** — that is where the numbers legitimately come from — but nothing about the mechanism is archetype-keyed.
+
+**C16 — Step 200 is 14 px from the ceiling, and it silences two more things.** The wrap-clean budget is `worldDims(WORLD_SIZE_ORBIT)[1] / 2 - 20` = **1,060 px**; four rings at step 200 reach **1,046 px**. Three consequences, none blocking, all worth writing down:
+
+**(a) The margin is 14 px, and the clamp that enforces it is silent.** `orbitEffectiveCount()` walks the ring count *down* until the outer edge fits. Any later increase to `ORBIT_INNER_RADIUS`, `ORBIT_RADIUS_STEP` or `DEBRIS_RADII[3]` — even a small one — does not error; it quietly returns 3 rings instead of 4 and the shell loses a layer with nothing in the log. **The maximum uniform step at `ORBIT_INNER_RADIUS` 400 with four rings is 204 px.** P4c pins `orbitEffectiveCount(4) === 4` with the margin stated, so the next person to nudge this geometry finds out at test time rather than in the hands.
+
+**(b) The drift's speed cap becomes dead code on both archetypes.** It is derived from ring 4's tangential speed, so widening the rings raised it 255.7 → 314.2 px/s — while simultaneously *shortening* the longest possible fall, because the target radius moved outward too. Longest orbit fall is now 1,403 px, worth 290 px/s; longest field fall 669 px, worth 200 px/s. **Neither reaches the cap.** Keep it: it is derived, it costs one projection per drifting body, and it is the guard that makes raising `DEBRIS_DRIFT_ACCEL` at the gate safe. But do not expect to observe it, and do not "simplify" it away because nothing hits it — that is the same trap C5 describes for the gap-multiplier curve.
+
+**(c) The drift reclaims less of each world than it did.** The trigger radius moved 814 → 1,000 px, so the reclaimed dead zone shrank from 75% to 62% of an orbit world and from 46% to **29%** of a field world. This is the one place P4c made something worse, and it lands on the mechanic P4b had just finished widening. Paul chose derived-not-pinned deliberately; the gate question is whether the field drift still fires often enough to matter, and decoupling the two radii from the ring geometry later is a two-line change.
 
 ---
 
@@ -169,16 +179,16 @@ The naming is what caused the misread, so P4b renames `ORBIT_GRAVITY_*` to `DEBR
 | **FORK-CS023-E** | Does a rammed hazard award score? | **No.** All four new kill sites pass `awardScore = false`: no `addScore`, no `debrisKills`/`hunterKills`/`saucerKills`, no `bestDebrisGame`, no lineage or Diamond Cutter progress. Ramming is a cost, not a scoring route. **Drops are unaffected** (C13) — the garbage canisters, the split, and the Hunter/UFO powerups all still happen. |
 | **FORK-CS023-F** | A UFO killed by a satellite — powerup? | **Yes, it still drops one.** Which, with E, makes `destroySaucer(s, awardScore = true)` gate exactly what `destroyHunter` gates: score and achievement counters only. One rule, three functions, no special cases. |
 | **FORK-CS023-G** | `ORBIT_FAST_RING` as a list | **Yes — a list of 1-based ring numbers, any length.** Rings 2 and 4 ship fast. C3, and C14 for the consequence. |
-| **FORK-CS023-H** | Does the drift run on **field** levels? | ⚠️ **RE-RESOLVED after P4 shipped: EVERY LEVEL.** The mechanic is about distance from the dock, not about archetype — the ring radii were only ever a convenient way to name 814 px and 676 px. My earlier orbit-only recommendation rested on a wrong premise and is retracted; see **C15** for why, and **P4b** for the correction. |
+| **FORK-CS023-H** | Does the drift run on **field** levels? | ⚠️ **RE-RESOLVED after P4 shipped: EVERY LEVEL.** The mechanic is about distance from the dock, not about archetype — the ring radii were only ever a convenient way to name two distances. My earlier orbit-only recommendation rested on a wrong premise and is retracted; see **C15** for why, and **P4b** for the correction. |
 
 ### Flags (best-guess, review at the playtest gate)
 
 | Flag | Note |
 |---|---|
-| **FLAG-CS023-a** | **The trigger counts ALL debris, orbiting and free.** ✅ Confirmed by Paul. The shell must be harvested before the outer stragglers are summoned, rather than the force fighting the level from the first frame. Ring 4 sits at *exactly* 814 px, so it is not "closer than" and never blocks itself. |
-| **FLAG-CS023-b** | **Arming is sticky and per-piece.** A piece armed on the triggering frame keeps its force until it arrives or is interrupted, even though the global condition goes false the moment the first piece crosses 814 px. This is Paul's *"they will continue it until their direction is changed"* made literal, and it is what stops the whole population oscillating on and off around the trigger radius. |
+| **FLAG-CS023-a** | **The trigger counts ALL debris, orbiting and free.** ✅ Confirmed by Paul. The shell must be harvested before the outer stragglers are summoned, rather than the force fighting the level from the first frame. Ring 4 sits at *exactly* the trigger radius, so it is not "closer than" and never blocks itself. |
+| **FLAG-CS023-b** | **Arming is sticky and per-piece.** A piece armed on the triggering frame keeps its force until it arrives or is interrupted, even though the global condition goes false the moment the first piece crosses the trigger radius. This is Paul's *"they will continue it until their direction is changed"* made literal, and it is what stops the whole population oscillating on and off around the trigger radius. |
 | **FLAG-CS023-c** | **Pieces born after arming are not armed.** A split child of a drifting parent starts free and unforced; it can only be armed if the global condition becomes true again. Deliberate — the alternative is inheritance, which would let one armed large seed an entire armed lineage regardless of where the field has got to. |
-| **FLAG-CS023-d** | **`DEBRIS_DRIFT_ACCEL` is the one pure guess left: 30 px/s².** The *cap* is derived (§4.7) but the acceleration is not. At 30 px/s² a piece reaches the 255.7 px/s cap after 8.5 s and 1,090 px of fall, so the cap binds only for pieces starting beyond ~1,766 px from the dock — real, in an orbit torus whose farthest point is 2,203 px away, but not the common case — and never at all on a field level, whose farthest point is 1,469 px (C15). Live debug slider from P4; report where the gate leaves it. |
+| **FLAG-CS023-d** | **`DEBRIS_DRIFT_ACCEL` is the one pure guess left: 30 px/s².** The *cap* is derived (§4.7) but the acceleration is not. At 30 px/s² a piece reaches the 314.2 px/s cap after 10.5 s and 1,645 px of fall. **After P4c the cap never binds on either archetype** (C16) — the longest possible fall is 1,403 px on an orbit level, worth 290 px/s. It stays in as a derived guard rail, not as a live limiter, and raising the acceleration is what would wake it up. Live debug slider from P4; report where the gate leaves it. |
 | **FLAG-CS023-e** | **No falloff and no damping, unlike the Magnet.** `MAGNET_PULL` ramps with proximity and applies `MAGNET_DAMP` because it is a precision tool for hooking one canister. This is a slow, flat, long-range nudge, and a falloff curve would make the far pieces the mechanic exists for the slowest to arrive. The cap is what bounds it instead. |
 | **FLAG-CS023-f** | **The bounce needs a separation floor or contacts re-bill every frame.** `SHIELD_BOUNCE_MIN` (120 px/s) is the precedent and the reason is identical. Satellites are slower than the ship, so `DEBRIS_BOUNCE_MIN` is **40 px/s**, with `DEBRIS_BOUNCE_RESTITUTION` 1.0 matching `SHIELD_BOUNCE_RESTITUTION`. |
 | **FLAG-CS023-g** | **This is the build's second O(n²) pass.** Realistic peak `game.debris` on a level-12+ orbit level is ~200–250 bodies fully split (16 rails → 48 → 144, plus up to 13 field satellites and their children), i.e. ~30k pair-checks in the worst frame — below the 49,203 `coalesceGarbage` checks CS022 P3 measured and gated. Affordable **because** §1.3 cut the satellite count 5×; at CS022's 84 satellites it would not have been. Gated in P2 by the same deterministic-counter method. |
@@ -200,9 +210,9 @@ The naming is what caused the misread, so P4b renames `ORBIT_GRAVITY_*` to `DEBR
 ### 4.1 Geometry and world size (constants block, ≈ lines 114–125 and 515–582)
 
 - `WORLD_SIZE_ORBIT` **16 → 9**. `WORLD_SIZE_MAX` is derived (`Math.max`) and follows; `STAR_COUNT` is area-derived from that and follows (C8). `resizeWorld`'s grow comment is corrected per C7.
-- `ORBIT_INNER_RADIUS` **460 → 400**, `ORBIT_RADIUS_STEP` **276 → 138**, `ORBIT_DENSITY` **→ `[0.12, 0.12, 0.12, 0.12]`**.
+- `ORBIT_INNER_RADIUS` **460 → 400**, `ORBIT_RADIUS_STEP` **276 → 200** (P1 shipped 138; P4c respaced), `ORBIT_DENSITY` **→ `[0.12, 0.12, 0.12, 0.12]`**.
 - `ORBIT_FAST_RING` **`3` → `[2, 4]`**. `spawnOrbitWave` maps it to a 0-based list; `generateOrbitLayout`'s parameter is renamed `fastRingIndices` and `i === fastRingIndex` becomes membership. The constant stays human 1-based, as its comment already says, and the conversion must work for a list of **any** length (C14).
-- The fitted-radii comment paragraph is rewritten around 860-against-1,060 at size 9, ring 1's **266 px** clearance over the permanent 88 px dock, and the **46 px** inter-ring corridor — which is a new fact worth stating plainly, because it is *narrower than the 65 px in-ring fairness floor*. That is correct, not a bug: `minRequiredGap` has only ever governed tangential lanes between adjacent satellites in one ring, and nobody had to notice at a 276 px step.
+- The fitted-radii comment paragraph is rewritten around **1,046-against-1,060** at size 9 (C16 — state the 14 px margin and the 204 px ceiling explicitly), ring 1's **266 px** clearance over the permanent 88 px dock, and the **108 px** inter-ring corridor.
 - The density block's "tight → breather → widest → wide" rhythm sentence is **deleted**, not amended. There is no rhythm at a flat curve.
 - The `ORBIT_GAP_MULT` block gains C5's finding and the note that FORK-A's inversion is what now carries escalation.
 
@@ -295,8 +305,8 @@ for (const s of game.saucers) {
 // The ring geometry SUPPLIES these two distances; it does not SCOPE them. The drift runs on every
 // level, field and orbit alike (C15) — deriving from the rings is how the numbers stay in step with
 // a geometry retune, nothing more. Named DEBRIS_*, not ORBIT_*, so that stays legible.
-const DEBRIS_DRIFT_TRIGGER_R = ORBIT_INNER_RADIUS + 3 * ORBIT_RADIUS_STEP;  // 814 — ring 4's radius
-const DEBRIS_DRIFT_TARGET_R  = ORBIT_INNER_RADIUS + 2 * ORBIT_RADIUS_STEP;  // 676 — ring 3's radius
+const DEBRIS_DRIFT_TRIGGER_R = ORBIT_INNER_RADIUS + 3 * ORBIT_RADIUS_STEP;  // 1000 — ring 4's radius
+const DEBRIS_DRIFT_TARGET_R  = ORBIT_INNER_RADIUS + 2 * ORBIT_RADIUS_STEP;  //  800 — ring 3's radius
 const DEBRIS_DRIFT_ACCEL     = 30;   // px/s^2 toward the dock. FLAG-CS023-d: the one guess left.
 ```
 
@@ -307,7 +317,7 @@ const DEBRIS_DRIFT_ACCEL     = 30;   // px/s^2 toward the dock. FLAG-CS023-d: th
 // MUST scan every ring — angVel is not uniform, so the outermost ring is not always the fastest
 // (at ORBIT_FAST_RING = [1,2] the maximum falls on ring 2). Reads the live DEBUG knobs, so a gate
 // retune of orbitAngVel / orbitFastMult / orbitCount carries the cap with it.
-function maxOrbitSpeed() { ... }      // 255.7 px/s at the shipped constants (ring 4)
+function maxOrbitSpeed() { ... }      // 314.2 px/s at the shipped constants (ring 4)
 ```
 
 Called **once per frame** in the drift pass and passed down — never once per body, which would be a four-iteration loop times up to ~250 bodies for a value that cannot change within a frame.
@@ -339,7 +349,7 @@ else {
 
 Flat force, no falloff, no damping (FLAG-CS023-e) — the cap is what bounds it. Release is **per-piece** and leaves the accumulated velocity intact: a released piece coasts on through the shell region rather than parking, which is what makes the arrival a live population instead of a second ring. Because the cap held while it was drifting, **nothing arrives faster than a satellite on the outer fast ring** — a speed the player has already had to read on a rail.
 
-The cap is applied only while `drifting`. A released or never-armed body is not clamped by anything except the standing `DEBRIS_SPEED_CAP` guard rail, which this can never approach. **On a field level the cap never binds at all** — the longest possible armed fall is 792 px, worth 218 px/s against a 255.7 px/s ceiling (C15) — so it is orbit-scale machinery that sits inert on the smaller world rather than needing a per-archetype variant.
+The cap is applied only while `drifting`. A released or never-armed body is not clamped by anything except the standing `DEBRIS_SPEED_CAP` guard rail, which this can never approach. **After P4c the cap never binds on either archetype** — the longest possible armed falls are 1,403 px (orbit, 290 px/s) and 669 px (field, 200 px/s) against a 314.2 px/s ceiling (C16). It stays as a derived guard rail that makes raising `DEBRIS_DRIFT_ACCEL` at the gate safe.
 
 **Disarming.** `drifting` is cleared at exactly four sites, one per interrupt Paul named:
 - **arrival** — the branch above;
@@ -375,11 +385,11 @@ Both entries stay **physically inside the ORBIT block** even though the drift is
 | Lever | Constants | Curve | Note |
 |---|---|---|---|
 | Orbit world size | `WORLD_SIZE_ORBIT` 16 → **9** | archetype-keyed binary | Existing row; value only |
-| Orbit ring geometry | `ORBIT_INNER_RADIUS` 400, `ORBIT_RADIUS_STEP` 138 | flat | Corridors 266/46/46/46 px |
+| Orbit ring geometry | `ORBIT_INNER_RADIUS` 400, `ORBIT_RADIUS_STEP` 200 | flat | Corridors 266/108/108/108 px; 14 px from the budget ceiling (C16) |
 | Orbit ring ramp | `activeRingsFor()` | **occurrence-scaled, now INNERMOST-first** | **The archetype's escalation axis** (C5) — 1 ring at level 3 to 4 at level 12, flat to 63 |
-| Orbit satellite count | `ORBIT_DENSITY` flat 0.12 | flat, 3 → 16 by ring count | The dial if the level 12–63 plateau reads as repetitive |
-| Orbit gap multiplier | `ORBIT_GAP_MULT` 2.5 → 1.8 | occurrence-scaled | Unchanged and now nearly unobservable (C5) — record it, don't delete it |
-| Debris inward drift | `DEBRIS_DRIFT_*` + `maxOrbitSpeed()` | flat, event-triggered, **every level** | **New row.** Not difficulty-scaled by design; the cap tracks the orbit motion knobs and never binds on a field level (C15) |
+| Orbit satellite count | `ORBIT_DENSITY` flat 0.12 | flat, 3 → 18 by ring count | The dial if the level 12–63 plateau reads as repetitive |
+| Orbit gap multiplier | `ORBIT_GAP_MULT` 2.5 → 1.8 | occurrence-scaled | Unchanged and now entirely unobservable (C5) — record it, don't delete it |
+| Debris inward drift | `DEBRIS_DRIFT_*` + `maxOrbitSpeed()` | flat, event-triggered, **every level** | **New row.** Not difficulty-scaled by design; the cap tracks the orbit motion knobs and, after P4c, never binds at all (C16) |
 | Satellite bounce | `DEBRIS_MASS`, `DEBRIS_BOUNCE_*` | flat | **New row.** Not difficulty-scaled by design |
 
 ---
@@ -388,21 +398,21 @@ Both entries stay **physically inside the ORBIT block** even though the drift is
 
 Every item drives the **real** `startGame` / `nextWave` / `update(1/60)` / `destroyDebris` / `destroySaucer` / `draw` path. Nothing under test is reimplemented; every expectation is recomputed from the same `generateOrbitLayout` + `activeRingsFor` + `levelDef` the shipped code is wired to.
 
-1. **Geometry and ramp.** The §1.4 table reproduced by a real `nextWave()` at every orbit level 3 → 63, grouped by `orbitRadius` and never by array position. The rings present are always the **innermost** *n*, ring 1 is always among them, and the totals are 3/6/11/16 at occurrences 1–4. Counts computed through the generator, with C5's single-satellite step at occurrence 3 asserted as the *only* density-driven change across the whole curve.
+1. **Geometry and ramp.** The §1.4 table reproduced by a real `nextWave()` at every orbit level 3 → 63, grouped by `orbitRadius` and never by array position. The rings present are always the **innermost** *n*, ring 1 is always among them, and the totals are 3/7/12/18 at occurrences 1–4. Counts computed through the generator, with the shell asserted **identical at every occurrence from 1 to 21** — at step 200 C5's curve moves nothing at all.
 2. **World size.** Every orbit level exactly 3840×2160, every field level exactly 2560×1440, through 30 consecutive real transitions; the round trip landing on `=== 2560/1440`; `dmax` 1020/660; CS022 P1 §C's carried-entity bearing/distance claims re-run at the new sizes.
-3. **Budget and clamp.** Outer edge 860 against 1,060; `orbitEffectiveCount` returning 5 at a requested 5 **and** at a requested 6 (C6), asserted as a change against a pinned-SHA CS022 reference module, not as a fresh literal.
+3. **Budget and clamp.** Outer edge **1,046 against 1,060**, with the 14 px margin asserted as a named value rather than left implicit; `orbitEffectiveCount` returning **4** at a requested 4, 5 and 6 (C6 — **reversed by P4c**, so P1's 5-ring assertion must be inverted, not deleted); and a sandbox proving that step 205 silently drops the shell to three rings, which is the failure mode C16(a) exists to catch.
 4. **Fast rings.** Rings 2 and 4 carry `ORBIT_ANG_VEL × ORBIT_FAST_MULT` and rings 1 and 3 do not, at every occurrence, keyed by ring index — including the occurrences where a fast ring is not yet present (FLAG-CS023-l). A control asserting the CS022 scalar behaviour must now fail. **Lists of length 0, 1, 3 and 4 all handled** (C3 — the point of the type change).
 5. **Ramp direction as a behavioural claim, not a source regex.** Level 3 lays exactly one ring and its radius is `ORBIT_INNER_RADIUS`; a pinned CS022 reference build lays one ring at `ORBIT_INNER_RADIUS + 3 × ORBIT_RADIUS_STEP` from the same call. `layout.rings[k].index === k` at every occurrence (§1.4's reversal of the CS022 P3 known issue).
 6. **Ship ram, all three targets.** A large satellite rammed unshielded: ship loses `DEBRIS_DAMAGE[3]`, satellite `dead`, three mediums pushed, `DEBRIS_GARBAGE` canisters emitted — and **`game.score` unchanged, `debrisKills` unchanged, `bestDebrisGame` unchanged** (FORK-E). Same for a large Hunter, which must additionally **still drop its powerup** (C13), and both saucer sizes, which must **still drop theirs** (FORK-F). **Plus the negative:** a *shielded* ram byte-identical to a pinned pre-CS023 build (C10), and a ram during i-frames doing nothing at all.
 7. **Multi-overlap (FLAG-CS023-k).** Three satellites staged overlapping the ship on one frame: all three destroyed, exactly one `damageShip` application, `dmgThisWave` incremented once, no second hit for a full `HIT_STUN_DURATION`.
 8. **Auto-shield interaction.** `settings.autoShield` on, hull at/below `LOW_HP_THRESHOLD`: hull unchanged, `AUTO_SHIELD_SCORE_PENALTY` applied, **hazard still destroyed**.
 9. **Bounce physics as physics, not as restated code.** Over ≥40 incoming velocities per case: momentum conserved at the `DEBRIS_MASS` ratios; kinetic energy conserved at restitution 1.0 and strictly decreasing below it; a separating body never reversed; separation achieved within one frame in every case. A naive non-wrap normal as a **live control** that must fail at the seam.
-10. **Bounce asymmetry.** A free satellite driven into a rail-borne one across 300 real frames: twelve fields of the rail body byte-identical throughout, its distance to `orbitCenter` never leaving `orbitRadius`, the free one's outbound velocity matching the closed form. Ring-vs-ring asserted **unreachable** (C11) by sweeping every adjacent-ring satellite pair at every occurrence and showing the minimum separation is 46 px.
+10. **Bounce asymmetry.** A free satellite driven into a rail-borne one across 300 real frames: twelve fields of the rail body byte-identical throughout, its distance to `orbitCenter` never leaving `orbitRadius`, the free one's outbound velocity matching the closed form. Ring-vs-ring asserted **unreachable** (C11) by sweeping every adjacent-ring satellite pair at every occurrence and showing the minimum separation is 108 px.
 11. **UFO kills.** A saucer driven into a satellite: `dead`, **zero** score movement, `saucerKills`/`smallSaucerKills` unchanged, **one powerup pushed** (FORK-F), the satellite bounced-or-untouched per its rail state and **disarmed** if it was drifting. A control proving the bullet and shield kills still award score and stats.
 12. **UFO shot → satellite is unchanged (C1).** Byte-identical to a pinned pre-CS023 build over a seeded run — a *regression* test for something the changeset deliberately does not touch.
-13. **Drift trigger.** With one ring satellite alive inside 814 px, nothing is armed. Destroy it and, on the next frame, every free debris body beyond 676 px is armed and nothing inside it is. Rail-borne bodies are **never** armed regardless. **The same trigger and arming behaviour proven on a FIELD level** — same radii, same lateness, no archetype gate anywhere (C15). Both radii asserted as *derived* from `ORBIT_INNER_RADIUS`/`ORBIT_RADIUS_STEP`, never as 814/676 literals.
-14. **Drift motion and the cap.** An armed piece's inward velocity component increasing by exactly `DEBUG.debrisDriftAccel × dt` per frame, measured along the wrap-aware dock vector, with its tangential component untouched — then **plateauing at `maxOrbitSpeed()` and never exceeding it**, over a fall long enough to reach it (≈8.5 s / 1,090 px at the shipped values). A tangentially-moving piece proving the cap clamps the *radial* component only and leaves total speed above the cap where the tangential part warrants it. A piece released at the target radius keeping its accumulated speed, and that speed being ≤ the cap. **On a field level, the cap asserted never to bind** — the longest armed fall (792 px) arrives at ~218 px/s, and a piece must reach the target without ever being clamped (C15).
-15. **The cap is derived, and derived correctly (C14).** `maxOrbitSpeed()` equals the max over rings of `angVel × radius` at the shipped `[2, 4]` (ring 4, 255.7 px/s) — **and, in a sandbox with `ORBIT_FAST_RING = [1, 2]`, equals ring 2's 169.0 px/s rather than the outermost ring's 85.2.** A "use the outer ring" mutant must fail this. Also: moving `DEBUG.orbitAngVel` or `DEBUG.orbitFastMult` moves the cap, and the helper is called **once per frame**, not once per body.
+13. **Drift trigger.** With one ring satellite alive inside 1,000 px, nothing is armed. Destroy it and, on the next frame, every free debris body beyond 800 px is armed and nothing inside it is. Rail-borne bodies are **never** armed regardless. **The same trigger and arming behaviour proven on a FIELD level** — same radii, same lateness, no archetype gate anywhere (C15). Both radii asserted as *derived* from `ORBIT_INNER_RADIUS`/`ORBIT_RADIUS_STEP`, never as 814/676 literals.
+14. **Drift motion and the cap.** An armed piece's inward velocity component increasing by exactly `DEBUG.debrisDriftAccel × dt` per frame, measured along the wrap-aware dock vector, with its tangential component untouched — then **plateauing at `maxOrbitSpeed()` and never exceeding it**, over a fall long enough to reach it (≈8.5 s / 1,090 px at the shipped values). A tangentially-moving piece proving the cap clamps the *radial* component only and leaves total speed above the cap where the tangential part warrants it. A piece released at the target radius keeping its accumulated speed, and that speed being ≤ the cap. **The cap asserted never to bind on either archetype** — the longest armed falls (1,403 px orbit, 669 px field) arrive at ~290 and ~200 px/s, and a piece must reach the target without ever being clamped (C16b). Raising `DEBUG.debrisDriftAccel` in a sandbox must wake the cap up, proving it is live code rather than merely unreachable.
+15. **The cap is derived, and derived correctly (C14).** `maxOrbitSpeed()` equals the max over rings of `angVel × radius` at the shipped `[2, 4]` (ring 4, 314.2 px/s) — **and, in a sandbox with `ORBIT_FAST_RING = [1, 2]`, equals ring 2's 188.5 px/s rather than the outermost ring's 104.7.** A "use the outer ring" mutant must fail this. Also: moving `DEBUG.orbitAngVel` or `DEBUG.orbitFastMult` moves the cap, and the helper is called **once per frame**, not once per body.
 16. **Drift release and disarm.** All four interrupts driven for real: arrival, satellite contact, UFO contact, and destruction by shot and by ram. The contact cases additionally prove the *other* body's state is correct (untouched if rail-borne, bounced and disarmed if free). A split child of an armed parent is **not** armed (FLAG-CS023-c).
 17. **Drift edge cases.** An armed piece carried through a real `resizeWorld` shrink keeps `drifting` and re-homes with the rest. `game.dock` is re-created every `nextWave()` — assert the force follows the new dock and no piece keeps a stale centre. An armed piece that coalesces, is scooped, or is destroyed leaves nothing dangling. A seam-straddling case with a naive-arithmetic control that would push the wrong way.
 18. **⛔ FRAME-BUDGET GATE.** At level 21 with the full shell plus field component, drive a real progressive full harvest. Gate on **deterministic counters** — the debris pair-check count *and* `coalesceGarbage`'s inner-loop iterations, in an instrumented copy of the real source, one increment per site. **Derive both ceilings before measuring** and document the derivation from CS022 P3's 49,203-check measurement and the entity-count ratio. Wall time (median/p95/p99/worst) and peak simultaneous entities are **reported, not asserted** — headless Node timing is GC-noisy, which is exactly why CS022 P3 gated on a counter. If a ceiling is breached, **stop and report**; the four density sliders are the first lever and a spatial hash is its own changeset.
@@ -436,5 +446,6 @@ Every item drives the **real** `startGame` / `nextWave` / `update(1/60)` / `dest
 | `ORBIT_GAP_MULT` occurrence curve | **Kept, nearly unobservable** | C5. Record the fact; do not delete a working mechanism because one density array silenced it, and do not retune a curve that is not connected to anything. |
 | `ORBIT_DENSITY`'s rhythm comment | **Deleted** | C5 / §4.1. There is no rhythm at a flat curve. |
 | `ORBIT_GRAVITY_*` constants and the `orbitGravityAccel` knob | **Renamed → `DEBRIS_DRIFT_*` / `debrisDriftAccel`** (P4b) | C15. The `ORBIT_` prefix is what made a universal mechanic read as archetype-scoped once already; the radii keep deriving from the ring geometry. Renaming the knob id orphans one saved value under the standing known-value-else-default rule — one slider resets to default once, no schema bump. |
+| `orbitEffectiveCount`'s 5-ring case | **Re-closed** (P4c) | C6. Reachable at step 138, unreachable at step 200. `orbitDensity5` returns to never having been read by a shipped spawn. |
 | `ORBIT_RADIUS_STEP_PAD` | Still retired, still zero readers | CS022 P2. Unchanged by this round. |
 | `generateOrbitLayout`'s `activeRings` / `inactive` | **Kept and still used** | The ramp survives; only its direction changed. |

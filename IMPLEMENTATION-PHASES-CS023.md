@@ -4,7 +4,7 @@
 **Baseline:** public repo HEAD `6654ef6`, `GAME_VERSION "1.0.0.22"`. CS022 is fully shipped and pushed; the attached build is byte-identical to HEAD.
 **Ships:** `"1.0.0.23"` (bumped in P5 only).
 
-> **AMENDED 2026-08-05, after P4 shipped and before the gate:** FORK-H was resolved the wrong way. **The drift runs on every level, not orbit levels only.** Corrected by **Phase 4b** below, which runs before the playtest gate. P4's prompt is left intact as the historical record of what was built; do not re-run it.
+> **AMENDED 2026-08-05, twice, both before the gate.** (1) FORK-H was resolved the wrong way — **the drift runs on every level**, corrected by **Phase 4b**. (2) The rings were packed too tightly to read as separate orbits — `ORBIT_RADIUS_STEP` **138 → 200**, corrected by **Phase 4c**. Both run before the playtest gate. **P1's and P4's prompts are left intact as the record of what was built; do not re-run them.**
 
 Five phases and one blocking playtest gate. One session per phase, one commit per phase, on `main`. Paul commits and pushes himself — Claude Code never pushes.
 
@@ -40,6 +40,8 @@ Five phases and one blocking playtest gate. One session per phase, one commit pe
 ---
 
 ## Phase 1 — Geometry, world size, and the inverted ramp
+
+> ⚠️ **PARTLY SUPERSEDED BY PHASE 4C.** This prompt shipped `ORBIT_RADIUS_STEP = 138`, which packed the four rings into a 506 px band. P4c respaces to **200**. Everything else P1 did — world size, inner radius, density, the fast-ring list, the ramp inversion — stands. Preserved as the record of what was built.
 
 **Goal:** the new orbit shell — smaller world, tighter rings, flat density, a fast-ring *list*, and a ramp that fills from the inside out. One sweep for the whole changeset's geometry pins. No new mechanics.
 
@@ -199,7 +201,7 @@ Five phases and one blocking playtest gate. One session per phase, one commit pe
 
 > Implement CS023 Phase 4b per `PLANNED-FEATURES-CS023.md` Correction **C15** and the re-resolved **FORK-CS023-H**. This is a correction to P4, which shipped the drift scoped to orbit levels. It should not be scoped at all.
 >
-> **The mechanic is about distance from the dock, not about archetype.** The ring radii were only ever a convenient way to name 814 px and 676 px — they supply the numbers, they do not scope the behaviour. Re-grep every P4 anchor by symbol before editing.
+> **The mechanic is about distance from the dock, not about archetype.** The ring radii were only ever a convenient way to name two distances — they supply the numbers, they do not scope the behaviour. Re-grep every P4 anchor by symbol before editing.
 >
 > 1. **Delete the archetype gate** from the arming pass — the `game.orbitLayout === null` early return goes. `update()` already early-returns unless `game.state === "playing"`, and `game.dock` is created by every `nextWave()`, so there is no title-screen or null-dock path to worry about; a defensive `if (!game.dock) return;` is in-idiom and free. Nothing else in the pass changes: same trigger radius, same target radius, same "any live debris, orbiting or free" trigger population, same sticky per-piece arming, same disarm sites. On a field level no body ever carries orbit state, so the "no orbit state" clause is simply always true there.
 >
@@ -209,17 +211,51 @@ Five phases and one blocking playtest gate. One session per phase, one commit pe
 >
 >    Note the one real cost, and do not try to avoid it: renaming the id orphans whatever value is saved under the old key in `afd_settings_v1.debug`. Under the standing known-value-else-default rule the unknown key is ignored and the new one takes its default — one slider resets once. **No migration, no schema bump, no compatibility shim.**
 >
-> 4. **`maxOrbitSpeed()` is unchanged and keeps its name.** It genuinely is a statement about orbital speeds — the cap's whole justification is "no faster than a satellite moves on a rail" — and it returns the same 255.7 px/s on every level because it reads constants, not the live layout. **Do not add a field-level variant.** On a field level the longest possible armed fall is 792 px, worth ~218 px/s, so the cap simply never binds there (C15); that is the correct behaviour, not a gap.
+> 4. **`maxOrbitSpeed()` is unchanged and keeps its name.** It genuinely is a statement about orbital speeds — the cap's whole justification is "no faster than a satellite moves on a rail" — and it returns the same 255.7 px/s on every level because it reads constants, not the live layout. **Do not add a field-level variant.** On a field level the longest possible armed fall is far short of what the cap would clamp, so it simply never binds there (C15); that is the correct behaviour, not a gap. **Read the radii from the constants, never from this prompt** — P4c moves them.
 >
 > **Tests** — extend `scratchpad/test-cs023-p4.js` rather than adding a new file; this is a correction to P4, not a new feature, and splitting it would leave the wrong assertions sitting in the older file.
 >
-> **The critical work is INVERTING P4's existing field-level assertions, not appending new ones.** P4's file asserts that the pass is inert on a field level. That assertion is now backwards and will pass for the wrong reason if it is merely deleted. Find it, invert it, and leave a `CORRECTED BY CS023 P4B` note beside it — the standing repoint idiom. Then prove on a **real field level**, driven through `startGame` and `nextWave` and not staged by hand: nothing armed while any live debris sits inside 814 px of the dock; every free body beyond 676 px armed on the frame after the last inside-body dies; the same radii as on an orbit level; arrival, release and all four disarm paths behaving identically; **and the cap never binding across the longest fall the field world permits.**
+> **The critical work is INVERTING P4's existing field-level assertions, not appending new ones.** P4's file asserts that the pass is inert on a field level. That assertion is now backwards and will pass for the wrong reason if it is merely deleted. Find it, invert it, and leave a `CORRECTED BY CS023 P4B` note beside it — the standing repoint idiom. Then prove on a **real field level**, driven through `startGame` and `nextWave` and not staged by hand: nothing armed while any live debris sits inside the trigger radius of the dock; every free body beyond the target radius armed on the frame after the last inside-body dies; the same radii as on an orbit level; arrival, release and all four disarm paths behaving identically; **and the cap never binding across the longest fall the field world permits.**
 >
 > Also assert there is **no reachable reference to `game.orbitLayout`** anywhere in the drift path, and that the three renamed constants have zero readers under their old names.
 >
 > **TRAP 1:** `GAME_VERSION` unchanged; docs untouched — P5 owns them, and its prompt already carries this correction. **TRAP 2:** the registry count stays 46 and no entry moves position. **TRAP 3:** do not "simplify" by folding the trigger and target radii into literals now that they are not orbit-named — the derivation is the point. **TRAP 4:** nothing about P1, P2 or P3 is in scope; this is one deleted gate, three renamed constants, one renamed knob id, and a set of inverted assertions.
 
 **Commit:** `CS023 P4b: drift applies on every level, not orbit-only — gate removed, ORBIT_GRAVITY_* renamed DEBRIS_DRIFT_*`
+
+---
+
+## Phase 4c — Ring spacing
+
+**Goal:** spread the shell so the rings read as separate orbits. One constant — but it drags four derived values with it, one of which reverses a correction P1 shipped.
+
+**Model:** Opus 4.8, xhigh effort, thinking on.
+
+### Paste-ready prompt
+
+> Implement CS023 Phase 4c per `PLANNED-FEATURES-CS023.md` Correction **C16** and the amended §1.3/§1.4. Re-grep every P1 and P4/P4b anchor by symbol.
+>
+> **The change is one constant: `ORBIT_RADIUS_STEP` 138 → 200.** Rings move to **400 / 600 / 800 / 1000**, radial corridors from 46 px to **108 px**, outer satellite edge to **1,046 px** against the 1,060 px wrap-clean budget. `ORBIT_INNER_RADIUS` stays 400, so ring 1's 266 px dock clearance is unchanged. Nothing else is retuned by hand.
+>
+> **Four things follow from it that are NOT optional, and three of them contradict something already in the codebase or its tests.** Find each one; do not assume the list is complete.
+>
+> 1. **`orbitEffectiveCount(5)` reverts to 4, reversing Correction C6.** At step 138 a fifth ring fitted (998 px inside 1,060) and P1 wrote a test asserting that as a *change* from CS022. At step 200 five rings would reach 1,246 px and the clamp walks back to four. **Invert that assertion with a `CORRECTED BY CS023 P4C` note — do not delete it**, or the suite goes quiet on a behaviour that just moved. `orbitDensity5` returns to never having been read by a shipped spawn; say so where P1 said the opposite.
+>
+> 2. **Satellite counts rise 15/16 → 18, flat.** Ring counts become 3/4/5/6 and the ramp totals 3/7/12/18 at occurrences 1–4. **The occurrence curve now moves nothing at all** — at step 138 it bought one satellite across the whole game, at step 200 it buys zero, because the `1 + 0.12 × (maxCount − 1)` rounding absorbs the gap-multiplier decay on all four rings. Strengthen P1's C5 comment from "nearly inert" to "inert," and change its test from "one step at occurrence 3" to "identical at every occurrence from 1 to 21."
+>
+> 3. **The drift's radii move with the rings, by design** (Paul's call: derived, not pinned). Trigger 814 → **1,000**, target 676 → **800**. Verify they still derive and are not literals anywhere. **This shrinks what the drift reclaims** — 46% → 29% of a field world, 75% → 62% of an orbit world (C16c). That is a known, accepted cost and a gate question, not something to compensate for here.
+>
+> 4. **The speed cap rises 255.7 → 314.2 px/s and stops binding on either archetype** (C16b). Widening the rings raised ring 4's tangential speed *and* moved the target radius outward, shortening every fall: longest orbit fall 1,403 px worth 290 px/s, longest field fall 669 px worth 200 px/s. **Keep the cap.** It is derived, it costs one projection per drifting body, and it is what makes raising `DEBRIS_DRIFT_ACCEL` at the gate safe. Do not remove it for being unreachable — that is the exact trap C5 describes for the gap-multiplier curve. Add a sandbox test that raises the acceleration until the cap *does* bind, proving it is live code.
+>
+> **The 14 px margin needs its own guard (C16a).** `orbitEffectiveCount()` walks the ring count down *silently* — any later bump to `ORBIT_INNER_RADIUS`, `ORBIT_RADIUS_STEP` or `DEBRIS_RADII[3]` returns three rings instead of four with nothing in the log. Pin `orbitEffectiveCount(4) === 4` with the margin as a named value, and add a sandbox proving **step 205 drops the shell to three rings**. State the 204 px ceiling in the constants comment.
+>
+> **Tests** — extend `scratchpad/test-cs023-p1.js` (geometry, counts, budget, clamp) and `scratchpad/test-cs023-p4.js` (drift radii, cap) rather than adding a file. This is a retune of what those phases built, and splitting it leaves stale expectations sitting in the older files. **Sweep the whole suite for the old radii — 538, 676, 814, 860 — and for the 46 px corridor**; P1's repoint sweep found the surface wider than predicted, as every geometry round has.
+>
+> **TRAP 1:** `GAME_VERSION` unchanged; docs untouched — P5 owns them and its prompt carries this. **TRAP 2:** `ORBIT_INNER_RADIUS`, `ORBIT_DENSITY`, `ORBIT_FAST_RING`, `WORLD_SIZE_ORBIT`, `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT` and the ramp direction do not move — the complaint was ring *spacing*, nothing else. **TRAP 3:** do not compensate for the higher satellite count by touching density; 18 is still well under CS022's 27 and the gate decides. **TRAP 4:** the registry stays at 46.
+>
+> ultrathink about which existing assertions this reverses rather than merely updates.
+
+**Commit:** `CS023 P4c: ring spacing 138 to 200 — rings 400/600/800/1000, corridors 108 px, drift radii and cap follow`
 
 ---
 
@@ -233,10 +269,11 @@ Four densities, both orbit velocities, gravity acceleration and bounce restituti
 
 1. **The inverted ramp.** One ring at 400 px at level 3, growing outward to four by level 12. Does it read as the shell building outward, and — the whole point of the inversion — is the dead space gone?
 2. **Level 3 is 3 ring satellites and 5 scatter.** That is a very light level. Too light, or a clean introduction to the archetype?
-3. **The 46 px radial corridor.** Flying between rings, does 46 px against a 26 px ship read as threading a needle, or is it invisible because the tangential lanes (746–1035 px) mean you never have to use it? *The one geometric consequence nobody has seen in the hands.*
+2b. **The full shell is now 18 satellites, not 15** (P4c — wider rings have more circumference at a flat 0.12 density). Still comfortably under CS022's 27, but your original complaint was that the orbits felt like a grind. Does 18 cross back over? *(knobs: the four densities)*
+3. **The 108 px radial corridor** (P4c raised it from 46). Do the four rings now read as separate orbits with real space between them, which is what P4c was for? And at 1,046 px the outer ring is 14 px from the budget ceiling — no room left to spread them further without dropping `ORBIT_INNER_RADIUS` or a ring.
 4. **Two fast rings (2 and 4).** Slow/fast/slow/fast — rhythm or noise? Note the inner fast ring now arrives first, at level 6. *(report where you leave `ORBIT_ANG_VEL` 6 °/s and `ORBIT_FAST_MULT` 3.0 — they also set the drift's speed cap)*
 5. **The smaller world.** Orbit levels are 3840×2160 rather than 5120×2880. Less of a commute? Is the field component still findable?
-6. **Level 63 is level 12.** Spec C5: the ramp carries escalation to level 12 and then the shell is flat at 16 satellites for 17 more occurrences. Does the archetype need something after 12, or does the drift carry it? *A density ramp is the cheapest answer and it is a CS024 decision, not a P5 retune.*
+6. **Level 63 is level 12.** Spec C5: the ramp carries escalation to level 12 and then the shell is flat at 18 satellites for 17 more occurrences — at step 200 the gap-multiplier curve adds *nothing at all*. Does the archetype need something after 12, or does the drift carry it? *A density ramp is the cheapest answer and it is a CS024 decision, not a P5 retune.*
 
 ### The collisions
 
@@ -247,10 +284,10 @@ Four densities, both orbit velocities, gravity acceleration and bounce restituti
 
 ### The drift
 
-11. **Does it read at all?** The trigger fires only once nothing is left inside 814 px, which is late in a level. Did the outer junk come back to you, or did the level just end? *(knob: `debrisDriftAccel`, a guess at 30 px/s² — set it to 0 for the A/B)*
-12. **Is the pull fast enough, and is the cap right?** Pieces accelerate to at most 255.7 px/s inward — the outer fast ring's own speed — and coast on through the shell region when released. Too slow to matter, or does the field genuinely re-form around you? *If it is slow, raise the acceleration first; the cap only binds for pieces starting beyond ~1,766 px from the dock.*
+11. **Does it read at all?** The trigger fires only once nothing is left inside 1,000 px of the dock, which is late in a level. Did the outer junk come back to you, or did the level just end? *(knob: `debrisDriftAccel`, a guess at 30 px/s² — set it to 0 for the A/B)*
+12. **Is the pull fast enough?** Pieces are pulled toward 800 px from the dock and coast on through the shell region when released. Too slow to matter, or does the field genuinely re-form around you? *Raise `debrisDriftAccel` first — after P4c the 314 px/s cap never binds on either archetype (C16b), so there is real headroom before it starts clamping.*
 13. **The interrupts.** Shooting a drifting piece, ramming one, or watching two collide mid-drift — does that read as knocking something off course, or does it just look like the pull switched off?
-14. **The drift on FIELD levels** (P4b). It runs everywhere now, and the field world is smaller — 46% of it sits beyond the 814 px trigger, versus 75% of an orbit world. Does the cleanup tail of a field level improve as much as an orbit level's does, or does pulling everything to 676 px around the dock feel cramped on the smaller map? *One radius serves both worlds right now; if the field wants its own, that is a CS024 decision, not a P5 retune.*
+14. **The drift on FIELD levels** (P4b), and whether P4c hurt it. The trigger moved out to 1,000 px with the rings, so the share of the world it can reclaim fell from 46% to **29%** on a field level and 75% to 62% on an orbit level (C16c). **Does the field drift still fire often enough to be worth having?** If it has gone quiet, the fix is decoupling the two drift radii from the ring geometry — a two-line change, but a CS024 decision, not a P5 retune.
 
 ### Frame rate
 
@@ -268,15 +305,15 @@ Four densities, both orbit velocities, gravity acceleration and bounce restituti
 
 > Implement CS023 Phase 5 — the closing phase. **No new logic.** Read the gate answers in `STATUS.md`'s Playtest asks section and retune from those only; if an answer is "no change," change nothing (the CS020 P2 / CS022 P4 precedent). If an answer asks for something that is a FEATURE rather than a constant move, **surface it and stop**.
 >
-> 1. **Retune** whatever the gate settled: the four densities, `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT`, `DEBRIS_DRIFT_ACCEL`, `DEBRIS_BOUNCE_RESTITUTION`, `DEBRIS_BOUNCE_MIN`, `DEBRIS_MASS`. Registry `def`s derive from the shipped consts, so a const move carries the knob automatically — verify, don't assume. **Note that moving `ORBIT_ANG_VEL` or `ORBIT_FAST_MULT` also moves the drift's speed cap** (spec C14); say so wherever you record the retune.
+> 1. **Retune** whatever the gate settled: the four densities, `ORBIT_RADIUS_STEP` (**ceiling 204 px — above that `orbitEffectiveCount` silently drops a ring**, C16a), `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT`, `DEBRIS_DRIFT_ACCEL`, `DEBRIS_BOUNCE_RESTITUTION`, `DEBRIS_BOUNCE_MIN`, `DEBRIS_MASS`. Registry `def`s derive from the shipped consts, so a const move carries the knob automatically — verify, don't assume. **Moving `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT` or `ORBIT_RADIUS_STEP` also moves the drift's speed cap, and moving `ORBIT_RADIUS_STEP` moves both drift radii, the satellite counts and the ring-count clamp** (C14, C16). Nothing about this geometry is a one-value change; say so wherever you record the retune.
 >
 > 2. **`GAME_VERSION` `"1.0.0.22"` → `"1.0.0.23"`.** Grep the repo whole rather than trusting any list: CS021 P5 predicted eight-plus-four pins and found eleven, and CS022 P4's sweep touched twelve files against a prompt naming five. Live pins that track HEAD get both their console label and their assert message bumped; this changeset's own four test files (P4's now also carrying P4b) get the standing mirror-image repoint (`assert GAME_VERSION !== "1.0.0.22"`) with a `REPOINTED BY CS023 P5` note. Files already asserting `!== "1.0.0.21"` stay correct forever — leave them. Historical header-comment narratives are left alone (CS018 P10 / CS020 P2 precedent).
 >
-> 3. **GDD — shipped behaviour only.** **§2.13.1** needs the archetype **restated, not amended**: every geometry number moved (radii 460/736/1012/1288 → 400/538/676/814, outer edge 1,334 → 860 against a 1,060 px budget, dock clearance 326 → 266, corridors 184 → 46, density → flat 0.12, the full shell 84 peak → 16), the ramp now runs **innermost-first** with the §1.4 table, the fast ring is a **list**, and the inward drift with its derived cap is new. **The drift is documented as level-agnostic** — §2.13.1 is the orbit section, so the drift's own description belongs in the general debris/level material with only a pointer from §2.13.1, or a future reader will re-scope it exactly as P4 did (spec C15). **§2.11.1** takes the size-9 orbit world and the corrected `dmax`. **§3.1 collision conventions** gains three new passes in its documented pass order — satellite↔satellite, UFO↔satellite, and the mutual-damage rule on hazard↔ship — plus the "the hazard dies too, and scores nothing" clause on its `damageShip` bullet, and a line recording that `awardScore` gates score and stats but never drops (spec C13). **§2.19** takes the registry 44 → 46 with both new knobs. Architecture Map: Constants row gains `DEBRIS_MASS`/`DEBRIS_BOUNCE_*`/`DEBRIS_DRIFT_*`; Entity classes gains `DebrisSatellite.drifting`; Flow functions gains `debrisBounce`, `maxOrbitSpeed` and the arming pass.
+> 3. **GDD — shipped behaviour only.** **§2.13.1** needs the archetype **restated, not amended**: every geometry number moved (radii 460/736/1012/1288 → 400/600/800/1000, outer edge 1,334 → 1,046 against a 1,060 px budget, dock clearance 326 → 266, corridors 184 → 108, density → flat 0.12, the full shell 84 peak → 18 flat), the ramp now runs **innermost-first** with the §1.4 table, the fast ring is a **list**, and the inward drift with its derived cap is new. **The drift is documented as level-agnostic** — §2.13.1 is the orbit section, so the drift's own description belongs in the general debris/level material with only a pointer from §2.13.1, or a future reader will re-scope it exactly as P4 did (spec C15). **§2.11.1** takes the size-9 orbit world and the corrected `dmax`. **§3.1 collision conventions** gains three new passes in its documented pass order — satellite↔satellite, UFO↔satellite, and the mutual-damage rule on hazard↔ship — plus the "the hazard dies too, and scores nothing" clause on its `damageShip` bullet, and a line recording that `awardScore` gates score and stats but never drops (spec C13). **§2.19** takes the registry 44 → 46 with both new knobs. Architecture Map: Constants row gains `DEBRIS_MASS`/`DEBRIS_BOUNCE_*`/`DEBRIS_DRIFT_*`; Entity classes gains `DebrisSatellite.drifting`; Flow functions gains `debrisBounce`, `maxOrbitSpeed` and the arming pass.
 >
-> 4. **`DIFFICULTY-LEVERS.md`** — the orbit world size row takes 16 → 9; the **orbit ring ramp row takes the inversion and is promoted to the archetype's escalation axis** (spec C5/§5); the orbit-gap-multiplier row records C5 — the curve still runs and buys one satellite in the whole game; the orbit density row takes the flat curve. **Two new rows:** debris inward drift (noting it applies on **every** level, and that the cap tracks the orbit motion knobs but never binds on a field level) and satellite bounce.
+> 4. **`DIFFICULTY-LEVERS.md`** — the orbit world size row takes 16 → 9; the **orbit ring ramp row takes the inversion and is promoted to the archetype's escalation axis** (spec C5/§5); the orbit-gap-multiplier row records C5 — the curve still runs and buys one satellite in the whole game; the orbit density row takes the flat curve and the 18-satellite shell; the ring-geometry row records the 14 px budget margin and the 204 px step ceiling (C16a). **Two new rows:** debris inward drift (noting it applies on **every** level, and that the cap tracks the orbit motion knobs but never binds on a field level) and satellite bounce.
 >
-> 5. **`GDD-VERSION-HISTORY.md`** — one consolidated CS023 (P1–P5, including P4b) entry appended. Open only to append; never read for context.
+> 5. **`GDD-VERSION-HISTORY.md`** — one consolidated CS023 (P1–P5, including P4b and P4c) entry appended. Open only to append; never read for context.
 >
 > 6. **`STATUS.md` size check**, per `CLAUDE.md`'s rolling-window rule: this closes CS023, so if the oldest changeset still covered is more than ~3 rounds behind, relocate it into `archive/STATUS-HISTORY.md` — **a straight relocation, newest-first, each entry its own paragraph, never summarized**. Double-check every written entry starts on its own paragraph; a missing trailing newline is what fused years of entries into one 160 KB line in mid-2026.
 >
@@ -296,6 +333,7 @@ Four densities, both orbit velocities, gravity acceleration and bounce restituti
 | P2 | Opus 4.8 | xhigh + thinking + `ultrathink` | New physics with a wrap-aware asymmetry, plus a second O(n²) pass whose ceilings must be derived before they are measured |
 | P3 | Sonnet 5 | high | Four one-line insertions and one parameter, against a helper P2 already proved and a contract C13 already established. The care is all in the traps, and they are explicit |
 | P4 | Opus 4.8 | xhigh + thinking + `ultrathink` | An arm/release lifecycle whose failure mode is silence, a cap whose obvious shortcut is wrong (C14), and a strong pull toward touching the rails that the spec explicitly forbids |
+| P4c | Opus 4.8 | xhigh + thinking + `ultrathink` | One constant, four derived consequences, and a *reversal* of P1's 5-ring assertion — the danger is a session that changes the number, sees green, and never finds the three tests now asserting the wrong thing |
 | P4b | Sonnet 5 | high | One deleted gate and three renames — but the real work is finding and *inverting* P4's field-level assertions rather than deleting them, which is a well-established idiom in this suite |
 | P5 | Sonnet 5 | high | Mechanical, but the version-pin sweep has undercounted in four consecutive changesets — grep, don't trust |
 
