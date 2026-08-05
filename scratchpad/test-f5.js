@@ -53,7 +53,7 @@ const returnList = [
   "difficultyFactor", "angleTo",
   "WORLD_W", "WORLD_H",
   // CS022 P1: WORLD_W/WORLD_H are a load-time SNAPSHOT now (the field size). Section (D) drives real
-  // nextWave() calls through orbit levels (21, 63), which resize the torus to 5120x2880 — so (H2),
+  // nextWave() calls through orbit levels (21, 63), which resize the torus to 3840x2160 — so (H2),
   // which places the ship relative to the seam, guards that it is running in the world it thinks it is.
   "WORLD_SIZE_FIELD"
 ];

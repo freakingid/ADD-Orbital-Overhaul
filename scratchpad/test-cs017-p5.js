@@ -99,7 +99,8 @@ const RETURN = [
   "levelDef", "JUNK_CYCLE", "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "GARBAGE_PICKUP", "SCOOP_SPILL_KICK",
   "HUNTER_COALESCE_COUNT", "GARBAGE_MERGE_DIST", "COLOR", "CARGO_BASE", "WORLD_W", "WORLD_H",
   // CS022 P1: WORLD_W/WORLD_H above are a LOAD-TIME SNAPSHOT (the field size). This sweep walks orbit
-  // levels too, where the live world is 5120x2880, so the world-bounds check reads the live period.
+  // levels too, where the live world is 3840x2160 (CS023 P1; 5120x2880 through CS022), so the world-bounds
+  // check reads the live period rather than any literal.
   "worldDims",
 ];
 
@@ -178,7 +179,7 @@ const bonusOf = arr => arr.filter(g => g.bonus);
       `wave ${wave}: placed in the [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] ring around the ship (d=${d.toFixed(2)})`);
     assert(near(d, SPAWN_MIN_DIST), `wave ${wave}: with random pinned to 0 the ring distance is exactly SPAWN_MIN_DIST`);
     // REPOINTED BY CS022 P1: the bounds are the LIVE world's, not the load-time snapshot's. This sweep
-    // includes orbit levels (every 3rd), where nextWave() has just resized the torus to 5120x2880.
+    // includes orbit levels (every 3rd), where nextWave() has just resized the torus to 3840x2160.
     const [liveW, liveH] = liveDims();
     assert(b.x >= 0 && b.x <= liveW && b.y >= 0 && b.y <= liveH,
       `wave ${wave}: placement wrapped into world bounds (wrapPos)`);

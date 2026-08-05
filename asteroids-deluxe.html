@@ -102,7 +102,7 @@
 const VIEW_W = 1280, VIEW_H = 720;      // visible viewport = canvas size
 // CS022 P1 (spec §4.1, FORK-CS022-B/C): THE TORUS PERIOD IS NO LONGER FIXED. A world "size" counts
 // VIEWPORT-SIZED SCREENS OF AREA — size 4 is 2x2 viewports (2560x1440, every build through CS021),
-// size 16 is 4x4 (5120x2880, what four rings at CS022's 276 px spacing need). The size is chosen by
+// size 9 is 3x3 (3840x2160, what four rings at CS023's 138 px spacing need). The size is chosen by
 // the LEVEL'S ARCHETYPE (worldSizeFor), not by a level-table column and not by a ramp, so game.wave
 // stays the ONE difficulty clock. FORK-CS022-B: this is a general seam with two values wired — a
 // finer per-level scheme later is a data change, not a re-plumb.
@@ -115,7 +115,13 @@ const WORLD_SIZE_FIELD = 4;             // field levels: 2560x1440 — deliberat
                                         // v3.1 P1 shrink (spec C4: the bigger world was tried and
                                         // rejected, and the spawn/dock rings are flat constants that
                                         // would just leave more dead space in it)
-const WORLD_SIZE_ORBIT = 16;            // orbit levels: 5120x2880
+const WORLD_SIZE_ORBIT = 9;             // orbit levels: 3840x2160. CS023 P1 (spec §1.3, C2): 16 -> 9.
+                                        // CS022's four rings at a 276 px step reached a 1,334 px
+                                        // satellite edge and needed size 16's 1,420 px wrap-clean
+                                        // budget; CS023's 138 px step reaches 860 px, which fits
+                                        // size 9's 1,060 px budget with 200 px to spare. This is a
+                                        // VALUE change, not a rename — worldSizeFor() and
+                                        // orbitEffectiveCount() read the symbol, not the number.
 const WORLD_SIZE_MAX = Math.max(WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT); // largest size in the table; the
                                         // starfield is generated once for THIS (§4.3/FLAG-CS022-d)
 let WORLD_W = 2560, WORLD_H = 1440;     // simulation space (the wrap boundary). WAS `const` through
@@ -484,7 +490,7 @@ const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawi
 const SPAWN_MIN_DIST = 220;     // new debris satellites: nearest allowed to the ship
 const SPAWN_MAX_DIST = 640;     // new debris satellites: farthest from the ship (stay reachable; clamped
                                 // to the reachable radius min(WORLD_W,WORLD_H)/2-60, which is 660 at
-                                // WORLD_SIZE_FIELD and 1380 at WORLD_SIZE_ORBIT — CS022 P1 (spec C5)
+                                // WORLD_SIZE_FIELD and 1020 at WORLD_SIZE_ORBIT — CS022 P1 (spec C5)
                                 // corrects the old comment's claim that 660 is "the" limit. Both this
                                 // and DOCK_MAX_DIST are FLAT constants that do NOT scale with world
                                 // size, and they clear either figure; only this comment moved.
@@ -507,23 +513,33 @@ const STAR_NEAR_BRIGHT_MAX = 1.0;
 // shootable, breakable, harvestable — so shooting a lane open is a legitimate strategy and the whole
 // arrangement erodes into a normal field as it is harvested (FORK-CS021-C2).
 //
-// THE RADII ARE DERIVED FROM SATELLITE SIZE AND FITTED TO THE *ORBIT-LEVEL* WORLD (CS022 P3, gate Q1 +
-// FORK-CS022-A). CS021 shipped 180/150 — four radii fitted to the FIELD world's ~700 px wrap-clean
-// circle — and its playtest gate came back saying the rings sat too close to the dock and were all too
-// tight. The spacing Q1 asked for is: ring 1 five large-satellite diameters out from the dock, every
-// further ring three more, measured CENTRE-TO-CENTRE (FORK-CS022-A; the edge-to-edge readings need a
-// size-25 world). At DEBRIS_RADII[3] * 2 = 92 px that is 5 x 92 = 460 and 3 x 92 = 276, putting the four
-// rings at 460 / 736 / 1012 / 1288 and the OUTERMOST SATELLITE EDGE at 1288 + 46 = 1,334 px.
+// THE RADII ARE DERIVED FROM SATELLITE SIZE AND FITTED TO THE *ORBIT-LEVEL* WORLD (CS023 P1, spec §1.3 /
+// §4.1). CS022 shipped 460/276 — ring 1 five large-satellite diameters out and every further ring three
+// more — which needed a size-16 world and put four rings across 1,334 px of satellite edge. CS023 keeps
+// the derive-from-satellite-size rule and tightens the SHELL: ring 1 stays a round 400 px off the dock
+// and the step drops to 138 px, which is 1.5 x the 92 px large-satellite diameter (DEBRIS_RADII[3] * 2).
+// The four rings land at 400 / 538 / 676 / 814 and the OUTERMOST SATELLITE EDGE at 814 + 46 = 860 px.
 //
-// That is why CS022 P1 exists: 1,334 px does not fit the field world (budget 700 px), so an ORBIT level
-// runs at WORLD_SIZE_ORBIT (5120x2880), whose wrap-clean budget is 2880/2 - 20 = 1,420 px. 1,334 against
-// 1,420 — four rings fit, and they fit from the FIRST occurrence. THE WORLD SIZE DOES NOT RAMP EVEN
-// THOUGH THE RINGS DO (activeRingsFor(), spec §1.2). Ring 1 clears the permanent 88 px dock (radius
-// DOCK_RADIUS x 2 at every level — LEVER_DOCK_SIZE ships disabled, Correction C2) by 460 - 46 - 88 =
-// 326 px, against CS021's 46 px. Anything re-deriving these must budget against worldDims(
-// WORLD_SIZE_ORBIT), never the live WORLD_H — see orbitEffectiveCount() for the same rule.
-const ORBIT_INNER_RADIUS  = 460;  // ring 1 radius, px from the dock — 5 large-satellite diameters (5 x 92)
-const ORBIT_RADIUS_STEP   = 276;  // px per further ring (3 x 92); rings 1-4 land at 460 / 736 / 1012 / 1288
+// 860 px is why WORLD_SIZE_ORBIT could come back down to 9: an ORBIT level runs at 3840x2160, whose
+// wrap-clean budget is 2160/2 - 20 = 1,060 px. 860 against 1,060 — four rings fit with 200 px spare (a
+// FIFTH would reach 998 px and now also fits; a sixth, 1,136, does not — spec C6). They fit from the
+// FIRST occurrence: THE WORLD SIZE DOES NOT RAMP EVEN THOUGH THE RINGS DO (activeRingsFor() below).
+// Anything re-deriving these must budget against worldDims(WORLD_SIZE_ORBIT), never the live WORLD_H —
+// see orbitEffectiveCount() for the same rule.
+//
+// TWO CORRIDOR FACTS, STATED HERE SO NOBODY HAS TO RE-DERIVE THEM — AND SO NOBODY "FIXES" THE SECOND.
+//   (1) Ring 1 clears the permanent 88 px dock (radius DOCK_RADIUS x 2 at every level — LEVER_DOCK_SIZE
+//       ships disabled) by 400 - 46 - 88 = 266 px. That is the point of the retune: the shell now sits
+//       right where the player already is, rather than out past a field of dead space.
+//   (2) The INTER-RING RADIAL CORRIDOR is 138 - 92 = 46 px — the gap a ship crossing the shell radially
+//       passes through between two adjacent rings' satellite edges. THAT IS NARROWER THAN THE 65 px
+//       IN-RING FAIRNESS FLOOR (minRequiredGap below), AND IT IS CORRECT, NOT A BUG. minRequiredGap has
+//       only ever governed TANGENTIAL lanes between two adjacent satellites in the SAME ring; it says
+//       nothing about the radial distance between rings and never has. Nobody had to notice at CS022's
+//       276 px step, where the corridor was 184 px and comfortably wider than the floor. Do not "repair"
+//       the mismatch by feeding ORBIT_RADIUS_STEP through the fairness floor — that would be a new rule.
+const ORBIT_INNER_RADIUS  = 400;  // ring 1 radius, px from the dock — 266 px of clear water over the dock
+const ORBIT_RADIUS_STEP   = 138;  // px per further ring (1.5 x 92); rings 1-4 land at 400 / 538 / 676 / 814
 // ORBIT_RING_COUNT IS NOT DECLARED HERE ANY MORE. CS022 P3 moved it down into the LEVEL PROGRESSION
 // TABLE block, beside ORBIT_LEVEL_EVERY, because levelDef()'s new `orbitRings` column reads it and
 // levelDef must stay evaluable ALONE in a bare context — the identical reason ORBIT_LEVEL_EVERY lives
@@ -534,22 +550,23 @@ const ORBIT_RADIUS_STEP   = 276;  // px per further ring (3 x 92); rings 1-4 lan
 // so this floor can never bind again. Left defined, unread, as a documented historical value (the
 // DEBRIS_COUNT_MAX precedent, CS018 P3). No readers remain.
 const ORBIT_RADIUS_STEP_PAD = 40;
-// Per-ring density, 0 (one satellite) -> 1 (the tightest fair fit). Non-uniform on purpose so the level
-// has rhythm: tight -> breather -> widest -> wide.
+// Per-ring density, 0 (one satellite) -> 1 (the tightest fair fit).
 //
-// CS022 P3 (FORK-CS022-G, Correction C7): that rhythm line USED to read "tight -> breather -> wide/fast
-// -> tightest", which was true at CS021's 180/150 geometry — ring 4's lane was 96.5 px there and it was
-// the level's climax. Ring 4's density is now HALVED (0.85 -> 0.42), taken on FRAME BUDGET rather than on
-// fairness: at the new radii the shipped curve put 44 satellites on ring 4 alone and a level-21 peak of
-// 108, and the standing-garbage load a full harvest produces scales with that. The halving is exact at
-// both ends of the occurrence curve — 44 -> 22 at level 3, 49 -> 25 at the 1.8 floor — and takes the peak
-// level total to 84. The consequence is that ring 4's lane goes 92 -> 276 px, making it the second-WIDEST
-// ring rather than the tightest; ring 1's 101 px is now the only tight ring left (FLAG-CS022-c).
+// CS023 P1 (spec §1.3): FLAT AT 0.12, ALL FOUR RINGS. Every earlier build ran a non-uniform curve so the
+// level had a rhythm from ring to ring (CS021's 0.75/0.45/0.35/0.85, CS022's 0.42-halved tail); that
+// sentence is DELETED rather than amended, because there is no rhythm at a flat curve. What replaced it
+// is the RAMP: escalation is now ring COUNT over occurrences 1-4 (activeRingsFor(), FORK-CS023-A), not
+// per-ring crowding within one level.
 //
-// At the shipped geometry, with every ring active (occurrence 4+), this yields counts 15 / 14 / 15 / 23
-// at level 12 rising to 15 / 15 / 16 / 25 at the floor. All four are live debug sliders (CS021 P3) and
-// are the first lever if the frame budget or the feel says so.
-const ORBIT_DENSITY       = [0.75, 0.45, 0.35, 0.42];
+// The cut is large and deliberate. CS022 shipped 27 satellites at level 3 rising to a peak of 84; CS023's
+// FULL four-ring shell is 15 satellites at occurrences 1-2 and 16 from occurrence 3 through level 63 — a
+// ~5x reduction, and it is what pays for CS023's two new O(n^2)-shaped collision passes (spec §1.1/§1.2).
+// Per-ring counts at the shipped geometry are 3 / 3 / 4 / 5 at occurrence 1, becoming 3 / 4 / 4 / 5 from
+// occurrence 3 on, with tangential lanes of 746 / 1035 / 970 / 931 px — every ring is now a wide ring.
+//
+// All four are live debug sliders (CS021 P3) and are the first lever if the level 12-63 plateau reads as
+// repetitive or if the frame budget says so.
+const ORBIT_DENSITY       = [0.12, 0.12, 0.12, 0.12];
 // THE FAIRNESS FLOOR, as a multiple of the ship's diameter:
 //     minRequiredGap = max(shipDiameter + ORBIT_SAFETY_MARGIN, shipDiameter * ORBIT_GAP_MULT)
 // At 2.5x a 26 px ship that is 65 px of clear lane between adjacent satellites (the multiplicative half
@@ -560,6 +577,21 @@ const ORBIT_DENSITY       = [0.75, 0.45, 0.35, 0.42];
 // orbit spawn is orbitGapMult(level) below, which decays by ORBIT_GAP_MULT_STEP per further occurrence
 // of the archetype and is clamped at the hard ORBIT_GAP_MULT_FLOOR, the point past which the gap would
 // stop being a fair minimum at all. The floor lands at occurrence 8 (level 24) and holds through level 63.
+//
+// CS023 P1 (spec Correction C5) — THIS CURVE STILL RUNS AND IS NO LONGER OBSERVABLE. RECORDED, NOT
+// RETUNED AND NOT DELETED. The generator picks a count in two steps: maxCount = floor(circumference /
+// spacePerSatellite), then count = round(1 + density * (maxCount - 1)). The occurrence curve acts only on
+// the FIRST step — 2.5 -> 1.8 shrinks spacePerSatellite 157 -> 138.8 px and raises maxCount by ~13%
+// (16/21/27/32 -> 18/24/30/36 at the four radii). At ORBIT_DENSITY 0.12 that 13% is 13% OF THE 0.12 TERM,
+// i.e. roughly half a satellite per ring, and rounding eats almost all of it: across the WHOLE 63-level
+// game the curve buys exactly ONE satellite — ring 2, at occurrence 3 (level 9), 3 -> 4. The full shell is
+// 15 at levels 3-6 and 16 from level 9 through 63. At CS022's 0.85 ring-4 density the same maxCount move
+// was worth four satellites on that ring alone; at 0.12 it is worth zero.
+//
+// DO NOT retune a lever that is not connected to anything, and DO NOT delete a working mechanism because
+// one density array quieted it. Escalation is now carried by the RAMP (activeRingsFor(): ring count 1 -> 4
+// across levels 3-12), and the four density sliders are the dial if the flat 12-63 tail reads as
+// repetitive — either of which would make this curve audible again.
 const ORBIT_GAP_MULT       = 2.5;
 const ORBIT_GAP_MULT_FLOOR = 1.8;  // hard absolute floor under difficulty scaling (FLAG-CS021-d)
 const ORBIT_GAP_MULT_STEP  = 0.1;  // multiplier lost per occurrence past the first
@@ -568,13 +600,24 @@ const ORBIT_SAFETY_MARGIN  = 8;    // px in the ADDITIVE half of minRequiredGap
 // knobs whose `def` DERIVES from these constants (shown in degrees/second, via toNative), and the
 // playtest gate is where they get settled — the fork resolution is explicit that Paul tunes them live
 // rather than accepting a specced guess. ORBIT_ANG_VEL is deliberately slow: a full revolution in 60 s,
-// which at CS022 P3's ring-4 radius (1288) is ~135 px/s of tangential travel — the px/s figures scale
-// with the radii, so this whole paragraph's numbers moved when the geometry did, the °/s did not.
+// which at CS023's ring-1 radius (400) is ~41.9 px/s of tangential travel and at ring 3's (676) ~70.8 —
+// the px/s figures scale with the radii, so this whole paragraph's numbers moved when the geometry did,
+// the °/s did not.
 const ORBIT_ANG_VEL       = 6 * Math.PI / 180;  // 6 deg/s
-const ORBIT_FAST_MULT     = 3.0;  // the fast ring's multiplier — ~18 deg/s, ~318 px/s at ring 3's radius
-const ORBIT_FAST_RING     = 3;    // 1-BASED ring number that spins at ORBIT_ANG_VEL * ORBIT_FAST_MULT.
-                                  // Ring 3 is the deliberately SPARSE ring: it trades spatial tightness
-                                  // for timing pressure, which is the whole point of the density curve's dip.
+const ORBIT_FAST_MULT     = 3.0;  // the fast rings' multiplier — ~18 deg/s: ~169 px/s at ring 2's radius
+                                  // (538) and ~256 px/s at ring 4's (814), the fastest a satellite ever
+                                  // moves in orbit at the shipped constants.
+// CS023 P1 (spec C3, FORK-CS023-G): A LIST, NOT A NUMBER. Human, 1-BASED ring numbers, ANY LENGTH —
+// including empty (no fast ring at all). It has exactly one consumer, spawnOrbitWave() below, which maps
+// it to the 0-based `fastRingIndices` generateOrbitLayout() tests by MEMBERSHIP. The arbitrary length is
+// the point of the type change and not incidental: nothing may assume "the fast ring is the outermost
+// one" or "there is exactly one" — at [1, 2] the fastest satellite on the board would be on ring 2, not
+// on ring 4 (spec C14). Not a knob; the two motion values beside it are.
+const ORBIT_FAST_RING     = [2, 4];  // rings 2 and 4 spin at ORBIT_ANG_VEL * ORBIT_FAST_MULT. Alternating
+                                     // fast/slow from the inside out, so the shell reads as moving at
+                                     // every occurrence past the first — but NOT at occurrence 1, which
+                                     // lays ring 1 alone: motion still arrives one occurrence late, as a
+                                     // second surprise, exactly as CS022's ring-3 choice did.
 // FORK-CS021-A -> (c): the rings centre on the dock and THE SHIP IS NEVER REPOSITIONED. Instead, any
 // ring whose band contains the ship rerolls its startAngle until the nearest satellite clears the ship;
 // this bounds the rerolls so a wave start can never hang. See spawnSafeOrbitLayout().
@@ -5102,11 +5145,15 @@ function resizeWorld(newSize) {
 
   // ---- 4. RE-PLACE each body ---------------------------------------------------------------------
   // BEARING is kept exactly; MAGNITUDE is min(d, dmax). dmax is the same reachable-radius clamp v3.1
-  // P1 derived for the spawn rings, for the same reason — 660 at WORLD_SIZE_FIELD, 1380 at
-  // WORLD_SIZE_ORBIT. On the GROW almost nothing binds (old max reach 1,468 px against 1,380); on the
-  // SHRINK a great deal does, and an over-range body is pulled ALONG ITS OWN BEARING to the edge of
-  // the new world rather than teleported by one period. FLAG-CS022-k: that parks the whole over-range
-  // band in a shell at exactly dmax; monotone compression of the band is the fix if it reads badly,
+  // P1 derived for the spawn rings, for the same reason — 660 at WORLD_SIZE_FIELD, 1020 at
+  // WORLD_SIZE_ORBIT. CS023 P1 (spec C7) CORRECTS WHAT THIS COMMENT USED TO CLAIM: at CS022's size-16
+  // orbit world dmax was 1,380 px and the note here read "on the GROW almost nothing binds (old max
+  // reach 1,468 px against 1,380)". At size 9 the orbit dmax is 1,020, so a carried body's old reach
+  // (up to the field world's half-diagonal, 1,468 px) exceeds it over a materially larger band and a
+  // real share of the field clamps on the GROW as well as on the shrink. An over-range body is pulled
+  // ALONG ITS OWN BEARING to that radius rather than teleported by one period. FLAG-CS022-k: that
+  // parks the whole over-range band in a shell at exactly dmax, and it now applies in BOTH directions
+  // rather than mostly on the shrink; monotone compression of the band is the fix if it reads badly,
   // and it is a one-expression change at this site.
   const dmax = Math.min(WORLD_W, WORLD_H) / 2 - 60;
   for (const s of snap) {
@@ -5225,9 +5272,15 @@ function startGame() {
 // satellite-size constant.
 function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY, orbitCount,
                                innerRadius, radiusStep, safetyMargin, minGapMultiplier,
-                               densityByOrbit, baseAngVel, fastRingIndex, fastRingMult, activeRings }) {
+                               densityByOrbit, baseAngVel, fastRingIndices, fastRingMult, activeRings }) {
   const minRequiredGap    = Math.max(shipDiameter + safetyMargin, shipDiameter * minGapMultiplier);
   const spacePerSatellite = satelliteDiameter + minRequiredGap;
+  // CS023 P1 (spec C3, FORK-CS023-G): `fastRingIndices` is a LIST of 0-based ring indices — the plural
+  // parameter name is the visible half of ORBIT_FAST_RING's type change, so the caller and the callee
+  // agree at a glance. Any length works, EMPTY included (no ring is fast); absent behaves as empty,
+  // matching what the retired scalar `fastRingIndex` did when it was undefined. Normalised ONCE here
+  // rather than per ring, so the membership test below allocates nothing.
+  const fastIdx = fastRingIndices || [];
   const rings = [], rejected = [], inactive = [];
   for (let i = 0; i < orbitCount; i++) {
     const radius        = innerRadius + i * radiusStep;
@@ -5237,7 +5290,7 @@ function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY
     // reported. `inactive` is a NEW returned array and is deliberately NOT folded into `rejected`:
     // `rejected` means "this ring is unfair by construction" (the maxCount guard below) and several
     // tests read it with exactly that meaning. Every other per-ring quantity — radius, density, angVel,
-    // fastRingIndex — keeps its ORIGINAL index, so ring 4 is ring 4 whether or not rings 1-3 exist.
+    // fastRingIndices — keeps its ORIGINAL index, so ring 4 is ring 4 whether or not rings 1-3 exist.
     if (activeRings && activeRings.indexOf(i) === -1) { inactive.push({ index: i, radius }); continue; }
     const circumference = TAU * radius;
     const maxCount      = Math.floor(circumference / spacePerSatellite);
@@ -5248,8 +5301,9 @@ function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY
     const ring = {
       index: i, radius, circumference, maxCount, density, count, angleStep,
       startAngle: 0,
-      // The fast ring trades spatial tightness for timing pressure (FORK-CS021-C1).
-      angVel: baseAngVel * (i === fastRingIndex ? fastRingMult : 1),
+      // A fast ring trades spatial tightness for timing pressure (FORK-CS021-C1). CS023 P1: SET
+      // MEMBERSHIP over `fastIdx`, not `i === fastRingIndex` — any number of rings may be fast.
+      angVel: baseAngVel * (fastIdx.indexOf(i) !== -1 ? fastRingMult : 1),
       actualGapPx: circumference / count - satelliteDiameter,
       satellites: [],
     };
@@ -5262,7 +5316,11 @@ function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY
     satelliteDiameter, shipDiameter,
     total: rings.reduce((n, r) => n + r.count, 0),
     // `rings` holds only ACTIVE rings, in ascending index order, so this is the OUTERMOST ACTIVE ring's
-    // satellite edge — 1,334 px at every occurrence, since the ramp fills from the outside in.
+    // satellite edge. CS023 P1 (FORK-CS023-A) REVERSES WHAT THIS USED TO SAY: under CS022's
+    // outermost-first ramp it was a constant 1,334 px at every occurrence; the ramp now fills from the
+    // INSIDE OUT, so the outer edge GROWS with the occurrence — 446 / 584 / 722 / 860 px at occurrences
+    // 1-4, held at 860 from level 12 on. It is still bounded by the same wrap-clean budget, and the
+    // level-12 figure is the one to budget against.
     outerEdge: rings.length ? rings[rings.length - 1].radius + satelliteDiameter / 2 : 0,
   };
 }
@@ -5388,25 +5446,47 @@ function orbitEffectiveCount(requested) {
          ORBIT_INNER_RADIUS + (count - 1) * ORBIT_RADIUS_STEP + DEBRIS_RADII[3] > orbitBudget) count--;
   return count;
 }
-// CS022 P3 (spec §1.2/§4.4, FORK-CS022-E): THE RING RAMP. Rather than every ring appearing at the first
-// occurrence, ONE RING IS ADDED PER OCCURRENCE OF THE ARCHETYPE, OUTERMOST FIRST — [3], [3,2], [3,2,1],
-// [3,2,1,0] — complete at occurrence 4 (level 12) and held from there through 63 and past the plateau.
-// Radii never move: this SELECTS rings, it does not re-space them, so ring 4 sits at 1288 px at level 3
-// exactly as it does at level 63.
+// CS022 P3 (spec §1.2/§4.4, FORK-CS022-E), INVERTED BY CS023 P1 (spec §1.4/§4.2, FORK-CS023-A): THE RING
+// RAMP. Rather than every ring appearing at the first occurrence, ONE RING IS ADDED PER OCCURRENCE OF THE
+// ARCHETYPE, INNERMOST FIRST — [0], [0,1], [0,1,2], [0,1,2,3] — complete at occurrence 4 (level 12) and
+// held from there through 63 and past the plateau. Radii never move: this SELECTS rings, it does not
+// re-space them, so ring 1 sits at 400 px at level 3 exactly as it does at level 63.
+//
+// WHY INNERMOST FIRST, WHICH IS THE OPPOSITE OF WHAT CS022 SHIPPED AND ARGUED FOR. CS022 filled from the
+// outside in on the reasoning that a distant shell reads as a horizon closing in. In the hands it read as
+// dead space: at occurrence 1 the only satellites on the board sat on the outermost ring, as far from the
+// dock as the geometry allows, so the first orbit level a player meets was a long flight out to a thin
+// arc and back. Filling from the INSIDE means level 3's whole shell is ring 1 — 266 px off the dock,
+// right where the player already is — and each further occurrence adds a ring OUTWARD from there, so the
+// level grows around the player instead of arriving from the edge. That is the direct answer to the
+// dead-space complaint, and it is the entire code change: one loop pushing `i` instead of `count - 1 - i`.
+//
+// A CONSEQUENCE WORTH NAMING, BECAUSE CS022 P3 LEFT NOTES SAYING THE OPPOSITE IN TWO PLACES: `rings`'
+// ARRAY POSITION IS ITS RING INDEX AGAIN. Under the outermost-first fill, layout.rings[0] was ring 4 at
+// occurrence 1 and per-ring snapshots keyed by loop position silently read the wrong ring; innermost-first
+// makes position and index agree at every occurrence (rings[k].index === k). Keying by `r.index` or
+// `r.radius` is still the right habit and every test that adopted it stays correct unchanged — but it is
+// no longer load-bearing, and the two CS022 P3 notes claiming position and index DIVERGE are now false.
+//
+// THE RAMP IS ALSO THE ARCHETYPE'S ESCALATION AXIS NOW (spec C5). At the flat 0.12 density curve the
+// occurrence-scaled gap multiplier buys one satellite in the whole game, so ring COUNT 1 -> 4 across
+// levels 3-12 is what carries the difficulty step; levels 12-63 are deliberately flat at 16 ring
+// satellites. See ORBIT_GAP_MULT's block above for the arithmetic.
 //
 // NO NEW CONSTANT AND NO NEW CLOCK. Occurrence is CS021 P2's own derivation, level / ORBIT_LEVEL_EVERY,
 // the same coarse tick orbitGapMult() above reads — game.wave stays the ONE difficulty clock.
 //
-// IT COMPOSES WITH THE orbitCount DEBUG KNOB RATHER THAN IGNORING IT (FLAG-CS022-h): the count it walks
-// down from is the EFFECTIVE ring count, so a requested 3 gives [2], [2,1], [2,1,0] and completes at
-// occurrence 3 instead of 4. No knob is added for the ramp itself. orbitEffectiveCount() is idempotent
+// IT COMPOSES WITH THE orbitCount DEBUG KNOB RATHER THAN IGNORING IT (FLAG-CS022-h): the count it clamps
+// against is the EFFECTIVE ring count, so a requested 3 gives [0], [0,1], [0,1,2] and completes at
+// occurrence 3 instead of 4 — and, at CS023's geometry, a requested 5 genuinely spawns 5 (spec C6) and
+// completes at occurrence 5. No knob is added for the ramp itself. orbitEffectiveCount() is idempotent
 // at this call — applyDebug()'s clampShown has already run on every write to DEBUG.orbitCount — so this
 // can never disagree with the ring count spawnOrbitWave() actually lays down.
 function activeRingsFor(level) {
   const count = orbitEffectiveCount(DEBUG.orbitCount);
   const n = Math.max(1, Math.min(Math.floor(level / ORBIT_LEVEL_EVERY), count));
   const rings = [];
-  for (let i = 0; i < n; i++) rings.push(count - 1 - i);   // outermost first
+  for (let i = 0; i < n; i++) rings.push(i);   // CS023 P1: innermost first (was: count - 1 - i)
   return rings;
 }
 // CS021 P3 (spec §6 table): the debug slider OVERRIDES orbitGapMult()'s occurrence-scaled curve only
@@ -5442,7 +5522,9 @@ function spawnOrbitWave(speedMul, gapMult, activeRings) {
     densityByOrbit:    [DEBUG.orbitDensity1, DEBUG.orbitDensity2, DEBUG.orbitDensity3,
                          DEBUG.orbitDensity4, DEBUG.orbitDensity5],   // FLAG-CS021-b: first `orbitCount` consumed
     baseAngVel:        DEBUG.orbitAngVel,
-    fastRingIndex:     ORBIT_FAST_RING - 1,   // ORBIT_FAST_RING is the human, 1-based ring number; not a knob
+    // CS023 P1 (spec C3): ORBIT_FAST_RING is a LIST of human, 1-based ring numbers; the generator wants
+    // 0-based indices. `.map` handles any length, empty included, and there is still no knob for it.
+    fastRingIndices:   ORBIT_FAST_RING.map(n => n - 1),
     fastRingMult:      DEBUG.orbitFastMult,
     activeRings,       // CS022 P3: the CALLER's ramp (spec §4.4/§4.6) — resolved at the call site exactly
                        // like gapMult, so the generator stays pure and still knows nothing about
@@ -7973,9 +8055,12 @@ function drawToasts() {
 // grew — this was the ONLY such cache in the file. `stars` is therefore laid over
 // worldDims(WORLD_SIZE_MAX) once, and applyWorldSize() rebuilds `starsActive` as the subset inside the
 // CURRENT world. Because the distribution is uniform, that subset's count is the area-derived value for
-// whatever size is live (~320 at size 4, all 1280 at size 16) with no scaling — and, more to the point,
-// THE SKY IS STABLE ACROSS TRANSITIONS: a size-4 sky is literally a sub-region of the size-16 sky
+// whatever size is live (~320 at size 4, all 720 at size 9) with no scaling — and, more to the point,
+// THE SKY IS STABLE ACROSS TRANSITIONS: a size-4 sky is literally a sub-region of the size-9 sky
 // rather than a fresh roll every level. The filter runs once per transition, never per frame.
+// CS023 P1 (spec C8): STAR_COUNT follows WORLD_SIZE_ORBIT by DERIVATION and needed no edit — 1280 -> 720
+// as WORLD_SIZE_MAX went 16 -> 9. The active count at field size is unchanged at ~320, because the field
+// world is 4/9 of the size-9 world's area and 720 x 4/9 is the same 320 that 1280 x 1/4 was.
 const [STAR_WORLD_W, STAR_WORLD_H] = worldDims(WORLD_SIZE_MAX);
 const STAR_COUNT = Math.round(STAR_DENSITY * (STAR_WORLD_W * STAR_WORLD_H) / (VIEW_W * VIEW_H));
 const stars = [];

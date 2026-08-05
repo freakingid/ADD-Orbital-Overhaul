@@ -191,7 +191,11 @@ function orbitTotalAt(A, level) {
     minGapMultiplier:  A.orbitGapMult(level),
     densityByOrbit:    A.ORBIT_DENSITY,
     baseAngVel:        A.ORBIT_ANG_VEL,
-    fastRingIndex:     A.ORBIT_FAST_RING - 1,
+    // REPOINTED BY CS023 P1 (spec C3): ORBIT_FAST_RING is a LIST of 1-based ring numbers and the
+    // generator's parameter is the plural `fastRingIndices`. This helper only reads `.total`, so the
+    // stale scalar key would have gone on passing while quietly making every ring slow — a wiring
+    // mismatch that means nothing here today and would mislead the moment anyone read angVel off it.
+    fastRingIndices:   A.ORBIT_FAST_RING.map(n => n - 1),
     fastRingMult:      A.ORBIT_FAST_MULT,
     activeRings:       A.activeRingsFor(level),   // CS022 P3: the ramp, read from the shipped helper
   }).total;

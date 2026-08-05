@@ -183,7 +183,7 @@ console.log("(A) source pins: the mutable world, the both-places rule, ordering,
   assert(!/\bconst WORLD_W\b/.test(codeOnly), "A: nothing re-declares WORLD_W as a const");
   eq((codeOnly.match(/^let WORLD_W/gm) || []).length, 1, "A: exactly one WORLD_W declaration");
   assert(/^const WORLD_SIZE_FIELD = 4;/m.test(codeOnly), "A: WORLD_SIZE_FIELD = 4");
-  assert(/^const WORLD_SIZE_ORBIT = 16;/m.test(codeOnly), "A: WORLD_SIZE_ORBIT = 16");
+  assert(/^const WORLD_SIZE_ORBIT = 9;/m.test(codeOnly), "A: REPOINTED BY CS023 P1 — WORLD_SIZE_ORBIT = 9 (spec C2: a VALUE change, 16 -> 9, never a rename)");
   assert(/^const WORLD_SIZE_MAX = Math\.max\(WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT\);/m.test(codeOnly),
     "A: WORLD_SIZE_MAX is DERIVED from the table, not restated");
 
@@ -282,11 +282,13 @@ console.log("(A) source pins: the mutable world, the both-places rule, ordering,
   // REPOINTED BY CS022 P3, the standing mirror-image treatment: P1's claim was about ITS OWN diff, and
   // P3 is the phase that owns every one of these. Each "not yet" becomes its positive successor at the
   // same strength, so the file still fails loudly if the ramp is ever reverted or half-reverted.
-  eq(X.ORBIT_INNER_RADIUS, 460, "A: REPOINTED BY CS022 P3 — ORBIT_INNER_RADIUS is now 460 (was 180 through P2)");
-  eq(X.ORBIT_RADIUS_STEP, 276, "A: REPOINTED BY CS022 P3 — ORBIT_RADIUS_STEP is now 276 (was 150 through P2)");
+  // REPOINTED AGAIN BY CS023 P1 — same treatment, one round on: the geometry moved a second time
+  // (spec §1.3), so each pin follows the live value rather than being loosened to a range.
+  eq(X.ORBIT_INNER_RADIUS, 400, "A: REPOINTED BY CS023 P1 — ORBIT_INNER_RADIUS is now 400 (180 -> 460 -> 400)");
+  eq(X.ORBIT_RADIUS_STEP, 138, "A: REPOINTED BY CS023 P1 — ORBIT_RADIUS_STEP is now 138 (150 -> 276 -> 138)");
   eq(X.ORBIT_RING_COUNT, 4, "A: ORBIT_RING_COUNT untouched (P3 relocated its declaration, not its value)");
-  eq(X.ORBIT_GAP_MULT, 2.5, "A: ORBIT_GAP_MULT untouched — the occurrence curve is not part of CS022");
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]", "A: REPOINTED BY CS022 P3 — ring 4's density halved (FORK-CS022-G)");
+  eq(X.ORBIT_GAP_MULT, 2.5, "A: ORBIT_GAP_MULT untouched — the occurrence curve is not part of CS022 or CS023");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]", "A: REPOINTED BY CS023 P1 — the density curve is FLAT now (spec §1.3)");
   assert(/activeRings/.test(codeOnly), "A: REPOINTED BY CS022 P3 — generateOrbitLayout has gained the activeRings filter");
   const genBody = codeOnly.slice(codeOnly.indexOf("function generateOrbitLayout(")).split("\n}\n")[0];
   assert(genBody.length > 200 && /inactive/.test(genBody),
@@ -301,16 +303,20 @@ console.log("(A) source pins: the mutable world, the both-places rule, ordering,
   eq(X.SPAWN_MAX_DIST, 640, "A: spec C5 — SPAWN_MAX_DIST unchanged at 640 (only its comment moved)");
   eq(X.DOCK_MIN_DIST, 260, "A: spec C5 — DOCK_MIN_DIST unchanged at 260");
   eq(X.DOCK_MAX_DIST, 620, "A: spec C5 — DOCK_MAX_DIST unchanged at 620");
-  const spawnComment = scriptSrc.split("\n").filter(l => /const SPAWN_MAX_DIST/.test(l) ||
-    (/WORLD_SIZE_ORBIT/.test(l) && /1380/.test(l))).join("\n");
-  assert(/1380/.test(spawnComment) || /1380/.test(scriptSrc.slice(scriptSrc.indexOf("const SPAWN_MAX_DIST"), scriptSrc.indexOf("const SPAWN_MAX_DIST") + 700)),
-    "A: spec C5 — SPAWN_MAX_DIST's comment now names the orbit-size limit (1380) as well as 660");
+  // REPOINTED BY CS023 P1: the claim is unchanged — the comment must name the ORBIT-size reachable
+  // radius as well as the field one — but the orbit figure is 1020 now, not 1380 (WORLD_SIZE_ORBIT
+  // 16 -> 9). Derived from the size table rather than restated, so it follows a future size change.
+  const orbitReach = Math.min(...X.worldDims(X.WORLD_SIZE_ORBIT)) / 2 - 60;
+  eq(orbitReach, 1020, "A: the orbit-size reachable radius is 1020 px (spec C7)");
+  const spawnBlock = scriptSrc.slice(scriptSrc.indexOf("const SPAWN_MAX_DIST"), scriptSrc.indexOf("const SPAWN_MAX_DIST") + 700);
+  assert(new RegExp(String(orbitReach)).test(spawnBlock) && /660/.test(spawnBlock),
+    `A: spec C5 — SPAWN_MAX_DIST's comment names the orbit-size limit (${orbitReach}) as well as 660`);
 
   // --- the size table's arithmetic --------------------------------------------------------------------
   eq(JSON.stringify(X.worldDims(X.WORLD_SIZE_FIELD)), "[2560,1440]", "A: worldDims(field) === [2560,1440]");
-  eq(JSON.stringify(X.worldDims(X.WORLD_SIZE_ORBIT)), "[5120,2880]", "A: worldDims(orbit) === [5120,2880]");
+  eq(JSON.stringify(X.worldDims(X.WORLD_SIZE_ORBIT)), "[3840,2160]", "A: REPOINTED BY CS023 P1 — worldDims(orbit) === [3840,2160]");
   eq(JSON.stringify(X.worldDims(1)), "[1280,720]", "A: worldDims(1) is exactly one viewport (the size unit is AREA)");
-  eq(JSON.stringify(X.worldDims(9)), "[3840,2160]", "A: worldDims(9) === the old v1.2 world (the table generalises, FORK-CS022-B)");
+  eq(JSON.stringify(X.worldDims(16)), "[5120,2880]", "A: worldDims(16) === CS022's retired orbit world (the table still generalises past what is wired, FORK-CS022-B)");
   eq(X.WORLD_W, 2560, "A: the build boots at 2560 wide");
   eq(X.WORLD_H, 1440, "A: ...and 1440 tall");
 })();
@@ -353,7 +359,7 @@ console.log("(B) spec §8 item 4 — the world size tracks the archetype through
     }
   });
   assert(allOk, "B: every level 2..31 ran at exactly the size its archetype asks for");
-  eq(orbitExact, 10, "B: all 10 orbit levels in 2..31 measured EXACTLY 5120x2880");
+  eq(orbitExact, 10, "B: all 10 orbit levels in 2..31 measured EXACTLY 3840x2160");
   eq(fieldExact, 20, "B: all 20 field levels in 2..31 measured EXACTLY 2560x1440");
   eq(grows, 10, "B: (control) 10 grow transitions were actually driven");
   eq(shrinks, 10, "B: (control) ...and 10 shrink transitions");
@@ -372,7 +378,7 @@ console.log("(B) spec §8 item 4 — the world size tracks the archetype through
   withRandom(seededRandom(0xB007), () => atWave(Y, 4));
   const [w4, h4] = liveDims(Y);
   assert(w2 === 2560 && h2 === 1440, "B: level 2 (field) is 2560x1440");
-  assert(w3 === 5120 && h3 === 2880, "B: level 3 (orbit) is 5120x2880");
+  assert(w3 === 3840 && h3 === 2160, "B: level 3 (orbit) is 3840x2160");
   assert(w4 === 2560 && h4 === 1440, "B: level 4 (field) is back to EXACTLY 2560x1440");
   assert(w4 === w2 && h4 === h2, "B: the grow-then-shrink round trip is bit-identical to where it started");
 
@@ -382,7 +388,12 @@ console.log("(B) spec §8 item 4 — the world size tracks the archetype through
   const W = seededBuild(0xB020);
   withRandom(seededRandom(0xB021), () => { W.startGame(); atWave(W, 3); });
   eq(W.game.worldSize, W.WORLD_SIZE_ORBIT, "B: (setup) parked on an orbit level before restarting");
-  assert(W.game.ship.x === 2560 && W.game.ship.y === 1440, "B: (setup) ...with the ship at the orbit world's centre");
+  // REPOINTED BY CS023 P1: read the orbit world's centre off the size table rather than restating it —
+  // 2560/1440 was the size-16 centre and is 1920/1080 at size 9. The CLAIM is unchanged: the ship is
+  // parked at the ORBIT world's centre, which is what makes the restart below a real test of the
+  // startGame() ordering (a stale centre would be outside the 2560x1440 field world).
+  const [oW, oH] = W.worldDims(W.WORLD_SIZE_ORBIT);
+  assert(W.game.ship.x === oW / 2 && W.game.ship.y === oH / 2, "B: (setup) ...with the ship at the orbit world's centre");
   withRandom(seededRandom(0xB022), () => W.startGame());
   eq(W.game.worldSize, W.WORLD_SIZE_FIELD, "B: a fresh run resets the world to the FIELD size");
   const [rw, rh] = liveDims(W);
@@ -415,7 +426,7 @@ console.log("(B) spec §8 item 4 — the world size tracks the archetype through
 // =====================================================================
 console.log("(C) spec §8 item 5 — re-homing across a REAL transition, both directions");
 (function sectionC() {
-  // GROW (field 2560x1440 -> orbit 5120x2880) and SHRINK (orbit -> field), each through nextWave().
+  // GROW (field 2560x1440 -> orbit 3840x2160) and SHRINK (orbit -> field), each through nextWave().
   for (const dir of ["grow", "shrink"]) {
     const X = seededBuild(dir === "grow" ? 0xC001 : 0xC002);
     withRandom(seededRandom(0xC010), () => { X.startGame(); atWave(X, dir === "grow" ? 2 : 3); });
@@ -481,7 +492,7 @@ console.log("(D) the NAIVE-wrap() control (rejected FORK-CS022-D option (a)) mus
   // preserved bearings, (C) would be proving nothing.
   function stage(seed) {
     const X = seededBuild(seed);
-    withRandom(seededRandom(0xD010), () => { X.startGame(); atWave(X, 3); });  // orbit: 5120x2880
+    withRandom(seededRandom(0xD010), () => { X.startGame(); atWave(X, 3); });  // orbit: 3840x2160
     for (const k of BODY_KEYS) X.game[k].length = 0;
     populate(X, 120, Math.min(...liveDims(X)) / 2 - 70);
     return X;
@@ -543,7 +554,8 @@ console.log("(E) the tow chain — translated by the ship's own delta, never sca
 (function sectionE() {
   // THE FLOAT-EXACTNESS CONTRACT, stated honestly. resizeWorld shifts n.x and n.px by the IDENTICAL
   // double, so the implied verlet velocity (n.x - n.px, which updateChain integrates next frame) is
-  // preserved to within ONE ULP OF A WORLD COORDINATE — 2^-41 px at 2560 and 2^-40 px at 5120, i.e.
+  // preserved to within ONE ULP OF A WORLD COORDINATE — 2^-41 px at 2560 and at 3840 alike (CS023 P1:
+  // the orbit world used to be 5120 wide, where the ulp is 2^-40; the ceiling below is unchanged), i.e.
   // under 1e-12 px per resize, ~1e-10 px/s of implied velocity. It is BIT-identical whenever both
   // additions happen to be exact, which is most but demonstrably not all of the time (a 2M-sample fuzz
   // over realistic coordinates puts the miss rate near a third and the worst deviation at 2.3e-13 px);
@@ -610,7 +622,10 @@ console.log("(E) the tow chain — translated by the ship's own delta, never sca
   const exactAfter = X.game.chain.map(n => [n.x - n.px, n.y - n.py]);
   assert(exactAfter.every((v, i) => v[0] === exactBefore[i][0] && v[1] === exactBefore[i][1]),
     "E: on exactly-representable coordinates the implied velocity is BIT-identical after a resize");
-  assert(X.game.chain.every((n, i) => n.x === 5120 / 2 - (i + 1) * 16 && Math.abs(n.y - 2880 / 2) === 8),
+  // REPOINTED BY CS023 P1: the orbit world's centre is derived, not restated (5120/2880 -> 3840/2160).
+  // Both halves are still exact integers, so the `===` this case exists to prove is still available.
+  const [eW, eH] = X.worldDims(X.WORLD_SIZE_ORBIT);
+  assert(X.game.chain.every((n, i) => n.x === eW / 2 - (i + 1) * 16 && Math.abs(n.y - eH / 2) === 8),
     "E: ...and every node landed at exactly the ship's own delta from where it was (rigid, unscaled)");
 
   // THE CONTROL for the velocity claim: re-homing a node by position alone (what a wrapPos()-style
@@ -669,7 +684,7 @@ console.log("(F) a transition with the ship hard against a world seam");
 console.log("(G) several hundred garbage bodies across a resize — nothing lost, nothing duplicated");
 (function sectionG() {
   const X = seededBuild(0x6001);
-  withRandom(seededRandom(0x6010), () => { X.startGame(); atWave(X, 3); });   // orbit world, 5120x2880
+  withRandom(seededRandom(0x6010), () => { X.startGame(); atWave(X, 3); });   // orbit world, 3840x2160
   X.game.garbage.length = 0;
   const [ow, oh] = liveDims(X);
   const N = 640;
@@ -726,7 +741,7 @@ console.log("(H) spec §8 item 6 — the starfield: one sky, filtered per world,
   // The pool is generated ONCE, for the largest size, at the shipped density.
   eq(X.STAR_COUNT, Math.round(X.STAR_DENSITY * (MAXW * MAXH) / (X.VIEW_W * X.VIEW_H)),
     "H: STAR_COUNT is the area-derived value for WORLD_SIZE_MAX");
-  eq(X.STAR_COUNT, 1280, "H: ...which is 1280 far stars over 5120x2880");
+  eq(X.STAR_COUNT, 720, "H: REPOINTED BY CS023 P1 (spec C8) — which is 720 far stars over 3840x2160 (1280 at the retired size 16)");
   eq(X.stars.length, X.STAR_COUNT, "H: the pool really holds STAR_COUNT stars");
   assert(X.stars.every(s => s.x >= 0 && s.x < MAXW && s.y >= 0 && s.y < MAXH),
     "H: every generated star lies inside the largest world");

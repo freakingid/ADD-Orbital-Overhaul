@@ -212,7 +212,8 @@ function quiet(X) {
   // without this a run staged 400px out could straddle the world wrap and every position assertion
   // below would be measuring the seam instead of the mechanic.
   // REVIEWED AND DELIBERATELY LEFT ALONE BY CS022 P1. toLevel() reaches level 12, an ORBIT level, where
-  // the live torus is 5120x2880 (spec §4.1) — so (WORLD_W/2, WORLD_H/2) read off this file's load-time
+  // the live torus is 3840x2160 as of CS023 P1 (5120x2880 through CS022) — so (WORLD_W/2, WORLD_H/2)
+  // read off this file's load-time
   // FIELD-size snapshot is no longer literally the centre there. It does not need to be: the parking
   // exists solely to keep the dock clear of the wrap seam, and (1280, 720) is 1280 px from the nearest
   // x seam and 720 px from the nearest y seam in EITHER world — far outside anything this file measures.

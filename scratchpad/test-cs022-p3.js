@@ -5,14 +5,16 @@
 // WHAT LANDED (PLANNED-FEATURES-CS022 §1.2/§1.3/§1.4/§4.4/§4.5/§4.6/§4.7, forks E/F/G). Five moving
 // parts, all of which change what an ORBIT LEVEL CONTAINS and none of which touch a field level:
 //
-//   1. THE GEOMETRY (§1.3, gate Q1 + FORK-CS022-A). ORBIT_INNER_RADIUS 180 -> 460 (5 large-satellite
-//      diameters, centre-to-centre) and ORBIT_RADIUS_STEP 150 -> 276 (3 more per ring), putting the four
-//      rings at 460 / 736 / 1012 / 1288 and the outermost satellite EDGE at 1,334 px against the ORBIT
-//      world's 1,420 px wrap-clean budget. It does NOT fit the field world's 700 px one, which is why
-//      CS022 P1 (per-archetype world size) had to land first.
-//   2. THE RAMP (§1.2, FORK-CS022-E). One ring per OCCURRENCE of the archetype, OUTERMOST FIRST —
-//      activeRingsFor(level) returns [3], [3,2], [3,2,1], [3,2,1,0] — complete at occurrence 4 (level
-//      12) and held. Radii never move: the ramp SELECTS rings, it does not re-space them.
+//   1. THE GEOMETRY (§1.3, gate Q1 + FORK-CS022-A). ORBIT_INNER_RADIUS 180 -> 460 and
+//      ORBIT_RADIUS_STEP 150 -> 276, putting the four rings at 460 / 736 / 1012 / 1288 and the outermost
+//      satellite EDGE at 1,334 px against the ORBIT world's 1,420 px wrap-clean budget.
+//      *** REPOINTED BY CS023 P1 (spec §1.3): 400 / 138, rings at 400 / 538 / 676 / 814, edge 860 px
+//      against a size-9 world's 1,060 px budget. It still does NOT fit the field world's 700 px one,
+//      which is why CS022 P1 (per-archetype world size) is still load-bearing. ***
+//   2. THE RAMP (§1.2, FORK-CS022-E). One ring per OCCURRENCE of the archetype — complete at occurrence
+//      4 (level 12) and held. Radii never move: the ramp SELECTS rings, it does not re-space them.
+//      *** REPOINTED BY CS023 P1 (FORK-CS023-A): the direction is INVERTED. activeRingsFor(level) now
+//      returns [0], [0,1], [0,1,2], [0,1,2,3] — INNERMOST first, not outermost. ***
 //   3. THE HALVING (FORK-CS022-G). ORBIT_DENSITY[3] 0.85 -> 0.42, taken on FRAME BUDGET, not fairness:
 //      an exact halving of ring 4's count at both ends of the occurrence curve (44 -> 22 at level 3,
 //      49 -> 25 at the 1.8 floor), taking the peak level total from 108 to 84.
@@ -193,7 +195,8 @@ function shippedArgs(X, centerX, centerY, gapMult, activeRings) {
     minGapMultiplier:  gapMult,
     densityByOrbit:    X.ORBIT_DENSITY,
     baseAngVel:        X.ORBIT_ANG_VEL,
-    fastRingIndex:     X.ORBIT_FAST_RING - 1,
+    // CS023 P1 (spec C3): ORBIT_FAST_RING is a LIST; the generator's parameter is the plural form.
+    fastRingIndices:   X.ORBIT_FAST_RING.map(n => n - 1),
     fastRingMult:      X.ORBIT_FAST_MULT,
     activeRings,
   };
@@ -216,30 +219,41 @@ function shippedRadii(X) {
   const X = build();
 
   // --- the three constants that moved, and the ones that deliberately did not -----------------------
-  eq(X.ORBIT_INNER_RADIUS, 460, "A: ORBIT_INNER_RADIUS is 460 (was 180)");
-  eq(X.ORBIT_RADIUS_STEP, 276, "A: ORBIT_RADIUS_STEP is 276 (was 150)");
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]", "A: ORBIT_DENSITY's ring 4 halved to 0.42");
+  // REPOINTED BY CS023 P1 (spec §1.3): the shell was retuned a second time — 460/276 -> 400/138 and the
+  // density curve went FLAT at 0.12, retiring FORK-CS022-G's ring-4 halving along with the whole rhythm.
+  eq(X.ORBIT_INNER_RADIUS, 400, "A: ORBIT_INNER_RADIUS is 400 (180 -> 460 -> 400)");
+  eq(X.ORBIT_RADIUS_STEP, 138, "A: ORBIT_RADIUS_STEP is 138 (150 -> 276 -> 138)");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]", "A: ORBIT_DENSITY is FLAT at 0.12 on every ring");
   eq(X.ORBIT_RING_COUNT, 4, "A: ORBIT_RING_COUNT unchanged at 4");
   eq(X.ORBIT_GAP_MULT, 2.5, "A: ORBIT_GAP_MULT unchanged");
   eq(X.ORBIT_GAP_MULT_FLOOR, 1.8, "A: ORBIT_GAP_MULT_FLOOR unchanged");
   eq(X.ORBIT_SAFETY_MARGIN, 8, "A: ORBIT_SAFETY_MARGIN unchanged");
   close(X.ORBIT_ANG_VEL, 6 * Math.PI / 180, "A: ORBIT_ANG_VEL unchanged at 6 deg/s");
   eq(X.ORBIT_FAST_MULT, 3.0, "A: ORBIT_FAST_MULT unchanged");
-  eq(X.ORBIT_FAST_RING, 3, "A: ORBIT_FAST_RING unchanged");
-  // Both new radii are the design's own derivation, not free numbers (FORK-CS022-A: centre-to-centre).
-  eq(X.ORBIT_INNER_RADIUS, 5 * X.DEBRIS_RADII[3] * 2, "A: 460 IS 5 large-satellite diameters");
-  eq(X.ORBIT_RADIUS_STEP, 3 * X.DEBRIS_RADII[3] * 2, "A: 276 IS 3 large-satellite diameters");
+  // REPOINTED BY CS023 P1 (spec C3 / FORK-CS023-G): ORBIT_FAST_RING became a LIST of 1-based ring numbers.
+  eq(JSON.stringify(X.ORBIT_FAST_RING), "[2,4]", "A: ORBIT_FAST_RING is the list [2, 4] (was the scalar 3)");
+  assert(Array.isArray(X.ORBIT_FAST_RING), "A: ...and it really is an Array, not a number");
+  // The step is still the design's own derivation, not a free number — 1.5 satellite diameters now,
+  // where CS022 used 3. The inner radius is no longer a diameter multiple; it is set by the clearance it
+  // has to leave over the permanent 88 px dock, so that is what gets asserted (spec §4.1).
+  eq(X.ORBIT_RADIUS_STEP, 1.5 * X.DEBRIS_RADII[3] * 2, "A: 138 IS 1.5 large-satellite diameters");
+  eq(X.ORBIT_RADIUS_STEP - X.DEBRIS_RADII[3] * 2, 46, "A: ...leaving a 46 px inter-ring radial corridor");
 
   // --- the constants-block comments the phase prompt requires rewriting -----------------------------
   const constBlock = scriptSrc.slice(scriptSrc.indexOf("// ---------- CS021 P1: ORBIT LEVELS"),
                                      scriptSrc.indexOf("const ORBIT_SPAWN_TRIES"));
-  assert(/1,334/.test(constBlock) && /1,420/.test(constBlock),
-    "A: the fitted-radii paragraph names the 1,334 px edge against the 1,420 px budget");
+  // REPOINTED BY CS023 P1 (spec §4.1): the paragraph is rewritten around 860-against-1,060 at size 9,
+  // and the rhythm SENTENCE IS DELETED rather than amended — there is no rhythm at a flat curve — so the
+  // pin flips from "it reads X" to "no rhythm claim of any kind survives".
+  assert(/860/.test(constBlock) && /1,060/.test(constBlock),
+    "A: the fitted-radii paragraph names the 860 px edge against the 1,060 px budget");
   assert(/WORLD_SIZE_ORBIT/.test(constBlock), "A: ...and says the budget is the ORBIT world's, not the live one");
-  assert(/tight -> breather -> widest -> wide/.test(constBlock),
-    "A: the density rhythm line reads tight -> breather -> widest -> wide (Correction C7)");
-  assert(!/tight -> breather -> wide\/fast -> tightest/.test(constBlock),
-    "A: ...and the retired rhythm line is gone");
+  assert(/266/.test(constBlock), "A: ...and states ring 1's 266 px clearance over the permanent 88 px dock");
+  assert(/46 px/.test(constBlock) && /fairness floor/.test(constBlock),
+    "A: ...and states the 46 px inter-ring corridor and that it is narrower than the in-ring fairness floor on purpose");
+  assert(!/tight -> breather -> widest -> wide/.test(constBlock) &&
+         !/tight -> breather -> wide\/fast -> tightest/.test(constBlock),
+    "A: BOTH retired rhythm lines are gone — the sentence was deleted, not amended");
 
   // --- ORBIT_RING_COUNT's relocation (FLAG-CS022-e) -------------------------------------------------
   // It had to move INSIDE the level-table block, because levelDef's new orbitRings column reads it and
@@ -324,24 +338,29 @@ function shippedRadii(X) {
     "A: TRAP 3 — no ramp knob was added (the ramp is derived, not dialled)");
   // orbitDensity4's `def` follows the shipped const automatically — the registry convention, verified.
   const d4 = X.DEBUG_ENTRIES.find(e => e.id === "orbitDensity4");
-  eq(d4.def, X.ORBIT_DENSITY[3], "A: orbitDensity4's registry default follows ORBIT_DENSITY[3] (0.42) automatically");
-  eq(X.DEBUG.orbitDensity4, 0.42, "A: ...and the live DEBUG value is the halved one");
+  eq(d4.def, X.ORBIT_DENSITY[3], "A: orbitDensity4's registry default follows ORBIT_DENSITY[3] automatically");
+  eq(X.DEBUG.orbitDensity4, 0.12, "A: ...and the live DEBUG value is the flat-curve one (CS023 P1; 0.42 through CS022)");
   eq(X.DEBUG.orbitCount, X.ORBIT_RING_COUNT, "A: orbitCount seeds at the shipped ring count, unclamped by the budget");
 })();
 
-// ================= (B) spec §8 item 1 — THE §4.7 RAMP TABLE =====================
+// ================= (B) spec §8 item 1 — THE RAMP TABLE =====================
 // Every orbit level 3..63 reproduced by a REAL nextWave() spawn, grouped by orbitRadius. Ring identity
-// is asserted by RADIUS, never by array position. Spec §4.7's own published totals for occurrences 1-7
-// are pinned as LITERALS here on purpose — that table is the changeset's headline claim, and a wiring
-// check alone would happily agree with a wrong-but-self-consistent build.
+// is asserted by RADIUS, never by array position. The published per-occurrence totals are pinned as
+// LITERALS here on purpose — that table is the changeset's headline claim, and a wiring check alone would
+// happily agree with a wrong-but-self-consistent build.
+//
+// REPOINTED BY CS023 P1: the table is now PLANNED-FEATURES-CS023.md §1.4's, not CS022 §4.7's. Both the
+// geometry and the ramp DIRECTION moved (spec §1.3 / FORK-CS023-A), so every figure changed and so did
+// the "which rings" claim below — the rings present are the INNERMOST n now, and ring 1 rather than
+// ring 4 is the one always on the board.
 const WANT_47 = {   // level: [orbit, field, total]
-  3:  [22,  5, 27],
-  6:  [37,  3, 40],
-  9:  [52, 13, 65],
-  12: [67,  9, 76],
-  15: [70,  5, 75],
-  18: [70,  3, 73],
-  21: [71, 13, 84],
+  3:  [ 3,  5,  8],
+  6:  [ 6,  3,  9],
+  9:  [11, 13, 24],
+  12: [16,  9, 25],
+  15: [16,  5, 21],
+  18: [16,  3, 19],
+  21: [16, 13, 29],
 };
 (function sectionB() {
   console.log("(B) spec §8 item 1 — the §4.7 ramp table at EVERY orbit level 3..63, via a real nextWave()");
@@ -368,9 +387,9 @@ const WANT_47 = {   // level: [orbit, field, total]
       const occ = n / X.ORBIT_LEVEL_EVERY;
       const wantRings = Math.max(1, Math.min(occ, X.ORBIT_RING_COUNT));
       eq(liveRadii.length, wantRings, `B: level ${n} (occurrence ${occ}): ${wantRings} ring(s) on the board`);
-      const wantRadii = RAD.slice(X.ORBIT_RING_COUNT - wantRings);   // the OUTERMOST `wantRings` of them
-      eq(liveRadii.join(","), wantRadii.join(","), `B: level ${n}: the rings present are the outermost ${wantRings}`);
-      assert(liveRadii.includes(RAD[X.ORBIT_RING_COUNT - 1]), `B: level ${n}: ring 4 is always present`);
+      const wantRadii = RAD.slice(0, wantRings);   // CS023 P1: the INNERMOST `wantRings` of them
+      eq(liveRadii.join(","), wantRadii.join(","), `B: level ${n}: the rings present are the innermost ${wantRings}`);
+      assert(liveRadii.includes(RAD[0]), `B: level ${n}: ring 1 is always present (FORK-CS023-A)`);
       eq(JSON.stringify(X.activeRingsFor(n).slice().sort((a, b) => a - b)),
          JSON.stringify(wantRadii.map(r => RAD.indexOf(r))),
          `B: level ${n}: activeRingsFor agrees with what actually spawned`);
@@ -394,12 +413,15 @@ const WANT_47 = {   // level: [orbit, field, total]
   eq(orbitLevels, 21, "B: 21 orbit levels across 3..63");
   // Spec §4.7's closing claims: from level 24 the orbit half is frozen at 71 and the total breathes with
   // the junk cycle; the peak is 84, at levels 21/30/42/51/63.
+  // REPOINTED BY CS023 P1: the ring half freezes at 16 from level 12 (not 24 — the ramp completes at
+  // occurrence 4 and the occurrence curve buys nothing after it, spec C5), and the total breathes
+  // 19/21/25/29 with the junk cycle. The peak levels are unchanged, which is the junk cycle's doing.
   const frozen = seen.filter(s => s.n >= 24);
-  assert(frozen.every(s => s.orbit === 71), "B: from level 24 the ring population is frozen at 71");
-  eq(JSON.stringify([...new Set(frozen.map(s => s.total))].sort((a, b) => a - b)), "[74,76,80,84]",
-    "B: ...and the totals from 24 on breathe 74 / 76 / 80 / 84 with the junk cycle");
-  eq(peak, 84, "B: the peak level total is 84 (FORK-CS022-G's halving is what holds it there)");
-  eq(JSON.stringify(seen.filter(s => s.total === 84).map(s => s.n)), "[21,30,42,51,63]",
+  assert(frozen.every(s => s.orbit === 16), "B: from level 24 the ring population is frozen at 16");
+  eq(JSON.stringify([...new Set(frozen.map(s => s.total))].sort((a, b) => a - b)), "[19,21,25,29]",
+    "B: ...and the totals from 24 on breathe 19 / 21 / 25 / 29 with the junk cycle");
+  eq(peak, 29, "B: the peak level total is 29 (84 at CS022's geometry — spec §1.3's ~5x cut)");
+  eq(JSON.stringify(seen.filter(s => s.total === 29).map(s => s.n)), "[21,30,42,51,63]",
     "B: ...reached at levels 21, 30, 42, 51 and 63");
   eq(peakLevel, 21, "B: the FIRST peak is level 21 — the level the frame-budget gate measures");
   console.log("    " + seen.filter(s => s.n <= 24).map(s => `L${s.n}:${s.orbit}+${s.field}=${s.total}`).join("  "));
@@ -452,68 +474,56 @@ const WANT_47 = {   // level: [orbit, field, total]
     "C: FLAG-CS022-a — the field spawn does NOT avoid the rings, as specced");
 })();
 
-// ================= (D) spec §8 item 3 — THE HALVING, PINNED BOTH WAYS =====================
-// Ring 4's count must be EXACTLY half what the retired 0.85 density would have produced, at both ends of
-// the occurrence curve. The comparison is COMPUTED against 0.85 through the real generator rather than
-// restated as "22 vs 44", so a future density retune fails loudly instead of silently.
+// ================= (D) THE COUNT CUT, PINNED BOTH WAYS =====================
+// REPOINTED BY CS023 P1. This section was written for FORK-CS022-G — ring 4's density halved 0.85 -> 0.42
+// — and CS023 retires that value along with the whole non-uniform curve (ORBIT_DENSITY is flat 0.12 now,
+// spec §1.3). The section's SHAPE is what survives and is what made it worth having: the cut is COMPUTED
+// against the retired curve through the REAL generator rather than restated as a pair of numbers, so a
+// future density retune fails loudly instead of silently. Only the retired curve it measures against
+// changed — CS021's lone 0.85 became CS022's whole [0.75, 0.45, 0.35, 0.42].
+//
+// The comparison is run at CS023's OWN radii on both sides, deliberately: that isolates the DENSITY
+// change from the geometry change, which the level totals alone would confound.
 (function sectionD() {
-  console.log("(D) spec §8 item 3 — ring 4's halving, computed against the RETIRED 0.85 density");
+  console.log("(D) the count cut, computed against the RETIRED CS022 density curve at the same radii");
   const X = build();
-  const RETIRED_RING4_DENSITY = 0.85;   // CS021's shipped value — a deliberate literal, this is the point
+  const RETIRED_CURVE = [0.75, 0.45, 0.35, 0.42];   // CS022's shipped curve — a deliberate literal, this is the point
   const R4 = X.ORBIT_RING_COUNT - 1;
 
-  function ring4CountAt(level, density) {
-    const dens = X.ORBIT_DENSITY.slice();
-    dens[R4] = density;
-    const L = withRandom(seededRandom(0xD444 + level), () => X.generateOrbitLayout(
+  function shellAt(level, dens) {
+    return withRandom(seededRandom(0xD444 + level), () => X.generateOrbitLayout(
       Object.assign(shippedArgs(X, 1280, 720, X.orbitGapMult(level), X.activeRingsFor(level)),
                     { densityByOrbit: dens })));
-    const r = L.rings.find(x => x.index === R4);
-    return r ? r.count : 0;
   }
 
-  eq(X.ORBIT_DENSITY[R4], 0.42, "D: the shipped ring-4 density is 0.42");
-  assert(X.ORBIT_DENSITY[R4] < RETIRED_RING4_DENSITY, "D: (control) and it really is below the retired 0.85");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]", "D: the shipped curve is flat 0.12 on every ring");
+  eq(new Set(X.ORBIT_DENSITY).size, 1, "D: ...which is what 'the rhythm is retired' means arithmetically");
+  assert(X.ORBIT_DENSITY.every((d, i) => d < RETIRED_CURVE[i]),
+    "D: (control) every ring's density really is below the CS022 curve's, ring by ring");
 
-  // Level 3 (occurrence 1, gapMult 2.5) and level 24 (the first level at the 1.8 floor).
-  // A note on "exact", stated honestly rather than parroting the spec's phrasing. The count is
-  // round(1 + density x (maxCount - 1)), so halving the DENSITY halves the (count - 1) term, not count
-  // itself, and the final rounding can land half a satellite either side. At occurrence 1 it comes out
-  // exactly (22 x 2 === 44); at the 1.8 floor the retired density's own rounding gives 49, whose half is
-  // 24.5 and rounds to 25. Both are asserted at the strength that is actually true, and the exact case
-  // is asserted exactly so a density retune cannot hide behind the rounding.
-  for (const [level, label] of [[3, "occurrence 1"], [24, "the 1.8 floor"]]) {
-    const now = ring4CountAt(level, X.ORBIT_DENSITY[R4]);
-    const old = ring4CountAt(level, RETIRED_RING4_DENSITY);
-    eq(now, Math.round(old / 2), `D: level ${level} (${label}): ring 4 is half its 0.85 count to the rounding (${now} vs ${old})`);
-  }
-  eq(ring4CountAt(3, X.ORBIT_DENSITY[R4]) * 2, ring4CountAt(3, RETIRED_RING4_DENSITY),
-    "D: at occurrence 1 the halving is EXACT — 22 x 2 === 44, no rounding slack at all");
-  // The spec's own figures, as a second, independent statement of the same thing.
-  eq(ring4CountAt(3, X.ORBIT_DENSITY[R4]), 22, "D: spec's figure — 22 at level 3");
-  eq(ring4CountAt(3, RETIRED_RING4_DENSITY), 44, "D: spec's figure — 44 under the retired density");
-  eq(ring4CountAt(24, X.ORBIT_DENSITY[R4]), 25, "D: spec's figure — 25 at the floor");
-  eq(ring4CountAt(24, RETIRED_RING4_DENSITY), 49, "D: spec's figure — 49 under the retired density");
+  // The full four-ring shell, at the base multiplier, both ways.
+  const nowFull = shellAt(12, X.ORBIT_DENSITY), oldFull = shellAt(12, RETIRED_CURVE);
+  eq(nowFull.rings.map(r => r.count).join(","), "3,4,4,5", "D: the flat curve's full shell is 3/4/4/5");
+  eq(oldFull.rings.map(r => r.count).join(","), "12,10,10,15", "D: ...where CS022's curve would give 12/10/10/15 at the same radii");
+  eq(nowFull.total, 16, "D: 16 satellites in the full shell");
+  eq(oldFull.total, 47, "D: ...against 47 under the retired curve — the density cut alone is a ~3x reduction");
+  assert(nowFull.total * 2 < oldFull.total, "D: (control) and that really is more than a halving, not a rounding wobble");
 
-  // FLAG-CS022-c / Correction C7: the halving reversed ring 4's CHARACTER. It was the tightest ring at
-  // 92 px; it is the second-widest now, and ring 1 is the only tight one left.
+  // The peak the cut exists to hold down. Both halves recomputed, never restated.
+  function peakTotalWith(dens) { return shellAt(21, dens).total + X.levelDef(21).fieldCount; }
+  eq(peakTotalWith(X.ORBIT_DENSITY), 29, "D: the level-21 peak is 29 with the flat curve");
+  eq(peakTotalWith(RETIRED_CURVE), 64, "D: ...and would be 64 with CS022's curve at these radii (84 at CS022's own radii)");
+
+  // Ring CHARACTER. CS022 had a rhythm and this section asserted its shape; at a flat curve the only
+  // ordering left is the one radius and rounding produce, so what is asserted instead is that EVERY ring
+  // is now a wide ring — which is the property the ~5x cut was taken for.
   const L = withRandom(seededRandom(0xD4FF), () => X.generateOrbitLayout(
     shippedArgs(X, 1280, 720, X.ORBIT_GAP_MULT, null)));
   const gaps = L.rings.map(r => r.actualGapPx);
-  close(gaps[R4], 276, "D: ring 4's lane is ~276 px now (it was 92 under the retired density)", 1.0);
-  assert(gaps[0] === Math.min(...gaps), "D: ring 1 is the tightest ring (Correction C7)");
-  assert(gaps[R4] !== Math.min(...gaps), "D: ...and ring 4 is not, which is what the retired rhythm line claimed");
-
-  // The peak the halving exists to hold down: 84, against the 108 the retired density would have given.
-  function peakTotalWith(density) {
-    const dens = X.ORBIT_DENSITY.slice(); dens[R4] = density;
-    const LL = withRandom(seededRandom(0xD400), () => X.generateOrbitLayout(
-      Object.assign(shippedArgs(X, 1280, 720, X.orbitGapMult(21), X.activeRingsFor(21)),
-                    { densityByOrbit: dens })));
-    return LL.total + X.levelDef(21).fieldCount;
-  }
-  eq(peakTotalWith(X.ORBIT_DENSITY[R4]), 84, "D: the level-21 peak is 84 with the halved density");
-  eq(peakTotalWith(RETIRED_RING4_DENSITY), 108, "D: ...and would have been 108 with the retired one (FORK-CS022-G's whole reason)");
+  close(gaps[0], 745.8, "D: ring 1's lane is ~746 px (it was 101 px under CS022's curve and radii)", 1.0);
+  close(gaps[R4], 930.9, "D: ring 4's lane is ~931 px", 1.0);
+  assert(gaps[0] === Math.min(...gaps), "D: ring 1 is still the tightest ring");
+  assert(gaps.every(g => g > 700), `D: ...but no ring's lane is under 700 px any more (tightest ${Math.min(...gaps).toFixed(1)})`);
 })();
 
 // ================= (E) spec §4.6 — spawnFieldSatellites IS A PURE EXTRACTION =====================
@@ -580,7 +590,7 @@ const WANT_47 = {   // level: [orbit, field, total]
   const X = build();
   // Drive to an orbit level first so the LIVE torus is the one these radii belong in. The counts and
   // gaps below are position-independent, but placeOrbitRing() runs wrapPos() against the live period and
-  // a 1288 px ring folded into a 1440-tall world is a confusing thing to be looking at while asserting.
+  // an 814 px ring folded into a 1440-tall world is a confusing thing to be looking at while asserting.
   withRandom(seededRandom(0xF00C), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
   eq(X.game.worldSize, X.WORLD_SIZE_ORBIT, "F: (setup) the sweep runs at the orbit world size");
   const shipDiameter = X.SHIP_RADIUS * 2;
@@ -588,7 +598,7 @@ const WANT_47 = {   // level: [orbit, field, total]
   // THE BUDGET IS THE ORBIT WORLD'S, read from the size table — never the live WORLD_H, which is 1440
   // whenever a field level is on screen. This is the distinction CS022 P1's sweep had to introduce.
   const budget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
-  eq(budget, 1420, "F: the orbit world's wrap-clean budget is 1420 px");
+  eq(budget, 1060, "F: the orbit world's wrap-clean budget is 1060 px (CS023 P1: WORLD_SIZE_ORBIT 16 -> 9)");
   const fieldBudget = X.worldDims(X.WORLD_SIZE_FIELD)[1] / 2 - 20;
   eq(fieldBudget, 700, "F: (control) the FIELD world's is 700 px — which this geometry does NOT fit");
   const dock = X.DOCK_RADIUS * X.leverScale(X.LEVER_DOCK_SIZE, 1);
@@ -610,7 +620,14 @@ const WANT_47 = {   // level: [orbit, field, total]
     }
     // The outermost satellite EDGE clears the budget — the Correction-C3 failure can never regress in.
     assert(L.outerEdge <= budget, `F: level ${n}: outermost satellite edge ${L.outerEdge} <= ${budget}`);
-    eq(L.outerEdge, 1334, `F: level ${n}: ...and it is 1334 px at EVERY occurrence (the ramp never re-spaces)`);
+    // REPOINTED BY CS023 P1 (FORK-CS023-A): under the outermost-first ramp the outer edge was a constant
+    // 1,334 px at every occurrence; filling from the INSIDE OUT makes it grow with the occurrence. The
+    // "never re-spaces" claim is preserved and strengthened — every active ring is asserted to sit at its
+    // own original radius, so the edge is a CONSEQUENCE of which rings are active, not a free number.
+    for (const r of L.rings) eq(r.radius, X.ORBIT_INNER_RADIUS + r.index * X.ORBIT_RADIUS_STEP,
+      `F: level ${n}: active ring ${r.index + 1} sits at its ORIGINAL radius — the ramp never re-spaces`);
+    eq(L.outerEdge, X.ORBIT_INNER_RADIUS + (L.rings.length - 1) * X.ORBIT_RADIUS_STEP + satR,
+      `F: level ${n}: ...so the outer edge is the outermost ACTIVE ring's, growing 446/584/722/860 with the occurrence`);
     worstEdge = Math.max(worstEdge, L.outerEdge);
     // Ring 1's clearance over the dock, whether or not ring 1 is active at this occurrence.
     assert(X.ORBIT_INNER_RADIUS - satR - dock >= 0,
@@ -623,7 +640,7 @@ const WANT_47 = {   // level: [orbit, field, total]
       `F: level ${n}: inactive ring ${r.index + 1} still reports its radius`);
   }
   eq(occurrences, 21, "F: 21 occurrences swept");
-  eq(X.ORBIT_INNER_RADIUS - satR - dock, 326, "F: that clearance is 326 px (was 46 at the CS021 geometry)");
+  eq(X.ORBIT_INNER_RADIUS - satR - dock, 266, "F: that clearance is 266 px (46 at CS021's geometry, 326 at CS022's)");
   assert(worstEdge > fieldBudget,
     "F: (control) the geometry genuinely does NOT fit the field world — CS022 P1 is load-bearing, not cosmetic");
   console.log(`    tightest lane across all 21 occurrences: ${worstGap.toFixed(2)} px; edge ${worstEdge} px (budget ${budget})`);
@@ -633,13 +650,13 @@ const WANT_47 = {   // level: [orbit, field, total]
 (function sectionG() {
   console.log("(G) spec §8 item 8 — wrap correctness at the orbit world size, with a naive control");
   const X = build();
-  // Drive to an orbit level FIRST so the LIVE torus really is 5120x2880 — wrapPos reads the live period,
-  // and a ring of radius 1288 has no wrap-clean meaning in the 2560x1440 field world.
+  // Drive to an orbit level FIRST so the LIVE torus really is 3840x2160 — wrapPos reads the live period,
+  // and a ring of radius 814 straddling a seam has no wrap-clean meaning in the 2560x1440 field world.
   withRandom(seededRandom(0x5EA22), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
   eq(X.game.worldSize, X.WORLD_SIZE_ORBIT, "G: (setup) the probe runs at the orbit world size");
   const [W, H] = X.worldDims(X.game.worldSize);
-  eq(W, 5120, "G: (setup) the live world is 5120 wide");
-  eq(H, 2880, "G: (setup) ...and 2880 tall");
+  eq(W, 3840, "G: (setup) the live world is 3840 wide (CS023 P1: size 9, was 5120 at size 16)");
+  eq(H, 2160, "G: (setup) ...and 2160 tall");
 
   const docks = [
     { x: 5, y: 5 }, { x: W - 5, y: 5 }, { x: 5, y: H - 5 }, { x: W - 5, y: H - 5 },
@@ -661,7 +678,10 @@ const WANT_47 = {   // level: [orbit, field, total]
       }
     }
   }
-  assert(samples > 400, `G: (setup) ${samples} satellites sampled across seven edge/corner docks`);
+  // REPOINTED BY CS023 P1: the flat 0.12 curve puts 15 satellites on a full shell rather than 65, so
+  // seven docks sample ~105 rather than ~455. The threshold moves with it; the CLAIM (the sweep really
+  // visited a real population across every dock) is unchanged, and 100 is still far above zero.
+  assert(samples > 100, `G: (setup) ${samples} satellites sampled across seven edge/corner docks`);
   assert(toroidalWorst < 1e-6, `G: the wrap-aware measurement is exact (worst error ${toroidalWorst.toExponential(2)} px)`);
   assert(naiveWorst > 1000,
     `G: CONTROL — naive (non-wrap) arithmetic is off by ${naiveWorst.toFixed(0)} px, thousands not units, so the assertion above has teeth`);
@@ -832,13 +852,17 @@ const HARVEST_PAIR_CEILING = 500000;
   const blitz   = probe(21, 0x9021, "blitz");
 
   // Validity: no probe may silently degenerate.
-  for (const p of [harvest, blitz, death]) eq(p.spawned, 84, `H: (validity) the ${p.mode} probe started from the 84-satellite peak wave`);
+  // REPOINTED BY CS023 P1: level 21 is still the peak wave, but the peak is 29 satellites now, not 84
+  // (spec §1.3's ~5x cut). Derived from expectedSpawn() rather than restated, so a future retune carries it.
+  const PEAK_SPAWN = expectedSpawn(X, 21).total;
+  eq(PEAK_SPAWN, 29, "H: (validity) level 21 is the peak wave and it is 29 satellites (84 at CS022's geometry)");
+  for (const p of [harvest, blitz, death]) eq(p.spawned, PEAK_SPAWN, `H: (validity) the ${p.mode} probe started from the ${PEAK_SPAWN}-satellite peak wave`);
   eq(harvest.endState, "playing", "H: (validity) the harvest probe stayed in the live update path throughout");
   eq(blitz.endState, "playing", "H: (validity) so did the blitz probe");
   eq(harvest.endWave, 21, "H: (validity) the harvest stayed on level 21 — no wave clear mid-measurement");
   eq(blitz.endWave, 21, "H: (validity) ...and so did the blitz");
   assert(harvest.frames > 300, `H: (validity) the harvest ran a real number of frames (${harvest.frames})`);
-  assert(harvest.peakDebris > 84, "H: (validity) the harvest really cascaded through the split tiers");
+  assert(harvest.peakDebris > PEAK_SPAWN, "H: (validity) the harvest really cascaded through the split tiers");
   eq(blitz.livePlayFrames, blitz.frames, "H: (validity) EVERY blitz frame was a live update() — none of it measured the death path");
   assert(blitz.frames >= 550, `H: (validity) the blitz ran past the 3 s coalesce delay (${blitz.frames} frames), so the pass really saw the load`);
   assert(blitz.peakGarbage > harvest.peakGarbage,
@@ -872,8 +896,16 @@ const HARVEST_PAIR_CEILING = 500000;
     assert(/game\.sweepPause = DEBUG\.sweepCoalescePause;/.test(codeOnly),
       "H: (source) the SMD's mass Hunter destruction PAUSES coalescence — the other mass-destruction event is guarded too");
   }
-  assert(blitz.worstPairs > 1000000,
-    `H: (teeth) the counter can register millions of checks — the blitz drove it to ${blitz.worstPairs.toLocaleString("en-US")}, so a real breach would not go unseen`);
+  // REPOINTED BY CS023 P1. The teeth claim is "the instrument can register a number far above the gated
+  // ceiling, so a breach would not go unseen", and it is now stated against the GATED CEILING itself
+  // rather than against a bare 1,000,000 literal. That literal only ever meant "much more than the gate
+  // allows"; the shell shrank ~5x this changeset, so the blitz load fell with it (it was 8.27M at CS022's
+  // 84 satellites) and a fixed literal would have made the control fail for the right reason with the
+  // wrong message. NEITHER CEILING IS TIGHTENED — see STATUS.md's standing Known-issues note: both are
+  // derived from the arithmetic, not fitted to a measurement, and the gate's slack is now enormous
+  // precisely BECAUSE §1.3 cut the shell, which is what buys CS023 P2/P3's two new O(n^2) passes.
+  assert(blitz.worstPairs > HARVEST_PAIR_CEILING,
+    `H: (teeth) the counter registers far more than the gated ceiling — the blitz drove it to ${blitz.worstPairs.toLocaleString("en-US")} against a ${HARVEST_PAIR_CEILING.toLocaleString("en-US")} gate, so a real breach would not go unseen`);
 
   // ⛔ THE GATED QUANTITY: the two REAL scenarios only.
   const worst = Math.max(harvest.worstPairs, death.worstPairs);

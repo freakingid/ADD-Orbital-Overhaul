@@ -128,8 +128,11 @@ const RETURN = [
   "DEBRIS_RADII", "SHIP_MAX_HP", "KNOCKBACK_SPEED", "WORLD_W", "WORLD_H", "TAU",
   "AudioSys", "GAME_VERSION", "DEBUG_VARS",
   // CS022 P3: both builds have these (CS021 P1 shipped them), so they stay on the SHARED list — which
-  // is the point: each build resolves a ring index against its own geometry, 180/150 or 460/276.
-  "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_RING_COUNT", "ORBIT_LEVEL_EVERY",
+  // is the point: each build resolves a ring index against its own geometry, 180/150 or 400/138.
+  // CS023 P1 adds ORBIT_FAST_RING to the same shared list. It exists in both builds but with DIFFERENT
+  // TYPES — a bare 1-based number at PRE_FIX_REF, a LIST of them as of CS023 (spec C3) — so it is read
+  // through fastRingIndices() below rather than directly, and each build answers for its own rings.
+  "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_RING_COUNT", "ORBIT_LEVEL_EVERY", "ORBIT_FAST_RING",
 ];
 // CS022 P1: worldDims joins the FIXED-build-only list rather than RETURN — it does not exist at
 // PRE_FIX_REF, and the RETURN list above is shared with that older build. Sections (I)/(J) need it
@@ -224,10 +227,12 @@ function placeShipAt(X, h, d) {
 }
 // CS022 P3: resolve a RING INDEX (0-based) into the { level, radius } that build actually puts it at.
 // The two builds this file compares no longer agree on either: PRE_FIX_REF (CS021 P1) has radii
-// 180/330/480/630 with all four rings present from level 3, while the CS022 build has 460/736/1012/1288
-// and a RAMP that lays them outermost-first, one per occurrence — so ring 1 does not exist until level
-// 12. Naming a ring by index and letting each build answer for itself keeps section (B)'s comparison
-// about the SHIELD BEHAVIOUR, which is what it has always been about, instead of about geometry.
+// 180/330/480/630 with all four rings present from level 3, while the live build has 400/538/676/814
+// (CS023 P1; 460/736/1012/1288 through CS022) and a RAMP that lays them one per occurrence. CS022 filled
+// OUTERMOST-first, so ring 1 did not exist until level 12; CS023 fills INNERMOST-first, so it is ring 4
+// that arrives last. Naming a ring by index and letting each build answer for itself keeps section (B)'s
+// comparison about the SHIELD BEHAVIOUR, which is what it has always been about, instead of about
+// geometry — and it is why the ramp inversion needed no change here beyond the fast-ring role lookup.
 function ringCaseFor(X, ringIndex) {
   const radius = X.ORBIT_INNER_RADIUS + ringIndex * X.ORBIT_RADIUS_STEP;
   let level = X.ORBIT_LEVEL_EVERY;
@@ -236,6 +241,22 @@ function ringCaseFor(X, ringIndex) {
     if (level > 63) throw new Error("ring " + ringIndex + " never becomes active");
   }
   return { level, radius };
+}
+// CS023 P1: which rings are FAST is a per-build fact now, and the constant's TYPE differs between the
+// two builds this file compares — ORBIT_FAST_RING is the scalar 3 at PRE_FIX_REF and the list [2, 4] as
+// of CS023 (spec C3 / FORK-CS023-G). Normalise both shapes to 0-BASED INDICES, then let each build name
+// its own fast and slow rings. Hardcoding index 2 as "the fast ring" (which is what CS022 P3 left here)
+// is exactly the bug this closes: at CS023 ring index 2 is a SLOW ring, so the comparison below was
+// measuring one slow ring against another and would have passed or failed for the wrong reason.
+function fastRingIndices(X) {
+  const raw = Array.isArray(X.ORBIT_FAST_RING) ? X.ORBIT_FAST_RING : [X.ORBIT_FAST_RING];
+  return raw.map(n => n - 1);
+}
+function aFastRingIndex(X) { return fastRingIndices(X)[0]; }
+function aSlowRingIndex(X) {
+  const fast = fastRingIndices(X);
+  for (let i = 0; i < X.ORBIT_RING_COUNT; i++) if (fast.indexOf(i) === -1) return i;
+  throw new Error("every ring is fast — this file needs a slow one to compare against");
 }
 // Stage a hazard on a ring named by INDEX, resolving level + radius against that build's own geometry.
 function stageRing(X, ringIndex) {
@@ -318,14 +339,23 @@ function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
   console.log("(B) the regression: fixed build vs. the pinned P1 build at " + PRE_FIX_REF);
   // REPOINTED BY CS022 P3: rings named by INDEX, not by a hardcoded radius or level — ringCaseFor()
   // resolves both against whichever build is running (see its comment). The claims below are unchanged.
+  // REPOINTED AGAIN BY CS023 P1: the third case names its ring by ROLE ("the fast one") rather than by
+  // the hardcoded index 2, because the two builds no longer agree on which index that is — ORBIT_FAST_RING
+  // is 3 at PRE_FIX_REF and [2, 4] as of CS023 (spec C3). Each build now resolves the role against its own
+  // constant, so the case still exercises a FAST ring on BOTH sides instead of a fast one on one side and
+  // a slow one on the other. The first ring index (0) stays literal: it is slow in both builds.
   const CASES = [
-    { name: "ORBIT ring 1 (slow), ship at 68 px — the shield-only annulus", ringIndex: 0, startDist: 68 },
-    { name: "ORBIT ring 1, ship at 50 px — the unshielded hitbox also reaches", ringIndex: 0, startDist: 50 },
-    { name: "ORBIT ring 3 (fast), ship at 68 px", ringIndex: 2, startDist: 68 },
+    { name: "ORBIT ring 1 (slow), ship at 68 px — the shield-only annulus", ring: 0, startDist: 68 },
+    { name: "ORBIT ring 1, ship at 50 px — the unshielded hitbox also reaches", ring: 0, startDist: 50 },
+    { name: "ORBIT the fast ring, ship at 68 px", ring: "fast", startDist: 68 },
   ];
+  // One resolver, used at every call site in this section — including the two 50 px probes below, which
+  // is where forgetting it silently drops back to the no-ring `stage()` branch.
+  const resolve = (X, c) => ({ ...c, ringIndex: c.ring === "fast" ? aFastRingIndex(X) : c.ring });
   for (const c of CASES) {
-    const pre = contactRun(buildPreFix(), c);
-    const fix = contactRun(build(), c);
+    const preX = buildPreFix(), fixX = build();
+    const pre = contactRun(preX, resolve(preX, c));
+    const fix = contactRun(fixX, resolve(fixX, c));
     // The pre-fix build is a PERMANENT RED CONTROL: if this stops reproducing, the control is broken,
     // not the fix. Five consecutive deflect frames and a meter emptied inside a tenth of a second.
     eq(pre.deflectFrames, 5, `B: PRE-FIX ${c.name}: five deflect frames`);
@@ -341,8 +371,9 @@ function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
   }
   // The 50 px case took a real 50-damage hit pre-fix, because the shield collapsed while the ship was
   // still inside the UNSHIELDED contact radius. The bounce clears it before that can happen.
-  const preClose = contactRun(buildPreFix(), CASES[1]);
-  const fixClose = contactRun(build(), CASES[1]);
+  const preCloseX = buildPreFix(), fixCloseX = build();
+  const preClose = contactRun(preCloseX, resolve(preCloseX, CASES[1]));
+  const fixClose = contactRun(fixCloseX, resolve(fixCloseX, CASES[1]));
   eq(preClose.hits, 1, "B: PRE-FIX at 50 px: the ship took exactly one hit once its shield collapsed");
   assert(preClose.hp < 250, `B: PRE-FIX at 50 px: hull dropped to ${preClose.hp}`);
   eq(fixClose.hits, 0, "B: FIXED at 50 px: no hit at all — the bounce separates before the shield can collapse");
@@ -358,7 +389,8 @@ function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
   eq(fixField.hits, preField.hits, "B: FIELD control: hits identical on both builds");
   eq(fixField.deflectFrames, 1, "B: FIELD control: one deflect, as it always was");
   // ...and the fixed ORBIT case now matches the FIELD yardstick exactly.
-  const fixOrbit = contactRun(build(), CASES[0]);
+  const fixOrbitX = build();
+  const fixOrbit = contactRun(fixOrbitX, resolve(fixOrbitX, CASES[0]));
   eq(fixOrbit.deflectFrames, fixField.deflectFrames, "B: a fixed ORBIT contact now costs the same as a FIELD contact");
   eq(fixOrbit.shieldGoneFrame, fixField.shieldGoneFrame, "B: ...and leaves the shield meter lasting exactly as long");
 })();
@@ -446,8 +478,12 @@ function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
   // parked radially outward from a satellite has a normal PERPENDICULAR to that velocity — no normal
   // component to reflect — so a pure sideswipe correctly does nothing at all. (My first draft used the
   // radial placement and measured both rings as identical: the right answer to the wrong question.)
+  // REPOINTED BY CS023 P1: the two rings are named by ROLE, not by hardcoded index. Under CS022 the
+  // fast ring was index 2 and index 0 was slow; under CS023 the fast rings are 1 and 3 and index 2 is
+  // SLOW, so the old [0, 2] pair compared two slow rings.
+  const SLOW_IDX = aSlowRingIndex(X), FAST_IDX = aFastRingIndex(X);
   const swept = {};
-  for (const ring of [0, 2]) {   // CS022 P3: ring INDICES
+  for (const ring of [SLOW_IDX, FAST_IDX]) {   // CS022 P3: ring INDICES; CS023 P1: resolved by role
     const sat = stageRing(X, ring);
     const tangential = Math.hypot(sat.vx, sat.vy);
     const dirA = Math.atan2(sat.vy, sat.vx);
@@ -464,16 +500,19 @@ function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
         `C: ring idx ${ring}: too slow to out-push the floor (2x${tangential.toFixed(1)} < ${X.SHIELD_BOUNCE_MIN}), so the floor governs`, 1e-6);
     }
   }
-  assert(swept[2].after > swept[0].after * 2,
+  assert(swept[FAST_IDX].tangential > swept[SLOW_IDX].tangential,
+    `C: (setup) the ring named fast really does move faster than the one named slow ` +
+    `(${swept[FAST_IDX].tangential.toFixed(1)} vs ${swept[SLOW_IDX].tangential.toFixed(1)} px/s)`);
+  assert(swept[FAST_IDX].after > swept[SLOW_IDX].after * 2,
     `C: the FAST ring shoves a parked ship far harder than a slow one ` +
-    `(${swept[2].after.toFixed(1)} vs ${swept[0].after.toFixed(1)} px/s) — working in the hazard's frame is what carries that`);
-  console.log(`    swept while parked: ring 1 (${swept[0].tangential.toFixed(1)} px/s) throws you at ` +
-    `${swept[0].after.toFixed(1)} px/s; ring 3 (${swept[2].tangential.toFixed(1)} px/s) throws you at ${swept[2].after.toFixed(1)} px/s`);
+    `(${swept[FAST_IDX].after.toFixed(1)} vs ${swept[SLOW_IDX].after.toFixed(1)} px/s) — working in the hazard's frame is what carries that`);
+  console.log(`    swept while parked: ring ${SLOW_IDX + 1} (${swept[SLOW_IDX].tangential.toFixed(1)} px/s) throws you at ` +
+    `${swept[SLOW_IDX].after.toFixed(1)} px/s; ring ${FAST_IDX + 1} (${swept[FAST_IDX].tangential.toFixed(1)} px/s) throws you at ${swept[FAST_IDX].after.toFixed(1)} px/s`);
 
   // And the mirror, which is the same physics seen from the other side: a purely TANGENTIAL approach is
   // a sideswipe with no normal component, so the reflection is a no-op and only the floor acts. That is
   // true on the fast ring exactly as on the slow ones, by design.
-  const fast = stageRing(X, 2);   // CS022 P3: the fast ring, by index
+  const fast = stageRing(X, FAST_IDX);   // CS023 P1: the fast ring, resolved by role
   assert(Math.hypot(fast.vx, fast.vy) > 100, `C: (setup) the fast ring's satellite really is moving`);
   placeShipAt(X, fast, X.SHIELD_RADIUS + fast.radius - 4);   // radial: normal perpendicular to its velocity
   const along = bounceOnce(fast, fast.vx, fast.vy);          // riding with it: zero relative velocity
@@ -575,7 +614,7 @@ function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
 (function sectionE() {
   console.log("(E) the hazard is left completely alone — the ring stays intact");
   const X = build();
-  const h = stageRing(X, 2);   // CS022 P3: the fast ring, by index
+  const h = stageRing(X, aFastRingIndex(X));   // CS023 P1: the fast ring, resolved by role
   placeShipAt(X, h, X.SHIELD_RADIUS + h.radius - 4);
   X.game.ship.vx = -300; X.game.ship.vy = 120;
   const snap = { x: h.x, y: h.y, vx: h.vx, vy: h.vy, angle: h.angle, spin: h.spin,
@@ -776,9 +815,16 @@ function contactRun(X, { level, ringIndex, startDist, frames = 600 }) {
       X.game.wave = 2; X.game.debris.length = 0; X.nextWave();
       X.game.state = "playing"; X.game.paused = false;
       X.input.shield = () => true;
-      // Park the ship right on the OUTERMOST ring so it is in and out of contact for the whole run.
-      // CS022 P3: level 3 lays ring 4 alone (the ramp), so ring 1 is not on the board here.
-      const sat = X.game.debris.find(d => d.orbitRadius === X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP);
+      // Park the ship right on the level's OUTERMOST ACTIVE ring so it is in and out of contact for the
+      // whole run. REPOINTED BY CS023 P1: this named ring ORBIT_RING_COUNT - 1 outright, which was
+      // correct only while the ramp filled OUTERMOST-FIRST (CS022 P3: level 3 laid ring 4 alone). The
+      // ramp is INVERTED now — level 3 lays ring 1 alone — so the lookup found nothing and the run
+      // crashed on `sat.x`. Read the ring off the level's OWN active set so neither ramp direction,
+      // and no future ring count, can break it again.
+      const active = X.activeRingsFor(X.game.wave);
+      const outerIdx = active[active.length - 1];
+      const sat = X.game.debris.find(d => d.orbitRadius === X.ORBIT_INNER_RADIUS + outerIdx * X.ORBIT_RADIUS_STEP);
+      if (!sat) throw new Error(`no satellite on ring index ${outerIdx} at level ${X.game.wave}`);
       X.game.ship.x = sat.x; X.game.ship.y = sat.y;
       X.game.ship.vx = 0; X.game.ship.vy = 0;
       for (let i = 0; i < 300; i++) { X.game.ship.energy = 1.0; X.update(1 / 60); X.draw(); }

@@ -15,13 +15,14 @@
 //      (GAME_VERSION, every ORBIT_* constant, no P3 material) all hold.
 //  (B) orbitRadiusStepFor: returns ORBIT_RADIUS_STEP at counts 1-5, and is bit-identical to the RETIRED
 //      pre-P2 formula's own count-4 answer (both give 150 — the shipped geometry does not move).
-//  (C) orbitEffectiveCount at the CS021 (shipped, still-live) geometry: a locally-built expectation
-//      function — cross-validated against the REAL exported one across counts 1-20 — proves the accept/
-//      reject boundary sits at 8/9, not at the retired rule's 3/4 boundary.
-//  (D) the SAME cross-validated expectation function, now fed the CS022 (460/276, not-yet-landed)
-//      geometry as plain arithmetic: pins the spec's own numbers (edge 1334 accepted at count 4, edge
-//      1610 rejected at count 5, walking down to 4) — documentation of the rule P3 will exercise for
-//      real, not an exercise of live code (ORBIT_INNER_RADIUS/ORBIT_RADIUS_STEP stay P3's to move).
+//  (C) orbitEffectiveCount at the SHIPPED geometry: a locally-built expectation function —
+//      cross-validated against the REAL exported one across counts 1-20 — proves where the accept/reject
+//      boundary actually sits. It has moved twice: 8/9 at CS021's 180/150, 4/5 at CS022's 460/276, and
+//      5/6 at CS023's 400/138 (spec C6). The RULE never changed; only the geometry it measures did.
+//  (D) the SAME cross-validated expectation function, fed the RETIRED CS022 (460/276) geometry as plain
+//      arithmetic: pins that build's own numbers (edge 1334 accepted at count 4, edge 1610 rejected at
+//      count 5) to show the walk-down rule is GEOMETRY-GENERAL rather than fitted to what ships, with a
+//      control asserting the live build disagrees with those figures.
 //  (E) ORBIT_RADIUS_STEP_PAD has zero readers — a direct source-count check.
 
 "use strict";
@@ -141,11 +142,11 @@ const X = build();
   // moved no ORBIT_* constant; P3 is the phase that owns them and has now moved three, so the surviving
   // claim is that they landed on the values P2's own section (D) predicted — the same numbers, read from
   // the other side. ORBIT_RING_COUNT and ORBIT_GAP_MULT genuinely did not move and stay as they were.
-  eq(X.ORBIT_INNER_RADIUS, 460, "A: REPOINTED BY CS022 P3 — ORBIT_INNER_RADIUS is now 460 (was 180 through P2)");
-  eq(X.ORBIT_RADIUS_STEP, 276, "A: REPOINTED BY CS022 P3 — ORBIT_RADIUS_STEP is now 276 (was 150 through P2)");
+  eq(X.ORBIT_INNER_RADIUS, 400, "A: REPOINTED BY CS023 P1 — ORBIT_INNER_RADIUS is now 400 (180 -> 460 -> 400)");
+  eq(X.ORBIT_RADIUS_STEP, 138, "A: REPOINTED BY CS023 P1 — ORBIT_RADIUS_STEP is now 138 (150 -> 276 -> 138)");
   eq(X.ORBIT_RING_COUNT, 4, "A: ORBIT_RING_COUNT untouched (P3 relocated its declaration, not its value)");
   eq(X.ORBIT_GAP_MULT, 2.5, "A: ORBIT_GAP_MULT untouched — the occurrence curve is not part of CS022");
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]", "A: REPOINTED BY CS022 P3 — ring 4's density halved 0.85 -> 0.42 (FORK-CS022-G)");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]", "A: REPOINTED BY CS023 P1 — the density curve is FLAT at 0.12 (spec §1.3)");
 
   // TRAP 3 — REPOINTED BY CS022 P3, same treatment: P2 asserted none of the ramp material existed YET.
   // P3 landed all four pieces, so each "not yet" becomes its positive successor at the same strength.
@@ -175,11 +176,11 @@ const X = build();
     return (outerRadius - X.ORBIT_INNER_RADIUS) / (count - 1);
   }
   eq(retiredFormula(4), X.ORBIT_RADIUS_STEP, "B: (control) the retired formula's own count-4 answer is still the shipped step");
-  eq(retiredFormula(4), 276, "B: (control) ...which at the CS022 P3 geometry is 276 (was 150 through P2)");
+  eq(retiredFormula(4), 138, "B: (control) ...which at the CS023 P1 geometry is 138 (150 through P2, 276 through CS022)");
   eq(X.orbitRadiusStepFor(4), retiredFormula(4), "B: count 4 is bit-identical to the pre-P2 (retired) value — the shipped geometry did not move");
   // ...but the retired formula and the new rule now DISAGREE everywhere else, proving P2 is a real change.
-  eq(retiredFormula(3), 414, "B: (control) the retired formula widens count 3 to 414 — spec Correction C3's own figure");
-  assert(X.orbitRadiusStepFor(3) !== retiredFormula(3), "B: the new rule disagrees with the retired one at count 3 (276 vs 414) — Correction C3 in effect");
+  eq(retiredFormula(3), 207, "B: (control) the retired formula widens count 3 to 207 (414 at CS022's geometry — CS022 Correction C3's own figure)");
+  assert(X.orbitRadiusStepFor(3) !== retiredFormula(3), "B: the new rule disagrees with the retired one at count 3 (138 vs 207) — Correction C3 in effect");
 })();
 
 // == (C) orbitEffectiveCount at the CS021 (live) geometry: cross-validate a local expectation function ==
@@ -196,7 +197,8 @@ function expectedEffectiveCount(innerRadius, step, satRadius, budget, requested)
 (function sectionC() {
   console.log("(C) orbitEffectiveCount at the shipped CS021 geometry: accept/reject boundary via a cross-validated helper");
   const orbitBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
-  eq(orbitBudget, 1420, "C: the orbit-world wrap-clean budget is 1420px (worldDims(16)[1]/2 - 20)");
+  // REPOINTED BY CS023 P1: WORLD_SIZE_ORBIT 16 -> 9, so the budget is 2160/2 - 20 = 1060, not 1420.
+  eq(orbitBudget, 1060, "C: the orbit-world wrap-clean budget is 1060px (worldDims(9)[1]/2 - 20)");
 
   for (let requested = 1; requested <= 20; requested++) {
     const want = expectedEffectiveCount(X.ORBIT_INNER_RADIUS, X.ORBIT_RADIUS_STEP, X.DEBRIS_RADII[3], orbitBudget, requested);
@@ -213,47 +215,68 @@ function expectedEffectiveCount(innerRadius, step, satRadius, budget, requested)
   // not change between P2 and P3 — only the geometry it is measuring did — which is why the sweep above
   // (1..20 against the cross-validated helper) is the load-bearing assertion and these four are its
   // named boundary cases. The two literals are read off the live constants below, never restated.
+  // REPOINTED AGAIN BY CS023 P1, and the boundary MOVED OUT BY ONE RING (spec C6). At 400/138 a fifth
+  // ring's edge is 998px against the 1,060px budget, so a requested 5 is now accepted outright and it is
+  // the SIXTH that walks back down. The rule is untouched in both repoints — only the geometry it
+  // measures moved — which is why the 1..20 sweep above against the cross-validated helper is the
+  // load-bearing assertion and these are its named boundary cases.
   const edge4 = X.ORBIT_INNER_RADIUS + 3 * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
   const edge5 = X.ORBIT_INNER_RADIUS + 4 * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
+  const edge6 = X.ORBIT_INNER_RADIUS + 5 * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
   assert(edge4 <= orbitBudget, `C: the shipped 4-ring outer edge (${edge4}px) clears the ${orbitBudget}px budget`);
-  assert(edge5 > orbitBudget, `C: a 5th ring's edge (${edge5}px) would not`);
+  assert(edge5 <= orbitBudget, `C: a 5th ring's edge (${edge5}px) clears it too now (spec C6)`);
+  assert(edge6 > orbitBudget, `C: a 6th ring's edge (${edge6}px) does not`);
   eq(X.orbitEffectiveCount(4), 4, "C: requested 4 — the shipped ORBIT_RING_COUNT — is accepted outright");
-  eq(X.orbitEffectiveCount(5), 4, "C: requested 5 walks down to 4 at the CS022 P3 geometry (the clamp is armed again)");
-  eq(X.orbitEffectiveCount(20), 4, "C: a wildly over-requested count lands on the same 4");
+  eq(X.orbitEffectiveCount(5), 5, "C: requested 5 is accepted outright too at the CS023 P1 geometry (it walked to 4 at CS022's)");
+  eq(X.orbitEffectiveCount(6), 5, "C: requested 6 walks down to 5 — the clamp still bites, one ring further out");
+  eq(X.orbitEffectiveCount(20), 5, "C: a wildly over-requested count lands on the same 5");
   eq(X.orbitEffectiveCount(X.ORBIT_RING_COUNT), X.ORBIT_RING_COUNT,
     "C: the shipped ring count is a FIXED POINT of the clamp — activeRingsFor() can rely on that");
 })();
 
-// =========== (D) the SAME cross-validated helper, at the CS022 (460/276) geometry ======================
-// REPOINTED BY CS022 P3. Written at P2 as documented arithmetic for a geometry that had not landed yet,
-// with 460/276 deliberately restated as literals rather than read from X. Those constants ARE the shipped
-// build now, so the section keeps its literals (they are the spec's own figures, and pinning them here is
-// what makes a silent geometry drift fail loudly) and gains the assertion that the build agrees with them.
+// ======= (D) the SAME cross-validated helper, at the RETIRED CS022 (460/276) geometry ================
+// REPOINTED BY CS023 P1 — and the section's ROLE returns to what P2 wrote it for. P2 authored it as
+// documented arithmetic for a geometry that had not landed; CS022 P3 landed 460/276 and the section
+// briefly described the LIVE build; CS023 P1 has moved the build on to 400/138, so 460/276 is a retired
+// geometry again and this is once more the second, non-live geometry the cross-validated helper is
+// exercised against. That is the section's actual value: it proves the walk-down rule is GEOMETRY-GENERAL
+// rather than fitted to whatever happens to be shipping. The literals stay literals on purpose — they are
+// CS022's own published figures — and the live build is now asserted to DISAGREE with them, which is the
+// CS023 change stated as a control rather than as prose.
 (function sectionD() {
-  console.log("(D) the CS022 (460/276) geometry — P2's predicted arithmetic, now cross-checked against the live constants");
-  const orbitBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20; // 1420
+  console.log("(D) the RETIRED CS022 (460/276) geometry — the same helper, proving the rule is geometry-general");
+  const CS022_BUDGET = X.worldDims(16)[1] / 2 - 20;                  // the size-16 world CS022 ran orbits in
   const CS022_INNER = 460, CS022_STEP = 276; // PLANNED-FEATURES-CS022.md §1.3 — spec literals, on purpose
-  eq(X.ORBIT_INNER_RADIUS, CS022_INNER, "D: the shipped ORBIT_INNER_RADIUS is the spec's 460 (P2 predicted it, P3 landed it)");
-  eq(X.ORBIT_RADIUS_STEP, CS022_STEP, "D: the shipped ORBIT_RADIUS_STEP is the spec's 276");
+  eq(CS022_BUDGET, 1420, "D: CS022's orbit world was size 16, budget 1420px");
+
+  // The live build is NOT that geometry any more, and saying so here is what stops this section quietly
+  // turning back into a description of the shipped constants.
+  assert(X.ORBIT_INNER_RADIUS !== CS022_INNER && X.ORBIT_RADIUS_STEP !== CS022_STEP,
+    "D: (control) the LIVE build is no longer CS022's 460/276 — CS023 P1 moved it to 400/138");
+  assert(X.WORLD_SIZE_ORBIT !== 16, "D: (control) ...and the orbit world is no longer size 16 either");
 
   const edge4 = CS022_INNER + 3 * CS022_STEP + X.DEBRIS_RADII[3];
   const edge5 = CS022_INNER + 4 * CS022_STEP + X.DEBRIS_RADII[3];
-  eq(edge4, 1334, "D: spec's own figure — the CS022 4-ring outer edge is 1334px");
-  eq(edge5, 1610, "D: spec's own figure — a hypothetical 5th ring's outer edge would be 1610px");
-  assert(edge4 <= orbitBudget, "D: 1334px clears the 1420px orbit-world budget — 4 rings fit");
-  assert(edge5 > orbitBudget, "D: 1610px does NOT clear the budget — a requested 5th ring would be rejected");
+  eq(edge4, 1334, "D: CS022's own figure — its 4-ring outer edge was 1334px");
+  eq(edge5, 1610, "D: CS022's own figure — a 5th ring's outer edge would have been 1610px");
+  assert(edge4 <= CS022_BUDGET, "D: 1334px cleared the 1420px size-16 budget — 4 rings fit");
+  assert(edge5 > CS022_BUDGET, "D: 1610px did NOT clear it — a requested 5th ring was rejected there");
 
-  eq(expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], orbitBudget, 4), 4,
-    "D: at the CS022 geometry, requesting 4 is accepted outright");
-  eq(expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], orbitBudget, 5), 4,
-    "D: at the CS022 geometry, requesting 5 walks down to 4 — the boundary the shipped rule now protects");
-  // ...and the LIVE function agrees with the helper at every count, which is the claim P2 could only
-  // make as arithmetic and P3 can make against the real code.
+  eq(expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], CS022_BUDGET, 4), 4,
+    "D: at the CS022 geometry the helper accepts 4 outright");
+  eq(expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], CS022_BUDGET, 5), 4,
+    "D: at the CS022 geometry the helper walks 5 down to 4 — the boundary that build's rule protected");
+  // And the same helper, at the LIVE geometry, agrees with the LIVE function at every count — which is
+  // the cross-validation that licenses trusting it on a geometry the build no longer runs.
+  const liveBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
   for (let requested = 1; requested <= 20; requested++) {
     eq(X.orbitEffectiveCount(requested),
-       expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], orbitBudget, requested),
-       `D: the LIVE orbitEffectiveCount(${requested}) matches the spec-geometry helper`);
+       expectedEffectiveCount(X.ORBIT_INNER_RADIUS, X.ORBIT_RADIUS_STEP, X.DEBRIS_RADII[3], liveBudget, requested),
+       `D: the LIVE orbitEffectiveCount(${requested}) matches the same helper at the LIVE geometry`);
   }
+  // The two geometries genuinely disagree, so the section cannot pass by coincidence.
+  assert(expectedEffectiveCount(CS022_INNER, CS022_STEP, X.DEBRIS_RADII[3], CS022_BUDGET, 5) !== X.orbitEffectiveCount(5),
+    "D: (control) the retired and live geometries give DIFFERENT answers at a requested 5 (4 vs 5)");
 })();
 
 // ============================ (E) ORBIT_RADIUS_STEP_PAD: zero readers ================================

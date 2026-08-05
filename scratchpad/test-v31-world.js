@@ -11,7 +11,7 @@
 //  (D) STAR_COUNT is the area-derived value for the LARGEST world size (density preserved).
 //
 // REPOINTED BY CS022 P1. WORLD_W/WORLD_H are `let` now and change with the level's archetype
-// (worldDims(WORLD_SIZE_FIELD) = 2560x1440, worldDims(WORLD_SIZE_ORBIT) = 5120x2880), so:
+// (worldDims(WORLD_SIZE_FIELD) = 2560x1440, worldDims(WORLD_SIZE_ORBIT) = 3840x2160 as of CS023 P1), so:
 //   * this file's destructured WORLD_W/WORLD_H are a SNAPSHOT taken at module load — i.e. the FIELD
 //     size, which is what the game boots in and what startGame() re-applies. Every place that needs
 //     the size the sim is CURRENTLY running at goes through liveDims() below instead.
@@ -87,7 +87,11 @@ assert(WORLD_H === 1440, "A: WORLD_H boots at 1440 (the FIELD-level world)");
 assert(FIELD_W === 2560 && FIELD_H === 1440, "A: worldDims(WORLD_SIZE_FIELD) is exactly 2560x1440");
 assert(WORLD_W === FIELD_W && WORLD_H === FIELD_H, "A: the boot dimensions ARE the field-level dimensions");
 const [ORBIT_W, ORBIT_H] = worldDims(WORLD_SIZE_ORBIT);
-assert(ORBIT_W === 5120 && ORBIT_H === 2880, "A: worldDims(WORLD_SIZE_ORBIT) is exactly 5120x2880");
+// REPOINTED BY CS023 P1: WORLD_SIZE_ORBIT 16 -> 9 (spec §1.3/C2), so the orbit torus is 3840x2160, not
+// 5120x2880. A VALUE change, not a rename — the symbol is read, only the number it resolves to moved.
+assert(ORBIT_W === 3840 && ORBIT_H === 2160, "A: worldDims(WORLD_SIZE_ORBIT) is exactly 3840x2160");
+assert(ORBIT_W === VIEW_W * Math.sqrt(WORLD_SIZE_ORBIT) && ORBIT_H === VIEW_H * Math.sqrt(WORLD_SIZE_ORBIT),
+  "A: ...and that is the sqrt-of-area derivation, not a literal that happens to agree");
 assert(worldSizeFor(1) === WORLD_SIZE_FIELD && worldSizeFor(3) === WORLD_SIZE_ORBIT,
   "A: worldSizeFor picks the size off the level's archetype (level 1 field, level 3 orbit)");
 assert(SPAWN_MIN_DIST === 220, "A: SPAWN_MIN_DIST unchanged at 220");
@@ -95,10 +99,13 @@ assert(SPAWN_MAX_DIST === 640, "A: SPAWN_MAX_DIST clamped to 640");
 assert(DOCK_MIN_DIST === 260, "A: DOCK_MIN_DIST unchanged at 260");
 assert(DOCK_MAX_DIST === 620, "A: DOCK_MAX_DIST clamped to 620");
 // CS022 P1 (spec C5/§7): the two flat constants must clear the reachable-radius limit at BOTH sizes,
-// since neither scales with the world. 660 at field size, 1380 at orbit size.
+// since neither scales with the world. 660 at field size, 1020 at orbit size.
+// REPOINTED BY CS023 P1 (spec C7): the orbit figure was 1380 at WORLD_SIZE_ORBIT 16 and is 1020 at 9.
+// This is the same `dmax` resizeWorld() clamps carried bodies to, so the drop is what makes C7's
+// corrected grow comment true — a materially larger band of carried bodies now clamps on the GROW too.
 const bindingLimit = Math.min(FIELD_W, FIELD_H) / 2 - 60;
 const orbitLimit   = Math.min(ORBIT_W, ORBIT_H) / 2 - 60;
-assert(bindingLimit === 660 && orbitLimit === 1380, "A: the reachable-radius limit is 660 at field size and 1380 at orbit size");
+assert(bindingLimit === 660 && orbitLimit === 1020, "A: the reachable-radius limit is 660 at field size and 1020 at orbit size");
 assert(SPAWN_MAX_DIST <= bindingLimit, "A: SPAWN_MAX_DIST within min(W,H)/2-60 at the FIELD size (the binding one)");
 assert(SPAWN_MAX_DIST <= orbitLimit && DOCK_MAX_DIST <= orbitLimit,
   "A: both flat spawn/dock maxima also clear the ORBIT size's limit (spec §7 — they do not scale)");
@@ -134,7 +141,7 @@ for (let trial = 0; trial < 25; trial++) {
   game.debris = [];
   nextWave();
   // REPOINTED BY CS022 P1: the budget is now read off the LIVE world, not the load-time snapshot —
-  // nextWave() has just resized to 5120x2880 if this turned out to be an orbit level.
+  // nextWave() has just resized to 3840x2160 if this turned out to be an orbit level (CS023 P1).
   const [liveW, liveH] = liveDims();
   const orbitEdgeBudget = Math.min(liveW, liveH) / 2 - 20;
   if (game.worldSize !== worldSizeFor(game.wave)) sizeOk = false;

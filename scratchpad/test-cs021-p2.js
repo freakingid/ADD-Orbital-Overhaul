@@ -134,7 +134,8 @@ function shippedArgs(X, centerX, centerY, gapMult) {
     minGapMultiplier:  gapMult,
     densityByOrbit:    X.ORBIT_DENSITY,
     baseAngVel:        X.ORBIT_ANG_VEL,
-    fastRingIndex:     X.ORBIT_FAST_RING - 1,
+    // CS023 P1 (spec C3): ORBIT_FAST_RING is a LIST; the generator's parameter is the plural form.
+    fastRingIndices:   X.ORBIT_FAST_RING.map(n => n - 1),
     fastRingMult:      X.ORBIT_FAST_MULT,
   };
 }
@@ -238,7 +239,10 @@ function atWave(X, w) {
   // that value — it is that the curve is a FIXED array rather than a function of level — so it is
   // restated at the new value and the "not derived from orbitGapMult" source check below carries the
   // actual weight.
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]",
+  // REPOINTED AGAIN BY CS023 P1: the curve went FLAT at 0.12. Same treatment and same reasoning as the
+  // CS022 P3 repoint above — the claim is that the curve is a FIXED ARRAY rather than a function of
+  // level, so it is restated at the new value and the source check below carries the actual weight.
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]",
     "B: ORBIT_DENSITY is still the fixed curve — untouched by occurrence scaling");
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
   assert(!/ORBIT_DENSITY\s*=\s*[^,;]*orbitGapMult/.test(codeOnly) && !/ORBIT_ANG_VEL\s*=\s*[^,;]*orbitGapMult/.test(codeOnly),
@@ -284,14 +288,28 @@ function atWave(X, w) {
   const L24 = withRandom(seededRandom(0xC024), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(24))));
   const L63 = withRandom(seededRandom(0xC063), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(63))));
 
-  eq(L1.total, 65, "C1: occurrence 1's multiplier over all four rings totals 65");
-  eq(L24.total, 71, "C1: occurrence 8 (level 24, the floor) totals 71");
-  eq(L63.total, 71, "C1: occurrence 21 (level 63) still totals 71 — held at the floor");
+  // REPOINTED BY CS023 P1 (spec §1.3 + C5). The maxCounts still widen by ~13% as the multiplier decays
+  // 2.5 -> 1.8 — that mechanism is untouched — but at the flat 0.12 density curve the widening buys ONE
+  // satellite in the whole game (ring 2, at occurrence 3), so the four-ring total goes 15 -> 16 rather
+  // than 65 -> 71. That is C5's finding, and pinning it here is what stops anyone "fixing" the quiet
+  // curve or deleting it.
+  eq(L1.total, 15, "C1: occurrence 1's multiplier over all four rings totals 15");
+  eq(L24.total, 16, "C1: occurrence 8 (level 24, the floor) totals 16");
+  eq(L63.total, 16, "C1: occurrence 21 (level 63) still totals 16 — held at the floor");
 
-  const WANT_MAXCOUNT_1  = [18, 29, 40, 51];
-  const WANT_MAXCOUNT_24 = [20, 33, 45, 58];
-  const WANT_COUNT_24    = [15, 15, 16, 25];
-  L1.rings.forEach((r, i) => eq(r.maxCount, WANT_MAXCOUNT_1[i], `C1: occurrence 1 ring ${i + 1} maxCount unchanged at ${WANT_MAXCOUNT_1[i]}`));
+  const WANT_MAXCOUNT_1  = [16, 21, 27, 32];
+  const WANT_MAXCOUNT_24 = [18, 24, 30, 36];
+  const WANT_COUNT_1     = [3, 3, 4, 5];
+  const WANT_COUNT_24    = [3, 4, 4, 5];
+  // C5 stated as arithmetic rather than as prose: the whole occurrence curve moves exactly ONE ring's
+  // count, by exactly one satellite, and it is ring 2.
+  const movedRings = WANT_COUNT_1.map((c, i) => c !== WANT_COUNT_24[i] ? i : -1).filter(i => i >= 0);
+  eq(JSON.stringify(movedRings), "[1]", "C1: spec C5 — ring 2 is the ONLY ring the occurrence curve moves");
+  eq(WANT_COUNT_24[1] - WANT_COUNT_1[1], 1, "C1: ...and it moves it by exactly one satellite, across the whole 63-level game");
+  L1.rings.forEach((r, i) => {
+    eq(r.maxCount, WANT_MAXCOUNT_1[i], `C1: occurrence 1 ring ${i + 1} maxCount unchanged at ${WANT_MAXCOUNT_1[i]}`);
+    eq(r.count, WANT_COUNT_1[i], `C1: occurrence 1 ring ${i + 1} count is ${WANT_COUNT_1[i]}`);
+  });
   L24.rings.forEach((r, i) => {
     eq(r.maxCount, WANT_MAXCOUNT_24[i], `C1: occurrence 8 ring ${i + 1} maxCount widened to ${WANT_MAXCOUNT_24[i]}`);
     eq(r.count, WANT_COUNT_24[i], `C1: occurrence 8 ring ${i + 1} count is ${WANT_COUNT_24[i]}`);
@@ -340,12 +358,14 @@ function atWave(X, w) {
     atWave(X, 3);
     const r3 = [...new Set(X.game.debris.filter(d => !!d.orbitCenter).map(d => d.orbitRadius))];
     eq(r3.length, 1, "C2: a REAL level-3 wave lays exactly ONE ring (FORK-CS022-E)");
-    eq(r3[0], X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP,
-      "C2: ...and it is the OUTERMOST one — the ramp fills from the outside in");
+    // REPOINTED BY CS023 P1 (FORK-CS023-A): the ramp is INVERTED — occurrence 1 lays the INNERMOST ring.
+    eq(r3[0], X.ORBIT_INNER_RADIUS,
+      "C2: ...and it is the INNERMOST one — the ramp fills from the inside out");
   });
 
-  // -- (C3) the climb is MONOTONIC (non-decreasing) across occurrences 1..21, from 40 up to 45, never
-  //    overshooting or oscillating.
+  // -- (C3) the climb is MONOTONIC (non-decreasing) across occurrences 1..21 — from 40 to 45 at CS021's
+  //    density curve, 65 to 71 at CS022's, and 15 to 16 at CS023's flat 0.12 (spec C5). The SHAPE claim
+  //    is what this checks and it is unchanged; only the endpoints moved.
   let prevTotal = 0;
   for (let occ = 1; occ <= 21; occ++) {
     const level = occ * 3;
@@ -354,7 +374,7 @@ function atWave(X, w) {
     assert(L.total >= L1.total && L.total <= L24.total, `C3: occurrence ${occ}: total ${L.total} stays within [${L1.total}, ${L24.total}]`);
     prevTotal = L.total;
   }
-  eq(prevTotal, 71, "C3: the climb really does reach 71 by occurrence 21");
+  eq(prevTotal, 16, "C3: the climb really does reach 16 by occurrence 21 (one satellite in the whole game — spec C5)");
 })();
 
 // ================= (D) THE FAIRNESS SWEEP RE-RUN — spec §8 items 1-4, occurrence-scaled ===============

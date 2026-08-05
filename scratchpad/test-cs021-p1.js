@@ -202,7 +202,10 @@ function shippedArgs(X, centerX, centerY) {
     minGapMultiplier:  X.ORBIT_GAP_MULT,
     densityByOrbit:    X.ORBIT_DENSITY,
     baseAngVel:        X.ORBIT_ANG_VEL,
-    fastRingIndex:     X.ORBIT_FAST_RING - 1,
+    // CS023 P1 (spec C3): ORBIT_FAST_RING is a LIST of 1-based ring numbers now, and the generator's
+    // parameter is the plural `fastRingIndices`. Mapped exactly as spawnOrbitWave() does, so this stays
+    // a wiring check rather than a restatement.
+    fastRingIndices:   X.ORBIT_FAST_RING.map(n => n - 1),
     fastRingMult:      X.ORBIT_FAST_MULT,
   };
 }
@@ -301,12 +304,14 @@ function shippedArgs(X, centerX, centerY) {
 // what it pins is the GEOMETRY — radii, maxCounts, densities, counts, lanes — which the ramp SELECTS
 // from and never re-spaces. The ramp's own per-occurrence table is §4.7 and is driven through a real
 // nextWave() in test-cs022-p3.js; the two are cross-checked at the foot of this section.
+// REPOINTED BY CS023 P1 (spec §1.3): 460/276 -> 400/138 and the density curve went FLAT at 0.12, so
+// every column below moved. The un-ramped four-ring shell is 15 satellites at the base multiplier, not 65.
 const WANT_RINGS = [
   // radius, maxCount, density, count, actualGapPx (arc) — at the base ORBIT_GAP_MULT (occurrence 1)
-  { radius: 460,  maxCount: 18, density: 0.75, count: 14, gap: 114.4 },
-  { radius: 736,  maxCount: 29, density: 0.45, count: 14, gap: 238.3 },
-  { radius: 1012, maxCount: 40, density: 0.35, count: 15, gap: 331.9 },
-  { radius: 1288, maxCount: 51, density: 0.42, count: 22, gap: 275.9 },
+  { radius: 400, maxCount: 16, density: 0.12, count: 3, gap: 745.8 },
+  { radius: 538, maxCount: 21, density: 0.12, count: 3, gap: 1034.8 },
+  { radius: 676, maxCount: 27, density: 0.12, count: 4, gap: 969.9 },
+  { radius: 814, maxCount: 32, density: 0.12, count: 5, gap: 930.9 },
 ];
 (function sectionB() {
   console.log("(B) the CS022 §1.3 geometry table, pinned exactly");
@@ -314,14 +319,18 @@ const WANT_RINGS = [
   const L = withRandom(seededRandom(0xB0B0), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720)));
 
   // The inputs, so a constant drifting away from the spec fails HERE rather than three sections later.
-  eq(X.ORBIT_INNER_RADIUS, 460, "B: innerRadius 460 — 5 large-satellite diameters (gate Q1, FORK-CS022-A)");
-  eq(X.ORBIT_RADIUS_STEP, 276, "B: radiusStep 276 — 3 large-satellite diameters");
-  eq(X.ORBIT_INNER_RADIUS, 5 * X.DEBRIS_RADII[3] * 2, "B: ...and 460 really is 5 x the satellite diameter, not a coincidence");
-  eq(X.ORBIT_RADIUS_STEP, 3 * X.DEBRIS_RADII[3] * 2, "B: ...and 276 really is 3 x it");
+  eq(X.ORBIT_INNER_RADIUS, 400, "B: innerRadius 400 (CS023 P1, spec §1.3 — was 460)");
+  eq(X.ORBIT_RADIUS_STEP, 138, "B: radiusStep 138 (CS023 P1 — was 276)");
+  // REPOINTED BY CS023 P1. CS022's radii were 5x and 3x the satellite diameter; CS023 keeps the
+  // derive-from-satellite-size rule for the STEP (1.5x) and derives the inner radius from the CLEARANCE
+  // it has to leave over the permanent 88 px dock instead. Both are asserted as derivations, not literals.
+  eq(X.ORBIT_RADIUS_STEP, 1.5 * X.DEBRIS_RADII[3] * 2, "B: ...and 138 really is 1.5 x the satellite diameter, not a coincidence");
+  eq(X.ORBIT_RADIUS_STEP - X.DEBRIS_RADII[3] * 2, 46,
+    "B: ...so the INTER-RING radial corridor is 46 px — narrower than the 65 px in-ring floor, and correct (spec §4.1)");
   eq(X.ORBIT_RING_COUNT, 4, "B: 4 rings (FORK-CS021-B)");
   eq(X.ORBIT_GAP_MULT, 2.5, "B: gap multiplier 2.5 (P1 ships it fixed; P2 makes it occurrence-scaled)");
   eq(X.ORBIT_SAFETY_MARGIN, 8, "B: safety margin 8");
-  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.75,0.45,0.35,0.42]", "B: the density curve is the shipped [0.75, 0.45, 0.35, 0.42] (FORK-CS022-G halved ring 4)");
+  eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]", "B: REPOINTED BY CS023 P1 — the density curve is FLAT at 0.12 (spec §1.3; the rhythm is retired)");
   eq(X.DEBRIS_RADII[3] * 2, 92, "B: size-3 satellite diameter is 92 px (DEBRIS_RADII[3] * 2)");
   eq(X.SHIP_RADIUS * 2, 26, "B: ship diameter is 26 px (SHIP_RADIUS * 2)");
 
@@ -347,44 +356,61 @@ const WANT_RINGS = [
     close(r.angleStep, X.TAU / w.count, `B: ring ${i + 1} angleStep = TAU / count`);
     r.satellites.forEach((s, k) => close(s.angle, r.startAngle + k * r.angleStep, `B: ring ${i + 1} satellite ${k} angle`));
   });
-  eq(L.total, 65, "B: 65 size-3 satellites with ALL FOUR rings at the base multiplier (the ramp is what keeps a real level under this)");
-  eq(L.outerEdge, 1334, "B: outermost satellite EDGE is 1288 + 46 = 1334 px");
+  eq(L.total, 15, "B: 15 size-3 satellites with ALL FOUR rings at the base multiplier (CS022 shipped 65 here)");
+  eq(L.outerEdge, 860, "B: outermost satellite EDGE is 814 + 46 = 860 px");
   // The budget that edge has to clear is the ORBIT world's, never the live WORLD_H (which is 1440
   // whenever a field level is on screen). This is the constraint that made CS022 P1 a prerequisite.
   const orbitBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
-  eq(orbitBudget, 1420, "B: the orbit world's wrap-clean budget is 1420 px");
-  assert(L.outerEdge <= orbitBudget, `B: 1334 px clears it with ${orbitBudget - L.outerEdge} px to spare`);
+  eq(orbitBudget, 1060, "B: the orbit world's wrap-clean budget is 1060 px (WORLD_SIZE_ORBIT 9, CS023 P1)");
+  assert(L.outerEdge <= orbitBudget, `B: ${L.outerEdge} px clears it with ${orbitBudget - L.outerEdge} px to spare`);
   assert(L.outerEdge > X.worldDims(X.WORLD_SIZE_FIELD)[1] / 2 - 20,
     "B: (control) and it does NOT fit the FIELD world — the bigger orbit world is load-bearing, not cosmetic");
 
-  // The fast ring, and only the fast ring.
+  // The fast RINGS, and only them. REPOINTED BY CS023 P1 (spec C3 / FORK-CS023-G): ORBIT_FAST_RING is a
+  // LIST of 1-based ring numbers now, so this is set membership rather than one index comparison.
+  const FAST_IDX = X.ORBIT_FAST_RING.map(n => n - 1);
   L.rings.forEach((r, i) => {
-    const wantVel = X.ORBIT_ANG_VEL * (i === X.ORBIT_FAST_RING - 1 ? X.ORBIT_FAST_MULT : 1);
+    const wantVel = X.ORBIT_ANG_VEL * (FAST_IDX.indexOf(i) !== -1 ? X.ORBIT_FAST_MULT : 1);
     close(r.angVel, wantVel, `B: ring ${i + 1} angVel`);
   });
-  eq(X.ORBIT_FAST_RING, 3, "B: ring 3 — the deliberately sparse one — is the fast ring");
-  assert(L.rings[2].angVel > L.rings[0].angVel, "B: the fast ring really is markedly faster than the rest");
-  close(L.rings[2].angVel / L.rings[0].angVel, X.ORBIT_FAST_MULT, "B: and by exactly ORBIT_FAST_MULT");
-  // Ring 3 is the SPARSEST by arc gap, which is the rhythm the curve exists to produce.
-  assert(L.rings[2].actualGapPx === Math.max(...L.rings.map(r => r.actualGapPx)),
-    "B: ring 3 has the widest lanes of the four — sparse in space, tight in time");
-  // CS022 P3 (Correction C7 / FLAG-CS022-c): the halving reversed ring 4's character. It used to be the
-  // TIGHTEST ring and the level's climax; it is now the SECOND-widest, and ring 1 is the only tight one
-  // left. Asserted rather than merely commented, because the constants block's rhythm line says so.
+  assert(Array.isArray(X.ORBIT_FAST_RING), "B: ORBIT_FAST_RING is a LIST, not a scalar (spec C3)");
+  eq(JSON.stringify(X.ORBIT_FAST_RING), "[2,4]", "B: rings 2 and 4 are the fast ones (CS022 shipped the scalar 3)");
+  eq(FAST_IDX.length, 2, "B: (setup) exactly two rings are fast at the shipped list");
+  for (const i of FAST_IDX) {
+    assert(L.rings[i].angVel > L.rings[0].angVel, `B: fast ring ${i + 1} really is markedly faster than ring 1`);
+    close(L.rings[i].angVel / L.rings[0].angVel, X.ORBIT_FAST_MULT, `B: ...and by exactly ORBIT_FAST_MULT`);
+  }
+  for (let i = 0; i < L.rings.length; i++) {
+    if (FAST_IDX.indexOf(i) !== -1) continue;
+    close(L.rings[i].angVel, X.ORBIT_ANG_VEL, `B: slow ring ${i + 1} carries the BASE angular velocity, unmultiplied`);
+  }
+  // REPOINTED BY CS023 P1. CS022's ordering claims ("ring 3 has the widest lanes", "ring 4 is the
+  // second-widest") were properties of a NON-UNIFORM density curve, and the curve is flat now — the
+  // constants block's rhythm sentence was deleted rather than amended for exactly this reason, so the
+  // assertions that mirrored it are replaced rather than retuned. What is true at a flat curve: lane
+  // width is set by radius and the rounding of count, ring 1 is still the tightest, and EVERY ring is
+  // now a wide ring — which is what the 5x count cut bought.
   const byGap = L.rings.slice().sort((a, b) => a.actualGapPx - b.actualGapPx).map(r => r.index);
-  assert(byGap[0] === 0, "B: ring 1 is now the TIGHTEST ring (Correction C7 — the curve reads tight -> breather -> widest -> wide)");
-  assert(byGap[3] === 2 && byGap[2] === 3, "B: ...and ring 4 is the second-widest, not the tightest it used to be");
+  assert(byGap[0] === 0, "B: ring 1 is still the TIGHTEST ring");
+  assert(L.rings.every(r => r.actualGapPx > 700),
+    `B: ...but every lane is over 700 px wide now (tightest ${Math.min(...L.rings.map(r => r.actualGapPx)).toFixed(1)} px) — the flat 0.12 curve`);
+  assert(new Set(L.rings.map(r => r.density)).size === 1,
+    "B: ...and all four densities are the same number, which is what 'no rhythm' means arithmetically");
 
   // §1.3's stated clearances. The dock is 88 px at EVERY wave (Correction C2 — LEVER_DOCK_SIZE ships
   // disabled, so leverScale returns its 2.0 start), which is why one probe wave is representative.
   const satR = X.DEBRIS_RADII[3];
   const wave1Dock = X.DOCK_RADIUS * X.leverScale(X.LEVER_DOCK_SIZE, 1);
   eq(wave1Dock, 88, "B: a dock's radius is 88 px (DOCK_RADIUS 44 x the 2x size lever)");
-  eq(X.ORBIT_INNER_RADIUS - satR - wave1Dock, 326, "B: inner-ring clearance over an 88 px dock is 326 px (was 46 at the CS021 geometry)");
+  eq(X.ORBIT_INNER_RADIUS - satR - wave1Dock, 266, "B: inner-ring clearance over an 88 px dock is 266 px (46 at CS021, 326 at CS022)");
 
   // CS022 P3 — the ramp SELECTS from exactly these rings and never re-spaces them. Cross-check against
   // the un-ramped table above: at every occurrence, each active ring's radius is one of these four, and
   // the outermost active ring is always ring 4 (the ramp fills from the outside in).
+  // REPOINTED BY CS023 P1 (FORK-CS023-A): the ramp now fills from the INSIDE OUT, so it is ring 1 that
+  // is always present, `rings[k].index === k` at every occurrence, and the outer edge GROWS with the
+  // occurrence instead of sitting at a constant. The "never re-spaces" claim is unchanged and is the
+  // one this loop exists for.
   const RADII = WANT_RINGS.map(w => w.radius);
   for (const level of [3, 6, 9, 12, 21, 63]) {
     const R = withRandom(seededRandom(0xB0B1 + level), () => X.generateOrbitLayout({
@@ -393,9 +419,12 @@ const WANT_RINGS = [
       `B: level ${level}: every active ring sits at its ORIGINAL radius — the ramp does not re-space`);
     eq(R.rings.length + R.inactive.length, X.ORBIT_RING_COUNT,
       `B: level ${level}: active + inactive accounts for every ring`);
-    eq(R.rings[R.rings.length - 1].index, X.ORBIT_RING_COUNT - 1,
-      `B: level ${level}: the outermost ring is always present — the ramp fills from the outside in`);
-    eq(R.outerEdge, 1334, `B: level ${level}: the outer edge is 1334 px at every occurrence`);
+    eq(R.rings[0].index, 0,
+      `B: level ${level}: ring 1 is always present — the ramp fills from the inside out`);
+    assert(R.rings.every((r, k) => r.index === k),
+      `B: level ${level}: array position IS ring index again (CS022 P3's divergence note is retired)`);
+    eq(R.outerEdge, RADII[R.rings.length - 1] + X.DEBRIS_RADII[3],
+      `B: level ${level}: the outer edge is the OUTERMOST ACTIVE ring's, and it grows with the occurrence`);
   }
   console.log("    " + L.rings.map(r => `R${r.index + 1} r=${r.radius} n=${r.count}/${r.maxCount} gap=${r.actualGapPx.toFixed(1)}px v=${(r.angVel * 180 / Math.PI).toFixed(1)}deg/s`).join("  "));
 })();
@@ -438,7 +467,7 @@ const WANT_RINGS = [
       `C: level ${n}: innerRadius - satRadius (${X.ORBIT_INNER_RADIUS - satR}) >= dock radius (${wave1Dock})`);
     eq(L.rejected.length, 0, `C: level ${n}: no ring was rejected`);
     eq(L.inactive.length, 0, `C: level ${n}: the un-ramped control really does place all four rings`);
-    eq(L.total, 65, `C: level ${n}: 65 satellites un-ramped and un-scaled (this is the control P2/P3 move away from)`);
+    eq(L.total, 15, `C: level ${n}: 15 satellites un-ramped and un-scaled (this is the control P2/P3 move away from — CS022 shipped 65)`);
   }
   eq(orbitLevels, 21, "C: 21 orbit levels across 1..63 (FORK-CS021-E — every 3rd)");
   console.log(`    tightest lane across all 21 occurrences: ${worstGap.toFixed(2)} px (floor ${shipDiameter * X.ORBIT_GAP_MULT}); widest edge ${worstEdge} px (budget ${budget})`);
@@ -602,14 +631,19 @@ function expectedOrbitSpawn(X, level) {
 
   // The fast ring really moves faster on the field, not just in the layout object.
   // REPOINTED BY CS022 P3: radii read from the shipped constants, never restated — 180/330/480/630
-  // became 460/736/1012/1288 this phase and hardcoding them again would just re-arm the same trap.
+  // became 460/736/1012/1288 there and 400/538/676/814 at CS023 P1. Three geometries in three rounds;
+  // hardcoding them again would just re-arm the same trap.
   const byRadius = {};
   for (const d of X.game.debris) if (d.orbitCenter) byRadius[d.orbitRadius] = Math.abs(d.orbitAngVel);
+  // REPOINTED BY CS023 P1: ORBIT_FAST_RING is a LIST, so this checks a SET of fast radii against the
+  // complementary set of slow ones — every fast ring strictly faster than every slow one.
   const RAD = shippedRadii(X);
-  const fastR = RAD[X.ORBIT_FAST_RING - 1];
+  const fastR = X.ORBIT_FAST_RING.map(n => RAD[n - 1]);
+  const slowR = RAD.filter(r => fastR.indexOf(r) === -1);
   eq(Object.keys(byRadius).length, X.ORBIT_RING_COUNT, "E: (setup) all four ring radii are represented on the field");
-  assert(RAD.every(r => r === fastR || byRadius[fastR] > byRadius[r]),
-    `E: the ring-${X.ORBIT_FAST_RING} satellites on the field carry the fast angular velocity`);
+  assert(fastR.length > 0 && slowR.length > 0, "E: (setup) the level really has both a fast and a slow ring on it");
+  assert(fastR.every(f => slowR.every(sl => byRadius[f] > byRadius[sl])),
+    `E: the ring-[${X.ORBIT_FAST_RING}] satellites on the field carry the fast angular velocity and the others do not`);
 })();
 
 // ================= (F) THE SPLIT — the tangent handoff =====================
@@ -724,8 +758,8 @@ function expectedOrbitSpawn(X, level) {
   const X = build();
   // REPOINTED BY CS022 P3. The corners USED to be read off X.WORLD_W/X.WORLD_H — the load-time FIELD
   // snapshot (2560x1440). That was already the wrong period after CS022 P1 (an orbit level runs at
-  // 5120x2880) and it only kept passing because CS021's outermost radius, 630, still fitted a 720 px
-  // half-height. At 1288 it does not: wrapPos folds a ring that big in a 1440-tall world, and the
+  // a bigger world) and it only kept passing because CS021's outermost radius, 630, still fitted a 720
+  // px half-height. At 814 it does not: wrapPos folds a ring that big in a 1440-tall world, and the
   // toroidal-distance claim breaks for the right reason. The world is driven to an orbit level FIRST
   // and the corners are read off the LIVE period, which is the standing CS022 P1 idiom.
   withRandom(seededRandom(0x5EA12), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
@@ -811,7 +845,7 @@ function expectedOrbitSpawn(X, level) {
   const X = build();
   // REPOINTED BY CS022 P3, same reason as (H): these probes place a ship at a RING RADIUS around a fixed
   // centre and then measure wrap-aware distances, so they only mean anything in a world whose wrap-clean
-  // circle contains the outermost ring. At 1288 px that is the ORBIT world, not the load-time field
+  // circle contains the outermost ring. At 814 px that is the ORBIT world, not the load-time field
   // snapshot the centre used to be hardcoded to.
   withRandom(seededRandom(0x5AFD), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
   eq(X.game.worldSize, X.WORLD_SIZE_ORBIT, "I: (setup) the probes run at the ORBIT world size");
@@ -851,8 +885,16 @@ function expectedOrbitSpawn(X, level) {
 
   // 2. A REROLL MOVES START ANGLES ONLY. Counts, radii, densities, velocities and gaps are identical
   //    before and after — the property CS021 P3's reroll keybind will lean on.
-  const shipOnRing = X.wrapPos({ x: CX + X.ORBIT_INNER_RADIUS, y: CY });
+  // REPOINTED BY CS023 P1: this used to park the ship at a FIXED point on ring 1's radius and rely on the
+  // seed happening to drop a satellite near it. That worked while ring 1 carried 14 satellites 114 px
+  // apart; at the flat 0.12 curve it carries THREE, 837 px of arc apart, so a fixed point clears the 65 px
+  // floor on the first roll about 95% of the time and the "a reroll actually happened" control went quiet.
+  // The ship is now placed exactly ON one of ring 1's satellites, which makes the reroll unconditional —
+  // a stronger staging than the original, and one no future density retune can silence.
   const L2 = withRandom(seededRandom(0x5AFF), () => X.generateOrbitLayout(shippedArgs(X, CX, CY)));
+  const shipOnRing = X.wrapPos({ x: L2.rings[0].satellites[0].x, y: L2.rings[0].satellites[0].y });
+  assert(X.nearestOrbitDist(L2.rings[0], shipOnRing) < L2.minRequiredGap,
+    "I: (setup) the ship starts inside ring 1's fairness floor, so the reroll MUST fire");
   const snap = L2.rings.map(r => ({ radius: r.radius, count: r.count, maxCount: r.maxCount, density: r.density,
                                     angVel: r.angVel, gap: r.actualGapPx, angleStep: r.angleStep, start: r.startAngle }));
   withRandom(seededRandom(0x5B00), () => X.spawnSafeOrbitLayout(L2, shipOnRing));
@@ -1036,7 +1078,18 @@ function expectedOrbitSpawn(X, level) {
     `K: (validity) the orbit probe really started from a full level-3 wave (${orbit.spawned} satellites)`);
   eq(field.spawned, 13, "K: (validity) the field control really started from a 13-satellite wave");
   assert(orbit.frames > 60 && field.frames > 60, "K: (validity) both probes ran a real number of frames");
-  assert(orbit.peak > field.peak, "K: (validity) the orbit level really is the heavier load");
+  // REPOINTED BY CS023 P1, AND THE REVERSAL IS THE POINT. Through CS021/CS022 a level-3 orbit wave was
+  // unambiguously the heavier load (40, then 27 satellites against the densest field level's 13), and
+  // this line was a validity check on that. CS023's 5x count cut plus the INVERTED ramp make level 3
+  // ring 1 alone — 3 ring satellites plus a 5-satellite field component, 8 in all — so the FIRST orbit
+  // occurrence is now LIGHTER than the densest field level. Asserted in its new direction rather than
+  // deleted, because it is a real, deliberate consequence of spec §1.3 and a future re-inflation of the
+  // shell should fail here and be looked at. The anti-vacuity guarantee this line used to carry is
+  // carried by the spawned-count and endState/endWave assertions around it, which are unchanged.
+  assert(orbit.spawned < field.spawned,
+    `K: (validity, CS023 P1) level 3 is now the LIGHTER wave — ${orbit.spawned} satellites against the field control's ${field.spawned}`);
+  assert(orbit.peak > 100 && field.peak > 100,
+    `K: (validity) both probes still carried a real entity population (orbit ${orbit.peak}, field ${field.peak})`);
   // Without these two the probe can silently degenerate: a dead ship sends update() into updateDeath()
   // and then into an early return, and a wave clear would put a whole different level under measurement.
   eq(orbit.endState, "playing", "K: (validity) the orbit probe stayed in the live update path throughout");
