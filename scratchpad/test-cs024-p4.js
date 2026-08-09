@@ -36,6 +36,18 @@
 // has NOT changed is the odometer mechanism itself — LEVERS, leverState, buildLeverOrder, payloadSlots,
 // musicIntensity are byte-identical in shape to what phase 4 shipped; only their WIRING moved.
 //
+// UPDATE (CS024 P6b, the in-round corrective phase): ONLY DRIVERS MAY WRAP. A lever may declare
+// `carriesTo` only if it also declares `everyNLevels`, so item 3's "passing the top step RESETS to step
+// 0 and bumps every id in carriesTo" now describes DRIVERS ONLY, and every carried lever plateaus —
+// there is no second carry generation. Item 4's cycle check is GONE with it: a cycle is unreachable by
+// construction, so the load-time guard is a cheaper LEGALITY check (carriesTo without everyNLevels, or
+// an unknown id) in the same SCOOP_WIDTH invariant idiom. Three assertions in §E/§F asserted the
+// depth-2 mechanism and are INVERTED IN PLACE below, each marked `CORRECTED BY CS024 P6b` — the
+// standing convention since CS017 P6 — rather than deleted. §B (the bare-context slice) and §C (closed
+// form vs brute-force simulation) are untouched and still pass unmodified: leverState is still pure,
+// still closed-form, and still agrees with a level-by-level simulation written from the prose.
+// test-cs024-p6b.js owns the new rule's own assertions.
+//
 // Follows the standing rule (CLAUDE.md): stub window/document/rAF/navigator/localStorage, eval the
 // REAL <script> block, and drive the ACTUAL startGame/nextWave/update(1/60) paths. Nothing under test
 // is reimplemented — with ONE deliberate exception, which is the point of §C: the brute-force
@@ -427,7 +439,13 @@ function simulate(table, wave) {
   const terminal = X.LEVERS.filter(l => !l.carriesTo || !l.carriesTo.length);
   const carrying = X.LEVERS.filter(l => l.carriesTo && l.carriesTo.length);
   eq(terminal.length + carrying.length, 17, "E: 17 levers, every one either terminal or carrying");
-  eq(carrying.length, 5, "E: five levers carry (3 drivers + the two UFO flight speeds, the 2nd generation)");
+  // CORRECTED BY CS024 P6b — was `eq(carrying.length, 5, "five levers carry (3 drivers + the two UFO
+  // flight speeds, the 2nd generation)")`. Only DRIVERS may wrap now: a lever may declare carriesTo
+  // only if it also declares everyNLevels, so the two UFO flight speeds no longer carry and the second
+  // generation is gone. Inverted to its mirror image rather than deleted — the count is the same claim,
+  // and the number moving from 5 to 3 IS the phase.
+  eq(carrying.length, 3, "E: exactly THREE levers carry — the three chain drivers, and nothing else (CS024 P6b)");
+  for (const lev of carrying) assert(lev.everyNLevels, `E: ...and carrier ${lev.id} is a driver (THE RULE, CS024 P6b)`);
 
   // ENDPOINTS, exactly. Step 0 IS floor and step steps-1 IS ceil — not "approximately", since the
   // interpolation multiplies before it divides. Find the first level each lever sits at each end.
@@ -557,15 +575,26 @@ function evalSlice(literal) {
   // GUARD 1 — carriesTo names an id no lever declares.
   throwsWith(() => PURE.buildLeverOrder([L("a", { everyNLevels: 1, carriesTo: ["ghost"] })]),
     /unknown lever "ghost"/, "F: an unknown carriesTo id throws at build time");
+  // CORRECTED BY CS024 P6b — this table's second lever declares carriesTo WITHOUT everyNLevels, which
+  // is now itself illegal, so the rule catches it before the id lookup ever reaches "typo". The
+  // unknown-id guard is unchanged and still proven by the "ghost" case above; what moved is that a
+  // typo cannot hide a generation down any more, because there is no generation down.
   throwsWith(() => PURE.buildLeverOrder([L("a", { everyNLevels: 1, carriesTo: ["b"] }), L("b", { carriesTo: ["typo"] })]),
-    /unknown lever "typo"/, "F: ...including one buried a generation down");
-  // GUARD 2 — a cycle.
+    /"b" declares carriesTo without everyNLevels/, "F: ...and a second generation is rejected before its own typo can be");
+  // GUARD 2 — CORRECTED BY CS024 P6b. These four lines asserted /cycle/ against the Kahn check. Only
+  // drivers may wrap now, so A CYCLE IS UNREACHABLE BY CONSTRUCTION: every one of these tables needs a
+  // non-driver to carry, and the legality rule rejects each of them EARLIER and with a better message.
+  // The Kahn sort and its cycle throw are gone from the build (test-cs024-p6b.js §C proves that too).
+  // Inverted to their mirror image — same tables, same "this must not load" claim, new reason.
   throwsWith(() => PURE.buildLeverOrder([L("a", { carriesTo: ["b"] }), L("b", { carriesTo: ["a"] })]),
-    /cycle/, "F: a two-lever cycle throws");
+    /declares carriesTo without everyNLevels/, "F: the old two-lever cycle is rejected by THE RULE instead");
   throwsWith(() => PURE.buildLeverOrder([L("a", { carriesTo: ["a"] })]),
-    /cycle/, "F: a self-cycle throws");
+    /declares carriesTo without everyNLevels/, "F: ...and so is the old self-cycle");
   throwsWith(() => PURE.buildLeverOrder([L("a", { everyNLevels: 1, carriesTo: ["b"] }), L("b", { carriesTo: ["c"] }), L("c", { carriesTo: ["b"] })]),
-    /cycle/, "F: a cycle hanging off a valid driver throws (the reachable part is not enough to save it)");
+    /"b" declares carriesTo without everyNLevels/, "F: ...and so is a cycle hanging off a valid driver — the driver does not launder it");
+  // A DRIVER carrying into a TERMINAL lever is the only legal shape, and it still passes.
+  noThrow(() => PURE.buildLeverOrder([L("a", { everyNLevels: 1, carriesTo: ["b"] }), L("b")]),
+    "F: ...while the one legal shape — a driver into a terminal lever — still passes (CS024 P6b)");
   // GUARD 3 — a duplicate id, which would silently orphan one lever and fake a cycle.
   throwsWith(() => PURE.buildLeverOrder([L("a"), L("a")]), /duplicate lever id "a"/, "F: a duplicate id throws");
   // The guard is REAL — it runs at load on the shipped table, not only when a test calls it.

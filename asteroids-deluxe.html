@@ -651,6 +651,22 @@ const MUSIC_INTENSITY_WAVES = 8; // THE knob: larger = slower heat-up. Feeds mus
 // satellite speed until roughly level 96. One junkCount wrap bumping all three at once lets them
 // saturate at different levels while staying genuinely independent levers.
 //
+// ONLY DRIVERS MAY WRAP (CS024 P6b — the FORK-CS025-A amendment, PLANNED-FEATURES-CS025 §1). A lever
+// may declare `carriesTo` ONLY IF IT ALSO DECLARES `everyNLevels`. Every CARRIED lever therefore
+// plateaus at its ceiling, always, and THERE IS NO SECOND CARRY GENERATION: the graph is exactly one
+// driver deep. This is a restriction of the semantics above, not a redesign, and it exists because the
+// unrestricted version shipped a visible difficulty REGRESSION — a carried lever that itself declared
+// carriesTo wrapped like any other, so ufoFlightSpeedSmall climbed 150 -> 210 px/s by level 25 and then
+// RESET TO 150 AT LEVEL 33, a UFO genuinely slower at 33 than at 25 on one of the most legible
+// quantities in the game. It also left that chain's second generation moving twice in 64 levels and not
+// reaching its ceilings until level 97 — frozen constants wearing lever clothing.
+// Under the rule no carried lever can ever return toward its floor, so nothing in the game can get
+// EASIER as levels rise except through an explicitly inverted floor/ceil pair, which is a deliberate
+// authoring choice rather than an emergent one. The load-time guard below enforces it; leverState's
+// two-flat-pass closed form is what it buys. WHAT IS LOST is the ability to express a chain deeper than
+// one carry generation (FLAG-CS025-d) — nothing was using it on purpose. A future changeset that wants
+// depth must reopen this rule explicitly rather than discovering it still works.
+//
 // NOTHING MAY VALIDATE, CLAMP, REORDER OR ASSERT floor <= ceil — not here, not in the debug panel,
 // not at a call site (§2.3). Several levers are INVERTED: coalescePause 5.0 -> 1.5, ufoAppearFreq
 // 25 -> 12, ufoFireFreq* 1.8 -> 0.7/0.6, both ufoDirChange* and ufoAccuracySmall all descend, because
@@ -682,10 +698,32 @@ const LEVERS = [
     carriesTo: ["hunterSpeedMedium", "hunterSpeedSmall"] },
   { id: "hunterSpeedMedium",   floor: 60,  ceil: 110, steps: 5 },
   { id: "hunterSpeedSmall",    floor: 90,  ceil: 160, steps: 5 },
-  // UFO chain, INVERTED driver, and the only TWO-GENERATION carry in the build (FLAG-CS024-d): the
-  // appearance frequency bumps four levers, two of which bump five more between them. This is the
-  // deepest chain here and the likeliest to read as arrhythmic; flattening it to one generation is a
-  // one-line table edit. Three things about it are resolved and must not be "fixed" later:
+  // UFO chain, INVERTED driver, FLAT and STAGGERED as of CS024 P6b. ufoAppearFreq stays the driver and
+  // now carries DIRECTLY to ALL NINE other UFO levers. This was the one chain that used a second carry
+  // generation — appearance frequency bumped four levers, two of which bumped five more between them —
+  // and it is the chain the drivers-only-wrap rule above was written for: that shape is what reset
+  // ufoFlightSpeedSmall to its floor at level 33, and what left ufoDirChange*/ufoShotSpeed*/
+  // ufoAccuracySmall moving twice in 64 levels. Neither flight-speed lever may carry any more; the
+  // guard below throws at load if one tries.
+  //
+  // THE STAGGER IS THE DESIGN. Floors and ceilings are UNCHANGED from the two-generation table; only
+  // `steps` moved, re-staging the nine so they saturate in a deliberate ORDER rather than together —
+  // one shared driver wrap every 8 levels feeds all nine, so a bigger step count simply takes longer:
+  //     SPEED first        (5 steps -> ceil at L33)   ufoFlightSpeedBig / ufoFlightSpeedSmall
+  //     then RATE OF FIRE  (6 steps -> ceil at L41)   ufoFireFreqBig / ufoFireFreqSmall
+  //     then EVASIVENESS   (7 steps -> ceil at L49)   ufoDirChangeBig / ufoDirChangeSmall
+  //     then SHOT VELOCITY (8 steps -> ceil at L57)   ufoShotSpeedBig / ufoShotSpeedSmall
+  //     and ACCURACY LAST  (9 steps -> ceil at L65)   ufoAccuracySmall
+  // THE UNEVENNESS IS THE POINT — DO NOT "TIDY" THESE INTO ONE NUMBER on a cleanup pass. Accuracy is
+  // the most lethal quantity in the chain, so it creeps in over the longest span in the smallest
+  // per-carry increments (9 steps across 22 degrees of aim error is ~2.75 deg per carry): a player who
+  // reaches level 60 should feel the UFOs have become genuinely dangerous without ever being able to
+  // point at the level it happened. The UFOs get FASTER before they get ACCURATE, deliberately.
+  //
+  // Four things about this chain are resolved and must not be "fixed" later:
+  //   - ufoAppearFreq CYCLES FOREVER and never permanently tightens — level 100 reads exactly as level
+  //     1. DELIBERATE: it is the driver, and a driver that stopped cycling would freeze all nine levers
+  //     under it. UFO PRESSURE escalates through those nine; UFO RHYTHM stays constant.
   //   - There is exactly ONE appearance timer. Which SIZE spawns is a flat 20% chance for the whole
   //     game (DEBUG.smallUfoChance, wired in P5) and is NOT a lever. That is what retired
   //     SAUCER_SMALL_CHANCE_FLOOR/_CEIL and, with them, ramp().
@@ -694,57 +732,53 @@ const LEVERS = [
   //   - ufoFireFreq* are MULTIPLIERS on the shipped SAUCER_FIRE_BIG/SAUCER_FIRE_SMALL ranges, not
   //     intervals, which is also why they never pass through jitteredInterval().
   { id: "ufoAppearFreq",       floor: 25,  ceil: 12,  steps: 8, everyNLevels: 1,
-    carriesTo: ["ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoFireFreqBig", "ufoFireFreqSmall"] },
-  { id: "ufoFlightSpeedBig",   floor: 100, ceil: 150, steps: 4,
-    carriesTo: ["ufoDirChangeBig", "ufoShotSpeedBig"] },
-  { id: "ufoFlightSpeedSmall", floor: 150, ceil: 210, steps: 4,
-    carriesTo: ["ufoDirChangeSmall", "ufoShotSpeedSmall", "ufoAccuracySmall"] },
-  { id: "ufoFireFreqBig",      floor: 1.8, ceil: 0.7, steps: 4 },
-  { id: "ufoFireFreqSmall",    floor: 1.8, ceil: 0.6, steps: 4 },
-  { id: "ufoDirChangeBig",     floor: 2.2, ceil: 1.0, steps: 4 },
-  { id: "ufoDirChangeSmall",   floor: 1.8, ceil: 0.7, steps: 4 },
-  { id: "ufoShotSpeedBig",     floor: 300, ceil: 430, steps: 4 },
-  { id: "ufoShotSpeedSmall",   floor: 320, ceil: 470, steps: 4 },
-  { id: "ufoAccuracySmall",    floor: 30,  ceil: 8,   steps: 4 },
+    carriesTo: ["ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
+                "ufoDirChangeBig", "ufoDirChangeSmall", "ufoShotSpeedBig", "ufoShotSpeedSmall",
+                "ufoAccuracySmall"] },
+  { id: "ufoFlightSpeedBig",   floor: 100, ceil: 150, steps: 5 },
+  { id: "ufoFlightSpeedSmall", floor: 150, ceil: 210, steps: 5 },
+  { id: "ufoFireFreqBig",      floor: 1.8, ceil: 0.7, steps: 6 },
+  { id: "ufoFireFreqSmall",    floor: 1.8, ceil: 0.6, steps: 6 },
+  { id: "ufoDirChangeBig",     floor: 2.2, ceil: 1.0, steps: 7 },
+  { id: "ufoDirChangeSmall",   floor: 1.8, ceil: 0.7, steps: 7 },
+  { id: "ufoShotSpeedBig",     floor: 300, ceil: 430, steps: 8 },
+  { id: "ufoShotSpeedSmall",   floor: 320, ceil: 470, steps: 8 },
+  { id: "ufoAccuracySmall",    floor: 30,  ceil: 8,   steps: 9 },
 ];
 
 // THE LOAD-TIME STRUCTURAL GUARD — an INVARIANT, not test scaffolding, in exactly the style of the
-// SCOOP_WIDTH[0] !== 0 assertion further up. leverState() settles the carry graph in ONE topological
-// pass, which is only meaningful if the graph is well formed, so the order is computed ONCE at load
-// (Kahn) and the three ways the table can be malformed all throw HERE — at load, loudly — rather than
-// producing quietly wrong difficulty or spinning forever inside a spawn site:
+// SCOOP_WIDTH[0] !== 0 assertion further up. CS024 P6b REPLACED it rather than deleting it: under the
+// drivers-only-wrap rule a CYCLE IS UNREACHABLE BY CONSTRUCTION, so the Kahn topological sort that used
+// to stand here — and the "the carriesTo graph contains a cycle" throw that came with it — is gone, and
+// what took its place is a STRONGER AND CHEAPER LEGALITY CHECK. The three ways the table can be
+// malformed all throw HERE, at load, loudly, rather than producing quietly wrong difficulty:
+//   - `carriesTo` declared WITHOUT `everyNLevels`     -> throw. THE RULE: only a driver may wrap. This
+//     is the check that would have caught the level-33 flight-speed regression at load rather than at
+//     playtest, and it is why nothing downstream needs a cycle check or an ordering pass any more.
 //   - `carriesTo` names an id no lever declares       -> throw (a typo would otherwise carry nowhere)
-//   - the carry graph contains a cycle                -> throw (Kahn cannot consume every node)
-//   - two levers share an id                          -> throw (both `raw` and the indegree map are
-//     keyed by id, so a duplicate would silently make one lever unreachable AND turn the cycle check
-//     into a false positive — worth its own message rather than a confusing one)
-// THE GRAPH IS A DAG, NOT A CHAIN, and nothing here assumes otherwise: no lever in the shipped table
-// has two parents, but indegree counts every incoming carry, and a lever that is BOTH a driver and a
-// carry target accumulates both (its own clock ticks seed `raw`, its parents add on top).
+//   - two levers share an id                          -> throw (`raw` is keyed by id, so a duplicate
+//     would silently make one lever unreachable)
+// THE GRAPH IS STILL A DAG, NOT A CHAIN, and nothing here assumes otherwise: a lever may have two
+// parents (leverState sums every incoming carry), and a lever that is BOTH a driver and a carry target
+// accumulates both — its own clock ticks seed `raw`, its parents add on top.
 // Takes the table as an argument so the invariant can be exercised against a deliberately malformed
-// table without disturbing the shipped one.
+// table without disturbing the shipped one, and still returns the order leverState walks — but that
+// order is now simply the table's own, because with every carrier a driver and every carry target
+// terminal there is nothing left to sort.
 function buildLeverOrder(table) {
-  const byId = {}, indeg = {};
+  const byId = {};
   for (const lev of table) {
     if (byId[lev.id] !== undefined) throw new Error('LEVERS: duplicate lever id "' + lev.id + '"');
     byId[lev.id] = lev;
-    indeg[lev.id] = 0;
   }
   for (const lev of table) {
-    for (const id of (lev.carriesTo || [])) {
+    const carries = lev.carriesTo || [];
+    if (carries.length && !lev.everyNLevels)
+      throw new Error('LEVERS: "' + lev.id + '" declares carriesTo without everyNLevels — only a driver may wrap');
+    for (const id of carries)
       if (byId[id] === undefined) throw new Error('LEVERS: "' + lev.id + '".carriesTo names unknown lever "' + id + '"');
-      indeg[id]++;
-    }
   }
-  const order = [], queue = [];
-  for (const lev of table) if (indeg[lev.id] === 0) queue.push(lev);
-  while (queue.length) {
-    const lev = queue.shift();
-    order.push(lev);
-    for (const id of (lev.carriesTo || [])) if (--indeg[id] === 0) queue.push(byId[id]);
-  }
-  if (order.length !== table.length) throw new Error("LEVERS: the carriesTo graph contains a cycle");
-  return order;
+  return table;
 }
 const LEVER_ORDER = buildLeverOrder(LEVERS);
 
@@ -757,8 +791,13 @@ const LEVER_ORDER = buildLeverOrder(LEVERS);
 // CLOSED FORM, NOT A SIMULATION. This is called at spawn sites, so it must never walk levels 1..wave.
 // A driver's total advance is floor((wave - 1) / everyNLevels) directly; a carried lever's is the sum
 // of its parents' WRAP counts, and a parent's wrap count is itself floor(parentAdvance / parentSteps).
-// One pass in topological order therefore settles the entire graph, because every parent is resolved
-// before any of its children. Levels below 1 clamp to zero ticks — startGame() reads a lever before
+// UNDER THE DRIVERS-ONLY-WRAP RULE THAT PROPAGATION COLLAPSES (CS024 P6b): every carrier is a driver,
+// so its advance is its own clock and nothing else, and floor(floor((wave - 1) / everyN) / steps) is
+// exactly floor((wave - 1) / (everyN * steps)) — a dependent's carry count off each of its drivers,
+// computed DIRECTLY. And every lever a driver carries into is terminal, so a carry can never cascade.
+// Two flat passes settle the whole graph: no recursion, no iteration to a fixed point, and no ordering
+// requirement at all (the loops walk LEVER_ORDER only because that is the validated table).
+// Levels below 1 clamp to zero ticks — startGame() reads a lever before
 // the first nextWave(), while game.wave is still 0 — which makes leverState(0) === leverState(1),
 // the same answer levelDef(0) gave through stepAt()'s "first breakpoint" rule.
 //
@@ -779,20 +818,23 @@ const LEVER_ORDER = buildLeverOrder(LEVERS);
 function leverState(wave) {
   const raw = {}, out = {};
   for (const lev of LEVER_ORDER) raw[lev.id] = lev.everyNLevels ? Math.max(0, Math.floor((wave - 1) / lev.everyNLevels)) : 0;
+  // PASS 1 — EVERY CARRY, in one flat sweep. A carrier is a driver (the guard guarantees it), so it
+  // wraps once every everyNLevels * steps levels; each of those wraps bumps every id it carries into.
+  // Every one of those ids is terminal, so nothing here can cascade and the order of this loop cannot
+  // matter. A lever with two parents simply receives both sums.
+  for (const lev of LEVER_ORDER) {
+    if (!lev.carriesTo || !lev.carriesTo.length) continue;
+    const wraps = Math.max(0, Math.floor((wave - 1) / (lev.everyNLevels * lev.steps)));
+    if (wraps > 0) for (const id of lev.carriesTo) raw[id] += wraps;
+  }
+  // PASS 2 — the value each lever's accumulated advance lands on.
   for (const lev of LEVER_ORDER) {
     const n = raw[lev.id];
     const carries = lev.carriesTo && lev.carriesTo.length ? lev.carriesTo : null;
-    // A lever with somewhere to carry WRAPS and passes floor(n / steps) bumps on; a terminal lever
-    // PLATEAUS at its top step and passes nothing on. The plateau pins a STEP INDEX — it is not, and
-    // must never become, a floor/ceil ordering check.
-    let step;
-    if (carries) {
-      step = n % lev.steps;
-      const wraps = Math.floor(n / lev.steps);
-      if (wraps > 0) for (const id of carries) raw[id] += wraps;
-    } else {
-      step = n < lev.steps - 1 ? n : lev.steps - 1;
-    }
+    // A lever with somewhere to carry WRAPS — it is a driver, and it sawtooths forever. A lever with
+    // nowhere to carry PLATEAUS at its top step, which is now EVERY carried lever in the table. The
+    // plateau pins a STEP INDEX — it is not, and must never become, a floor/ceil ordering check.
+    const step = carries ? n % lev.steps : (n < lev.steps - 1 ? n : lev.steps - 1);
     const span = lev.steps - 1;
     out[lev.id] = step <= 0 ? lev.floor : step >= span ? lev.ceil : lev.floor + (lev.ceil - lev.floor) * step / span;
   }

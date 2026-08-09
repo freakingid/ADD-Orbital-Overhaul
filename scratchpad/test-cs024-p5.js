@@ -325,10 +325,13 @@ function atWave(A, w) {
     assert(bigZig >= bigLo && bigZig <= bigHi, `D: level ${w} ufoZigInterval(false) falls in the jittered band around ufoDirChangeBig`);
     assert(smallZig >= smallLo && smallZig <= smallHi, `D: level ${w} ufoZigInterval(true) falls in the jittered band around ufoDirChangeSmall`);
   }
-  // ufoAccuracySmall stays small-only — no size parameter. It sits on the SECOND generation of the
-  // two-generation carry (ufoAppearFreq -> ufoFlightSpeedSmall -> ufoAccuracySmall), so it only moves
-  // once ufoFlightSpeedSmall itself wraps — that needs 4 ufoAppearFreq wraps, i.e. wave 33+ (see the
-  // LEVERS table: ufoFlightSpeedSmall has 4 steps, ufoAppearFreq wraps every 8 levels).
+  // ufoAccuracySmall stays small-only — no size parameter.
+  //   CORRECTED BY CS024 P6b (comment only — the assertions below are unchanged and still pass): this
+  // paragraph used to read "it sits on the SECOND generation of the two-generation carry (ufoAppearFreq
+  // -> ufoFlightSpeedSmall -> ufoAccuracySmall), so it only moves once ufoFlightSpeedSmall itself wraps
+  // — that needs 4 ufoAppearFreq wraps, i.e. wave 33+". There is no second generation any more. Only
+  // drivers may wrap, so ufoAppearFreq carries into ufoAccuracySmall DIRECTLY and it steps on every
+  // driver wrap — every 8 levels, from level 9 — over 9 steps to its ceiling at level 65.
   const accSeen = new Set();
   for (const w of [1, 8, 24, 33, 60]) {
     A.game.wave = w;
@@ -336,7 +339,7 @@ function atWave(A, w) {
       `D: level ${w} ufoAccuracyRad() === leverState(${w}).ufoAccuracySmall in radians`);
     accSeen.add(A.leverState(w).ufoAccuracySmall);
   }
-  assert(accSeen.size > 1, "D: ufoAccuracySmall genuinely varies across the probed levels (second-generation carry, wave 33+)");
+  assert(accSeen.size > 1, "D: ufoAccuracySmall genuinely varies across the probed levels (one carry generation off ufoAppearFreq — CS024 P6b)");
   eq(A.ufoAccuracyRad.length, 0, "D: ufoAccuracyRad() takes no size parameter — small-only by construction");
 
   // Real end-to-end: two Saucers at the same level, one small one big, independent vx/zig/fire/shot.
