@@ -58,8 +58,8 @@ const RETURN = [
   "DEBUG", "debugShown", "DEBUG_VARS", "applyDebug", "menuDebug",
   "Garbage", "coalesceGarbage", "AudioSys",
   // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY is deleted outright (replaced by the coalescePause
-  // lever) — leverState replaces it as this file's source of truth for the inert-delay quantity.
-  "SCOOP_HITS_PER_LEVEL", "leverState", "GARBAGE_MAGNET_RANGE", "GARBAGE_MAGNET_PULL",
+  // lever) — leverState/liveLevers replace it as this file's source of truth for the inert-delay quantity.
+  "SCOOP_HITS_PER_LEVEL", "leverState", "liveLevers", "GARBAGE_MAGNET_RANGE", "GARBAGE_MAGNET_PULL",
   "GARBAGE_MERGE_DIST", "WORLD_W"
 ];
 
@@ -108,7 +108,7 @@ function beginPlaying(A) {
 
   // REPOINTED BY CS024 P5: garbageAttractDelay is RETIRED — CS024 P5 deleted GARBAGE_COALESCE_DELAY
   // outright and replaced the whole quantity with the coalescePause lever (HUNTER section, read live
-  // at ctor time as `DEBUG.coalescePause ?? leverState(game.wave).coalescePause`). This is now an
+  // at ctor time as `liveLevers(game.wave).coalescePause`, CS024 P6c). This is now an
   // absence proof, not a claim about a knob that no longer exists.
   const delay = byId("garbageAttractDelay");
   assert(!delay, "B: garbageAttractDelay no longer exists in DEBUG_VARS (CS024 P5: retired, replaced by the coalescePause lever)");
@@ -252,9 +252,10 @@ function beginPlaying(A) {
   assert(!("garbageAttractDelay" in A.DEBUG), "F2: DEBUG carries no garbageAttractDelay field (retired CS024 P5)");
 
   // A fresh piece still captures its inert delay at ctor time — now from the live coalescePause lever
-  // (DEBUG.coalescePause ?? leverState(game.wave).coalescePause), which is the exact expression the
-  // real Garbage constructor and the scoop-leftover respill site both read.
-  const expected = A.DEBUG.coalescePause ?? A.leverState(A.game.wave).coalescePause;
+  // (liveLevers(game.wave).coalescePause — REPOINTED BY CS024 P6c off the retired
+  // `DEBUG.coalescePause ?? leverState(...)` shape), which is the exact expression the real Garbage
+  // constructor and the scoop-leftover respill site both read.
+  const expected = A.liveLevers(A.game.wave).coalescePause;
   const a = new A.Garbage(1000, 1000, 0, 0);
   const b = new A.Garbage(1080, 1000, 0, 0); // 80px apart: inside the shipped magnet range, outside merge dist
   assert(a.coalesceDelay === expected, `F2: a fresh piece captures the LIVE coalescePause lever at ctor time (got ${a.coalesceDelay})`);
@@ -263,11 +264,12 @@ function beginPlaying(A) {
   A.coalesceGarbage(1 / 60);
   assert(a.vx === 0 && b.vx === 0, "F2: still inert immediately (coalesceDelay > 0) -> no attraction yet");
 
-  // Dial the REAL knob that now governs this quantity — coalescePause, the lever's own debug entry —
-  // to prove the pipeline reads it live, exactly as the retired garbageAttractDelay test used to prove
-  // for the knob it replaced.
-  A.applyDebug("coalescePause", 0.5);
-  assert(A.DEBUG.coalescePause === 0.5, "F2: DEBUG.coalescePause dialed to 0.5s");
+  // Dial the REAL knobs that now govern this quantity — REPOINTED BY CS024 P6c: the lever's single
+  // flat row is gone, and pinning it to a constant is now Floor === Ceil (§2.6's "the flat pin is
+  // subsumed, not lost"). Same claim as before, same live-read pipeline, two writes instead of one.
+  A.applyDebug("coalescePauseFloor", 0.5);
+  A.applyDebug("coalescePauseCeil", 0.5);
+  assert(A.liveLevers(A.game.wave).coalescePause === 0.5, "F2: the coalescePause lever pinned flat at 0.5s");
 
   const c = new A.Garbage(1000, 1000, 0, 0);
   const d = new A.Garbage(1080, 1000, 0, 0);

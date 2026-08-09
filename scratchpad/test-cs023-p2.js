@@ -298,10 +298,13 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     // every other lever. The claim this section carries is unchanged — still the plain three-child loop,
     // still no rail handoff — only the argument it passes is now itself lever-derived rather than a
     // literal passed in from the parent's own spawn.
-    assert(/const childId = a\.size - 1 === 2 \? "junkSpeedMedium" : "junkSpeedSmall";/.test(body),
-      "A: REPOINTED BY CS024 P5 — the split child's lever id is chosen by the CHILD's own size tier");
-    assert(/const speed = DEBUG\[childId\] \?\? lv\[childId\];/.test(body),
-      "A: ...read live via the DEBUG-override-else-lever idiom, exactly like every other lever consumer");
+    // REPOINTED AGAIN BY CS024 P6c: P5's per-value `DEBUG[childId] ?? lv[childId]` override is gone
+    // with the flat lever rows — the panel overrides the TABLE now, and the consumer reads liveLevers.
+    // The claim is unchanged: the CHILD's own size tier picks the lever, read live at the point of use.
+    assert(/const lv = liveLevers\(game\.wave\);/.test(body),
+      "A: REPOINTED BY CS024 P6c — the split branch reads liveLevers(game.wave) at the point of use");
+    assert(/const speed = a\.size - 1 === 2 \? lv\.junkSpeedMedium : lv\.junkSpeedSmall;/.test(body),
+      "A: ...and the child's lever is chosen by the CHILD's own size tier");
     assert(/for \(let i = 0; i < 3; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speed\)\);/.test(body),
       "A: ...and the split is still the plain three-child loop, each child taking that same derived speed");
   }
@@ -411,7 +414,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // the constant it derived from (retired outright, replaced by the coalescePause lever).
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 33, "A: TRAP 4 REPOINTED BY CS024 P6 — the debug registry is 33 value entries");
+  eq(X.DEBUG_ENTRIES.length, 67, "A: TRAP 4 REPOINTED BY CS024 P6c — the debug registry is 67 value entries (three per lever)");
   // The id filter below is deliberately LEFT WIDE (it still matches /gravity|drift/), because a
   // silently-restored drift knob is exactly what it exists to catch. CS024 P6's engineMassMult joins
   // the matched set only because /mass/i catches it — it is a POWERUP knob, nothing to do with the

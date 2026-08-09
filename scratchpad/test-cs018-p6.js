@@ -35,7 +35,7 @@
 //      readers; DEBUG.saucerGapPressure/DEBUG_VARS entry for it are gone.
 //  (H) Persistence: the surviving fields round-trip through afd_settings_v1.debug across a reload.
 //  (I) Regression: cargoMax/junk/hunters untouched; GAME_VERSION unchanged; DEBUG_VARS/DEBUG_ROWS
-//      counts reported (33 value entries as of CS024 P6's POWERUPS section).
+//      counts reported (67 value entries as of CS024 P6c's three-knobs-per-lever rebuild).
 
 "use strict";
 const fs = require("fs");
@@ -494,7 +494,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // Engine-as-fuel's two knobs (engineBurnSeconds, engineMassMult). Net -1 +2. Section-by-section:
   // SHIP 2 + GARBAGE 4 + CHAIN GUARD 3 + DELIVERY 1 + JUNK 4 + HUNTER 4 + UFO 11 + POWERUPS 2 +
   // GLOBAL 2 = 33.
-  eq(nEntries, 33, `I: DEBUG_ENTRIES count is 33 after CS024 P6's POWERUPS section (got ${nEntries})`);
+  eq(nEntries, 67, `I: DEBUG_ENTRIES count is 67 after CS024 P6c's three rows per lever (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

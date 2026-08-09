@@ -436,8 +436,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // headers rebuilt around them) plus smallUfoChance, as predicted above.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
+  // AND AGAIN BY CS024 P6c: 33 -> 67 — every lever's single flat row becomes THREE (floor, ceiling,
+  // step count), so the 17 lever rows become 51 and the 16 non-lever knobs stay exactly as they were.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 33, "A: TRAP 3 — DEBUG_VARS holds exactly 33 value entries after CS024 P6");
+  eq(valueEntries, 67, "A: TRAP 3 — DEBUG_VARS holds exactly 67 value entries after CS024 P6c");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

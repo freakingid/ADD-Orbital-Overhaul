@@ -29,7 +29,7 @@
 //
 // Sections:
 //  (A) node --check; every deleted symbol probed ABSENT; powerActive is exactly `budget > 0`;
-//      the registry at 33 with its new POWERUPS section.
+//      the registry at 67 (CS024 P6c) with its new POWERUPS section.
 //  (B) each type's budget depletes on the RIGHT event — and on no other one.
 //  (C) ENGINE AS FUEL: drains on thrust by exactly dt, burns NOTHING on rotation / idling / firing,
 //      there is no reverse action to burn either, and the mass multiplier is flat, not tapered.
@@ -205,7 +205,7 @@ function layChain(X, n) {
 
 // ================= (A) deletions, the reduced predicate, the registry =================
 (function sectionA() {
-  console.log("(A) node --check; every deleted symbol absent; powerActive === budget>0; the registry at 33");
+  console.log("(A) node --check; every deleted symbol absent; powerActive === budget>0; the registry at 67");
   const tmp = path.join(repoRoot, "scratchpad", "_cs024p6_extracted.js");
   fs.writeFileSync(tmp, scriptSrc);
   try { execFileSync(process.execPath, ["--check", tmp], { stdio: "pipe" }); passed++; }
@@ -260,9 +260,11 @@ function layChain(X, n) {
     "A: POWERUP_DROP_TYPES is unchanged — append-only, order load-bearing");
 
   // The registry: 32 -> 33 (chainGuardTime out, engineBurnSeconds + engineMassMult in under a new
-  // POWERUPS header that CS024 P5 deliberately left uncreated).
-  eq(X.DEBUG_ENTRIES.length, 33, "A: the registry holds 33 value entries after CS024 P6");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 33, "A: ...and DEBUG_VARS agrees");
+  // POWERUPS header that CS024 P5 deliberately left uncreated). REPOINTED BY CS024 P6c: 33 -> 67, three
+  // rows per lever replacing P5's one flat row. This section's own subject — the POWERUPS pair — is
+  // untouched by that, which is exactly what the by-name checks below still pin.
+  eq(X.DEBUG_ENTRIES.length, 67, "A: the registry holds 67 value entries after CS024 P6c");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 67, "A: ...and DEBUG_VARS agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).map(v => v.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "A: nine section headers, POWERUPS between UFO and GLOBAL");
@@ -278,9 +280,14 @@ function layChain(X, n) {
   eq(em.def, X.ENGINE_MASS_MULT, "A: engineMassMult's def derives from ENGINE_MASS_MULT");
   eq(X.DEBUG.engineBurnSeconds, 5.0, "A: DEBUG.engineBurnSeconds is seeded to 5.0 s");
   eq(X.DEBUG.engineMassMult, 0.5, "A: DEBUG.engineMassMult is seeded to 0.5");
-  // Neither is a LEVER knob: levers ship `def: null` (the "follow the odometer" sentinel) and Engine is
-  // a powerup, not a difficulty ramp.
-  assert(eb.def !== null && em.def !== null, "A: neither POWERUPS knob uses the lever `def: null` sentinel");
+  // Neither is a LEVER knob — Engine is a powerup, not a difficulty ramp. REPOINTED BY CS024 P6c: the
+  // `def: null` sentinel that used to distinguish them is retired (every row has a real default now),
+  // so the distinguishing mark is the one P6c introduced — a lever row wears a ▼/↳ chain glyph and
+  // ends in " · floor"/" · ceil"/" · steps"; a flat knob wears neither.
+  for (const e of [eb, em]) {
+    assert(!/▼|↳|\(inv\)/.test(e.label), `A: ${e.id} carries no chain glyph — it belongs to no chain`);
+    assert(!/ · (floor|ceil|steps)$/.test(e.label), `A: ...and is not one end of a lever`);
+  }
 
   // CHAIN GUARD is down to three, and cooldown is still last in its group.
   const ids = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);

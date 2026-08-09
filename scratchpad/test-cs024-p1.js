@@ -329,7 +329,7 @@ function atWave(X, w) {
   // is unaffected; only the live total moves, same as every other repoint above.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 33, "B: the debug registry holds 33 value entries after CS024 P6");
+  eq(X.DEBUG_ENTRIES.length, 67, "B: the debug registry holds 67 value entries after CS024 P6c (three knobs per lever)");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,

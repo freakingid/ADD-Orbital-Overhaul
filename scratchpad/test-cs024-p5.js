@@ -124,7 +124,7 @@ function makeCtxStub() {
 
 const RETURN = [
   "game", "startGame", "nextWave", "update", "settings",
-  "LEVERS", "leverState", "payloadSlots",
+  "LEVERS", "leverState", "liveLevers", "payloadSlots",
   "ufoFlightSpeedPx", "ufoAppearInterval", "ufoZigInterval", "ufoFireMult", "ufoAccuracyRad", "ufoShotSpeedPx",
   "jitteredInterval", "FREQ_JITTER",
   "Saucer", "HunterSatellite", "DebrisSatellite", "Garbage", "coalesceGarbage",
@@ -407,10 +407,14 @@ function atWave(A, w) {
   // REPOINTED BY CS024 P6: 32 -> 33 and an eight-header list becomes nine. Timed powerup expiry is
   // deleted (spec §1.7/§3.4/§3.5), taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and the
   // POWERUPS header P5 deliberately left unwritten arrives holding Engine-as-fuel's two knobs
-  // (engineBurnSeconds, engineMassMult). Net -1 +2. The claim is unchanged in kind and strength —
-  // an exact live count plus an exact ordered header list.
-  eq(values.length, 33, "G: DEBUG_VARS has exactly 33 value entries");
-  eq(A.DEBUG_ENTRIES.length, 33, "G: DEBUG_ENTRIES agrees — headers are not values");
+  // (engineBurnSeconds, engineMassMult). Net -1 +2.
+  // REPOINTED AGAIN BY CS024 P6c (spec §2.6): 33 -> 67. THIS SECTION'S SUBJECT IS THE THING THAT
+  // CHANGED — P5's "one knob per lever" was incoherent (a lever is a floor, a ceiling, a step count and
+  // the level number, not a value), and its single row could only PIN a lever flat. Each lever now
+  // emits three rows, so 17 become 51 and the 16 non-lever knobs are untouched. The claim is unchanged
+  // in kind and strength — an exact live count plus an exact ordered header list.
+  eq(values.length, 67, "G: DEBUG_VARS has exactly 67 value entries");
+  eq(A.DEBUG_ENTRIES.length, 67, "G: DEBUG_ENTRIES agrees — headers are not values");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "G: section headers, in the specced order, POWERUPS now present (CS024 P6's)");
   for (const h of headers) {
@@ -425,14 +429,22 @@ function atWave(A, w) {
     "ufoDirChangeBig", "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
     "ufoShotSpeedBig", "ufoShotSpeedSmall", "ufoAccuracySmall"];
   eq(LEVER_IDS.length, 17, "G: (setup) exactly 17 lever ids named");
+  // REPOINTED BY CS024 P6c: three rows per lever, each with a REAL def off the table field it names,
+  // and one shared range per lever WIDENED a full span either side of the shipped pair. P5's
+  // `def: null` sentinel and its Math.min/max-of-the-pair range are both retired — the latter is the
+  // actual defect P6c fixes, since it locked every slider inside the lever's current span.
   for (const id of LEVER_IDS) {
-    const e = values.find(v => v.id === id);
-    assert(!!e, `G: lever knob ${id} exists in the registry`);
-    if (!e) continue;
-    eq(e.def, null, `G: ${id}'s def is null — the "no override, follow the odometer" sentinel`);
     const lev = A.LEVERS.find(l => l.id === id);
-    eq(e.min, Math.min(lev.floor, lev.ceil), `G: ${id}'s min is Math.min(floor, ceil)`);
-    eq(e.max, Math.max(lev.floor, lev.ceil), `G: ${id}'s max is Math.max(floor, ceil)`);
+    assert(!values.some(v => v.id === id), `G: ${id}'s single flat row is gone`);
+    for (const [suffix, field] of [["Floor", "floor"], ["Ceil", "ceil"], ["Steps", "steps"]]) {
+      const e = values.find(v => v.id === id + suffix);
+      assert(!!e, `G: lever knob ${id}${suffix} exists in the registry`);
+      if (!e) continue;
+      eq(e.def, lev[field], `G: ${id}${suffix}'s def IS the lever's ${field}`);
+    }
+    const e = values.find(v => v.id === id + "Floor");
+    assert(e.min <= Math.min(lev.floor, lev.ceil), `G: ${id}'s slider min is at or below both endpoints`);
+    assert(e.max > Math.max(lev.floor, lev.ceil), `G: ${id}'s slider max is ABOVE both — either endpoint can pass the other`);
   }
   for (const id of ["smallUfoChance", "lastStandSpeed", "autoShieldRegenPause", "scoopHitsPerLevel",
     "garbageAttractRadius", "garbageAttractForce", "garbageSoftMax", "garbageHardMax",
@@ -440,23 +452,30 @@ function atWave(A, w) {
     "sweepCoalescePause", "debrisBounceRestitution"])
     assert(values.some(v => v.id === id), `G: kept knob ${id} survives the rebuild`);
 
-  // DEBUG is seeded from def at load — every lever knob starts null; consumers fall back to leverState.
-  for (const id of LEVER_IDS) eq(A.DEBUG[id], null, `G: DEBUG.${id} starts null (untouched, follows the odometer)`);
+  // DEBUG is seeded from def at load — REPOINTED BY CS024 P6c: every lever row seeds from the shipped
+  // table field it names, so an untouched registry reproduces LEVERS exactly and liveLevers === leverState.
+  for (const id of LEVER_IDS) {
+    const lev = A.LEVERS.find(l => l.id === id);
+    eq(A.DEBUG[id + "Floor"], lev.floor, `G: DEBUG.${id}Floor seeds from the table`);
+    eq(A.DEBUG[id + "Ceil"], lev.ceil, `G: DEBUG.${id}Ceil seeds from the table`);
+    eq(A.DEBUG[id + "Steps"], lev.steps, `G: DEBUG.${id}Steps seeds from the table`);
+  }
   eq(A.DEBUG.smallUfoChance, 0.20, "G: DEBUG.smallUfoChance seeds to its real 0.20 default (not a lever, not null)");
 
   // Clamping happens at the PANEL (menuDebug's arrow-step / debugEntryCommit), never inside applyDebug
   // itself — applyDebug is a plain, unclamped setter (the panel pre-clamps before calling it). Drive the
-  // real arrow-step path, which also exercises the null-base fallback (coalescePause starts at "auto").
+  // real arrow-step path. REPOINTED BY CS024 P6c: the null "auto" base it used to exercise is retired
+  // with the flat rows, so the nudge starts from the row's real seeded value instead.
   A.startGame();
-  A.game.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === "coalescePause");
-  assert(A.game.menu.index >= 0, "G: (setup) found the coalescePause row in DEBUG_ROWS");
-  const e = values.find(v => v.id === "coalescePause");
-  for (let i = 0; i < 30; i++) A.menuDebug("right"); // far past e.max from the null "auto" base
-  eq(A.DEBUG.coalescePause, e.max, "G: repeated ► clamps at max, even starting from the null auto base");
+  A.game.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === "coalescePauseFloor");
+  assert(A.game.menu.index >= 0, "G: (setup) found the coalescePauseFloor row in DEBUG_ROWS");
+  const e = values.find(v => v.id === "coalescePauseFloor");
+  for (let i = 0; i < 30; i++) A.menuDebug("right"); // far past e.max
+  eq(A.DEBUG.coalescePauseFloor, e.max, "G: repeated ► clamps at max");
   for (let i = 0; i < 30; i++) A.menuDebug("left"); // far past e.min
-  eq(A.DEBUG.coalescePause, e.min, "G: repeated ◄ clamps at min");
-  A.applyDebug("coalescePause", null); // restore "auto" for the sections below
-  eq(A.DEBUG.coalescePause, null, "G: applyDebug(id, null) restores the auto sentinel");
+  eq(A.DEBUG.coalescePauseFloor, e.min, "G: repeated ◄ clamps at min");
+  A.applyDebug("coalescePauseFloor", e.def); // restore the shipped ramp for the sections below
+  eq(A.liveLevers(1).coalescePause, 5.0, "G: ...and restoring the def restores the shipped ramp");
 
   // No floor <= ceil validator, anywhere: several levers are genuinely inverted and stay that way.
   const inverted = A.LEVERS.filter(l => l.floor > l.ceil).map(l => l.id);
@@ -468,20 +487,21 @@ function atWave(A, w) {
 
 (function sectionG2() {
   console.log("(G2) persistence round-trip across a fresh module load — real save -> real load");
+  // REPOINTED BY CS024 P6c: the ids are the three-per-lever ones, and the "untouched loads back to
+  // null" half becomes "untouched loads back to the shipped table field" — the sentinel is retired.
   const first = build();
-  first.exports.applyDebug("junkCount", 7);
-  first.exports.applyDebug("ufoAccuracySmall", 15);
+  first.exports.applyDebug("junkCountFloor", 7);
+  first.exports.applyDebug("ufoAccuracySmallCeil", 15);
   first.exports.saveSettings();
   const second = build({ storage: first.store });
-  eq(second.exports.debugShown.junkCount, 7, "G2: a touched lever knob (junkCount=7) survives a reload");
-  eq(second.exports.debugShown.ufoAccuracySmall, 15, "G2: a second touched lever knob (ufoAccuracySmall=15) survives a reload");
-  eq(second.exports.DEBUG.junkCount, 7, "G2: ...and its native DEBUG value matches (no toNative on lever knobs)");
-  // An UNTOUCHED lever (still null) does not get written as a finite number, so loadSettings' own
-  // Number.isFinite(dv) gate skips it on reload, leaving the seeded (also null) default in place.
+  eq(second.exports.debugShown.junkCountFloor, 7, "G2: a touched lever knob (junkCountFloor=7) survives a reload");
+  eq(second.exports.debugShown.ufoAccuracySmallCeil, 15, "G2: a second touched lever knob (ufoAccuracySmallCeil=15) survives a reload");
+  eq(second.exports.DEBUG.junkCountFloor, 7, "G2: ...and its native DEBUG value matches (no toNative on lever knobs)");
+  eq(second.exports.liveLevers(1).junkCount, 7, "G2: ...and the reloaded build derives the reloaded ramp");
   const third = build();
-  third.exports.saveSettings(); // never touched -> every lever knob's debugShown stays null
+  third.exports.saveSettings(); // never touched
   const fourth = build({ storage: third.store });
-  eq(fourth.exports.debugShown.coalescePause, null, "G2: an untouched lever knob loads back to null (still 'auto'), not 0 or a stale default");
+  eq(fourth.exports.debugShown.coalescePauseFloor, 5.0, "G2: an untouched lever knob loads back to its shipped table value, not 0 or a stale default");
   // Orphaned old key ignored under known-value-else-default: a hand-crafted save carrying the RETIRED
   // garbageAttractDelay id must not resurrect it or throw.
   const legacy = { debug: { garbageAttractDelay: 4000, autoShieldRegenPause: 2000 } };

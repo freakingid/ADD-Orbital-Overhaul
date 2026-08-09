@@ -540,64 +540,61 @@ function evalSlice(literal) {
   // TRAP 1 — the version stays put. P7 owns the bump.
   eq(X.GAME_VERSION, "1.0.0.22", "G: TRAP 1 — GAME_VERSION is still 1.0.0.22");
 
-  // TRAP 2 — the registry is P6c's. Not one entry added, removed or reshaped here. Pinned against the
-  // pre-P6b build entry by entry, with ONE expected difference: a lever knob's `step` is DERIVED from
-  // the lever's step count by leverKnob(), so the nine restaged UFO knobs necessarily move with it.
-  // That is the derivation working, not a reshape — and the check names exactly which nine may move.
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 33, "G: TRAP 2 — still 33 value entries");
+  // TRAP 2 — the registry was P6c's, and P6c has since taken it: this phase's own claim was "P6b adds,
+  // removes and reshapes NOTHING in the registry", which was pinned entry-by-entry against the pre-P6b
+  // build. CS024 P6c then replaced every lever's single flat row with THREE (<id>Floor/<id>Ceil/
+  // <id>Steps, 33 -> 67 entries, spec §2.6), so a literal entry-by-entry comparison is no longer the
+  // right instrument. REPOINTED, NOT DROPPED: the claim P6b actually makes survives intact at the
+  // LEVER level, so it is asserted there — the registry names exactly the same levers in exactly the
+  // same order, and the only thing about them P6b touched is the derived slider step of the nine
+  // restaged UFO knobs.
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 67, "G: TRAP 2 — 67 value entries (CS024 P6c's three rows per lever)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
     const RESTAGED = new Set(["ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
       "ufoDirChangeBig", "ufoDirChangeSmall", "ufoShotSpeedBig", "ufoShotSpeedSmall", "ufoAccuracySmall"]);
-    eq(X.DEBUG_VARS.map(e => e.header || e.id).join(","), OLD.DEBUG_VARS.map(e => e.header || e.id).join(","),
-      `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF}`);
-    let reshaped = [];
-    for (let i = 0; i < X.DEBUG_VARS.length; i++) {
-      const a = X.DEBUG_VARS[i], b = OLD.DEBUG_VARS[i];
-      const strip = e => JSON.stringify(Object.keys(e).sort().map(k => [k, typeof e[k] === "function" ? "fn" : e[k]]));
-      if (strip(a) !== strip(b)) reshaped.push(a.id || a.header);
-    }
-    eq(reshaped.sort().join(","), [...RESTAGED].sort().join(","),
-      "G: ...and the ONLY entries that differ at all are the nine restaged lever knobs (their derived slider step)");
-    for (const id of RESTAGED) {
-      const a = X.DEBUG_VARS.find(e => e.id === id), b = OLD.DEBUG_VARS.find(e => e.id === id);
-      eq(a.def, b.def, `G: ${id}'s knob default is unchanged (still null — the odometer drives it)`);
-      eq(a.min, b.min, `G: ${id}'s slider min is unchanged`);
-      eq(a.max, b.max, `G: ${id}'s slider max is unchanged`);
-      assert(a.step !== b.step, `G: ...only ${id}'s derived step moved, with its step count`);
+    // Collapse P6c's three rows per lever back to the one row this phase shipped, then compare the
+    // registry's shape and ORDER against the pre-P6b build exactly as before.
+    const collapse = list => {
+      const out = [];
+      for (const e of list) {
+        const key = e.header ? e.header : e.id.replace(/(Floor|Ceil|Steps)$/, "");
+        if (out[out.length - 1] !== key) out.push(key);
+      }
+      return out.join(",");
+    };
+    eq(collapse(X.DEBUG_VARS), collapse(OLD.DEBUG_VARS),
+      `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
+    // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
+    // still is: it moved off the pre-P6b build, and it still equals one odometer step of the curve.
+    for (const id of X.LEVERS.map(l => l.id)) {
+      const a = X.DEBUG_VARS.find(e => e.id === id + "Floor"), b = OLD.DEBUG_VARS.find(e => e.id === id);
       const lev = X.LEVERS.find(l => l.id === id);
       close(a.step, Math.round(Math.abs(lev.ceil - lev.floor) / (lev.steps - 1) * 100) / 100,
-        `G: ...and it is exactly one odometer step of the restaged curve`);
+        `G: ${id}'s derived slider step is exactly one odometer step of its curve`);
+      if (RESTAGED.has(id)) assert(a.step !== b.step, `G: ...and ${id} is one of the nine RESTAGED, so it moved off ${PRE_P6B_REF}`);
+      else eq(a.step, b.step, `G: ...while ${id} was not restaged, so it did not move`);
     }
   }
 
-  // TRAP 5 — P6's POWERUPS section and the powerup paths are untouched. Pinned STRUCTURALLY: every
-  // hunk of the diff against the pre-P6b build must fall inside the odometer section's line range.
-  // That pins the powerup paths, the registry, the HUD and everything else in one claim.
+  // TRAP 5 — P6's POWERUPS section and the powerup paths are untouched. THE HUNK-RANGE PIN THAT STOOD
+  // HERE IS RETIRED, DELIBERATELY: it required every hunk of the diff against the pre-P6b build to fall
+  // inside the odometer section's line range, which was true of P6b and is false of the working tree
+  // the moment CS024 P6c edits the registry and the twelve consumer call sites — by design, and in a
+  // phase this file is not about. A line-range claim cannot survive a later phase touching other lines,
+  // so what remains is the part that can and does: the powerup surface itself, named symbol by symbol
+  // rather than implied by geometry. (P6c's own file re-pins the registry.)
   try {
     const diff = execFileSync("git", ["diff", "-U0", PRE_P6B_REF, "--", "asteroids-deluxe.html"],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
-    const hunks = [...diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
-      .map(h => [Number(h[1]), Number(h[2] === undefined ? 1 : h[2])]);
-    assert(hunks.length > 0, "G: TRAP 5 — the diff against the pre-P6b build is non-empty (this phase changed something)");
-    // Line numbers in the diff are file-relative; the slice indices above are script-block-relative.
-    const fileLines = html.split("\n");
-    const fileBanner = fileLines.findIndex(l => l.includes("CS024 P4: THE LEVER ODOMETER")) + 1;
-    let fileClose = -1;
-    for (let i = fileLines.findIndex(l => l.startsWith("function leverState(wave) {")); i < fileLines.length; i++)
-      if (fileLines[i] === "}") { fileClose = i + 1; break; }
-    assert(fileBanner > 0 && fileClose > fileBanner, "G: located the odometer section's line range in the file");
-    const stray = hunks.filter(([start, len]) => start < fileBanner || start + Math.max(len, 1) - 1 > fileClose);
-    eq(stray.map(h => h.join("+")).join(","), "",
-      `G: TRAP 5 — every changed hunk lies inside the odometer section (lines ${fileBanner}..${fileClose}); the POWERUPS section, the powerup paths, the registry and the HUD are untouched`);
-    // ...and the powerup surface specifically, named rather than merely implied.
+    assert(diff.length > 0, "G: TRAP 5 — the diff against the pre-P6b build is non-empty");
     for (const sym of ["POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "dropPowerup", "powerActive", "powerBudget",
                        "engineBurnSeconds", "engineMassMult", "chainGuardMinTow"])
       assert(!new RegExp("^[-+].*\\b" + sym + "\\b", "m").test(diff), `G: TRAP 5 — no diff line touches ${sym}`);
   } catch (e) {
     if (/FAIL/.test(String(e && e.message))) throw e;
-    console.log("  (skipped the git hunk pin — not a git checkout)");
+    console.log("  (skipped the git diff pin — not a git checkout)");
   }
 
   // TRAP 3 — no floor <= ceil validator, anywhere. The odometer section's own code, textually.

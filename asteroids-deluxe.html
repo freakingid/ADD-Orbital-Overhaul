@@ -811,24 +811,40 @@ const LEVER_ORDER = buildLeverOrder(LEVERS);
 //     already inside [0, steps-1] by construction — the plateau branch pins it and the wrap branch
 //     mods it — so this is an exactness rule at the ends, NOT a clamp, and it is certainly not a
 //     floor/ceil ordering check: it never compares the two, only the step index against its own span.
+//     CS024 P6c: this is exactly what makes A WRAP LAND ON `floor` AT ANY STEP COUNT. `n % steps` is 0
+//     on every wrap boundary whatever `steps` is, and step 0 short-circuits to `lev.floor` verbatim
+//     rather than interpolating toward it — so a Steps knob dragged to 2 or to 40 still returns the
+//     lever to precisely its floor, never to a fraction near it.
 //
 // THE BARE-CONTEXT RULE (§4.5), inherited verbatim from levelDef: everything this function reads must
 // be declared inside this section, because its test slices the source from the banner above to the
 // closing brace below and evaluates that slice and nothing else.
-function leverState(wave) {
+//
+// CS024 P6c SPLIT THIS IN TWO, AND THE SPLIT IS WHAT MAKES THE FLOOR/CEIL/STEPS KNOBS POSSIBLE. The
+// arithmetic now lives in leverValues(table, wave) — the same closed form, taking the table it walks as
+// an ARGUMENT — and leverState(wave) is that function applied to the shipped LEVERS. The debug panel's
+// three-knobs-per-lever rows (§2.6) hand it an OVERRIDDEN COPY of the table instead (see liveLevers(),
+// down beside the registry). That indirection is not decoration: a Steps override changes a driver's
+// WRAP PERIOD, which changes how many carries its dependents receive, so it cannot be expressed as a
+// post-hoc override of leverState's OUTPUT the way P5's retired flat rows were. It has to go in before
+// the derivation runs, and the only way in is the table.
+// leverState() ITSELF STAYS PURE and stays the bare-context test surface: it reads no DEBUG, no game
+// state, nothing outside this section. liveLevers() — the one function that does read DEBUG — lives
+// OUTSIDE the slice, on purpose (§2.6 "purity is not negotiable").
+function leverValues(table, wave) {
   const raw = {}, out = {};
-  for (const lev of LEVER_ORDER) raw[lev.id] = lev.everyNLevels ? Math.max(0, Math.floor((wave - 1) / lev.everyNLevels)) : 0;
+  for (const lev of table) raw[lev.id] = lev.everyNLevels ? Math.max(0, Math.floor((wave - 1) / lev.everyNLevels)) : 0;
   // PASS 1 — EVERY CARRY, in one flat sweep. A carrier is a driver (the guard guarantees it), so it
   // wraps once every everyNLevels * steps levels; each of those wraps bumps every id it carries into.
   // Every one of those ids is terminal, so nothing here can cascade and the order of this loop cannot
   // matter. A lever with two parents simply receives both sums.
-  for (const lev of LEVER_ORDER) {
+  for (const lev of table) {
     if (!lev.carriesTo || !lev.carriesTo.length) continue;
     const wraps = Math.max(0, Math.floor((wave - 1) / (lev.everyNLevels * lev.steps)));
     if (wraps > 0) for (const id of lev.carriesTo) raw[id] += wraps;
   }
   // PASS 2 — the value each lever's accumulated advance lands on.
-  for (const lev of LEVER_ORDER) {
+  for (const lev of table) {
     const n = raw[lev.id];
     const carries = lev.carriesTo && lev.carriesTo.length ? lev.carriesTo : null;
     // A lever with somewhere to carry WRAPS — it is a driver, and it sawtooths forever. A lever with
@@ -839,6 +855,21 @@ function leverState(wave) {
     out[lev.id] = step <= 0 ? lev.floor : step >= span ? lev.ceil : lev.floor + (lev.ceil - lev.floor) * step / span;
   }
   return out;
+}
+// The shipped odometer: leverValues over the shipped, load-time-validated table. THIS SIGNATURE IS
+// LOAD-BEARING — the bare-context slice test finds this exact line and slices from the banner above to
+// the brace that closes it, so everything the derivation needs stays above it and everything that reads
+// DEBUG stays below. Keep it a one-liner over LEVER_ORDER; give the TABLE to leverValues, never here.
+//
+// ⛔ IT HAS NO IN-GAME CALLER AS OF CS024 P6c, AND THAT IS NOT VESTIGIAL — DO NOT DELETE IT ON A
+// CLEANUP PASS. Every consumer reads liveLevers(), which is this same derivation over the table the
+// debug panel may have overridden. leverState is what liveLevers is DEFINED AGAINST: it is the
+// odometer's pure statement of the shipped ramp, the bare-context slice three phases of headless tests
+// evaluate on its own, and the reference the untouched-panel invariant is pinned to (an untouched
+// registry must make liveLevers(w) === leverState(w) at every level — CS024 P6c's TRAP 2). Deleting it
+// would delete the specification and the only thing that can catch the panel drifting off it.
+function leverState(wave) {
+  return leverValues(LEVER_ORDER, wave);
 }
 
 // ---------- CS024 P4: payloadSlots — a FIXED CURVE, deliberately OUTSIDE the odometer (§2.5) --------
@@ -2883,6 +2914,13 @@ const DEBUG_ROWS_Y       = 100;   // first row baseline band, offset from the pa
 const DEBUG_FOOTER_H     = 92;    // room below the row band for the position indicator + the control hint
 const DEBUG_PANEL_H      = DEBUG_ROWS_Y + DEBUG_ROWS_VISIBLE * DEBUG_ROW_STEP + DEBUG_FOOTER_H; // 640 <= VIEW_H
 const DEBUG_VALUE_X      = 420;   // value column, offset from the panel's left edge
+// ⛔ THE LABEL COLUMN IS A HARD 32 CHARACTERS, AND drawDebug NEITHER WRAPS NOR TRUNCATES (CS024 P6c).
+// A label is drawn left-aligned at x + 40 at 18px monospace (advance ~0.6em ≈ 10.8px), and a SELECTED
+// row's ◄ chevron is centred at x + DEBUG_VALUE_X - 24 = x + 396. That leaves (396 - 40) / 10.8 ≈ 32
+// characters before the two collide; past that a long label simply draws over the chevron and then over
+// the value. This is why P6c's three-rows-per-lever labels shortened their BASE text (which the phase
+// owns) instead of dropping the ▼ / ↳ / (inv) markers (which the reader needs) — the markers plus the
+// " · floor" suffix cost up to 18 characters on their own. The longest label in the registry is 31.
 const DEBUG_ENTRY_MAXLEN = 8;     // characters a typed numeric entry may accrete (guards a held/pasted key)
 // CS016 P5: the viewer's two tabs replace the old three columns. The default tab id lives up here
 // (not beside ACH_TABS down in the viewer section) because game.menu's object literals — evaluated
@@ -2971,29 +3009,75 @@ const settings = {
 // RULE THAT KILLED ALL FOUR IS THE SAME ONE, and it still binds: A HEADER LEFT WITH NO ENTRIES UNDER IT
 // RENDERS AS A STRAY LABEL, so a header dies with its last knob rather than being left standing empty.
 // CS024 P5 reintroduces JUNK, HUNTER and UFO with a knob per LEVER (§5) — a different shape from the
-// retired tier trios, one entry per QUANTITY rather than three per quantity.
+// retired tier trios, one entry per QUANTITY rather than three per quantity. CS024 P6c then REPLACES
+// that one row per lever with THREE (below): a lever is not a value, so it could never be one knob.
 //
-// THE LEVER KNOBS ARE LIVE OVERRIDES, NOT THE VALUE SOURCE (spec §4.5's "exposed as a debug knob so it
-// can be overridden live"). leverState(game.wave) is what actually drives the game at every wired
-// call site; every one of those sites reads `DEBUG.<id> ?? leverState(w).<id>`, so the odometer's own
-// per-level ramp keeps running untouched until a slider is actually moved. That is why `def: null` for
-// every lever knob below — null is the "no override yet" sentinel, not a duplicated literal, and it is
-// what makes `??` meaningful. `min`/`max` derive from Math.min/max(floor, ceil) — a UI RANGE only, never
-// a reordering of the lever's own floor/ceil (several are inverted on purpose; see the LEVERS table and
-// the standing "no floor <= ceil validator, anywhere" rule, which this does not violate: LEVERS itself
-// is never touched or read in reordered form). `step` is exactly one odometer step, so each ◄/► press
-// moves a slider by the same increment `leverState` would move the real curve. `debugShown[id] == null`
-// (the "auto" state) is handled explicitly at the two UI sites that need a concrete number: the ◄/►
-// nudge in menuDebug (bases off leverState(game.wave)[id] instead of null) and the value string in
-// drawDebug() (renders "auto" instead of "null px/s"). Persistence needs NO special handling: `null`
-// round-trips through JSON fine, and loadSettings' `Number.isFinite(dv)` gate already rejects it,
-// leaving the seeded (also null) default in place — a saved-but-never-touched lever knob loads back to
-// "auto", exactly as it shipped.
+// ---- CS024 P6c: THREE ROWS PER LEVER — floor, ceiling, step count (spec §2.6) ----
+// P5's single row per lever, when touched, PINNED that lever to a flat constant at every level: useful
+// for isolating one quantity's feel, useless for tuning a ramp, and Gate B's entire job is tuning
+// ramps. It could not move a ramp's floor, its ceiling or its period, and — because its min/max came
+// from Math.min/max of the shipped pair — it could not move an endpoint PAST its partner either, which
+// on the seven INVERTED levers meant a ceiling could never be raised above where it already sat.
+//
+// So each lever now emits THREE registry entries — `<leverId>Floor`, `<leverId>Ceil`, `<leverId>Steps`
+// (51 rows over 17 levers) — and leverKnob() returns them as an ARRAY, spread into DEBUG_VARS below.
+// Moving any of the three re-derives that lever's WHOLE ramp immediately, at every level, because
+// liveLevers() folds all three straight back into the table leverValues() walks. THE FLAT PIN IS
+// SUBSUMED, NOT LOST: setting Floor equal to Ceil pins the lever to a constant at every level, which is
+// exactly what the retired row did. There is deliberately no fourth row for it.
+//
+// `def` IS THE SHIPPED TABLE VALUE, and P5's `def: null` "auto" sentinel is retired with the flat rows.
+// A lever's VALUE varies per level, so it had no single honest default; a lever's floor, ceiling and
+// step count are plain constants that do. That keeps the untouched-panel guarantee sharper than the
+// sentinel did — an untouched registry reproduces LEVERS field for field, so liveLevers() === leverState
+// at every level — and it retires both null special-cases the sentinel needed (menuDebug's nudge base
+// and drawDebug's "auto" string), which went with it.
+//
+// ⛔ THE RANGES SPAN BOTH DIRECTIONS, AND NOTHING HERE ORDERS THE PAIR. Floor and Ceil share one range,
+// widened by a full span on each side of the shipped pair (clamped at 0 below, since every levered
+// quantity is a non-negative count/speed/interval/angle), so EITHER endpoint can be dragged past the
+// other. That is required, not tolerated: seven levers ship with floor > ceil because a shorter delay
+// and a smaller aim error are HARDER, and the standing rule (§2.3, and the LEVERS banner) forbids any
+// floor/ceil ordering assertion or clamp — in the panel exactly as in the table. Math.min/max appear
+// here ONLY to find the shipped pair's extent for that widening; neither is ever written back.
+//
+// `step` — the ◄/► increment on the Floor/Ceil rows — is exactly ONE odometer step of the shipped
+// curve, so a press moves the endpoint by the same increment leverState would move the real value.
+// Steps is an INTEGER knob with a MIN OF 2: `steps: 1` leaves a zero-width span and `steps: 0` is
+// meaningless, and both are refused at the row's own `min` rather than by a runtime clamp anywhere
+// downstream. Its `clampShown` (the CS021 P3 hook) rounds a TYPED entry to a whole number — arrows
+// already land on integers, given step 1 off an integer default.
+//
+// ⛔ THE LABEL CARRIES THE CHAIN, AND IT IS DERIVED FROM `LEVERS`, NEVER HAND-TYPED. 51 flat rows is a
+// wall; a retune needs to know what a slider will knock on to. A section maps 1:1 to a chain, and
+// within it `everyNLevels` decides DRIVER ("▼ ", unindented — everything indented below it moves when
+// this one wraps) from DEPENDENT ("  ↳ "), while floor > ceil decides INVERTED (" (inv)" — so a Floor
+// numerically above its Ceil reads as correct rather than as a bug). Both come off the table right
+// here, so a future table edit cannot silently desync the panel from the mechanism. Non-lever knobs
+// (smallUfoChance, lastStandSpeed, the GARBAGE/CHAIN GUARD/POWERUPS/GLOBAL rows) belong to no chain and
+// get NEITHER glyph NOR indent — that is why they are plain literals and not leverKnob() calls.
+//
+// LABEL WIDTH IS A REAL CONSTRAINT (see DEBUG_VALUE_X): the label column is ~32 monospace characters at
+// 18px before it reaches the selected row's ◄ chevron, and drawDebug neither wraps nor truncates. The
+// glyphs, the indent and " (inv)" cost up to 18 of those characters, so the BASE labels were shortened
+// to fit rather than the markers dropped. The UFO levers dropped their "UFO " prefix (their section
+// header already says it, and Flight/Shot/Fire/Zig/Aim/Appear are unique panel-wide); JUNK and HUNTER
+// kept theirs, because both sections have a "speed md"/"speed sm" pair and the prefix is the only
+// thing telling those apart when the header has scrolled off the top of the window. The size token is
+// bare (lg/md/sm, no parentheses) for the same two-character reason — uniformly, across all 17.
 function leverKnob(id, label, unit) {
   const lev = LEVERS.find(l => l.id === id);
-  const lo = Math.min(lev.floor, lev.ceil), hi = Math.max(lev.floor, lev.ceil);
-  const step = Math.round((hi - lo) / (lev.steps - 1) * 100) / 100;
-  return { id, label, unit, def: null, min: lo, max: hi, step };
+  const lo = Math.min(lev.floor, lev.ceil), hi = Math.max(lev.floor, lev.ceil), span = hi - lo;
+  const r2 = v => Math.round(v * 100) / 100;                       // 2dp, so 0.7 - 1.1 reads 0 and not -0.4000000000000001
+  const min = r2(Math.max(0, lo - span)), max = r2(hi + span);     // a full span of headroom EITHER SIDE of the shipped pair
+  const step = r2(span / (lev.steps - 1));                         // one odometer step of the shipped curve
+  const name = (lev.everyNLevels ? "▼ " : "  ↳ ") + label + (lev.floor > lev.ceil ? " (inv)" : "");
+  return [
+    { id: id + "Floor", label: name + " · floor", unit, def: lev.floor, min, max, step },
+    { id: id + "Ceil",  label: name + " · ceil",  unit, def: lev.ceil,  min, max, step },
+    { id: id + "Steps", label: name + " · steps", unit: "", def: lev.steps, min: 2, max: 40, step: 1,
+      clampShown: v => Math.round(v) },
+  ];
 }
 const DEBUG_VARS = [
   { header: "SHIP" },
@@ -3051,23 +3135,24 @@ const DEBUG_VARS = [
   { header: "DELIVERY" },
   { id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
     def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
-  // CS024 P5 (spec §2.4/§4.5/§5): the JUNK chain, one knob per lever — see leverKnob() above for what
-  // `def: null` means. junkCount is the driver (sawtooths every 10 levels); the three sizes are fully
-  // independent (no shared ratio) and carried from junkCount's own wraps.
+  // CS024 P5/P6c (spec §2.4/§2.6/§4.5/§5): the JUNK chain, THREE knobs per lever (floor, ceil, steps) —
+  // see leverKnob() above, which also derives the ▼ / ↳ / (inv) markers straight off LEVERS. junkCount
+  // is the driver (sawtooths every 10 levels, so it wears ▼); the three sizes are fully independent (no
+  // shared ratio), carried from junkCount's own wraps, so they wear ↳ under it.
   { header: "JUNK" },
-  leverKnob("junkCount", "Junk count", ""),
-  leverKnob("junkSpeedLarge", "Junk speed (large)", "px/s"),
-  leverKnob("junkSpeedMedium", "Junk speed (medium)", "px/s"),
-  leverKnob("junkSpeedSmall", "Junk speed (small)", "px/s"),
+  ...leverKnob("junkCount", "Junk count", ""),
+  ...leverKnob("junkSpeedLarge", "Junk speed lg", "px/s"),
+  ...leverKnob("junkSpeedMedium", "Junk speed md", "px/s"),
+  ...leverKnob("junkSpeedSmall", "Junk speed sm", "px/s"),
   // CS024 P5 (spec §2.4/§4.5): the HUNTER chain. coalescePause is the driver (INVERTED — shorter is
   // harder) and replaces the retired garbageAttractDelay knob outright; it carries to the two pursuit
   // speeds. Large Hunters have NO speed lever (frozen drift, spec §2.4) — only medium/small pursuit
   // speed varies. lastStandSpeed is NOT a lever (spec §2.5, CS024 P3) and stays the flat knob it always
   // was, kept in this section since it is Hunter-specific.
   { header: "HUNTER" },
-  leverKnob("coalescePause", "Coalescence inert delay", "s"),
-  leverKnob("hunterSpeedMedium", "Hunter speed (medium)", "px/s"),
-  leverKnob("hunterSpeedSmall", "Hunter speed (small)", "px/s"),
+  ...leverKnob("coalescePause", "Coalesce delay", "s"),
+  ...leverKnob("hunterSpeedMedium", "Hunter speed md", "px/s"),
+  ...leverKnob("hunterSpeedSmall", "Hunter speed sm", "px/s"),
   { id: "lastStandSpeed", label: "Hunter last-stand speed", unit: "px/s",
     def: HUNTER_LAST_STAND_SPEED, min: 0, max: 200, step: 5 },
   // CS024 P5 (spec §2.4/§4.5/§4.6): the UFO chain, the deepest in the odometer (a two-generation carry,
@@ -3075,17 +3160,21 @@ const DEBUG_VARS = [
   // is the ONE driver — there is exactly one appearance timer, which size spawns is the flat
   // smallUfoChance roll below and NOT a lever. ufoAccuracySmall is small-only, by design (big saucers
   // stay genuinely unaimed) — it deliberately has no big-saucer counterpart.
+  // CS024 P6c: these ten dropped their "UFO " prefix to buy label width for the ▼/↳/(inv) markers and
+  // the " · floor" suffix — the section header already says UFO, and no other row in the panel is
+  // called Appear/Flight/Zig/Fire/Shot/Aim. JUNK's and HUNTER's kept theirs (both own a "speed (md)"),
+  // which is the whole reason the prefix is worth its characters there and not here.
   { header: "UFO" },
-  leverKnob("ufoAppearFreq", "UFO appearance interval", "s"),
-  leverKnob("ufoFlightSpeedBig", "UFO flight speed (big)", "px/s"),
-  leverKnob("ufoFlightSpeedSmall", "UFO flight speed (small)", "px/s"),
-  leverKnob("ufoDirChangeBig", "UFO dir-change interval (big)", "s"),
-  leverKnob("ufoDirChangeSmall", "UFO dir-change interval (small)", "s"),
-  leverKnob("ufoFireFreqBig", "UFO fire-freq mult (big)", "x"),
-  leverKnob("ufoFireFreqSmall", "UFO fire-freq mult (small)", "x"),
-  leverKnob("ufoShotSpeedBig", "UFO shot speed (big)", "px/s"),
-  leverKnob("ufoShotSpeedSmall", "UFO shot speed (small)", "px/s"),
-  leverKnob("ufoAccuracySmall", "UFO aim error (small)", "deg"),
+  ...leverKnob("ufoAppearFreq", "Appear interval", "s"),
+  ...leverKnob("ufoFlightSpeedBig", "Flight speed lg", "px/s"),
+  ...leverKnob("ufoFlightSpeedSmall", "Flight speed sm", "px/s"),
+  ...leverKnob("ufoDirChangeBig", "Zig gap lg", "s"),
+  ...leverKnob("ufoDirChangeSmall", "Zig gap sm", "s"),
+  ...leverKnob("ufoFireFreqBig", "Fire mult lg", "x"),
+  ...leverKnob("ufoFireFreqSmall", "Fire mult sm", "x"),
+  ...leverKnob("ufoShotSpeedBig", "Shot speed lg", "px/s"),
+  ...leverKnob("ufoShotSpeedSmall", "Shot speed sm", "px/s"),
+  ...leverKnob("ufoAccuracySmall", "Aim error sm", "deg"),
   { id: "smallUfoChance", label: "Small UFO chance", unit: "",
     def: 0.20, min: 0, max: 1, step: 0.05 },
   // CS024 P6 (spec §3.4/§5): the POWERUPS section, created HERE with its two knobs at once — P5 left
@@ -3094,8 +3183,9 @@ const DEBUG_VARS = [
   // through powerBudgetAmount at the moment of pickup, so a retune applies to the NEXT pickup, never
   // retroactively to fuel already in the tank), engineMassMult is HOW STRONG the effect is while fuel
   // remains (read live at chainMass()'s site, so a retune applies on the very next frame). Neither is
-  // a lever — Engine is a powerup, not a difficulty ramp — so both are ordinary flat knobs with a real
-  // `def` off the shipped const, not the `def: null` odometer sentinel.
+  // a lever — Engine is a powerup, not a difficulty ramp — so both are ordinary flat knobs off the
+  // shipped const, and per CS024 P6c's marker rule they carry NO ▼/↳ glyph and no indent: they belong
+  // to no chain, and must not look as though they do.
   { header: "POWERUPS" },
   { id: "engineBurnSeconds", label: "Engine fuel per pickup", unit: "s",
     def: ENGINE_BURN_SECONDS, min: 0.5, max: 60, step: 0.5 },
@@ -3144,10 +3234,11 @@ const debugShown = {};   // display-unit values — what the panel shows and wha
 // CS021 P3: `clampShown` is the one new registry hook this phase adds, alongside `toNative` — an entry
 // may collapse the requested display value to an achievable one BEFORE it is stored, so `debugShown`
 // (what's shown AND what's persisted) can never disagree with what actually gets used. Every entry
-// without one (all 34 pre-CS021 knobs, and 9 of these 10) is unaffected: `e.clampShown` is undefined,
-// so `shown` passes through unchanged, byte-identical to the pre-P3 function. Only `orbitCount` supplies
-// one (FLAG-CS021-a): a requested 5 collapses to the geometry-fittable 4 right here, so the slider, the
-// save file, and the level that actually spawns can never show three different numbers.
+// without one is unaffected: `e.clampShown` is undefined, so `shown` passes through unchanged,
+// byte-identical to the pre-P3 function. Its first user, `orbitCount` (FLAG-CS021-a), went with the
+// orbit levels in CS024 P1; its users now are CS024 P6c's 17 `<leverId>Steps` rows, which round a TYPED
+// entry to a whole number so the slider, the save file and the ramp the game actually derives can never
+// show three different step counts.
 function applyDebug(id, shown) {
   const e = DEBUG_ENTRIES.find(v => v.id === id);
   const clamped = e.clampShown ? e.clampShown(shown) : shown;
@@ -3155,6 +3246,36 @@ function applyDebug(id, shown) {
   DEBUG[id] = e.toNative ? e.toNative(clamped) : clamped;
 }
 for (const v of DEBUG_ENTRIES) applyDebug(v.id, v.def);   // seed both maps from the registry defaults
+
+// ---------- CS024 P6c: liveLevers() — the registry folded back into the odometer (spec §2.6) ----------
+// THE ONE IMPURE FACE OF THE ODOMETER, and the reason it sits HERE rather than up in the odometer
+// section: it reads DEBUG, and leverState()'s bare-context slice must not. Consumers call liveLevers()
+// at their own point of use exactly as they called leverState() before — next wave's spawn, next
+// saucer's construction, next canister's ctor — never per frame and never cached across an event.
+//
+// leverTable() is the shipped LEVERS with each lever's three OVERRIDABLE fields swapped for the
+// registry's current values. Nothing else is overridable: `id`, `everyNLevels` and `carriesTo` are
+// STRUCTURE, validated once at load by buildLeverOrder(), and no slider may reshape the graph — which
+// is also why the copy needs no re-validation. `?? lev.floor` is a belt-and-braces fallback, not a
+// sentinel: every one of the 51 rows seeds from LEVERS at load, so the ?? only ever fires if a knob is
+// missing entirely, and when it does the shipped table wins.
+//
+// WHY THE WHOLE TABLE AND NOT A PER-VALUE OVERRIDE (the P5 shape this replaces): a Steps override
+// changes a DRIVER'S WRAP PERIOD, and a driver's wrap period is how many carries every dependent under
+// it receives. That is a change to the derivation's INPUT, so it cannot be applied to its OUTPUT after
+// the fact. Rebuilding the table is the only place it fits — and it is cheap (17 small objects), which
+// is why there is deliberately no cache here to go stale behind a slider.
+function leverTable() {
+  return LEVERS.map(lev => ({
+    ...lev,
+    floor: DEBUG[lev.id + "Floor"] ?? lev.floor,
+    ceil:  DEBUG[lev.id + "Ceil"]  ?? lev.ceil,
+    steps: DEBUG[lev.id + "Steps"] ?? lev.steps,
+  }));
+}
+function liveLevers(wave) {
+  return leverValues(leverTable(), wave);
+}
 
 // Secret-code entry state for the debug panel (module-level; driven by the keydown listener + loop()).
 // The backtick ARMS a capture window; subsequent single-char keys accrete into `buf` until its tail
@@ -3199,15 +3320,17 @@ const DIFFLOG_FIELDS = [
 // Snapshots read every lever from the SAME expressions the live sites use — never a re-derived formula.
 // junkCount/junkSpeedLarge are passed in verbatim from nextWave()'s own `count`/`speed` locals (the
 // exact, DEBUG-override-resolved values that level's DebrisSatellite spawns just used) — every other
-// lever column re-applies the identical `DEBUG.<id> ?? lv.<id>` expression its own consumer uses, which
-// is what keeps this an honest mirror rather than a second source of truth. maxLargeHunters logs the
+// lever column re-applies the identical `liveLevers(game.wave).<id>` expression its own consumer uses,
+// which is what keeps this an honest mirror rather than a second source of truth. CS024 P6c: the column
+// reads liveLevers, NOT leverState — a floor/ceil/steps slider must move the log exactly as it moves the
+// game, or a Gate B retune would be tuned against numbers the CSV never saw. maxLargeHunters logs the
 // flat LARGE_HUNTER_MAX constant (CS024 P3 repoint, unchanged this phase — the cap is flat now, not a
 // lever). saucerAimErr mirrors the exact ufoAccuracyRad() call at the saucer aim site. saucerGapMin/Max
 // log the jittered-interval bounds around the resolved appearance centre — the same "where the actual
 // sampled timer can land" meaning this pair has always had.
 function logDifficultySnapshot(junkCount, junkSpeedLarge, prevLevelSecs) {
-  const lv = leverState(game.wave);
-  const appearCenter = DEBUG.ufoAppearFreq ?? lv.ufoAppearFreq;
+  const lv = liveLevers(game.wave);
+  const appearCenter = lv.ufoAppearFreq;
   const appearJitter = FREQ_JITTER;
   DiffLog.rows.push({
     t: performance.now(),
@@ -3216,23 +3339,23 @@ function logDifficultySnapshot(junkCount, junkSpeedLarge, prevLevelSecs) {
     prevLevelSecs,
     junkCount,
     junkSpeedLarge,
-    junkSpeedMedium: DEBUG.junkSpeedMedium ?? lv.junkSpeedMedium,
-    junkSpeedSmall: DEBUG.junkSpeedSmall ?? lv.junkSpeedSmall,
+    junkSpeedMedium: lv.junkSpeedMedium,
+    junkSpeedSmall: lv.junkSpeedSmall,
     maxLargeHunters: LARGE_HUNTER_MAX, // CS024 P3: was def.maxLargeHunters; the cap is flat now
     hunterCount: game.hunters.length, // FLAG-CS017-g: seeds the future music-intensity changeset
-    coalescePause: DEBUG.coalescePause ?? lv.coalescePause,
-    hunterSpeedMedium: DEBUG.hunterSpeedMedium ?? lv.hunterSpeedMedium,
-    hunterSpeedSmall: DEBUG.hunterSpeedSmall ?? lv.hunterSpeedSmall,
+    coalescePause: lv.coalescePause,
+    hunterSpeedMedium: lv.hunterSpeedMedium,
+    hunterSpeedSmall: lv.hunterSpeedSmall,
     ufoAppearFreq: appearCenter,
-    ufoFlightSpeedBig: DEBUG.ufoFlightSpeedBig ?? lv.ufoFlightSpeedBig,
-    ufoFlightSpeedSmall: DEBUG.ufoFlightSpeedSmall ?? lv.ufoFlightSpeedSmall,
-    ufoDirChangeBig: DEBUG.ufoDirChangeBig ?? lv.ufoDirChangeBig,
-    ufoDirChangeSmall: DEBUG.ufoDirChangeSmall ?? lv.ufoDirChangeSmall,
-    ufoFireFreqBig: DEBUG.ufoFireFreqBig ?? lv.ufoFireFreqBig,
-    ufoFireFreqSmall: DEBUG.ufoFireFreqSmall ?? lv.ufoFireFreqSmall,
-    ufoAccuracySmall: DEBUG.ufoAccuracySmall ?? lv.ufoAccuracySmall,
-    ufoShotSpeedBig: DEBUG.ufoShotSpeedBig ?? lv.ufoShotSpeedBig,
-    ufoShotSpeedSmall: DEBUG.ufoShotSpeedSmall ?? lv.ufoShotSpeedSmall,
+    ufoFlightSpeedBig: lv.ufoFlightSpeedBig,
+    ufoFlightSpeedSmall: lv.ufoFlightSpeedSmall,
+    ufoDirChangeBig: lv.ufoDirChangeBig,
+    ufoDirChangeSmall: lv.ufoDirChangeSmall,
+    ufoFireFreqBig: lv.ufoFireFreqBig,
+    ufoFireFreqSmall: lv.ufoFireFreqSmall,
+    ufoAccuracySmall: lv.ufoAccuracySmall,
+    ufoShotSpeedBig: lv.ufoShotSpeedBig,
+    ufoShotSpeedSmall: lv.ufoShotSpeedSmall,
     saucerAimErr: ufoAccuracyRad(),
     saucerGapMin: appearCenter * (1 - appearJitter),
     saucerGapMax: appearCenter * (1 + appearJitter),
@@ -3746,12 +3869,11 @@ function menuDebug(a) {
   else if (a === "left" || a === "right") {
     const e = debugSelectedVar();   // null on a header / the dump action / Back — left/right is a no-op there
     if (e) {
-      // CS024 P5: a lever knob's `debugShown` starts null (spec §4.5's "auto" state, see leverKnob()
-      // above) — nudge FROM the odometer's current value for this wave rather than from 0 (null + step
-      // would otherwise coerce to just `step`), so the first press moves relative to what's actually
-      // playing right now. Every non-lever knob is never null, so this is a no-op for them.
-      const base = debugShown[e.id] == null ? leverState(game.wave)[e.id] : debugShown[e.id];
-      const next = Math.max(e.min, Math.min(e.max, base + (a === "right" ? e.step : -e.step)));
+      // CS024 P6c: P5's null "auto" base STOOD HERE — a lever knob's debugShown started null, so the
+      // nudge had to source its base from leverState(game.wave)[e.id] instead. The three-knobs-per-lever
+      // rebuild retires the sentinel: every row, lever or not, now seeds from a real constant (a floor,
+      // a ceiling, a step count), so every base is simply the shown value and this is one branch again.
+      const next = Math.max(e.min, Math.min(e.max, debugShown[e.id] + (a === "right" ? e.step : -e.step)));
       applyDebug(e.id, next);
       saveSettings();
       AudioSys.ui(false);
@@ -3995,7 +4117,7 @@ function noteLargeHunterSpawn() {
 // called, preserving the 70/110/160 ratio across all three sizes from one lever. That is a DELETION,
 // not a repoint: the three junk sizes are now fully independent levers (junkSpeedLarge/Medium/Small),
 // so there is no shared ratio left to derive — each call site reads its own size's lever from
-// leverState(game.wave) directly and passes the resulting px/s straight into DebrisSatellite's ctor.
+// liveLevers(game.wave) directly and passes the resulting px/s straight into DebrisSatellite's ctor.
 
 // CS024 P3 (spec §1.2/§4.2): CS018 P3's bonusSpawnChance() STOOD HERE — the bonus canister's
 // easing-off per-wave spawn probability, and the one lever in CS017/CS018 that got easier as the game
@@ -4014,33 +4136,31 @@ function jitteredInterval(center) {
 }
 
 // THE SIX UFO DERIVATION HELPERS (CS018 P6/P7), WIRED TO THE UFO CHAIN'S TEN LEVERS BY CS024 P5
-// (spec §2.4/§4.6). Each reads leverState(game.wave) at the point of use — its own call — with
-// DEBUG.<leverId> ?? lv.<leverId> so a live-override slider takes priority the instant it is touched.
+// (spec §2.4/§4.6). Each reads liveLevers(game.wave) at the point of use — its own call — so a
+// floor/ceil/steps slider re-derives the whole ramp the instant it is touched (CS024 P6c; P5's
+// `DEBUG.<leverId> ?? lv.<leverId>` per-value override went with the flat rows).
 // PER-SIZE INDEPENDENCE (§4.6): the four that used to derive "big" from "small" (or vice versa) by a
 // fixed ratio now take the `small` flag seriously and read two fully independent levers instead.
 //
 // UFO flight speed: ufoFlightSpeedPx(small)'s shipped 100/150 ratio derivation is GONE — ufoFlightSpeedBig
 // and ufoFlightSpeedSmall are independent levers, one per saucer size.
 function ufoFlightSpeedPx(small) {
-  const lv = leverState(game.wave);
-  return small ? (DEBUG.ufoFlightSpeedSmall ?? lv.ufoFlightSpeedSmall)
-               : (DEBUG.ufoFlightSpeedBig   ?? lv.ufoFlightSpeedBig);
+  const lv = liveLevers(game.wave);
+  return small ? lv.ufoFlightSpeedSmall : lv.ufoFlightSpeedBig;
 }
 
 // UFO appearance frequency — INVERTED (the number goes DOWN as difficulty rises), jittered around the
 // centre by jitteredInterval(). There is exactly ONE timer for both sizes (resolved, §2.4) — this stays
 // size-less.
 function ufoAppearInterval() {
-  const lv = leverState(game.wave);
-  return jitteredInterval(DEBUG.ufoAppearFreq ?? lv.ufoAppearFreq);
+  return jitteredInterval(liveLevers(game.wave).ufoAppearFreq);
 }
 
 // UFO direction-change frequency — INVERTED, jittered the same way, now SPLIT per size (ufoDirChangeBig/
 // Small) — read at both Saucer sites (ctor + update()), both of which know `this.small`.
 function ufoZigInterval(small) {
-  const lv = leverState(game.wave);
-  return jitteredInterval(small ? (DEBUG.ufoDirChangeSmall ?? lv.ufoDirChangeSmall)
-                                 : (DEBUG.ufoDirChangeBig   ?? lv.ufoDirChangeBig));
+  const lv = liveLevers(game.wave);
+  return jitteredInterval(small ? lv.ufoDirChangeSmall : lv.ufoDirChangeBig);
 }
 
 // UFO firing frequency — INVERTED, and a straight MULTIPLIER on the shipped SAUCER_FIRE_BIG/
@@ -4048,9 +4168,8 @@ function ufoZigInterval(small) {
 // its own rand(range[0], range[1]), and a second draw here would double-randomize one quantity. Now
 // SPLIT per size (ufoFireFreqBig/Small) — rollFireTimer() passes its own `this.small`.
 function ufoFireMult(small) {
-  const lv = leverState(game.wave);
-  return small ? (DEBUG.ufoFireFreqSmall ?? lv.ufoFireFreqSmall)
-               : (DEBUG.ufoFireFreqBig   ?? lv.ufoFireFreqBig);
+  const lv = liveLevers(game.wave);
+  return small ? lv.ufoFireFreqSmall : lv.ufoFireFreqBig;
 }
 
 // Small-saucer shot accuracy — INVERTED. Entered as DEGREES (0 = perfectly accurate) and converted to
@@ -4058,17 +4177,15 @@ function ufoFireMult(small) {
 // BIG SAUCERS NEVER CALL THIS: they fire rand(0, TAU), genuinely unaimed, by design (FLAG-d), and
 // ufoAccuracySmall stays small-only — it deliberately takes no size parameter.
 function ufoAccuracyRad() {
-  const lv = leverState(game.wave);
-  return (DEBUG.ufoAccuracySmall ?? lv.ufoAccuracySmall) * Math.PI / 180;
+  return liveLevers(game.wave).ufoAccuracySmall * Math.PI / 180;
 }
 
 // UFO shot (Bullet) speed. Not a frequency lever, so no jitter. Now SPLIT per size (ufoShotSpeedBig/
 // Small) — the shipped 380 literal was never size-split either, so this is a genuine behaviour change,
 // scoped exactly by spec §4.6.
 function ufoShotSpeedPx(small) {
-  const lv = leverState(game.wave);
-  return small ? (DEBUG.ufoShotSpeedSmall ?? lv.ufoShotSpeedSmall)
-               : (DEBUG.ufoShotSpeedBig   ?? lv.ufoShotSpeedBig);
+  const lv = liveLevers(game.wave);
+  return small ? lv.ufoShotSpeedSmall : lv.ufoShotSpeedBig;
 }
 
 function wrap(obj) {
@@ -4472,7 +4589,7 @@ const SAT_ART = [
 class DebrisSatellite {
   // CS024 P5 (spec §2.4/§4.5): `speed` is now a direct base px/s figure, not a shared multiplier on
   // DEBRIS_SPEEDS — the three junk sizes are fully independent levers with their own floor/ceil, so
-  // there is no longer one ratio to scale. Callers read leverState(game.wave)'s size-specific lever
+  // there is no longer one ratio to scale. Callers read liveLevers(game.wave)'s size-specific lever
   // (junkSpeedLarge/Medium/Small) at their own point of use and pass the result straight in. The default
   // is DEBRIS_SPEEDS[size] — the shipped base table survives as exactly that: the level-less fallback
   // for the one caller that isn't lever-driven (the title-screen decoration, below).
@@ -4561,7 +4678,7 @@ class HunterSatellite {
     // pursue and has no speed lever — it keeps the CS018 P4 frozen drift, HUNTER_SPEED_CEIL[3] *
     // HUNTER_FLOOR_FRAC = 40.6 px/s, unconditionally. Medium/small speed is now the HUNTER chain's two
     // carried levers (hunterSpeedMedium/hunterSpeedSmall), read at the point of use — a Hunter's own
-    // construction — via leverState(game.wave), with the live-override knob taking priority via `??`.
+    // construction — via liveLevers(game.wave), which folds the panel's floor/ceil/steps rows in first.
     // This is what makes escalating Hunter pressure real again post-CS024 P3 (which retired the level
     // table's maxLargeHunters cap in favour of the flat LARGE_HUNTER_MAX backstop): the HOW MANY axis is
     // gone, but coalescePause (how fast the pipeline feeds) and hunterSpeedMedium/Small (how fast a
@@ -4570,9 +4687,8 @@ class HunterSatellite {
     if (size === 3) {
       this.speed = HUNTER_SPEED_CEIL[3] * HUNTER_FLOOR_FRAC;
     } else {
-      const lv = leverState(game.wave);
-      this.speed = size === 2 ? (DEBUG.hunterSpeedMedium ?? lv.hunterSpeedMedium)
-                               : (DEBUG.hunterSpeedSmall  ?? lv.hunterSpeedSmall);
+      const lv = liveLevers(game.wave);
+      this.speed = size === 2 ? lv.hunterSpeedMedium : lv.hunterSpeedSmall;
     }
     if (size === 3) {
       // Large core: passive drift toward the ship's position AT SPAWN — no continuous re-aim
@@ -4795,8 +4911,8 @@ class Garbage {
     // so a single piece still reads 7 (the base canister radius).
     // CS024 P5 (spec §2.4/§4.5): the retired garbageAttractDelay knob is now the HUNTER chain's driver
     // lever, coalescePause — read at the point of use (this ctor) exactly like every other lever, with
-    // the live-override knob taking priority via `??` when a slider has actually been touched.
-    this.coalesceDelay = DEBUG.coalescePause ?? leverState(game.wave).coalescePause; // captured per-piece at ctor time
+    // the panel's floor/ceil/steps rows folded in first (CS024 P6c) when a slider has been touched.
+    this.coalesceDelay = liveLevers(game.wave).coalescePause; // captured per-piece at ctor time
     this.pieces = 1;
     this.radius = 7 * Math.sqrt(this.pieces);
     // CS024 P3: `this.bonus` STOOD HERE (CS017 P5's rare-canister marker). Removed with the bonus
@@ -5312,6 +5428,10 @@ function startGame() {
 // pure extraction: `git diff -w` on the field branch reads as an indent change, and test-cs022-p3.js
 // §E pins that against the pre-P3 commit rather than trusting the eye. Ship-relative and wrap-aware, so
 // it is correct at either world size without knowing which one it is running in.
+// `n` ARRIVES ALREADY ROUNDED (CS024 P6c) — nextWave() is the one lever-driven caller and rounds the
+// junkCount lever there, at the point of use, so the count it logs is the count that spawns. This loop
+// deliberately does not round defensively: a second rounding site is a second place for the two to
+// disagree, which is exactly the bug the P6c note at nextWave() describes.
 function spawnFieldSatellites(n, speed) {
   for (let i = 0; i < n; i++) {
     // spawn in a ring around the ship's current world position so the wave is
@@ -5363,15 +5483,30 @@ function nextWave() {
   // volume from guaranteed 3-per-tier drops. (CS024 P3 restores the v3.2 P3 rule: garbage no longer
   // decays, so density is held by coalescence + shatter-to-harvest + the cullGarbage() ceiling.)
   // CS024 P5 (spec §2.4/§4.5): was FROZEN_JUNK_COUNT for one phase (CS024 P4, TRAP 2). Now reads the
-  // JUNK chain's driver — leverState(game.wave).junkCount — at the point of use, its own sawtooth (3..12
+  // JUNK chain's driver — liveLevers(game.wave).junkCount — at the point of use, its own sawtooth (3..12
   // over ten levels, then a wrap that bumps all three junkSpeed* levers permanently) replacing the
   // retired JUNK_CYCLE table. No count clamp here either way: the old in-cycle/hard-max debris clamps
   // (deleted, CS024 P2) were never applied at this site, and the lever is bounded by construction — its
-  // ceiling IS its top step. `DEBUG.junkCount`/`junkSpeedLarge` are the live-override knobs (§4.5) —
-  // `??` so the odometer's own ramp keeps driving the game until a slider is actually touched.
-  const lv = leverState(game.wave);
-  const count = DEBUG.junkCount ?? lv.junkCount;
-  const speed = DEBUG.junkSpeedLarge ?? lv.junkSpeedLarge;
+  // ceiling IS its top step.
+  //
+  // ⛔ junkCount IS THE ONE INTEGER-VALUED LEVER, AND THIS IS WHERE IT IS ROUNDED (CS024 P6c, spec §2.6).
+  // Every other lever is a speed, an interval, a multiplier or an angle — all continuous, all fine
+  // fractional. This one is a COUNT OF SATELLITES, and until P6c nothing had to round it: at the shipped
+  // 3/12/10 the interpolation lands on a whole number at every step. THE STEPS KNOB BREAKS THAT — 3/12/7
+  // interpolates to 3, 4.5, 6, 7.5, 9, 10.5, 12, and `for (let i = 0; i < 4.5; i++)` would silently
+  // spawn five satellites while the panel and the difficulty log both said four and a half.
+  // ROUND, NOT FLOOR, AND THE CHOICE IS DELIBERATE. Math.round is the NEAREST achievable count to the
+  // authored curve (off by at most half a satellite, where flooring is off by up to a whole one), it
+  // returns both authored endpoints EXACTLY whenever they are whole (as all three JUNK-chain endpoints
+  // are), and it stays monotonic, so a step up can never spawn fewer. Flooring would instead shave every
+  // interior step of every retune downward — a systematic bias that would make mid-ramp levels quietly
+  // easier than the number on the slider, and would make the difficulty log lie by a full satellite in
+  // the same direction every time. Rounding HERE rather than inside spawnFieldSatellites() is what keeps
+  // logDifficultySnapshot's junkCount column honest: it is handed this same local, so the log records
+  // what actually spawned.
+  const lv = liveLevers(game.wave);
+  const count = Math.round(lv.junkCount);
+  const speed = lv.junkSpeedLarge;
   // CS024 P1 (spec §4.1, consequence 3): THE ARCHETYPE BRANCH IS GONE. CS021 P1 put a two-way switch
   // here — "field" scattered junkCount satellites, "orbit" laid concentric rings around the dock and
   // (from CS022 P3) added the previous level's junkCount as scatter on top. spawnFieldSatellites() is now
@@ -5431,10 +5566,9 @@ function destroyDebris(a, awardScore = true) {
     // CS024 P5 (spec §4.5): the SECOND debris-speed site — a split child must move like a freshly-spawned
     // piece of THIS wave, at the CHILD'S OWN size lever (a large splitting to medium reads junkSpeedMedium,
     // a medium splitting to small reads junkSpeedSmall; junkSpeedMul()'s shared-ratio derivation is gone,
-    // CS024 P5 deletion). Reads leverState(game.wave) at the point of use like every other consumer.
-    const lv = leverState(game.wave);
-    const childId = a.size - 1 === 2 ? "junkSpeedMedium" : "junkSpeedSmall";
-    const speed = DEBUG[childId] ?? lv[childId];
+    // CS024 P5 deletion). Reads liveLevers(game.wave) at the point of use like every other consumer.
+    const lv = liveLevers(game.wave);
+    const speed = a.size - 1 === 2 ? lv.junkSpeedMedium : lv.junkSpeedSmall;
     // CS024 P1: CS021 P1's rail handoff (FORK-CS021-C2 -> (i)) STOOD HERE — a shattered ORBITING parent
     // handed its three children its instantaneous orbital tangent as vx/vy. `tangent` was null for every
     // field-level parent, so that conditional never fired off an orbit level; removing it leaves the
@@ -6991,7 +7125,7 @@ function update(dt) {
           g.pieces -= take;
           g.mass  -= take * pMass;
           g.radius = 7 * Math.sqrt(g.pieces);
-          g.coalesceDelay = DEBUG.coalescePause ?? leverState(game.wave).coalescePause; // CS024 P5: coalescePause lever
+          g.coalesceDelay = liveLevers(game.wave).coalescePause; // CS024 P5: coalescePause lever
           const [ax, ay] = shortDelta(game.ship.x, game.ship.y, g.x, g.y); // ship -> leftover (wrap-aware)
           const d = Math.hypot(ax, ay) || 0.0001;
           g.vx += (ax / d) * SCOOP_SPILL_KICK;
@@ -7706,10 +7840,9 @@ function drawDebug() {
       drawText(e.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
       // While typing, the pending digits REPLACE the live value (with a caret, in the "uncommitted" tint) so
       // it is unambiguous that nothing has been written yet — and the ◄► chevrons drop, because arrows don't
-      // step while an entry is pending. CS024 P5: a lever knob's untouched `debugShown` is null (§4.5's
-      // "auto" sentinel) — shown as "auto" rather than the literal string "null".
-      const val = typing ? DebugPanel.entry + "_"
-        : debugShown[e.id] == null ? "auto" : debugShown[e.id] + (e.unit ? " " + e.unit : "");
+      // step while an entry is pending. CS024 P6c: P5's `== null ? "auto"` branch went with the null lever
+      // sentinel — every row shows a real number now, because every row's default IS one.
+      const val = typing ? DebugPanel.entry + "_" : debugShown[e.id] + (e.unit ? " " + e.unit : "");
       drawText(val, ox, cy + 6, 18, typing ? COLOR.garbageBonus : sel ? COLOR.text : COLOR.menuIdle, "left");
       if (sel && !typing) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 120, cy + 7, 16, COLOR.text); }
     } else {   // the Dump action row and Back — centered, ▶ marker, no value, no chevrons

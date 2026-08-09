@@ -329,27 +329,34 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 
   // DEBUG_VARS: REPOINTED BY CS024 P5, INVERTED AGAIN (mirror image of the P4 claim above, which is now
   // stale). P4 deleted the JUNK header along with its three now-defunct tier knobs (an empty header
-  // renders as a stray label). P5 brings JUNK back with a knob PER LEVER — a different shape from the
-  // old tier trio: one entry per QUANTITY (junkCount, junkSpeedLarge, junkSpeedMedium, junkSpeedSmall),
-  // each built by leverKnob() with the "no override, follow the live odometer" `def: null` sentinel.
+  // renders as a stray label). P5 brought JUNK back with a knob PER LEVER, and REPOINTED AGAIN BY
+  // CS024 P6c: a lever is not a value, so it is not one knob — each of the four JUNK levers now emits
+  // THREE rows (<id>Floor / <id>Ceil / <id>Steps), each with a REAL def off the shipped table. P5's
+  // `def: null` "auto" sentinel is retired with the flat rows it existed for. The claim here is
+  // unchanged in kind: JUNK is back, it is per-lever, and its defaults derive from LEVERS.
   const junkHeaderIdx = Y.DEBUG_VARS.findIndex(v => v.header === "JUNK");
   assert(junkHeaderIdx !== -1, "E: the JUNK section header is back (CS024 P5)");
   const junkKnobIds = ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"];
   for (const id of junkKnobIds) {
-    const entry = Y.DEBUG_VARS.find(v => v.id === id);
-    assert(entry, `E: DEBUG_VARS has a ${id} lever knob`);
-    eq(entry.def, null, `E: ${id}'s knob has def: null — the "follow leverState" sentinel, not a duplicated literal`);
-    assert(id in Y.DEBUG, `E: DEBUG.${id} exists`);
-    eq(Y.DEBUG[id], null, `E: DEBUG.${id} seeds to null (no override) — an untouched build follows leverState()`);
+    const lev = Y.LEVERS.find(l => l.id === id);
+    assert(!Y.DEBUG_VARS.some(v => v.id === id), `E: ${id}'s single flat row is gone (CS024 P6c)`);
+    for (const [suffix, field] of [["Floor", "floor"], ["Ceil", "ceil"], ["Steps", "steps"]]) {
+      const entry = Y.DEBUG_VARS.find(v => v.id === id + suffix);
+      assert(entry, `E: DEBUG_VARS has a ${id}${suffix} lever knob`);
+      eq(entry.def, lev[field], `E: ${id}${suffix}'s def IS the lever's ${field} — derived, not a duplicated literal`);
+      assert(id + suffix in Y.DEBUG, `E: DEBUG.${id}${suffix} exists`);
+      eq(Y.DEBUG[id + suffix], lev[field], `E: ...and seeds from LEVERS, so an untouched build follows leverState()`);
+    }
   }
-  // min/max derive from Math.min/max(floor, ceil) — none of the four JUNK levers is inverted, so min ===
-  // floor and max === ceil for all four (unlike, say, coalescePause or ufoAppearFreq elsewhere in LEVERS).
-  const junkCountLever = Y.LEVERS.find(l => l.id === "junkCount");
-  eq(Y.DEBUG_VARS.find(v => v.id === "junkCount").min, junkCountLever.floor, "E: junkCount knob min === its floor (3)");
-  eq(Y.DEBUG_VARS.find(v => v.id === "junkCount").max, junkCountLever.ceil, "E: junkCount knob max === its ceil (12)");
-  const junkSpeedLargeLever = Y.LEVERS.find(l => l.id === "junkSpeedLarge");
-  eq(Y.DEBUG_VARS.find(v => v.id === "junkSpeedLarge").min, junkSpeedLargeLever.floor, "E: junkSpeedLarge knob min === its floor (60)");
-  eq(Y.DEBUG_VARS.find(v => v.id === "junkSpeedLarge").max, junkSpeedLargeLever.ceil, "E: junkSpeedLarge knob max === its ceil (110)");
+  // The slider RANGE is widened a full span either side of the shipped pair (CS024 P6c) so an endpoint
+  // can be dragged PAST its partner — none of the four JUNK levers is inverted, but the range must not
+  // assume that (coalescePause and ufoAppearFreq elsewhere in LEVERS are).
+  for (const id of junkKnobIds) {
+    const lev = Y.LEVERS.find(l => l.id === id);
+    const e = Y.DEBUG_VARS.find(v => v.id === id + "Floor");
+    assert(e.min < lev.floor && e.max > lev.ceil, `E: ${id}'s slider range extends beyond both shipped endpoints`);
+    eq(e.min, Y.DEBUG_VARS.find(v => v.id === id + "Ceil").min, `E: ...and Floor and Ceil share it`);
+  }
 
   // The pre-CS024 tier-name knobs stay gone — a different shape (per-tier, not per-lever) that never
   // comes back.
@@ -364,7 +371,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // change (the odometer's floors were chosen fresh for the three independent levers, spec §2.4), not a
   // rename. FROZEN_JUNK_SPEED itself no longer exists.
   eq(Y.probe("FROZEN_JUNK_SPEED"), "__ReferenceError__", "E: FROZEN_JUNK_SPEED no longer exists");
-  eq(junkSpeedLargeLever.floor, 60, "E: junkSpeedLarge's floor (what a fresh level 1 actually spawns at) is 60 px/s, not the old 58");
+  eq(Y.LEVERS.find(l => l.id === "junkSpeedLarge").floor, 60, "E: junkSpeedLarge's floor (what a fresh level 1 actually spawns at) is 60 px/s, not the old 58");
 })();
 
 // ================= summary =====================

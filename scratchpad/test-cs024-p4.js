@@ -773,14 +773,24 @@ function evalSlice(literal) {
   eq(X.DEBUG.garbageAttractForce, 30, "H: the LIVE force knob reads 30 px/s²");
   assert(160 % knob("garbageAttractRadius").step === 0, "H: 160 px sits on the radius slider's 10 px grid");
   assert(30 % knob("garbageAttractForce").step === 0, "H: 30 px/s² sits on the force slider's 5 px/s² grid");
-  // coalescePause's registry entry is a LEVER knob, built by leverKnob() straight off the LEVERS table
-  // (def: null — "no override yet, follow the odometer" — not a duplicated literal default).
-  const cpKnob = knob("coalescePause");
-  eq(cpKnob.def, null, "H: coalescePause's registry entry is def: null — no override yet, the odometer drives it");
-  eq(cpKnob.min, 1.5, "H: coalescePause's slider min is its ceil, 1.5s (min/max derive from Math.min/max(floor,ceil), never LEVERS' own order)");
-  eq(cpKnob.max, 5.0, "H: coalescePause's slider max is its floor, 5.0s");
-  eq(cpKnob.step, 0.5, "H: coalescePause's slider step is (5.0-1.5)/(8-1) = 0.5s, one odometer step");
-  eq(X.DEBUG.coalescePause, null, "H: the LIVE coalescePause knob is null by default (auto) — unlike the retired flat garbageAttractDelay, which was always a concrete number");
+  // coalescePause's registry entries are LEVER knobs, built by leverKnob() straight off the LEVERS
+  // table. REPOINTED BY CS024 P6c: three rows, not one, and each `def` IS the table field it names —
+  // P5's `def: null` "auto" sentinel existed because a lever's VALUE has no single default, and a
+  // floor, a ceiling and a step count all do. The slider RANGE is widened a full span either side of
+  // the shipped pair so an endpoint can be dragged PAST its partner (P5's Math.min/max-of-the-pair
+  // range could not, which on this very lever meant its 5.0 s floor was also the slider's ceiling).
+  const cpFloor = knob("coalescePauseFloor"), cpCeil = knob("coalescePauseCeil"), cpSteps = knob("coalescePauseSteps");
+  assert(knob("coalescePause") === undefined, "H: coalescePause's single flat row is GONE (CS024 P6c)");
+  eq(cpFloor.def, 5.0, "H: coalescePauseFloor's def IS the lever's floor, 5.0s");
+  eq(cpCeil.def, 1.5, "H: coalescePauseCeil's def IS the lever's ceil, 1.5s — below its floor, and left that way");
+  eq(cpSteps.def, 8, "H: coalescePauseSteps' def IS the lever's step count, 8");
+  eq(cpFloor.min, 0, "H: the pair's slider min is 0 — a full 3.5s span below the shipped 1.5s, clamped at zero");
+  eq(cpFloor.max, 8.5, "H: ...and its max is 8.5s, a full span ABOVE the shipped 5.0s, so the ceiling can be raised past the floor");
+  eq(cpCeil.min, cpFloor.min, "H: Floor and Ceil share one range — they are two ends of one quantity");
+  eq(cpCeil.max, cpFloor.max, "H: ...both ends of it");
+  eq(cpFloor.step, 0.5, "H: coalescePause's slider step is (5.0-1.5)/(8-1) = 0.5s, one odometer step");
+  eq(cpSteps.min, 2, "H: the Steps row is guarded at 2 — steps 1 leaves a zero-width span, steps 0 is meaningless");
+  eq(X.DEBUG.coalescePauseFloor, 5.0, "H: the LIVE coalescePauseFloor knob seeds to the shipped 5.0s — an untouched panel changes nothing");
   eq(X.LEVERS.find(l => l.id === "coalescePause").floor, 5.0,
     "H: coalescePause's floor is 5.0s — the same number Gate A Q1 validated, now a lever endpoint instead of the retired GARBAGE_COALESCE_DELAY constant");
   // The delay is LIVE at its consumer: a fresh piece captures leverState(game.wave).coalescePause at
@@ -819,10 +829,13 @@ function evalSlice(literal) {
   // REPOINTED BY CS024 P6: 32 -> 33 and an eight-header list becomes nine. Timed powerup expiry is
   // deleted (spec §1.7/§3.4/§3.5), taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and the
   // POWERUPS header P5 deliberately left unwritten arrives holding Engine-as-fuel's two knobs
-  // (engineBurnSeconds, engineMassMult). Net -1 +2. The claim is unchanged in kind and strength —
-  // an exact live count plus an exact ordered header list.
-  eq(values.length, 33, "H: 33 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section");
-  eq(X.DEBUG_ENTRIES.length, 33, "H: DEBUG_ENTRIES agrees — headers are not values");
+  // (engineBurnSeconds, engineMassMult). Net -1 +2.
+  // REPOINTED AGAIN BY CS024 P6c (spec §2.6): 33 -> 67. P5's one flat row per lever could only PIN a
+  // lever flat, never tune its ramp, so each lever now emits three rows — floor, ceiling, step count —
+  // and 17 become 51. The claim is unchanged in kind and strength: an exact live count plus an exact
+  // ordered header list.
+  eq(values.length, 67, "H: 67 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever");
+  eq(X.DEBUG_ENTRIES.length, 67, "H: DEBUG_ENTRIES agrees — headers are not values");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "H: nine section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {
@@ -833,52 +846,62 @@ function evalSlice(literal) {
     "chainGuardIntercepts", "chainGuardMinTow", "chainGuardCooldown", "dockComboGrace",
     "sweepCoalescePause", "debrisBounceRestitution", "garbageSoftMax", "garbageHardMax", "lastStandSpeed"])
     assert(values.some(e => e.id === id), `H: ${id} survives the P5 rebuild unchanged (none of these are lever knobs)`);
-  // The new lever knobs P5 actually adds — one spot-check per chain, by section.
+  // The lever knobs P5 adds — one spot-check per chain, by section. REPOINTED BY CS024 P6c: each is
+  // now three rows, so the spot-check asks for the Floor row of each rather than a bare id.
   for (const id of ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"])
-    assert(values.some(e => e.id === id), `H: ${id} is a new JUNK-chain lever knob`);
+    assert(values.some(e => e.id === id + "Floor"), `H: ${id} is a JUNK-chain lever knob`);
   for (const id of ["coalescePause", "hunterSpeedMedium", "hunterSpeedSmall"])
-    assert(values.some(e => e.id === id), `H: ${id} is a new HUNTER-chain lever knob`);
+    assert(values.some(e => e.id === id + "Floor"), `H: ${id} is a HUNTER-chain lever knob`);
   for (const id of ["ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoDirChangeBig",
     "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall", "ufoShotSpeedBig", "ufoShotSpeedSmall", "ufoAccuracySmall"])
-    assert(values.some(e => e.id === id), `H: ${id} is a new UFO-chain lever knob`);
+    assert(values.some(e => e.id === id + "Floor"), `H: ${id} is a UFO-chain lever knob`);
   assert(values.some(e => e.id === "smallUfoChance"), "H: smallUfoChance is back too — a flat non-lever knob (which size spawns is not a lever)");
-  // Every lever knob shares the leverKnob() shape: def: null, and min/max derived from Math.min/max
-  // (floor, ceil) rather than the LEVERS table's own (possibly inverted) order.
+  // Every lever knob shares the leverKnob() shape — REPOINTED BY CS024 P6c: three rows, each with a
+  // REAL def off the table field it names (P5's `def: null` "auto" sentinel is retired with the flat
+  // rows), and a min/max WIDENED a full span either side of the shipped pair so an endpoint can be
+  // dragged PAST its partner. P5's Math.min/max-of-the-pair range could not do that, which is the
+  // defect P6c exists to fix on the seven inverted levers.
   for (const lev of X.LEVERS) {
-    const k = knob(lev.id);
-    assert(k, `H: lever ${lev.id} has a registry entry`);
-    eq(k.def, null, `H: lever knob ${lev.id} has def: null (no override yet, not a duplicated literal)`);
-    eq(k.min, Math.min(lev.floor, lev.ceil), `H: lever knob ${lev.id}'s min is Math.min(floor, ceil)`);
-    eq(k.max, Math.max(lev.floor, lev.ceil), `H: lever knob ${lev.id}'s max is Math.max(floor, ceil)`);
+    for (const [suffix, field] of [["Floor", "floor"], ["Ceil", "ceil"], ["Steps", "steps"]]) {
+      const k = knob(lev.id + suffix);
+      assert(k, `H: lever ${lev.id} has a ${suffix} registry entry`);
+      eq(k.def, lev[field], `H: lever knob ${lev.id}${suffix}'s def IS the lever's ${field}`);
+    }
+    const k = knob(lev.id + "Floor");
+    assert(k.min < Math.min(lev.floor, lev.ceil) || k.min === 0,
+      `H: lever knob ${lev.id}'s min reaches below both endpoints (or bottoms out at 0)`);
+    assert(k.max > Math.max(lev.floor, lev.ceil), `H: ...and its max reaches above both`);
   }
   // Nothing in the panel validates a sibling — the standing rule the inverted levers depend on.
   assert(!values.some(e => "validate" in e || "against" in e), "H: no registry entry validates against a sibling");
 
   // TRAP 1 — the version stays put. P7 owns the bump, straight to 1.0.0.24.
   eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is still 1.0.0.22");
-  // TRAP 2 IS NOW POSITIVELY WIRED (P5). leverState has MANY callers: its own declaration plus 13 real
-  // call sites, one per consumer named in spec §4.5/§4.6 — logDifficultySnapshot, menuDebug's live-
-  // override resolution, the six UFO derivation helpers, HunterSatellite's ctor, Garbage's ctor,
-  // nextWave's JUNK spawn block, destroyDebris's split-child speed, and the scoop-leftover-respill site.
-  const leverCalls = (execOnly.match(/\bleverState\s*\(/g) || []).length;
-  eq(leverCalls, 14, "H: TRAP 2 INVERTED — leverState appears 14 times in executable source: 1 declaration + 13 real call sites");
-  assert(/function leverState\(wave\) \{/.test(execOnly), "H: ...one of which is the declaration");
+  // TRAP 2 IS NOW POSITIVELY WIRED (P5), AND REPOINTED BY CS024 P6c: the odometer's consumer-facing
+  // face is liveLevers(wave) — the same derivation over the table the debug panel may have overridden —
+  // so the 12 call sites P5 wired now read THAT. leverState itself keeps exactly one appearance, its
+  // own declaration: it is the PURE statement of the shipped ramp, the bare-context test surface, and
+  // the reference an untouched panel must reproduce. That is a claim worth pinning both halves of.
+  eq((execOnly.match(/\bleverState\s*\(/g) || []).length, 1,
+    "H: TRAP 2 REPOINTED — leverState appears exactly once in executable source: its own declaration");
+  assert(/function leverState\(wave\) \{/.test(execOnly), "H: ...which is that declaration");
+  eq((execOnly.match(/\bliveLevers\s*\(/g) || []).length, 13,
+    "H: ...and liveLevers appears 13 times: 1 declaration + the 12 real consumer call sites");
   const CALL_SITES = [
-    [/function logDifficultySnapshot\(junkCount, junkSpeedLarge, prevLevelSecs\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "logDifficultySnapshot"],
-    [/const base = debugShown\[e\.id\] == null \? leverState\(game\.wave\)\[e\.id\] : debugShown\[e\.id\];/, "menuDebug's live-override resolution"],
-    [/function ufoFlightSpeedPx\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoFlightSpeedPx"],
-    [/function ufoAppearInterval\(\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoAppearInterval"],
-    [/function ufoZigInterval\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoZigInterval"],
-    [/function ufoFireMult\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoFireMult"],
-    [/function ufoAccuracyRad\(\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoAccuracyRad"],
-    [/function ufoShotSpeedPx\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoShotSpeedPx"],
-    [/const lv = leverState\(game\.wave\);\s*\n\s*this\.speed = size === 2 \? \(DEBUG\.hunterSpeedMedium/, "HunterSatellite's ctor"],
-    [/this\.coalesceDelay = DEBUG\.coalescePause \?\? leverState\(game\.wave\)\.coalescePause;/, "Garbage's ctor"],
-    [/const lv = leverState\(game\.wave\);\s*\n\s*const count = DEBUG\.junkCount \?\? lv\.junkCount;/, "nextWave's JUNK spawn block"],
-    [/const lv = leverState\(game\.wave\);\s*\n\s*const childId = a\.size - 1 === 2 \? "junkSpeedMedium" : "junkSpeedSmall";/, "destroyDebris's split-child speed"],
-    [/g\.coalesceDelay = DEBUG\.coalescePause \?\? leverState\(game\.wave\)\.coalescePause;/, "the scoop-leftover-respill site"],
+    [/function logDifficultySnapshot\(junkCount, junkSpeedLarge, prevLevelSecs\) \{\s*\n\s*const lv = liveLevers\(game\.wave\);/, "logDifficultySnapshot"],
+    [/function ufoFlightSpeedPx\(small\) \{\s*\n\s*const lv = liveLevers\(game\.wave\);/, "ufoFlightSpeedPx"],
+    [/function ufoAppearInterval\(\) \{\s*\n\s*return jitteredInterval\(liveLevers\(game\.wave\)\.ufoAppearFreq\);/, "ufoAppearInterval"],
+    [/function ufoZigInterval\(small\) \{\s*\n\s*const lv = liveLevers\(game\.wave\);/, "ufoZigInterval"],
+    [/function ufoFireMult\(small\) \{\s*\n\s*const lv = liveLevers\(game\.wave\);/, "ufoFireMult"],
+    [/function ufoAccuracyRad\(\) \{\s*\n\s*return liveLevers\(game\.wave\)\.ufoAccuracySmall \* Math\.PI \/ 180;/, "ufoAccuracyRad"],
+    [/function ufoShotSpeedPx\(small\) \{\s*\n\s*const lv = liveLevers\(game\.wave\);/, "ufoShotSpeedPx"],
+    [/const lv = liveLevers\(game\.wave\);\s*\n\s*this\.speed = size === 2 \? lv\.hunterSpeedMedium/, "HunterSatellite's ctor"],
+    [/this\.coalesceDelay = liveLevers\(game\.wave\)\.coalescePause;/, "Garbage's ctor"],
+    [/const lv = liveLevers\(game\.wave\);\s*\n\s*const count = Math\.round\(lv\.junkCount\);/, "nextWave's JUNK spawn block"],
+    [/const lv = liveLevers\(game\.wave\);\s*\n\s*const speed = a\.size - 1 === 2 \? lv\.junkSpeedMedium : lv\.junkSpeedSmall;/, "destroyDebris's split-child speed"],
+    [/g\.coalesceDelay = liveLevers\(game\.wave\)\.coalescePause;/, "the scoop-leftover-respill site"],
   ];
-  for (const [re, label] of CALL_SITES) assert(re.test(execOnly), `H: TRAP 2 INVERTED — ${label} is a real leverState(game.wave) call site`);
+  for (const [re, label] of CALL_SITES) assert(re.test(execOnly), `H: TRAP 2 REPOINTED — ${label} is a real liveLevers(game.wave) call site`);
   const payloadCalls = (execOnly.match(/\bpayloadSlots\s*\(/g) || []).length;
   eq(payloadCalls, 2, "H: payloadSlots has exactly one call site plus its declaration — P5 did not touch it");
   assert(/game\.cargoMax = payloadSlots\(game\.wave\);/.test(execOnly), "H: ...and it is nextWave()'s cargoMax assignment");

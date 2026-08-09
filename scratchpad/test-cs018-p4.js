@@ -204,8 +204,11 @@ function levelForCap(n) {
   }
   // ...and, separately, the medium/small branch DOES read leverState(game.wave) — the source-level
   // mirror image of the claim above, proven on the same file.
-  const mediumSmallSpeed = scriptSrc.split("\n").filter(l => /DEBUG\.hunterSpeedMedium/.test(l));
-  assert(mediumSmallSpeed.length >= 1, "B: the medium/small speed branch reads DEBUG.hunterSpeedMedium ?? leverState(...).hunterSpeedMedium");
+  // REPOINTED BY CS024 P6c: the per-value `DEBUG.hunterSpeedMedium ?? lv.hunterSpeedMedium` override
+  // went with P5's flat rows — the panel now overrides the TABLE (floor/ceil/steps), and consumers read
+  // liveLevers(game.wave) instead. Same claim, current expression.
+  const mediumSmallSpeed = scriptSrc.split("\n").filter(l => /liveLevers\(game\.wave\)/.test(l) || /lv\.hunterSpeedMedium/.test(l));
+  assert(mediumSmallSpeed.length >= 1, "B: the medium/small speed branch reads liveLevers(game.wave).hunterSpeedMedium");
 
   // The invariant an existing source comment asserts: HUNTER_LAST_STAND_SPEED stays below the medium
   // homer's speed. That speed no longer has one frozen value to compare against — it ranges
@@ -669,43 +672,47 @@ function levelForCap(n) {
   // without moving the total.
   //
   // REPOINTED BY CS024 P6 (spec §1.7/§3.4/§3.5/§5): 32 -> 33, and the POWERUPS header P5 deliberately
-  // left unwritten is created here — an empty header renders as a stray label, so it waits for its
+  // left unwritten is created there — an empty header renders as a stray label, so it waits for its
   // first knob. Net +1 from -1 (chainGuardTime, deleted with timed expiry) +2 (engineBurnSeconds,
   // engineMassMult). CHAIN GUARD survives as a header on 3 knobs rather than 4.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 33, "H: DEBUG_VARS holds 33 value entries as of CS024 P6");
+  // REPOINTED AGAIN BY CS024 P6c (spec §2.6): 33 -> 67. Each of the 17 levers now emits THREE rows
+  // (<id>Floor / <id>Ceil / <id>Steps) instead of one flat row, so 17 become 51 and the 16 non-lever
+  // knobs are untouched. The header list is unchanged — this is a reshape inside three sections.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 67, "H: DEBUG_VARS holds 67 value entries as of CS024 P6c");
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
   const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),
     `H: section headers are exactly ${WANT_HEADERS.join("/")}, in order (got ${headerOrder.join("/")})`);
 
-  // JUNK: back (P4 removed it whole), one leverKnob per lever, all with def: null.
-  for (const id of ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"]) {
-    const e = Y.DEBUG_VARS.find(v => v.id === id);
-    assert(e, `H: DEBUG_VARS has a ${id} lever knob (CS024 P5)`);
-    eq(e.def, null, `H: ${id}'s knob has def: null — the "follow leverState" sentinel`);
-  }
+  // JUNK: back (P4 removed it whole), one leverKnob per lever — and as of CS024 P6c that leverKnob
+  // emits THREE rows, each defaulting to the shipped table field it names (P5's `def: null` sentinel is
+  // retired with the flat rows). One helper, used for all three sections below.
+  const leverRows = (id, phase) => {
+    const lev = Y.LEVERS.find(l => l.id === id);
+    assert(!Y.DEBUG_VARS.some(v => v.id === id), `H: ${id}'s flat row is gone (CS024 P6c)`);
+    for (const [suffix, field] of [["Floor", "floor"], ["Ceil", "ceil"], ["Steps", "steps"]]) {
+      const e = Y.DEBUG_VARS.find(v => v.id === id + suffix);
+      assert(e, `H: DEBUG_VARS has a ${id}${suffix} lever knob (${phase})`);
+      eq(e.def, lev[field], `H: ${id}${suffix}'s def IS the lever's ${field} — derived from LEVERS`);
+    }
+  };
+  for (const id of ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"]) leverRows(id, "CS024 P5/P6c");
   // HUNTER: coalescePause + the two pursuit-speed levers are new; lastStandSpeed survives as the flat
   // (non-lever, non-null-default) knob it always was; garbageAttractDelay does not come back under
   // GARBAGE — coalescePause replaces it outright, and it lives under HUNTER (spec §2.4/§2.5).
-  for (const id of ["coalescePause", "hunterSpeedMedium", "hunterSpeedSmall"]) {
-    const e = Y.DEBUG_VARS.find(v => v.id === id);
-    assert(e, `H: DEBUG_VARS has a ${id} lever knob (CS024 P5)`);
-    eq(e.def, null, `H: ${id}'s knob has def: null`);
-  }
+  for (const id of ["coalescePause", "hunterSpeedMedium", "hunterSpeedSmall"]) leverRows(id, "CS024 P5/P6c");
   assert(!Y.DEBUG_VARS.some(v => v.id === "garbageAttractDelay"),
     "H: garbageAttractDelay does not return — coalescePause is the HUNTER-chain driver now, not a GARBAGE knob");
   const lastStand = Y.DEBUG_VARS.find(v => v.id === "lastStandSpeed");
-  assert(lastStand && lastStand.def !== null, "H: lastStandSpeed stays a flat, non-null-default knob — it is NOT a lever (spec §2.5)");
+  assert(lastStand && lastStand.def !== null, "H: lastStandSpeed stays a flat knob — it is NOT a lever (spec §2.5)");
+  assert(lastStand && !/▼|↳|\(inv\)/.test(lastStand.label),
+    "H: ...and CS024 P6c gives it no chain glyph either — it belongs to no chain");
   // UFO: all ten levers present, one per size (ufoAppearFreq/ufoAccuracySmall deliberately NOT split —
   // one shared appearance timer, small-only accuracy). The old CS018 P6/P7 generic ids
   // (ufoFlightSpeed/ufoDirChangeFreq/ufoFireFreq/ufoAccuracy/ufoShotSpeed, unsplit) do not survive.
   for (const id of ["ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoDirChangeBig",
                     "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall", "ufoShotSpeedBig",
-                    "ufoShotSpeedSmall", "ufoAccuracySmall"]) {
-    const e = Y.DEBUG_VARS.find(v => v.id === id);
-    assert(e, `H: DEBUG_VARS has a ${id} lever knob (CS024 P5)`);
-    eq(e.def, null, `H: ${id}'s knob has def: null`);
-  }
+                    "ufoShotSpeedSmall", "ufoAccuracySmall"]) leverRows(id, "CS024 P5/P6c");
   for (const id of ["ufoFlightSpeed", "ufoDirChangeFreq", "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
     assert(!Y.DEBUG_VARS.some(v => v.id === id),
       `H: the old unsplit ${id} knob id does not survive — CS024 P5 splits every UFO quantity per size`);

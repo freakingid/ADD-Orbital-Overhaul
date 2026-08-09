@@ -418,9 +418,11 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // among others) plus smallUfoChance.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
+  // REPOINTED AGAIN BY CS024 P6c: 33 -> 67 — three knobs per lever (floor/ceiling/step count) replace
+  // P5's one flat row, so 17 lever rows become 51; the 16 non-lever knobs are untouched.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 33, "A: DEBUG_VARS holds 33 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 33, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 67, "A: DEBUG_VARS holds 67 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33; CS024 P6c -> 67)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 67, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");
@@ -432,10 +434,14 @@ const dockBlockCode = stripComments(dockBlockSrc);
   const iJunk = DEBUG_VARS.findIndex(e => e.header === "JUNK");
   assert(iJunk > iDeliv, "A: ...and the JUNK header is back, after DELIVERY (CS024 P5)");
   eq(DEBUG_VARS[iJunk + 1].header, undefined, "A: JUNK is not left empty — a value entry follows it");
-  const junkIds = DEBUG_VARS.slice(iJunk + 1, iJunk + 5).map(e => e.id);
+  // REPOINTED BY CS024 P6c: the JUNK section's four levers each hold THREE adjacent rows now
+  // (floor, ceiling, step count), so the section runs twelve entries rather than four. Same claim —
+  // the four levers, in the same order, immediately after the header.
+  const junkIds = DEBUG_VARS.slice(iJunk + 1, iJunk + 13).map(e => e.id);
   eq(JSON.stringify(junkIds),
-    JSON.stringify(["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"]),
-    "A: ...and its four entries are junkCount/junkSpeedLarge/junkSpeedMedium/junkSpeedSmall, in order (CS024 P5)");
+    JSON.stringify(["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"]
+      .flatMap(id => [id + "Floor", id + "Ceil", id + "Steps"])),
+    "A: ...and its twelve entries are junkCount/junkSpeedLarge/junkSpeedMedium/junkSpeedSmall x floor/ceil/steps, in order (CS024 P6c)");
   // A header with nothing under it renders as a stray label (the retired SAUCER PRESSURE lesson).
   assert(!DEBUG_VARS[iDeliv + 1].header, "A: the DELIVERY header is not left empty — a value entry follows it");
 
