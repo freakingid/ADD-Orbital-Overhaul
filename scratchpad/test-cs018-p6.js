@@ -139,8 +139,8 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // (it previously trailed the retired ORBIT block as a layout artefact, not a real scoping claim). The
   // claim is the full membership, not just the first entry, so a silent addition still fails.
   const globalIds = X.DEBUG_VARS.slice(gIdx + 1).map(v => v.id);
-  assert(deepEq(globalIds, ["sweepCoalescePause", "debrisBounceRestitution"]),
-    `B: GLOBAL header followed by sweepCoalescePause then debrisBounceRestitution, freqJitter still removed (got ${JSON.stringify(globalIds)})`);
+  assert(deepEq(globalIds, ["sweepCoalescePause", "debrisBounceRestitution", "startLevel"]),
+    `B: GLOBAL header followed by sweepCoalescePause, debrisBounceRestitution, then P6d's startLevel, freqJitter still removed (got ${JSON.stringify(globalIds)})`);
   assert(!X.DEBUG_VARS.some(v => v.id === "freqJitter"), "B: freqJitter entry is gone from DEBUG_VARS (CS024 P2)");
   assert(!("freqJitter" in X.DEBUG), "B: DEBUG.freqJitter is gone (CS024 P2)");
 
@@ -494,7 +494,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // Engine-as-fuel's two knobs (engineBurnSeconds, engineMassMult). Net -1 +2. Section-by-section:
   // SHIP 2 + GARBAGE 4 + CHAIN GUARD 3 + DELIVERY 1 + JUNK 4 + HUNTER 4 + UFO 11 + POWERUPS 2 +
   // GLOBAL 2 = 33.
-  eq(nEntries, 67, `I: DEBUG_ENTRIES count is 67 after CS024 P6c's three rows per lever (got ${nEntries})`);
+  eq(nEntries, 68, `I: DEBUG_ENTRIES count is 68 after CS024 P6c's three rows per lever + P6d's startLevel (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

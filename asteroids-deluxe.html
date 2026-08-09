@@ -3206,6 +3206,17 @@ const DEBUG_VARS = [
   // block as a layout artefact of that block's CS024 P1 removal, not a scoping claim).
   { id: "debrisBounceRestitution", label: "Satellite bounce restitution", unit: "",
     def: DEBRIS_BOUNCE_RESTITUTION, min: 0, max: 1.5, step: 0.05 },
+  // CS024 P6d (gate tooling, PLANNED-FEATURES-CS024.md §4.5): jumps startGame()'s wave seed so Gate B
+  // can sample a deep level without playing up to it. NOT A LEVER — a plain flat knob, no ▼/↳ glyph, no
+  // (inv), no floor/ceil/steps triple; it belongs to no chain. FIDELITY LIMIT (real, do not "fix" by
+  // seeding scoop level or powerups — that is unrequested design): a run started at level N gives a
+  // level-N FIELD with a level-1 SHIP — no scoop upgrades, no banked powerups, no accumulated garbage,
+  // no towed load. It is a spawn-side sampling tool, not a simulation of having played there. Any value
+  // above 1 flags game.debugRun (set ONCE in startGame() from this knob, never re-read mid-run), which
+  // suppresses the three persistence points (HighScores entry, achievement-unlock save, lifetime-stats
+  // save) so a debug jump can never pollute real progress — see startGame() and Achievements.save().
+  { id: "startLevel", label: "Start level", unit: "",
+    def: 1, min: 1, max: 99, step: 1 },
 ];
 // CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
@@ -5198,6 +5209,12 @@ const game = {
   // `wave` is the ABSOLUTE player-facing level counter and the ONE difficulty clock's input — every
   // achievement, the HUD LEVEL readout, high-score records, musicStateFor and leverState() read it.
   // CS018 P4 retired its CS017 companions `cycle`/`cycleWave` outright (FORK-CS018-A).
+  // CS024 P6d: true iff this run was started above level 1 via the startLevel debug knob. Set ONCE in
+  // startGame() from the knob's value at that instant, never re-read mid-run (see startGame()). Gates
+  // the three persistence points (HighScores entry, achievement-unlock save, lifetime-stats save) so a
+  // debug jump can never record. Declared in BOTH this literal and startGame()'s reset per the standing
+  // CS016 P3 rule — a field in only one of the two reads `undefined` for a whole run.
+  debugRun: false,
   waveTime: 0,   // seconds elapsed in the current level; ticked in update(), zeroed by nextWave().
                  // CS018 P4 (FLAG-k): kept as telemetry — nextWave() logs the level just finished.
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
@@ -5358,7 +5375,13 @@ function startGame() {
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.score = 0;
-  game.wave = 0;
+  // CS024 P6d: the startLevel debug knob seeds the wave counter — game.wave = 0 lands nextWave() on
+  // level 1 exactly as before (startLevel's def is 1). Any value above 1 sets the STICKY debugRun flag
+  // from the knob at this instant only; DEBUG.startLevel is never re-read for the rest of the run, so
+  // dragging the slider mid-run can neither re-arm recording for a debug run nor retroactively void a
+  // legitimate one. See the registry entry for the fidelity limit this knob does NOT paper over.
+  game.debugRun = DEBUG.startLevel > 1;
+  game.wave = DEBUG.startLevel - 1;
   // A fresh run never carries a stale waveTime. nextWave() (called at the end of this function) zeroes
   // it again for level 1, exactly as it does for every other level. (CS018 P4 removed the
   // game.cycle/game.cycleWave resets that used to sit on this line with it.)
@@ -6079,7 +6102,12 @@ const Achievements = {
   },
 
   // --- Persistence (own key; same guarded pattern as settings — never crash on storage failure). ---
+  // CS024 P6d: the ONE choke point for both "the achievement unlock commit" and "the lifetime-stats
+  // save" (onUnlock, tick's periodic flush, killShip and the abandon path all funnel through here) —
+  // gating it once suppresses every write a debug run (game.debugRun) could otherwise leave behind.
+  // In-memory state (lifetime counters, tier progress, toasts) is untouched: only the write is skipped.
   save() {
+    if (game.debugRun) return;
     const ls = storageOK(); if (!ls) return;
     try {
       const data = {
@@ -6928,8 +6956,11 @@ function updateDeath(dt) {
     game.state = "gameover";
     // v3.6 P6: the "dying" -> "gameover" seam. Arm initials entry iff the run earned a top-10 slot;
     // otherwise the gameover screen goes straight to the (unhighlighted) table.
+    // CS024 P6d: a debug run (game.debugRun) never offers initials entry, qualifying score or not —
+    // HighScores.add() is only ever reachable through commitEntry(), so gating the entry here is what
+    // suppresses that persistence point ("no high-score entry" — the standing suppression contract).
     game.lastScoreId = null;
-    game.entry = HighScores.qualifies(game.score) ? { initials: [0, 0, 0], idx: 0 } : null;
+    game.entry = (!game.debugRun && HighScores.qualifies(game.score)) ? { initials: [0, 0, 0], idx: 0 } : null;
     if (game.entry) resetMenuNav(); // a stick held through the spectacle mustn't fire a phantom first move
   }
 }
@@ -8403,6 +8434,9 @@ function drawHUD() {
       ctx.fillRect(Math.max(0, c[0] - R), Math.max(0, c[1] - R), R, R);
     }
   }
+  // CS024 P6d: the visible tell for a debug run — without it, a good score silently failing to record
+  // is baffling. Centered top, dim, reflows nothing (every other readout is left/right-column).
+  if (game.debugRun) drawText("DEBUG RUN", VIEW_W / 2, 18, 14, COLOR.dim, "center");
   drawText(String(game.score).padStart(6, "0"), 30, 46, 30, COLOR.text, "left");
   // v3.3 P1 (spec §7): "LEVEL" is the player-facing label for game.wave — moved from the dim,
   // easy-to-miss top-right corner into the left column, lit like the other HUD readouts. game.wave /

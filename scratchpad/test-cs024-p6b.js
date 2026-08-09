@@ -548,7 +548,8 @@ function evalSlice(literal) {
   // LEVER level, so it is asserted there — the registry names exactly the same levers in exactly the
   // same order, and the only thing about them P6b touched is the derived slider step of the nine
   // restaged UFO knobs.
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 67, "G: TRAP 2 — 67 value entries (CS024 P6c's three rows per lever)");
+  // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 68, "G: TRAP 2 — 68 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -564,7 +565,10 @@ function evalSlice(literal) {
       }
       return out.join(",");
     };
-    eq(collapse(X.DEBUG_VARS), collapse(OLD.DEBUG_VARS),
+    // CS024 P6d repoint: strip the trailing `startLevel` knob (P6d, GLOBAL, appended after this phase's
+    // own registry footprint) before the comparison — the claim under test is P6b's, not P6d's.
+    const collapsedX = collapse(X.DEBUG_VARS).replace(/,startLevel$/, "");
+    eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
     // still is: it moved off the pre-P6b build, and it still equals one odometer step of the curve.

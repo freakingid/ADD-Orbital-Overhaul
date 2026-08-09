@@ -213,13 +213,14 @@ let X = null;
   eq(X.LEVERS.length, 17, "A: still 17 levers — P6c adds knobs, not levers");
   // THE COUNT, MEASURED AND THEN PINNED (the spec deliberately does not predict it): 16 non-lever
   // rows survive P6's registry unchanged, and 17 levers x 3 = 51 replace P5's 17 flat rows.
-  eq(X.DEBUG_ENTRIES.length, 67, "A: the registry holds exactly 67 value entries (16 non-lever + 51 lever)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 67, "A: ...and DEBUG_VARS agrees");
+  // CS024 P6d repoint: registry 67 -> 68 (+1 non-lever `startLevel` GLOBAL knob, gate tooling, no lever).
+  eq(X.DEBUG_ENTRIES.length, 68, "A: the registry holds exactly 68 value entries (17 non-lever + 51 lever)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 68, "A: ...and DEBUG_VARS agrees");
   eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, 51,
     "A: ...51 of them are lever knobs");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 2, "A: DEBUG_ROWS is still the registry plus Dump + Back");
-  eq(Object.keys(X.DEBUG).length, 67, "A: the native DEBUG map agrees with the registry");
-  eq(Object.keys(X.debugShown).length, 67, "A: ...and so does the display map");
+  eq(Object.keys(X.DEBUG).length, 68, "A: the native DEBUG map agrees with the registry");
+  eq(Object.keys(X.debugShown).length, 68, "A: ...and so does the display map");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -586,7 +587,8 @@ let X = null;
   // A NON-LEVER KNOB BELONGS TO NO CHAIN and must not look as though it does.
   const leverRowIds = new Set(LEVER_IDS.flatMap(id => [id + "Floor", id + "Ceil", id + "Steps"]));
   const nonLever = X.DEBUG_ENTRIES.filter(e => !leverRowIds.has(e.id));
-  eq(nonLever.length, 16, "G: 16 non-lever knobs survive P6's registry");
+  // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no chain, no lever markings).
+  eq(nonLever.length, 17, "G: 17 non-lever knobs survive P6/P6d's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);
