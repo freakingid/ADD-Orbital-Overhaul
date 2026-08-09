@@ -240,9 +240,19 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     "A: shieldBounce is BYTE-UNCHANGED — derived from, not edited");
   eq(bodyOf(scriptSrc, "function shieldDeflect(obj) {"), bodyOf(preSrc, "function shieldDeflect(obj) {"),
     "A: ...and so is shieldDeflect");
-  // TRAP 2: coalesceGarbage and the Garbage class are out of scope entirely.
-  eq(bodyOf(scriptSrc, "function coalesceGarbage(dt) {"), bodyOf(preSrc, "function coalesceGarbage(dt) {"),
-    "A: TRAP 2 — coalesceGarbage is BYTE-UNCHANGED; canisters do not bounce");
+  // TRAP 2: coalesceGarbage and the Garbage class are out of scope for CS023 P2 (this phase never
+  // touches either). REPOINTED BY CS024 P2 (spec §1.8): a LATER, unrelated phase deleted the dead
+  // GARBAGE_CLUMP_MAXSPD off-by-default clamp guard (`if (GARBAGE_CLUMP_MAXSPD !== Infinity) {...}`,
+  // permanently false since the constant was a literal `Infinity`) and its now-orphaned
+  // clampGarbageSpeed() callee — that guard never fired at any point in this file's own history, so no
+  // canister ever bounced off the CS023 P2 rewrite either way. The pin is repointed to prove the ONLY
+  // diff from the pre-CS024-P2 body is that exact deletion, so this TRAP still catches an unrelated
+  // change to the merge/attraction logic it actually cares about.
+  const preCoalesce = bodyOf(preSrc, "function coalesceGarbage(dt) {");
+  const deadGuard = `\n      if (GARBAGE_CLUMP_MAXSPD !== Infinity) { // off-by-default playtest clamp\n        clampGarbageSpeed(a); clampGarbageSpeed(b);\n      }`;
+  assert(preCoalesce.includes(deadGuard), "A: TRAP 2 (setup) — the pre-CS024-P2 body really does contain the dead clamp guard verbatim");
+  eq(bodyOf(scriptSrc, "function coalesceGarbage(dt) {"), preCoalesce.replace(deadGuard, ""),
+    "A: TRAP 2 — coalesceGarbage's only diff from HEAD is CS024 P2's dead-clamp-guard deletion; canisters still do not bounce");
   eq(bodyOf(scriptSrc, "class Garbage {"), bodyOf(preSrc, "class Garbage {"),
     "A: TRAP 2 — the Garbage class is BYTE-UNCHANGED");
   // REPOINTED BY CS024 P1: destroyDebris can no longer be byte-pinned against the pre-CS023-P2 build,
@@ -360,7 +370,9 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // (orbitGravityAccel -> debrisDriftAccel, ORBIT_GRAVITY_* -> DEBRIS_DRIFT_*). CS024 P1 REMOVES THE DRIFT
   // ENTIRELY (spec §1.5/§4.1), so every one of those claims inverts to an ABSENCE — which is the form
   // that now does the work, since a silently-restored drift is the thing this file should catch.
-  eq(X.DEBUG_ENTRIES.length, 35, "A: TRAP 4 REPOINTED BY CS024 P1 — the debug registry is 35 value entries");
+  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
+  // via the FREQ_JITTER constant instead).
+  eq(X.DEBUG_ENTRIES.length, 34, "A: TRAP 4 REPOINTED BY CS024 P2 — the debug registry is 34 value entries");
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
     "debrisBounceRestitution",
     "A: REPOINTED BY CS024 P1 — debrisBounceRestitution is the ONLY survivor of CS023 P4's two knobs; debrisDriftAccel is gone");

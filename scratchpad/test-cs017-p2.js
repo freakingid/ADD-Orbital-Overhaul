@@ -73,12 +73,13 @@ const RETURN = [
   "levelDef", "junkSpeedMul", "largeHunterCap",                                        // CS018 P4 repoint
   "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
   "ufoAccuracyRad",                                    // CS018 P7 (section B: tiered saucer aim error)
-  "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "AudioSys",
   // CS024 P1: the eight ORBIT_* constants and the three orbit functions (generateOrbitLayout,
   // orbitGapMult, activeRingsFor) CS021 P2 added here are REMOVED — they no longer exist in the build, so
   // exporting them threw a ReferenceError out of the factory's own return statement. SHIP_RADIUS and
   // DEBRIS_RADII went with them: they were pulled in only to feed the ring generator's geometry arguments.
+  // CS024 P2: SAUCER_GAP_FLOOR_MIN/CEIL_MIN/FLOOR_MAX/CEIL_MAX are REMOVED (dead constants, spec §1.8) —
+  // dropped from this list rather than repointed, since none was ever destructured or asserted on below.
 ];
 
 // CS024 P1 REMOVED orbitTotalAt(). The helper existed to recompute what an ORBIT level's nextWave()
@@ -201,7 +202,9 @@ const TIER_NAMES = ["low", "normal", "high"];
     // ramp() — they log the jittered-interval bounds around the ufoAppearFreq TIER centre.
     const appearTier = def.ufoAppearFreq;
     const appearCenter = appearTier === "low" ? A.DEBUG.ufoAppearFreqLow : appearTier === "high" ? A.DEBUG.ufoAppearFreqHigh : A.DEBUG.ufoAppearFreqNormal;
-    const appearJitter = A.DEBUG.freqJitter / 100;
+    // CS024 P2: freqJitter is no longer a live DEBUG knob — jitteredInterval() reads the frozen
+    // FREQ_JITTER constant (0.25) instead. Same expected value, different source.
+    const appearJitter = 0.25;
     const expGapMin = appearCenter * (1 - appearJitter);
     const expGapMax = appearCenter * (1 + appearJitter);
     assert(Math.abs(row.saucerGapMin - expGapMin) < 1e-9, `B: wave ${w}: saucerGapMin expected ${expGapMin}, got ${row.saucerGapMin}`);

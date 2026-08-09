@@ -44,7 +44,7 @@ const returnList = [
   "DebrisSatellite", "Garbage",
   "destroyDebris", "updateChain", "scatterChain", "chainMass",
   "DEBRIS_GARBAGE", "DEBRIS_SCORE",
-  "GARBAGE_PICKUP", "GARBAGE_DECAY", "DEBUG",
+  "GARBAGE_PICKUP", "DEBUG",
   "CHAIN_LINK", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG",
   "WORLD_W", "WORLD_H"
@@ -58,7 +58,7 @@ const {
   startGame, update, game, keys,
   DebrisSatellite, Garbage,
   destroyDebris, updateChain, scatterChain, chainMass,
-  DEBRIS_GARBAGE, GARBAGE_DECAY,
+  DEBRIS_GARBAGE,
   GARBAGE_PICKUP, DEBUG,
   CHAIN_LINK, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG,
@@ -96,7 +96,7 @@ function node(x, y, mass) {
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (garbage decays on DEBUG.garbageLifetime=${DEBUG.garbageLifetime}, CS015 P6; was the frozen GARBAGE_DECAY=${GARBAGE_DECAY} single-only)`);
+console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (garbage decays on DEBUG.garbageLifetime=${DEBUG.garbageLifetime}, CS015 P6; the frozen pre-P6 GARBAGE_DECAY=22 single-only const was deleted as dead in CS024 P2)`);
 
 // =====================================================================
 // (A) full lineage: 1 large -> 3 mediums -> 9 smalls = 13 kills, 13*DEBRIS_GARBAGE canisters

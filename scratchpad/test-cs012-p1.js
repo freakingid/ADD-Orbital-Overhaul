@@ -76,7 +76,9 @@ function makeLocalStorage() {
 
 const RETURN = [
   "game", "startGame", "update", "Saucer", "angleTo", "levelDef", "ufoAccuracyRad", "DEBUG",
-  "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
+  // CS024 P2: SAUCER_AIM_ERR_FLOOR/CEIL and SAUCER_ACCURACY_RAMP_SCALE are REMOVED (dead constants,
+  // spec §1.8) — dropped from this list; section (retirement) below probes for their absence instead.
+  'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
 ];
 
 // AudioContext ctor omitted -> AudioSys.ctx stays null (the (E) case); Saucer/aim logic never
@@ -117,19 +119,24 @@ function actualAimErr(inst, wave) {
   return Math.atan2(Math.sin(diff), Math.cos(diff)); // normalize to (-pi, pi]
 }
 
-// ================= (retirement) the scaled-wave formula's three consts are unread =====================
+// ================= (retirement) the scaled-wave formula's three consts are gone =====================
 (function () {
-  console.log("(retirement) SAUCER_AIM_ERR_FLOOR/_CEIL and SAUCER_ACCURACY_RAMP_SCALE have zero live readers");
+  console.log("(retirement) SAUCER_AIM_ERR_FLOOR/_CEIL and SAUCER_ACCURACY_RAMP_SCALE are gone (CS024 P2)");
   // Strip trailing `//` doc comments too (e.g. "was ramp(SAUCER_AIM_ERR_FLOOR, ...)" on a live line
   // documenting what it replaced) — only actual CODE usage counts as a "reader".
   const codeOnly = currentSrc.split("\n")
     .map(l => l.replace(/\/\/.*$/, ""))
     .filter(l => l.trim() !== "");
+  const inst = buildInstance();
+  // REPOINTED BY CS024 P2 (spec §1.8): these three were "documented, unread" at CS012/CS018 P7 — now
+  // they are deleted outright (dead-constant sweep). The claim inverts from "still defined" to
+  // "does not exist".
   for (const id of ["SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE"]) {
     const hits = codeOnly.filter(l => l.includes(id) && !l.trim().startsWith(`const ${id}`));
     assert(hits.length === 0, `retirement: ${id} has zero readers left (found: ${JSON.stringify(hits)})`);
-    assert((currentSrc.match(new RegExp(`const ${id}\\s*=`, "g")) || []).length === 1,
-      `retirement: ${id} is still defined (documented, unread)`);
+    assert(inst.probe(id) === "__ReferenceError__", `retirement: ${id} does not exist (deleted, CS024 P2)`);
+    assert((currentSrc.match(new RegExp(`const ${id}\\s*=`, "g")) || []).length === 0,
+      `retirement: ...and no declaration remains either`);
   }
 })();
 

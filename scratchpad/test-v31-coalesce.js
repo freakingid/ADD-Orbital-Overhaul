@@ -76,7 +76,7 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
   "levelDef", "largeHunterCount", "largeHunterCap",
-  "GARBAGE_DECAY", "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
+  "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
   "settings", "DEBUG",
@@ -91,10 +91,14 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
   destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
   levelDef, largeHunterCount, largeHunterCap,
-  GARBAGE_DECAY, GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
+  GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
   MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
   WORLD_W, WORLD_H, CARGO_BASE } = G;
+// GARBAGE_DECAY (22) was a dead constant, deleted in CS024 P2 (declaration-and-comment only, zero
+// live readers — superseded by the live DEBUG.garbageLifetime knob). Kept here as a local historical
+// literal since this file's economy-relationship assertions are built around it.
+const GARBAGE_DECAY = 22;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {

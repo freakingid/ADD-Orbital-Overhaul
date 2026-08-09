@@ -67,10 +67,9 @@ function makeCtx(canvasStub) {
 const RETURN = [
   "startGame", "update", "nextWave", "game", "settings",
   "DebrisSatellite", "HunterSatellite", "Saucer",
-  "ramp", "difficultyFactor", "leverScale",
+  "ramp", "difficultyFactor",
   "levelDef", "junkSpeedMul", "DEBRIS_SPEEDS",              // CS018 P4 (sections B, F)
   "DEBUG",                                                  // CS018 P6 (section F: tiered saucer gap)
-  "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
   "MusicSys", "AudioSys",
   // CS024 P1: the eight ORBIT_* constants and the three orbit functions (generateOrbitLayout,
@@ -78,6 +77,9 @@ const RETURN = [
   // build, so exporting them threw a ReferenceError out of the factory's own return statement. SHIP_RADIUS
   // and DEBRIS_RADII went with them: they were pulled in only to feed the ring generator's geometry
   // arguments.
+  // CS024 P2: leverScale (and the SAUCER_GAP_* floor/ceil constants it neighboured, which had zero live
+  // readers besides declaration comments) are REMOVED outright — dropped from this list rather than
+  // repointed, since neither was ever destructured or asserted on below, only pulled in as scope filler.
   // A scope probe, so section (E) can ask "does this identifier exist at all?" without the factory's
   // own return statement throwing a ReferenceError on a retired symbol. Direct eval keeps the script
   // block's lexical scope, so this sees exactly what the game's own code would see.
@@ -320,7 +322,9 @@ function build() {
     assert(g.saucers.length === 1, `F: level ${w}: forcing the spawn timer produced exactly one saucer`);
     const tier = A.levelDef(g.wave).ufoAppearFreq;
     const center = tier === "low" ? A.DEBUG.ufoAppearFreqLow : tier === "high" ? A.DEBUG.ufoAppearFreqHigh : A.DEBUG.ufoAppearFreqNormal;
-    const expGapLo = center * (1 - A.DEBUG.freqJitter / 100);
+    // CS024 P2: freqJitter is no longer a live DEBUG knob — jitteredInterval() reads the frozen
+    // FREQ_JITTER constant (0.25) instead. Same expected value, different source.
+    const expGapLo = center * (1 - 0.25);
     assert(Math.abs(g.saucerTimer - expGapLo) < 1e-9,
       `F: level ${w}: saucer gap (Math.random pinned to 0) expected the tier's jitter lower bound=${expGapLo}, got ${g.saucerTimer}`);
   }

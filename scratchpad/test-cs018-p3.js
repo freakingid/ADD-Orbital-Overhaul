@@ -77,7 +77,7 @@ function makeLocalStorage() {
 }
 const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "levelDef", "stepAt",
                 "junkSpeedMul", "bonusSpawnChance", "JUNK_CYCLE", "DEBUG", "DEBUG_VARS",
-                "DEBRIS_SPEEDS", "DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX", "DEBRIS_SPEED_PER_WAVE",
+                "DEBRIS_SPEEDS",
                 "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE",
                 "CARGO_BASE", "GAME_VERSION",
                 // CS018 P4: the cycle clock is retired, so section (E) probes for its ABSENCE instead.
@@ -152,11 +152,13 @@ let X;
   }
   eq(levelsChecked, 63, "B: REPOINTED BY CS024 P1 (inverted) — all 63 levels consume the column; the 21/42 archetype census is gone");
 
-  // The retired clamps are provably unread: static grep, non-comment lines, excluding their own defs.
+  // REPOINTED BY CS024 P2 (dead-constant sweep, spec §1.8): the retired clamps were "documented,
+  // unread" here at P3 — now they are gone outright, not merely unread. The claim inverts from
+  // "zero readers besides the declaration" to "does not exist at all".
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
-  for (const id of ["DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX"]) {
-    const hits = codeOnly.filter(l => l.includes(id) && !l.trim().startsWith(`const ${id}`));
-    eq(hits.length, 0, `B: ${id} has zero readers left (found: ${JSON.stringify(hits)})`);
+  for (const id of ["DEBRIS_COUNT_MAX", "DEBRIS_COUNT_HARD_MAX", "DEBRIS_SPEED_PER_WAVE"]) {
+    eq(X.probe(id), "__ReferenceError__", `B: ${id} does not exist (deleted, CS024 P2)`);
+    assert(!codeOnly.some(l => l.includes(id)), `B: ...and appears nowhere in executable source (historical-comment mentions are fine)`);
   }
 })();
 if (!X) { console.error("Cannot continue without a built instance."); process.exit(1); }

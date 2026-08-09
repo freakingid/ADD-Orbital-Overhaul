@@ -270,16 +270,19 @@ function fireOnce(small, wave) {
 
 // ================= (F) retirement =====================
 (function sectionF() {
-  console.log("(F) retirement: wavePressure() is gone; the three ramp-era saucer consts have zero live readers");
+  console.log("(F) retirement: wavePressure() is gone; the three ramp-era saucer consts are gone too (CS024 P2)");
   assert(X.probe("typeof wavePressure") === "undefined", "F: wavePressure is not defined anywhere in scope");
 
   // Strip trailing `//` doc comments too — only actual CODE usage counts as a "reader".
   const codeOnly = scriptSrc.split("\n").map(l => l.replace(/\/\/.*$/, "")).filter(l => l.trim() !== "");
+  // REPOINTED BY CS024 P2 (spec §1.8): these five were "documented, unread" at P7 — now they are
+  // deleted outright (dead-constant sweep). The claim inverts from "still defined" to "does not exist".
   for (const id of ["SAUCER_FIRE_MULT_FLOOR", "SAUCER_FIRE_MULT_CEIL",
                      "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE"]) {
     const hits = codeOnly.filter(l => l.includes(id) && !l.trim().startsWith(`const ${id}`));
     eq(hits.length, 0, `F: ${id} has zero readers left (found: ${JSON.stringify(hits)})`);
-    eq((scriptSrc.match(new RegExp(`const ${id}\\s*=`, "g")) || []).length, 1, `F: ${id} is still defined (documented, unread)`);
+    eq(X.probe(id), "__ReferenceError__", `F: ${id} does not exist (deleted, CS024 P2)`);
+    eq((scriptSrc.match(new RegExp(`const ${id}\\s*=`, "g")) || []).length, 0, `F: ...and no declaration remains either`);
   }
   assert(!codeOnly.some(l => l.includes("saucerAimPressure")), "F: no live reference to saucerAimPressure remains");
   assert(!codeOnly.some(l => l.includes("saucerPressureSecs")), "F: no live reference to saucerPressureSecs remains");
@@ -346,7 +349,9 @@ function fireOnce(small, wave) {
   // outright with the orbit archetype and the inward drift — spec §1.1/§1.5/§4.1/§5). First decrease this
   // pin has taken; a deliberate rebuild under CS024 §5, not a breach of the append-only rule. The
   // /^orbit/i claim is INVERTED to its positive successor rather than dropped.
-  eq(nEntries, 35, `H: DEBUG_ENTRIES count is 35 after CS024 P1 (got ${nEntries})`);
+  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
+  // the FREQ_JITTER constant instead).
+  eq(nEntries, 34, `H: DEBUG_ENTRIES count is 34 after CS024 P2 (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

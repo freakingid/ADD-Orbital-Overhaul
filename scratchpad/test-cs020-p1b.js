@@ -409,9 +409,11 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // outright with the orbit archetype and the inward drift — spec §1.1/§1.5/§4.1/§5). This phase's own
   // claim — that CS020 P1b adds exactly one knob, under a DELIVERY header placed between CHAIN GUARD and
   // JUNK — is unaffected and is still asserted directly below; only the live total moves.
+  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
+  // via the FREQ_JITTER constant instead).
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 35, "A: DEBUG_VARS holds 35 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 35, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 34, "A: DEBUG_VARS holds 34 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 34, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");
@@ -488,7 +490,7 @@ const dockBlockCode = stripComments(dockBlockSrc);
   const c = clean(X, { level: 1, nodes: 8 });
   eq(c.hooked, 8, "B: (setup) 8 canisters really were hooked through the real pickup gate");
   eq(c.cargoMax, 8, "B: (setup) level 1's payload cap is 8 — spec 2.2's staging");
-  eq(X.game.dock.radius, 88, "B: (setup) dock.radius is 88 (DOCK_RADIUS 44, LEVER_DOCK_SIZE's permanent 2x)");
+  eq(X.game.dock.radius, 88, "B: (setup) dock.radius is 88 (DOCK_RADIUS baked to 88 as of CS024 P2, was 44 x leverScale's permanent 2x)");
   eq(c.deliveryCount, 8, "B: CLEAN PASS — the whole load delivers as one run of 8");
   eq(c.score, 1100, "B: CLEAN PASS — 1100 points (50+75+...+225)");
   eq(c.left, 0, "B: CLEAN PASS — the chain is empty");

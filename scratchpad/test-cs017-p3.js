@@ -82,14 +82,12 @@ function makeCtx(canvasStub) {
 const RETURN = [
   "startGame", "update", "nextWave", "destroyDebris", "game",
   "DebrisSatellite", "HunterSatellite", "Saucer",
-  "ramp", "difficultyFactor", "leverScale",
+  "ramp", "difficultyFactor",
   "levelDef", "stepAt", "junkSpeedMul", "JUNK_CYCLE", "PHASE_LEN", "LEVEL_MAX", "DEBUG",
   "ufoFireMult",                                              // CS018 P7 (section F: tiered fire mult)
   "DEBRIS_SPEED_CAP", "DEBRIS_SPEEDS", "SHIP_MAX_SPEED",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
-  "SAUCER_FIRE_MULT_FLOOR", "SAUCER_FIRE_MULT_CEIL",
   "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL",
-  "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "DiffLog", "AudioSys",
   // Scope probe (same idiom as test-cs017-p1 §E): asks "does this identifier exist at all?" without the
   // factory's own return statement throwing a ReferenceError on a retired symbol.
@@ -97,6 +95,10 @@ const RETURN = [
   // CS024 P1: the eight ORBIT_* constants and the three orbit functions CS021 P2 added here are REMOVED —
   // they no longer exist in the build, so exporting them threw a ReferenceError out of the factory's own
   // return statement. SHIP_RADIUS and DEBRIS_RADII went with them (ring-geometry arguments only).
+  // CS024 P2: leverScale, SAUCER_FIRE_MULT_FLOOR/CEIL and SAUCER_GAP_FLOOR/CEIL_MIN/MAX are REMOVED from
+  // the CURRENT build (dead constants + the leverScale mechanism, spec §1.6/§1.8) — dropped from THIS
+  // list only. RETURN_HEAD below still names them: that build is a fixed pre-P3 historical SHA where they
+  // genuinely still exist, and section (F) reads them off H, never off W.
 ];
 
 // The pre-P3 build has none of the CS017 P3 constants, so section (F) builds it with its own narrower list.

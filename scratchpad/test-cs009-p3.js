@@ -66,14 +66,17 @@ global.localStorage = {
 
 const returnList = [
   "startGame", "update", "game", "AudioSys",
-  "CARGO_BASE", "CARGO_CAP_MAX", "CARGO_GROW_PER", "HUD_CAP_FLASH"
+  "CARGO_BASE", "CARGO_CAP_MAX", "HUD_CAP_FLASH"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
   scriptSrc + "\n;return { " + returnList.join(", ") + " };"
 );
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
-const { startGame, update, game, CARGO_BASE, CARGO_CAP_MAX, CARGO_GROW_PER, HUD_CAP_FLASH } = A;
+const { startGame, update, game, CARGO_BASE, CARGO_CAP_MAX, HUD_CAP_FLASH } = A;
+// CARGO_GROW_PER (30) was a dead constant, deleted in CS024 P2 (declaration-and-comment only, zero
+// live readers) — kept here as a local historical literal since this file's math is built around it.
+const CARGO_GROW_PER = 30;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }

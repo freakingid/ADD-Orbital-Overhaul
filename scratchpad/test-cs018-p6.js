@@ -101,7 +101,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 
 // ================= (B) DEBUG_VARS registry =====================
 (function sectionB() {
-  console.log("(B) DEBUG_VARS: UFO MOVEMENT (9) + GLOBAL (2) entries, saucerGapPressure gone");
+  console.log("(B) DEBUG_VARS: UFO MOVEMENT (9) entries, GLOBAL down to 1 (freqJitter removed, CS024 P2), saucerGapPressure gone");
 
   const hIdx = X.DEBUG_VARS.findIndex(v => v.header === "UFO MOVEMENT");
   assert(hIdx >= 0, "B: a UFO MOVEMENT section header exists in DEBUG_VARS");
@@ -116,9 +116,14 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 
   const gIdx = X.DEBUG_VARS.findIndex(v => v.header === "GLOBAL");
   assert(gIdx >= 0, "B: a GLOBAL section header exists in DEBUG_VARS");
-  const globalIds = X.DEBUG_VARS.slice(gIdx + 1, gIdx + 3).map(v => v.id);
-  assert(deepEq(globalIds, ["freqJitter", "sweepCoalescePause"]),
-    `B: GLOBAL header immediately followed by freqJitter, sweepCoalescePause (got ${JSON.stringify(globalIds)})`);
+  // REPOINTED BY CS024 P2 (spec §1.8/§5): freqJitter is removed from the registry — jitteredInterval()
+  // now reads a frozen FREQ_JITTER constant (0.25) instead of a live knob. GLOBAL is down to its one
+  // surviving entry.
+  const globalIds = X.DEBUG_VARS.slice(gIdx + 1, gIdx + 2).map(v => v.id);
+  assert(deepEq(globalIds, ["sweepCoalescePause"]),
+    `B: GLOBAL header immediately followed by sweepCoalescePause only, freqJitter removed (got ${JSON.stringify(globalIds)})`);
+  assert(!X.DEBUG_VARS.some(v => v.id === "freqJitter"), "B: freqJitter entry is gone from DEBUG_VARS (CS024 P2)");
+  assert(!("freqJitter" in X.DEBUG), "B: DEBUG.freqJitter is gone (CS024 P2)");
 
   const specs = {
     ufoFlightSpeedLow:      { unit: "px/s", def: 120, min: 20, max: 600, step: 2 },
@@ -130,7 +135,6 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
     ufoDirChangeFreqLow:    { unit: "s",    def: 2.0, min: 0.1, max: 10, step: 0.1 },
     ufoDirChangeFreqNormal: { unit: "s",    def: 1.3, min: 0.1, max: 10, step: 0.1 },
     ufoDirChangeFreqHigh:   { unit: "s",    def: 0.8, min: 0.1, max: 10, step: 0.1 },
-    freqJitter:             { unit: "%",    def: 25,  min: 0,  max: 90,  step: 5 },
     sweepCoalescePause:     { unit: "s",    def: 10,  min: 0,  max: 60,  step: 1 },
   };
   for (const [id, spec] of Object.entries(specs)) {
@@ -302,20 +306,26 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   console.log("(F) jitteredInterval(): exactly one implementation, percentage-based, shared by both consumers");
   eq((scriptSrc.match(/function jitteredInterval\(/g) || []).length, 1, "F: exactly one jitteredInterval definition");
 
+  // REPOINTED BY CS024 P2 (spec §1.8/§5): freqJitter is no longer a live debug knob — jitteredInterval()
+  // reads a frozen FREQ_JITTER constant instead, so this section's old "the knob actually moves the
+  // spread" claim is replaced by its mirror image: the spread is FIXED at 25% regardless of anything
+  // applyDebug can do, because there is no longer a knob id to feed it.
+  assert(!X.DEBUG_VARS.some(v => v.id === "freqJitter"), "F: no freqJitter knob exists to drive jitteredInterval() with");
+  eq((scriptSrc.match(/FREQ_JITTER\s*=\s*0\.25/g) || []).length, 1, "F: exactly one FREQ_JITTER = 0.25 declaration");
   X.game.wave = 1;
-  X.applyDebug("freqJitter", 0);
-  eq(X.jitteredInterval(10), 10, "F: freqJitter=0 collapses jitteredInterval to the exact centre");
-  X.applyDebug("freqJitter", 50);
+  let sawAbove = false, sawBelow = false;
   for (let i = 0; i < 200; i++) {
     const v = X.jitteredInterval(10);
-    assert(v >= 5 - 1e-9 && v <= 15 + 1e-9, `F: freqJitter=50% keeps jitteredInterval(10) within [5,15] (got ${v})`);
+    assert(v >= 7.5 - 1e-9 && v <= 12.5 + 1e-9, `F: jitteredInterval(10) stays within the frozen ±25% band [7.5,12.5] (got ${v})`);
+    if (v > 10) sawAbove = true;
+    if (v < 10) sawBelow = true;
   }
-  X.applyDebug("freqJitter", 25); // restore the shipped default for later sections
+  assert(sawAbove && sawBelow, "F: jitteredInterval(10) still varies both above and below its centre across 200 samples");
 })();
 
 // ================= (G) retirement: SAUCER_GAP_* and saucerGapPressure =====================
 (function sectionG() {
-  console.log("(G) retirement: SAUCER_GAP_FLOOR/CEIL and saucerGapPressure have zero live readers");
+  console.log("(G) retirement: SAUCER_GAP_FLOOR/CEIL and saucerGapPressure are gone");
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
   for (const id of ["SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_CEIL_MAX"]) {
     const hits = codeOnly.filter(l => l.includes(id) && !l.trim().startsWith(`const ${id}`));
@@ -324,22 +334,25 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   const gapPressureHits = codeOnly.filter(l => l.includes("saucerGapPressure"));
   eq(gapPressureHits.length, 0, `G: saucerGapPressure has zero live references anywhere (found: ${JSON.stringify(gapPressureHits)})`);
 
-  // The two retired constants still exist as documented values (grep confirms exactly one definition each).
+  // REPOINTED BY CS024 P2 (spec §1.8): these four were "documented, unread" at P6 — now they are
+  // deleted outright (dead-constant sweep). The claim inverts from "still defined" to "does not exist".
   for (const id of ["SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_CEIL_MAX"]) {
-    eq((scriptSrc.match(new RegExp(`const ${id}\\s*=`, "g")) || []).length, 1, `G: ${id} is still defined (documented, unread)`);
+    eq(X.probe(id), "__ReferenceError__", `G: ${id} does not exist (deleted, CS024 P2)`);
+    eq((scriptSrc.match(new RegExp(`const ${id}\\s*=`, "g")) || []).length, 0, `G: ...and no declaration remains either`);
   }
 })();
 
 // ================= (H) persistence round-trip =====================
 (function sectionH() {
-  console.log("(H) the 11 new fields round-trip through afd_settings_v1.debug across a reload");
+  // REPOINTED BY CS024 P2: freqJitter is gone (spec §1.8/§5), so this now round-trips 10 fields, not 11.
+  console.log("(H) the 10 surviving fields round-trip through afd_settings_v1.debug across a reload");
   const inst = build();
   const A = inst.exports;
   const newIds = [
     "ufoFlightSpeedLow", "ufoFlightSpeedNormal", "ufoFlightSpeedHigh",
     "ufoAppearFreqLow", "ufoAppearFreqNormal", "ufoAppearFreqHigh",
     "ufoDirChangeFreqLow", "ufoDirChangeFreqNormal", "ufoDirChangeFreqHigh",
-    "freqJitter", "sweepCoalescePause",
+    "sweepCoalescePause",
   ];
   const want = {};
   for (const id of newIds) {
@@ -395,7 +408,9 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // drift (spec §1.1/§1.5/§4.1/§5) — a deliberate registry REBUILD under CS024 §5, not a violation of the
   // append-only rule that governed every increase above. The /^orbit/i claim is INVERTED rather than
   // deleted, per the standing convention: "none match" is the assertion that catches a knob creeping back.
-  eq(nEntries, 35, `I: DEBUG_ENTRIES count is 35 after CS024 P1 (got ${nEntries})`);
+  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
+  // the FREQ_JITTER constant instead). Section B/F/G/H above carry the rest of this phase's own claims.
+  eq(nEntries, 34, `I: DEBUG_ENTRIES count is 34 after CS024 P2 (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

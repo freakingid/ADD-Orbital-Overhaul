@@ -45,12 +45,14 @@ const returnList = [
   "Saucer",
   "difficultyFactor", "ramp", "RAMP_WAVES",
   "levelDef", "ufoAccuracyRad", "ufoFireMult", "DEBUG",           // CS018 P7 (section C, live wiring)
-  "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_CEIL_MAX",
   "SAUCER_FIRE_INIT", "SAUCER_FIRE_BIG", "SAUCER_FIRE_SMALL",
-  "SAUCER_FIRE_MULT_FLOOR", "SAUCER_FIRE_MULT_CEIL",
-  "SAUCER_AIM_ERR_FLOOR", "SAUCER_AIM_ERR_CEIL", "SAUCER_ACCURACY_RAMP_SCALE",
   "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL",
   "WORLD_W", "WORLD_H"
+  // CS024 P2: SAUCER_GAP_FLOOR/CEIL_MIN/MAX, SAUCER_FIRE_MULT_FLOOR/CEIL and SAUCER_AIM_ERR_FLOOR/CEIL +
+  // SAUCER_ACCURACY_RAMP_SCALE are REMOVED (dead constants, spec §1.8) — dropped from this list. The
+  // ramp()-driven sub-blocks of section (B) that tested them directly are pruned below rather than
+  // repointed: CS018 P6/P7 had already made them true statements about a formula the live game no
+  // longer runs (see the NOTEs they carried), and now the formula's own inputs don't exist either.
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -62,10 +64,7 @@ const {
   Saucer,
   difficultyFactor, ramp, RAMP_WAVES,
   levelDef, ufoAccuracyRad, ufoFireMult, DEBUG,
-  SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MIN, SAUCER_GAP_CEIL_MAX,
   SAUCER_FIRE_INIT, SAUCER_FIRE_BIG, SAUCER_FIRE_SMALL,
-  SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL,
-  SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, SAUCER_ACCURACY_RAMP_SCALE,
   SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL,
   WORLD_W, WORLD_H
 } = A;
@@ -112,44 +111,15 @@ assert(df[25] > 0.94, `A: essentially plateaued by wave 25 (>0.94, got ${df[25].
 // =====================================================================
 console.log("(B) saucer floor/ceiling interpolation, wave 1 vs wave 20");
 
-// -- spawn gap (seconds between saucers): longer early, tighter late --
-const gapMin1 = ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, 1);
-const gapMax1 = ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, 1);
-const gapMin20 = ramp(SAUCER_GAP_FLOOR_MIN, SAUCER_GAP_CEIL_MIN, 20);
-const gapMax20 = ramp(SAUCER_GAP_FLOOR_MAX, SAUCER_GAP_CEIL_MAX, 20);
-console.log(`     gap  wave1=[${gapMin1.toFixed(1)}, ${gapMax1.toFixed(1)}]s   wave20=[${gapMin20.toFixed(1)}, ${gapMax20.toFixed(1)}]s`);
-assert(near(gapMin1, 20) && near(gapMax1, 30), `B: wave-1 gap sits exactly on the floor [20,30]s (got [${gapMin1},${gapMax1}])`);
-assert(gapMin20 < gapMin1 && gapMax20 < gapMax1, "B: wave-20 gaps are tighter than wave-1 (both endpoints)");
-const gapCtr1 = (gapMin1 + gapMax1) / 2, gapCtr20 = (gapMin20 + gapMax20) / 2;
-assert(gapCtr1 - gapCtr20 > 7, `B: saucers are >7s less frequent at wave 1 than wave 20 (center ${gapCtr1.toFixed(1)}s vs ${gapCtr20.toFixed(1)}s)`);
-assert(gapMin20 < 14 && gapMax20 < 18, `B: wave-20 gap has closed toward the shipped ~12-16s cadence (got [${gapMin20.toFixed(1)},${gapMax20.toFixed(1)}])`);
+// REPOINTED BY CS024 P2 (spec §1.8, dead-constant sweep): the spawn-gap, fire-rate-multiplier and
+// aim-error sub-blocks that used to live here are DELETED, not repointed — SAUCER_GAP_FLOOR/CEIL_MIN/MAX,
+// SAUCER_FIRE_MULT_FLOOR/CEIL and SAUCER_AIM_ERR_FLOOR/CEIL + SAUCER_ACCURACY_RAMP_SCALE no longer exist,
+// so there is no formula left to interpolate. Each block's own NOTE already said the live Saucer had
+// stopped sampling ramp() for these levers as of CS018 P6/P7; section (C) below is what actually proves
+// end-to-end wiring against the tiered replacements (ufoAccuracyRad()/ufoFireMult()), and it is
+// untouched by this deletion.
 
-// -- fire-rate multiplier: slower early, easing to 1.0x --
-// NOTE (CS018 P7): this is the raw-wave ramp() curve, still a true statement about that pure helper —
-// but the LIVE Saucer no longer samples it at all for the fire multiplier; it samples the UFO WEAPONS
-// fire-frequency TIER via ufoFireMult(), tested end-to-end against a real Saucer's rollFireTimer() below
-// in section (C), which is what actually reflects live behaviour (same treatment CS012 P1 already gave
-// the aim-error curve two blocks below).
-const fmult1 = ramp(SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL, 1);
-const fmult20 = ramp(SAUCER_FIRE_MULT_FLOOR, SAUCER_FIRE_MULT_CEIL, 20);
-console.log(`     fire mult  wave1=${fmult1.toFixed(2)}x   wave20=${fmult20.toFixed(2)}x`);
-assert(near(fmult1, 1.8), `B: wave-1 fire multiplier is the 1.8x floor (got ${fmult1})`);
-assert(fmult20 < fmult1 && fmult20 < 1.12, `B: wave-20 fire multiplier eased toward 1.0x (got ${fmult20.toFixed(3)})`);
-assert(fmult20 >= SAUCER_FIRE_MULT_CEIL, "B: fire multiplier never dips below the 1.0x ceiling");
-
-// -- small-saucer aim error: much wider early, tightening late --
-// NOTE (CS012 P1): this is the raw-wave ramp() curve, still a true statement about that pure
-// helper — but the LIVE Saucer no longer samples it at the raw wave for aim error; it samples a
-// scaled wave (SAUCER_ACCURACY_RAMP_SCALE), tested end-to-end against the real fired bullet below
-// in section (C), which is what actually reflects live behaviour.
-const err1 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 1);
-const err20 = ramp(SAUCER_AIM_ERR_FLOOR, SAUCER_AIM_ERR_CEIL, 20);
-console.log(`     aim err  wave1=±${err1.toFixed(3)}rad   wave20=±${err20.toFixed(3)}rad`);
-assert(near(err1, 0.35), `B: wave-1 aim error is the ±0.35 floor (got ${err1})`);
-assert(err1 / err20 > 2.5, `B: wave-1 aim is >2.5x wider than wave-20 (${err1.toFixed(3)} vs ${err20.toFixed(3)})`);
-assert(err20 < 0.13 && err20 >= SAUCER_AIM_ERR_CEIL, `B: wave-20 aim tightened toward the ±0.09 ceiling (got ${err20.toFixed(3)})`);
-
-// -- small-saucer appearance chance: rarer early, common late --
+// -- small-saucer appearance chance: rarer early, common late — SAUCER_SMALL_CHANCE_* survives P2 --
 const chance1 = ramp(SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL, 1);
 const chance20 = ramp(SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL, 20);
 console.log(`     small-saucer chance  wave1=${(chance1*100).toFixed(0)}%   wave20=${(chance20*100).toFixed(0)}%`);

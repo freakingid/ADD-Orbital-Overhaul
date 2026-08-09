@@ -66,10 +66,18 @@ function close(got, want, msg, eps = 1e-9) {
   assert(Math.abs(got - want) < eps, `${msg} (got ${got}, want ${want}, |d| ${Math.abs(got - want).toExponential(2)})`);
 }
 
+// REPOINTED BY CS024 P2: this used to read the moving `HEAD`, which was correct only up to the moment
+// this phase's own commit landed — the same trap CS017 P3 hit and fixed the same way (see that file's
+// header). Once "cs-24 p1: remove orbit levels and the inward drift" (e6d6869) was committed, `HEAD`
+// stopped holding the pre-edit three-branch debrisBounce this section needs as its reference and
+// started holding the ALREADY-SIMPLIFIED one, making §C's own "(setup)" sanity checks fail for a reason
+// that has nothing to do with anything CS024 P2 touched. Pinned to 8540f2a ("cs-24 p0: declare CS023
+// superseded, doc banners"), the last commit before P1 landed, which still has the genuine pre-edit form.
+const PRE_P1_REF = "8540f2a";
 let headSrcCache = null;
 function headSrc() {
   if (headSrcCache === null) {
-    headSrcCache = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"],
+    headSrcCache = execFileSync("git", ["show", `${PRE_P1_REF}:asteroids-deluxe.html`],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString().match(/<script>([\s\S]*?)<\/script>/)[1];
   }
   return headSrcCache;
@@ -305,7 +313,9 @@ function atWave(X, w) {
   assert(!/R reroll orbit start angles/.test(codeOnly), "B: ...and its debug-panel footer hint with it");
 
   // --- the debug registry ---
-  eq(X.DEBUG_ENTRIES.length, 35, "B: the debug registry holds 35 value entries (46 - 10 ORBIT - debrisDriftAccel)");
+  // REPOINTED BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via the
+  // FREQ_JITTER constant instead).
+  eq(X.DEBUG_ENTRIES.length, 34, "B: the debug registry holds 34 value entries (46 - 10 ORBIT - debrisDriftAccel - freqJitter)");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,

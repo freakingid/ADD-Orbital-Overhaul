@@ -55,7 +55,7 @@ const RETURN = [
   "startGame", "update", "game", "settings",
   "DEBUG", "debugShown", "DEBUG_VARS", "applyDebug", "menuDebug",
   "Garbage", "coalesceGarbage", "AudioSys",
-  "GARBAGE_DECAY", "GARBAGE_FADE", "GARBAGE_COALESCE_DELAY", "HUNTER_COALESCE_COUNT", "WORLD_W",
+  "GARBAGE_FADE", "GARBAGE_COALESCE_DELAY", "HUNTER_COALESCE_COUNT", "WORLD_W",
   "levelDef"
 ];
 
@@ -105,13 +105,15 @@ function byId(A, id) { return A.DEBUG_VARS.find(v => v.id === id); }
   assert(!life.toNative, "B: garbageLifetime has no toNative (display === native, like scoopHitsPerLevel)");
 })();
 
-// ================= (C) seed: DEBUG.garbageLifetime === 10, independent of GARBAGE_DECAY (22) ========
+// ================= (C) seed: DEBUG.garbageLifetime === 10, independent of the old GARBAGE_DECAY (22) ==
 (function sectionC() {
-  console.log("(C) seeded default is 10, NOT the old GARBAGE_DECAY (22) — FLAG-CS015-a resolution");
+  console.log("(C) seeded default is 10, NOT the old GARBAGE_DECAY (22, deleted CS024 P2) — FLAG-CS015-a resolution");
   const A = build();
   assert(A.debugShown.garbageLifetime === 10, "C: debugShown.garbageLifetime seeded to 10");
   assert(A.DEBUG.garbageLifetime === 10, "C: DEBUG.garbageLifetime seeded to 10");
-  assert(A.GARBAGE_DECAY === 22, "C: GARBAGE_DECAY const is untouched (22) — historical reference only now");
+  // REPOINTED BY CS024 P2 (spec §1.8): GARBAGE_DECAY was a historical-reference-only dead constant —
+  // now deleted outright. The claim inverts from "untouched" to "gone".
+  assert(A.GARBAGE_DECAY === undefined, "C: GARBAGE_DECAY no longer exists (deleted, CS024 P2)");
 })();
 
 // ================= (D) menuDebug left/right clamps garbageLifetime at [1,60] step 1 ==================

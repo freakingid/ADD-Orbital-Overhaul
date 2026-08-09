@@ -606,7 +606,9 @@ function levelForCap(n) {
   // are INVERTED to their positive successors rather than deleted, per the standing repoint convention —
   // "exactly ten match /^orbit/i" becomes "NONE match", which is the assertion that would actually catch
   // a knob creeping back in.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 35, "H: DEBUG_VARS holds 35 value entries as of CS024 P1 (46 - 10 ORBIT - debrisDriftAccel)");
+  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
+  // via the FREQ_JITTER constant instead).
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 34, "H: DEBUG_VARS holds 34 value entries as of CS024 P2 (35 - freqJitter)");
   assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,

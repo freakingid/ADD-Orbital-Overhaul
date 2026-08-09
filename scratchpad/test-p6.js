@@ -52,7 +52,7 @@ const navigatorStub = { getGamepads: () => [] };
 const returnList = [
   "startGame", "update", "draw", "game", "keys",
   "updateChain", "chainAnchor", "chainMass",
-  "CARGO_BASE", "CARGO_CAP_MAX", "CARGO_GROW_PER",
+  "CARGO_BASE", "CARGO_CAP_MAX",
   "CHAIN_LINK", "CHAIN_ITER", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "ENGINE_MASS_MULT", "DOCK_OFFLOAD_INTERVAL",
   "DOCK_RADIUS", "DOCK_POWERUP_SPEED", "shortDelta", "WORLD_W", "WORLD_H"
@@ -65,11 +65,15 @@ const A = factory(windowStub, documentStub, performanceStub, () => 0, navigatorS
 const {
   startGame, update, draw, game, keys,
   updateChain, chainAnchor, chainMass,
-  CARGO_BASE, CARGO_CAP_MAX, CARGO_GROW_PER,
+  CARGO_BASE, CARGO_CAP_MAX,
   CHAIN_LINK, CHAIN_ITER, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, ENGINE_MASS_MULT, DOCK_OFFLOAD_INTERVAL,
   DOCK_RADIUS, DOCK_POWERUP_SPEED, shortDelta, WORLD_W, WORLD_H
 } = A;
+// CARGO_GROW_PER (30) was a dead constant, deleted in CS024 P2 (declaration-and-comment only, zero
+// live readers) — kept here as a local historical literal since section (B) below builds its math
+// around the old delivery-count threshold it used to name.
+const CARGO_GROW_PER = 30;
 
 // The old fixed constant must be gone (it was replaced by game.cargoMax + CARGO_BASE).
 const CHAIN_MAX_GONE = (A.CHAIN_MAX === undefined) && !/const\s+CHAIN_MAX\b/.test(scriptSrc);
@@ -347,9 +351,10 @@ assert(ticksToEmpty === CARGO_CAP_MAX, `F: one canister peeled off per DOCK_OFFL
 console.log("(G) recycle hub emits one powerup per 8/12/16/20 threshold crossed in a visit");
 
 // Deliver `n` canisters in one visit (forcing an offload each frame) and report what happened.
-// The ship parks just inside the "nearDock" cutoff (DOCK_RADIUS+10 = 54px) but well outside the
-// powerup pickup radius (43px — POWERUP_RADIUS is pinned at LEVER_POWERUP_SIZE's disabled 2x, per
-// asteroids-deluxe.html's leverScale — NOT the raw 15px constant), so a hub powerup launched FROM
+// The ship parks just inside the "nearDock" cutoff (DOCK_RADIUS+10, live-computed off the current
+// DOCK_RADIUS rather than a stale literal) but well outside the powerup pickup radius (POWERUP_RADIUS
+// is permanently 30 as of CS024 P2, baking in the old leverScale mechanism's shipped-disabled 2x —
+// see asteroids-deluxe.html's POWERUP_RADIUS declaration), so a hub powerup launched FROM
 // the dock's center isn't standing inside the ship's own pickup radius the instant it spawns (that
 // would auto-collect it before this test could observe the emission at all — an artifact of a
 // stationary test ship, not a game bug). The ship is moved to its resting spot BEFORE fillChain
