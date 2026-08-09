@@ -111,10 +111,8 @@ const RETURN = [
   // its parent, for the derived-from-shieldBounce claims
   "shieldBounce", "SHIELD_BOUNCE_RESTITUTION", "SHIELD_BOUNCE_MIN", "SHIELD_RADIUS",
   // the orbit surface every rail-state expectation derives from
-  "generateOrbitLayout", "activeRingsFor", "orbitEffectiveCount", "orbitRadiusStepFor",
-  "orbitGapMult", "orbitEffectiveGapMult", "orbitTangent",
-  "ORBIT_LEVEL_EVERY", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_RING_COUNT",
-  "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_MULT", "ORBIT_FAST_RING",
+  // PRUNED BY CS024 P1: the seven orbit functions and eight ORBIT_* constants exported here no longer
+  // exist in the build, so the factory's own return statement threw a ReferenceError on load.
   // shared constants every expectation derives from — never a restated literal
   "DEBRIS_RADII", "DEBRIS_SPEEDS", "DEBRIS_SPEED_CAP", "SHIP_RADIUS", "SHIP_MAX_HP",
   "WORLD_W", "WORLD_H", "worldDims", "worldSizeFor", "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT",
@@ -168,15 +166,12 @@ function atWave(X, w) {
   X.nextWave();
   return X.game.debris.length;
 }
-// The first level at which the ramp has laid `want` rings. Derived from activeRingsFor(), never
-// hardcoded — CS022 P3's own Known-issues idiom, and CS023 P1 inverted the ramp under it.
-function levelWithRings(X, want) {
-  let n = X.ORBIT_LEVEL_EVERY;
-  while (X.activeRingsFor(n).length < want && n < 400) n += X.ORBIT_LEVEL_EVERY;
-  return n;
-}
-const railBodies = X => X.game.debris.filter(d => !d.dead && d.orbitCenter);
-const freeBodies = X => X.game.debris.filter(d => !d.dead && !d.orbitCenter);
+// PRUNED BY CS024 P1: levelWithRings() (the first level at which the ramp had laid `want` rings) and
+// railBodies() are gone with the rings. RING_LEVEL is what the rail-staging sites used to reach for — an
+// ordinary level, since every level is now the same kind — kept as one named constant so the pruned
+// sites still read as "a level deep enough to have a full field".
+const RING_LEVEL = 12;
+const freeBodies = X => X.game.debris.filter(d => !d.dead);
 
 // A bare free satellite at a chosen place and velocity. The constructor's own random drift is
 // overwritten, exactly as spawnOrbitWave overwrites it with orbitSyncVelocity — this is staging, not a
@@ -186,10 +181,11 @@ function freeSat(X, x, y, size, vx, vy) {
   d.x = x; d.y = y; d.vx = vx; d.vy = vy;
   return d;
 }
-// The twelve fields CS021 P1b §E pinned on a rail-borne hazard across a shieldBounce. Same twelve here,
-// for the same reason and against the same claim: the rail is authoritative and NOTHING may write to it.
-const TWELVE = ["x", "y", "vx", "vy", "angle", "spin", "orbitAngle", "orbitRadius", "orbitAngVel",
-                "orbitCenter", "dead", "guardT"];
+// REPOINTED BY CS024 P1: was TWELVE — CS021 P1b §E's twelve fields pinned on a RAIL-BORNE hazard across a
+// shieldBounce, of which four (orbitAngle / orbitRadius / orbitAngVel / orbitCenter) were rail state and
+// no longer exist on a DebrisSatellite. The remaining EIGHT still carry the claim that matters for the
+// surviving free/SAUCER branch: the fixed partner is authoritative and NOTHING may write to it.
+const TWELVE = ["x", "y", "vx", "vy", "angle", "spin", "dead", "guardT"];
 const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return o; };
 
 // ================= (A, part 2) source pins (spec §6 item 20) =====================
@@ -249,26 +245,50 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     "A: TRAP 2 — coalesceGarbage is BYTE-UNCHANGED; canisters do not bounce");
   eq(bodyOf(scriptSrc, "class Garbage {"), bodyOf(preSrc, "class Garbage {"),
     "A: TRAP 2 — the Garbage class is BYTE-UNCHANGED");
-  eq(bodyOf(scriptSrc, "function destroyDebris(a, awardScore = true) {"), bodyOf(preSrc, "function destroyDebris(a, awardScore = true) {"),
-    "A: destroyDebris is BYTE-UNCHANGED — this phase creates and destroys nothing");
+  // REPOINTED BY CS024 P1: destroyDebris can no longer be byte-pinned against the pre-CS023-P2 build,
+  // because CS024 removed CS021 P1's rail handoff from its split branch (the `const tangent =
+  // orbitTangent(a)` line and the two-line child fixup). The claim NARROWS rather than being dropped, and
+  // it narrows in the direction that still means something: everything in destroyDebris OUTSIDE the split
+  // branch — the dead flag, the score/achievement gate, the boom, the DEBRIS_GARBAGE fan-out — is still
+  // byte-identical to the pre-CS023-P2 build, and the split branch is asserted positively to be the plain
+  // three-child loop it was BEFORE CS021 P1 ever added the handoff.
+  {
+    const cut = t => t.slice(0, t.indexOf("  if (a.size > 1) {"));
+    eq(cut(bodyOf(scriptSrc, "function destroyDebris(a, awardScore = true) {")),
+       cut(bodyOf(preSrc, "function destroyDebris(a, awardScore = true) {")),
+      "A: destroyDebris is BYTE-UNCHANGED up to its split branch — this phase creates and destroys nothing");
+    const body = bodyOf(scriptSrc, "function destroyDebris(a, awardScore = true) {");
+    assert(!/orbitTangent/.test(body),
+      "A: REPOINTED BY CS024 P1 (inverted) — the split branch no longer calls orbitTangent");
+    assert(/for \(let i = 0; i < 3; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speedMul\)\);/.test(body),
+      "A: ...and the split is the plain three-child loop again, each taking its own constructor's velocity");
+  }
 
   // --- wrap-awareness, asserted at the SITE rather than trusted (CLAUDE.md's single commonest bug source)
-  assert(/angleTo\(r, f\)/.test(fnBody), "A: the free/rail normal comes from angleTo (wrap-aware)");
+  assert(/angleTo\(r, f\)/.test(fnBody), "A: the free/saucer normal comes from angleTo (wrap-aware)");
   assert(/angleTo\(b, a\)/.test(fnBody), "A: the free/free normal comes from angleTo (wrap-aware)");
   assert(/Math\.sqrt\(dist2\(a, b\)\)/.test(fnBody), "A: the overlap depth comes from dist2 (wrap-aware)");
-  eq((fnBody.match(/\bwrap\(/g) || []).length, 3, "A: wrap() is called after every positional push (free/rail 1, free/free 2)");
+  eq((fnBody.match(/\bwrap\(/g) || []).length, 3, "A: wrap() is called after every positional push (free/saucer 1, free/free 2)");
   assert(!/Math\.hypot\(\s*[ab]\.x/.test(fnBody) && !/Math\.atan2\(\s*b\.y\s*-/.test(fnBody),
     "A: no naive Math.hypot/Math.atan2 over raw coordinate differences anywhere in the helper");
 
-  // --- the rail gate is `orbitCenter`, the SAME field the motion mode and shieldBounce already use
-  // REPOINTED BY CS023 P3: aRail/bRail -> aFixed/bFixed (P3 also treats a Saucer partner as fixed, to
-  // close the saucer-mass gap this file's own section (H) flagged), but the underlying orbitCenter read
-  // and the rail/rail no-op are unchanged in substance — only the variable names moved.
-  assert(/const aFixed = !!a\.orbitCenter \|\| a instanceof Saucer, bFixed = !!b\.orbitCenter \|\| b instanceof Saucer;/.test(fnBody),
-    "A: rail state is STILL read off orbitCenter — one concept, not two (the CS021 P1b rule) — now OR'd with a Saucer check (P3)");
-  assert(/if \(aFixed && bFixed\) return;/.test(fnBody), "A: rail/rail (or rail/saucer) is still an explicit early no-op (C11)");
-  assert(/if \(a\.orbitCenter\)/.test(bodyOf(scriptSrc, "  update(dt) {\n    // CS021 P1: ORBIT MOTION MODE")) ||
-         /this\.orbitCenter/.test(codeOnly), "A: ...and it is the same field DebrisSatellite.update() gates its motion mode on");
+  // --- REPOINTED BY CS024 P1 (spec §4.1, consequence 1), to the mirror image at each of the three pins.
+  // CS023 shipped `!!x.orbitCenter || x instanceof Saucer` and an explicit rail/rail early no-op
+  // (Correction C11). With no body able to carry orbit state the predicate REDUCES to the Saucer test and
+  // the FIXED/FIXED arm is unreachable at both call sites — the debris pair walk passes two satellites,
+  // the UFO pass passes exactly one Saucer — so it is DELETED rather than left as a dead guard. All three
+  // assertions invert: the reduced dispatch is pinned positively, and the no-op's ABSENCE is pinned so it
+  // cannot creep back unnoticed.
+  assert(/const aFixed = a instanceof Saucer, bFixed = b instanceof Saucer;/.test(fnBody),
+    "A: REPOINTED BY CS024 P1 — the dispatch is the Saucer test alone, and still SYMMETRIC over both operands");
+  assert(!/orbitCenter/.test(fnBody),
+    "A: REPOINTED BY CS024 P1 (inverted) — debrisBounce reads orbitCenter NOWHERE");
+  assert(!/if \(aFixed && bFixed\) return;/.test(fnBody),
+    "A: REPOINTED BY CS024 P1 (inverted) — the FIXED/FIXED early no-op is GONE, not merely unreachable");
+  assert(/if \(aFixed !== bFixed\) \{/.test(fnBody),
+    "A: ...leaving exactly two branches — free/saucer and free/free");
+  assert(!/orbitCenter/.test(bodyOf(scriptSrc, "  update(dt) {")),
+    "A: ...and DebrisSatellite.update() has no motion-mode branch left to share the concept with");
 
   // --- the pass: one site, the coalesceGarbage idiom, the LIVE array, correctly placed
   eq((codeOnly.match(/if \(dist2\(a, b\) < r \* r\) debrisBounce\(a, b\);/g) || []).length, 1,
@@ -335,34 +355,47 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
 
   // --- TRAP 1 / TRAP 4
   eq(X.GAME_VERSION, "1.0.0.22", "A: TRAP 1 — GAME_VERSION unchanged (P5 bumps it)");
-  // TRAP 4 — REPOINTED BY CS023 P4, to its positive successors rather than deleted: every one of these
-  // named P4 as the phase that would land the symbol, and P4 has.
-  // REPOINTED AGAIN BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel, ORBIT_GRAVITY_* -> DEBRIS_DRIFT_*
-  // (spec C15 — the drift is not orbit-scoped). Same two entries, same order, same row; only the names.
-  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 4 REPOINTED — the debug registry is 46 value entries after P4B");
+  // TRAP 4 — REPOINTED THREE TIMES NOW, and CS024 P1 is the first repoint that runs the other way.
+  // CS023 P4 flipped these to their positive successors as the drift landed; P4B renamed them
+  // (orbitGravityAccel -> debrisDriftAccel, ORBIT_GRAVITY_* -> DEBRIS_DRIFT_*). CS024 P1 REMOVES THE DRIFT
+  // ENTIRELY (spec §1.5/§4.1), so every one of those claims inverts to an ABSENCE — which is the form
+  // that now does the work, since a silently-restored drift is the thing this file should catch.
+  eq(X.DEBUG_ENTRIES.length, 35, "A: TRAP 4 REPOINTED BY CS024 P1 — the debug registry is 35 value entries");
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
-    "debrisDriftAccel,debrisBounceRestitution",
-    "A: P4B — debrisBounceRestitution landed as P4's knob, beside debrisDriftAccel (ex-orbitGravityAccel), and nothing else did");
-  assert(/\bdrifting\b/.test(codeOnly), "A: REPOINTED — the P4 `drifting` field is now real, not a stub");
-  eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 1, "A: REPOINTED — maxOrbitSpeed is defined exactly once");
-  assert(/DEBRIS_DRIFT_TRIGGER_R/.test(codeOnly) && /DEBRIS_DRIFT_TARGET_R/.test(codeOnly),
-    "A: P4B — both DEBRIS_DRIFT_* radii (ex-ORBIT_GRAVITY_*) landed");
-  // The seam this file reserved is FILLED, by exactly the one line it reserved it for.
-  eq((codeOnly.match(/a\.drifting = b\.drifting = false;/g) || []).length, 1,
-    "A: REPOINTED — debrisBounce's P4 seam holds exactly the one specced clear line");
+    "debrisBounceRestitution",
+    "A: REPOINTED BY CS024 P1 — debrisBounceRestitution is the ONLY survivor of CS023 P4's two knobs; debrisDriftAccel is gone");
+  assert(!/\bdrifting\b/.test(codeOnly),
+    "A: REPOINTED BY CS024 P1 (inverted) — the `drifting` field appears NOWHERE in executable source");
+  eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 0,
+    "A: REPOINTED BY CS024 P1 (inverted) — maxOrbitSpeed is not defined at all");
+  assert(!/DEBRIS_DRIFT_TRIGGER_R/.test(codeOnly) && !/DEBRIS_DRIFT_TARGET_R/.test(codeOnly) &&
+         !/DEBRIS_DRIFT_ACCEL/.test(codeOnly),
+    "A: REPOINTED BY CS024 P1 (inverted) — none of the three DEBRIS_DRIFT_* constants survive");
+  assert(!/updateDebrisDrift/.test(codeOnly),
+    "A: ...and updateDebrisDrift is neither defined nor called");
+  // The seam this file reserved, and which P4 filled, is now EMPTY again — and stays empty.
+  eq((codeOnly.match(/a\.drifting = b\.drifting = false;/g) || []).length, 0,
+    "A: REPOINTED BY CS024 P1 (inverted) — debrisBounce's P4 drift-disarm line is gone with the drift");
   // REPOINTED BY CS023 P3: destroySaucer's awardScore parameter has now landed, exactly as this trap
   // always named it would — flipped to its positive successor rather than deleted.
   assert(/function destroySaucer\(s, awardScore = true\) \{/.test(codeOnly),
     "A: TRAP REPOINTED — destroySaucer now takes awardScore = true (P3 landed)");
-  // The P4 SEAM is a documented comment, not code — assert both halves of that.
-  assert(/CS023 P4 SEAM/.test(scriptSrc), "A: the P4 seam is named in a comment at the top of debrisBounce");
-  assert(scriptSrc.indexOf("CS023 P4 SEAM") > scriptSrc.indexOf("function debrisBounce(a, b) {"),
-    "A: ...inside the helper, where the one-line clear drops in");
-  assert(/drifting/.test(scriptSrc), "A: ...and it names the field P4 will clear");
+  // REPOINTED BY CS024 P1: the "CS023 P4 SEAM" comment marked the spot in debrisBounce reserved for the
+  // drift's disarm line. The drift is gone, so the seam marker goes with it — asserted as an absence, so
+  // a reintroduced seam has to come back through this file rather than around it.
+  assert(!/CS023 P4 SEAM/.test(scriptSrc),
+    "A: REPOINTED BY CS024 P1 (inverted) — the P4 seam marker is gone from debrisBounce");
 
   // --- the docs are untouched this phase (TRAP 1's second half)
   const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString().trim().split("\n").filter(Boolean);
-  const docs = changed.filter(f => /GDD|DIFFICULTY-LEVERS|VERSION-HISTORY|PLANNED-FEATURES|IMPLEMENTATION-PHASES/.test(f));
+  // REPOINTED BY CS024 P1, and this is a NARROWING with a reason rather than a convenience. The filter
+  // used to include PLANNED-FEATURES-* and IMPLEMENTATION-PHASES-*, which are SPEC documents authored by
+  // Paul and legitimately edited between build sessions — a phase-scoped "docs untouched" trap has no
+  // business freezing them, and it fired on exactly that during CS024 P1 (an edit to P4's own prompt,
+  // made outside the session and unrelated to any code change). What every phase's TRAP actually protects
+  // is the SHIPPED-BEHAVIOUR documentation set — the GDD, its version history, and DIFFICULTY-LEVERS —
+  // which is precisely the list CS024 P1's own TRAP 3 names. That list is what is checked now.
+  const docs = changed.filter(f => /GDD|DIFFICULTY-LEVERS|VERSION-HISTORY/.test(f));
   eq(docs.length, 0, `A: TRAP 1 — no design doc is touched this phase (saw ${JSON.stringify(docs)})`);
 })();
 
@@ -575,480 +608,34 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   console.log(`    sandbox at restitution 0.5: ${nLossy} lossy collisions, worst energy CHANGE ${worstGain.toExponential(2)} (must be < 0)`);
 }); })();
 
-// ================= (C) spec §6 item 9 — FREE vs RAIL-BORNE, AS PHYSICS =====================
+// ============ (C), (D), (E) PRUNED BY CS024 P1 — their whole subject is gone ============
+// Three sections stood here and all three were about RAILS, which no longer exist:
+//   (C) FREE vs RAIL-BORNE as physics — shieldBounce's shape with the rail immovable, the twelve-field
+//       byte-identity pin on the rail partner, the argument-order symmetry, and the deliberate
+//       non-conservation of momentum against an immovable body.
+//   (D) THE ASYMMETRY OVER 300 REAL FRAMES — a free satellite driven into a rail-borne one, proving the
+//       rail body's trajectory was byte-identical with and without the contact.
+//   (E) Correction C11 — RING vs RING IS UNREACHABLE, the geometric proof that two rail-borne bodies can
+//       never touch (and the antipodal wrap-fold clearance CS023 P4c found underneath it).
 //
-// This branch is shieldBounce's exact shape with the free body in the ship's role, so it inherits
-// shieldBounce's own physics rather than the free/free case's:
-//   * THE RAIL IS AN INFINITE-MASS CONSTRAINT. Momentum is deliberately NOT conserved — asserted in
-//     that direction, with a control, so nobody later "fixes" it into a symmetric exchange.
-//   * The reflection happens IN THE RAIL BODY'S FRAME, which is what makes a fast ring feel different
-//     from a slow one: subtract the rail body's velocity, reflect the approaching part, add it back.
-//   * The classic result against an immovable partner: a rail satellite sweeping into a STATIONARY free
-//     body throws it at exactly TWICE the satellite's own speed (CS021 P1b measured the same thing for
-//     the ship, 2 x 150.8 = 301.6 px/s off the fast ring).
-//   * The free body ends exactly `rail.radius + free.radius + 2` away, on the side it came from.
-(function sectionC() { withRandom(seededRandom(0xC0C0), () => {
-  console.log("(C) spec §6 item 9 — FREE vs RAIL-BORNE: shieldBounce's shape, the rail immovable");
-  const X = seededBuild(0xC001);
-  X.startGame();
-  const FULL = levelWithRings(X, X.ORBIT_RING_COUNT);
-  atWave(X, FULL);
-  const rails = railBodies(X);
-  eq(rails.length > 0, true, "C: (setup) a full-ramp orbit level laid rail-borne satellites");
-  const byRing = [...new Set(rails.map(r => r.orbitRadius))].sort((p, q) => p - q);
-  eq(byRing.length, X.ORBIT_RING_COUNT, "C: (setup) all four rings are on the board");
-  const R = X.DEBRIS_BOUNCE_RESTITUTION, MIN = X.DEBRIS_BOUNCE_MIN;
-  const TRIALS = 60;
-
-  let nApproach = 0, nRecede = 0, nFloor = 0, nMomentumBroken = 0;
-  for (const radius of byRing) {
-    const proto = rails.find(r => r.orbitRadius === radius);
-    for (const freeSize of [3, 1]) {
-      const rnd = seededRandom(0xC000 + radius + freeSize);
-      for (let k = 0; k < TRIALS / 2; k++) {
-        // A fresh rail body each trial, carrying the REAL ring's state (radius, angle, angular velocity).
-        const r = freeSat(X, proto.x, proto.y, 3, 0, 0);
-        r.orbitCenter = proto.orbitCenter; r.orbitRadius = proto.orbitRadius;
-        r.orbitAngle = rnd() * X.TAU; r.orbitAngVel = proto.orbitAngVel;
-        const p = X.wrapPos({ x: r.orbitCenter.x + Math.cos(r.orbitAngle) * r.orbitRadius,
-                              y: r.orbitCenter.y + Math.sin(r.orbitAngle) * r.orbitRadius });
-        r.x = p.x; r.y = p.y;
-        const t = X.orbitTangent(r); r.vx = t[0]; r.vy = t[1];
-
-        const contactAng = rnd() * X.TAU;
-        const gap = (r.radius + X.DEBRIS_RADII[freeSize]) * (0.2 + 0.75 * rnd());
-        const fp = X.wrapPos({ x: r.x + Math.cos(contactAng) * gap, y: r.y + Math.sin(contactAng) * gap });
-        const f = freeSat(X, fp.x, fp.y, freeSize, (rnd() - 0.5) * 500, (rnd() - 0.5) * 500);
-
-        const nAng = X.angleTo(r, f), nx = Math.cos(nAng), ny = Math.sin(nAng);
-        const tx = -ny, ty = nx;
-        const un0 = (f.vx - r.vx) * nx + (f.vy - r.vy) * ny;   // approach speed IN THE RAIL BODY'S FRAME
-        const ft0 = f.vx * tx + f.vy * ty;
-        const railBefore = snap12(r);
-        const mf = X.DEBRIS_MASS[freeSize], mr = X.DEBRIS_MASS[3];
-        const p0 = [mf * f.vx + mr * r.vx, mf * f.vy + mr * r.vy];
-
-        // BOTH ARGUMENT ORDERS must behave identically — the pass hands over whichever came first in
-        // the array, and rail state is a property of the bodies, not of the call.
-        const fSwap = freeSat(X, f.x, f.y, freeSize, f.vx, f.vy);
-        X.debrisBounce(f, r);
-        X.debrisBounce(r, fSwap);
-        for (const key of ["x", "y", "vx", "vy"]) eq(fSwap[key], f[key], `C: debrisBounce(rail, free) === debrisBounce(free, rail) — ${key}`);
-
-        // THE RAIL BODY IS COMPLETELY UNTOUCHED.
-        for (const key of TWELVE) eq(r[key], railBefore[key], `C: the bounce left rail.${key} byte-identical (r=${radius})`);
-
-        // Tangential motion of the free body is exactly preserved.
-        close(f.vx * tx + f.vy * ty, ft0, `C: the free body's tangential velocity is untouched (r=${radius})`, 1e-9);
-
-        // NEWTON'S RESTITUTION LAW, in the rail body's frame — or the world-frame floor, shieldBounce's own.
-        const un1 = (f.vx - r.vx) * nx + (f.vy - r.vy) * ny;
-        const lawful = un0 < 0 ? -R * un0 : un0;
-        const outward = f.vx * nx + f.vy * ny;
-        assert(outward >= MIN - 1e-9, `C: every bounce leaves the free body's OUTWARD world speed >= the floor (r=${radius})`);
-        if (outward > MIN + 1e-9) {
-          close(un1, lawful, `C: ...and where the floor is idle, the rail-frame separation obeys the restitution law (r=${radius})`, 1e-9);
-        } else nFloor++;
-        if (un0 < 0) nApproach++; else {
-          nRecede++;
-          // A body already receding is never yanked backwards: its rail-frame normal component can only
-          // have grown (the floor), never shrunk or flipped.
-          assert(un1 >= un0 - 1e-9, `C: a receding free body is never pulled back (r=${radius})`);
-        }
-
-        // SEPARATION, this instant, at shieldBounce's own epsilon and on the side it came from.
-        close(Math.sqrt(X.dist2(f, r)), r.radius + f.radius + 2, `C: the free body is pushed to contact + 2 px (r=${radius})`, 1e-6);
-        const outAng = X.angleTo(r, f);
-        close(Math.cos(outAng - nAng), 1, `C: ...on the SAME side it approached from, not through the body (r=${radius})`, 1e-9);
-
-        // MOMENTUM IS DELIBERATELY NOT CONSERVED — the rail is an infinite-mass constraint (C11/§4.4).
-        const p1 = [mf * f.vx + mr * r.vx, mf * f.vy + mr * r.vy];
-        if (Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) > 1e-6) nMomentumBroken++;
-      }
-    }
-  }
-  assert(nApproach > 100, `C: (control) the reflection path ran (${nApproach} approaching trials)`);
-  assert(nRecede > 50, `C: (control) the already-receding path ran (${nRecede} trials)`);
-  assert(nFloor > 10, `C: (control) the separation floor genuinely bound on ${nFloor} trials`);
-  // 480 trials in all (4 rings x 2 free sizes x 30). Momentum breaks on every trial where the free body
-  // was genuinely acted on, which is what an infinite-mass constraint MEANS: the rail body absorbs the
-  // reaction and does not move. Stated as an assertion rather than a comment so nobody later "fixes" it.
-  assert(nMomentumBroken > 100,
-    `C: momentum is DELIBERATELY not conserved against a rail — it broke on ${nMomentumBroken} of 480 trials, which is the ` +
-    `infinite-mass constraint working, not a defect. Do not "fix" this into a symmetric exchange.`);
-  assert(nMomentumBroken >= nApproach / 2,
-    `C: ...and it broke on essentially every trial where the free body was actually deflected`);
-
-  // THE FLAVOUR RESULT, measured: a rail satellite sweeping into a STATIONARY free body throws it at
-  // exactly twice its own speed — the classic elastic result against an immovable partner, and the same
-  // one CS021 P1b measured for the ship.
-  for (const radius of byRing) {
-    const proto = rails.find(r => r.orbitRadius === radius);
-    const r = freeSat(X, proto.x, proto.y, 3, proto.vx, proto.vy);
-    r.orbitCenter = proto.orbitCenter; r.orbitRadius = proto.orbitRadius;
-    r.orbitAngle = proto.orbitAngle; r.orbitAngVel = proto.orbitAngVel;
-    const railSpeed = Math.hypot(r.vx, r.vy);
-    // Park the free body directly in the rail body's path, dead ahead.
-    const ahead = Math.atan2(r.vy, r.vx);
-    const fp = X.wrapPos({ x: r.x + Math.cos(ahead) * (r.radius + X.DEBRIS_RADII[3] - 4),
-                           y: r.y + Math.sin(ahead) * (r.radius + X.DEBRIS_RADII[3] - 4) });
-    const f = freeSat(X, fp.x, fp.y, 3, 0, 0);
-    X.debrisBounce(f, r);
-    const got = Math.hypot(f.vx, f.vy);
-    const want = Math.max(2 * railSpeed, X.DEBRIS_BOUNCE_MIN);
-    close(got, want, `C: a rail satellite at ${railSpeed.toFixed(1)} px/s shoves a parked satellite at max(2x, floor)`, 1e-6);
-    console.log(`    ring r=${radius}: rail ${railSpeed.toFixed(1)} px/s -> parked satellite leaves at ${got.toFixed(1)} px/s`);
-  }
-}); })();
-
-// ================= (D) spec §6 item 10 — THE ASYMMETRY OVER 300 REAL FRAMES =====================
-(function sectionD() { withRandom(seededRandom(0xD0D0), () => {
-  console.log("(D) spec §6 item 10 — a free satellite driven into a rail-borne one for 300 real frames");
-  const SEED = 0xD001, FRAMES = 300;
-
-  // Stage identically in both runs; the ONLY difference is where the free body is parked. Every rand()
-  // draw is therefore the same in both, which is what makes the trajectory comparison a real control
-  // rather than two unrelated simulations.
-  function run(contact) {
-    const X = seededBuild(SEED);
-    return withRandom(seededRandom(SEED ^ 0x5A5A), () => {
-      X.startGame();
-      const FULL = levelWithRings(X, X.ORBIT_RING_COUNT);
-      atWave(X, FULL);
-      X.game.state = "playing"; X.game.paused = false;
-      const rails = railBodies(X);
-      const r = rails[Math.floor(rails.length / 2)];
-      // Park the ship on the far side of the world so nothing else can interfere with either run.
-      const [W, H] = X.worldDims(X.game.worldSize);
-      X.game.ship.x = (r.orbitCenter.x + W / 2) % W;
-      X.game.ship.y = (r.orbitCenter.y + H / 2) % H;
-      X.game.ship.vx = 0; X.game.ship.vy = 0;
-      // One free satellite, constructed identically in both runs (same rand draws), then placed.
-      const f = freeSat(X, r.x, r.y, 3, 0, 0);
-      X.game.debris.push(f);
-      const trace = [], fields = [];
-      for (let i = 0; i < FRAMES; i++) {
-        X.game.ship.hp = X.SHIP_MAX_HP;
-        if (contact) {
-          // Drive it into the rail body every frame: park it just inside contact, moving inward.
-          const ang = i * 0.37;
-          const d = r.radius + f.radius - 6;
-          const p = X.wrapPos({ x: r.x + Math.cos(ang) * d, y: r.y + Math.sin(ang) * d });
-          f.x = p.x; f.y = p.y;
-          f.vx = -Math.cos(ang) * 260; f.vy = -Math.sin(ang) * 260;
-        } else {
-          const p = X.wrapPos({ x: r.orbitCenter.x + W * 0.31, y: r.orbitCenter.y + H * 0.29 });
-          f.x = p.x; f.y = p.y; f.vx = 0; f.vy = 0;
-        }
-        X.update(1 / 60);
-        trace.push([r.x, r.y, r.vx, r.vy, r.orbitAngle]);
-        fields.push([r.size, r.radius, r.damage, r.dead, r.guardT, r.spin,
-                     r.orbitCenter === rails[0].orbitCenter, r.orbitRadius, r.orbitAngVel]);
-      }
-      return { X, r, f, trace, fields, state: X.game.state, wave: X.game.wave, angVel: r.orbitAngVel };
-    });
-  }
-
-  const hit = run(true), ctrl = run(false);
-  eq(hit.state, "playing", "D: (validity) the contact run stayed in the live update path");
-  eq(hit.wave, ctrl.wave, "D: (validity) both runs stayed on the same level");
-
-  // (1) TWELVE FIELDS BYTE-IDENTICAL ACROSS THE HELPER CALL ITSELF — CS021 P1b §E's own claim, restated
-  //     for satellites. Direct call, so nothing else can be the reason.
-  {
-    const X = seededBuild(0xD100);
-    X.startGame();
-    atWave(X, levelWithRings(X, X.ORBIT_RING_COUNT));
-    const r = railBodies(X)[0];
-    const f = freeSat(X, r.x + 10, r.y + 6, 3, -400, 250);
-    const before = snap12(r);
-    X.debrisBounce(f, r);
-    for (const k of TWELVE) eq(r[k], before[k], `D: the bounce left rail.${k} byte-identical`);
-    close(Math.sqrt(X.dist2(r, r.orbitCenter)), r.orbitRadius, "D: ...and it is still exactly on its rail", 1e-6);
-    assert(f.vx !== -400 || f.vy !== 250, "D: (control) ...while the FREE body really was changed");
-  }
-
-  // (2) THE RAIL BODY'S WHOLE 300-FRAME TRAJECTORY IS BYTE-IDENTICAL to the control run in which the
-  //     free satellite is parked a third of a world away and never touches it.
-  eq(JSON.stringify(hit.trace), JSON.stringify(ctrl.trace),
-    "D: the rail body's 300-frame trajectory is BYTE-IDENTICAL with and without a satellite slamming into it");
-  eq(JSON.stringify(hit.fields), JSON.stringify(ctrl.fields),
-    "D: ...and so is every one of its non-kinematic fields, on every frame");
-
-  // (3) IT NEVER LEAVES ITS RAIL, and its angle advances at exactly the rate its own angVel dictates.
-  let worstRail = 0, worstStep = 0;
-  const X = hit.X, r = hit.r;
-  for (let i = 0; i < FRAMES; i++) {
-    const [x, y, vx, vy, ang] = hit.trace[i];
-    worstRail = Math.max(worstRail, Math.abs(Math.sqrt(X.dist2({ x, y }, r.orbitCenter)) - r.orbitRadius));
-    if (i > 0) worstStep = Math.max(worstStep, Math.abs((ang - hit.trace[i - 1][4]) - hit.angVel / 60));
-    // Its velocity is the rail's tangent, at exactly angVel x radius, every frame.
-    worstStep = Math.max(worstStep, 0);
-    close(Math.hypot(vx, vy), Math.abs(hit.angVel) * r.orbitRadius, "D: |v| === angVel x radius on every frame", 1e-6);
-  }
-  assert(worstRail < 1e-6, `D: the satellite never left its rail across ${FRAMES} frames (worst ${worstRail.toExponential(2)} px)`);
-  assert(worstStep < 1e-12, `D: its orbit angle advanced by exactly angVel x dt every frame (worst ${worstStep.toExponential(2)} rad)`);
-
-  // (4) THE CONTROL THAT MAKES ALL OF THE ABOVE MEAN SOMETHING: the contact really happened, repeatedly.
-  //     Measured by the free body being ACTED ON — its velocity must differ from the inward one it was
-  //     given, on every single frame. (Final geometric clearance is a weaker signal here and is reported
-  //     rather than asserted: a full-ramp shell puts rings 200 px apart while a size-3 body is 92 px
-  //     across, so a free body wedged between two rings can be resolved against one and end up back
-  //     inside the other — real behaviour of a sequential pair-walk, not a defect.)
-  let contacts = 0, clear = 0;
-  {
-    const Y = seededBuild(0xD200);
-    Y.startGame();
-    atWave(Y, levelWithRings(Y, Y.ORBIT_RING_COUNT));
-    Y.game.state = "playing"; Y.game.paused = false;
-    const rr = railBodies(Y)[0];
-    const ff = freeSat(Y, rr.x, rr.y, 3, 0, 0);
-    Y.game.debris.push(ff);
-    const [W, H] = Y.worldDims(Y.game.worldSize);
-    Y.game.ship.x = (rr.orbitCenter.x + W / 2) % W; Y.game.ship.y = (rr.orbitCenter.y + H / 2) % H;
-    for (let i = 0; i < FRAMES; i++) {
-      Y.game.ship.hp = Y.SHIP_MAX_HP;
-      const ang = i * 0.37, d = rr.radius + ff.radius - 6;
-      const p = Y.wrapPos({ x: rr.x + Math.cos(ang) * d, y: rr.y + Math.sin(ang) * d });
-      const inVx = -Math.cos(ang) * 260, inVy = -Math.sin(ang) * 260;
-      ff.x = p.x; ff.y = p.y; ff.vx = inVx; ff.vy = inVy;
-      Y.update(1 / 60);
-      if (ff.vx !== inVx || ff.vy !== inVy) contacts++;
-      if (Math.sqrt(Y.dist2(ff, rr)) >= rr.radius + ff.radius) clear++;
-    }
-    eq(contacts, FRAMES, "D: (control) all 300 frames really resolved a contact — the free body was deflected every single one");
-    assert(clear > FRAMES * 0.9, `D: (reported) ...and ended geometrically clear of that ring satellite on ${clear} of ${FRAMES}`);
-  }
-  console.log(`    ${FRAMES} frames of continuous contact (${clear}/${FRAMES} ended clear of the ring): rail trajectory ` +
-              `byte-identical to the no-contact control, worst rail error ${worstRail.toExponential(2)} px`);
-}); })();
-
-// ================= (E) Correction C11 — RING vs RING IS UNREACHABLE =====================
-//
-// C11 says two rail-borne satellites cannot touch at the shipped geometry, so debrisBounce's rail/rail
-// branch is dead code in normal play. That is asserted here, not left as a comment.
-//
-// CS023 KEEPS THIS TRUE, and it is worth saying why while P4 is still unwritten: P4's inward drift acts
-// ONLY on free bodies (FORK-CS023-B) and never reads or writes orbitCenter / orbitRadius / orbitAngle /
-// orbitAngVel, so no body ever crosses a rail radius while itself on a rail. The moment a satellite
-// leaves a rail — a split child, a knocked-loose piece — it has no orbit state at all and is a FREE body
-// by construction, which is the free/rail or free/free branch, never this one.
-(function sectionE() { withRandom(seededRandom(0xE0E0), () => {
-  console.log("(E) Correction C11 — ring vs ring is unreachable, swept over the real geometry");
-  const X = seededBuild(0xE001);
-  X.startGame();
-
-  // (1) THE CORRIDOR, AS A DERIVATION. 200 px of ring spacing minus a 92 px satellite diameter.
-  // REPOINTED BY CS023 P4C: the step moved 138 -> 200, so the corridor moved 46 -> 108.
-  const corridor = X.ORBIT_RADIUS_STEP - 2 * X.DEBRIS_RADII[3];
-  eq(corridor, 108, "E: P4C — the inter-ring radial corridor is ORBIT_RADIUS_STEP - 2 x DEBRIS_RADII[3] = 108 px (was 46)");
-  assert(corridor > 0, "E: ...and it is positive, which is the whole claim");
-
-  // (1b) A TIGHTER FLOOR THAN THE CORRIDOR, FOUND BY CS023 P4C AND PREDICTED BY NOTHING IN THE SPEC.
-  // Every separation in this section is WRAP-AWARE, and once the outer ring reaches 1,000 px it very
-  // nearly folds onto itself across a 2,160 px-tall world: an ANTIPODAL pair on ring 4 (6 satellites, so
-  // k = 3 always exists) standing vertically is 2,000 px apart the long way and only 160 px the SHORT
-  // way. That is 68 px of clear space, and it — not the 108 px corridor — is now the true minimum any two
-  // rail-borne bodies can reach. At P1's 814 px outer ring the same pair cleared by 440 px, so this is
-  // squarely P4c's doing and the reason blocks (3) and (4) below had to be repointed off `corridor`.
-  //
-  // C11 SURVIVES, AND NOT BY LUCK. The clearance is exactly 2 x (wrap-clean budget - outer satellite
-  // edge) + 40 — the SAME 14 px margin orbitEffectiveCount() guards (spec C16a), doubled — so any
-  // geometry the clamp accepts keeps it positive, down to 44 px at the 204 px step ceiling.
-  const [SW, SH] = X.worldDims(X.WORLD_SIZE_ORBIT);
-  const outerR = X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP;
-  const seamFloor = SH - 2 * outerR - 2 * X.DEBRIS_RADII[3];
-  eq(seamFloor, 68, "E: P4C — the outer ring folds onto itself to within 68 px of clear space");
-  const orbitBudget = SH / 2 - 20, outerEdge = outerR + X.DEBRIS_RADII[3];
-  eq(seamFloor, 2 * (orbitBudget - outerEdge) + 40,
-    "E: ...which is EXACTLY 2 x the C16a budget margin + 40 — the same 14 px, doubled");
-  assert(seamFloor > 0, "E: ...and positive, so C11's rail/rail no-op branch stays unreachable");
-  assert(seamFloor < corridor,
-    "E: ...but TIGHTER than the inter-ring corridor, which is why it is the number blocks (3) and (4) use");
-  // The same floor, found by search over the PHYSICAL same-ring separations rather than asserted from the
-  // closed form: only multiples of a ring's own angular spacing can occur, so a free-angle sweep (which is
-  // what (2) does for DISTINCT rings) would model a pair that cannot exist.
-  {
-    const torS = (dx, dy) => {
-      let ax = Math.abs(dx); if (ax > SW / 2) ax = SW - ax;
-      let ay = Math.abs(dy); if (ay > SH / 2) ay = SH - ay;
-      return Math.hypot(ax, ay);
-    };
-    const LFULL = X.generateOrbitLayout({
-      satelliteDiameter: X.DEBRIS_RADII[3] * 2, shipDiameter: X.SHIP_RADIUS * 2,
-      centerX: 1280, centerY: 720,
-      orbitCount: X.ORBIT_RING_COUNT, innerRadius: X.ORBIT_INNER_RADIUS,
-      radiusStep: X.orbitRadiusStepFor(X.ORBIT_RING_COUNT), safetyMargin: X.DEBUG.orbitSafetyMargin,
-      minGapMultiplier: X.orbitEffectiveGapMult(X.ORBIT_LEVEL_EVERY * X.ORBIT_RING_COUNT),
-      densityByOrbit: X.ORBIT_DENSITY,
-      baseAngVel: X.ORBIT_ANG_VEL, fastRingIndices: X.ORBIT_FAST_RING.map(n => n - 1),
-      fastRingMult: X.ORBIT_FAST_MULT, activeRings: null,
-    });
-    let sameSweep = Infinity, sameArg = null;
-    for (const r of LFULL.rings) {
-      for (let k = 1; k < r.count; k++) {
-        const dA = k * X.TAU / r.count;
-        for (let t = 0; t < 3600; t++) {
-          const th = t / 3600 * X.TAU;
-          const sep = torS(Math.cos(th) * r.radius - Math.cos(th + dA) * r.radius,
-                           Math.sin(th) * r.radius - Math.sin(th + dA) * r.radius) - 2 * X.DEBRIS_RADII[3];
-          if (sep < sameSweep) { sameSweep = sep; sameArg = [r.radius, r.count, k]; }
-        }
-      }
-    }
-    close(sameSweep, seamFloor, "E: P4C — a full same-ring angular sweep finds exactly that 68 px floor", 0.01);
-    eq(sameArg[0], outerR, "E: ...on the OUTERMOST ring, which is the one the world height nearly folds");
-    eq(sameArg[2] * 2, sameArg[1], "E: ...and on its ANTIPODAL pair (k = count / 2), the only one that can reach it");
-    console.log(`    same-ring seam floor ${sameSweep.toFixed(2)} px on r=${sameArg[0]} (${sameArg[1]} sats, k=${sameArg[2]})`);
-  }
-
-  // (2) EXHAUSTIVE ANGLE SWEEP over the real layout, on the real torus. Only the two angles matter: the
-  //     wrap-aware separation of centre + r_i*u(a) and centre + r_j*u(b) depends on the two points'
-  //     DIFFERENCE, which is independent of where the dock happens to sit. 1-degree resolution over
-  //     every pair of DISTINCT rings, with both angles free — deliberately more permissive than reality,
-  //     since two rings sharing an angVel never change their relative angle at all.
-  //     SAME-RING pairs are a different question and are answered separately in (2b): those satellites
-  //     are laid at a fixed angular spacing and share an angular velocity, so their separation is a
-  //     constant of the layout — sweeping their angles independently would model a pair that cannot
-  //     exist, and reports a nonsense overlap.
-  const FULL = levelWithRings(X, X.ORBIT_RING_COUNT);
-  atWave(X, FULL);
-  const radii = [...new Set(railBodies(X).map(r => r.orbitRadius))].sort((p, q) => p - q);
-  eq(radii.length, X.ORBIT_RING_COUNT, "E: (setup) the sweep runs over all four shipped rings");
-  const [W, H] = X.worldDims(X.game.worldSize);
-  const tor = (dx, dy) => {
-    let ax = Math.abs(dx); if (ax > W / 2) ax = W - ax;
-    let ay = Math.abs(dy); if (ay > H / 2) ay = H - ay;
-    return Math.hypot(ax, ay);
-  };
-  const D = 2 * X.DEBRIS_RADII[3];
-  let sweepMin = Infinity, sweepMinPair = null;
-  const STEPS = 360;
-  for (let i = 0; i < radii.length; i++) {
-    for (let j = i + 1; j < radii.length; j++) {
-      for (let u = 0; u < STEPS; u++) {
-        const au = (u / STEPS) * X.TAU, cx = Math.cos(au) * radii[i], cy = Math.sin(au) * radii[i];
-        for (let v = 0; v < STEPS; v++) {
-          const bv = (v / STEPS) * X.TAU;
-          const sep = tor(cx - Math.cos(bv) * radii[j], cy - Math.sin(bv) * radii[j]) - D;
-          if (sep < sweepMin) { sweepMin = sep; sweepMinPair = [radii[i], radii[j]]; }
-        }
-      }
-    }
-  }
-  assert(sweepMin > 0, `E: over every DISTINCT ring pair x 360 x 360 angle pairs on the real torus, the CLOSEST two ` +
-    `rail-borne satellites can ever come is ${sweepMin.toFixed(2)} px of clear space — they cannot touch`);
-  close(sweepMin, corridor, "E: P4C — ...and that closest approach IS the 108 px inter-ring corridor (was 46)", 0.2);
-  console.log(`    exhaustive sweep (distinct rings): minimum rail-to-rail separation ${sweepMin.toFixed(3)} px ` +
-              `(rings r=${sweepMinPair[0]} and r=${sweepMinPair[1]}), corridor ${corridor} px`);
-
-  // (2b) SAME-RING PAIRS. Their separation is a constant of the layout — one angular spacing, one shared
-  //      angular velocity — so it is read off the real generator rather than swept, and it is enormous
-  //      compared with the inter-ring corridor. This is the half of "no two rail bodies can touch" that
-  //      the angle sweep above deliberately does not cover.
-  {
-    const layout = X.generateOrbitLayout({
-      satelliteDiameter: X.DEBRIS_RADII[3] * 2, shipDiameter: X.SHIP_RADIUS * 2,
-      centerX: X.game.dock.x, centerY: X.game.dock.y,
-      orbitCount: X.ORBIT_RING_COUNT, innerRadius: X.ORBIT_INNER_RADIUS,
-      radiusStep: X.orbitRadiusStepFor(X.ORBIT_RING_COUNT), safetyMargin: X.DEBUG.orbitSafetyMargin,
-      minGapMultiplier: X.orbitEffectiveGapMult(FULL), densityByOrbit: X.ORBIT_DENSITY,
-      baseAngVel: X.ORBIT_ANG_VEL, fastRingIndices: X.ORBIT_FAST_RING.map(n => n - 1),
-      fastRingMult: X.ORBIT_FAST_MULT, activeRings: X.activeRingsFor(FULL),
-    });
-    let laneMin = Infinity;
-    for (const ring of layout.rings) laneMin = Math.min(laneMin, ring.actualGapPx);
-    assert(laneMin > corridor,
-      `E: the tightest SAME-RING lane on the board is ${laneMin.toFixed(1)} px, far wider than the ${corridor} px ` +
-      `inter-ring corridor — so the inter-ring case really is the binding one`);
-    // ...and measured on the real spawned bodies, ring by ring, not just read off the layout.
-    let sameMin = Infinity, sameChecked = 0;
-    const rails = railBodies(X);
-    for (let i = 0; i < rails.length; i++) for (let j = i + 1; j < rails.length; j++) {
-      if (rails[i].orbitRadius !== rails[j].orbitRadius) continue;
-      sameChecked++;
-      sameMin = Math.min(sameMin, Math.sqrt(X.dist2(rails[i], rails[j])) - rails[i].radius - rails[j].radius);
-    }
-    assert(sameChecked > 0, "E: (setup) there really are same-ring pairs to measure");
-    // REPOINTED BY CS023 P4C off `corridor` and onto the seam floor (1b): a real spawn's ring-4 antipodal
-    // pair can now sit 68 px apart, under the 108 px corridor. This passed at P1's geometry, and would
-    // have gone on passing here only by the luck of a start angle.
-    assert(sameMin >= seamFloor - 1e-6,
-      `E: P4C — ...and the ${sameChecked} real same-ring pairs measure ${sameMin.toFixed(1)} px apart at the closest, never under the ${seamFloor} px seam floor`);
-  }
-
-  // (3) THE SAME CLAIM ON REAL SPAWNS, at every occurrence of the archetype.
-  let realMin = Infinity, pairsChecked = 0;
-  for (let occ = 1; occ <= 21; occ++) {
-    const Y = seededBuild(0xE100 + occ);
-    Y.startGame();
-    atWave(Y, occ * Y.ORBIT_LEVEL_EVERY);
-    const rs = railBodies(Y);
-    assert(rs.length > 0, `E: (setup) occurrence ${occ} laid rail-borne satellites`);
-    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
-      pairsChecked++;
-      realMin = Math.min(realMin, Math.sqrt(Y.dist2(rs[i], rs[j])) - rs[i].radius - rs[j].radius);
-    }
-  }
-  // REPOINTED BY CS023 P4C: the floor is the SEAM floor now, not the corridor — see (1b).
-  assert(realMin >= seamFloor - 1e-6,
-    `E: P4C — across all 21 occurrences (${pairsChecked} real rail-to-rail pairs) the minimum separation is ` +
-    `${realMin.toFixed(1)} px, never below the ${seamFloor} px seam floor`);
-  assert(realMin > 0, "E: ...and always strictly positive — C11's rail/rail branch is unreachable at spawn");
-
-  // (4) ...AND OVER TIME, not just at spawn: rings spin at different rates, so the relative angles move.
-  {
-    const Y = seededBuild(0xE900);
-    Y.startGame();
-    atWave(Y, levelWithRings(Y, Y.ORBIT_RING_COUNT));
-    Y.game.state = "playing"; Y.game.paused = false;
-    let liveMin = Infinity, frames = 0;
-    for (let i = 0; i < 1800; i++) {            // 30 s — a full relative revolution between a slow and a fast ring
-      Y.game.ship.hp = Y.SHIP_MAX_HP;
-      Y.update(1 / 60);
-      const rs = railBodies(Y);
-      if (rs.length < 2) break;
-      frames++;
-      for (let p = 0; p < rs.length; p++) for (let q = p + 1; q < rs.length; q++)
-        liveMin = Math.min(liveMin, Math.sqrt(Y.dist2(rs[p], rs[q])) - rs[p].radius - rs[q].radius);
-    }
-    eq(frames, 1800, "E: (setup) the 30 s live sweep ran to completion with the shell intact");
-    // REPOINTED BY CS023 P4C, AND THIS IS THE BLOCK THAT FOUND THE SEAM FLOOR. Thirty seconds of real
-    // rotation is long enough to walk ring 4's antipodal pair through vertical, so unlike the snapshot
-    // blocks above this one reaches the true minimum every run rather than depending on a start angle.
-    assert(liveMin >= seamFloor - 1e-6,
-      `E: P4C — over 1800 REAL frames the minimum live rail-to-rail separation is ${liveMin.toFixed(1)} px — never below the ${seamFloor} px seam floor`);
-    assert(liveMin > 0,
-      `E: ...and never zero: C11's rail/rail no-op stays unreachable through a full relative revolution`);
-    assert(liveMin < corridor,
-      `E: ...while genuinely dipping UNDER the ${corridor} px corridor (${liveMin.toFixed(1)} px), which is the finding P4c added`);
-    console.log(`    30 s of real play: minimum live rail-to-rail separation ${liveMin.toFixed(1)} px`);
-  }
-
-  // (5) THE BRANCH ITSELF IS A LITERAL NO-OP. Forced directly, since play cannot produce it.
-  {
-    const Y = seededBuild(0xEA00);
-    Y.startGame();
-    atWave(Y, levelWithRings(Y, Y.ORBIT_RING_COUNT));
-    const rs = railBodies(Y);
-    const p = rs[0], q = freeSat(Y, p.x + 3, p.y - 2, 3, 111, -222);
-    q.orbitCenter = p.orbitCenter; q.orbitRadius = p.orbitRadius;
-    q.orbitAngle = p.orbitAngle + 0.01; q.orbitAngVel = p.orbitAngVel;
-    assert(Math.sqrt(Y.dist2(p, q)) < p.radius + q.radius, "E: (setup) the forced pair really is overlapping");
-    const bp = snap12(p), bq = snap12(q);
-    Y.debrisBounce(p, q);
-    for (const k of TWELVE) { eq(p[k], bp[k], `E: rail/rail is a no-op — first body's ${k} untouched`); eq(q[k], bq[k], `E: ...and the second's ${k}`); }
-  }
-}); })();
+// WHAT SURVIVES THEM IS NOT LOST. The free/FIXED branch those sections exercised is still live — a Saucer
+// is now its only fixed partner — and it is covered by section (A)'s dispatch pins above, by CS023 P3's
+// own UFO-vs-debris sections, and by test-cs024-p1.js §C, which sweeps BOTH surviving branches against a
+// reference implementation of the pre-CS024 three-branch form across every size pair and an
+// incoming-velocity grid. (E)'s subject in particular is not merely untested but IMPOSSIBLE: the branch
+// it proved unreachable has been deleted, which section (A) now pins directly.
 
 // ================= (F) spec §6 item 9 — WRAP CORRECTNESS, with a NAIVE CONTROL that must FAIL ========
 (function sectionF() { withRandom(seededRandom(0xF0F0), () => {
   console.log("(F) wrap correctness at the seam, with a naive non-wrap normal as a LIVE control");
   const X = seededBuild(0xF001);
   X.startGame();
-  atWave(X, levelWithRings(X, X.ORBIT_RING_COUNT));
+  atWave(X, RING_LEVEL);
   const [W, H] = X.worldDims(X.game.worldSize);
-  eq(W, 3840, "F: (setup) the orbit level really is running in the size-9 world");
+  // REPOINTED BY CS024 P1: every level runs at WORLD_SIZE_FIELD now (2560x1440), so the seam this section
+  // exercises is the field world's seam. The claim — that wrap-aware measurement is load-bearing and a
+  // naive one is wrong by a full world period — is unchanged and is proven against THIS world instead.
+  eq(W, 2560, "F: (setup) the level is running in the field-sized world, the only size left");
 
   let worstNaiveErr = 0, cases = 0;
   // A GENUINE STRADDLE, built rather than hoped for: `a` sits a couple of px inside a corner and `b` a
@@ -1101,36 +688,10 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   console.log(`    ${cases} seam cases: worst naive distance error ${worstNaiveErr.toFixed(0)} px (a full world period)`);
   assert(worstNaiveErr > 1000, "F: CONTROL — the naive measurement is wrong by more than 1,000 px at the seam");
 
-  // The same, free vs RAIL: a ring straddling the seam is the routine case on an orbit level.
-  {
-    const Y = seededBuild(0xF900);
-    Y.startGame();
-    const FULL = levelWithRings(Y, Y.ORBIT_RING_COUNT);
-    // Put the dock hard against a seam by placing the ship there before the wave is laid.
-    Y.game.wave = FULL - 1; Y.game.debris.length = 0;
-    Y.nextWave();
-    const [WW, HH] = Y.worldDims(Y.game.worldSize);
-    Y.game.dock.x = 4; Y.game.dock.y = HH - 4;
-    Y.game.debris.length = 0;
-    Y.game.wave = FULL - 1; Y.nextWave();
-    Y.game.dock.x = 4; Y.game.dock.y = HH - 4;
-    // Re-lay by hand is not needed — just take a rail body and confirm the shell really straddles.
-    const rs = railBodies(Y);
-    assert(rs.length > 0, "F: (setup) a seam-side orbit wave laid rail-borne satellites");
-    const straddlers = rs.filter(r => r.x < 900 || r.x > WW - 900 || r.y < 900 || r.y > HH - 900);
-    assert(straddlers.length > 0, "F: (setup) ...and some of them sit within a ring radius of a seam");
-    for (const r of straddlers.slice(0, 8)) {
-      const ang = Math.atan2(r.vy, r.vx);
-      const p = Y.wrapPos({ x: r.x + Math.cos(ang) * (r.radius + Y.DEBRIS_RADII[3] - 5),
-                            y: r.y + Math.sin(ang) * (r.radius + Y.DEBRIS_RADII[3] - 5) });
-      const f = freeSat(Y, p.x, p.y, 3, 0, 0);
-      const before = snap12(r);
-      Y.debrisBounce(f, r);
-      for (const k of TWELVE) eq(r[k], before[k], `F: a seam-side rail body is still untouched — ${k}`);
-      close(Math.sqrt(Y.dist2(f, r)), r.radius + f.radius + 2, "F: ...and the free body lands at contact + 2 px, wrap-aware", 1e-6);
-      assert(f.x >= -60 && f.x <= WW + 60 && f.y >= -60 && f.y <= HH + 60, "F: ...and inside the world, because wrap() ran");
-    }
-  }
+  // PRUNED BY CS024 P1: a second sub-block stood here doing the same seam check FREE vs RAIL — a ring
+  // straddling the world seam was the routine case on an orbit level, not the edge case. There are no
+  // rings, so the sub-block has no subject; the wrap claim itself is fully carried by the free/free
+  // sweep above, which is the branch that actually still runs in the shipped game.
 }); })();
 
 // ================= (G) THE PASS ITSELF, THROUGH REAL update(1/60) FRAMES =====================
@@ -1142,7 +703,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     const X = seededBuild(0x6001);
     X.startGame();
     atWave(X, 4);
-    eq(X.levelDef(4).archetype, "field", "G: (setup) level 4 is a field level");
+    assert(!("archetype" in X.levelDef(4)), "G: (setup) REPOINTED BY CS024 P1 — there is no archetype column; every level is the one kind");
     X.game.debris.length = 0;
     X.game.state = "playing"; X.game.paused = false;
     const [W, H] = X.worldDims(X.game.worldSize);
@@ -1161,25 +722,11 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     close(a.vy + b.vy, 0, "G: ...in both axes", 1e-6);
   }
 
-  // (2) THE MIXED POPULATION AN ORBIT LEVEL ACTUALLY CARRIES (Correction C12's predicted fix): a FIELD
-  //     satellite spawned on top of a ring satellite used to pass straight through it.
-  {
-    const X = seededBuild(0x6002);
-    X.startGame();
-    atWave(X, levelWithRings(X, X.ORBIT_RING_COUNT));
-    X.game.state = "playing"; X.game.paused = false;
-    const r = railBodies(X)[0];
-    const f = freeSat(X, r.x + 6, r.y - 4, 3, 0, 0);
-    X.game.debris.push(f);
-    X.game.ship.hp = X.SHIP_MAX_HP;
-    const before = snap12(r);
-    X.update(1 / 60);
-    assert(Math.sqrt(X.dist2(f, r)) >= f.radius + r.radius, "G: an overlapped FIELD satellite is pushed clear of a ring satellite in one frame");
-    // The rail body kept doing exactly what it was doing — its own rail motion, nothing else.
-    for (const k of ["orbitRadius", "orbitAngVel", "orbitCenter", "dead", "guardT", "spin"])
-      eq(r[k], before[k], `G: ...and the ring satellite's ${k} is untouched`);
-    close(Math.sqrt(X.dist2(r, r.orbitCenter)), r.orbitRadius, "G: ...and it is still exactly on its rail", 1e-6);
-  }
+  // (2) PRUNED BY CS024 P1. This staged THE MIXED POPULATION AN ORBIT LEVEL CARRIED — a field satellite
+  //     spawned on top of a ring satellite, which used to pass straight through it (Correction C12's
+  //     predicted fix) — and pinned that the ring satellite stayed exactly on its rail through the
+  //     frame. With one population there is no mixture to stage: case (1) above already drives two
+  //     free satellites through a real update(1/60) frame, which is now the only case that exists.
 
   // (3) A DEAD BODY IS NEVER BOUNCED. The pass runs before the end-of-frame filter, so BOTH sides must
   //     check the flag — a dead body that got shoved would be a ghost contact. Driven in BOTH array
@@ -1233,46 +780,11 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     assert(Math.sqrt(X.dist2(g1, g2)) < 5, "G: ...they are still sitting on top of each other, unbounced");
   }
 
-  // (5) THE PASS FIRES IN ORDINARY PLAY, not just in staged setups. destroyDebris() births its three
-  //     children at the parent's OWN position, and a rail-borne parent hands all three the SAME tangent —
-  //     so a split is the commonest contact in the game and the floor is what breaks the stack up.
-  {
-    const X = seededBuild(0x6005);
-    X.startGame();
-    atWave(X, levelWithRings(X, X.ORBIT_RING_COUNT));
-    X.game.state = "playing"; X.game.paused = false;
-    const parent = railBodies(X)[0];
-    const px = parent.x, py = parent.y;
-    X.destroyDebris(parent, true);
-    const kids = X.game.debris.filter(d => !d.dead && d.size === 2);
-    eq(kids.length, 3, "G: (setup) the rail-borne parent split three ways");
-    for (const k of kids) eq(k.orbitCenter, undefined, "G: (setup) ...and every child is FREE, carrying no orbit state");
-    const spread0 = Math.max(Math.sqrt(X.dist2(kids[0], kids[1])), Math.sqrt(X.dist2(kids[0], kids[2])), Math.sqrt(X.dist2(kids[1], kids[2])));
-    close(spread0, 0, "G: (setup) ...and all three are born at exactly the parent's position", 1e-9);
-    close(Math.hypot(kids[0].vx - kids[1].vx, kids[0].vy - kids[1].vy), 0,
-      "G: (setup) ...with IDENTICAL velocities, because a rail parent hands over its tangent", 1e-9);
-    const closest = () => Math.min(Math.sqrt(X.dist2(kids[0], kids[1])),
-                                   Math.sqrt(X.dist2(kids[0], kids[2])),
-                                   Math.sqrt(X.dist2(kids[1], kids[2])));
-    X.game.ship.hp = X.SHIP_MAX_HP;
-    X.update(1 / 60);
-    const spread1 = closest();
-    assert(spread1 > 0, "G: ONE real frame breaks the coincident stack apart — the three children are no longer at one point");
-    assert(kids.every(k => Math.hypot(k.vx - kids[0].vx, k.vy - kids[0].vy) >= 0) &&
-           kids.some(k => Math.hypot(k.vx - kids[0].vx, k.vy - kids[0].vy) > 0),
-      "G: ...and they no longer share one velocity, so they will keep separating");
-    // FULL separation takes a few frames, and honestly so: a pair-walk resolves ONE pair at a time, so a
-    // three-body pile is resolved over successive frames rather than all at once. Bounded and asserted.
-    let framesToClear = 1;
-    while (closest() < 2 * X.DEBRIS_RADII[2] && framesToClear < 60) {
-      X.game.ship.hp = X.SHIP_MAX_HP; X.update(1 / 60); framesToClear++;
-    }
-    assert(framesToClear < 60,
-      `G: ...and all three pairs are fully clear of contact after ${framesToClear} frames (a pair-walk resolves a ` +
-      `three-body pile over successive frames, not in one)`);
-    console.log(`    a coincident 3-way split at (${px.toFixed(0)}, ${py.toFixed(0)}) is ${spread1.toFixed(1)} px apart ` +
-                `after one frame and fully clear after ${framesToClear}`);
-  }
+  // PRUNED BY CS024 P1: a sub-block here staged a RAIL-BORNE PARENT and pinned destroyDebris()'s
+  // handoff — the three children leaving the rail as free bodies carrying the parent's instantaneous
+  // orbital tangent as their identical velocity (FORK-CS021-C2 -> (i)). That handoff is removed with
+  // the rails; every split child now takes the fresh random velocity its own constructor rolls, which
+  // test-cs017-p3.js §D pins at every level.
 }); })();
 
 // ================= (H) ⛔ FRAME-BUDGET GATE (spec §6 item 18) =====================
@@ -1447,11 +959,22 @@ const COALESCE_HARVEST_CEILING = 500000;
   const blitz   = probe(21, 0x9021, "blitz");
 
   // Validity: no probe may silently degenerate into a cheaper code path.
-  const PEAK_SPAWN = 31;   // spec §1.4's published peak as amended by C16 (P4C: 29 -> 31), re-derived below rather than trusted
+  // REPOINTED BY CS024 P1. PEAK_SPAWN was 31 — CS022 P3's 18 ring satellites plus the 13-piece field
+  // component an orbit level carried on top of them, amended by C16 from 29. With the rings gone, level
+  // 21's spawn is simply the level table's own ceiling, and it is DERIVED from levelDef rather than
+  // restated as a literal, so a future table retune carries this probe instead of stranding it.
+  //   THE CEILINGS BELOW ARE DELIBERATELY NOT LOWERED TO MATCH. They are upper bounds derived before
+  // measuring, and a gate whose bound tracks the measurement downward stops being a gate. The measured
+  // headroom simply grew, which is reported in the summary rather than tuned away; CS024 P3 is the phase
+  // that puts real pressure back on these counters (permanent garbage), and it should inherit bounds that
+  // were not quietly ratcheted down first.
+  let PEAK_SPAWN;
   {
     const V = seededBuild(0x9500);
     V.startGame();
-    eq(atWave(V, 21), PEAK_SPAWN, "H: (validity) P4C — level 21 really is the 31-satellite peak wave (was 29)");
+    PEAK_SPAWN = V.levelDef(21).junkCount;
+    eq(PEAK_SPAWN, 13, "H: (validity) REPOINTED BY CS024 P1 — level 21's spawn is the level table's 13, the whole board now");
+    eq(atWave(V, 21), PEAK_SPAWN, "H: (validity) ...and the real nextWave() spawns exactly that many");
     eq(V.game.debris.every(d => d.size === 3), true, "H: (validity) ...and every one of them is a size-3 large, so the cascade bound holds");
   }
   for (const p of [harvest, blitz, death]) eq(p.spawned, PEAK_SPAWN, `H: (validity) the ${p.mode} probe started from the ${PEAK_SPAWN}-satellite peak wave`);
@@ -1516,8 +1039,41 @@ const COALESCE_HARVEST_CEILING = 500000;
     console.log(`    teeth: a ${N}-body sandbox board (unreachable in play — the level-21 cascade tops out at 377) ` +
                 `registers ${S.__PROBE.debrisPairs.toLocaleString("en-US")} debris pair checks`);
   }
-  assert(blitz.worstC > COALESCE_HARVEST_CEILING,
-    `H: (teeth) the coalesce counter registers far more than ITS gated realistic ceiling (${blitz.worstC.toLocaleString("en-US")})`);
+  // REPOINTED BY CS024 P1. This used to ride on the blitz probe: at a 31-satellite peak wave the garbage
+  // that cascade produced was itself enough to drive the coalesce counter past its realistic ceiling, so
+  // the counter's teeth came free. A 13-satellite board does not produce that much garbage, so the claim
+  // is moved onto a SANDBOX over-stress — exactly the idiom the debris counter above already uses, and
+  // for exactly the same reason: a gate is only worth having if the instrument could register a breach.
+  {
+    const S = withRandom(seededRandom(0x9E00), () => buildFrom(instrumented, { extra: ["__PROBE"] }));
+    withRandom(seededRandom(0x9E00), () => { S.startGame(); atWave(S, 4); });
+    S.game.state = "playing"; S.game.paused = false;
+    S.game.debris.length = 0;
+    S.game.garbage.length = 0;
+    const [W, H] = S.worldDims(S.game.worldSize);
+    const NG = 1200;   // not reachable in play; it exists to show the counter scales and would show a breach
+    withRandom(seededRandom(0x9E01), () => {
+      for (let i = 0; i < NG; i++) {
+        const g = new S.Garbage((i * 37) % W, (i * 53) % H, 0, 0);
+        // coalesceGarbage's OUTER loop `continue`s past any piece still inside its inert window
+        // (`a.coalesceDelay > 0`), so a board of fresh canisters would read ZERO and look like a pass —
+        // the exact trap this file's own live-counter control at (H) setup warns about. Clearing the
+        // delay is staging, not a reimplementation: it is the state a canister reaches on its own a
+        // couple of seconds later.
+        g.coalesceDelay = 0;
+        S.game.garbage.push(g);
+      }
+    });
+    S.__PROBE.coalescePairs = 0;
+    S.game.ship.hp = S.SHIP_MAX_HP;
+    S.update(1 / 60);
+    assert(S.__PROBE.coalescePairs > COALESCE_HARVEST_CEILING,
+      `H: (teeth) REPOINTED BY CS024 P1 — a ${NG}-canister sandbox board drives the coalesce counter to ` +
+      `${S.__PROBE.coalescePairs.toLocaleString("en-US")} checks, ABOVE the ` +
+      `${COALESCE_HARVEST_CEILING.toLocaleString("en-US")} gate, so a real breach could not go unseen`);
+    console.log(`    teeth: a ${NG}-canister sandbox board registers ` +
+                `${S.__PROBE.coalescePairs.toLocaleString("en-US")} coalesce pair checks`);
+  }
 
   for (const p of [harvest, death, blitz]) {
     const label = p.mode === "harvest" ? "PROGRESSIVE FULL HARVEST (steady, ship alive) — GATED"
@@ -1571,7 +1127,7 @@ const COALESCE_HARVEST_CEILING = 500000;
   const run = () => withRandom(seededRandom(0xDE7E), () => {
     const B = build();
     B.startGame();
-    atWave(B, levelWithRings(B, B.ORBIT_RING_COUNT));
+    atWave(B, RING_LEVEL);
     B.game.state = "playing"; B.game.paused = false;
     const out = [];
     for (let i = 0; i < 240; i++) {
@@ -1584,7 +1140,7 @@ const COALESCE_HARVEST_CEILING = 500000;
     return JSON.stringify(out);
   });
   const a = run(), b = run(), c = run();
-  eq(a, b, "I: two seeded runs of a real bouncing orbit level are byte-identical");
+  eq(a, b, "I: two seeded runs of a real bouncing level are byte-identical");
   eq(b, c, "I: ...and a third");
   assert(a.length > 2000, "I: (control) the snapshot is substantial, not an empty array");
   // The one unpinned Math.random() site in the whole build is named rather than left implicit.
@@ -1603,7 +1159,7 @@ const COALESCE_HARVEST_CEILING = 500000;
     withRandom(seededRandom(0x5A12), () => {
       // Walk the whole ramp — one ring, two, three, four — with real bouncing on every one.
       for (let occ = 1; occ <= 5; occ++) {
-        atWave(X, occ * X.ORBIT_LEVEL_EVERY);
+        atWave(X, occ * 3);
         X.game.state = "playing"; X.game.paused = false;
         // Seed a coincident split so the pass has real work on every level.
         const live = X.game.debris.filter(d => !d.dead);

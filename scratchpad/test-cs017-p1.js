@@ -73,11 +73,11 @@ const RETURN = [
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
   "MusicSys", "AudioSys",
-  // CS021 P2 REPOINT (sections B, F): the orbit archetype's total is occurrence-scaled now, not the
-  // fixed 40 P1 shipped — orbitTotalAt() below recomputes it from these.
-  "generateOrbitLayout", "orbitGapMult", "activeRingsFor", "SHIP_RADIUS", "DEBRIS_RADII",
-  "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
-  "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT",
+  // CS024 P1: the eight ORBIT_* constants and the three orbit functions (generateOrbitLayout,
+  // orbitGapMult, activeRingsFor) that CS021 P2 added here are REMOVED — they no longer exist in the
+  // build, so exporting them threw a ReferenceError out of the factory's own return statement. SHIP_RADIUS
+  // and DEBRIS_RADII went with them: they were pulled in only to feed the ring generator's geometry
+  // arguments.
   // A scope probe, so section (E) can ask "does this identifier exist at all?" without the factory's
   // own return statement throwing a ReferenceError on a retired symbol. Direct eval keeps the script
   // block's lexical scope, so this sees exactly what the game's own code would see.
@@ -110,43 +110,15 @@ function build() {
   return factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, localStorageStub);
 }
 
-// CS021 P2 REPOINT helper (sections B, F): P1 shipped ONE gap multiplier for every occurrence, so a real
-// orbit wave always spawned exactly 40 satellites; P2 makes it occurrence-scaled (orbitGapMult), so the
-// total now climbs to 45 by the floor. Recompute the expectation from the SAME generator + multiplier
-// nextWave() is wired to, rather than restating a level-40 literal that is only true at occurrence 1.
-// Consumes its own rand() draws (placeOrbitRing's startAngle) but never reads them back, so it does not
-// disturb any Math.random() sequencing the surrounding assertions depend on.
-// EXTENDED BY CS022 P3 — the third rewrite of this helper, and the reason it is a helper at all: it
-// recomputes what an orbit level's nextWave() ACTUALLY SPAWNS from the same generator, ramp and level
-// table the shipped code is wired to, so a geometry or schedule move fails as a wiring mismatch rather
-// than as a stale literal. Two parts are new this changeset:
-//   * THE RING RAMP (FORK-CS022-E) — activeRingsFor(level) selects rings outermost-first, so occurrence 1
-//     lays only ring 4 and all four are present from occurrence 4 (level 12) onward;
-//   * THE FIELD COMPONENT (FORK-CS022-F) — levelDef(level).fieldCount ordinary scatter satellites ON TOP
-//     of the rings, which is exactly what retires CS021's "junkCount is not consumed on an orbit level"
-//     rule (spec Correction C6) and is why this returns a SUM rather than layout.total.
-function orbitTotalAt(A, level) {
-  const ringTotal = A.generateOrbitLayout({
-    satelliteDiameter: A.DEBRIS_RADII[3] * 2,
-    shipDiameter:      A.SHIP_RADIUS * 2,
-    centerX: 0, centerY: 0,
-    orbitCount:        A.ORBIT_RING_COUNT,
-    innerRadius:       A.ORBIT_INNER_RADIUS,
-    radiusStep:        A.ORBIT_RADIUS_STEP,
-    safetyMargin:      A.ORBIT_SAFETY_MARGIN,
-    minGapMultiplier:  A.orbitGapMult(level),
-    densityByOrbit:    A.ORBIT_DENSITY,
-    baseAngVel:        A.ORBIT_ANG_VEL,
-    // REPOINTED BY CS023 P1 (spec C3): ORBIT_FAST_RING is a LIST of 1-based ring numbers and the
-    // generator's parameter is the plural `fastRingIndices`. This helper only reads `.total`, so the
-    // stale scalar key would have gone on passing while quietly making every ring slow — a wiring
-    // mismatch that means nothing here today and would mislead the moment anyone read angVel off it.
-    fastRingIndices:   A.ORBIT_FAST_RING.map(n => n - 1),
-    fastRingMult:      A.ORBIT_FAST_MULT,
-    activeRings:       A.activeRingsFor(level),   // CS022 P3: the ramp, read from the shipped helper
-  }).total;
-  return ringTotal + A.levelDef(level).fieldCount; // CS022 P3: rings PLUS the field component
-}
+// CS024 P1 REMOVED orbitTotalAt(). The helper existed to recompute what an ORBIT level's nextWave()
+// actually spawned — ring generator + occurrence-scaled gap multiplier + ring ramp + the CS022 P3
+// field component — so a geometry or schedule move failed as a wiring mismatch rather than as a stale
+// literal. With the orbit archetype removed permanently there is no second spawn rule left to
+// recompute: EVERY level now spawns exactly levelDef(level).junkCount ordinary scatter satellites
+// through the one unconditional spawnFieldSatellites() call. The archetype branches this helper fed
+// are collapsed to that single rule below, INVERTED to their positive successor rather than deleted —
+// each site now asserts that the level-table count is what actually spawned, at every level, which is
+// the claim that would catch a second spawn path being reintroduced.
 
 // ================= (B) the cycle clock is RETIRED; game.wave alone drives the level table ==============
 // REPOINTED BY CS018 P4 (was: "nextWave() derives cycle/cycleWave as a CYCLE_LENGTH=9 sawtooth"). The
@@ -164,21 +136,16 @@ function orbitTotalAt(A, level) {
     assert(g.wave === w, `B: game.wave is the untouched absolute counter (expected ${w}, got ${g.wave})`);
     assert(!("cycle" in g), `B: level ${w}: game.cycle does not exist (the sawtooth is gone)`);
     assert(!("cycleWave" in g), `B: level ${w}: game.cycleWave does not exist (the sawtooth is gone)`);
-    // The ONE clock, proven by its effect. REPOINTED BY CS021 P1: levelDef(game.wave) now also decides
-    // the level's ARCHETYPE, and that is still ONE clock — game.wave — not two. A field level's spawned
-    // junk count is still levelDef(game.wave).junkCount; an orbit level's population comes from its
-    // geometry instead, so the effect measured here is the archetype the same single clock produced.
-    const arch = A.levelDef(g.wave).archetype;
-    if (arch === "orbit") {
-      const wantTotal = orbitTotalAt(A, w);   // CS021 P2: occurrence-scaled, no longer always 40
-      assert(g.debris.length === wantTotal,
-        `B: level ${w}: ORBIT archetype spawned the ${wantTotal}-satellite layout (got ${g.debris.length})`);
-    } else {
-      assert(g.debris.length === A.levelDef(g.wave).junkCount,
-        `B: level ${w}: spawned junk ${g.debris.length} === levelDef(${w}).junkCount ${A.levelDef(w).junkCount}`);
-    }
-    assert(arch === (w % 3 === 0 ? "orbit" : "field"),
-      `B: level ${w}: the archetype is a pure function of the ONE clock (got ${arch})`);
+    // The ONE clock, proven by its effect. REPOINTED BY CS024 P1, to the mirror image of the CS021 P1
+    // claim and at greater strength: the ARCHETYPE SPLIT IS GONE, so this no longer has to concede a
+    // whole class of levels to a different rule. EVERY level 1-28 — including 3, 6, 9 … which were orbit
+    // levels for three changesets — now spawns exactly levelDef(game.wave).junkCount, through the one
+    // unconditional spawnFieldSatellites() call. The archetype field itself no longer exists on the
+    // level table, which is asserted directly so a quiet reintroduction fails here.
+    assert(g.debris.length === A.levelDef(g.wave).junkCount,
+      `B: level ${w}: spawned junk ${g.debris.length} === levelDef(${w}).junkCount ${A.levelDef(w).junkCount}`);
+    assert(!("archetype" in A.levelDef(w)),
+      `B: level ${w}: levelDef has NO archetype column any more (CS024 P1 — one spawn rule, not two)`);
   }
   // CONTROL: the level table is genuinely not a 9-long sawtooth — level 1 and level 10 (same cycleWave
   // under the retired CYCLE_LENGTH 9) do not have to agree, and in fact do not on the shipped table.
@@ -293,58 +260,29 @@ function orbitTotalAt(A, level) {
     assert(g.wave === w, `F: sanity — game.wave === ${w}`);
 
     // --- TABLE-DRIVEN: junk count + speedMul, exactly as nextWave() spawned them (CS018 P3) ---
-    // REPOINTED BY CS021 P1. The count/speed claim is about the FIELD archetype's drift spawn and is
-    // unchanged there. An ORBIT level's satellites are on a rail: their vx/vy is the instantaneous
-    // orbital tangent (angVel × radius), which has nothing to do with DEBRIS_SPEEDS × junkSpeedMul, so
-    // the tier envelope is a category error for them. They get their own assertion instead of a skip.
-    //
-    // REPOINTED BY CS022 P3 (spec §1.4, FORK-CS022-F): an orbit level now spawns BOTH populations —
-    // ramped rings plus levelDef(n-1).junkCount ordinary scatter satellites — so "which speed rule
-    // applies" is a PER-ENTITY question keyed on orbit state, not a per-LEVEL one. Dispatching on the
-    // level, as this branch used to, fed the field component's undefined orbitAngVel into the rail rule
-    // and produced NaN. Each population is now checked by ITS OWN rule, and the field component on an
-    // orbit level is checked by exactly the same tier envelope a field level's scatter is.
+    // REPOINTED BY CS024 P1, and this site loses a two-changeset-long complication rather than an
+    // assertion. CS021 P1 split it by archetype because an orbit level's satellites were on a rail and
+    // their vx/vy was the orbital tangent (angVel × radius), which has nothing to do with DEBRIS_SPEEDS ×
+    // junkSpeedMul; CS022 P3 then re-split it PER ENTITY, because an orbit level spawned both populations
+    // and dispatching on the level fed the field component's undefined orbitAngVel into the rail rule and
+    // produced NaN. Neither hazard can exist now: there is one population, one spawn rule and one speed
+    // rule, so the tier envelope applies to EVERY piece at EVERY level with no dispatch at all. The
+    // per-entity rail check is INVERTED to a positive assertion that no spawned piece carries rail state.
     const expectedSpeedMul = A.junkSpeedMul();
-    const tierEnvelope = (d, label) => {
+    const expectedCount = A.levelDef(w).junkCount;
+    assert(g.debris.length === expectedCount,
+      `F: level ${w}: junk count expected ${expectedCount}, got ${g.debris.length}`);
+    // Every piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the piece speed
+    // falls inside the rand(0.7,1.3) envelope of the tier-derived multiplier.
+    for (const d of g.debris) {
       const sp = Math.hypot(d.vx, d.vy);
       const lo = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 0.7 * 0.999;
       const hi = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 1.3 * 1.001;
       assert(sp >= lo && sp <= hi,
-        `F: level ${w}: ${label} speed ${sp.toFixed(2)} outside the tier envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
-    };
-    if (A.levelDef(w).archetype === "orbit") {
-      const wantTotal = orbitTotalAt(A, w);   // CS022 P3: rings (ramped) + the field component
-      assert(g.debris.length === wantTotal, `F: level ${w}: ORBIT level spawned the ${wantTotal}-satellite layout (got ${g.debris.length})`);
-      let railBorne = 0, scatter = 0;
-      for (const d of g.debris) {
-        if (d.orbitCenter) {
-          railBorne++;
-          const sp = Math.hypot(d.vx, d.vy);
-          const want = Math.abs(d.orbitAngVel * d.orbitRadius);
-          assert(Math.abs(sp - want) < 1e-9,
-            `F: level ${w}: orbiting satellite speed ${sp.toFixed(3)} === angVel × radius ${want.toFixed(3)}`);
-        } else {
-          scatter++;
-          tierEnvelope(d, "orbit-level FIELD COMPONENT junk");
-        }
-      }
-      assert(scatter === A.levelDef(w).fieldCount,
-        `F: level ${w}: the field component is exactly levelDef(${w}).fieldCount (${A.levelDef(w).fieldCount}, got ${scatter})`);
-      assert(railBorne === wantTotal - scatter,
-        `F: level ${w}: ...and the remaining ${railBorne} satellites are all rail-borne`);
-    } else {
-      const expectedCount = A.levelDef(w).junkCount;
-      assert(g.debris.length === expectedCount,
-        `F: level ${w}: junk count expected ${expectedCount}, got ${g.debris.length}`);
-      // Every piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the piece speed
-      // falls inside the rand(0.7,1.3) envelope of the tier-derived multiplier.
-      for (const d of g.debris) {
-        const sp = Math.hypot(d.vx, d.vy);
-        const lo = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 0.7 * 0.999;
-        const hi = A.DEBRIS_SPEEDS[3] * expectedSpeedMul * 1.3 * 1.001;
-        assert(sp >= lo && sp <= hi,
-          `F: level ${w}: junk speed ${sp.toFixed(2)} outside the tier envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
-      }
+        `F: level ${w}: junk speed ${sp.toFixed(2)} outside the tier envelope [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+      assert(d.orbitCenter === undefined && d.orbitRadius === undefined &&
+             d.orbitAngle === undefined && d.orbitAngVel === undefined,
+        `F: level ${w}: REPOINTED BY CS024 P1 (inverted) — no spawned satellite carries ANY rail state`);
     }
 
     // --- FROZEN: Hunter speed/turn — no clock at all (CS018 P4, FLAG-a) ---

@@ -598,15 +598,27 @@ function levelForCap(n) {
   // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
   // orbit-scoped, so its id no longer says "orbit"). The count stays 46 and the row does not move; only
   // the id, and therefore its membership in an `/^orbit/i` filter, changes.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 46, "H: DEBUG_VARS holds 46 value entries as of CS023 P4B (P4B itself renamed one, added none)");
+  // REPOINTED BY CS024 P1: 46 -> 35. The ten ORBIT knobs, their section header and debrisDriftAccel are
+  // REMOVED OUTRIGHT with the orbit archetype and the inward drift (spec §1.1/§1.5/§4.1/§5). This is the
+  // first time this pin has gone DOWN, and the reason matters: every earlier repoint was an append under
+  // the registry's append-only rule, whereas CS024 §5 scopes a deliberate REBUILD, so row indices below
+  // the removal shift and that is expected rather than a regression. The two orbit-shaped claims below
+  // are INVERTED to their positive successors rather than deleted, per the standing repoint convention —
+  // "exactly ten match /^orbit/i" becomes "NONE match", which is the assertion that would actually catch
+  // a knob creeping back in.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 35, "H: DEBUG_VARS holds 35 value entries as of CS024 P1 (46 - 10 ORBIT - debrisDriftAccel)");
   assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,
     "H: ...and the 33rd is CS019 P1's chainGuardCooldown, not some other silent addition");
-  eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 10,
-    "H: P4B — exactly CS021 P3's ten ORBIT knobs match /^orbit/i now; debrisDriftAccel (ex-orbitGravityAccel) no longer does");
-  eq(Y.DEBUG_VARS.filter(v => v.id === "debrisDriftAccel" || v.id === "debrisBounceRestitution").length, 2,
-    "H: ...and the two that moved it from 44 to 46 are CS023 P4's drift/bounce knobs (the first RENAMED by P4B)");
+  eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 0,
+    "H: REPOINTED BY CS024 P1 (inverted) — NO registry id matches /^orbit/i any more; all ten CS021 P3 knobs are gone");
+  eq(Y.DEBUG_VARS.filter(v => v.id === "debrisDriftAccel").length, 0,
+    "H: REPOINTED BY CS024 P1 (inverted) — debrisDriftAccel is GONE with the drift it drove");
+  eq(Y.DEBUG_VARS.filter(v => v.id === "debrisBounceRestitution").length, 1,
+    "H: ...but CS023 P2's debrisBounceRestitution SURVIVES — the satellite bounce is archetype-independent (CS024 spec §0)");
+  assert(!Y.DEBUG_VARS.some(v => v.header === "ORBIT"),
+    "H: REPOINTED BY CS024 P1 (inverted) — the ORBIT section header is gone from the registry too");
 })();
 
 // ================= (I) headless smoke =====================

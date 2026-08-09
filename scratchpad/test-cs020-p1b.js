@@ -405,9 +405,13 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // one knob — is unaffected; the count just has to track the live registry or it goes stale.
   // REPOINTED BY CS023 P4: 44 -> 46 (orbitGravityAccel, debrisBounceRestitution). Same reasoning.
   // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15). Count unaffected.
+  // REPOINTED BY CS024 P1: 46 -> 35 (the ORBIT section's 10 knobs + header, and debrisDriftAccel, removed
+  // outright with the orbit archetype and the inward drift — spec §1.1/§1.5/§4.1/§5). This phase's own
+  // claim — that CS020 P1b adds exactly one knob, under a DELIVERY header placed between CHAIN GUARD and
+  // JUNK — is unaffected and is still asserted directly below; only the live total moves.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 46, "A: DEBUG_VARS holds 46 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 46, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 35, "A: DEBUG_VARS holds 35 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 35, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");

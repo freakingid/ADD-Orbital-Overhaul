@@ -92,8 +92,22 @@ const [ORBIT_W, ORBIT_H] = worldDims(WORLD_SIZE_ORBIT);
 assert(ORBIT_W === 3840 && ORBIT_H === 2160, "A: worldDims(WORLD_SIZE_ORBIT) is exactly 3840x2160");
 assert(ORBIT_W === VIEW_W * Math.sqrt(WORLD_SIZE_ORBIT) && ORBIT_H === VIEW_H * Math.sqrt(WORLD_SIZE_ORBIT),
   "A: ...and that is the sqrt-of-area derivation, not a literal that happens to agree");
-assert(worldSizeFor(1) === WORLD_SIZE_FIELD && worldSizeFor(3) === WORLD_SIZE_ORBIT,
-  "A: worldSizeFor picks the size off the level's archetype (level 1 field, level 3 orbit)");
+// REPOINTED BY CS024 P1 (spec §3.6/§4.1, consequence 3), to the mirror image: worldSizeFor has lost its
+// archetype key and returns WORLD_SIZE_FIELD UNCONDITIONALLY, so level 3 — an orbit level for three
+// changesets, and the level this assertion was built around — is now the same size as level 1. Sampled
+// across a wide spread INCLUDING every former orbit level (multiples of 3), because "it returns field for
+// level 1" alone would pass even if a schedule quietly survived somewhere.
+for (const lv of [1, 2, 3, 6, 9, 12, 21, 42, 63, 64, 66, 99, 1000, 2001]) {
+  assert(worldSizeFor(lv) === WORLD_SIZE_FIELD,
+    `A: REPOINTED BY CS024 P1 — worldSizeFor(${lv}) is WORLD_SIZE_FIELD; every level runs at one size now`);
+}
+// ...and the 9x path is KEPT LIVE AND TESTABLE on purpose (Paul's explicit call, spec §3.6). The slot,
+// its dimensions and WORLD_SIZE_MAX's derivation from it all still hold — section E below drives
+// resizeWorld() at this size directly, which is what stops it rotting into untested dead code.
+assert(WORLD_SIZE_ORBIT === 9 && ORBIT_W === 3840 && ORBIT_H === 2160,
+  "A: the 9x world-size slot survives with its dimensions intact, reserved for future use");
+assert(WORLD_SIZE_MAX === Math.max(WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT) && WORLD_SIZE_MAX === 9,
+  "A: ...and WORLD_SIZE_MAX still derives from it, so STAR_COUNT is still generated at the largest table size");
 assert(SPAWN_MIN_DIST === 220, "A: SPAWN_MIN_DIST unchanged at 220");
 assert(SPAWN_MAX_DIST === 640, "A: SPAWN_MAX_DIST clamped to 640");
 assert(DOCK_MIN_DIST === 260, "A: DOCK_MIN_DIST unchanged at 260");
@@ -113,23 +127,15 @@ assert(DOCK_MAX_DIST < SPAWN_MAX_DIST, "A: DOCK_MAX_DIST stays below SPAWN_MAX_D
 
 // =====================================================================
 console.log("(B) Real nextWave() debris spawns land within the clamped ring, many samples");
-// REPOINTED BY CS021 P1: nextWave() has two archetypes now (FORK-CS021-E). A FIELD level still scatters
-// into the [SPAWN_MIN_DIST, SPAWN_MAX_DIST] ring around the SHIP — the original claim, unweakened and
-// still the majority of the samples. An ORBIT level (every 3rd) lays concentric rings around the DOCK
-// instead, so it is checked against ITS world-fit invariant rather than skipped: every satellite sits at
-// exactly its ring radius from the dock measured WRAP-AWARE (which is the property that would break if
-// the generator ever used naive arithmetic), and the outermost satellite edge stays inside the world's
-// wrap-clean radius budget, min(WORLD_W, WORLD_H)/2 - 20. Both archetypes are sampled; neither is
-// allowed to go unchecked, and the sample counts are asserted so a schedule change can't empty either.
-//
-// REPOINTED BY CS022 P3 (spec §1.4, FORK-CS022-F): an orbit level now ALSO spawns levelDef(n-1).junkCount
-// ordinary scatter satellites on top of its rings, so "which invariant applies" is a PER-ENTITY question
-// (does it carry orbit state?) and no longer a per-LEVEL one. Dispatching on the level, as this loop used
-// to, fed the field component's undefined orbitRadius into the ring check and produced NaN. Both
-// populations are now checked with their own rule, on both archetypes, and both sample counts are pinned.
+// REPOINTED BY CS024 P1, AND IT RESTORES THE ORIGINAL v3.1 CLAIM AT FULL COVERAGE. CS021 P1 split this
+// loop when nextWave() grew a second archetype, and CS022 P3 re-split it per-ENTITY once an orbit level
+// carried both populations (dispatching on the LEVEL fed the field component's undefined orbitRadius into
+// the ring check and produced NaN). With one spawn path there is one rule again: EVERY sampled satellite,
+// at every level, must land in the [SPAWN_MIN_DIST, SPAWN_MAX_DIST] ring around the SHIP. The two rail
+// controls are INVERTED — instead of pinning that rail-borne satellites were sampled, the sweep now pins
+// that NONE exist, which is the assertion that catches a rail spawn coming back.
 let debrisOk = true, debrisMinSeen = Infinity, debrisMaxSeen = 0;
-let orbitOk = true, orbitEdgeSlackMin = Infinity, orbitSamples = 0, fieldSamples = 0, orbitWorstErr = 0;
-let orbitFieldSamples = 0;   // CS022 P3: scatter satellites sampled ON an orbit level (the field component)
+let railSeen = 0, fieldSamples = 0;
 let sizeOk = true;
 for (let trial = 0; trial < 25; trial++) {
   startGame();
@@ -146,33 +152,21 @@ for (let trial = 0; trial < 25; trial++) {
   const orbitEdgeBudget = Math.min(liveW, liveH) / 2 - 20;
   if (game.worldSize !== worldSizeFor(game.wave)) sizeOk = false;
   for (const d of game.debris) {
-    if (d.orbitCenter) {   // CS022 P3: per-ENTITY, not per-level — an orbit level carries both populations
-      orbitSamples++;
-      // Wrap-aware distance to the dock must be exactly the satellite's own ring radius.
-      const err = Math.abs(Math.sqrt(dist2(d, game.dock)) - d.orbitRadius);
-      orbitWorstErr = Math.max(orbitWorstErr, err);
-      if (!(d.orbitRadius > 0) || err > 1e-6) orbitOk = false;
-      orbitEdgeSlackMin = Math.min(orbitEdgeSlackMin, orbitEdgeBudget - (d.orbitRadius + d.radius));
-    } else {
-      fieldSamples++;
-      if (levelDef(game.wave).archetype === "orbit") orbitFieldSamples++;
-      const dist = Math.sqrt(dist2(d, game.ship));
-      debrisMinSeen = Math.min(debrisMinSeen, dist);
-      debrisMaxSeen = Math.max(debrisMaxSeen, dist);
-      if (dist < SPAWN_MIN_DIST - 1e-6 || dist > SPAWN_MAX_DIST + 1e-6) debrisOk = false;
-    }
+    if (d.orbitCenter) railSeen++;   // must stay 0 — the inverted control, asserted below
+    fieldSamples++;
+    const dist = Math.sqrt(dist2(d, game.ship));
+    debrisMinSeen = Math.min(debrisMinSeen, dist);
+    debrisMaxSeen = Math.max(debrisMaxSeen, dist);
+    if (dist < SPAWN_MIN_DIST - 1e-6 || dist > SPAWN_MAX_DIST + 1e-6) debrisOk = false;
   }
 }
-assert(fieldSamples > 0, `B: (control) the sweep actually sampled SCATTER spawns (${fieldSamples} pieces)`);
-assert(debrisOk, `B: every sampled SCATTER debris spawn within [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] (saw [${debrisMinSeen.toFixed(1)}, ${debrisMaxSeen.toFixed(1)}])`);
-assert(orbitSamples > 0, `B: (control) the sweep actually sampled RAIL-BORNE satellites (${orbitSamples} satellites)`);
-// CS022 P3 control: the scatter samples above are no longer field-levels-only — an orbit level
-// contributes its fieldCount component to exactly the same [SPAWN_MIN_DIST, SPAWN_MAX_DIST] claim.
-assert(orbitFieldSamples > 0,
-  `B: (control) at least one ORBIT level's field component was sampled and checked by the scatter rule (${orbitFieldSamples} pieces)`);
-assert(orbitOk, `B: every sampled ORBIT satellite sits at exactly its ring radius from the dock, wrap-aware (worst error ${orbitWorstErr.toExponential(2)} px)`);
-assert(orbitEdgeSlackMin >= 0, "B: outermost ORBIT satellite edge stays within the LIVE world's wrap-clean budget");
-assert(sizeOk, "B: every sampled level ran at the world size its archetype asks for (CS022 P1)");
+assert(fieldSamples > 0, `B: (control) the sweep actually sampled spawns (${fieldSamples} pieces)`);
+assert(debrisOk, `B: EVERY sampled debris spawn — at every level, no archetype exemption — within [${SPAWN_MIN_DIST}, ${SPAWN_MAX_DIST}] (saw [${debrisMinSeen.toFixed(1)}, ${debrisMaxSeen.toFixed(1)}])`);
+assert(railSeen === 0,
+  `B: REPOINTED BY CS024 P1 (inverted) — NOT ONE sampled satellite carries rail state (${railSeen} found); the rings are gone`);
+assert(sizeOk, "B: every sampled level ran at the size worldSizeFor asks for — now always WORLD_SIZE_FIELD");
+assert(game.worldSize === WORLD_SIZE_FIELD,
+  "B: ...and the sweep never left the field-sized world, since nothing asks for another size any more");
 
 // =====================================================================
 console.log("(C) Real Dock spawns land within the clamped ring, many samples");

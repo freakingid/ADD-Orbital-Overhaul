@@ -82,46 +82,20 @@ const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "lev
                 "CARGO_BASE", "GAME_VERSION",
                 // CS018 P4: the cycle clock is retired, so section (E) probes for its ABSENCE instead.
                 'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
-                // CS021 P2 REPOINT (section B): the orbit archetype's total is occurrence-scaled now, not
-                // the fixed 40 P1 shipped — orbitTotalAt() below recomputes it from these.
-                "generateOrbitLayout", "orbitGapMult", "activeRingsFor", "SHIP_RADIUS", "DEBRIS_RADII",
-                "ORBIT_RING_COUNT", "ORBIT_INNER_RADIUS", "ORBIT_RADIUS_STEP", "ORBIT_SAFETY_MARGIN",
-                "ORBIT_DENSITY", "ORBIT_ANG_VEL", "ORBIT_FAST_RING", "ORBIT_FAST_MULT"];
+                // CS024 P1: the eight ORBIT_* constants and the three orbit functions CS021 P2 added here
+                // are REMOVED — they no longer exist in the build, so exporting them threw a
+                // ReferenceError out of the factory's own return statement.
+                ];
 
-// CS021 P2 REPOINT helper (section B): see test-cs017-p1.js's identical helper for the full rationale —
-// the total now climbs from 40 (occurrence 1) to 45 (the floor), recomputed from the same generator +
-// occurrence-scaled multiplier nextWave() is wired to, rather than a restated level-40 literal.
-// EXTENDED BY CS022 P3 — the third rewrite of this helper, and the reason it is a helper at all: it
-// recomputes what an orbit level's nextWave() ACTUALLY SPAWNS from the same generator, ramp and level
-// table the shipped code is wired to, so a geometry or schedule move fails as a wiring mismatch rather
-// than as a stale literal. Two parts are new this changeset:
-//   * THE RING RAMP (FORK-CS022-E) — activeRingsFor(level) selects rings outermost-first, so occurrence 1
-//     lays only ring 4 and all four are present from occurrence 4 (level 12) onward;
-//   * THE FIELD COMPONENT (FORK-CS022-F) — levelDef(level).fieldCount ordinary scatter satellites ON TOP
-//     of the rings, which is exactly what retires CS021's "junkCount is not consumed on an orbit level"
-//     rule (spec Correction C6) and is why this returns a SUM rather than layout.total.
-function orbitTotalAt(A, level) {
-  const ringTotal = A.generateOrbitLayout({
-    satelliteDiameter: A.DEBRIS_RADII[3] * 2,
-    shipDiameter:      A.SHIP_RADIUS * 2,
-    centerX: 0, centerY: 0,
-    orbitCount:        A.ORBIT_RING_COUNT,
-    innerRadius:       A.ORBIT_INNER_RADIUS,
-    radiusStep:        A.ORBIT_RADIUS_STEP,
-    safetyMargin:      A.ORBIT_SAFETY_MARGIN,
-    minGapMultiplier:  A.orbitGapMult(level),
-    densityByOrbit:    A.ORBIT_DENSITY,
-    baseAngVel:        A.ORBIT_ANG_VEL,
-    // REPOINTED BY CS023 P1 (spec C3): ORBIT_FAST_RING is a LIST of 1-based ring numbers and the
-    // generator's parameter is the plural `fastRingIndices`. This helper only reads `.total`, so the
-    // stale scalar key would have gone on passing while quietly making every ring slow — a wiring
-    // mismatch that means nothing here today and would mislead the moment anyone read angVel off it.
-    fastRingIndices:   A.ORBIT_FAST_RING.map(n => n - 1),
-    fastRingMult:      A.ORBIT_FAST_MULT,
-    activeRings:       A.activeRingsFor(level),   // CS022 P3: the ramp, read from the shipped helper
-  }).total;
-  return ringTotal + A.levelDef(level).fieldCount; // CS022 P3: rings PLUS the field component
-}
+// CS024 P1 REMOVED orbitTotalAt(). The helper existed to recompute what an ORBIT level's nextWave()
+// actually spawned — ring generator + occurrence-scaled gap multiplier + ring ramp + the CS022 P3
+// field component — so a geometry or schedule move failed as a wiring mismatch rather than as a stale
+// literal. With the orbit archetype removed permanently there is no second spawn rule left to
+// recompute: EVERY level now spawns exactly levelDef(level).junkCount ordinary scatter satellites
+// through the one unconditional spawnFieldSatellites() call. The archetype branches this helper fed
+// are collapsed to that single rule below, INVERTED to their positive successor rather than deleted —
+// each site now asserts that the level-table count is what actually spawned, at every level, which is
+// the claim that would catch a second spawn path being reintroduced.
 function build(src, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});
   const factory = new Function(
@@ -153,44 +127,30 @@ let X;
     got.push(X.game.debris.length);
   }
   eq(X.game.wave, 63, "B: 63 nextWave() calls (1 from startGame + 62 more) land on level 63");
-  // REPOINTED BY CS021 P1 — nextWave() has TWO archetypes now (FORK-CS021-E) and only the "field" one
-  // consumes junkCount. The junk-cycle claim is unchanged and unweakened for every field level; orbit
-  // levels are asserted against THEIR rule instead of being skipped, so nothing goes unchecked:
-  //   - the level TABLE's junkCount column is still the 3/5/9/13 cycle at EVERY level, orbit included
-  //     (the table is untouched by CS021 — the archetype decides whether nextWave reads that column);
-  //   - a field level still spawns exactly junkCount pieces, drift-only, no orbit state;
-  //   - an orbit level spawns its ring layout, every piece carrying orbit state, and deliberately NOT
-  //     junkCount. CS021 P2 REPOINT: the total is occurrence-scaled now (40 at occurrence 1, up to 45 at
-  //     the floor), not the flat 40 P1 shipped — checked per-level via orbitTotalAt() below.
+  // REPOINTED BY CS024 P1, and it undoes CS021 P1's split entirely. That phase gave nextWave() TWO
+  // archetypes (FORK-CS021-E), only one of which consumed junkCount, which meant this section could
+  // assert "the spawn consumes the cycle" at just 42 of the 63 levels and had to check the other 21
+  // against ring geometry. There is ONE archetype again, so the original, stronger claim is restored:
+  // the table's 3/5/9/13 column and the actual spawn agree at EVERY level 1-63, including the three
+  // phase-boundary 13s at levels 21/42/63 — all divisible by 3, so all three were orbit levels whose
+  // spawn deliberately ignored that 13, and all three now consume it again.
   const tableCounts = Array.from({ length: 21 }, (_, i) => X.levelDef(i + 1).junkCount);
   assert(deepEq(tableCounts, WANT_COUNT_1_21),
     `B: levelDef junkCount COLUMN levels 1-21 === ${WANT_COUNT_1_21.join(",")} (got ${tableCounts.join(",")})`);
-  const fieldCounts = got.slice(0, 21).map((c, i) => X.levelDef(i + 1).archetype === "field" ? c : null);
-  console.log("    levels 1-21 debris count: " + got.slice(0, 21).join(",") +
-              "   (orbit levels: " + got.slice(0, 21).filter((_, i) => X.levelDef(i + 1).archetype === "orbit").join(",") + ")");
-  assert(fieldCounts.every((c, i) => c === null || c === WANT_COUNT_1_21[i]),
-    `B: every FIELD level 1-21 still spawns its junkCount (got ${fieldCounts.join(",")})`);
-  // The three phase-boundary 13s (rel 21 at levels 21, 42, 63). All three are ALSO orbit levels — 21,
-  // 42 and 63 are each divisible by 3 — so the claim is checked where it still lives, in the table's
-  // junkCount column, rather than in a spawn that no longer reads it.
+  console.log("    levels 1-21 debris count: " + got.slice(0, 21).join(","));
+  assert(got.slice(0, 21).every((c, i) => c === WANT_COUNT_1_21[i]),
+    `B: REPOINTED BY CS024 P1 (inverted) — EVERY level 1-21 spawns its junkCount, not just the field ones (got ${got.slice(0, 21).join(",")})`);
   for (const n of [21, 42, 63]) {
     eq(X.levelDef(n).junkCount, 13, `B: level ${n} (phase boundary) still holds 13 in the table's junkCount column`);
-    eq(X.levelDef(n).archetype, "orbit", `B: level ${n} is also an orbit level, which is why its SPAWN no longer reads that 13`);
+    eq(got[n - 1], 13, `B: level ${n} — REPOINTED BY CS024 P1 (inverted): its SPAWN consumes that 13 again`);
+    assert(!("archetype" in X.levelDef(n)), `B: level ${n}: no archetype column exists to send it down a second path`);
   }
-  let orbitLevels = 0, fieldLevels = 0;
+  let levelsChecked = 0;
   for (let n = 1; n <= 63; n++) {
-    if (X.levelDef(n).archetype === "orbit") {
-      orbitLevels++;
-      const wantTotal = orbitTotalAt(X, n);   // CS021 P2: occurrence-scaled, no longer always 40
-      eq(got[n - 1], wantTotal, `B: level ${n} is an ORBIT level and spawns the ${wantTotal}-satellite layout`);
-      assert(got[n - 1] !== X.levelDef(n).junkCount, `B: level ${n} did NOT consume junkCount (${X.levelDef(n).junkCount})`);
-    } else {
-      fieldLevels++;
-      eq(got[n - 1], X.levelDef(n).junkCount, `B: level ${n} debris count === levelDef(${n}).junkCount`);
-    }
+    levelsChecked++;
+    eq(got[n - 1], X.levelDef(n).junkCount, `B: level ${n} debris count === levelDef(${n}).junkCount`);
   }
-  eq(orbitLevels, 21, "B: 21 of the 63 levels are orbit levels (every 3rd — FORK-CS021-E)");
-  eq(fieldLevels, 42, "B: the other 42 are field levels, spawning exactly as before");
+  eq(levelsChecked, 63, "B: REPOINTED BY CS024 P1 (inverted) — all 63 levels consume the column; the 21/42 archetype census is gone");
 
   // The retired clamps are provably unread: static grep, non-comment lines, excluding their own defs.
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));

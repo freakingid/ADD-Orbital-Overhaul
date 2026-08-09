@@ -422,24 +422,33 @@ function saucerAt(X, x, y, small) {
     eq(X.game.powerups.length, 1, "G: FORK-F — the UFO still drops exactly one powerup");
   }
 
-  // -- a RAIL-BORNE satellite: completely untouched (aFixed && bFixed no-op in debrisBounce).
+  // REPOINTED BY CS024 P1, to the mirror image. This sub-block staged a RAIL-BORNE satellite by hand
+  // (orbitCenter / orbitRadius / orbitAngle / orbitAngVel) and proved a UFO ramming it took debrisBounce's
+  // `aFixed && bFixed` no-op: the saucer died, and the satellite went on integrating its orbit angle as
+  // though nothing had happened. Rails are gone, that arm is DELETED as unreachable (spec §4.1,
+  // consequence 1), and the staging can no longer be written at all — assigning those four fields now
+  // just decorates a free body that ignores them.
+  //   The claim inverts to the one that replaced it: a satellite hit by a UFO is a FREE body, so it takes
+  // the free/FIXED branch and IS knocked off course, while the saucer — the immovable partner — is still
+  // left completely untouched. That asymmetry is what CS023 P3 was really asserting, and it survives.
   {
     const X = build();
     stagePlaying(X);
-    const cx = 500, cy = 500, radius = X.ORBIT_INNER_RADIUS || 400, angVel = 0.1;
     const a = new X.DebrisSatellite(0, 0, 2);
-    a.orbitCenter = { x: cx, y: cy }; a.orbitRadius = radius; a.orbitAngle = 0; a.orbitAngVel = angVel;
-    a.x = cx + radius; a.y = cy;   // consistent with angle 0
-    a.vx = 0; a.vy = 0;
+    a.x = 500; a.y = 500; a.vx = 0; a.vy = 0;
     X.game.debris.push(a);
+    assert(a.orbitCenter === undefined,
+      "G: (setup) REPOINTED BY CS024 P1 — a satellite cannot be given rail state any more; there is no motion mode to read it");
     const s = saucerAt(X, a.x, a.y, true);
+    const sBefore = { x: s.x, y: s.y, vx: s.vx, vy: s.vy };
     X.game.saucers.push(s);
     X.update(1 / 60);
-    assert(s.dead, "G: the saucer is destroyed on contact with the rail-borne satellite too");
-    assert(!a.dead, "G: ...and the rail-borne satellite is untouched");
-    close(a.orbitAngle, angVel * (1 / 60), "G: ...its orbit angle advanced by EXACTLY angVel*dt — pure orbit motion, no bounce");
-    close(a.x, cx + radius * Math.cos(angVel * (1 / 60)), "G: ...its position is EXACTLY the orbit-derived one");
-    close(a.y, cy + radius * Math.sin(angVel * (1 / 60)), "G: ...(y too)");
+    assert(s.dead, "G: the saucer is destroyed on contact with the satellite");
+    assert(!a.dead, "G: ...and the satellite survives the contact");
+    assert(Math.hypot(a.vx, a.vy) > 0,
+      "G: REPOINTED BY CS024 P1 (inverted) — the satellite is KNOCKED OFF COURSE, because every satellite is free now");
+    for (const k of ["x", "y", "vx", "vy"])
+      eq(s[k], sBefore[k], `G: ...and the saucer is still the immovable partner — ${k} untouched`);
   }
 
   // -- control: the bullet kill still scores and counts (destroySaucer's default is unchanged).
@@ -547,8 +556,13 @@ function saucerAt(X, x, y, small) {
     const fnBody = codeOnly.slice(fnStart, codeOnly.indexOf("\n}\n", fnStart));
     assert(/a instanceof Saucer/.test(fnBody) && /b instanceof Saucer/.test(fnBody),
       "A: debrisBounce's dispatch checks `instanceof Saucer` on both sides");
-    assert(/aFixed && bFixed/.test(fnBody) && /aFixed !== bFixed/.test(fnBody),
-      "A: the dispatch variables are the renamed aFixed/bFixed, covering rail-or-Saucer");
+    // REPOINTED BY CS024 P1: the `aFixed && bFixed` arm covered rail/rail and rail-vs-Saucer, and both
+    // are gone with the rails — it is unreachable at every call site and has been DELETED (spec §4.1,
+    // consequence 1). What CS023 P3 is answerable for here is that a SAUCER partner is dispatched as
+    // FIXED, which is asserted on the line above and is unchanged. The two-arm shape replaces the
+    // three-arm one, and the removed arm's absence is pinned so it cannot return unnoticed.
+    assert(/aFixed !== bFixed/.test(fnBody) && !/aFixed && bFixed/.test(fnBody),
+      "A: REPOINTED BY CS024 P1 — the dispatch is aFixed !== bFixed alone; the FIXED/FIXED arm is gone");
     // DEBRIS_MASS is looked up ONLY in the free/free branch, which a saucer (aFixed/bFixed) never reaches.
     const freeFreeStart = fnBody.indexOf("const ma = DEBRIS_MASS[a.size]");
     assert(freeFreeStart > 0, "A: the free/free branch is intact and unmoved");
@@ -564,23 +578,29 @@ function saucerAt(X, x, y, small) {
     const afterExec = codeOnly.slice(codeOnly.indexOf("function debrisBounce(a, b) {"),
       codeOnly.indexOf("\n}\n", codeOnly.indexOf("function debrisBounce(a, b) {")))
       .split("\n").filter(l => l.trim() && !l.trim().startsWith("//")).map(l => l.trim());
-    // REPOINTED BY CS023 P4: P4 fills the "CS023 P4 SEAM" P2 left at the top of this helper with exactly
-    // ONE new executable line — the drifting clear. Both sides are compared with that line removed, so the
-    // claim this file is answerable for (P3's own change was a RENAME, no new logic) keeps its strength
-    // whether HEAD is P3 or P4, rather than going stale the moment P4 lands.
-    const P4_LINE = "a.drifting = b.drifting = false;";
-    const strip = arr => arr.filter(l => l !== P4_LINE);
+    // REPOINTED BY CS023 P4, then again BY CS024 P1. P4 filled the "CS023 P4 SEAM" with exactly one new
+    // executable line (the drifting clear); CS024 P1 REMOVES that line again along with the whole drift,
+    // and also removes the one-line FIXED/FIXED early return. So the comparison strips BOTH lines from
+    // whichever side carries them, which keeps this file's own claim — that CS023 P3's change was a
+    // RENAME and added no logic — at full strength against any of the three HEADs it might face.
+    const DRIFT_LINE = "a.drifting = b.drifting = false;";
+    const NOOP_LINE  = "if (aFixed && bFixed) return;                      // C11 (rail/rail) or a rail-borne satellite vs a saucer";
+    const strip = arr => arr.filter(l => l !== DRIFT_LINE && l !== NOOP_LINE);
     eq(strip(beforeExec).length, strip(afterExec).length,
-      "A: debrisBounce's executable line COUNT is unchanged apart from CS023 P4's one specced drifting clear");
-    assert(afterExec.filter(l => l === P4_LINE).length <= 1,
-      "A: ...and that clear appears at most once");
+      "A: debrisBounce's executable line COUNT is unchanged apart from CS023 P4's drifting clear and CS024 P1's removed FIXED/FIXED no-op");
+    eq(afterExec.filter(l => l === DRIFT_LINE).length, 0,
+      "A: REPOINTED BY CS024 P1 (inverted) — the drift clear appears ZERO times now, not at most once");
+    eq(afterExec.filter(l => l === NOOP_LINE).length, 0,
+      "A: ...and neither does the FIXED/FIXED no-op it sat above");
   }
 
   // --- TRAPs ---
   eq(X.GAME_VERSION, "1.0.0.22", "A: TRAP 1 — GAME_VERSION unchanged");
-  // REPOINTED BY CS023 P4: 44 -> 46. P3's own claim — that IT added no knob — is what this guarded, and
+  // REPOINTED BY CS023 P4: 44 -> 46. REPOINTED AGAIN BY CS024 P1: 46 -> 35, the ten ORBIT knobs plus
+  // debrisDriftAccel removed outright with the orbit archetype and the inward drift. P3's own claim —
+  // that IT added no knob — is what this guarded and is asserted directly on the next line, unchanged;
   // the exact live count keeps guarding it.
-  eq(X.DEBUG_ENTRIES.length, 46, "A: TRAP 4 — the debug registry is exactly 46 value entries after CS023 P4");
+  eq(X.DEBUG_ENTRIES.length, 35, "A: TRAP 4 — the debug registry is exactly 35 value entries after CS024 P1");
   assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
     "A: TRAP 4 — ...and P3 still contributed none of them");
   {

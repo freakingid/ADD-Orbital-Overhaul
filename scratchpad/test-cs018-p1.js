@@ -99,11 +99,13 @@ let PURE = null;
   vm.createContext(sandbox);
   noThrow(() => {
     vm.runInContext(block +
-      // CS022 P3: ORBIT_RING_COUNT joins the exported set. levelDef's new `orbitRings` column clamps
-      // against it, so — exactly like ORBIT_LEVEL_EVERY before it — it had to be MOVED INTO this slice;
-      // pulling it out here is what proves it really is inside, not merely reachable in the full build.
-      "\n;globalThis.__X = { PHASE_LEN, LEVEL_MAX, JUNK_CYCLE, HUNTER_CAP_STEPS, TIER_STEPS, stepAt, levelDef," +
-      "\n                     ORBIT_LEVEL_EVERY, ORBIT_RING_COUNT };",
+      // REPOINTED BY CS024 P1: ORBIT_LEVEL_EVERY and ORBIT_RING_COUNT LEAVE the exported set. Both were
+      // relocated INTO this section (CS021 P1, CS022 P3) for one reason — levelDef's `archetype` and
+      // `orbitRings` columns read them, and anything levelDef reads has to be inside the slice — and both
+      // are removed with those columns. THE RULE THEY WERE EVIDENCE FOR IS UNCHANGED AND STILL PROVEN
+      // HERE: whatever levelDef reads must be declared inside this block, which is exactly what the
+      // standalone evaluation below asserts.
+      "\n;globalThis.__X = { PHASE_LEN, LEVEL_MAX, JUNK_CYCLE, HUNTER_CAP_STEPS, TIER_STEPS, stepAt, levelDef };",
       sandbox, { filename: "cs018-levelDef-block.js" });
   }, "B: the block evaluates standalone (no dependency on anything outside it)");
   PURE = sandbox.__X || null;
@@ -112,17 +114,27 @@ let PURE = null;
   if (!PURE) return;
   noThrow(() => { PURE.levelDef(1); }, "B: levelDef(1) is callable with NO game state in scope (purity)");
   noThrow(() => { PURE.levelDef(63); }, "B: levelDef(63) is callable in the bare context");
-  // CS022 P3 (FLAG-CS022-e): THE RECURSION SURVIVES THE SLICE. levelDef now calls ITSELF once, on an
-  // orbit level, to read the previous level's junkCount — so the slice has to contain everything the
-  // recursive branch touches, ORBIT_RING_COUNT included. An orbit level in the bare context is the
-  // direct proof, and the extremes prove the recursion terminates rather than merely not throwing here.
-  eq(PURE.ORBIT_LEVEL_EVERY, 3, "B: ORBIT_LEVEL_EVERY is defined INSIDE the slice (CS021 P1's own reason)");
-  eq(PURE.ORBIT_RING_COUNT, 4, "B: ORBIT_RING_COUNT is defined INSIDE the slice too (CS022 P3, same reason)");
-  noThrow(() => { PURE.levelDef(3); }, "B: levelDef(3) — an ORBIT level, so the recursive branch — is callable in the bare context");
-  eq(PURE.levelDef(3).fieldCount, PURE.levelDef(2).junkCount, "B: ...and the recursion returns the PREVIOUS level's junkCount");
-  eq(PURE.levelDef(3).orbitRings, 1, "B: ...and orbitRings resolves against the in-slice ORBIT_RING_COUNT");
+  // REPOINTED BY CS024 P1, to the mirror image of CS022 P3's claim (FLAG-CS022-e). That phase proved THE
+  // RECURSION SURVIVES THE SLICE: levelDef called ITSELF once on an orbit level to read the previous
+  // level's junkCount, so the slice had to contain everything the recursive branch touched. The
+  // `fieldCount` column that made the call is gone, so LEVELDEF IS NO LONGER RECURSIVE AT ALL — asserted
+  // directly off the source rather than inferred, since "it didn't throw" would pass either way. The
+  // extremes stay in the sweep: they cost nothing and they are what would catch a reintroduced self-call
+  // that fails to terminate.
+  // NB: comment-insensitive. The shipped source documents the removed recursion by name in a comment
+  // inside levelDef's own body, so a raw text scan would match the tombstone and never fail.
+  const levelDefBody = block.slice(block.indexOf("function levelDef(n) {") + "function levelDef(n) {".length)
+    .split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
+  assert(!/levelDef\s*\(/.test(levelDefBody),
+    "B: REPOINTED BY CS024 P1 (inverted) — levelDef's EXECUTABLE body contains NO self-call; the recursion is gone with fieldCount");
+  assert(!("ORBIT_LEVEL_EVERY" in sandbox) && !("ORBIT_RING_COUNT" in sandbox),
+    "B: REPOINTED BY CS024 P1 (inverted) — neither orbit constant is declared in the slice any more");
+  noThrow(() => { PURE.levelDef(3); }, "B: levelDef(3) — formerly an ORBIT level — is callable in the bare context");
+  for (const k of ["archetype", "orbitRings", "fieldCount"]) {
+    assert(!(k in PURE.levelDef(3)), `B: levelDef(3) has no ${k} column (CS024 P1)`);
+  }
   for (const n of [0, -3, 63, 66, 500, 1e6, Infinity, NaN]) {
-    noThrow(() => { PURE.levelDef(n); }, `B: levelDef(${n}) terminates in the bare context (the recursion is at most one deep)`);
+    noThrow(() => { PURE.levelDef(n); }, `B: levelDef(${n}) terminates in the bare context`);
   }
 
   // "Callable before startGame()" — the bare context has never had startGame() defined at all.
@@ -257,56 +269,43 @@ const levelDef = PURE.levelDef, stepAt = PURE.stepAt;
 })();
 
 // ================= (G) item 5 — endgame clamp =====================
-// REPOINTED BY CS021 P1 — the field set grew by one and the clamp now has TWO documented exceptions.
-// `archetype` (CS021 P1, FORK-CS021-E) is derived from the UNCLAMPED n exactly like `level`, and that is
-// deliberate: reading the clamped L would freeze level 63's archetype ("orbit", since 63 % 3 === 0) for
-// every level from 63 to infinity, i.e. the endgame would become nothing but orbit levels. The claim is
-// therefore not weakened, it is SPLIT: everything else still clamps at 63, and `archetype` is asserted
-// POSITIVELY below to keep following the every-3rd schedule past the plateau.
-//
-// REPOINTED AGAIN BY CS022 P3 — two more columns (spec §4.5), and only ONE of them is a third exception.
-// `orbitRings` reads the unclamped n for exactly `archetype`'s reason and IS one: level 63 is an orbit
-// level with 4 rings and level 64 is a field level with 0, so it cannot be plateau-identical. It gets the
-// same treatment — exempted from the clamp claim, then asserted POSITIVELY below against the ramp rule.
-// `fieldCount` is deliberately NOT exempted, and that is a real assertion rather than an oversight:
-// although it is written in terms of n, it reads junkCount through the internal L clamp, so from level
-// 63 onward every level — orbit or field — yields levelDef(63).junkCount === 13. It is plateau-identical
-// and is left inside the clamp claim, where a future change that broke that would be caught.
+// REPOINTED BY CS024 P1, AND THIS RESTORES THE ORIGINAL CS018 P1 CLAIM IN FULL. Two changesets had
+// carved exceptions into it: `archetype` (CS021 P1, FORK-CS021-E) and `orbitRings` (CS022 P3) both read
+// the UNCLAMPED n so the every-3rd orbit rhythm would keep going past the level-63 plateau instead of
+// latching level 63's value ("orbit", since 63 % 3 === 0) forever. Both columns are removed with the
+// archetype, and `fieldCount` — which was never an exception — goes with them.
+//   So `level` IS ONCE AGAIN THE ONLY FIELD THAT READS n, and the clamp claim is universal rather than
+// three-fifths of a claim: levelDef(64) … levelDef(Infinity) are field-identical to levelDef(63) in
+// EVERY other column. The two positive schedule assertions this section carried are INVERTED into
+// absence checks on the three removed columns, at the same levels (63-66 and the extremes), so a
+// reintroduced archetype that failed to handle the plateau would still be caught here.
 (function sectionG() {
-  console.log("(G) item 5 — levelDef(64) … levelDef(500) field-identical to levelDef(63) except `level`, `archetype`, `orbitRings`");
+  console.log("(G) item 5 — levelDef(64) … levelDef(500) field-identical to levelDef(63) except `level`");
   const base = levelDef(63);
   const keys = Object.keys(base);
-  const UNCLAMPED = ["level", "archetype", "orbitRings"];   // the three fields that read n, not L
-  assert(keys.length === 4 + 2 + 3 + 7, `G: levelDef returns 16 fields (got ${keys.length}: ${keys.join(",")})`);
-  // CS022 P3: the two new columns exist and are the two the field count grew by.
-  assert(keys.includes("orbitRings") && keys.includes("fieldCount"), "G: the two CS022 P3 columns are present");
+  const UNCLAMPED = ["level"];   // REPOINTED BY CS024 P1: back to ONE field that reads n, not L
+  const GONE = ["archetype", "orbitRings", "fieldCount"];
+  assert(keys.length === 6 + 7, `G: levelDef returns 13 fields (got ${keys.length}: ${keys.join(",")})`);
+  for (const k of GONE) {
+    assert(!keys.includes(k), `G: REPOINTED BY CS024 P1 (inverted) — the ${k} column is gone from levelDef`);
+  }
   for (let n = 64; n <= 500; n++) {
     const d = levelDef(n);
     assert(deepEq(Object.keys(d).sort(), keys.slice().sort()), `G: level ${n} has the same field set as 63`);
     eq(d.level, n, `G: level ${n} reports its UNCLAMPED level`);
     for (const k of keys) if (!UNCLAMPED.includes(k)) assert(deepEq(d[k], base[k]), `G: level ${n} field ${k} matches level 63`);
-    // The replacement for the assertion removed above: the orbit schedule keeps its rhythm past the
-    // endgame plateau instead of latching on level 63's value.
-    eq(d.archetype, n % 3 === 0 ? "orbit" : "field", `G: level ${n} archetype still follows the every-3rd schedule past the plateau`);
-    // CS022 P3: the ramp column, asserted positively for the same reason — one ring per occurrence,
-    // capped at ORBIT_RING_COUNT, still moving past the plateau instead of latching on level 63's value.
-    eq(d.orbitRings, n % 3 === 0 ? Math.min(n / 3, PURE.ORBIT_RING_COUNT) : 0,
-      `G: level ${n} orbitRings still follows the ramp past the plateau`);
-    // ...and the column that IS plateau-identical, said out loud rather than left implicit.
-    eq(d.fieldCount, 13, `G: level ${n} fieldCount is pinned at 13 by the internal L clamp`);
   }
-  eq(base.archetype, "orbit", "G: level 63 itself is an orbit level (63 % 3 === 0)");
-  eq(levelDef(64).archetype, "field", "G: level 64 is NOT an orbit level — the plateau does not freeze the archetype");
-  eq(levelDef(65).archetype, "field", "G: level 65 is a field level");
-  eq(levelDef(66).archetype, "orbit", "G: level 66 is the next orbit level");
-  // And the extremes.
+  // The levels the retired schedule assertions used to single out, kept as the inverted claim: past the
+  // plateau there is no longer anything that distinguishes a multiple of 3 from its neighbours.
+  for (const n of [63, 64, 65, 66, 1000, 1e6, Infinity]) {
+    const d = levelDef(n);
+    for (const k of GONE) assert(!(k in d), `G: level ${n} has no ${k} column (CS024 P1)`);
+  }
   for (const n of [1000, 1e6, Infinity]) {
     const d = levelDef(n);
     for (const k of keys) if (!UNCLAMPED.includes(k)) assert(deepEq(d[k], base[k]), `G: level ${n} field ${k} matches level 63`);
   }
-  eq(levelDef(1000).archetype, "field", "G: level 1000 (1000 % 3 === 1) is a field level");
-  eq(levelDef(1e6).archetype, "field", "G: level 1e6 (1e6 % 3 === 1) is a field level");
-  eq(levelDef(Infinity).archetype, "field", "G: levelDef(Infinity) does not throw and falls to \"field\" (NaN % 3 !== 0)");
+  noThrow(() => levelDef(Infinity), "G: levelDef(Infinity) still does not throw");
 })();
 
 // ================= (H) item 6 — purity =====================
@@ -391,42 +390,39 @@ function build(src, windowExtra) {
   // narrow — that one helper, by name — and it is paid for with the two assertions below, which pin
   // that every CALL of worldSizeFor passes game.wave and that no other parameterised reader exists.
   //
-  // REPOINTED AGAIN BY CS022 P3, and again narrowly. levelDef now calls ITSELF once — `levelDef(n - 1)`,
-  // to give an orbit level the previous level's scatter count (spec §1.4/§4.5). A SELF-call is not a
-  // consumer of the table and structurally cannot be a second clock: its argument is levelDef's own
-  // parameter, so whatever clock the outermost caller used is the only one in play. It is exempted by
-  // EXACT TEXT rather than by a loosened pattern, and paid for by the three assertions below: exactly one
-  // such site exists, it lives inside levelDef's own body, and its argument is literally `n - 1`.
+  // REPOINTED BY CS024 P1, AND BOTH EXEMPTIONS ARE RETIRED RATHER THAN RE-AIMED — the claim ends up
+  // stronger than it has been since CS018 P1 shipped it.
+  //   * CS022 P1's PARAMETERISED-READER exemption covered worldSizeFor(level), which read
+  //     levelDef(level).archetype to pick the world size. worldSizeFor now returns WORLD_SIZE_FIELD
+  //     unconditionally and reads levelDef NOT AT ALL, so it is no longer a call site of any kind and
+  //     there is nothing left to exempt.
+  //   * CS022 P3's SELF-CALL exemption covered levelDef(n - 1), the one recursive site, which existed
+  //     solely to give an orbit level the previous level's scatter count via the fieldCount column. That
+  //     column is gone and the recursion with it.
+  // So EVERY levelDef call site in the build now reads levelDef(game.wave), with no carve-outs at all —
+  // which is exactly what "nobody invents a second clock" was always trying to say. Both retired
+  // exemptions are INVERTED into absence pins below, so reintroducing either without revisiting this
+  // section fails here rather than passing silently under a stale allowance.
   const SELF_CALL = "levelDef(n - 1)";
-  const PARAM_READERS = ["worldSizeFor"];   // helpers allowed to read levelDef(<their own level param>)
-  const paramReaderRe = new RegExp(`^function (?:${PARAM_READERS.join("|")})\\s*\\(`);
-  let exempted = 0, selfCalls = 0;
+  let selfCalls = 0;
   for (const site of callSites) {
     if (site.includes(SELF_CALL)) { selfCalls++; continue; }
-    if (paramReaderRe.test(site) || /^return levelDef\(level\)\./.test(site)) { exempted++; continue; }
     assert(/levelDef\(game\.wave\)/.test(site), `I: call site reads levelDef(game.wave): ${site}`);
   }
-  // The self-call exemption, paid for.
-  eq(selfCalls, 1, "I: exactly ONE self-recursive levelDef site (CS022 P3's fieldCount column)");
-  eq((codeOnly.join("\n").match(/levelDef\(n - 1\)/g) || []).length, 1,
-    "I: ...and `levelDef(n - 1)` appears exactly once in the whole build");
+  eq(selfCalls, 0,
+    "I: REPOINTED BY CS024 P1 (inverted) — ZERO self-recursive levelDef sites; CS022 P3's fieldCount recursion is gone");
+  eq((codeOnly.join("\n").match(/levelDef\(n - 1\)/g) || []).length, 0,
+    "I: ...and `levelDef(n - 1)` appears NOWHERE in the build any more");
+  assert(!codeOnly.some(l => /function worldSizeFor/.test(l) === false && /worldSizeFor[\s\S]*levelDef/.test(l)),
+    "I: REPOINTED BY CS024 P1 (inverted) — worldSizeFor no longer reads levelDef on any line");
   {
-    // ...and it is INSIDE levelDef's own body — not some other function that happens to name its
-    // argument `n`, which would be a genuine second reader wearing the exemption's clothes.
-    const lines = codeOnly;
-    const defLine  = lines.findIndex(l => l.startsWith("function levelDef(n) {"));
-    const selfLine = lines.findIndex(l => l.includes(SELF_CALL));
-    let endLine = -1;
-    for (let i = defLine + 1; i < lines.length; i++) if (lines[i] === "}") { endLine = i; break; }
-    assert(defLine >= 0 && selfLine > defLine && selfLine < endLine,
-      "I: the self-call sits inside levelDef's own body, between its signature and its closing brace");
-  }
-  assert(exempted > 0, "I: (control) the parameterised-reader exemption actually matched something (CS022 P1's worldSizeFor)");
-  // ...and the exemption cannot hide a second clock: every CALL of the exempt helper passes game.wave.
-  for (const name of PARAM_READERS) {
-    const calls = codeOnly.join("\n").match(new RegExp(`(?<!function )\\b${name}\\s*\\(([^)]*)\\)`, "g")) || [];
-    assert(calls.length > 0, `I: ${name} is actually called`);
-    for (const c of calls) assert(/\(game\.wave\)/.test(c), `I: ${name} is only ever called with game.wave: ${c}`);
+    // The positive successor to the retired parameterised-reader exemption: worldSizeFor still EXISTS and
+    // is still called (the 9x world path is kept live on purpose — CS024 spec §3.6), it simply is not a
+    // levelDef consumer any more. Asserting it is still called is what stops this repoint from quietly
+    // passing because the function was deleted.
+    const calls = codeOnly.join("\n").match(/(?<!function )\bworldSizeFor\s*\(([^)]*)\)/g) || [];
+    assert(calls.length > 0, "I: worldSizeFor is still called (the world-size seam is kept live, CS024 §3.6)");
+    for (const c of calls) assert(/\(game\.wave\)/.test(c), `I: worldSizeFor is only ever called with game.wave: ${c}`);
   }
 
   // The full build exposes the same function, and it agrees with the bare-sandbox one everywhere.
