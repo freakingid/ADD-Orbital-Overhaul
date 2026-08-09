@@ -473,8 +473,11 @@ UFO · POWERUPS · GLOBAL**.
 
 ## 6. Playtest gates
 
-⛔ **Both gates BLOCK.** Answers land in `STATUS.md`'s Playtest asks before the
-next phase runs.
+⛔ **Both gates BLOCK.** **The questions themselves live in `IMPLEMENTATION-PHASES-CS024.md`'s gate
+sections** — that is the single source, so they cannot drift between two docs,
+and it is the doc open in front of you at gate time. That file also explains the
+full handoff under "How a playtest gate works." What follows here is the design
+rationale for *why* each gate exists.
 
 ### Gate A — after P3 (the removals with gameplay consequences)
 

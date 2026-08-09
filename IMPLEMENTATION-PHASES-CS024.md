@@ -14,11 +14,11 @@ session, one commit per phase, on `main`.** Claude Code commits; Paul pushes.
 | **P1** | Orbit + drift excision (code, tests, tool) | **Opus** | high | **yes** |
 | **P2** | Dead-code sweep + registry prune | Sonnet | medium | no |
 | **P3** | Gameplay removals: canister, ambient Hunter, garbage decay | **Opus** | high | **yes** |
-| ⛔ | **GATE A** — blocking playtest | — | — | — |
+| ⛔ | **GATE A** — blocking playtest ← *Paul plays; answers go in `STATUS.md`* | — | — | — |
 | **P4** | The odometer mechanism | **Opus** | high | **yes** |
 | **P5** | Lever wiring + UFO per-size independence | Sonnet | high | no |
 | **P6** | Count-only powerups + Engine-as-fuel | **Opus** | high | no |
-| ⛔ | **GATE B** — blocking playtest | — | — | — |
+| ⛔ | **GATE B** — blocking playtest ← *Paul plays; answers go in `STATUS.md`* | — | — | — |
 | **P7** | Retune, version bump, full doc rewrite | **Opus** | high | no |
 
 **Setting the model/effort in Claude Code:** use the session-level `/model`
@@ -31,6 +31,46 @@ read `CLAUDE.md` then `STATUS.md` before touching code; update `STATUS.md` at th
 end of the session; commit but do not push; surface genuine design decisions
 rather than inventing them; prefer `str_replace` over full-file rewrites; a phase
 is not done until its headless test passes.
+
+---
+
+## How a playtest gate works (read this once)
+
+A gate is a **stop**. Claude Code cannot answer these questions; only playing the
+build can. Here is the whole handoff, start to finish.
+
+**Step 1 — Claude Code opens the gate.** The last phase before a gate ends its
+session by writing a gate-open block into `STATUS.md` under the existing
+`## Playtest asks (Paul — can't be checked headlessly)` heading: the questions
+verbatim, plus a short briefing on what the headless suite already settled, so
+the playtest concentrates on what only playing can answer. Each phase prompt
+below that precedes a gate carries this as its final numbered instruction.
+
+**Step 2 — Paul plays and answers.** Pull, open `asteroids-deluxe.html` in a
+browser, play what the gate says to play, then **write the answers into that
+same `STATUS.md` section.** Inline under each question is fine; the repo's own
+established style is literally `Paul says: this is fine.` A one-line answer per
+question is enough — this is not a report.
+
+*The alternative, if you'd rather not edit the file:* paste the answers into the
+next Claude Code session's opening message instead, and tell it to record them in
+`STATUS.md` before it starts work. Same outcome, and it is what CS020 P2 did when
+the answers were missing. Editing `STATUS.md` yourself is more durable; pasting
+is faster. Either unblocks the gate.
+
+**Step 3 — the next session reads them and proceeds.** It retunes from your
+actual answers only. If a question is unanswered or unanswerable, it must
+**stop and ask you directly** rather than invent an interpretation — the CS020
+P2 precedent, and a standing rule.
+
+**Two things that make answers useful:**
+
+- **For anything driven by a debug slider: open the panel, retune live, and
+  report the number you landed on — not a yes/no.** "Too fast" costs the next
+  session a guess; "I settled at 140" costs it nothing.
+- **"Fine" is a complete answer.** A gate that comes back clean means the closing
+  phase is bump-and-sweep only, and that has happened twice (CS020 P2, CS022 P4).
+  Do not manufacture changes to justify the gate.
 
 ---
 
@@ -306,17 +346,54 @@ is not done until its headless test passes.
 >
 > Several existing tests stage garbage and rely on it decaying. Expect a real
 > repoint sweep and report every file you touch.
+>
+> **FINALLY — OPEN THE GATE.** This phase is followed by a blocking playtest.
+> Before finishing, write a gate-open block into `STATUS.md` under the existing
+> `## Playtest asks (Paul — can't be checked headlessly)` heading, following the
+> shape CS021/CS022/CS023 used: state plainly that **GATE A is open and P4 must
+> not run until it is answered here**, reproduce Gate A's six questions verbatim
+> from `IMPLEMENTATION-PHASES-CS024.md`, say what to play (6+ levels, no
+> deliberate farming, plus one run that deliberately hoards garbage), and add a
+> short briefing of **what the headless suite already settled** — the measured
+> pair-count at the soft ceiling, the coalescence timing, which knobs are live
+> sliders and their ranges — so the playtest spends itself on what only playing
+> can answer. Flag question 1 as the one that can change P4's scope.
 
 **Commit:** `cs-24 p3: permanent garbage, coalescence-only hunters, density ceiling`
 
 ---
 
-## ⛔ GATE A — blocking playtest
+## ⛔ GATE A — BLOCKING PLAYTEST (after P3)
 
-**Do not run P4 until these are answered in `STATUS.md`'s Playtest asks.**
-Questions 1–6 in `PLANNED-FEATURES-CS024.md` §6. Question 1 is the one that can
-change the plan: if Hunters effectively never appear, P4 inherits a coalescence
-retune it does not currently carry.
+**P4 must not run until the questions below are answered in `STATUS.md`'s
+`## Playtest asks` section.** See "How a playtest gate works" above for the
+handoff. P3's own prompt ends by writing these questions into that section.
+
+**What to play:** a fresh run, **at least 6 levels**, without deliberately
+farming garbage. Then, separately, one run where you *do* deliberately let
+garbage pile up, to see the ceiling behaviour.
+
+**The questions:**
+
+1. **Do Hunters still appear at all?** Roughly how many levels before the first
+   one? ← *this is the one that can change the plan; see below*
+2. **Is the field readable?** With garbage permanent, does a level-6 screen read
+   as salvage-rich or as visual noise?
+3. **Does the cull ever visibly fire?** You should never see a canister vanish.
+   If you do, `GARBAGE_SOFT_MAX` (220) is too low — it's a live knob, so raise it
+   until it stops and report the number.
+4. **Frame rate**, subjectively, at the worst moment you can produce.
+5. **Does removing the bonus canister leave the early levels flat?** It was
+   explicitly a reason-to-keep-playing for low-stakes waves.
+6. **Last stand:** does a large Hunter resuming its old vector when debris
+   reappears read as intentional, or as a bug?
+
+**⛔ Question 1 is the one that can change the plan.** Hunters now arise from
+exactly one source. If the answer is "never" or "only once, at level 9," then P4
+inherits a coalescence retune it does not currently scope, and the levers that
+would move are `coalescePause`, `garbageAttractRadius` and
+`garbageAttractForce` — all live sliders. **Try them at the gate and report the
+numbers**; that is far cheaper than P4 guessing.
 
 ---
 
@@ -355,8 +432,6 @@ retune it does not currently carry.
 > - `carriesTo` is an **ARRAY**, and that is deliberate: a single-successor
 >   odometer is multiplicatively deep and would not move small-satellite speed
 >   until roughly level 96.
->
-> RESTRICTION — only drivers may wrap. A lever may declare carriesTo only if it also declares everyNLevels. Every carried lever plateaus at its ceiling; there is no second carry generation. This was derived by plotting the shipped tables level by level: under an unrestricted rule, ufoFlightSpeedSmall climbs 150 → 210 px/s by level 25 and then resets to 150 at level 33, making a UFO genuinely slower at level 33 than at level 25 — a difficulty regression on one of the game's most visible quantities. Three consequences, all simplifications. (1) The carry graph is depth 1, so propagation is a single pass with no iteration and no recursion: a dependent's carry count is Math.floor((wave - 1) / (everyN × steps)) of its driver, computed directly. (2) A cycle is unreachable by construction, so the load-time guard is not a cycle check — it throws if any lever declares carriesTo without everyNLevels, or names an unknown id. Same idiom as SCOOP_WIDTH[0] !== 0; a deliberate invariant, not test scaffolding, and it must say so in a comment at the site. (3) The shipped UFO table must be authored accordingly — ufoAppearFreq carries to all nine other UFO levers directly, and neither ufoFlightSpeedBig nor ufoFlightSpeedSmall declares a carriesTo. Add to the phase's test file: no lever in the shipped table returns toward its floor at any level 1–200 except a driver. That single assertion is what would have caught the defect this restriction exists to prevent.
 >
 > The hard part is that this must be computed **closed-form from `wave` alone**,
 > not by simulating levels 1..wave in a loop — it is called at spawn sites and
@@ -542,17 +617,45 @@ retune it does not currently carry.
 > **TRAP 2:** `AUTO_SHIELD_SCORE_PENALTY`'s direct `game.score` deduction is the
 > one sanctioned `addScore` bypass and is untouched.
 > **TRAP 3:** docs untouched.
+>
+> **FINALLY — OPEN THE GATE.** This phase is followed by a blocking playtest.
+> Write a gate-open block into `STATUS.md` under `## Playtest asks`, following
+> the same shape as P3's: **GATE B is open, P7 must not run until it is answered
+> here**, Gate B's seven questions verbatim, what to play (levels 1→20 minimum),
+> and a briefing listing **every one of the 17 levers with its knob id, current
+> value, range and step**, so retuning at the gate is a matter of dragging a
+> slider rather than hunting for it. Restate the standing instruction: report the
+> number landed on, not a yes/no.
 
 **Commit:** `cs-24 p6: count-only powerups, engine-as-fuel, difficulty menu`
 
 ---
 
-## ⛔ GATE B — blocking playtest
+## ⛔ GATE B — BLOCKING PLAYTEST (after P6)
 
-**Do not run P7 until these are answered in `STATUS.md`'s Playtest asks.**
-Questions 7–13 in `PLANNED-FEATURES-CS024.md` §6. Play levels 1→20 minimum.
-Every lever is a live slider — **retune in-session and report the number you
-landed on, not a yes/no.**
+**P7 must not run until the questions below are answered in `STATUS.md`'s
+`## Playtest asks` section.** P6's own prompt ends by writing them there.
+
+**What to play:** **levels 1 → 20 minimum**, ideally to 30. Every one of the 17
+levers is a live slider in the hidden Debug panel — **retune in-session and
+report the number you landed on, not a yes/no.**
+
+**The questions:**
+
+7. **Does the sawtooth read as *breathing*, or as the game repeatedly getting
+   easier?** This is the changeset's central bet.
+8. **Is the carry legible?** When `junkCount` resets to 3 and the satellites are
+   visibly faster, does that land as an escalation?
+9. **Three chains breathing on different periods** — `junkCount` every 10 levels,
+   `coalescePause` every 8, `ufoAppearFreq` every 8. Rich, or arrhythmic?
+10. **Any lever whose floor or ceiling is wrong.** Slide it, land on a number,
+    report the number.
+11. **Engine-as-fuel:** does 5 seconds of thrust feel like a powerup or a tease?
+12. **Count-only powerups:** does losing timed mode make Magnet (40 hooks) or
+    Rapid (40 shots) feel meaningfully different?
+13. **Level 12 and the Super Mega Delivery** — now that 24 slots is the first
+    moment an SMD is possible at all, does hitting it land as the payoff it
+    should be?
 
 ---
 
