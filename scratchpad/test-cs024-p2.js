@@ -66,13 +66,18 @@ function close(got, want, msg, eps = 1e-9) {
   assert(Math.abs(got - want) < eps, `${msg} (got ${got}, want ${want}, |d| ${Math.abs(got - want).toExponential(2)})`);
 }
 
-// The last commit before this phase's own edits — the correct "pre-edit" reference while this phase is
-// still uncommitted. (Using bare HEAD here, not a fixed SHA: this file exists to prove THIS phase's own
-// diff, the same way test-cs024-p1.js originally did for its own phase before it landed.)
+// REPOINTED BY CS024 P3, exactly as CS024 P2 repointed test-cs024-p1.js's own copy of this trap: the
+// bare `HEAD` below was correct only until this phase's commit landed. Once "cs-24 p2: dead-constant
+// sweep..." (0d56e93) was committed, HEAD stopped holding the pre-edit build these sections need as
+// their reference and started holding the already-swept one, so every "(setup)" sanity check here failed
+// for a reason unrelated to anything CS024 P3 touched. Pinned to 37bfcd1 ("Doc change to support CS025
+// upcoming"), the last commit before P2 landed — a docs-only commit, so its asteroids-deluxe.html is
+// byte-identical to P1's and is the genuine pre-P2 build.
+const PRE_P2_REF = "37bfcd1";
 let headSrcCache = null;
 function headSrc() {
   if (headSrcCache === null) {
-    headSrcCache = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"],
+    headSrcCache = execFileSync("git", ["show", `${PRE_P2_REF}:asteroids-deluxe.html`],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString().match(/<script>([\s\S]*?)<\/script>/)[1];
   }
   return headSrcCache;
@@ -220,8 +225,22 @@ function build({ audio = true, ctxLog = null } = {}) {
   const preCoalesce = bodyOf(headSrc(), "function coalesceGarbage(dt) {");
   const deadGuard = `\n      if (GARBAGE_CLUMP_MAXSPD !== Infinity) { // off-by-default playtest clamp\n        clampGarbageSpeed(a); clampGarbageSpeed(b);\n      }`;
   assert(preCoalesce.includes(deadGuard), "C: (setup) the pre-edit build really does contain the dead guard verbatim");
-  eq(bodyOf(scriptSrc, "function coalesceGarbage(dt) {"), preCoalesce.replace(deadGuard, ""),
-    "C: coalesceGarbage's only diff from the pre-edit build is the dead-guard deletion");
+  // NARROWED BY CS024 P3, the way CS024 P1 narrowed test-cs023-p2's destroyDebris pin rather than
+  // dropping it: a whole-body byte-subtraction can only hold until the NEXT phase edits the same
+  // function, and CS024 P3 rewrote this one's merge and conversion branches (permanent garbage, the
+  // overflow-destroy rule). What this section actually needs to prove is narrower and still exactly
+  // provable — that CS024 P2's edit REMOVED the guard block and touched nothing else in the pair walk.
+  // So: the pre-edit body minus the guard must still be a body whose ATTRACTION half is byte-identical
+  // to today's, and the guard's own text must be absent from both today's body and today's source.
+  {
+    const attractionOf = t => t.slice(t.indexOf("      // Otherwise: mutual attraction"));
+    const preMinusGuard = preCoalesce.replace(deadGuard, "");
+    const live = bodyOf(scriptSrc, "function coalesceGarbage(dt) {");
+    eq(attractionOf(live), attractionOf(preMinusGuard),
+      "C: coalesceGarbage's attraction half — where the deleted clamp lived — is byte-identical to the pre-edit body minus the guard");
+    assert(!/clampGarbageSpeed/.test(live), "C: ...and no clamp call survives anywhere in the live body");
+    assert(attractionOf(live).length > 200, "C: (sanity) the attraction slice is a real slice, not an empty string");
+  }
 
   // Live behavioural proof: because the guard's condition (`GARBAGE_CLUMP_MAXSPD !== Infinity`) could
   // NEVER be true in the pre-edit build (the constant was a `const` literally set to Infinity, never
@@ -349,8 +368,11 @@ function build({ audio = true, ctxLog = null } = {}) {
   console.log("(F) TRAPs — GAME_VERSION unchanged; debug registry is 34 entries, freqJitter gone");
   const X = build();
   eq(X.GAME_VERSION, "1.0.0.22", "F: TRAP 1 — GAME_VERSION unchanged (P7 owns the bump)");
-  eq(X.DEBUG_ENTRIES.length, 34, "F: TRAP — the debug registry is exactly 34 value entries (35 - freqJitter)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 34, "F: ...and DEBUG_VARS agrees");
+  // REPOINTED BY CS024 P3: 34 -> 36 (garbageLifetime out with the decay clock; garbageSoftMax,
+  // garbageHardMax and lastStandSpeed in). The claim this TRAP carries — freqJitter is gone and stays
+  // gone — is asserted directly below rather than through a total that later phases keep moving.
+  eq(X.DEBUG_ENTRIES.length, 36, "F: TRAP — the debug registry is exactly 36 value entries after CS024 P3");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 36, "F: ...and DEBUG_VARS agrees");
   assert(X.DEBUG_ENTRIES.some(e => e.id === "debrisBounceRestitution"),
     "F: debrisBounceRestitution (untouched by this phase) still survives in the registry");
   const docs = ["ORBITAL-OVERHAUL-GDD.md", "GDD-VERSION-HISTORY.md", "DIFFICULTY-LEVERS.md"];

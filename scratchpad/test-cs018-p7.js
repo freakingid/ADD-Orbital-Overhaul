@@ -328,7 +328,10 @@ function fireOnce(small, wave) {
   Y.startGame();
   eq(Y.game.cargoMax, 8, "H: cargoMax still starts at 8 (CS018 P5, untouched by P7)");
   eq(Y.levelDef(5).junkCount, 3, "H: junk count table untouched by P7");
-  eq(Y.levelDef(5).maxLargeHunters, 1, "H: hunter cap table untouched by P7");
+  // REPOINTED BY CS024 P3: the level table lost its maxLargeHunters column when HUNTER_CAP_STEPS was
+  // deleted and the ceiling became the flat LARGE_HUNTER_MAX. The regression this line guards — "P7 did
+  // not touch the hunter side of the table" — is now stated as the column being absent entirely.
+  eq(Y.levelDef(5).maxLargeHunters, undefined, "H: hunter cap column is gone from levelDef (CS024 P3)");
   eq(Y.levelDef(1).ufoFlightSpeed, "low", "H: UFO MOVEMENT tiers (P6) untouched by P7");
   // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
   // the version has since moved past what P7 (this phase) shipped.
@@ -351,7 +354,7 @@ function fireOnce(small, wave) {
   // /^orbit/i claim is INVERTED to its positive successor rather than dropped.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
   // the FREQ_JITTER constant instead).
-  eq(nEntries, 34, `H: DEBUG_ENTRIES count is 34 after CS024 P2 (got ${nEntries})`);
+  eq(nEntries, 36, `H: DEBUG_ENTRIES count is 36 after CS024 P3 (got ${nEntries})`);  // CS024 P3: 34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

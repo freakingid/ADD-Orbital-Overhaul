@@ -383,7 +383,9 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   Y.startGame();
   eq(Y.game.cargoMax, 8, "I: cargoMax still starts at 8 (CS018 P5, untouched by P6)");
   eq(Y.levelDef(5).junkCount, 3, "I: junk count table untouched by P6");
-  eq(Y.levelDef(5).maxLargeHunters, 1, "I: hunter cap table untouched by P6");
+  // REPOINTED BY CS024 P3: see the identical note in test-cs018-p7 §H — the maxLargeHunters column was
+  // deleted with HUNTER_CAP_STEPS, replaced by the flat LARGE_HUNTER_MAX.
+  eq(Y.levelDef(5).maxLargeHunters, undefined, "I: hunter cap column is gone from levelDef (CS024 P3)");
   // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
   // the version has since moved past what P6 (this phase) shipped.
   assert(Y.GAME_VERSION !== "1.0.0.17", "I: GAME_VERSION has moved past what P6 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
@@ -410,7 +412,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // deleted, per the standing convention: "none match" is the assertion that catches a knob creeping back.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
   // the FREQ_JITTER constant instead). Section B/F/G/H above carry the rest of this phase's own claims.
-  eq(nEntries, 34, `I: DEBUG_ENTRIES count is 34 after CS024 P2 (got ${nEntries})`);
+  eq(nEntries, 36, `I: DEBUG_ENTRIES count is 36 after CS024 P3 (got ${nEntries})`);  // CS024 P3: 34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

@@ -16,8 +16,10 @@
 //      ReferenceError. Also a static token scan of the two function bodies.
 //  (C) item 1 — junkCount over levels 1–63 (+ the rel === 21 override at 21/42/63).
 //  (D) item 2 — payloadSlots: 8 at 1–4, 10..24 at 5–12, 24 at 13–63.
-//  (E) item 3 — maxLargeHunters: the §5.1 column incl. the deliberate 3→5 skip at 17, the §5.2/§5.3
-//      step points, never > 12, never decreasing.
+//  (E) REPOINTED BY CS024 P3: item 3 was the maxLargeHunters COLUMN (the §5.1 schedule, its 3→5 skip
+//      at 17, its step points, never > 12). The column and its HUNTER_CAP_STEPS table are deleted —
+//      the large-Hunter ceiling is the flat LARGE_HUNTER_MAX now — so the section proves the column is
+//      gone from the slice AND from levelDef, without disturbing the other seven step tables.
 //  (F) item 4 — every tier sequence is monotonic in DIFFICULTY across 1–63 and hits its step points
 //      exactly; stepAt is the single lookup mechanism behind all eight step tables.
 //  (G) item 5 — levelDef(64) … levelDef(500) are field-identical to levelDef(63) except `level`
@@ -61,8 +63,8 @@ function deepEq(a, b) {
 // ---- the phase prompt's expected values, pinned verbatim ----
 const WANT_JUNK_1_21    = [3, 5, 9, 13, 3, 5, 9, 13, 3, 5, 9, 13, 3, 5, 9, 13, 3, 5, 9, 13, 13];
 const WANT_PAYLOAD_1_13 = [8, 8, 8, 8, 10, 12, 14, 16, 18, 20, 22, 24, 24];
-const WANT_CAP_1_21     = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 5, 5, 5, 5, 7];
-const WANT_CAP_POINTS   = { 22: 8, 34: 10, 43: 11, 59: 12 };
+// CS024 P3: WANT_CAP_1_21 and WANT_CAP_POINTS — the expected maxLargeHunters column and its step
+// points — stood here and are deleted with the column itself (see section E).
 const TIER_KEYS = ["junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
                    "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"];
 const RANK = { low: 0, normal: 1, high: 2 };
@@ -105,7 +107,11 @@ let PURE = null;
       // are removed with those columns. THE RULE THEY WERE EVIDENCE FOR IS UNCHANGED AND STILL PROVEN
       // HERE: whatever levelDef reads must be declared inside this block, which is exactly what the
       // standalone evaluation below asserts.
-      "\n;globalThis.__X = { PHASE_LEN, LEVEL_MAX, JUNK_CYCLE, HUNTER_CAP_STEPS, TIER_STEPS, stepAt, levelDef };",
+      // CS024 P3: HUNTER_CAP_STEPS LEAVES the exported set, for exactly the reason ORBIT_LEVEL_EVERY
+      // did in P1 — it was in the slice because levelDef's maxLargeHunters column read it, and that
+      // column is deleted. The rule this line is evidence for is untouched: whatever levelDef reads
+      // must be declared inside this block, which the standalone evaluation below still asserts.
+      "\n;globalThis.__X = { PHASE_LEN, LEVEL_MAX, JUNK_CYCLE, TIER_STEPS, stepAt, levelDef };",
       sandbox, { filename: "cs018-levelDef-block.js" });
   }, "B: the block evaluates standalone (no dependency on anything outside it)");
   PURE = sandbox.__X || null;
@@ -206,30 +212,25 @@ const levelDef = PURE.levelDef, stepAt = PURE.stepAt;
   }
 })();
 
-// ================= (E) item 3 — maxLargeHunters =====================
+// ================= (E) REPOINTED BY CS024 P3 — the maxLargeHunters column is gone ==========
 (function sectionE() {
-  console.log("(E) item 3 — maxLargeHunters");
-  const got = [];
-  for (let n = 1; n <= 21; n++) got.push(levelDef(n).maxLargeHunters);
-  assert(deepEq(got, WANT_CAP_1_21), `E: maxLargeHunters 1–21 === ${WANT_CAP_1_21.join(",")} (got ${got.join(",")})`);
-  eq(levelDef(16).maxLargeHunters, 3, "E: level 16 is 3 (before the skip)");
-  eq(levelDef(17).maxLargeHunters, 5, "E: level 17 skips 3→5 deliberately");
-  for (const n of Object.keys(WANT_CAP_POINTS)) eq(levelDef(+n).maxLargeHunters, WANT_CAP_POINTS[n], `E: level ${n} step point`);
-  // §3's own verification list.
-  for (const [n, want] of [[20, 5], [21, 7], [22, 8], [26, 9], [33, 9], [34, 10], [42, 10], [58, 11], [59, 12], [63, 12]])
-    eq(levelDef(n).maxLargeHunters, want, `E: level ${n} cap`);
-  // Cap 0 over 1–4 — no large hunter from either producer.
-  for (let n = 1; n <= 4; n++) eq(levelDef(n).maxLargeHunters, 0, `E: level ${n} cap is 0`);
-  eq(levelDef(5).maxLargeHunters, 1, "E: level 5 is the first level with a large hunter");
-  // Never decreases, never exceeds the changeset's hard ceiling of 12.
-  for (let n = 1; n <= 500; n++) {
-    const c = levelDef(n).maxLargeHunters;
-    assert(c <= 12, `E: cap <= 12 at level ${n} (got ${c})`);
-    if (n > 1) assert(c >= levelDef(n - 1).maxLargeHunters, `E: cap never decreases at level ${n}`);
-  }
-  // Driven by stepAt over HUNTER_CAP_STEPS, not by a private lookup.
-  for (let n = 1; n <= 70; n++)
-    eq(levelDef(n).maxLargeHunters, stepAt(PURE.HUNTER_CAP_STEPS, Math.min(n, 63)), `E: level ${n} cap === stepAt(HUNTER_CAP_STEPS, L)`);
+  console.log("(E) REPOINTED BY CS024 P3: levelDef no longer carries a maxLargeHunters column");
+  // Item 3 used to be the cap SCHEDULE: 0 across levels 1–4, the deliberate 3→5 skip at 17, the step
+  // points at 22/34/43/59, never above 12 and never decreasing. CS024 P3 replaced the whole schedule
+  // with one flat constant (LARGE_HUNTER_MAX = 100), so there is nothing per-level left to verify —
+  // what matters instead is that the removal was CLEAN on both sides of the slice boundary.
+  for (const n of [1, 4, 5, 16, 17, 21, 22, 34, 43, 59, 63, 500])
+    eq(levelDef(n).maxLargeHunters, undefined, `E: level ${n} has no maxLargeHunters column`);
+  assert(!("maxLargeHunters" in levelDef(9)), "E: ...and the key is absent, not merely undefined-valued");
+  // Match the DECLARATION, not the identifier: the removal's tombstone comment sits inside this very
+  // slice and names the table, which is exactly what a tombstone is for.
+  assert(!/const HUNTER_CAP_STEPS/.test(block), "E: HUNTER_CAP_STEPS is not declared inside the levelDef slice");
+  assert(PURE && PURE.HUNTER_CAP_STEPS === undefined, "E: ...and the slice exports no such table");
+  // The seven tier tables and stepAt itself are UNTOUCHED — stepAt lost one of its eight callers, not
+  // its job. This is the regression that deleting a shared lookup's last-but-seven consumer risks.
+  eq(Object.keys(PURE.TIER_STEPS).length, 7, "E: the seven graded tier tables are untouched");
+  eq(typeof PURE.stepAt, "function", "E: stepAt survives as the one step-table reader");
+  eq(PURE.stepAt([[1, "a"], [5, "b"]], 7), "b", "E: ...and still resolves a table correctly");
 })();
 
 // ================= (F) item 4 — tier monotonicity + step points =====================
@@ -284,10 +285,12 @@ const levelDef = PURE.levelDef, stepAt = PURE.stepAt;
   const base = levelDef(63);
   const keys = Object.keys(base);
   const UNCLAMPED = ["level"];   // REPOINTED BY CS024 P1: back to ONE field that reads n, not L
-  const GONE = ["archetype", "orbitRings", "fieldCount"];
-  assert(keys.length === 6 + 7, `G: levelDef returns 13 fields (got ${keys.length}: ${keys.join(",")})`);
+  // CS024 P3 adds maxLargeHunters to the GONE list and drops the count 13 -> 12 (5 scalar columns +
+  // the 7 tier columns): the large-Hunter ceiling stopped being a per-level quantity.
+  const GONE = ["archetype", "orbitRings", "fieldCount", "maxLargeHunters"];
+  assert(keys.length === 5 + 7, `G: levelDef returns 12 fields (got ${keys.length}: ${keys.join(",")})`);
   for (const k of GONE) {
-    assert(!keys.includes(k), `G: REPOINTED BY CS024 P1 (inverted) — the ${k} column is gone from levelDef`);
+    assert(!keys.includes(k), `G: the ${k} column is gone from levelDef`);
   }
   for (let n = 64; n <= 500; n++) {
     const d = levelDef(n);
@@ -318,13 +321,13 @@ const levelDef = PURE.levelDef, stepAt = PURE.stepAt;
   }
   // Mutating a returned object cannot poison the next call.
   const first = levelDef(10);
-  first.junkCount = 999; first.maxLargeHunters = 999;
+  first.junkCount = 999; first.payloadSlots = 999;   // CS024 P3: was maxLargeHunters, now a deleted column
   eq(levelDef(10).junkCount, 5, "H: a mutated result does not affect the next call (junkCount)");
-  eq(levelDef(10).maxLargeHunters, 2, "H: a mutated result does not affect the next call (maxLargeHunters)");
+  eq(levelDef(10).payloadSlots, 20, "H: a mutated result does not affect the next call (payloadSlots)");
   // The source tables are not mutated by calling it.
-  const tablesBefore = JSON.stringify([PURE.JUNK_CYCLE, PURE.HUNTER_CAP_STEPS, PURE.TIER_STEPS]);
+  const tablesBefore = JSON.stringify([PURE.JUNK_CYCLE, PURE.TIER_STEPS]);   // CS024 P3: HUNTER_CAP_STEPS deleted
   for (let n = 1; n <= 100; n++) levelDef(n);
-  eq(JSON.stringify([PURE.JUNK_CYCLE, PURE.HUNTER_CAP_STEPS, PURE.TIER_STEPS]), tablesBefore,
+  eq(JSON.stringify([PURE.JUNK_CYCLE, PURE.TIER_STEPS]), tablesBefore,
     "H: the step tables are unchanged after 100 calls");
   // Repeat calls in a DIFFERENT order give the same answers (no hidden accumulator).
   const forward = [], backward = [];
@@ -352,10 +355,13 @@ function makeLocalStorage() {
   const store = {};
   return { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
 }
+// CS024 P3: HUNTER_CAP_STEPS and largeHunterCap() are deleted; LARGE_HUNTER_MAX replaces both, and a
+// `probe` is added so section I can assert the ABSENCE of a symbol rather than crashing on it.
 const RETURN = ["game", "startGame", "update", "nextWave", "levelDef", "stepAt",
-                "PHASE_LEN", "LEVEL_MAX", "JUNK_CYCLE", "HUNTER_CAP_STEPS", "TIER_STEPS",
+                "PHASE_LEN", "LEVEL_MAX", "JUNK_CYCLE", "TIER_STEPS",
                 "CARGO_BASE", "CARGO_CAP_MAX", "GAME_VERSION",
-                "largeHunterCap", "largeHunterCount"];
+                "LARGE_HUNTER_MAX", "largeHunterCount",
+                'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'];
 function build(src, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});
   const factory = new Function(
@@ -458,8 +464,13 @@ function build(src, windowExtra) {
   Z.startGame();
   eq(Z.game.debris.length, Z.levelDef(1).junkCount, "I: level 1 spawns levelDef(1).junkCount pieces (3), the table's count");
   eq(Z.levelDef(1).junkCount, 3, "I: levelDef(1).junkCount is 3");
-  eq(Z.levelDef(1).maxLargeHunters, 0, "I: levelDef(1).maxLargeHunters is 0 — no large Hunter at level 1 (P4)");
-  eq(Z.largeHunterCap(), 0, "I: the live largeHunterCap() agrees with the table at level 1");
+  // REPOINTED BY CS024 P3 (inverted): the pin used to be "level 1's cap is 0, so no large Hunter can
+  // exist there from either producer." The cap schedule and largeHunterCap() are both deleted; the
+  // ceiling is the flat LARGE_HUNTER_MAX, so level 1 now ALLOWS a coalesced large Hunter. That is the
+  // intended consequence of collapsing the schedule, not a slip.
+  eq(Z.levelDef(1).maxLargeHunters, undefined, "I: levelDef(1) carries no maxLargeHunters column (CS024 P3)");
+  eq(Z.probe("largeHunterCap"), "__ReferenceError__", "I: largeHunterCap() no longer exists");
+  eq(Z.LARGE_HUNTER_MAX, 100, "I: the flat ceiling is 100, and applies at level 1 like every other level");
   // REPOINTED BY CS018 P5: payloadSlots is now wired — cargoMax starts at levelDef(1).payloadSlots (8).
   eq(Z.game.cargoMax, Z.levelDef(1).payloadSlots, "I: cargoMax now starts at levelDef(1).payloadSlots (8) — wired in CS018 P5");
   eq(Z.game.cargoMax, 8, "I: level 1 cargoMax is 8, not CARGO_BASE (12)");

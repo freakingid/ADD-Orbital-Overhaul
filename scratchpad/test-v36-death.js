@@ -174,8 +174,10 @@ function stepDeath() { update(DT); }
   // immediately, so they (and their split children) really detonate during the window.
   const dbg = new DebrisSatellite(1300, 720, 3, 1);
   game.debris.push(dbg);
-  const hnt = HunterSatellite.spawnCore();
-  hnt.x = 1260; hnt.y = 720; hnt.vx = 0; hnt.vy = 0;
+  // CS024 P3: HunterSatellite.spawnCore() is deleted with the ambient producer. The ctor is the path
+  // coalescence uses, and this test only ever wanted "a large Hunter parked next to the ship".
+  const hnt = new HunterSatellite(1260, 720, 3);
+  hnt.vx = 0; hnt.vy = 0;
   game.hunters.push(hnt);
 
   killShip();
@@ -259,7 +261,7 @@ function stepDeath() { update(DT); }
   // Populate a busy field so the world-render path is genuinely exercised during death.
   game.ship.x = 1280; game.ship.y = 720;
   for (let i = 0; i < 5; i++) game.debris.push(new DebrisSatellite(700 + i * 120, 500 + i * 40, ((i % 3) + 1), 1));
-  game.hunters.push(HunterSatellite.spawnCore());
+  game.hunters.push(new HunterSatellite(1400, 600, 3));   // CS024 P3: spawnCore() deleted; ctor is the live path
   killShip();
   let ok = true;
   try {

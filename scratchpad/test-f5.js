@@ -11,7 +11,9 @@
 //  (B) per-tier split + garbage in isolation: large -> 3 mediums + HUNTER_GARBAGE[3]x mass-1.0;
 //      medium -> 3 smalls + HUNTER_GARBAGE[2]x mass-1.0; small -> destroyed (no children) +
 //      HUNTER_GARBAGE[1]x mass-0.5;
-//  (C) per-tier damage/score tables, the passive-vs-homing split, and spawnCore making a core;
+//  (C) per-tier damage/score tables and the passive-vs-homing split. REPOINTED BY CS024 P3: the
+//      "spawnCore() makes a core" claim goes with the deleted ambient producer — a large core is now
+//      only ever built by coalescence, through the plain ctor this section already exercises.
 //  (D) EVERY speed & turn rate wires through difficultyFactor: wave-1 values sit exactly on
 //      the HUNTER_FLOOR_FRAC floor and are meaningfully slower than wave-20 values (all tiers),
 //      while the large core's drift *speed* scales but it never homes;
@@ -162,9 +164,9 @@ assert(game.garbage.length === HUNTER_GARBAGE[1] && game.garbage.every(g => g.ma
   `B: small drops a burst of ${HUNTER_GARBAGE[1]} LOW-mass (${HUNTER_SMALL_MASS}) canisters (got ${game.garbage.length} @ masses [${[...new Set(game.garbage.map(g => g.mass))]}])`);
 
 // =====================================================================
-// (C) damage / score tables, passive-vs-homing, spawnCore
+// (C) damage / score tables, passive-vs-homing
 // =====================================================================
-console.log("(C) damage / score tables, passive-vs-homing, spawnCore");
+console.log("(C) damage / score tables, passive-vs-homing");
 game.wave = 5;
 const L = new HunterSatellite(cx, cy, 3, 0);
 const M = new HunterSatellite(cx, cy, 2, 0);
@@ -177,8 +179,12 @@ assert(HUNTER_SCORE[3] === 200 && HUNTER_SCORE[2] === 150 && HUNTER_SCORE[1] ===
 assert(L.homing === false, "C: large core is PASSIVE (does not home)");
 assert(M.homing === true && S.homing === true, "C: medium & small ACTIVELY home");
 assert(L.radius === HUNTER_RADII[3] && M.radius === HUNTER_RADII[2] && S.radius === HUNTER_RADII[1], "C: per-tier collision radii");
-const core = HunterSatellite.spawnCore();
-assert(core.size === 3 && core.homing === false, "C: spawnCore() makes a passive large core");
+// REPOINTED BY CS024 P3: HunterSatellite.spawnCore() — the ambient producer's off-screen-edge factory —
+// is deleted. Coalescence builds its core with `new HunterSatellite(a.x, a.y, 3)` at the clump's own
+// position, which is exactly the ctor path L above already came through; the claim worth keeping is
+// that the factory is genuinely gone, not merely unused.
+assert(typeof HunterSatellite.spawnCore === "undefined", "C: spawnCore() is gone (the ambient producer is deleted)");
+assert(L.size === 3 && L.homing === false, "C: a size-3 ctor still makes a passive large core — coalescence's one path");
 
 // =====================================================================
 // (D) Hunter speed & turn rate are FROZEN CONSTANTS — no difficulty clock at all

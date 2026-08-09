@@ -70,7 +70,7 @@ const RETURN = [
   "logDifficultySnapshot", "difficultyLogCSV", "dumpDifficultyLog",
   "DEBUG_VARS", "menuDebug", "drawDebug", "debugReturn",
   "ramp", "difficultyFactor", "HUNTER_FLOOR_FRAC",
-  "levelDef", "junkSpeedMul", "largeHunterCap",                                        // CS018 P4 repoint
+  "levelDef", "junkSpeedMul", "LARGE_HUNTER_MAX",                                     // CS024 P3 repoint (was largeHunterCap)
   "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
   "ufoAccuracyRad",                                    // CS018 P7 (section B: tiered saucer aim error)
   "AudioSys",
@@ -188,8 +188,10 @@ const TIER_NAMES = ["low", "normal", "high"];
     assert(!("archetype" in def) && !("fieldCount" in def) && !("orbitRings" in def),
       `B: wave ${w}: levelDef has no archetype/fieldCount/orbitRings columns any more`);
     assert(Math.abs(row.junkSpeedMul - A.junkSpeedMul()) < 1e-9, `B: wave ${w}: junkSpeedMul matches the live helper`);
-    assert(row.maxLargeHunters === def.maxLargeHunters, `B: wave ${w}: maxLargeHunters expected ${def.maxLargeHunters}, got ${row.maxLargeHunters}`);
-    assert(row.maxLargeHunters === A.largeHunterCap(), `B: wave ${w}: maxLargeHunters equals the live largeHunterCap()`);
+    // REPOINTED BY CS024 P3: the maxLargeHunters COLUMN survives (a column follows its consumer), but
+    // its source moved off the deleted levelDef column / largeHunterCap() onto the flat LARGE_HUNTER_MAX.
+    assert(!("maxLargeHunters" in def), `B: wave ${w}: levelDef no longer carries a maxLargeHunters column`);
+    assert(row.maxLargeHunters === A.LARGE_HUNTER_MAX, `B: wave ${w}: the DiffLog column logs LARGE_HUNTER_MAX (${A.LARGE_HUNTER_MAX}), got ${row.maxLargeHunters}`);
     for (const f of TIER_FIELDS) {
       assert(row[f] === def[f], `B: wave ${w}: tier "${f}" expected ${def[f]}, got ${row[f]}`);
     }
@@ -271,7 +273,7 @@ const TIER_NAMES = ["low", "normal", "high"];
       t: 1000 + i, level: def.level, phase: def.phase, rel: def.rel,
       score: 300 * i, prevLevelSecs: 12.5 + i,
       junkCount: def.junkCount, junkSpeedMul: 0.8 + i * 0.1,
-      maxLargeHunters: def.maxLargeHunters, hunterCount: i,
+      maxLargeHunters: A.LARGE_HUNTER_MAX, hunterCount: i,   // CS024 P3: flat, no longer a per-level column
       saucerAimErr: 0.35 - i * 0.01, saucerGapMin: 20 - i, saucerGapMax: 30 - i,
       chainLen: 2 * i, cargoMax: 8 + i, scoopLevel: i,
     };

@@ -108,6 +108,14 @@ const DT = 1 / 60;
 function isolate() {
   game.debris.length = 0; game.hunters.length = 0; game.saucers.length = 0;
   game.powerups.length = 0; game.garbage.length = 0; game.bullets.length = 0;
+  // FLAKE FIX (found by CS024 P3's regression sweep; PRE-EXISTING, not caused by that phase). nextWave()
+  // places the dock at a RANDOM offset from the ship's spawn point, and this helper then teleports the
+  // ship to a fixed (1800, 1000). On the unlucky rolls where that lands inside the dock's radius, the
+  // real offload pass pops chain nodes the moment they are hooked — so §G's "one hooked canister spends
+  // exactly one piece" saw an empty chain and failed, roughly 1 run in 30. CS024 P2 doubling DOCK_RADIUS
+  // 44 -> 88 doubled the target it had to miss. Dropping the dock is the established idiom for this
+  // (test-cs019-p1's quietRun does the same) and update() guards every dock read with `if (game.dock)`.
+  game.dock = null;
   game.ship.x = 1800; game.ship.y = 1000; game.ship.vx = 0; game.ship.vy = 0;
   game.ship.invuln = 0; game.ship.cooldown = 0;
 }

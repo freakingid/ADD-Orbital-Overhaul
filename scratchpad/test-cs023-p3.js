@@ -602,7 +602,7 @@ function saucerAt(X, x, y, small) {
   // the exact live count keeps guarding it.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
-  eq(X.DEBUG_ENTRIES.length, 34, "A: TRAP 4 — the debug registry is exactly 34 value entries after CS024 P2");
+  eq(X.DEBUG_ENTRIES.length, 36, "A: TRAP 4 — the debug registry is exactly 36 value entries after CS024 P3");
   assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
     "A: TRAP 4 — ...and P3 still contributed none of them");
   {

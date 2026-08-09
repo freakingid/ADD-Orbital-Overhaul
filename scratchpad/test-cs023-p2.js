@@ -233,7 +233,12 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   assert(iShield > 0 && iShieldEnd < fnStart, "A: debrisBounce is placed AFTER shieldBounce");
   assert(codeOnly.slice(iShieldEnd, fnStart).trim() === "}", "A: ...and IMMEDIATELY after it — nothing between the two");
   // shieldBounce itself is BYTE-UNCHANGED. This phase derives from it; it does not edit it.
-  const preSrc = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 })
+  // REPOINTED BY CS024 P3, the same trap and the same fix as test-cs024-p1/p2: a bare `HEAD` reference
+  // silently re-aims at whatever landed most recently, so these "BYTE-UNCHANGED vs the pre-edit build"
+  // pins stopped meaning anything the moment CS024 P2 was committed. Pinned to the last commit before
+  // CS023 P2 itself landed, which is what every claim in this section was always written against.
+  const PRE_CS023_P2_REF = "300ac27";
+  const preSrc = execFileSync("git", ["show", `${PRE_CS023_P2_REF}:asteroids-deluxe.html`], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 })
     .toString().match(/<script>([\s\S]*?)<\/script>/)[1];
   const bodyOf = (src, sig) => { const i = src.indexOf(sig); return src.slice(i, src.indexOf("\n}\n", i)); };
   eq(bodyOf(scriptSrc, "function shieldBounce(obj) {"), bodyOf(preSrc, "function shieldBounce(obj) {"),
@@ -248,13 +253,27 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // canister ever bounced off the CS023 P2 rewrite either way. The pin is repointed to prove the ONLY
   // diff from the pre-CS024-P2 body is that exact deletion, so this TRAP still catches an unrelated
   // change to the merge/attraction logic it actually cares about.
-  const preCoalesce = bodyOf(preSrc, "function coalesceGarbage(dt) {");
-  const deadGuard = `\n      if (GARBAGE_CLUMP_MAXSPD !== Infinity) { // off-by-default playtest clamp\n        clampGarbageSpeed(a); clampGarbageSpeed(b);\n      }`;
-  assert(preCoalesce.includes(deadGuard), "A: TRAP 2 (setup) — the pre-CS024-P2 body really does contain the dead clamp guard verbatim");
-  eq(bodyOf(scriptSrc, "function coalesceGarbage(dt) {"), preCoalesce.replace(deadGuard, ""),
-    "A: TRAP 2 — coalesceGarbage's only diff from HEAD is CS024 P2's dead-clamp-guard deletion; canisters still do not bounce");
-  eq(bodyOf(scriptSrc, "class Garbage {"), bodyOf(preSrc, "class Garbage {"),
-    "A: TRAP 2 — the Garbage class is BYTE-UNCHANGED");
+  // REPOINTED AGAIN BY CS024 P3. Both of these were WHOLE-BODY byte pins, and a whole-body pin can only
+  // survive until the next phase edits the same code: CS024 P3 rewrote coalesceGarbage's merge and
+  // conversion branches (permanent garbage, the overflow-destroy rule) and rewrote the Garbage class
+  // itself (decay out, the monotonic `age` in). The claim this TRAP carries is NOT "these are frozen" —
+  // it is "CS023 P2's satellite bounce never reached the garbage system," and that claim is timeless and
+  // still exactly provable. Asserted directly instead of by textual identity to a moving reference.
+  {
+    const liveCoalesce = bodyOf(scriptSrc, "function coalesceGarbage(dt) {");
+    const liveGarbage  = bodyOf(scriptSrc, "class Garbage {");
+    const strip = t => t.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
+    for (const [name, body] of [["coalesceGarbage", liveCoalesce], ["class Garbage", liveGarbage]]) {
+      assert(!/debrisBounce/.test(strip(body)), `A: TRAP 2 — ${name} never calls debrisBounce`);
+      assert(!/DEBRIS_BOUNCE_(RESTITUTION|MIN)/.test(strip(body)), `A: TRAP 2 — ...and reads neither bounce constant`);
+      assert(!/DEBRIS_MASS/.test(strip(body)), `A: TRAP 2 — ...nor the bounce system's mass table`);
+    }
+    // And the converse, which is the half a grep could not fake: every debrisBounce CALL SITE in live
+    // source pairs two hazards, never a Garbage. The behavioural proof is in section (E) below.
+    const bounceCalls = codeOnly.split("\n").filter(l => /debrisBounce\(/.test(l) && !/function debrisBounce/.test(l));
+    assert(bounceCalls.length > 0, "A: TRAP 2 (sanity) — debrisBounce does have call sites");
+    for (const l of bounceCalls) assert(!/garbage/i.test(l), `A: TRAP 2 — no debrisBounce call site mentions garbage: ${l.trim()}`);
+  }
   // REPOINTED BY CS024 P1: destroyDebris can no longer be byte-pinned against the pre-CS023-P2 build,
   // because CS024 removed CS021 P1's rail handoff from its split branch (the `const tangent =
   // orbitTangent(a)` line and the two-line child fixup). The claim NARROWS rather than being dropped, and
@@ -372,7 +391,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // that now does the work, since a silently-restored drift is the thing this file should catch.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
-  eq(X.DEBUG_ENTRIES.length, 34, "A: TRAP 4 REPOINTED BY CS024 P2 — the debug registry is 34 value entries");
+  eq(X.DEBUG_ENTRIES.length, 36, "A: TRAP 4 REPOINTED BY CS024 P3 — the debug registry is 36 value entries");
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
     "debrisBounceRestitution",
     "A: REPOINTED BY CS024 P1 — debrisBounceRestitution is the ONLY survivor of CS023 P4's two knobs; debrisDriftAccel is gone");

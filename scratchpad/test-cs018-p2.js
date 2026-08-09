@@ -333,26 +333,29 @@ function onDebug(A, { playing = false } = {}) {
   const g = onDebug(A);
 
   // Land on a known value row.
-  const target = "garbageLifetime";                       // {def:10, min:1, max:60, step:1}
+  // REPOINTED BY CS024 P3: was garbageLifetime {def:10, min:1, max:60, step:1}, deleted with the decay
+  // clock. lastStandSpeed has the same shape this section needs — a plain numeric knob with no
+  // toNative/clampShown hook, whose range admits the 42 / 25 / 73 the section types.
+  const target = "lastStandSpeed";                        // {def:50, min:0, max:200, step:5}
   const row = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === target);
   g.menu.index = row;
-  assert(A.debugSelectedVar() && A.debugSelectedVar().id === target, "F: cursor is on the Garbage lifetime row");
+  assert(A.debugSelectedVar() && A.debugSelectedVar().id === target, "F: cursor is on the Hunter last-stand speed row");
   assert(A.debugEntryActive() === false, "F: nothing pending to start with");
 
   // Typing builds the buffer without touching the live value.
   A.debugEntryKey("4"); A.debugEntryKey("2");
   assert(A.DebugPanel.entry === "42", `F: digits accrete into the pending buffer (got ${A.DebugPanel.entry})`);
   assert(A.debugEntryActive() === true, "F: an entry is pending");
-  assert(A.debugShown[target] === 10, "F: the LIVE value is untouched while the entry is pending");
+  assert(A.debugShown[target] === 50, "F: the LIVE value is untouched while the entry is pending");
 
   // While pending, left/right must not step and back must not leave the screen.
   A.menuDebug("right"); A.menuDebug("left"); A.menuDebug("right");
-  assert(A.debugShown[target] === 10, "F: left/right do not step while an entry is pending");
+  assert(A.debugShown[target] === 50, "F: left/right do not step while an entry is pending");
   assert(A.DebugPanel.entry === "42", "F: ...and do not disturb the pending digits");
   A.menuDebug("back");
   assert(g.menu.screen === "debug", "F: `back` while pending does NOT leave the screen");
   assert(A.debugEntryActive() === false, "F: ...it cancels the entry instead (ESC = cancel)");
-  assert(A.debugShown[target] === 10, "F: a cancelled entry commits nothing");
+  assert(A.debugShown[target] === 50, "F: a cancelled entry commits nothing");
 
   // Commit through the abstract confirm (so gamepad A behaves identically to ENTER).
   A.debugEntryKey("2"); A.debugEntryKey("5");
@@ -364,9 +367,11 @@ function onDebug(A, { playing = false } = {}) {
 
   // Clamped to the entry's own min/max on commit — never rejected, never reordered.
   A.debugEntryKey("9"); A.debugEntryKey("9"); A.debugEntryKey("9"); A.menuDebug("confirm");
-  assert(A.debugShown[target] === 60, `F: an over-max entry clamps to max 60 (got ${A.debugShown[target]})`);
+  assert(A.debugShown[target] === 200, `F: an over-max entry clamps to max 200 (got ${A.debugShown[target]})`);
   A.debugEntryKey("0"); A.menuDebug("confirm");
-  assert(A.debugShown[target] === 1, `F: an under-min entry clamps to min 1 (got ${A.debugShown[target]})`);
+  // CS024 P3: lastStandSpeed's min is 0, so the under-min probe types a NEGATIVE-equivalent instead —
+  // 0 is already the floor, and a typed 0 must land on it rather than being rejected.
+  assert(A.debugShown[target] === 0, `F: an at-min entry lands on min 0 (got ${A.debugShown[target]})`);
 
   // A typed value is exact — it is NOT snapped to `step`.
   // REPOINTED (CS018 P7): saucerAimPressure retired this phase; ufoDirChangeFreqNormal is the nearest
@@ -453,7 +458,7 @@ function onDebug(A, { playing = false } = {}) {
   const reload = build({ storage: { "afd_settings_v1": blob } }).exports;
   assert(reload.debugShown[target] === 73, `G: a fresh load restored the typed 73 (got ${reload.debugShown[target]})`);
   assert(reload.DEBUG[target] === 73, "G: ...and re-derived the native value");
-  assert(reload.debugShown.garbageLifetime === 10, "G: untouched knobs still load at their defaults");
+  assert(reload.debugShown.chainGuardMinTow === 5, "G: untouched knobs still load at their defaults");   // CS024 P3: was garbageLifetime
 
   // Every entry round-trips, typed or not (test item 12's generalisation over the whole registry).
   const inst2 = build();
@@ -483,21 +488,27 @@ function onDebug(A, { playing = false } = {}) {
       `G: ${e.id} survived the reload (${after.debugShown[e.id]} === ${want[e.id]})`);
 
   // An older save (written before the headers existed) still loads, and headers can't break it.
-  const legacy = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { garbageLifetime: 44 }, autoShield: true }) } }).exports;
-  assert(legacy.debugShown.garbageLifetime === 44, "G: a 1.0.0.17-era save loads its debug values unchanged");
+  // CS024 P3: the fixture key moved off garbageLifetime (deleted this phase) onto chainGuardTime — and
+  // an ORPHANED garbageLifetime is added alongside it, because that is now the more interesting half of
+  // the claim: a real 1.0.0.17-era save DOES carry that key, and the known-value-else-default rule must
+  // ignore it with no schema bump, no migration and no rename of the frozen afd_settings_v1 key.
+  const legacy = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { chainGuardTime: 44, garbageLifetime: 33 }, autoShield: true }) } }).exports;
+  assert(legacy.debugShown.chainGuardTime === 44, "G: a 1.0.0.17-era save loads its debug values unchanged");
+  assert(!("garbageLifetime" in legacy.debugShown), "G: ...while its now-orphaned garbageLifetime key is silently ignored (CS024 P3)");
+  assert(!("garbageLifetime" in legacy.DEBUG), "G: ...and never reaches the native map either");
   assert(legacy.settings.autoShield === true, "G: ...and its other additive fields (proving load ran)");
-  assert(legacy.debugShown.chainGuardTime === 30, "G: absent keys keep their seeded defaults");
+  assert(legacy.debugShown.chainGuardIntercepts === 3, "G: absent keys keep their seeded defaults");
 
   // A save carrying a literal "undefined" debug key must be ignored, never applied. (Honest note, verified by
   // mutation: switching loadSettings back to DEBUG_VARS does NOT break this — a header's `e.min` is
   // undefined, so the `dv >= e.min` range check is already false. The DEBUG_ENTRIES change there is
   // defensive clarity; the one in the STARTUP SEED is mandatory, and reverting THAT throws at load.)
-  const poisoned = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { undefined: 5, garbageLifetime: 12 } }) } }).exports;
+  const poisoned = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { undefined: 5, chainGuardTime: 12 } }) } }).exports;
   assert(!("undefined" in poisoned.debugShown) && !(undefined in poisoned.debugShown),
     "G: an `undefined` debug key in a save is never applied to debugShown");
   assert(Object.keys(poisoned.debugShown).length === poisoned.DEBUG_ENTRIES.length,
     "G: ...so the map still holds exactly one key per value entry");
-  assert(poisoned.debugShown.garbageLifetime === 12, "G: the real key alongside it still loaded");
+  assert(poisoned.debugShown.chainGuardTime === 12, "G: the real key alongside it still loaded");
 })();
 
 // ================= (H) NO cross-field validation (the CS018 inverted-lever trap) ===============

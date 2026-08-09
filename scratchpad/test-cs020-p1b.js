@@ -412,8 +412,8 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 34, "A: DEBUG_VARS holds 34 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 34, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 36, "A: DEBUG_VARS holds 36 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 36, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");

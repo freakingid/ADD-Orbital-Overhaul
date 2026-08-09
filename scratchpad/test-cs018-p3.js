@@ -17,8 +17,11 @@
 //  (C) speedMul PARITY: the two derivation sites (nextWave, destroyDebris) are proven byte-identical
 //      at the source level (both read literally "const speedMul = junkSpeedMul();"), and
 //      junkSpeedMul() is proven correct against a hand-computed tier lookup at low/normal/high levels.
-//  (D) bonusSpawnChance() re-homed onto the junk cycle position (levelDef().rel), hitting both
-//      endpoints exactly and diverging from what the retired game.cycleWave-based formula would say.
+//  (D) REPOINTED BY CS024 P3: this section proved bonusSpawnChance() had been re-homed onto the junk
+//      cycle position (levelDef().rel), hitting both endpoints exactly. The bonus canister is removed
+//      outright (spec §1.2/§4.2), so the section now proves the WHOLE feature is gone — the function,
+//      its four constants, the Garbage.bonus field, the nextWave() spawn block and the scoop payout —
+//      while the two things it borrowed, JUNK_CYCLE and levelDef().rel, are untouched.
 //  (E) regression: cargoMax/saucers untouched by P3; GAME_VERSION unchanged. REPOINTED BY CS018 P4 — the
 //      "cycleValue still has exactly 4 call sites" pin became "the cycle clock no longer exists."
 
@@ -76,9 +79,9 @@ function makeLocalStorage() {
   return { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
 }
 const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "levelDef", "stepAt",
-                "junkSpeedMul", "bonusSpawnChance", "JUNK_CYCLE", "DEBUG", "DEBUG_VARS",
+                "junkSpeedMul", "JUNK_CYCLE", "DEBUG", "DEBUG_VARS",   // CS024 P3: bonusSpawnChance deleted
                 "DEBRIS_SPEEDS",
-                "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE",
+                "Garbage",     // CS024 P3: BONUS_SPAWN_CHANCE_EARLY/_LATE deleted with the canister
                 "CARGO_BASE", "GAME_VERSION",
                 // CS018 P4: the cycle clock is retired, so section (E) probes for its ABSENCE instead.
                 'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
@@ -218,47 +221,31 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   }
 })();
 
-// ================= (D) bonusSpawnChance re-homed =====================
+// ================= (D) the bonus canister is GONE (CS024 P3) =====================
 (function sectionD() {
-  console.log("(D) bonusSpawnChance() re-homed onto the junk cycle position");
-  eq((scriptSrc.match(/function bonusSpawnChance\(/g) || []).length, 1, "D: exactly one bonusSpawnChance definition");
-  const bodyLines = scriptSrc.split("\n");
-  const defIdx = bodyLines.findIndex(l => l.startsWith("function bonusSpawnChance("));
-  let endIdx = -1;
-  for (let i = defIdx + 1; i < bodyLines.length; i++) if (bodyLines[i] === "}") { endIdx = i; break; }
-  const body = bodyLines.slice(defIdx, endIdx + 1).join("\n");
-  assert(!/game\.cycleWave/.test(body), "D: bonusSpawnChance() body no longer reads game.cycleWave");
-  assert(/levelDef\(game\.wave\)\.rel/.test(body), "D: bonusSpawnChance() body reads levelDef(game.wave).rel");
-
-  // Endpoints hit exactly: pos 0 (rel 1/5/9/...) === EARLY, pos 3 (rel 4/8/12/...) === LATE.
-  X.game.wave = 1; // phase 1, rel 1 -> pos 0
-  close(X.bonusSpawnChance(), X.BONUS_SPAWN_CHANCE_EARLY, "D: level 1 (junk-cycle pos 0) is exactly EARLY");
-  X.game.wave = 4; // phase 1, rel 4 -> pos 3
-  close(X.bonusSpawnChance(), X.BONUS_SPAWN_CHANCE_LATE, "D: level 4 (junk-cycle pos 3) is exactly LATE");
-  X.game.wave = 22; // phase 2 opens, rel 1 -> pos 0 again: the cycle resets with the phase too
-  close(X.bonusSpawnChance(), X.BONUS_SPAWN_CHANCE_EARLY, "D: level 22 (phase reset) is exactly EARLY again");
-
-  // Linear interpolation preserved: mid-cycle values match the documented formula.
-  for (let n = 1; n <= 21; n++) {
-    const rel = X.levelDef(n).rel;
-    const pos = (rel - 1) % X.JUNK_CYCLE.length;
-    const t = pos / (X.JUNK_CYCLE.length - 1);
-    const want = X.BONUS_SPAWN_CHANCE_EARLY + (X.BONUS_SPAWN_CHANCE_LATE - X.BONUS_SPAWN_CHANCE_EARLY) * t;
-    X.game.wave = n;
-    close(X.bonusSpawnChance(), want, `D: level ${n} bonusSpawnChance matches the rel-based linear formula`);
+  console.log("(D) REPOINTED BY CS024 P3: the bonus canister is removed outright");
+  // This section used to prove bonusSpawnChance() had been re-homed off the retired game.cycleWave onto
+  // the junk-cycle position, hitting BONUS_SPAWN_CHANCE_EARLY/_LATE exactly at the cycle's endpoints.
+  // CS024 P3 removes the whole feature (spec §1.2/§4.2), so what is worth pinning now is the ABSENCE of
+  // every piece of it — a partial removal that left, say, the Garbage.bonus field behind would be the
+  // real regression risk here.
+  eq((scriptSrc.match(/function bonusSpawnChance\(/g) || []).length, 0, "D: bonusSpawnChance is not defined anywhere in source");
+  eq(X.probe("bonusSpawnChance"), "__ReferenceError__", "D: ...and does not exist in the built game");
+  for (const c of ["BONUS_CANISTER_PIECES", "BONUS_CANISTER_SCORE",
+                   "BONUS_SPAWN_CHANCE_EARLY", "BONUS_SPAWN_CHANCE_LATE", "BONUS_RING_PAD"]) {
+    eq(X.probe(c), "__ReferenceError__", `D: ${c} does not exist`);
   }
-
-  // Regression: proves it actually MOVED off the retired cycleWave clock. That clock was 9 levels long,
-  // so level 10 sat at cycleWave 1 and the OLD formula returned EARLY exactly there; the junk cycle is 4
-  // levels long, so level 10 sits at position 1 and cannot. This fails if someone reverts the expression.
-  // (CS018 P4 note: the assignment that used to stand in for nextWave()'s derivation here is gone with the
-  // field itself — the old expected value is now stated as the arithmetic constant it always was.)
-  const OLD_CYCLE_LENGTH = 9;
-  X.game.wave = 10;
-  eq(((10 - 1) % OLD_CYCLE_LENGTH) + 1, 1, "D: (sanity) level 10's OLD cycleWave would have read back to 1");
-  eq((X.levelDef(10).rel - 1) % X.JUNK_CYCLE.length, 1, "D: level 10's junk-cycle position is 1, not 0");
-  assert(Math.abs(X.bonusSpawnChance() - X.BONUS_SPAWN_CHANCE_EARLY) > 1e-6,
-    "D: level 10 bonusSpawnChance no longer equals EARLY (proves it is off the old cycleWave formula)");
+  // The field and its render half, checked on a REAL Garbage rather than by grep.
+  const g = new X.Garbage(100, 100);
+  assert(!("bonus" in g), "D: a Garbage carries no `bonus` field");
+  assert(typeof g.drawBonusRing !== "function", "D: ...and Garbage has no drawBonusRing method");
+  // The two things the deleted lever BORROWED are untouched — that is the actual regression risk of
+  // deleting a function that read into the level table.
+  eq(X.JUNK_CYCLE.length, 4, "D: JUNK_CYCLE survives the removal (levelDef still reads it)");
+  eq(X.levelDef(10).rel, 10, "D: ...and levelDef's `rel` column survives too");
+  // COLOR.garbageBonus deliberately SURVIVES: the debug panel's uncommitted-entry tint reads it, and it
+  // is now that role's only consumer. Deleting it would have been the over-eager removal.
+  assert(/garbageBonus/.test(scriptSrc), "D: COLOR.garbageBonus survives — the debug panel's typing tint still reads it");
 })();
 
 // ================= (E) regression: untouched systems =====================

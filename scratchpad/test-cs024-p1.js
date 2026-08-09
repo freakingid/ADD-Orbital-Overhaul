@@ -315,7 +315,7 @@ function atWave(X, w) {
   // --- the debug registry ---
   // REPOINTED BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via the
   // FREQ_JITTER constant instead).
-  eq(X.DEBUG_ENTRIES.length, 34, "B: the debug registry holds 34 value entries (46 - 10 ORBIT - debrisDriftAccel - freqJitter)");
+  eq(X.DEBUG_ENTRIES.length, 36, "B: the debug registry holds 36 value entries (46 - 10 ORBIT - debrisDriftAccel - freqJitter - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed)");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,
@@ -348,9 +348,12 @@ function atWave(X, w) {
 
   // --- levelDef keeps existing, minus three columns (CS024 P4 replaces it outright) ---
   assert(typeof X.levelDef === "function", "B: levelDef() still exists this phase (P4 replaces it, not P1)");
-  for (const k of ["archetype", "orbitRings", "fieldCount"])
+  // REPOINTED BY CS024 P3: maxLargeHunters moves from the "kept" list to the "gone" list. P1 left it
+  // alone; P3 deleted it along with HUNTER_CAP_STEPS when the large-Hunter ceiling became the flat
+  // LARGE_HUNTER_MAX. Everything P1 itself removed is unchanged.
+  for (const k of ["archetype", "orbitRings", "fieldCount", "maxLargeHunters"])
     assert(!(k in X.levelDef(3)), `B: ...minus its ${k} column`);
-  for (const k of ["level", "phase", "rel", "junkCount", "payloadSlots", "maxLargeHunters"])
+  for (const k of ["level", "phase", "rel", "junkCount", "payloadSlots"])
     assert(k in X.levelDef(3), `B: ...and keeping ${k}`);
 
   // --- nextWave() calls spawnFieldSatellites() unconditionally ---

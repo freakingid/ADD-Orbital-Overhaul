@@ -30,7 +30,9 @@
 //  (F) sweep-payout pool: across many sweeps all SEVEN types appear (the six droppables + Health,
 //      which is ambient-only everywhere else).
 //  (G) coalescence pause: while game.sweepPause > 0 the REAL update() performs no merge and no
-//      clump->Hunter conversion, but decay clocks keep running (a piece ages out mid-pause); once
+//      clump->Hunter conversion. REPOINTED BY CS024 P3: the "but decay clocks keep running" half is
+//      retired with decay itself — the surviving claim is that Garbage.update() still runs during the
+//      pause (it ticks the new monotonic `age`) and that the pause suspends coalescence ONLY; once
 //      the pause expires the held merge + conversion goes through.
 //  (H) trigger INTEGRATION: a REAL 24-piece dock visit through update()'s offload path fires the
 //      sweep (seeded larges destroyed, set + per-piece payouts spawned, sweepPause armed) on top of
@@ -273,10 +275,10 @@ let reportBefore = 0, reportAfter = 0, reportPowerups = 0;
 
 // ================= (G) coalescence pause =====================
 (function sectionG() {
-  console.log("(G) pause: no merge/conversion while sweepPause > 0; decay still runs; resumes after");
+  console.log("(G) pause: no merge/conversion while sweepPause > 0; Garbage.update still runs; resumes after");
   const X = build();
   quietBoard(X);
-  X.game.wave = 21;                    // largeHunterCap() = 7 > 0, so a conversion CAN go through
+  X.game.wave = 21;                    // CS024 P3: the ceiling is flat now, so any level converts
   X.game.ship.x = 2000; X.game.ship.y = 1200;  // far from the seeded garbage — no scoop pickup
   X.DEBUG.sweepCoalescePause = 0.5;    // shorten the wait; the knob is the real consumer either way
 
@@ -287,31 +289,34 @@ let reportBefore = 0, reportAfter = 0, reportPowerups = 0;
 
   // two 6-piece clumps co-located and active: the FIRST coalesce pass would merge them into 12
   // pieces and convert (HUNTER_COALESCE_COUNT = 12) — unless the pause holds it back.
-  const mk = (x, y, decay) => {
+  const mk = (x, y) => {
     const g = new X.Garbage(x, y, 0, 0);
     g.pieces = 6; g.mass = 6; g.radius = 7 * Math.sqrt(6);
-    g.coalesceDelay = 0; g.decay = decay;
+    g.coalesceDelay = 0;
     return g;
   };
-  const a = mk(300, 300, 100), b = mk(300, 300, 100);
-  const ephemeral = mk(900, 900, 0.05);   // ages out INSIDE the pause window if decay clocks run
-  ephemeral.pieces = 1; ephemeral.mass = 1; ephemeral.radius = 7;
-  X.game.garbage.push(a, b, ephemeral);
-  const decay0 = a.decay;
+  const a = mk(300, 300), b = mk(300, 300);
+  // REPOINTED BY CS024 P3: this used to be an `ephemeral` piece with decay 0.05, seeded to prove decay
+  // clocks kept ticking through the pause (a piece aged out mid-pause). Nothing decays now, so the
+  // equivalent claim — Garbage.update() is NOT suspended by the pause, only coalescence is — is read off
+  // the new monotonic `age` instead. Same property, one clock later.
+  const witness = mk(900, 900);
+  witness.pieces = 1; witness.mass = 1; witness.radius = 7;
+  X.game.garbage.push(a, b, witness);
 
-  let mergedDuringPause = false, convertedDuringPause = false, agedOutDuringPause = false, frames = 0;
+  let mergedDuringPause = false, convertedDuringPause = false, frames = 0;
   while (X.game.sweepPause > 0 && frames < 600) {
     X.update(1 / 60); frames++;
     if (X.game.sweepPause > 0) {
       if (a.dead || b.dead || a.pieces !== 6 || b.pieces !== 6) mergedDuringPause = true;
       if (X.game.hunters.length > 0) convertedDuringPause = true;
-      if (ephemeral.dead) agedOutDuringPause = true;
     }
   }
   assert(!mergedDuringPause, "no merge happened while the pause was live");
   assert(!convertedDuringPause, "no clump->Hunter conversion happened while the pause was live");
-  assert(agedOutDuringPause, "decay clocks are NOT frozen — a piece aged out mid-pause");
-  assert(a.decay < decay0, "the held clumps' decay clocks ticked during the pause too");
+  assert(!witness.dead, "nothing aged out mid-pause — nothing ages out at all any more (CS024 P3)");
+  assert(witness.age > 0.4, `Garbage.update() still ran through the pause — age advanced (${witness.age.toFixed(3)}s)`);
+  assert(a.age > 0.4, "the held clumps' age clocks advanced through the pause too");
   assert(frames >= 29 && frames <= 32, "the pause ran its full configured length (~0.5 s of frames)");
 
   for (let i = 0; i < 5; i++) X.update(1 / 60);   // pause expired — coalescence resumes

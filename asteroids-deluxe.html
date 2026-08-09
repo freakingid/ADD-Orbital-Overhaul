@@ -253,7 +253,8 @@ const SAUCER_SCORE = { big: 200, small: 1000 };
 // for the WHOLE GAME — no difficulty ramp, no cycle, no clock of any kind. The two _CEIL tables are
 // therefore the FROZEN VALUE'S DERIVATION, not a target anything climbs toward; nothing interpolates
 // between the floor fraction and the ceiling any more. Rising Hunter pressure is expressed purely as
-// COUNT now, through the level table's maxLargeHunters cap (see HUNTER_CAP_STEPS / levelDef).
+// COUNT now — bounded by LARGE_HUNTER_MAX below (CS024 P3; it was the level table's maxLargeHunters
+// column, off HUNTER_CAP_STEPS, until this phase collapsed the whole clock into one flat ceiling).
 const HUNTER_RADII      = { 3: 24, 2: 15, 1: 10 };    // collision radius by tier
 const HUNTER_SCORE      = { 3: 200, 2: 150, 1: 250 }; // large core / medium / small (small worth most — hardest to hit)
 const HUNTER_DAMAGE     = { 3: 60, 2: 45, 1: 30 };    // contact damage — harder than the equivalent Debris tier (F2/F4)
@@ -262,8 +263,22 @@ const HUNTER_TURN_CEIL  = { 3: 0, 2: 1.6, 1: 2.6 };   // frozen turn-rate DERIVA
 const HUNTER_FLOOR_FRAC = 0.58;   // THE Hunter speed/turn knob: EVERY Hunter, at EVERY level, moves at this × its _CEIL
                                   // (40.6 / 69.6 / 101.5 px/s and 0 / 0.928 / 1.508 rad/s by tier 3/2/1)
 const HUNTER_SCATTER    = 0.6;    // sec a freshly-split homer scatters outward before homing engages
+// CS024 P3 (spec §3.2): THE large-Hunter ceiling — one flat constant, no clock, no level table. It
+// replaces HUNTER_CAP_STEPS' 11-breakpoint schedule (deleted this phase) and, with the ambient producer
+// gone, it is now checked at exactly ONE site: the coalescence conversion in coalesceGarbage(). The
+// OVERFLOW RULE changed with it and is the load-bearing half — at the ceiling a clump reaching
+// HUNTER_COALESCE_COUNT is DESTROYED, not held at its final stage. The retired hold stalled the
+// pipeline: a saturated clump sat there un-converting forever, and with garbage now permanent (§1.4)
+// nothing would ever clear it. 100 is deliberately far above anything reachable in play — it is a
+// runaway backstop, not a difficulty lever (§2.5: Hunter pressure is NOT levered on count any more).
+const LARGE_HUNTER_MAX  = 100;
 // v3.6 P2b: "last stand" — once no Debris remain (game.debris.length === 0), a large core slowly steers
 // toward the ship instead of drifting forever. Both PLAYTEST KNOBS, deliberately under-specified.
+// CS024 P3 (spec §2.5/§3.3): the SPEED half is now a live debug knob. This constant survives as the
+// registry's `def:` source — the standing "constant supplies the default, the consumer reads DEBUG.* at
+// the site" idiom (see GARBAGE_MAGNET_RANGE/garbageAttractRadius) — and the ONE consumer in
+// HunterSatellite.update() reads DEBUG.lastStandSpeed. HUNTER_LAST_STAND_TURN stays hardcoded: the
+// phase scoped one knob, not two.
 const HUNTER_LAST_STAND_SPEED = 50;    // px/s — slower than a medium homer, which since CS018 P4 is the
                                        // FROZEN HUNTER_SPEED_CEIL[2]*HUNTER_FLOOR_FRAC = 69.6 px/s at
                                        // EVERY level (it used to range 69.6 -> 120 and beyond); a
@@ -405,20 +420,35 @@ const HUD_BANK_POP = 0.25;      // fractional radius pop (25%) a powerup ring ge
 const HUD_CAP_FLASH = 0.5;      // sec — reserved flash duration for a cap-related HUD feedback event
 
 // Radioactive salvage / tow chain / recycling dock
-// v3.3 P4 (9a): loose SINGLE canisters decay again — decay is the GOVERNOR that keeps
-// the field readable now that Hunters always drop garbage (9b) reopens the 12-in/66-out amplifier.
-// This REVERSES the v3.2 P3 "garbage is permanent" rule (Paul signed off). CS015 P6 (item 10,
-// FLAG-CS015-a) reverses FORK-4 in turn: a CLUMP (pieces > 1) now ages out too — every piece, single or
-// clump, counts down a lifetime and dies at 0 — but a MERGE resets the survivor's clock to full, so an
-// actively-growing lineage never dies while a stalled one does (coalesceGarbage). Exits for a piece are
-// now three: RECYCLED (towed to the dock), CONSUMED INTO A HUNTER (coalescence), or AGED OUT (decay).
-// Chain nodes never decay (they're game.chain, not game.garbage). Severed garbage (Garbage.fromNode)
-// still routes through the one ctor line, so it gets a normal (tunable) life — no separate constant.
-// The live source of truth for a piece's lifetime is the `garbageLifetime` debug var (DEBUG_VARS,
-// CS015 P6), default 10 s, seeded at Garbage ctor time; the pre-P6 shipped literal (22) was deleted
-// as a dead constant in CS024 P2.
+// CS024 P3 (spec §1.4/§3.1/§4.4): LOOSE GARBAGE IS PERMANENT. `Garbage.decay`, GARBAGE_FADE, the
+// blink-out render and the `garbageLifetime` knob are all deleted — this reverses v3.3 P4 (9a) and
+// CS015 P6 (item 10) and restores the v3.2 P3 rule. A piece now has exactly THREE exits: RECYCLED
+// (towed to the dock), CONSUMED INTO A HUNTER (coalescence), or CULLED by the density ceiling below.
+// It never ages out.
+//
+// WHY, and it is load-bearing: this phase also deleted the ambient Hunter producer, so coalescence is
+// the ONLY thing that can make a Hunter. A decay clock racing the coalescence clock would mean the
+// pipeline almost never fires. Permanence is what makes "neglected debris is the only thing that
+// becomes a hunter" true rather than aspirational.
+//
+// THE PRICE, and the two constants that pay it: nextWave() clears nothing and wave-clear triggers on
+// debris-empty alone, so loose canisters now carry across levels with NO natural bound, and
+// coalesceGarbage() is an O(n²) pair walk over them. So a DETERMINISTIC two-tier ceiling replaces the
+// decay clock as the density governor. Deterministic is the operative word: a frame-rate-reactive cull
+// was considered and REJECTED — it would be nondeterministic (breaking the headless suite's
+// byte-identical-across-runs discipline), it is a lagging indicator, and it would let unrelated
+// background load silently delete the player's salvage. Do not reintroduce one.
+// Chain nodes are NEVER culled — they live in game.chain, not game.garbage, and cullGarbage() only ever
+// reads the latter. Severed garbage (Garbage.fromNode) routes through the one ctor, so it is permanent
+// too; that is intended (§4.4).
 const GARBAGE_PICKUP = 18;      // pickup radius from ship center
-const GARBAGE_FADE = 2.0;       // sec of blink-out before a decaying piece (single OR clump) dies (look-call)
+// FLAG-CS024-c: a pure guess, and Gate A question 3 is its A/B ("does the cull ever visibly fire?" —
+// it should not). Above SOFT, ONE piece is culled per frame — the oldest, preferring a single over a
+// clump — so the ceiling is approached as a slow drip the player never sees, not a purge. HARD is a
+// backstop for a pathological burst: above it the field drains to SOFT in a single pass. Both are
+// debug knobs (garbageSoftMax / garbageHardMax); the cull is SILENT — no blink, no particle, no sound.
+const GARBAGE_SOFT_MAX = 220;   // live loose pieces above which one is culled per frame
+const GARBAGE_HARD_MAX = 300;   // ...and above which the field is drained back to GARBAGE_SOFT_MAX at once
 
 // Garbage coalescence (v3.1 P3): uncollected canisters mutually attract and, on contact, fuse into a
 // growing clump; at HUNTER_COALESCE_COUNT pieces the clump collapses into a fresh large Hunter core
@@ -443,19 +473,13 @@ const GARBAGE_MERGE_DIST = 12;         // px: two active pieces this close fuse 
 const HUNTER_COALESCE_COUNT = 12;      // pieces fused into one clump -> a new large Hunter core forms
 const GARBAGE_SHATTER_KICK = [40, 90]; // v3.2 P2: px/s outward kick range for shatterClump's emitted pieces (playtest knob)
 
-// Rare BONUS CANISTER (CS017 P5, FORK-CS017-D -> (b) PRE-LINKED CLUMP). It is NOT a new entity type:
-// it is an ordinary `Garbage` born with a high `pieces` count plus a `bonus` marker, so the existing
-// scoop-intake path (which already turns a multi-piece clump into `take` chain nodes), coalescence,
-// shatter and decay all handle it with zero new machinery. Design intent: a reward-flavoured reason to
-// keep playing the low-stakes early waves that INVITES GREED (a fat chain is riskier to protect)
-// without making survival itself harder. Its spawn chance is the ONE lever in CS017 that EASES OFF
-// rather than escalating — see DIFFICULTY-LEVERS.md and bonusSpawnChance() below.
-const BONUS_CANISTER_PIECES = 6;      // PLAYTEST KNOB: chain slots one bonus clump fills on a full scoop
-const BONUS_CANISTER_SCORE  = 250;    // PLAYTEST KNOB: points paid ONCE per clump, at the scoop
-const BONUS_SPAWN_CHANCE_EARLY = 0.5; // PLAYTEST KNOB: per-wave spawn probability right after a junk-cycle reset
-const BONUS_SPAWN_CHANCE_LATE  = 0.1; // PLAYTEST KNOB: ... at the LAST level of a junk cycle (CS018 P3: re-homed off cycleWave)
-const BONUS_RING_PAD = 5;             // px: gap between the clump's collision radius and its halo-ring tell (look-call)
-
+// CS024 P3 (spec §1.2/§4.2): THE RARE BONUS CANISTER STOOD HERE and is removed outright. CS017 P5's
+// pre-linked clump — one easing-off roll per nextWave() spawning a 6-piece Garbage worth 250 points at
+// the scoop — took five constants (BONUS_CANISTER_PIECES/_SCORE, BONUS_SPAWN_CHANCE_EARLY/_LATE,
+// BONUS_RING_PAD), bonusSpawnChance(), a nextWave() spawn block, the `Garbage.bonus` field, its colour
+// branch and halo ring in Garbage.draw(), and a one-shot payout + flag-clear in the scoop intake path.
+// All gone. COLOR.garbageBonus SURVIVES — the debug panel's uncommitted-entry tint reads it, and that
+// is now its only consumer. Gate A question 5 asks whether the early levels read flat without it.
 const CHAIN_LINK = 20;          // px between chain nodes
 const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame (B-8: 3→4 to keep a 20-node chain from sagging; §3.4 rule 7)
 // CS017 P6 (chain guard) — the ABSORBED-break tell. Deliberately fewer particles than boom()'s
@@ -608,12 +632,14 @@ function stepAt(table, n) {
   return v;
 }
 
-// Max LARGE hunters alive at once (size 3 ONLY — middle/small are never counted and never capped).
-// Cap 0 across levels 1–4 means no large hunter from EITHER producer, coalescence or ambient spawn
-// (§4.1); 12 is the changeset's hard ceiling and this table must never exceed it. Consumed in P4.
-const HUNTER_CAP_STEPS = [[1,0],[5,1],[9,2],[13,3],[17,5],[21,7],
-                          [22,8],[26,9],[34,10],[43,11],[59,12]];
-
+// CS024 P3 (spec §3.2): CS018 P4's HUNTER_CAP_STEPS — the 11-breakpoint large-Hunter cap schedule
+// (0 at levels 1–4, climbing to 12 from level 59) — STOOD HERE, and is deleted with largeHunterCap().
+// Its replacement is the flat LARGE_HUNTER_MAX (100) in the Hunter constants block. This is the ONE
+// place this phase reaches into P4's territory, and it is forced rather than chosen: levelDef() read
+// this table for its `maxLargeHunters` column, so deleting the constant without deleting that column
+// would leave a ReferenceError on the first nextWave(). The column goes with it (see levelDef below);
+// nothing else in the level table, the tier tables or ramp() is touched — those are P4's.
+//
 // The seven GRADED levers. levelDef returns a TIER NAME ("low"/"normal"/"high") per lever, never a
 // number: each tier's actual value is a trio of DEBUG_VARS playtest knobs wired in P3/P6/P7, so this
 // table stays a pure schedule and the values stay tunable without touching it.
@@ -670,7 +696,11 @@ function levelDef(n) {
     // 8 tow slots through level 4, then +2 per level to 24 (= CARGO_CAP_MAX) at level 12, then flat.
     // Replaces the delivery-earned growCap curve (FORK-CS018-B); consumed in P5.
     payloadSlots: L <= 4 ? 8 : L >= 12 ? 24 : 8 + (L - 4) * 2,
-    maxLargeHunters: stepAt(HUNTER_CAP_STEPS, L),
+    // CS024 P3: `maxLargeHunters: stepAt(HUNTER_CAP_STEPS, L)` STOOD HERE. The large-Hunter ceiling is
+    // no longer a per-level quantity — it is the flat LARGE_HUNTER_MAX — so a level-table column for it
+    // would be a column that returns a constant. Deleted rather than repointed. Its two readers went
+    // with it: largeHunterCap() (deleted) and DiffLog's maxLargeHunters column (REPOINTED, not dropped,
+    // onto LARGE_HUNTER_MAX — see the DIFFLOG_FIELDS note about following a column with its consumer).
   };
   for (const k in TIER_STEPS) def[k] = stepAt(TIER_STEPS[k], L);
   return def;
@@ -2793,11 +2823,16 @@ const DEBUG_VARS = [
     def: GARBAGE_MAGNET_RANGE, min: 0, max: 600, step: 10 },
   { id: "garbageAttractForce", label: "Garbage attraction force", unit: "px/s²",
     def: GARBAGE_MAGNET_PULL, min: 0, max: 200, step: 5 },
-  // CS015 P6 (item 10, FLAG-CS015-a): garbage of ANY size now ages out on this lifetime (a merge
-  // resets the clock) — RESOLVED default 10s, not the old single-only pre-P6 shipped value (22, a
-  // dead constant deleted in CS024 P2). This knob is the live source of truth.
-  { id: "garbageLifetime", label: "Garbage lifetime", unit: "s",
-    def: 10, min: 1, max: 60, step: 1 },
+  // CS024 P3 (spec §1.4/§3.1/§5): `garbageLifetime` STOOD HERE and is removed with the decay clock.
+  // The two knobs replacing it govern the DENSITY CEILING that took over as the governor. Both are
+  // read live at the cull site (never captured per-piece, unlike the retired lifetime), so a retune
+  // takes effect on the very next frame. The panel does NOT enforce soft <= hard — no registry entry
+  // has ever validated against a sibling, and cullGarbage() is written so an inverted pair simply
+  // culls nothing rather than misbehaving.
+  { id: "garbageSoftMax", label: "Garbage soft max", unit: "",
+    def: GARBAGE_SOFT_MAX, min: 20, max: 1000, step: 10 },
+  { id: "garbageHardMax", label: "Garbage hard max", unit: "",
+    def: GARBAGE_HARD_MAX, min: 20, max: 1000, step: 10 },
   // CS017 P6 (+ CS019 P1): the chain-guard powerup's four knobs. chainGuardTime is powerDuration("guard")
   // in TIME mode; chainGuardIntercepts is the seeded powerBudget in COUNT mode (see powerBudgetAmount);
   // both are live values, NOT frozen consts, so the registry entry IS the source of truth for each
@@ -2840,6 +2875,14 @@ const DEBUG_VARS = [
     def: 70, min: 20, max: 400, step: 2 },
   { id: "junkSpeedHigh", label: "Junk speed (high)", unit: "px/s",
     def: 90, min: 20, max: 400, step: 2 },
+  // CS024 P3 (spec §2.5/§3.3): the large core's "last stand" speed — how fast it steers toward the ship
+  // once no Debris remain. HUNTER_LAST_STAND_SPEED supplies the `def`, HunterSatellite.update() reads
+  // the knob; the constant stays in place as the documented shipped value (the autoShieldRegenPause /
+  // garbageAttractRadius idiom). NOT a lever and never will be — it is a search-ender, not a difficulty
+  // dial. This section header is new; CS024 §5 gives HUNTER its full contents in P5.
+  { header: "HUNTER" },
+  { id: "lastStandSpeed", label: "Hunter last-stand speed", unit: "px/s",
+    def: HUNTER_LAST_STAND_SPEED, min: 0, max: 200, step: 5 },
   // CS018 P6: UFO movement, by TIER (§3.1) — levelDef's three movement tier names each select one of
   // these knobs; ufoFlightSpeedPx()/ufoAppearInterval()/ufoZigInterval() (Helpers section) turn the
   // pick into the value the Saucer ctor/update() and the spawn block consume. Appearance and
@@ -2995,9 +3038,11 @@ const DIFFLOG_FIELDS = [
 ];
 // Snapshots read every lever from the SAME expressions the live sites use — never a re-derived formula.
 // junkCount/junkSpeedMul are passed in verbatim from nextWave()'s own `count`/`speedMul` locals (the exact
-// values that level's DebrisSatellite spawns just used). level/phase/rel/maxLargeHunters and the seven
-// tier names come from ONE levelDef(game.wave) call, so a row can never disagree with itself about which
-// level it describes. The seven tier columns log the TIER NAME ("low"/"normal"/"high"), which is what the
+// values that level's DebrisSatellite spawns just used). level/phase/rel and the seven tier names come
+// from ONE levelDef(game.wave) call, so a row can never disagree with itself about which level it
+// describes. maxLargeHunters was REPOINTED in CS024 P3 (not dropped — the standing rule is that a column
+// follows its consumer): the cap stopped being a level-table column and became the flat
+// LARGE_HUNTER_MAX, so the column now logs that constant and reads the same 100 on every row. The seven tier columns log the TIER NAME ("low"/"normal"/"high"), which is what the
 // table decides; the px/s or seconds behind a name is a DEBUG_VARS knob and is not per-level data.
 // prevLevelSecs is game.waveTime captured by nextWave() BEFORE the reset — how long the level that just
 // ended took (FLAG-k, the field's only reader now that wavePressure() is retired).
@@ -3021,7 +3066,7 @@ function logDifficultySnapshot(junkCount, junkSpeedMul, prevLevelSecs) {
     prevLevelSecs,
     junkCount,
     junkSpeedMul,
-    maxLargeHunters: def.maxLargeHunters,
+    maxLargeHunters: LARGE_HUNTER_MAX, // CS024 P3: was def.maxLargeHunters; the cap is flat now
     hunterCount: game.hunters.length, // FLAG-CS017-g: seeds the future music-intensity changeset
     junkSpeed: def.junkSpeed,
     ufoAppearFreq: def.ufoAppearFreq,
@@ -3762,25 +3807,26 @@ function ramp(floor, ceil, wave) {
 // (large -> 3 mediums) therefore FREES a slot rather than consuming three, middle/small hunters are
 // never counted and never capped, and destroying a large frees its slot immediately (dead-but-not-yet
 // -filtered hunters are excluded, so the slot is free within the same frame).
+// CS024 P3: largeHunterCap() STOOD BELOW THIS FUNCTION and is deleted — the ceiling is no longer a
+// per-level lookup but the flat LARGE_HUNTER_MAX, so its ONE surviving caller (the coalescence
+// conversion) compares against the constant directly. This counter itself is unchanged.
 function largeHunterCount() {
   let n = 0;
   for (const h of game.hunters) if (h.size === 3 && !h.dead) n++;
   return n;
 }
-// The ceiling itself, straight off the level table: 0 at levels 1–4 (no large Hunter from EITHER
-// producer), 7 by 21, 12 from 59 on. Both producers — the ambient spawner in update() and the
-// coalescence conversion — gate on largeHunterCount() < largeHunterCap().
-function largeHunterCap() {
-  return levelDef(game.wave).maxLargeHunters;
-}
 // CS018 P4 (FLAG-i): Hunter's Bane counts kills within ONE lineage, and the shipped reset — "every
-// ambient spawnCore()" — breaks the moment lineages can coexist (the cap allows up to 12): a second
-// lineage arriving mid-fight would zero a counter the player was part-way through filling. Reset on
-// the 0 -> 1 transition instead: when the board goes from NO large Hunters to one, whichever producer
-// caused it. Call this IMMEDIATELY BEFORE pushing a new large, so the count read here is the
+// ambient spawnCore()" — breaks the moment lineages can coexist (the cap allows more than one): a
+// second lineage arriving mid-fight would zero a counter the player was part-way through filling.
+// Reset on the 0 -> 1 transition instead: when the board goes from NO large Hunters to one, whichever
+// producer caused it. Call this IMMEDIATELY BEFORE pushing a new large, so the count read here is the
 // pre-spawn count. Accepted consequence (recorded in the GDD): the achievement loosens — a lineage's
 // tally now survives later lineages arriving, and a coalesced core onto an empty board resets it
 // where before it did not.
+// CS024 P3 (spec §4.3): this function STAYS, but "whichever producer caused it" is now rhetorical —
+// coalescence is the ONLY producer, so this has exactly one call site. It still arms the achievement
+// on the 0 -> 1 transition, and it must NOT be called on the cap-overflow path (a destroyed clump
+// spawns nothing, so there is no transition to note).
 function noteLargeHunterSpawn() {
   if (largeHunterCount() === 0) game.stats.hunterLineageKills = 0;
 }
@@ -3796,24 +3842,10 @@ function junkSpeedMul() {
   return pxPerSec / 70;
 }
 
-// CS018 P3 (FLAG-f): the bonus canister's per-wave spawn probability — the ONE lever in this
-// changeset that EASES OFF instead of escalating. Common right after a junk-cycle reset, rare at its
-// end. RE-HOMED off the (now-retired, CS018 P4) game.cycleWave onto the junk cycle position instead
-// — levelDef's `rel` mod JUNK_CYCLE.length (4) — so it keeps breathing with a reset-and-climb clock
-// now that the cycle clock itself is gone.
-//
-// DELIBERATE DEVIATION from DIFFICULTY-LEVERS.md 2.6 ("no lever gets its own curve"), documented
-// there: this is a straight LINEAR interpolation across the cycle, not ramp()/difficultyFactor().
-// The two constants are defined as the CYCLE'S ENDPOINTS, and difficultyFactor() is asymptotic — over
-// a short cycle it would top out well short of 1, so a ramp() lever would never actually reach
-// BONUS_SPAWN_CHANCE_LATE. A knob that lies is worse than a private curve; this one hits both
-// endpoints exactly.
-function bonusSpawnChance() {
-  const pos = (levelDef(game.wave).rel - 1) % JUNK_CYCLE.length; // 0..3: 0 right after a junk-cycle reset, 3 at its end
-  const t = JUNK_CYCLE.length > 1 ? pos / (JUNK_CYCLE.length - 1) : 1; // 0 at the cycle's first level, 1 at its last
-  const f = Math.min(1, Math.max(0, t));  // clamp: pos is always in 0..3, but never trust a knob retune
-  return BONUS_SPAWN_CHANCE_EARLY + (BONUS_SPAWN_CHANCE_LATE - BONUS_SPAWN_CHANCE_EARLY) * f;
-}
+// CS024 P3 (spec §1.2/§4.2): CS018 P3's bonusSpawnChance() STOOD HERE — the bonus canister's
+// easing-off per-wave spawn probability, and the one lever in CS017/CS018 that got easier as the game
+// went on. Deleted with the canister itself. It was the last reader of BONUS_SPAWN_CHANCE_EARLY/_LATE;
+// JUNK_CYCLE and levelDef's `rel` column, which it also read, both stay (levelDef still uses them).
 
 // CS018 P6: the ONE shared jitter helper for every frequency-shaped lever (§3.2) — UFO appearance and
 // UFO direction-change here; UFO firing frequency joins in P7, reusing this same helper rather than a
@@ -4355,8 +4387,10 @@ class HunterSatellite {
     // visible: 40.6 / 69.6 / 101.5 px/s and 0 / 0.928 / 1.508 rad/s for tiers 3 / 2 / 1.
     // This also RETIRES the CS017 P3 wrinkle that used to live here: because the value no longer
     // depends on when a Hunter spawned, a Hunter carried across several levels can no longer be
-    // "stale-fast" relative to the field around it. Escalating Hunter pressure now comes entirely from
-    // the level table's maxLargeHunters cap — how MANY can exist, not how fast they move.
+    // "stale-fast" relative to the field around it. Escalating Hunter pressure came from the level
+    // table's maxLargeHunters cap — how MANY can exist, not how fast they move — until CS024 P3
+    // replaced that whole schedule with the flat LARGE_HUNTER_MAX backstop; pressure is now expressed
+    // as how fast the coalescence pipeline feeds (spec §2.4's HUNTER chain, wired in P4/P5).
     this.speed    = HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC;
     this.turnRate = HUNTER_TURN_CEIL[size]  * HUNTER_FLOOR_FRAC;
     if (size === 3) {
@@ -4385,19 +4419,13 @@ class HunterSatellite {
       ? [[r * 0.5, 0], [0, -r * 0.4], [-r * 0.4, 0], [0, r * 0.4]]
       : null;
   }
-  // Spawn a fresh large core from just beyond a random viewport edge, relative to the ship,
-  // so it still slides in from off-screen and drifts toward the ship (feel unchanged from
-  // the old Satellite). Children are created directly at the parent's position in destroyHunter.
-  static spawnCore() {
-    const edge = Math.floor(rand(0, 4));
-    const p = { x: game.ship.x, y: game.ship.y };
-    if (edge === 0)      { p.x -= VIEW_W / 2 + 40; p.y += rand(-VIEW_H / 2, VIEW_H / 2); }
-    else if (edge === 1) { p.x += VIEW_W / 2 + 40; p.y += rand(-VIEW_H / 2, VIEW_H / 2); }
-    else if (edge === 2) { p.y -= VIEW_H / 2 + 40; p.x += rand(-VIEW_W / 2, VIEW_W / 2); }
-    else                 { p.y += VIEW_H / 2 + 40; p.x += rand(-VIEW_W / 2, VIEW_W / 2); }
-    wrapPos(p);
-    return new HunterSatellite(p.x, p.y, 3);
-  }
+  // CS024 P3 (spec §1.3/§4.3): `static spawnCore()` STOOD HERE — the AMBIENT producer's factory, which
+  // slid a fresh large core in from just beyond a random viewport edge on a rand(20, 32) timer. It is
+  // deleted along with game.hunterTimer and update()'s spawn block. HUNTERS NOW ARISE FROM EXACTLY ONE
+  // SOURCE: garbage coalescing to HUNTER_COALESCE_COUNT pieces, which constructs the core in place at
+  // the clump's own position. That is the game's thesis made mechanical — neglected debris is the only
+  // thing that becomes a hunter — and it is only survivable because §1.4 made loose garbage permanent.
+  // Children are still created directly at the parent's position in destroyHunter.
   update(dt) {
     if (this.homing) {
       if (this.scatter > 0) {
@@ -4419,6 +4447,13 @@ class HunterSatellite {
       // flip this.homing: shape/inner and draw()'s angle-vs-heading pick are baked off it at construction,
       // so that would silently swap the diamond for the kite silhouette and freeze the tumble. Evaluated
       // inline instead of a stored flag — the tumble is the unchanged visual, the steering is the tell.
+      // CS024 P3 (spec §3.3) FORMALISES THIS AS A DOCUMENTED EXCEPTION to "the large Hunter does not
+      // pursue," and changes exactly one thing: the speed is the live DEBUG.lastStandSpeed knob rather
+      // than the hardcoded constant. Everything else is deliberately preserved, including the part that
+      // reads like a bug and is not: THE MOMENT DEBRIS REAPPEARS THIS BLOCK SIMPLY STOPS EXECUTING, so
+      // the core keeps whatever vx/vy it held at that instant and resumes a straight drift on it. There
+      // is no disarm, no restore of the spawn-time vector, and no homing flip. (Gate A question 6 asks
+      // whether that reads as intentional in the hands.)
       if (game.debris.length === 0 && !game.ship.dead) {
         const target = angleTo(this, game.ship);          // wrap-aware — a naive angle is ~180° wrong across a seam
         let diff = target - this.heading;
@@ -4426,8 +4461,8 @@ class HunterSatellite {
         while (diff < -Math.PI) diff += TAU;
         const maxTurn = HUNTER_LAST_STAND_TURN * dt;
         this.heading += Math.max(-maxTurn, Math.min(maxTurn, diff));
-        this.vx = Math.cos(this.heading) * HUNTER_LAST_STAND_SPEED;
-        this.vy = Math.sin(this.heading) * HUNTER_LAST_STAND_SPEED;
+        this.vx = Math.cos(this.heading) * DEBUG.lastStandSpeed;
+        this.vy = Math.sin(this.heading) * DEBUG.lastStandSpeed;
       }
     }
     if (this.guardT > 0) this.guardT -= dt;   // CS019 P1: absorb cooldown, see the ctor
@@ -4555,17 +4590,22 @@ function drawCanister(x, y, angle, alpha, color = COLOR.garbage, scale = 1) {
 }
 
 class Garbage {
-  // v3.3 P4 (9a): a loose piece decays on a lifetime clock (see update()). Not a ctor param — every
-  // piece is born with a full life. CS015 P6 (item 10): EVERY piece counts its clock down regardless
-  // of `pieces` — a clump no longer lives forever (FORK-4 reversed); a merge resets the clock instead
-  // (see coalesceGarbage), so an actively-growing lineage never dies but a stalled one does.
+  // CS024 P3 (spec §1.4/§4.4): A LOOSE PIECE IS PERMANENT. `decay` (v3.3 P4 9a, CS015 P6 item 10) is
+  // gone — no lifetime clock, no expiry, no blink-out. The density governor is now the deterministic
+  // cull in cullGarbage(), which orders its victims by `age` below.
   constructor(x, y, vx = 0, vy = 0, mass = 1.0) {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.spin = rand(0, TAU);
     this.spinRate = rand(-1.5, 1.5);
     this.mass = mass;   // towing weight (F5): 1.0 for Debris scrap; lighter scrap tows easier
-    this.decay = DEBUG.garbageLifetime; // CS015 P6: tunable live (captured per-piece at ctor time, like coalesceDelay)
+    // CS024 P3: cumulative seconds this piece has existed, ticked in update() and MONOTONICALLY
+    // INCREASING — it only ever goes up. Read by exactly ONE thing, the cull's victim ordering; no
+    // gameplay rule may read it. It is deliberately NOT the retired decay clock inverted: A MERGE DOES
+    // NOT RESET IT (see coalesceGarbage). The decay clock reset on merge so an actively-growing lineage
+    // would never age out; the cull wants the opposite — a clump that has been sitting around a long
+    // time is exactly what it should prefer to take.
+    this.age = 0;
     // Coalescence (v3.2 P1). These constructor defaults are inherited by all three emission sites
     // AND Garbage.fromNode. `coalesceDelay` counts down in update(); a piece is "active" (attracts +
     // can merge) once it hits 0. `pieces` is the 1..11 threat counter (at 12 the clump transforms).
@@ -4575,12 +4615,8 @@ class Garbage {
     this.coalesceDelay = DEBUG.garbageAttractDelay; // CS015 P5: tunable live (captured per-piece at ctor time)
     this.pieces = 1;
     this.radius = 7 * Math.sqrt(this.pieces);
-    // CS017 P5: the rare bonus-canister marker. Default FALSE for every emission site (debris drops,
-    // Hunter drops, shatter children, Garbage.fromNode) — only nextWave()'s bonus spawn sets it true.
-    // It drives (a) the draw tell and (b) the one-shot BONUS_CANISTER_SCORE payout at the scoop, which
-    // CLEARS it on the way through — that clear is what makes "paid once per clump" true for a partial
-    // scoop, whose leftover is the SAME object. See the pickup block and GDD 2.10.1.
-    this.bonus = false;
+    // CS024 P3: `this.bonus` STOOD HERE (CS017 P5's rare-canister marker). Removed with the bonus
+    // canister — no emission site ever set it but nextWave()'s deleted spawn block.
     this.dead = false;
   }
   static fromNode(n) { // chain node knocked loose -> free garbage (v3.2 P3: no decay)
@@ -4592,30 +4628,22 @@ class Garbage {
     this.x += this.vx * dt; this.y += this.vy * dt;
     this.spin += this.spinRate * dt;
     wrap(this);
-    // CS015 P6 (item 10): EVERY piece ages out now, single or clump — the density governor no longer
-    // exempts clumps (FORK-4 reversed; a merge resets the clock instead, see coalesceGarbage). Chain
-    // nodes aren't Garbage, so they never reach here. A pickup still sets `dead` externally; coalescence
-    // still consumes pieces.
-    this.decay -= dt;
-    if (this.decay <= 0) this.dead = true;
+    // CS024 P3: the `decay -= dt` / `if (decay <= 0) dead = true` block STOOD HERE. A piece no longer
+    // ages out at all; this clock only ever counts UP, and only the cull reads it. Chain nodes aren't
+    // Garbage, so they never reach here — which is why the cull can never touch one. A pickup still
+    // sets `dead` externally; coalescence still consumes pieces.
+    this.age += dt;
     // `coalesceDelay` still gates attraction/merge (see coalesceGarbage).
     if (this.coalesceDelay > 0) this.coalesceDelay -= dt;
   }
   draw() {
     if (this.pieces === 1) {
-      // A single centered canister. v3.3 P4 (9a): in its last GARBAGE_FADE sec it blinks out as an
-      // expiry tell — otherwise byte-identical to the pre-decay single render.
-      // CS017 P5: `bonus` wins the colour branch. A bonus clump is normally pieces > 1, but this path
-      // is covered too so a BONUS_CANISTER_PIECES retune down to 1 still renders the tell.
-      const color = this.bonus ? COLOR.garbageBonus : this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
-      let alpha = 0.9;
-      if (this.decay < GARBAGE_FADE) {
-        // fast on/off blink (skip the "off" frames) that fades as death nears
-        if (Math.sin(this.decay * 18) < 0) return;
-        alpha = 0.9 * Math.max(0.2, this.decay / GARBAGE_FADE);
-      }
-      drawCanister(this.x, this.y, this.spin, alpha, color);
-      if (this.bonus) this.drawBonusRing(alpha);
+      // A single centered canister. CS024 P3: the v3.3 P4 (9a) expiry blink-out and CS017 P5's `bonus`
+      // colour override both stood here and are gone — a piece neither expires nor can be a bonus, so
+      // this is once again a flat per-piece-mass colour at a constant alpha. The cull is SILENT: there
+      // is deliberately NO tell for a culled piece, here or in the clump path below.
+      const color = this.mass < 1 ? COLOR.garbageLight : COLOR.garbage;
+      drawCanister(this.x, this.y, this.spin, 0.9, color);
       return;
     }
     // v3.5 P2 (reverses v3.3 P1): a clump (pieces > 1) draws as ONE ordinary canister scaled up by
@@ -4624,28 +4652,11 @@ class Garbage {
     // exactly equal this.radius, so the visual and the (unchanged) collision radius agree by
     // construction. v3.6 P1a: colour now follows the same per-piece-mass rule as a single (the red
     // proximity-to-Hunter lerp is gone) — size (radius = 7*sqrt(pieces)) is the only remaining tell
-    // that a clump is nearing the Hunter transform. CS015 P6 (item 10): a clump now ages out too (a
-    // merge resets its clock), so it gets the same expiry blink tell as a single, mirrored verbatim.
-    // CS017 P5: a bonus clump overrides the per-piece-mass colour with COLOR.garbageBonus and adds a
-    // halo ring below — the size tell (radius) is already spoken for by the Hunter-transform warning,
-    // so the bonus needs its own channel.
-    const color = this.bonus ? COLOR.garbageBonus
-                : (this.mass / this.pieces) < 1 ? COLOR.garbageLight : COLOR.garbage;
-    let alpha = 0.9;
-    if (this.decay < GARBAGE_FADE) {
-      if (Math.sin(this.decay * 18) < 0) return;
-      alpha = 0.9 * Math.max(0.2, this.decay / GARBAGE_FADE);
-    }
-    drawCanister(this.x, this.y, this.spin, alpha, color, this.radius / 7);
-    if (this.bonus) this.drawBonusRing(alpha);
-  }
-  // CS017 P5: the second half of the bonus tell — a halo just outside the collision radius. STROKE
-  // ONLY, via the shared drawRingArc/glowStroke path (no new fill exception, GDD 3.2; frac 1 = a full
-  // turn). drawCanister leaves globalAlpha at 1, so the blink/expiry alpha is re-applied here.
-  drawBonusRing(alpha) {
-    ctx.globalAlpha = alpha;
-    drawRingArc(this.x, this.y, this.radius + BONUS_RING_PAD, 1, COLOR.garbageBonus, 1.5, 8);
-    ctx.globalAlpha = 1;
+    // that a clump is nearing the Hunter transform. CS024 P3: the expiry blink (CS015 P6 item 10) and
+    // the bonus colour + halo ring (CS017 P5, with drawBonusRing() below it) all stood here and are
+    // gone — size is now the ONLY tell a clump carries, which is what it was before CS017.
+    const color = (this.mass / this.pieces) < 1 ? COLOR.garbageLight : COLOR.garbage;
+    drawCanister(this.x, this.y, this.spin, 0.9, color, this.radius / 7);
   }
 }
 
@@ -4889,7 +4900,8 @@ const game = {
                  // CS018 P4 (FLAG-k): kept as telemetry — nextWave() logs the level just finished.
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
   saucerTimer: 0,
-  hunterTimer: 0,
+  // CS024 P3: `hunterTimer` STOOD HERE — the ambient Hunter producer's rand(20, 32) countdown. Gone
+  // with the producer; coalescence has no clock of its own, so there is nothing to replace it with.
   beatTimer: 0, beatHigh: false, beatInterval: 1.0,
   waveClearTimer: 0,
   lowHpSiren: false,  // v3.4 P5: edge-detection latch for AudioSys.lowhp — true iff the siren is
@@ -5074,7 +5086,7 @@ function startGame() {
   game.hudHull = game.ship.hp / SHIP_MAX_HP;   // CS009 P1: no drain animation on a fresh run
   game.camera = { x: game.ship.x, y: game.ship.y };
   game.saucerTimer = ufoAppearInterval(); // CS018 P6: first saucer waits one tier-jittered appearance interval (game.wave is still 0 here, pre-nextWave(), so levelDef resolves the "low" tier, same as level 1)
-  game.hunterTimer = rand(14, 22);
+  // CS024 P3: `game.hunterTimer = rand(14, 22);` STOOD HERE (the ambient producer's first-spawn seed).
   game.lowHpSiren = false; AudioSys.lowhp(false); // fresh run never carries the siren over (v3.4 P5)
   game.lowHpPhase = 0;      // CS010 P3: the pulse accumulator starts a fresh run at 0
   game.hpReliefFlash = 0;   // CS010 P3: no stale relief exhale carries into a fresh run
@@ -5154,8 +5166,8 @@ function nextWave() {
   if (nextWorldSize !== game.worldSize) resizeWorld(nextWorldSize);
   game.dock = new Dock(); // recycling dock relocates each wave
   // F3 first-pass balance: trimmed from min(4+wave, 11) to offset the ~8x higher garbage
-  // volume from guaranteed 3-per-tier drops. (v3.2 P3: garbage no longer decays; density is now
-  // held by coalescence + shatter-to-harvest, not a decay timer — see GDD §2.10.1.)
+  // volume from guaranteed 3-per-tier drops. (CS024 P3 restores the v3.2 P3 rule: garbage no longer
+  // decays, so density is held by coalescence + shatter-to-harvest + the cullGarbage() ceiling.)
   // CS018 P3 — repointed onto levelDef(). The table is already bounded (3/5/9/13, capped at 13), so
   // the old in-cycle/hard-max debris count clamps (deleted, CS024 P2) were never applied at this site.
   const count = levelDef(game.wave).junkCount;
@@ -5168,23 +5180,12 @@ function nextWave() {
   // level actually spawns, so logDifficultySnapshot()'s junkCount column can no longer disagree with the
   // field in front of the player.
   spawnFieldSatellites(count, speedMul);
-  // CS017 P5 — the rare bonus canister (FORK-CS017-D -> (b) PRE-LINKED CLUMP). ONE roll per wave, on
-  // the EASING-OFF curve (bonusSpawnChance()): common right after a cycle reset, rare at the cycle's
-  // end. Placed by the SAME ring-around-the-ship rule as the debris above, so it is reachable without
-  // being dumped on the player. Nothing here is new intake machinery — it is a plain Garbage whose
-  // `pieces`/`mass`/`radius` are set by the same three expressions coalescence and the partial-scoop
-  // leftover already use, so every downstream system (scoop, shatter, coalesce, decay) just works.
-  if (Math.random() < bonusSpawnChance()) {
-    const ba = rand(0, TAU);
-    const bd = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
-    const bp = wrapPos({ x: game.ship.x + Math.cos(ba) * bd, y: game.ship.y + Math.sin(ba) * bd });
-    const bonusClump = new Garbage(bp.x, bp.y);
-    bonusClump.pieces = BONUS_CANISTER_PIECES;
-    bonusClump.mass   = BONUS_CANISTER_PIECES;          // per-piece mass 1.0 — the Debris-scrap default, so mass sums to the piece count
-    bonusClump.radius = 7 * Math.sqrt(bonusClump.pieces); // the ONE clump-radius expression (never a hardcoded px)
-    bonusClump.bonus  = true;
-    game.garbage.push(bonusClump);
-  }
+  // CS024 P3 (spec §1.2/§4.2): CS017 P5's BONUS-CANISTER SPAWN BLOCK STOOD HERE — one bonusSpawnChance()
+  // roll per wave that pushed a pre-linked 6-piece `Garbage` into the field on the same ring-around-the
+  // -ship rule as the debris above. Removed outright. nextWave() now spawns satellites and nothing else,
+  // and — the other half of this phase — IT STILL CLEARS NOTHING: loose garbage carries across the level
+  // boundary and, with decay gone, does so permanently. That is what makes the density ceiling in
+  // cullGarbage() necessary rather than defensive.
   logDifficultySnapshot(count, speedMul, prevLevelSecs); // CS017 P2: dev-only, one row per level (see DiffLog above)
 }
 
@@ -5320,9 +5321,10 @@ function destroySaucer(s, awardScore = true) {
 // disperses before it can start re-clumping), and an outward kick that inherits a fraction of the
 // clump's own drift — same fan-out shape as destroyDebris/destroyHunter. No score: the reward is
 // the hookable canisters themselves.
-// CS017 P5: the emitted pieces are FRESH Garbage, so a bonus marker is deliberately NOT inherited —
-// shooting a bonus canister apart forfeits BONUS_CANISTER_SCORE (scoop it intact or lose it). That's
-// the opposite call from coalescence, which does carry the marker; both are argued in GDD 2.10.1.
+// CS024 P3: CS017 P5's note here — that the emitted pieces are FRESH Garbage and so deliberately do
+// NOT inherit a bonus marker — retires with the bonus canister. The pieces are still fresh Garbage,
+// which now means each child starts at age 0 and is permanent, so shattering a long-lived clump
+// genuinely resets that salvage's standing with the density cull.
 function shatterClump(g) {
   g.dead = true;
   const pieceMass = g.mass / g.pieces;
@@ -5457,7 +5459,8 @@ function superMegaDelivery() {
   // is also why the sweep spawns nothing extra for size 3 (FLAG-g: two powerups for one piece would
   // make the ceiling a lie). Those interior drops can't be stopped once destroyHunter is called, so
   // their count is RESERVED out of the budget up front and the medium/small payouts spend what's left.
-  // Under the game's own largeHunterCap() (hard ceiling 12) the reservation never exhausts the budget.
+  // Under LARGE_HUNTER_MAX (CS024 P3; the level-table cap it used to read topped out at 12) the
+  // reservation never exhausts the budget in any reachable state.
   const pool = setTypes.concat("health");  // sweep rolls ADD Health (ambient-only everywhere else)
   let budget = SWEEP_POWERUP_CAP - setTypes.length - snap.filter(h => h.size === 3).length;
   for (const h of snap) {
@@ -6256,13 +6259,21 @@ function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity surv
 }
 
 // Garbage coalescence pass (v3.1 P3). Runs once per frame from update(), AFTER the garbage
-// pickup/magnet loop and BEFORE updateChain(dt). O(n²) over ACTIVE pieces (cheap at realistic counts
-// — a full lineage tops out ~39 free canisters); every measurement is wrap-aware (dist2/shortDelta),
-// and a piece already marked dead this pass is skipped. Both the attraction and the merge require
-// BOTH pieces active (coalesceDelay <= 0), so a fresh burst disperses for 1 s before it can clump.
-// FORK-1: coalesced Hunters are spawned independent of game.hunterTimer, so neglect can breed several
-// concurrent lineages — bounded since CS018 P4 by the shared large-Hunter cap (§4.1), which this pass
-// respects at the conversion site. Relies on the existing end-of-frame dead-filter (no new filter).
+// pickup/magnet loop and BEFORE updateChain(dt). O(n²) over ACTIVE pieces; every measurement is
+// wrap-aware (dist2/shortDelta), and a piece already marked dead this pass is skipped. Both the
+// attraction and the merge require BOTH pieces active (coalesceDelay <= 0), so a fresh burst disperses
+// before it can clump. Relies on the existing end-of-frame dead-filter (no new filter).
+//
+// CS024 P3 — THIS IS NOW THE ONLY HUNTER PRODUCER IN THE GAME. The ambient spawner is deleted, so the
+// old FORK-1 note ("coalesced Hunters are spawned independent of game.hunterTimer") is moot: there is
+// no timer to be independent of. Two consequences bind here:
+//   1. THE PAIR WALK IS THE FRAME-BUDGET RISK. Loose garbage is permanent now, so `gs` is bounded only
+//      by the density ceiling in cullGarbage(): at most GARBAGE_SOFT_MAX + a frame's intake, hard-
+//      capped at GARBAGE_HARD_MAX. The visit count is n(n-1)/2 — 24,090 pairs at the soft ceiling
+//      (220) and 44,850 at the hard one (300). A spatial grid would let that ceiling rise by an order
+//      of magnitude; it is deliberately OUT OF SCOPE here and recorded for CS025 (spec §7).
+//   2. The conversion is capped by the flat LARGE_HUNTER_MAX, and AT THE CAP THE CLUMP IS DESTROYED —
+//      see the branch below, which reverses CS018 P4's hold-at-final-stage behaviour.
 function coalesceGarbage(dt) {
   const gs = game.garbage;
   for (let i = 0; i < gs.length; i++) {
@@ -6286,36 +6297,40 @@ function coalesceGarbage(dt) {
         a.mass = mt;
         a.pieces += b.pieces;
         a.radius = 7 * Math.sqrt(a.pieces);
-        a.decay = DEBUG.garbageLifetime; // CS015 P6 (item 10): a merge is activity — clock resets to full,
-                                          // so an actively-growing lineage never ages out, only a stalled one
-        // CS017 P5: an unclaimed bonus marker survives a merge onto the survivor. Coalescence is not
-        // something the player controls, so a bonus canister quietly absorbed into a passing clump
-        // shouldn't silently stop being one. It can't double-pay: there is exactly one survivor object
-        // and the payout clears the flag. (Shatter is the opposite call by design — its children are
-        // fresh Garbage and inherit nothing, so shooting a bonus clump forfeits it. See GDD 2.10.1.)
-        a.bonus = a.bonus || b.bonus;
+        // CS024 P3: `a.decay = DEBUG.garbageLifetime` (CS015 P6's "a merge is activity, so the clock
+        // resets") and `a.bonus = a.bonus || b.bonus` (CS017 P5's marker inheritance) BOTH STOOD HERE
+        // and are gone with their mechanics. NOTHING REPLACES THE FIRST ONE, and that is deliberate:
+        // the survivor keeps its OWN `age`, untouched, because the cull orders by how long a piece has
+        // been sitting around and a merge is not a reason to look younger. Resetting age here would be
+        // the retired decay clock's rule applied to a governor that wants the opposite answer.
         b.dead = true;
         if (a.pieces >= HUNTER_COALESCE_COUNT) {
-          // CS018 P4 (§4.1): coalescence is the SECOND large-Hunter producer and is capped by the same
-          // level-table ceiling as the ambient spawner. With the cap full the clump HOLDS AT THE FINAL
-          // COALESCENCE STAGE instead of converting: it does not become a Hunter, it does not grow past
-          // HUNTER_COALESCE_COUNT pieces (the overflow this merge just added is shed, per-piece mass
-          // preserved), and its decay clock — already reset by the merge above, per the shipped rule —
-          // keeps running, so a held clump that nothing else touches still ages out and the player can
-          // still shatter or scoop it as ordinary 12-piece salvage. Destroy a large anywhere on the
-          // board and the next merge into this clump converts it.
-          if (largeHunterCount() >= largeHunterCap()) {
-            a.mass   = a.mass * (HUNTER_COALESCE_COUNT / a.pieces); // shed the overflow, keep mass-per-piece
-            a.pieces = HUNTER_COALESCE_COUNT;
-            a.radius = 7 * Math.sqrt(a.pieces);                     // the ONE clump-radius expression
-            continue;  // survivor lives on, saturated; keep scanning further pieces against it this pass
+          // CS024 P3 (spec §3.2) — THE OVERFLOW RULE, REVERSED. CS018 P4 had a saturated clump HOLD at
+          // the final coalescence stage while the cap was full: shed the overflow, stay 12 pieces, and
+          // wait for a slot. That was survivable only because the clump's decay clock kept running, so
+          // a held clump eventually aged out on its own. With decay deleted (§1.4) a held clump would
+          // sit there forever, permanently occupying pieces the pipeline can never convert and never
+          // reclaim — the pipeline stalls. So AT THE CAP THE CLUMP IS DESTROYED INSTEAD. It does not
+          // convert, it does not hold: it simply vanishes, with a boom() in the garbage hue.
+          //
+          // `awardScore = false` SEMANTICS, matching the standing contract (C13) even though no
+          // destroy* helper is involved: NO score and NO achievement counters move. Specifically
+          // hunterCoalesced is NOT incremented (nothing coalesced) and noteLargeHunterSpawn() is NOT
+          // called (there is no 0 -> 1 transition to arm Hunter's Bane on). AudioSys.hunterborn() is
+          // likewise not fired — nothing was born; boom()'s own explosion voice is the whole tell.
+          //
+          // At LARGE_HUNTER_MAX = 100 this is a runaway backstop that play should never reach.
+          if (largeHunterCount() >= LARGE_HUNTER_MAX) {
+            a.dead = true;
+            boom(a.x, a.y, 1, COLOR.garbage);  // size 1, the shatterClump idiom — the only other garbage-hue boom
+            break;   // survivor is gone — stop pairing it against the rest
           }
-          // Clump collapses into a new large Hunter core. Independent of game.hunterTimer (FORK-1).
+          // Clump collapses into a new large Hunter core — the game's ONLY Hunter producer since P3.
           // v3.3 P4 (9b, FORK-5): no bornOfScrap tag anymore — this coalesced core drops garbage like
           // any other Hunter. hunterCoalesced still counts the transform (it never read the flag) so the
           // "Waste Not" achievement is untouched.
           a.dead = true;
-          noteLargeHunterSpawn();   // FLAG-i: same 0 -> 1 rule as the ambient producer, one choke point
+          noteLargeHunterSpawn();   // FLAG-i: the 0 -> 1 rule, now with this as its ONE choke point
           game.hunters.push(new HunterSatellite(a.x, a.y, 3));
           game.stats.hunterCoalesced++;
           AudioSys.hunterborn();
@@ -6333,6 +6348,63 @@ function coalesceGarbage(dt) {
       b.vx -= ux * a.mass; b.vy -= uy * a.mass;
     }
   }
+}
+
+// ---------- CS024 P3: the GARBAGE DENSITY CEILING (spec §3.1 / §4.4) ----------
+// The governor that replaced the decay clock. Called from update()'s cleanup block, immediately BEFORE
+// the dead-filters and therefore AFTER every pass that can mark a piece dead (pickup, shatter,
+// coalescence) — placement is load-bearing twice over: it means the excess is measured against pieces
+// that are genuinely still in the world, and it means a culled piece is swept by the SAME filter as
+// every other death, so the entity-lifecycle contract (dead flag + one end-of-frame filter, never a
+// mid-loop splice) holds and no culled piece ever survives a frame to be drawn.
+//
+// THE CULL IS SILENT — no blink, no particle, no sound. §1.4 deleted the expiry fade on purpose and
+// the ceiling is set high enough that a player should never observe a cull at all (Gate A question 3).
+//
+// FULLY DETERMINISTIC, and that is a requirement rather than a nicety: same inputs, same victims, every
+// run. A frame-rate-reactive cull was considered and rejected (see the GARBAGE_SOFT_MAX comment).
+//
+// THE ORDERING RULE (FLAG-CS024-e, invented here, no precedent in the build): singles before clumps,
+// then oldest first. Singles first because a clump is player-relevant progress — it is salvage worth
+// more per hook and it is a lineage on its way to becoming a Hunter — while a stray single is the
+// cheapest thing on the board to lose. Oldest first because a piece that has been drifting untouched
+// the longest is the one the player has most clearly abandoned. `age` never resets, not even on a
+// merge, so "oldest" means oldest in absolute terms, not oldest-since-last-event.
+function betterCullVictim(a, b) {
+  const aSingle = a.pieces === 1, bSingle = b.pieces === 1;
+  if (aSingle !== bSingle) return aSingle;   // a single ALWAYS outranks a clump, at any age
+  return a.age > b.age;                      // within a group: the oldest
+}
+function cullGarbage() {
+  const gs = game.garbage;
+  let live = 0;
+  for (let i = 0; i < gs.length; i++) if (!gs[i].dead) live++;
+  // Soft: exactly ONE piece per frame, so the ceiling is approached as a drip. Hard: drain straight
+  // back to the soft ceiling in one pass. Note both knobs are read live and neither is validated
+  // against the other — an inverted pair (soft > hard) yields a negative n and simply culls nothing,
+  // which is why there is no ordering assert here (no registry entry has ever validated a sibling).
+  const n = live > DEBUG.garbageHardMax ? live - DEBUG.garbageSoftMax
+          : live > DEBUG.garbageSoftMax ? 1 : 0;
+  if (n <= 0) return;
+  if (n === 1) {
+    // The common path — one linear scan, no allocation, ties broken by array order (first wins).
+    let v = -1;
+    for (let i = 0; i < gs.length; i++) {
+      if (gs[i].dead) continue;
+      if (v < 0 || betterCullVictim(gs[i], gs[v])) v = i;
+    }
+    gs[v].dead = true;   // v >= 0 is guaranteed: n === 1 implies live > garbageSoftMax >= 0
+    return;
+  }
+  // The hard backstop — rank every live piece once (O(n log n)) rather than rescanning n times, so a
+  // pathological count can't turn the drain itself into the stall it exists to prevent. The comparator
+  // is betterCullVictim in both directions plus an EXPLICIT index tiebreak, so the two paths agree by
+  // construction and the result never depends on whether the engine's sort is stable.
+  const order = [];
+  for (let i = 0; i < gs.length; i++) if (!gs[i].dead) order.push(i);
+  order.sort((i, j) => betterCullVictim(gs[i], gs[j]) ? -1
+                     : betterCullVictim(gs[j], gs[i]) ? 1 : i - j);
+  for (let k = 0; k < n; k++) gs[order[k]].dead = true;
 }
 
 function updateChain(dt) {
@@ -6658,18 +6730,10 @@ function update(dt) {
     // scoopLevel 0 inScoopBox is always false, so this is byte-identical to the pre-scoop pickup.
     if (game.chain.length < game.cargoMax &&
         (dist2(g, game.ship) < pickR * pickR || inScoopBox(g))) {
-      // CS017 P5: the bonus canister pays ONCE, HERE — at the moment of capture, above the
-      // single/clump branch so both paths trip it, and inside the capture gate so only a real scoop
-      // counts. Deliberately NOT proportional to how many pieces actually fit: reaching the clump is
-      // what's being rewarded, so a nearly-full chain still banks the full BONUS_CANISTER_SCORE.
-      // Clearing the flag is load-bearing — a partial scoop's leftover is the SAME object and would
-      // otherwise pay again when the player comes back for it. Routed through addScore() normally
-      // (this is a gain, not the AUTO_SHIELD_SCORE_PENALTY bypass case — see CLAUDE.md).
-      if (g.bonus) {
-        g.bonus = false;
-        addScore(BONUS_CANISTER_SCORE);
-        game.floaters.push(new FloatText("+" + BONUS_CANISTER_SCORE, g.x, g.y, COLOR.garbageBonus));
-      }
+      // CS024 P3 (spec §1.2/§4.2): CS017 P5's ONE-SHOT BONUS PAYOUT STOOD HERE — an
+      // `if (g.bonus) { g.bonus = false; addScore(BONUS_CANISTER_SCORE); ...float... }` above the
+      // single/clump branch, whose flag-clear was what made "paid once per clump" true across a partial
+      // scoop. Removed with the canister; the capture gate below is otherwise untouched.
       // CS020: a node is TOWED if it was hooked OUTSIDE the dock's neighborhood, and an INCIDENTAL if
       // it was hooked inside it. Computed HERE — once, at the moment of capture, above the single/clump
       // branch so ONE expression covers both push paths (the same placement idiom as the bonus-canister
@@ -6746,12 +6810,14 @@ function update(dt) {
     }
   }
   // CS018 P9: a Super Mega Delivery pauses coalescence for DEBUG.sweepCoalescePause sec — without
-  // this, N larges splitting at once frees the WHOLE largeHunterCap() and fresh larges convert while
-  // the player is still in the fragment swarm. The pause holds the ENTIRE pass — conversion, merging
-  // AND the attraction that feeds them: pausing only the merge/convert branches while attraction kept
-  // pulling would just pile pieces up inside merge range for a mass conversion the frame the pause
-  // expires, recreating exactly what the pause exists to prevent. Decay clocks are NOT frozen — they
-  // live in Garbage.update(), which runs regardless, so pieces still age out mid-pause.
+  // this, N larges splitting at once frees the WHOLE large-Hunter ceiling and fresh larges convert
+  // while the player is still in the fragment swarm. The pause holds the ENTIRE pass — conversion,
+  // merging AND the attraction that feeds them: pausing only the merge/convert branches while
+  // attraction kept pulling would just pile pieces up inside merge range for a mass conversion the
+  // frame the pause expires, recreating exactly what the pause exists to prevent. CS024 P3: the old
+  // note here — "decay clocks are NOT frozen, so pieces still age out mid-pause" — is retired with
+  // decay. Garbage.update() still runs regardless (it ticks `age`), and the density cull still runs
+  // in the cleanup block, so a pause suspends coalescence ONLY, never the ceiling.
   if (game.sweepPause > 0) game.sweepPause -= dt;
   else coalesceGarbage(dt); // v3.1 P3: neglected scrap clumps; a 12-piece clump becomes a Hunter
   updateChain(dt);
@@ -6915,21 +6981,12 @@ function update(dt) {
     game.saucerTimer = ufoAppearInterval();
   }
 
-  // The AMBIENT Hunter producer, one of two (the other is coalescence). CS018 P4 (§4.1): the old
-  // `game.hunters.length === 0` gate — "one lineage at a time, and not even a leftover small may be
-  // alive" — was a de facto cap of ONE, so it had to go for a table cap of 7/10/12 to mean anything.
-  // Several lineages can now coexist, bounded by largeHunterCap(); middle/small hunters no longer
-  // block a spawn at all. The `game.wave >= 2` gate and the rand(20, 32) cadence are UNCHANGED — how
-  // often a Hunter appears is still not a difficulty lever, only how many may exist at once.
-  // Levels 1–4 have a cap of 0, so no ambient Hunter appears there: levels 2–4 lose the Hunter they
-  // used to get, which is the intended consequence of the table (§4.1), not an oversight.
-  game.hunterTimer -= dt;
-  if (game.hunterTimer <= 0 && largeHunterCount() < largeHunterCap() && game.wave >= 2) {
-    noteLargeHunterSpawn();   // FLAG-i: arms Hunter's Bane only on the 0 -> 1 transition, not every spawn
-    game.hunters.push(HunterSatellite.spawnCore());
-    game.hunterTimer = rand(20, 32);
-  }
-
+  // CS024 P3 (spec §1.3/§4.3): THE AMBIENT HUNTER PRODUCER STOOD HERE — a `game.hunterTimer` countdown
+  // that pushed HunterSatellite.spawnCore() every rand(20, 32) sec, gated on the level-table cap and on
+  // `game.wave >= 2`. The whole block is deleted, gate included, and nothing takes its slot. HUNTERS NOW
+  // ARISE FROM EXACTLY ONE SOURCE: garbage coalescing to HUNTER_COALESCE_COUNT pieces, in
+  // coalesceGarbage(). Gate A question 1 exists to check that they still arise AT ALL in practice — if
+  // the answer is "never," the coalescence numbers need the retune P4 does not currently carry.
   // Ambient Health powerup (F6): drifts into the field on a saucer-like cadence, at most one at a
   // time (its own decay bounds coexistence — like the one-saucer-at-a-time gate).
   game.healthTimer -= dt;
@@ -7136,6 +7193,13 @@ function update(dt) {
   }
 
   // --- Cleanup ---
+  // CS024 P3: the density ceiling runs FIRST in this block and nowhere else. It must be after every
+  // pass above that can mark a piece dead (so it counts what is genuinely still in the world) and
+  // before the garbage filter below (so its victims are swept by the same one filter as every other
+  // death, and none survives a frame to be drawn). Deliberately NOT mirrored into updateDeath()'s
+  // filter pass: that sim runs no coalescence — so it pays no O(n²) cost — and the run is over inside
+  // DEATH_DURATION, so culling there would only delete salvage during the death spectacle.
+  cullGarbage();
   const hadSaucer = game.saucers.length > 0;
   game.debris = game.debris.filter(a => !a.dead);
   game.bullets = game.bullets.filter(b => !b.dead);

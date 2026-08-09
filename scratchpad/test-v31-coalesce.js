@@ -26,8 +26,9 @@
 //      full-delay, mass-conserving, and they don't immediately re-merge; a player bullet passes
 //      THROUGH a pieces=1 canister; a hostile bullet passes through a clump; the emitted pieces are
 //      hookable once in pickup range; shattering doesn't coalesce anything.
-// (16) v3.3 P4 (9a): a loose SINGLE ages out at GARBAGE_DECAY; a CLUMP (pieces>1) never decays; the
-//      old garbageDecayed stat is still gone from game.stats.
+// (16) REPOINTED BY CS024 P3 (spec §1.4): loose garbage is PERMANENT — neither a lone single nor a
+//      stalled clump ever ages out, `decay` is gone from the class entirely, and the new monotonic
+//      `age` counts UP. The old garbageDecayed stat is still gone from game.stats.
 // (17) v3.3 P4 (9b, reverses FORK-B/B1): a SCRAP-BORN lineage now emits the FULL 66, same as a
 //      timer-spawned one — same score, still drops its small-tier powerup.
 // (18) v3.3 P4: a timer-spawned Hunter still emits the full 12 normal + 54 low = 66.
@@ -35,7 +36,8 @@
 //      and EMIT garbage at both generations.
 // (20) v3.3 P4: a coalesced core carries no bornOfScrap flag and drops garbage like any Hunter;
 //      game.stats.hunterCoalesced still increments exactly once per 12-piece transform.
-// (21) v3.3 P4 (9a): a chain node never decays; GARBAGE_DECAY exceeds GARBAGE_COALESCE_DELAY by a wide margin.
+// (21) REPOINTED BY CS024 P3: a chain node is neither decayed (nothing decays) nor CULLED — it lives
+//      in game.chain, not game.garbage, which is what puts it out of cullGarbage()'s reach.
 // (22) v3.3 P4 (9c): scoop a 5-piece clump with 5+ slots free -> exactly 5 nodes at mass=clumpMass/5,
 //      clump dead, total mass conserved onto the chain.
 // (23) v3.3 P4 (9c): scoop a 10-piece clump with 3 slots free -> 3 nodes, a live 7-piece leftover with
@@ -75,8 +77,8 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "DebrisSatellite", "HunterSatellite", "destroyDebris", "destroyHunter", "shatterClump", "Bullet", "AudioSys", "Achievements",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
-  "levelDef", "largeHunterCount", "largeHunterCap",
-  "GARBAGE_FADE", "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",
+  "levelDef", "largeHunterCount", "LARGE_HUNTER_MAX",   // CS024 P3: largeHunterCap() deleted, ceiling now flat
+  "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",     // CS024 P3: GARBAGE_FADE deleted with the blink-out
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
   "settings", "DEBUG",
@@ -90,15 +92,15 @@ const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafS
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
   destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
-  levelDef, largeHunterCount, largeHunterCap,
-  GARBAGE_FADE, SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
+  levelDef, largeHunterCount, LARGE_HUNTER_MAX,
+  SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
   MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
   WORLD_W, WORLD_H, CARGO_BASE } = G;
-// GARBAGE_DECAY (22) was a dead constant, deleted in CS024 P2 (declaration-and-comment only, zero
-// live readers — superseded by the live DEBUG.garbageLifetime knob). Kept here as a local historical
-// literal since this file's economy-relationship assertions are built around it.
-const GARBAGE_DECAY = 22;
+// CS024 P3: the local historical `GARBAGE_DECAY = 22` literal STOOD HERE, kept after CS024 P2 deleted
+// the constant so this file's economy-relationship assertions still had a number to reason about.
+// It is gone now too: with decay removed from the game outright there is no lifetime for the inert
+// window to be compared against, and §16/§21 below are repointed onto permanence instead.
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -129,28 +131,29 @@ function beginPlaying() {
   game.cargoMax = CARGO_BASE;
 }
 
-// The level every test in this file runs at: the first level whose large-Hunter cap is at least 2, so a
-// clump may convert AND a second, independent clump may convert after it. Derived from the shipped table,
-// never hardcoded, so a cap retune moves this with it.
-const CAP_OK_LEVEL = (() => {
-  for (let n = 1; n <= 63; n++) if (levelDef(n).maxLargeHunters >= 2) return n;
-  throw new Error("no level in 1..63 allows 2 large Hunters — the cap table changed shape");
-})();
+// REPOINTED BY CS024 P3: this used to search the level table for the first level whose large-Hunter cap
+// was at least 2 (it was 9), because levels 1-4 capped at 0 and no clump could convert there at all.
+// The cap is now the flat LARGE_HUNTER_MAX (100) at EVERY level, so the search has nothing to search
+// and the file can run at level 1 — which is the point of the change, not an accident of it.
+const CAP_OK_LEVEL = 1;
 
 // =====================================================================
 console.log("(0) config + inheritance: constants sane; emission sites + fromNode inherit defaults");
-assert(levelDef(CAP_OK_LEVEL).maxLargeHunters >= 2,
-  `0: the file runs at level ${CAP_OK_LEVEL}, whose large-Hunter cap (${levelDef(CAP_OK_LEVEL).maxLargeHunters}) permits a coalesced core`);
-assert(levelDef(1).maxLargeHunters === 0, "0: (context) level 1's cap is 0, which is why the file cannot run there");
+assert(LARGE_HUNTER_MAX >= 2,
+  `0: the flat large-Hunter ceiling (${LARGE_HUNTER_MAX}) permits a coalesced core, and permits a second`);
+assert(levelDef(1).maxLargeHunters === undefined, "0: the level table no longer carries a maxLargeHunters column at all (CS024 P3)");
 assert(GARBAGE_COALESCE_DELAY === 3.0, `0: GARBAGE_COALESCE_DELAY is 3.0 (v3.3 P4 retune 6.0->3.0; got ${GARBAGE_COALESCE_DELAY})`);
 assert(GARBAGE_MERGE_DIST === 12, `0: GARBAGE_MERGE_DIST is 12 (got ${GARBAGE_MERGE_DIST})`);
 assert(HUNTER_COALESCE_COUNT === 12, `0: HUNTER_COALESCE_COUNT is 12 (got ${HUNTER_COALESCE_COUNT})`);
 assert(GARBAGE_MAGNET_RANGE === 180, `0: GARBAGE_MAGNET_RANGE is 180 (v3.3 P4 retune 260->180; got ${GARBAGE_MAGNET_RANGE})`);
 assert(GARBAGE_MAGNET_RANGE > GARBAGE_MERGE_DIST, "0: magnet range exceeds merge distance");
-assert(GARBAGE_DECAY === 22, `0: GARBAGE_DECAY is 22 (v3.3 P4 reintroduced; got ${GARBAGE_DECAY})`);
-// The whole coalescence economy hinges on this relationship: a single must live long ENOUGH past its
-// inert window to find neighbours, or nothing ever clumps. Assert the RELATIONSHIP, not just the values.
-assert(GARBAGE_DECAY > GARBAGE_COALESCE_DELAY * 3, `0: GARBAGE_DECAY exceeds GARBAGE_COALESCE_DELAY by a wide margin (${GARBAGE_DECAY} vs ${GARBAGE_COALESCE_DELAY})`);
+// REPOINTED BY CS024 P3. The two assertions here checked the coalescence economy's load-bearing
+// relationship: a single had to live long ENOUGH past its inert window to find neighbours, or nothing
+// would ever clump. That relationship is now trivially satisfied and permanently so — a piece lives
+// forever — so the thing worth asserting instead is that no lifetime exists to get the relationship
+// wrong. This is what makes the coalescence pipeline the ONLY Hunter producer viable at all.
+assert(!("decay" in new Garbage(0, 0)), "0: a Garbage carries no decay field at all any more (CS024 P3)");
+assert(new Garbage(0, 0).age === 0, "0: ...and starts its monotonic age clock at 0 instead");
 {
   const fresh = new Garbage(100, 100);
   assert(fresh.pieces === 1, "0: a new Garbage starts at pieces === 1");
@@ -382,12 +385,14 @@ console.log("(12) v3.2 P1: draw() is crash-free at pieces=1 and pieces=11 (clust
   let threw = false;
   try {
     const one = new Garbage(200, 200); one.draw();
-    const fading = new Garbage(250, 250); fading.decay = GARBAGE_FADE * 0.5; fading.draw(); // v3.3 P4: blink branch
-    const dying = new Garbage(260, 260); dying.decay = 0.01; dying.draw();                  // near death
+    // CS024 P3: the two blink-out branches this exercised (a piece inside GARBAGE_FADE of expiry, and
+    // one at the very end of its life) no longer exist — draw() has one flat alpha per branch now. An
+    // aged piece is drawn instead, to prove `age` never leaks into the render.
+    const old = new Garbage(250, 250); old.age = 999; old.draw();
     const wad = new Garbage(300, 300); wad.pieces = 11;
     wad.radius = 7 * Math.sqrt(11); wad.draw();
   } catch (e) { threw = true; console.log("    threw: " + e); }
-  assert(!threw, "12: draw() renders a 1-piece, a blinking-out single, and an 11-piece clump without throwing");
+  assert(!threw, "12: draw() renders a 1-piece, a long-aged single, and an 11-piece clump without throwing");
 }
 
 // =====================================================================
@@ -472,24 +477,26 @@ function killLineage(core) {
 }
 
 // =====================================================================
-console.log("(16) CS015 P6 (item 10): a loose SINGLE ages out on DEBUG.garbageLifetime; a stalled CLUMP now ages out too");
+console.log("(16) REPOINTED BY CS024 P3: loose garbage is PERMANENT — nothing ages out, and `age` counts UP");
 {
   beginPlaying();
-  const life = DEBUG.garbageLifetime; // live knob (default 10s), not the frozen GARBAGE_DECAY (22, historical)
+  // This section used to prove the opposite: that a lone single died on DEBUG.garbageLifetime and (after
+  // CS015 P6 reversed FORK-4) that a stalled clump did too. CS024 P3 deleted the whole clock — a piece's
+  // only exits are RECYCLED, CONSUMED INTO A HUNTER, or CULLED by the density ceiling — because with the
+  // ambient Hunter producer gone, coalescence is the only Hunter source and a decay race would starve it.
   const g = new Garbage(500, 500, 0, 0); // isolated single — no neighbours to coalesce with
-  assert(g.decay === life, `16: a fresh single seeds decay from the live DEBUG.garbageLifetime (${life})`);
-  // drive the REAL Garbage.update just SHORT of the lifetime: still alive
-  for (let t = 0; t < life - 1; t += 1 / 60) g.update(1 / 60);
-  assert(!g.dead, "16: a lone single is still alive just before its lifetime elapses");
-  // now cross the lifetime: it dies of age
-  for (let t = 0; t < 1.5; t += 1 / 60) g.update(1 / 60);
-  assert(g.dead, "16: a lone single ages out once DEBUG.garbageLifetime elapses");
+  assert(!("decay" in g), "16: a fresh single carries no decay field");
+  assert(g.age === 0, "16: ...and starts its age at 0");
+  // 60 s of REAL Garbage.update — six times the old default lifetime, and past the old 22 s literal too.
+  for (let t = 0; t < 60; t += 1 / 60) g.update(1 / 60);
+  assert(!g.dead, "16: a lone single is still alive after 60 s — far past any lifetime it used to have");
+  assert(Math.abs(g.age - 60) < 0.05, `16: ...and its age accumulated monotonically to ~60 s (got ${g.age.toFixed(2)})`);
 
-  // CS015 P6 reverses FORK-4: a STALLED clump (pieces>1, no merges) now ages out too, past the same lifetime.
+  // Same for a STALLED clump (pieces>1, no merges): the case CS015 P6 went out of its way to make mortal.
   const clump = new Garbage(700, 700, 0, 0);
   clump.pieces = 4; clump.mass = 4; clump.radius = 7 * Math.sqrt(4);
-  for (let t = 0; t < life + 1; t += 1 / 60) clump.update(1 / 60);
-  assert(clump.dead, "16: a stalled clump (pieces>1, no merges) now ages out too (FORK-4 reversed)");
+  for (let t = 0; t < 60; t += 1 / 60) clump.update(1 / 60);
+  assert(!clump.dead, "16: a stalled clump does not age out either — permanence is size-independent");
 
   assert(!("garbageDecayed" in game.stats), "16: the old garbageDecayed stat is still gone from game.stats");
 }
@@ -590,7 +597,7 @@ console.log("(20) v3.3 P4: a coalesced core carries no bornOfScrap flag and drop
 }
 
 // =====================================================================
-console.log("(21) v3.3 P4 (9a): a chain node never decays (it isn't a Garbage); decay/delay relationship holds");
+console.log("(21) REPOINTED BY CS024 P3: a chain node is never decayed AND never culled (it isn't a Garbage)");
 {
   beginPlaying();
   game.cargoMax = 12;
@@ -599,16 +606,17 @@ console.log("(21) v3.3 P4 (9a): a chain node never decays (it isn't a Garbage); 
   game.garbage = [single];
   update(1 / 60);
   assert(game.chain.length === 1, "21: pre-condition — one node hooked");
-  assert(!("decay" in game.chain[0]), "21: a chain node carries no decay field");
-  // drive many frames far past GARBAGE_DECAY; the chain node has no decay clock and must persist.
-  // Clear ambient hazards each frame (as test-firerate does) so a stray spawn can't scatter the chain
-  // over the long run — this test is about decay, not collision.
+  assert(!("decay" in game.chain[0]), "21: a chain node carries no decay field (nothing does, since CS024 P3)");
+  assert(!("age" in game.chain[0]), "21: ...and no age field either — the cull's ordering key can't even be read off it");
+  // 44 s of real frames — twice the old 22 s literal this loop used to be sized against. Clear ambient
+  // hazards each frame (as test-firerate does) so a stray spawn can't scatter the chain over the long
+  // run — this section is about lifetime and the cull, not collision.
   game.garbage = [];
-  for (let t = 0; t < GARBAGE_DECAY * 2; t += 1 / 60) {
+  for (let t = 0; t < 44; t += 1 / 60) {
     game.debris = []; game.hunters = []; game.saucers = []; game.bullets = [];
     update(1 / 60);
   }
-  assert(game.chain.length === 1, "21: the chain node never decays (it lives in game.chain, not game.garbage)");
+  assert(game.chain.length === 1, "21: the chain node persists (it lives in game.chain, not game.garbage)");
 }
 
 // =====================================================================

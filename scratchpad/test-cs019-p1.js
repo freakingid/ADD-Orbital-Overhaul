@@ -193,7 +193,7 @@ function quietRun(X) {
   g.camera = { x: g.ship.x, y: g.ship.y };
   g.debris = [new X.DebrisSatellite(X.WORLD_W / 2 + 3000, X.WORLD_H / 2 + 3000, 1)];
   g.debris[0].vx = 0; g.debris[0].vy = 0;
-  g.saucerTimer = 1e6; g.hunterTimer = 1e6; g.healthTimer = 1e6;
+  g.saucerTimer = 1e6; g.healthTimer = 1e6;   // CS024 P3: game.hunterTimer is gone with the ambient producer
   return g;
 }
 // Lay n chain nodes in a straight line trailing the ship along -x, CHAIN_LINK apart. Verlet advances
@@ -638,8 +638,17 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // ever applied. Everything observable about the break must match.
   function runNoGuard(src) {
     const X = build({ src });
+    // REPOINTED BY CS024 P3: the seeded stream now starts AFTER staging rather than before it. quietRun()
+    // drives the real startGame()/nextWave(), and CS024 P3 deleted nextWave()'s bonus-canister
+    // Math.random() roll — so the two builds consume a DIFFERENT NUMBER OF DRAWS during setup, and every
+    // rand()-derived value after that point is offset in the pre-fix build relative to this one. That
+    // offset says nothing about the chain guard, which is the only thing this section measures; it showed
+    // up as the cut-loose canisters' scatter velocities (Garbage.fromNode's rand(0,TAU)/rand(20,60))
+    // differing while the RNG-free chain-node positions still matched exactly. Re-seeding at the staging
+    // boundary puts both builds on the same stream for the measured window, so the assertion below is the
+    // strong bit-identical one it was always meant to be rather than a hostage to unrelated setup draws.
+    const g = withRandom(seededRandom(0x5EEDBEEF), () => quietRun(X));
     return withRandom(seededRandom(0xC0FFEE), () => {
-      const g = quietRun(X);
       layChain(X, 10);
       stageDebris(X, 5, 3);
       const log = run(X, 60, null);

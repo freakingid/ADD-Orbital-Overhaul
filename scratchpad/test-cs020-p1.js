@@ -429,7 +429,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 34, "A: TRAP 3 — DEBUG_VARS holds exactly 34 value entries after CS024 P2's freqJitter removal");
+  eq(valueEntries, 36, "A: TRAP 3 — DEBUG_VARS holds exactly 36 value entries after CS024 P3 (34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed)");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,
