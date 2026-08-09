@@ -16,7 +16,8 @@
 //      is NOT collected at scoopLevel 0 (inScoopBox is unconditionally false there); the same-shaped
 //      placement, but inside the scoop mouth (inScoopBox true) at scoopLevel >= 1, IS collected — via
 //      the real update() powerup-pickup loop, so it's the real inScoopBox() + real applyPowerup() that
-//      run, confirmed by powerupsPicked incrementing and the real powerFx effect landing.
+//      run, confirmed by powerupsPicked incrementing and the real effect landing (REPOINTED BY CS024
+//      P6: the effect state is game.powerBudget now — game.powerFx is deleted with timed expiry).
 
 "use strict";
 const fs = require("fs");
@@ -149,11 +150,11 @@ const {
   assert(inScoopBox(p1) === true, "C: sanity — inScoopBox is true at scoopLevel >=1 for this placement");
   game.powerups = [p1];
   const pickedBefore2 = game.stats.powerupsPicked;
-  const fxBefore = game.powerFx.rapid;
+  const fxBefore = game.powerBudget.rapid;   // REPOINTED BY CS024 P6: budget, not a duration clock
   update(1 / 60);
   assert(p1.dead === true, "C: scoopLevel >=1 — a powerup inside the scoop mouth but outside r IS collected");
   assert(game.stats.powerupsPicked === pickedBefore2 + 1, "C: scoopLevel >=1 hit — powerupsPicked incremented (the real applyPowerup ran)");
-  assert(game.powerFx.rapid > fxBefore, "C: the real applyPowerup ran — rapid powerFx duration was actually added");
+  assert(game.powerBudget.rapid > fxBefore, "C: the real applyPowerup ran — rapid budget was actually added");
 
   game.powerups = []; game.scoopLevel = 0; // restore
 })();

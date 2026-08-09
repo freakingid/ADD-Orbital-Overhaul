@@ -383,7 +383,7 @@ console.log("(10) v3.2 P1: two mass-1.0 singles attract EXACTLY as the shipped f
 console.log("(11) v3.4 P4: the Magnet now pulls BOTH a clump and a single — via real update() (reversed from v3.2 P1)");
 {
   beginPlaying();
-  game.powerFx.magnet = 10; // magnet active (time mode default)
+  game.powerBudget.magnet = MAGNET_PIECES;   // CS024 P6: a budget, not a clock — the only expiry rule now
   const clump = new Garbage(game.ship.x + 100, game.ship.y, 0, 0); // in magnet range, well out of pickup range
   clump.pieces = 4; clump.mass = 4; clump.radius = 7 * Math.sqrt(4);
   game.garbage = [clump];
@@ -392,7 +392,7 @@ console.log("(11) v3.4 P4: the Magnet now pulls BOTH a clump and a single — vi
   assert(game.chain.length === 0 && !clump.dead, "11: a far clump is pulled but not yet hooked");
 
   beginPlaying();
-  game.powerFx.magnet = 10;
+  game.powerBudget.magnet = MAGNET_PIECES;   // CS024 P6: budget, not a clock
   const single = new Garbage(game.ship.x + 100, game.ship.y, 0, 0); // same spot, one piece
   game.garbage = [single];
   update(1 / 60);
@@ -759,8 +759,7 @@ function oldArrivalTime(distance, arriveAt) {
 // Run ONE real update() frame on a single lone piece to the right of the ship; return its resulting vx.
 function pullVx(distance, pcs, mass) {
   beginPlaying();
-  game.powerFx.magnet = 10;   // time-mode Magnet active
-  settings.magnetMode = "time";
+  game.powerBudget.magnet = MAGNET_PIECES;   // CS024 P6: a budget, not a clock
   const g = new Garbage(game.ship.x + distance, game.ship.y, 0, 0);
   g.pieces = pcs; g.mass = mass; g.radius = 7 * Math.sqrt(pcs);
   game.garbage = [g];
@@ -779,8 +778,7 @@ console.log("(26) v3.4 P4 RANGE: a single at 350 px IS pulled (far past the old 
 console.log("(27) v3.4 P4 RANGE across a WORLD WRAP seam — the pull must use shortDelta/dist2, not naive math");
 {
   beginPlaying();
-  settings.magnetMode = "time";
-  game.powerFx.magnet = 10;
+  game.powerBudget.magnet = MAGNET_PIECES;   // CS024 P6: budget, not a clock
   game.ship.x = WORLD_W - 20; game.ship.y = 1000;   // ship hard against the right seam
   // garbage at x=330: naive |2540-330| = 2210 px (WAY out of range); wrap distance = 2560-2210 = 350 px (in range).
   const g = new Garbage(330, game.ship.y, 0, 0);
@@ -818,12 +816,10 @@ console.log("(29) v3.4 P4 MASS: a mass-1 single's per-frame vx is BIT-IDENTICAL 
   assert(Math.abs(clump9 - single / 3) < 1e-12, `29: a mass-9 clump's delta is exactly 1/3 of the same-distance single's (${clump9.toFixed(5)} ≈ ${(single / 3).toFixed(5)})`);
 }
 
-console.log("(30) v3.4 P4 (FLAG-7b): scooping a 6-piece clump under a pieces-mode Magnet spends EXACTLY 6 budget");
+console.log("(30) v3.4 P4 (FLAG-7b): scooping a 6-piece clump under an active Magnet spends EXACTLY 6 budget");
 {
-  settings.magnetMode = "pieces";
   beginPlaying();
-  game.powerBudget.magnet = MAGNET_PIECES; // 40, pieces-mode active
-  game.powerFx.magnet = 0;
+  game.powerBudget.magnet = MAGNET_PIECES; // 40 — CS024 P6: the ONLY mode; the old pieces-mode gate is gone
   game.cargoMax = 12; game.chain = [];
   const clump = new Garbage(game.ship.x, game.ship.y, 0, 0); // ON the ship -> scooped whole
   clump.pieces = 6; clump.mass = 6; clump.radius = 7 * Math.sqrt(6); clump.coalesceDelay = 0;
@@ -831,14 +827,12 @@ console.log("(30) v3.4 P4 (FLAG-7b): scooping a 6-piece clump under a pieces-mod
   update(DT);
   assert(clump.dead && game.chain.length === 6, `30: the 6-clump is fully scooped onto the chain (${game.chain.length} nodes)`);
   assert(game.powerBudget.magnet === MAGNET_PIECES - 6, `30: the scoop spent exactly 6 budget — a 6-clump costs the same as 6 singles (got ${game.powerBudget.magnet}, expected ${MAGNET_PIECES - 6})`);
-  settings.magnetMode = "time"; // restore for any later use
 }
 
 console.log("(31) v3.4 P4 regression: coalescence (12-piece -> Hunter) still fires with the Magnet OFF");
 {
   beginPlaying();
-  settings.magnetMode = "time";
-  game.powerFx.magnet = 0; game.powerBudget.magnet = 0; // Magnet OFF: the pull block is skipped entirely
+  game.powerBudget.magnet = 0; // Magnet OFF: the pull block is skipped entirely
   game.ship.x = 200; game.ship.y = 200;                 // far from the clump so nothing is pulled or hooked
   hunterbornCalls = 0;
   const before = game.hunters.length;
@@ -875,8 +869,7 @@ console.log("(33) v3.6 P2a: the new pull is monotonically stronger than the old 
 console.log("(34) v3.6 P2a: a mass-1 single at 190 px reaches the ship measurably faster than the old build (real update(), time compared — not the constant)");
 {
   beginPlaying();
-  settings.magnetMode = "time";
-  game.powerFx.magnet = 10;
+  game.powerBudget.magnet = MAGNET_PIECES;   // CS024 P6: budget, not a clock
   game.cargoMax = 0;   // block the pickup gate (chain.length(0) < cargoMax(0) is false) so the piece
                         // keeps traveling all the way in instead of hooking onto the chain mid-flight
   // CS018 P5 fallout: beginPlaying() clears game.debris, and the real wave-clear timer (2.5s on

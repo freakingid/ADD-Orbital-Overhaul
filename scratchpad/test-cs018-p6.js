@@ -35,7 +35,7 @@
 //      readers; DEBUG.saucerGapPressure/DEBUG_VARS entry for it are gone.
 //  (H) Persistence: the surviving fields round-trip through afd_settings_v1.debug across a reload.
 //  (I) Regression: cargoMax/junk/hunters untouched; GAME_VERSION unchanged; DEBUG_VARS/DEBUG_ROWS
-//      counts reported (32 value entries as of CS024 P5's registry rebuild).
+//      counts reported (33 value entries as of CS024 P6's POWERUPS section).
 
 "use strict";
 const fs = require("fs");
@@ -489,7 +489,12 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // knob per LEVER instead of three per tier (10 UFO levers + smallUfoChance under UFO; 4 JUNK; 4 HUNTER;
   // 2 GLOBAL). Section-by-section: SHIP 2 + GARBAGE 4 + CHAIN GUARD 4 + DELIVERY 1 + JUNK 4 + HUNTER 4 +
   // UFO 11 + GLOBAL 2 = 32. Same claim, same strength — an exact live-registry count.
-  eq(nEntries, 32, `I: DEBUG_ENTRIES count is 32 after CS024 P5's registry rebuild (got ${nEntries})`);
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry is deleted (spec §1.7/§3.4/§3.5),
+  // taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and a new POWERUPS section arrives holding
+  // Engine-as-fuel's two knobs (engineBurnSeconds, engineMassMult). Net -1 +2. Section-by-section:
+  // SHIP 2 + GARBAGE 4 + CHAIN GUARD 3 + DELIVERY 1 + JUNK 4 + HUNTER 4 + UFO 11 + POWERUPS 2 +
+  // GLOBAL 2 = 33.
+  eq(nEntries, 33, `I: DEBUG_ENTRIES count is 33 after CS024 P6's POWERUPS section (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

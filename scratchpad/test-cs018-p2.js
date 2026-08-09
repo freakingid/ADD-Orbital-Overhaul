@@ -441,7 +441,11 @@ function onDebug(A, { playing = false } = {}) {
   const A = inst.exports;
   const g = onDebug(A);
 
-  const target = "chainGuardTime";                        // {def:30, min:5, max:120, step:5}
+  // REPOINTED BY CS024 P6: chainGuardTime is DELETED with timed expiry (spec §1.7/§3.5), so this
+  // section's typed-entry fixture moves to garbageAttractRadius — another plain flat knob (a real `def`,
+  // no toNative, no clampShown) whose range admits the 73 the section types. Nothing about the claim
+  // changes: typed entry commits live, persists in display units, and survives a reload.
+  const target = "garbageAttractRadius";                 // {def:160, min:0, max:600, step:10}
   g.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === target);
   for (const k of ["7", "3"]) A.debugEntryKey(k);
   A.menuDebug("confirm");
@@ -495,23 +499,28 @@ function onDebug(A, { playing = false } = {}) {
   // an ORPHANED garbageLifetime is added alongside it, because that is now the more interesting half of
   // the claim: a real 1.0.0.17-era save DOES carry that key, and the known-value-else-default rule must
   // ignore it with no schema bump, no migration and no rename of the frozen afd_settings_v1 key.
-  const legacy = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { chainGuardTime: 44, garbageLifetime: 33 }, autoShield: true }) } }).exports;
-  assert(legacy.debugShown.chainGuardTime === 44, "G: a 1.0.0.17-era save loads its debug values unchanged");
-  assert(!("garbageLifetime" in legacy.debugShown), "G: ...while its now-orphaned garbageLifetime key is silently ignored (CS024 P3)");
-  assert(!("garbageLifetime" in legacy.DEBUG), "G: ...and never reaches the native map either");
+  // CS024 P6: chainGuardTime JOINS garbageLifetime on the orphan side of this fixture — it is exactly
+  // the same situation one changeset later (a key every pre-P6 save really does carry, whose knob no
+  // longer exists), and the surviving live key moves to chainGuardIntercepts.
+  const legacy = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { chainGuardIntercepts: 4, chainGuardTime: 44, garbageLifetime: 33 }, autoShield: true }) } }).exports;
+  assert(legacy.debugShown.chainGuardIntercepts === 4, "G: a 1.0.0.17-era save loads its still-live debug values unchanged");
+  for (const orphan of ["garbageLifetime", "chainGuardTime"]) {
+    assert(!(orphan in legacy.debugShown), `G: ...while its now-orphaned ${orphan} key is silently ignored (CS024 P3 / P6)`);
+    assert(!(orphan in legacy.DEBUG), `G: ...and ${orphan} never reaches the native map either`);
+  }
   assert(legacy.settings.autoShield === true, "G: ...and its other additive fields (proving load ran)");
-  assert(legacy.debugShown.chainGuardIntercepts === 3, "G: absent keys keep their seeded defaults");
+  assert(legacy.debugShown.chainGuardMinTow === 5, "G: absent keys keep their seeded defaults");
 
   // A save carrying a literal "undefined" debug key must be ignored, never applied. (Honest note, verified by
   // mutation: switching loadSettings back to DEBUG_VARS does NOT break this — a header's `e.min` is
   // undefined, so the `dv >= e.min` range check is already false. The DEBUG_ENTRIES change there is
   // defensive clarity; the one in the STARTUP SEED is mandatory, and reverting THAT throws at load.)
-  const poisoned = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { undefined: 5, chainGuardTime: 12 } }) } }).exports;
+  const poisoned = build({ storage: { "afd_settings_v1": JSON.stringify({ debug: { undefined: 5, chainGuardIntercepts: 6 } }) } }).exports;
   assert(!("undefined" in poisoned.debugShown) && !(undefined in poisoned.debugShown),
     "G: an `undefined` debug key in a save is never applied to debugShown");
   assert(Object.keys(poisoned.debugShown).length === poisoned.DEBUG_ENTRIES.length,
     "G: ...so the map still holds exactly one key per value entry");
-  assert(poisoned.debugShown.chainGuardTime === 12, "G: the real key alongside it still loaded");
+  assert(poisoned.debugShown.chainGuardIntercepts === 6, "G: the real key alongside it still loaded");
 })();
 
 // ================= (H) NO cross-field validation (the CS018 inverted-lever trap) ===============
@@ -524,7 +533,11 @@ function onDebug(A, { playing = false } = {}) {
   // CS018 ships four levers whose values DECREASE as difficulty rises. There are no tier trios in the
   // registry yet (P2 adds no entries), so the property is asserted structurally AND behaviourally: three
   // knobs set to a strictly DESCENDING sequence must all stick, with no clamping or reordering.
-  const trio = ["chainGuardTime", "chainGuardIntercepts", "chainGuardMinTow"];
+  // REPOINTED BY CS024 P6: chainGuardTime is deleted, so the descending trio's first member becomes
+  // garbageSoftMax (min 20, max 1000, step 10), which admits the same 90. The property under test —
+  // three knobs set to a strictly DESCENDING sequence all stick, with no clamping or reordering — is
+  // unchanged, and is still checked both live and across a reload.
+  const trio = ["garbageSoftMax", "chainGuardIntercepts", "chainGuardMinTow"];
   const vals = [90, 7, 3];   // descending, and each inside its own [min,max]
   trio.forEach((id, k) => {
     g.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === id);
@@ -538,9 +551,9 @@ function onDebug(A, { playing = false } = {}) {
     `H: ${id} still ${vals[k]} after a reload — nothing reordered it`));
 
   // Arrow stepping accepts a descending walk too (the same clamp, no relational check).
-  g.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === "chainGuardTime");
-  for (let i = 0; i < 4; i++) A.menuDebug("left");
-  assert(A.debugShown.chainGuardTime === 70, `H: ◄ stepped 90 -> 70 unimpeded (got ${A.debugShown.chainGuardTime})`);
+  g.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === "garbageSoftMax");
+  for (let i = 0; i < 4; i++) A.menuDebug("left");   // step 10 x4, from the 90 typed above
+  assert(A.debugShown.garbageSoftMax === 50, `H: ◄ stepped 90 -> 50 unimpeded (got ${A.debugShown.garbageSoftMax})`);
 
   // Structural: no relational logic between two registry entries exists in the panel's code. Comment lines
   // are stripped first — the source deliberately DISCUSSES the low/normal/high prohibition in prose, and the

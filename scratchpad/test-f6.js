@@ -5,13 +5,17 @@
 //   node scratchpad/test-f6.js
 //
 // Confirms:
-//  (A) applyPowerup effect magnitudes — Health repairs +25 capped at max; each timed effect
-//      arms its own powerFx slot to POWERUP_DURATION and no other;
+// REPOINTED BY CS024 P6 (spec §1.7/§3.4): timed expiry is deleted. Each effect now arms its own
+// powerBudget slot to powerBudgetAmount(type), and an effect ENDS by being USED rather than by a clock.
+// Section (D)'s countdown is INVERTED accordingly — that is the mirror-image convention, not a drop.
+//
+//  (A) applyPowerup effect magnitudes — Health repairs +25 capped at max; each budgeted effect
+//      arms its own powerBudget slot to powerBudgetAmount(type) and no other;
 //  (B) the flexible bullet cap — 4 / 8 (Rapid) / 12 (Triple), and Rapid+Triple together = 12
 //      (the higher cap), NOT 24 (not multiplied);
 //  (C) Triple Shot fires a 3-bullet spread (single otherwise); Rapid lets a 5th+ bullet fly;
-//  (D) duration expiry — a timed effect counts down through update() to 0 and the cap resets;
-//      a same-type pickup REFRESHES the timer (doesn't stack magnitude);
+//  (D) INVERTED — nothing counts down on a clock. update() alone never expires anything; a Rapid
+//      ends by FIRING its budget away, and the cap resets when it does. A same-type pickup BANKS.
 //  (E) Engine halves the EFFECTIVE towed mass fed to chainMass() (thrust/top-speed/tug);
 //  (F) Magnet moves free garbage toward the ship over a few frames (real pull, not teleport),
 //      and does NOT when inactive;
@@ -45,9 +49,9 @@ const returnList = [
   "startGame", "update", "game", "keys",
   "Powerup", "Garbage",
   "applyPowerup", "maxBullets", "chainMass",
-  "POWERUP_DURATION", "POWERUP_HEALTH_AMOUNT", "POWERUP_DROP_TYPES",
+  "powerBudgetAmount", "POWERUP_HEALTH_AMOUNT", "POWERUP_DROP_TYPES", "DEBUG",
   "RAPID_MAX_BULLETS", "TRIPLE_MAX_BULLETS", "MAX_BULLETS", "TRIPLE_SPREAD",
-  "ENGINE_MASS_MULT", "MAGNET_RANGE", "MAGNET_PICKUP_MULT", "MAGNET_DURATION",
+  "ENGINE_MASS_MULT", "ENGINE_BURN_SECONDS", "MAGNET_RANGE", "MAGNET_PICKUP_MULT",
   "GARBAGE_PICKUP", "SHIP_MAX_HP",
   "dist2", "shortDelta", "WORLD_W", "WORLD_H"
 ];
@@ -60,9 +64,9 @@ const {
   startGame, update, game, keys,
   Powerup, Garbage,
   applyPowerup, maxBullets, chainMass,
-  POWERUP_DURATION, POWERUP_HEALTH_AMOUNT, POWERUP_DROP_TYPES,
+  powerBudgetAmount, POWERUP_HEALTH_AMOUNT, POWERUP_DROP_TYPES, DEBUG,
   RAPID_MAX_BULLETS, TRIPLE_MAX_BULLETS, MAX_BULLETS, TRIPLE_SPREAD,
-  ENGINE_MASS_MULT, MAGNET_RANGE, MAGNET_PICKUP_MULT, MAGNET_DURATION,
+  ENGINE_MASS_MULT, ENGINE_BURN_SECONDS, MAGNET_RANGE, MAGNET_PICKUP_MULT,
   GARBAGE_PICKUP, SHIP_MAX_HP,
   dist2, shortDelta, WORLD_W, WORLD_H
 } = A;
@@ -82,7 +86,11 @@ function clearField() {
   game.garbage.length = 0; game.particles.length = 0; game.floaters.length = 0;
   game.powerups.length = 0;
 }
-function resetFx() { game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 }; }
+// CS024 P6: one state bag — game.powerFx is deleted and engine/guard are ordinary budget keys.
+function resetFx() { game.powerBudget = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 }; }
+// "make effect t active" without caring what its unit is — the grant differs per type and two of the
+// five are live debug knobs, so a literal here would be wrong for someone.
+function armFx(t, mult = 1) { game.powerBudget[t] = powerBudgetAmount(t) * mult; }
 function resetShip(over = {}) {
   Object.assign(game.ship, {
     dead: false, hp: 250, invuln: 0, shieldOn: false, energy: 1, cooldown: 0,
@@ -95,7 +103,7 @@ function node(x, y, mass) { return { x, y, px: x, py: y, spin: 0, spinRate: 0, m
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) DURATION=${POWERUP_DURATION}s  caps 4/${RAPID_MAX_BULLETS}/${TRIPLE_MAX_BULLETS}  ENGINE_MULT=${ENGINE_MASS_MULT}  MAGNET_RANGE=${MAGNET_RANGE}px`);
+console.log(`(config) FUEL=${ENGINE_BURN_SECONDS}s  caps 4/${RAPID_MAX_BULLETS}/${TRIPLE_MAX_BULLETS}  ENGINE_MULT=${ENGINE_MASS_MULT}  MAGNET_RANGE=${MAGNET_RANGE}px`);
 
 // =====================================================================
 // (A) applyPowerup effect magnitudes — one of each type
@@ -109,15 +117,15 @@ assert(game.ship.hp === 125, `A: Health restores +${POWERUP_HEALTH_AMOUNT} HP (1
 game.ship.hp = SHIP_MAX_HP - 10;
 applyPowerup("health");
 assert(game.ship.hp === SHIP_MAX_HP, `A: Health is capped at max (got ${game.ship.hp}/${SHIP_MAX_HP})`);
-assert(game.powerFx.health === undefined || game.powerFx.health === 0, "A: Health is instant — arms no timed slot");
+assert(game.powerBudget.health === undefined || game.powerBudget.health === 0, "A: Health is instant — arms no budget slot");
 
-for (const t of ["rapid", "triple", "magnet", "engine"]) {
+for (const t of POWERUP_DROP_TYPES) {
   resetFx();
   applyPowerup(t);
-  const expDur = t === "magnet" ? MAGNET_DURATION : POWERUP_DURATION; // v3.4 P4: Magnet is the one 30 s effect
-  assert(near(game.powerFx[t], expDur), `A: ${t} arms its slot to ${expDur}s (got ${game.powerFx[t]})`);
-  const others = ["rapid", "triple", "magnet", "engine"].filter(o => o !== t);
-  assert(others.every(o => game.powerFx[o] === 0), `A: ${t} does not activate any other effect`);
+  const grant = powerBudgetAmount(t);   // 40 / 30 / 40 / DEBUG.engineBurnSeconds / DEBUG.chainGuardIntercepts
+  assert(near(game.powerBudget[t], grant), `A: ${t} arms its slot to ${grant} (got ${game.powerBudget[t]})`);
+  const others = POWERUP_DROP_TYPES.filter(o => o !== t);
+  assert(others.every(o => game.powerBudget[o] === 0), `A: ${t} does not activate any other effect`);
 }
 
 // =====================================================================
@@ -125,9 +133,9 @@ for (const t of ["rapid", "triple", "magnet", "engine"]) {
 // =====================================================================
 console.log("(B) bullet cap: 4 / 8 (rapid) / 12 (triple) / 12 (both, NOT 24)");
 resetFx(); assert(maxBullets() === MAX_BULLETS, `B: no powerup -> base cap ${MAX_BULLETS} (got ${maxBullets()})`);
-resetFx(); game.powerFx.rapid = 5; assert(maxBullets() === RAPID_MAX_BULLETS, `B: Rapid -> ${RAPID_MAX_BULLETS} (got ${maxBullets()})`);
-resetFx(); game.powerFx.triple = 5; assert(maxBullets() === TRIPLE_MAX_BULLETS, `B: Triple -> ${TRIPLE_MAX_BULLETS} (got ${maxBullets()})`);
-resetFx(); game.powerFx.rapid = 5; game.powerFx.triple = 5;
+resetFx(); armFx("rapid"); assert(maxBullets() === RAPID_MAX_BULLETS, `B: Rapid -> ${RAPID_MAX_BULLETS} (got ${maxBullets()})`);
+resetFx(); armFx("triple"); assert(maxBullets() === TRIPLE_MAX_BULLETS, `B: Triple -> ${TRIPLE_MAX_BULLETS} (got ${maxBullets()})`);
+resetFx(); armFx("rapid"); armFx("triple");
 assert(maxBullets() === TRIPLE_MAX_BULLETS, `B: Rapid+Triple -> the HIGHER cap ${TRIPLE_MAX_BULLETS} (got ${maxBullets()})`);
 assert(maxBullets() !== RAPID_MAX_BULLETS * 3 && maxBullets() !== 24 && maxBullets() !== RAPID_MAX_BULLETS + TRIPLE_MAX_BULLETS,
   `B: Rapid+Triple is NOT multiplied/summed (got ${maxBullets()}, must be ${TRIPLE_MAX_BULLETS})`);
@@ -146,7 +154,7 @@ assert(mine.length === 1, `C: a normal shot fires 1 bullet (got ${mine.length})`
 
 // triple shot
 resetShip(); resetFx(); clearField(); quietTimers();
-game.powerFx.triple = POWERUP_DURATION;
+armFx("triple");
 game.ship.cooldown = 0;
 game.ship.update(DT);
 mine = game.bullets.filter(b => !b.hostile);
@@ -162,7 +170,7 @@ for (let i = 0; i < 4; i++) game.bullets.push({ x: cx, y: cy, vx: 0, vy: 0, host
 game.ship.cooldown = 0;
 game.ship.update(DT);
 assert(game.bullets.filter(b => !b.hostile).length === 4, "C: at the base cap (4) a 5th bullet can't fire");
-game.powerFx.rapid = POWERUP_DURATION;
+armFx("rapid");
 game.ship.cooldown = 0;
 game.ship.update(DT);
 assert(game.bullets.filter(b => !b.hostile).length === 5, "C: Rapid Fire lets the 5th bullet fly (cap raised to 8)");
@@ -171,18 +179,30 @@ keys[" "] = false;
 // =====================================================================
 // (D) duration expiry + same-type banking (v3.6 P4: reverses the old refresh rule)
 // =====================================================================
-console.log("(D) duration counts down to 0 (cap resets); same-type pickup BANKS (adds), not refreshes");
+console.log("(D) INVERTED: no clock — a budget is spent by USE, and the cap resets when it empties");
 resetShip(); resetFx(); clearField(); quietTimers();
-game.powerFx.rapid = 0.02;                 // about to expire
-assert(maxBullets() === RAPID_MAX_BULLETS, "D: Rapid active before expiry -> cap 8");
-for (let i = 0; i < 4; i++) update(DT);    // ~0.067s of game time drives the countdown to 0
-assert(game.powerFx.rapid === 0, `D: the effect expired (powerFx.rapid ${game.powerFx.rapid})`);
-assert(maxBullets() === MAX_BULLETS, `D: cap reset to ${MAX_BULLETS} after expiry (got ${maxBullets()})`);
-// bank: picking the same type back up ADDS the full duration to what's left (v3.6 P4)
+game.powerBudget.rapid = 1;                // one shot left
+assert(maxBullets() === RAPID_MAX_BULLETS, "D: Rapid active before it empties -> cap 8");
+// INVERTED: 60 frames of update() with nothing fired must NOT expire it. The old build's clock would
+// have run 1 s off the timer here; there is no clock left to run.
+keys[" "] = false;
+for (let i = 0; i < 60; i++) update(DT);
+assert(game.powerBudget.rapid === 1, `D: INVERTED — 60 frames of update() spend NOTHING without firing (got ${game.powerBudget.rapid})`);
+assert(maxBullets() === RAPID_MAX_BULLETS, "D: ...so the cap is still 8");
+// now FIRE it away: one trigger pull ends it, and the cap drops back on the same frame
+resetShip(); resetFx(); clearField(); quietTimers();
+game.powerBudget.rapid = 1;
+game.ship.cooldown = 0; keys[" "] = true;
+game.ship.update(DT);
+keys[" "] = false;
+assert(game.powerBudget.rapid === 0, `D: one trigger pull spent the last shot (got ${game.powerBudget.rapid})`);
+assert(maxBullets() === MAX_BULLETS, `D: cap reset to ${MAX_BULLETS} once the budget emptied (got ${maxBullets()})`);
+// bank: picking the same type back up ADDS the full grant to what's left (v3.6 P4)
 resetFx();
-game.powerFx.triple = 3;
+game.powerBudget.triple = 3;
 applyPowerup("triple");
-assert(near(game.powerFx.triple, 3 + POWERUP_DURATION), `D: same-type pickup BANKS to 3+${POWERUP_DURATION} (not refreshed to ${POWERUP_DURATION}); got ${game.powerFx.triple}`);
+assert(near(game.powerBudget.triple, 3 + powerBudgetAmount("triple")),
+  `D: same-type pickup BANKS to 3+${powerBudgetAmount("triple")} (not refreshed); got ${game.powerBudget.triple}`);
 
 // =====================================================================
 // (E) Engine halves the effective towed mass in chainMass()
@@ -191,14 +211,22 @@ console.log("(E) Engine halves the effective towed mass (chainMass)");
 resetShip(); resetFx(); clearField();
 game.chain.push(node(cx, cy, 1.0), node(cx, cy, 1.0), node(cx, cy, 1.0), node(cx, cy, 1.0)); // 4x mass-1.0 = 4.0
 assert(near(chainMass(), 4.0), `E: no Engine -> full towed mass (got ${chainMass()})`);
-game.powerFx.engine = POWERUP_DURATION;
-assert(near(chainMass(), 4.0 * ENGINE_MASS_MULT), `E: Engine -> mass x ${ENGINE_MASS_MULT} (got ${chainMass()}, exp ${4.0 * ENGINE_MASS_MULT})`);
+armFx("engine");
+assert(near(chainMass(), 4.0 * DEBUG.engineMassMult), `E: Engine -> mass x ${DEBUG.engineMassMult} (got ${chainMass()}, exp ${4.0 * DEBUG.engineMassMult})`);
+assert(DEBUG.engineMassMult === ENGINE_MASS_MULT, "E: CS024 P6 — the live knob is seeded from ENGINE_MASS_MULT, so the shipped value is unchanged");
 // mixed masses too (low-mass Hunter scrap): 1.0 + 0.5 + 0.5 = 2.0 -> 1.0 under Engine
 resetFx(); game.chain.length = 0;
 game.chain.push(node(cx, cy, 1.0), node(cx, cy, 0.5), node(cx, cy, 0.5));
 assert(near(chainMass(), 2.0), "E: mixed-mass chain sums correctly with no Engine (2.0)");
-game.powerFx.engine = POWERUP_DURATION;
+armFx("engine");
 assert(near(chainMass(), 1.0), `E: mixed-mass chain halves under Engine (got ${chainMass()})`);
+// CS024 P6: the multiplier is FLAT while any fuel remains — it does NOT taper with the tank.
+for (const fuel of [powerBudgetAmount("engine"), 1, 0.05]) {
+  game.powerBudget.engine = fuel;
+  assert(near(chainMass(), 1.0), `E: the multiplier is FLAT at ${fuel}s of fuel — no taper (got ${chainMass()})`);
+}
+game.powerBudget.engine = 0;
+assert(near(chainMass(), 2.0), "E: ...and snaps back to full mass the moment the tank is empty");
 
 // =====================================================================
 // (F) Magnet pulls free garbage toward the ship over a few frames
@@ -209,7 +237,7 @@ resetShip({ x: cx, y: cy }); resetFx(); clearField(); quietTimers();
 const startX = cx + 45;
 const g = new Garbage(startX, cy, 0, 0);
 game.garbage.push(g);
-game.powerFx.magnet = POWERUP_DURATION;
+armFx("magnet");
 const dBefore = Math.sqrt(dist2(g, game.ship));
 for (let i = 0; i < 6; i++) update(DT);
 const dAfter = Math.sqrt(dist2(g, game.ship));

@@ -416,9 +416,11 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
   // entries (JUNK header restored around junkCount/junkSpeedLarge/junkSpeedMedium/junkSpeedSmall,
   // among others) plus smallUfoChance.
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
+  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 32, "A: DEBUG_VARS holds 32 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 32, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 33, "A: DEBUG_VARS holds 33 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 33, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");

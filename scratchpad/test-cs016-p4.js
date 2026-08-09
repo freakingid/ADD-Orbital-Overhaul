@@ -168,15 +168,15 @@ function build({ audio = true } = {}) {
 // live DEBUG_VARS values, so it is rebuilt here from the same knobs rather than pinned as a literal —
 // that keeps the "the lock replaces the per-row tip" assertion exact without pinning a number that the
 // debug panel is designed to change.
+// REPOINTED BY CS024 P6 (spec §3.7): the three expiry-mode help lines are DELETED with their rows —
+// including the interpolated chain-guard one, which read DEBUG.chainGuardTime, a knob that no longer
+// exists. Auto-shield's line is untouched and is the only one left.
 const helpText = A => [
-  "Time = today's 15-second timer.   Shots = expire by use, not the clock.",
-  "Time = today's 15-second timer.   Pieces = expire by use, not the clock.",
   "Auto-raises shield at critical hull. -500 points per blocked hit.",
-  `Tows can't be cut while it holds. Time = a ${A.DEBUG.chainGuardTime}-second timer.   ` +
-    `Intercepts = ${A.DEBUG.chainGuardIntercepts} blocked breaks.`,
 ];
-const DIFFICULTY_VALUE_ROWS = 4;   // CS017 P6: shot, magnet, autoshield, chainguard (Back excluded)
-const DIFFICULTY_PANEL_H = 476;    // CS017 P6: 418 + 58 for the fourth value row
+const DIFFICULTY_VALUE_ROWS = 1;   // CS024 P6: autoshield alone (Back excluded) — was 4
+const DIFFICULTY_PANEL_H = 302;    // CS024 P6: 476 - 3*58, three value rows removed
+const DIFFICULTY_HELP_DY = 248;    // CS024 P6: the help line's y offset inside the panel (was 422)
 
 // ================= (A, part 2) config shapes =====================
 (function sectionA_shapes() {
@@ -271,26 +271,26 @@ const DIFFICULTY_PANEL_H = 476;    // CS017 P6: 418 + 58 for the fourth value ro
 
 // ================= (D) locked Difficulty: left/right is a byte-identical no-op =====================
 (function sectionD() {
-  console.log("(D) game.state \"playing\": left/right on shot/magnet/autoshield changes nothing, persists nothing");
+  console.log("(D) game.state \"playing\": left/right on every value row changes nothing, persists nothing");
   const A = build();
   const g = A.game;
 
   // CS017 P6: "chainguard" joins the locked set — the lock keys on `row !== "back"`, so it inherited the
   // behaviour automatically, and this loop is what proves that rather than assuming it.
-  for (const row of ["shot", "magnet", "autoshield", "chainguard"]) {
+  // REPOINTED BY CS024 P6 (spec §3.7): "shot"/"magnet"/"chainguard" are DELETED with timed expiry, so
+  // "autoshield" is the only value row left. The loop is DERIVED from DIFFICULTY_ROWS rather than
+  // relisted, which is what keeps this claim about "every value row" instead of about a fixed list —
+  // and the mid-run lock's own rule (`row !== "back"`) is unchanged and still what is under test.
+  for (const row of A.DIFFICULTY_ROWS.filter(r => r !== "back")) {
     A.atDifficultyLocked();
     assert(g.state === "playing", `D: (precondition) [${row}] game.state is "playing"`);
     g.menu.index = A.DIFFICULTY_ROWS.indexOf(row);
-    const before = { shot: A.settings.shotPowerupMode, magnet: A.settings.magnetMode, auto: A.settings.autoShield,
-      guard: A.settings.chainGuardMode };
+    const before = { auto: A.settings.autoShield };
     const callsBefore = A.setItemCalls();
     A.menuInput("left");
     A.menuInput("right");
     A.menuInput("left");
-    assert(A.settings.shotPowerupMode === before.shot, `D: [${row}] shotPowerupMode byte-identical after left/right/left`);
-    assert(A.settings.magnetMode === before.magnet, `D: [${row}] magnetMode byte-identical`);
-    assert(A.settings.autoShield === before.auto, `D: [${row}] autoShield byte-identical`);
-    assert(A.settings.chainGuardMode === before.guard, `D: [${row}] chainGuardMode byte-identical`);
+    assert(A.settings.autoShield === before.auto, `D: [${row}] autoShield byte-identical after left/right/left`);
     assert(A.setItemCalls() === callsBefore, `D: [${row}] no saveSettings/localStorage write occurred while locked`);
     assert(g.menu.index === A.DIFFICULTY_ROWS.indexOf(row), `D: [${row}] left/right did not even move the cursor`);
   }
@@ -304,27 +304,22 @@ const DIFFICULTY_PANEL_H = 476;    // CS017 P6: 418 + 58 for the fourth value ro
     const g = A.game;
     A.atDifficultyUnlocked(from);
     assert(g.state === from, `E: [${from}] (precondition) game.state is "${from}"`);
-    g.menu.index = A.DIFFICULTY_ROWS.indexOf("shot");
-    A.settings.shotPowerupMode = "time";
-    A.menuInput("right");
-    assert(A.settings.shotPowerupMode === "shots", `E: [${from}] right on the shot row DID flip it to "shots"`);
-    assert(!!A.store[A.STORAGE_KEY], `E: [${from}] the toggle persisted a settings write`);
-    const persisted = JSON.parse(A.store[A.STORAGE_KEY]);
-    assert(persisted.shotPowerupMode === "shots", `E: [${from}] ...and the persisted value is the new one`);
-
+    // REPOINTED BY CS024 P6: the shot/magnet/chainguard rows are gone with timed expiry. Auto-shield —
+    // which was already here — carries the whole claim now, in BOTH directions and with the persisted
+    // blob re-read each time, so "unlocked really does write" stays as strong as it was with four rows.
     g.menu.index = A.DIFFICULTY_ROWS.indexOf("autoshield");
     A.settings.autoShield = false;
     A.menuInput("right");
     assert(A.settings.autoShield === true, `E: [${from}] right on the auto-shield row DID turn it on`);
-
-    // CS017 P6: the new row is live in exactly the same unlocked states.
-    g.menu.index = A.DIFFICULTY_ROWS.indexOf("chainguard");
-    A.settings.chainGuardMode = "time";
-    A.menuInput("right");
-    assert(A.settings.chainGuardMode === "count", `E: [${from}] right on the chain-guard row DID flip it to "count"`);
-    assert(JSON.parse(A.store[A.STORAGE_KEY]).chainGuardMode === "count", `E: [${from}] ...and it persisted`);
+    assert(!!A.store[A.STORAGE_KEY], `E: [${from}] the toggle persisted a settings write`);
+    assert(JSON.parse(A.store[A.STORAGE_KEY]).autoShield === true, `E: [${from}] ...and the persisted value is the new one`);
     A.menuInput("left");
-    assert(A.settings.chainGuardMode === "time", `E: [${from}] left on the chain-guard row DID flip it back to "time"`);
+    assert(A.settings.autoShield === false, `E: [${from}] left on the auto-shield row DID turn it back off`);
+    assert(JSON.parse(A.store[A.STORAGE_KEY]).autoShield === false, `E: [${from}] ...and that persisted too`);
+
+    // ...and the three deleted rows are genuinely gone from the row model, not merely unreachable.
+    for (const dead of ["shot", "magnet", "chainguard"])
+      assert(A.DIFFICULTY_ROWS.indexOf(dead) === -1, `E: [${from}] the "${dead}" row is DELETED from DIFFICULTY_ROWS (CS024 P6)`);
   }
 })();
 
@@ -376,7 +371,7 @@ const DIFFICULTY_PANEL_H = 476;    // CS017 P6: 418 + 58 for the fourth value ro
     const chevrons = log.filter(e => e.c === "fillText" && e.y === cy + 1 && (e.str === "◄" || e.str === "►"));
     assert(chevrons.length === 2, `G: [locked] row ${i} (focused) drew both ◄► chevrons`);
     assert(chevrons.every(e => e.color === A.COLOR.dim), `G: [locked] row ${i}'s chevrons draw COLOR.dim, not COLOR.text`);
-    const help = at(log, cx, y0 + 422)[0];
+    const help = at(log, cx, y0 + DIFFICULTY_HELP_DY)[0];
     assert(!!help && help.str === A.DIFFICULTY_LOCK_HELP,
       `G: [locked] row ${i}'s help line is DIFFICULTY_LOCK_HELP, not the per-row tip (got ${help && help.str})`);
     assert(!HELP_TEXT.includes(help && help.str), `G: [locked] the normal per-row HELP text is NOT shown`);
@@ -392,13 +387,13 @@ const DIFFICULTY_PANEL_H = 476;    // CS017 P6: 418 + 58 for the fourth value ro
     const cy = y0 + 122 + i * 58 + 6;
     const rowEntries = log.filter(e => e.c === "fillText" && e.y === cy);
     assert(rowEntries.length > 0, `G: [unlocked] row ${i} drew at least one fillText`);
-    // The FOCUSED row's label reads COLOR.text; the other two read COLOR.menuIdle — never COLOR.dim.
+    // The FOCUSED row's label reads COLOR.text; any other reads COLOR.menuIdle — never COLOR.dim.
     const labelEntry = rowEntries.find(e => e.align === "left" && e.x === (B.VIEW_W - 620) / 2 + 40);
     if (labelEntry) {
       const expect = i === B.game.menu.index ? B.COLOR.text : B.COLOR.menuIdle;
       assert(labelEntry.color === expect, `G: [unlocked] row ${i} label draws the normal focus color, not dim (got ${labelEntry.color})`);
     }
-    const help = at(log, cx, y0 + 422)[0];
+    const help = at(log, cx, y0 + DIFFICULTY_HELP_DY)[0];
     assert(!!help && help.str === HELP_TEXT_B[i], `G: [unlocked] row ${i}'s help line is the normal per-row tip (got ${help && help.str})`);
     assert((help && help.str) !== B.DIFFICULTY_LOCK_HELP, `G: [unlocked] the lock message is NOT shown`);
   }

@@ -434,8 +434,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // shape, not a restoration — so expect this number to move again next phase.
   // AND AGAIN BY CS024 P5: 15 -> 32 — the levers wired: 17 new lever-knob entries (JUNK/HUNTER/UFO
   // headers rebuilt around them) plus smallUfoChance, as predicted above.
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
+  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 32, "A: TRAP 3 — DEBUG_VARS holds exactly 32 value entries after CS024 P5 (15 + 17 wired lever knobs)");
+  eq(valueEntries, 33, "A: TRAP 3 — DEBUG_VARS holds exactly 33 value entries after CS024 P6");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

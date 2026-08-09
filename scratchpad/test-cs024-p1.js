@@ -327,7 +327,9 @@ function atWave(X, w) {
   // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
   // entries plus smallUfoChance. This phase's own trap (its twelve orbit/drift removals stayed removed)
   // is unaffected; only the live total moves, same as every other repoint above.
-  eq(X.DEBUG_ENTRIES.length, 32, "B: the debug registry holds 32 value entries after CS024 P5 wires the levers");
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
+  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
+  eq(X.DEBUG_ENTRIES.length, 33, "B: the debug registry holds 33 value entries after CS024 P6");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,

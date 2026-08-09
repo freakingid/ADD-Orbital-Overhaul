@@ -16,22 +16,27 @@
 //
 // Sections:
 //  (A) node --check on the extracted <script>, plus the wiring sanity: POWERUP_DROP_TYPES/_WEIGHTS,
-//      POWERUP_COLOR/LABEL, the three DEBUG_VARS knobs, the four seed literals, powerMode/powerDuration/
-//      powerBudgetAmount routing, and the ONE breakChain call-site count (grepped off the real source).
+//      POWERUP_COLOR/LABEL, the DEBUG_VARS knobs, the per-type seed literals, powerBudgetAmount
+//      routing, and the ONE breakChain call-site count (grepped off the real source).
+//
+// REPOINTED BY CS024 P6 (spec §1.7/§3.5): timed expiry is deleted, so the chain guard's FOUR knobs
+// become THREE (chainGuardTime goes), (C)'s count path becomes THE path, and (D)'s whole TIME-mode
+// section is INVERTED — it now proves the clock is gone rather than that it governs. (G)'s Difficulty
+// row is deleted with the setting behind it and inverts the same way. Everything else — the intercept
+// itself, the drop gate, scatterChain, the HUD row order, the voice — is untouched by this changeset.
 //  (B) THE INTERCEPT through the REAL update() collision passes: with the guard up, a real hostile
 //      Bullet on a mid-chain node and a real HunterSatellite on a mid-chain node both leave the chain
 //      byte-identical (same nodes, same order, same length), spawn no garbage and leave deliveryCount
 //      untouched. With the guard down, both still sever exactly as today.
 //  (C) COUNT mode: one budget spent per absorbed break, exactly N absorbed, the N+1th severs.
-//  (D) TIME mode: absorbs indefinitely while the clock runs, spends NO budget, and stops absorbing the
-//      moment the clock reaches 0 — driven through the real update() decay, not by hand.
+//  (D) INVERTED — there IS no time mode. Nothing decays on a clock: an idle guard survives a full
+//      simulated minute of update() untouched, and only an absorbed break ever spends it.
 //  (E) FORK-CS017-E: scatterChain() still scatters the FULL load with the guard active.
 //  (F) THE DROP GATE: below DEBUG.chainGuardMinTow, "guard" never rolls and the surviving distribution
 //      is BYTE-IDENTICAL to the pre-P6 build (same seeded RNG, same type sequence, 5000 rolls). At/above
 //      the threshold guard does roll, at about its renormalised weight.
-//  (G) the Difficulty row: toggles both ways, persists into afd_settings_v1 additively, round-trips,
-//      is LOCKED mid-run (CS016 P4), and falls back to the default on a missing/invalid stored value
-//      without locking the player out of the row afterwards.
+//  (G) INVERTED — the Difficulty row and settings.chainGuardMode are DELETED; a pre-edit save carrying
+//      the orphaned key loads cleanly and is ignored, with no schema bump and no migration shim.
 //  (H) the HUD: SIX fixed rows (Scoop + five timed), the new one topmost, and NO existing row moved —
 //      the pre-P6 build's row indices are re-read and compared, not assumed. Still zero ctx.fill().
 //  (I) [CS017 P7 REPOINT] collect_guard/expire_guard are PERMANENTLY absent (never fires, never will);
@@ -135,12 +140,12 @@ function makeRecordingCtx() {
 const RETURN = [
   "game", "settings", "startGame", "nextWave", "update", "draw", "drawHUD",
   "breakChain", "scatterChain", "chainAnchor", "drawChain", "drawLink",
-  "dropPowerup", "applyPowerup", "powerMode", "powerDuration", "powerActive", "powerBudgetAmount",
+  "dropPowerup", "applyPowerup", "powerActive", "powerBudgetAmount",
   "menuDifficulty", "menuInput", "gotoScreen", "openPause", "closePause", "rootItems",
   "saveSettings", "loadSettings", "drawDifficulty", "drawPowerupGlyph",
   "Bullet", "HunterSatellite", "DebrisSatellite", "Powerup", "Garbage",
   "POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "POWERUP_COLOR", "POWERUP_LABEL", "POWERUP_BUDGET",
-  "POWERUP_DURATION", "MAGNET_DURATION", "GUARD_ABSORB_SPARKS", "GUARD_CHAIN_WIDTH", "GUARD_CHAIN_BLUR",
+  "GUARD_ABSORB_SPARKS", "GUARD_CHAIN_WIDTH", "GUARD_CHAIN_BLUR",
   "DEBUG", "DEBUG_VARS", "debugShown", "applyDebug",
   "DIFFICULTY_ROWS", "DIFFICULTY_LOCK_HELP", "MENU_OPTIONS",
   "HUD_FX_BASE_Y", "HUD_FX_ROW_H", "HUD_FX_RING_R", "SCOOP_MAX_LEVEL", "COLOR",
@@ -184,9 +189,9 @@ const A = build();
 // game object while the section under test drives a different instance — the first draft of this file
 // did exactly that, and it fails as a confusing "cannot read properties of undefined".
 const {
-  game, settings, startGame, powerMode, powerDuration, powerActive, powerBudgetAmount,
+  game, settings, startGame, powerActive, powerBudgetAmount,
   POWERUP_DROP_TYPES, POWERUP_DROP_WEIGHTS, POWERUP_COLOR,
-  POWERUP_LABEL, POWERUP_BUDGET, POWERUP_DURATION, MAGNET_DURATION, GUARD_ABSORB_SPARKS,
+  POWERUP_LABEL, POWERUP_BUDGET, GUARD_ABSORB_SPARKS,
   DEBUG, DEBUG_VARS, DIFFICULTY_ROWS, HUD_FX_BASE_Y, HUD_FX_ROW_H, VOICE_LINES, AudioSys,
   SHIP_RADIUS,
 } = A;
@@ -261,8 +266,9 @@ const chainIdentical = (g, snap) =>
 
   // The three debug knobs, exactly as specified.
   const byId = id => DEBUG_VARS.find(v => v.id === id);
+  // REPOINTED BY CS024 P6 (spec §3.5): FOUR knobs -> THREE. chainGuardTime dies with timed expiry; its
+  // absence is asserted positively below so a silent restoration fails here.
   const specs = [
-    { id: "chainGuardTime", unit: "s", def: 30, min: 5, max: 120, step: 5 },
     { id: "chainGuardIntercepts", unit: "", def: 3, min: 1, max: 10, step: 1 },
     { id: "chainGuardMinTow", unit: "", def: 5, min: 0, max: 24, step: 1 },
   ];
@@ -275,6 +281,8 @@ const chainIdentical = (g, snap) =>
     assert(DEBUG[s.id] === s.def, `A: DEBUG.${s.id} seeded to its registry default (${s.def}, got ${DEBUG[s.id]})`);
     assert(typeof e.toNative !== "function", `A: ${s.id} needs no unit conversion (display unit === native unit)`);
   }
+  assert(!byId("chainGuardTime"), "A: INVERTED BY CS024 P6 — chainGuardTime is gone from the registry");
+  assert(!("chainGuardTime" in DEBUG), "A: ...and never reaches DEBUG either");
   // CS018 P2: header entries share the registry array now, so pin the first VALUE entry.
   assert(DEBUG_VARS.filter(v => !v.header)[0].id === "autoShieldRegenPause",
     "A: the registry is still append-only (P4's entry is the first VALUE entry)");
@@ -282,28 +290,21 @@ const chainIdentical = (g, snap) =>
   // All four per-type seed literals carry a guard key — in the game object AND after startGame().
   for (const phase of ["fresh", "after startGame()"]) {
     if (phase !== "fresh") startGame();
-    for (const bag of ["powerFx", "powerBank", "powerBankAmt", "powerVoiced"]) {
+    // CS024 P6: `powerFx` is deleted from this list along with the field itself.
+    for (const bag of ["powerBank", "powerBankAmt", "powerVoiced"]) {
       assert("guard" in game[bag], `A: [${phase}] game.${bag} has a guard key`);
     }
     assert("guard" in game.powerBudget, `A: [${phase}] game.powerBudget has a guard key`);
-    assert(game.powerFx.guard === 0 && game.powerBudget.guard === 0 && game.powerBank.guard === 0 &&
+    assert(game.powerBudget.guard === 0 && game.powerBank.guard === 0 &&
       game.powerBankAmt.guard === 0 && game.powerVoiced.guard === false,
       `A: [${phase}] every guard seed is the idle value`);
   }
-  // powerBudget deliberately has NO engine key (Engine is always timed) — that asymmetry is preserved.
-  assert(!("engine" in game.powerBudget), "A: powerBudget still has no engine key (Engine is always timed)");
+  // INVERTED BY CS024 P6: powerBudget's missing engine key was an asymmetry of "Engine is always timed".
+  // Engine is fuel now, so the asymmetry is gone — and its ABSENCE is the thing worth asserting, since
+  // a missing key would read as permanently spent (the exact bug the guard key was added to avoid).
+  assert("engine" in game.powerBudget, "A: INVERTED — powerBudget now HAS an engine key (Engine is budgeted fuel, CS024 P6)");
 
-  // Mode / duration / budget routing.
-  settings.chainGuardMode = "time";
-  assert(powerMode("guard") === "time", "A: powerMode(guard) follows settings.chainGuardMode (time)");
-  settings.chainGuardMode = "count";
-  assert(powerMode("guard") === "count", "A: powerMode(guard) follows settings.chainGuardMode (count)");
-  settings.chainGuardMode = "time";
-  assert(powerMode("engine") === "time", "A: engine is still hard-wired to time (the guard branch didn't capture it)");
-  assert(powerDuration("guard") === DEBUG.chainGuardTime,
-    `A: powerDuration(guard) === DEBUG.chainGuardTime (${DEBUG.chainGuardTime}, got ${powerDuration("guard")})`);
-  assert(powerDuration("magnet") === MAGNET_DURATION && powerDuration("rapid") === POWERUP_DURATION,
-    "A: powerDuration for the pre-existing types is unchanged");
+  // Budget routing.
   assert(powerBudgetAmount("guard") === DEBUG.chainGuardIntercepts,
     "A: powerBudgetAmount(guard) reads the LIVE debug knob, not POWERUP_BUDGET");
   assert(POWERUP_BUDGET.guard === undefined, "A: guard is deliberately absent from the frozen POWERUP_BUDGET table");
@@ -314,9 +315,6 @@ const chainIdentical = (g, snap) =>
   A.applyDebug("chainGuardIntercepts", 7);
   assert(powerBudgetAmount("guard") === 7, "A: retuning chainGuardIntercepts changes powerBudgetAmount immediately");
   A.applyDebug("chainGuardIntercepts", 3);
-  A.applyDebug("chainGuardTime", 45);
-  assert(powerDuration("guard") === 45, "A: retuning chainGuardTime changes powerDuration immediately");
-  A.applyDebug("chainGuardTime", 30);
 
   // breakChain really is the single choke point: exactly two CALL sites in the shipped source.
   const callSites = (scriptSrc.match(/(?<!function\s)\bbreakChain\(/g) || []).length
@@ -361,10 +359,9 @@ const chainIdentical = (g, snap) =>
     {
       const B = build();
       const g = quietRun(B);
-      B.settings.chainGuardMode = "time";
       const chain = layChain(B, 10);
       const K = 5;                                  // a MID-chain node: 4 nodes would fall loose aft of it
-      g.powerFx.guard = 30;
+      g.powerBudget.guard = 99;   // CS024 P6: budget-only. 99 >> the one intercept this staging spends.
       assert(B.powerActive("guard"), `B: [${site}] (precondition) the guard is active`);
       // Node K is ~120px behind the ship, well clear of the ship's own collision radius.
       assert(Math.hypot(g.chain[K].x - g.ship.x, g.chain[K].y - g.ship.y) > SHIP_RADIUS + 60,
@@ -424,9 +421,8 @@ const chainIdentical = (g, snap) =>
     const withGuard = build(), without = build();
     for (const [X, on] of [[withGuard, true], [without, false]]) {
       const g = quietRun(X);
-      X.settings.chainGuardMode = "time";
       layChain(X, 8);
-      if (on) g.powerFx.guard = 30;
+      if (on) g.powerBudget.guard = 99;
       const n = g.chain[4];
       g.bullets.push(new X.Bullet(n.x, n.y, 0, 0, true));
       X.update(1 / 60);
@@ -438,19 +434,17 @@ const chainIdentical = (g, snap) =>
 
 // ================= (C) COUNT mode =====================
 (function sectionC() {
-  console.log("(C) COUNT mode: one budget per absorbed break, exactly N absorbed, the N+1th severs");
+  console.log("(C) one budget per absorbed break, exactly N absorbed, the N+1th severs (THE rule since CS024 P6)");
   const N = 3;
   const C = build();
   const g = quietRun(C);
-  C.settings.chainGuardMode = "count";
   C.applyDebug("chainGuardIntercepts", N);
   layChain(C, 12);
 
   // Grant the budget the REAL way — through applyPowerup, not by poking state.
   C.applyPowerup("guard");
   assert(g.powerBudget.guard === N, `C: applyPowerup("guard") seeds powerBudget.guard from the knob (${N}, got ${g.powerBudget.guard})`);
-  assert(g.powerFx.guard === 0, "C: count mode grants NO seconds — powerFx.guard stays 0");
-  assert(C.powerActive("guard"), "C: a budget alone makes the guard active in count mode");
+  assert(C.powerActive("guard"), "C: a budget alone makes the guard active");
 
   for (let k = 1; k <= N; k++) {
     const snap = snapshotChain(g);
@@ -473,73 +467,71 @@ const chainIdentical = (g, snap) =>
   C.applyPowerup("guard");
   C.applyPowerup("guard");
   assert(g.powerBudget.guard === 2 * N, `C: a same-type re-pickup BANKS the budget (${2 * N}, got ${g.powerBudget.guard})`);
+  // CS024 P6: banking is now the rule for EVERY type, not a count-mode speciality — see test-cs009-p5.js.
   C.applyDebug("chainGuardIntercepts", 3);
 })();
 
-// ================= (D) TIME mode =====================
+// ============ (D) INVERTED BY CS024 P6 — there is no clock =============
 (function sectionD() {
-  console.log("(D) TIME mode: absorbs while the clock runs, spends no budget, stops the moment it expires");
+  console.log("(D) INVERTED: nothing decays on a clock — an idle guard survives a full minute of update()");
+  // P6's original section proved the guard ran on a TIMER: granted chainGuardTime seconds, absorbing
+  // indefinitely while the clock ran, spending no budget, and dying when the clock hit 0. CS024 P6
+  // deletes the timer, so every one of those claims is now backwards. Inverted rather than deleted —
+  // "the guard silently starts decaying again" is exactly the regression this section should catch.
   const D = build();
   const g = quietRun(D);
-  D.settings.chainGuardMode = "time";
-  D.applyDebug("chainGuardTime", 30);
   layChain(D, 12);
 
   D.applyPowerup("guard");
-  assert(near(g.powerFx.guard, DEBUG.chainGuardTime), `D: applyPowerup("guard") grants chainGuardTime seconds (got ${g.powerFx.guard})`);
-  assert(g.powerBudget.guard === 0, "D: time mode grants NO budget");
+  assert(g.powerBudget.guard === DEBUG.chainGuardIntercepts,
+    `D: applyPowerup("guard") grants INTERCEPTS, not seconds (got ${g.powerBudget.guard})`);
 
-  // A SENTINEL budget. Time mode leaves powerBudget.guard at 0 in real play, so asserting "still 0"
-  // would pass even if the intercept decremented unconditionally — Math.max(0, 0 - 1) is 0. Seeding a
-  // non-zero value is what makes the `powerMode("guard") === "count"` condition itself the thing under
-  // test: in TIME mode the timer alone governs and this number must come out completely untouched.
-  const SENTINEL = 99;
-  g.powerBudget.guard = SENTINEL;
+  // A FULL SIMULATED MINUTE of real update() with nothing happening. Under the old build the 30-second
+  // clock would have expired twice over; here the budget must come out bit-for-bit unchanged.
+  const before = g.powerBudget.guard;
+  for (let i = 0; i < 60 * 60; i++) D.update(1 / 60);
+  assert(g.powerBudget.guard === before,
+    `D: INVERTED — 60 s of update() spent NOTHING (expected ${before}, got ${g.powerBudget.guard})`);
+  assert(D.powerActive("guard"), "D: ...and the guard is still up after a minute of doing nothing");
 
-  // Far more breaks than any count budget would allow — every one absorbed, no budget touched.
-  const MANY = 25;
-  for (let k = 0; k < MANY; k++) {
-    const snap = snapshotChain(g);
-    D.breakChain(6);
-    assert(chainIdentical(g, snap), `D: break ${k + 1}/${MANY} absorbed on the clock alone`);
-    assert(g.powerBudget.guard === SENTINEL,
-      `D: break ${k + 1}/${MANY} decremented NO budget (time mode: the timer alone governs; expected ${SENTINEL}, got ${g.powerBudget.guard})`);
-  }
-  assert(g.chain.length === 12, "D: after 25 absorbed breaks the full 12-node load is still intact");
-  assert(g.powerBudget.guard === SENTINEL, "D: the sentinel budget is bit-for-bit unchanged after 25 time-mode absorptions");
-  g.powerBudget.guard = 0;   // back to the state real time-mode play would actually be in
-
-  // Run the clock down through the REAL update() decay, then confirm the next break severs.
-  let ticks = 0;
-  while (D.powerActive("guard") && ticks < 60 * 60) { D.update(1 / 60); ticks++; }
-  assert(!D.powerActive("guard"), "D: the guard expires on the real update() decay");
-  assert(near(g.powerFx.guard, 0), `D: powerFx.guard decayed to exactly 0 (got ${g.powerFx.guard})`);
-  assert(Math.abs(ticks / 60 - 30) < 0.2, `D: ...after about chainGuardTime seconds (got ${(ticks / 60).toFixed(2)}s)`);
-
+  // The ONLY thing that spends it is an absorbed break — and it spends exactly one per break, which is
+  // what the retired TIME mode explicitly did NOT do.
+  layChain(D, 12);
   const snap = snapshotChain(g);
   D.breakChain(6);
-  assert(g.chain.length === 6, `D: once expired the very next break SEVERS (got ${g.chain.length})`);
-  assert(g.garbage.length > snap.garbage, "D: ...and the aft nodes fell loose");
+  assert(chainIdentical(g, snap), "D: an absorbed break still leaves the chain byte-identical");
+  assert(g.powerBudget.guard === before - 1,
+    `D: INVERTED — an intercept ALWAYS spends one charge now, unconditionally (expected ${before - 1}, got ${g.powerBudget.guard})`);
+
+  // Drain it and confirm the next break severs for real.
+  g.powerBudget.guard = 1;
+  D.breakChain(6);
+  assert(g.powerBudget.guard === 0 && !D.powerActive("guard"), "D: the last charge is spent and the guard is down");
+  const snap2 = snapshotChain(g);
+  D.breakChain(6);
+  assert(g.chain.length === 6, `D: once spent the very next break SEVERS (got ${g.chain.length})`);
+  assert(g.garbage.length > snap2.garbage, "D: ...and the aft nodes fell loose");
 })();
 
 // ================= (E) FORK-CS017-E: death still scatters =====================
 (function sectionE() {
   console.log("(E) FORK-CS017-E — scatterChain() still scatters the FULL load with the guard active");
-  for (const mode of ["time", "count"]) {
+  // CS024 P6: the two-mode loop collapses to one path, run at two budget sizes so the "spends NOTHING"
+  // claim is still checked against more than a single number.
+  for (const mode of [5, 99]) {
     const E = build();
     const g = quietRun(E);
-    E.settings.chainGuardMode = mode;
     layChain(E, 9);
-    if (mode === "time") g.powerFx.guard = 30; else g.powerBudget.guard = 5;
-    assert(E.powerActive("guard"), `E: [${mode}] (precondition) the guard is active`);
-    const before = { garbage: g.garbage.length, budget: g.powerBudget.guard, fx: g.powerFx.guard };
+    g.powerBudget.guard = mode;
+    assert(E.powerActive("guard"), `E: [budget ${mode}] (precondition) the guard is active`);
+    const before = { garbage: g.garbage.length, budget: g.powerBudget.guard };
 
     E.scatterChain();
 
     assert(g.chain.length === 0, `E: [${mode}] scatterChain() emptied the chain despite the guard (got ${g.chain.length})`);
     assert(g.garbage.length === before.garbage + 9, `E: [${mode}] all 9 nodes became free garbage (got ${g.garbage.length - before.garbage})`);
     assert(g.deliveryCount === 0, `E: [${mode}] deliveryCount zeroed`);
-    assert(g.powerBudget.guard === before.budget && g.powerFx.guard === before.fx,
+    assert(g.powerBudget.guard === before.budget,
       `E: [${mode}] scatterChain spends NOTHING — it is not a guarded event at all`);
   }
   // The guard code is genuinely absent from scatterChain (not merely inert under these inputs).
@@ -620,115 +612,103 @@ const chainIdentical = (g, snap) =>
   A.applyDebug("chainGuardMinTow", 5);
 })();
 
-// ================= (G) the Difficulty row =====================
+// ============ (G) INVERTED BY CS024 P6 — the row and its setting are DELETED ============
 (function sectionG() {
-  console.log("(G) Difficulty row: toggles, persists, round-trips, locks mid-run, tolerates a bad stored value");
+  console.log("(G) INVERTED: the chain-guard Difficulty row is deleted; an orphaned save key loads cleanly");
+  // P6's original section proved the "Chain guard expires" row existed, toggled settings.chainGuardMode
+  // both ways, persisted it additively onto afd_settings_v1, round-tripped on a cold boot, tolerated a
+  // corrupt stored value and locked mid-run. CS024 P6 (spec §1.7/§3.7) deletes the row, the setting and
+  // the mode it selected. Inverted rather than deleted: a row silently reappearing, or an orphaned key
+  // silently being resurrected onto `settings`, is precisely what this section should now catch.
 
-  assert(DIFFICULTY_ROWS.includes("chainguard"), "G: DIFFICULTY_ROWS contains \"chainguard\"");
-  assert(DIFFICULTY_ROWS.indexOf("chainguard") === DIFFICULTY_ROWS.indexOf("back") - 1,
-    "G: the chain-guard row sits immediately before Back (appended, not inserted among the old rows)");
-  assert(JSON.stringify(DIFFICULTY_ROWS) === JSON.stringify(["shot", "magnet", "autoshield", "chainguard", "back"]),
-    `G: DIFFICULTY_ROWS order is unchanged apart from the append; got ${JSON.stringify(DIFFICULTY_ROWS)}`);
+  assert(!DIFFICULTY_ROWS.includes("chainguard"), "G: INVERTED — DIFFICULTY_ROWS no longer contains \"chainguard\"");
+  assert(JSON.stringify(DIFFICULTY_ROWS) === JSON.stringify(["autoshield", "back"]),
+    `G: INVERTED — DIFFICULTY_ROWS is exactly [autoshield, back]; got ${JSON.stringify(DIFFICULTY_ROWS)}`);
+  assert(!("chainGuardMode" in settings), "G: INVERTED — settings.chainGuardMode does not exist");
 
-  // ---- toggles + persistence (unlocked: gameover, per the CS016 P4 lock rule) ----
+  // ---- the save no longer WRITES the key, and every surviving field is still written alongside ----
   {
     const G = build();
     G.startGame();
     G.game.state = "gameover";
     G.game.menu.screen = "difficulty";
-    G.game.menu.index = G.DIFFICULTY_ROWS.indexOf("chainguard");
-
-    G.settings.chainGuardMode = "time";
-    G.menuDifficulty("right");
-    assert(G.settings.chainGuardMode === "count", "G: ► selects Intercepts (count)");
-    assert(JSON.parse(G.store[G.STORAGE_KEY]).chainGuardMode === "count", "G: ► persisted \"count\" into afd_settings_v1");
-    G.menuDifficulty("left");
-    assert(G.settings.chainGuardMode === "time", "G: ◄ selects Time");
-    assert(JSON.parse(G.store[G.STORAGE_KEY]).chainGuardMode === "time", "G: ◄ persisted \"time\"");
-
-    // Additive on the FROZEN key: every pre-existing field is still written alongside it.
+    G.game.menu.index = G.DIFFICULTY_ROWS.indexOf("autoshield");
+    G.menuDifficulty("right");                       // the one surviving row still persists
     const data = JSON.parse(G.store[G.STORAGE_KEY]);
+    assert(data.autoShield === true, "G: the surviving auto-shield row still toggles and persists");
     assert(G.STORAGE_KEY === "afd_settings_v1", "G: the key is still afd_settings_v1 — no rename, no schema bump");
-    for (const k of ["vol", "bindings", "shotPowerupMode", "magnetMode", "musicTrack", "shipTurnScale",
-      "voiceStyle", "captions", "autoShield", "debug"]) {
-      assert(k in data, `G: the save still carries the pre-P6 field "${k}" (purely additive)`);
+    for (const k of ["vol", "bindings", "musicTrack", "shipTurnScale", "voiceStyle", "captions", "autoShield", "debug"]) {
+      assert(k in data, `G: the save still carries the field "${k}"`);
     }
-    assert(!("version" in data) && !("schema" in data), "G: no version/schema field was introduced");
+    for (const gone of ["shotPowerupMode", "magnetMode", "chainGuardMode"]) {
+      assert(!(gone in data), `G: INVERTED — a fresh save no longer WRITES the retired "${gone}" key`);
+    }
+    assert(!("version" in data) && !("schema" in data), "G: still no version/schema field — no migration shim");
   }
 
-  // ---- round-trip through a fresh instance sharing the store ----
-  for (const mode of ["count", "time"]) {
-    const store = {};
-    const W = build({ store });
-    W.settings.chainGuardMode = mode;
-    W.saveSettings();
-    const R = build({ store });   // a cold boot: loadSettings() already ran at module scope
-    assert(R.settings.chainGuardMode === mode, `G: "${mode}" round-trips through afd_settings_v1 on a cold boot (got ${R.settings.chainGuardMode})`);
-    assert(R.powerMode("guard") === mode, `G: ...and powerMode(guard) reads the loaded value`);
+  // ---- A PRE-EDIT SAVE LOADS CLEANLY. The three orphaned keys are ignored under known-value-else-
+  // default; nothing throws, and every field this build still understands comes back untouched. ----
+  for (const orphanValue of ["time", "count", "banana", 42, null, {}]) {
+    const store = { "afd_settings_v1": JSON.stringify({
+      vol: { master: 0.7, sfx: 1, music: 1 }, bindings: {},
+      shotPowerupMode: "shots", magnetMode: "pieces", chainGuardMode: orphanValue,
+      musicTrack: "derelict", shipTurnScale: 1.2, voiceStyle: "flat", captions: false,
+      autoShield: true, debug: { chainGuardIntercepts: 6, chainGuardTime: 44 }
+    }) };
+    let R = null;
+    try { R = build({ store }); } catch (e) { /* falls through to the assertion below */ }
+    assert(!!R, `G: a pre-edit save carrying chainGuardMode=${JSON.stringify(orphanValue)} loads without throwing`);
+    if (!R) continue;
+    for (const gone of ["shotPowerupMode", "magnetMode", "chainGuardMode"])
+      assert(!(gone in R.settings), `G: ...and the orphaned "${gone}" key is never resurrected onto settings`);
+    assert(R.settings.autoShield === true && R.settings.musicTrack === "derelict" && R.settings.captions === false,
+      "G: ...while every field this build DOES understand loads normally");
+    assert(R.debugShown.chainGuardIntercepts === 6, "G: ...including a surviving debug knob");
+    assert(!("chainGuardTime" in R.debugShown) && !("chainGuardTime" in R.DEBUG),
+      "G: ...and the orphaned chainGuardTime debug key is ignored too");
   }
 
-  // ---- missing / invalid stored values fall back to the default, and DON'T lock the player out ----
-  for (const bad of [undefined, null, "", "banana", 42, true, "TIME", "Count", {}]) {
-    const store = {};
-    const seed = { vol: {}, bindings: {}, shotPowerupMode: "time", magnetMode: "time" };
-    if (bad !== undefined) seed.chainGuardMode = bad;
-    store["afd_settings_v1"] = JSON.stringify(seed);
-    const R = build({ store });
-    assert(R.settings.chainGuardMode === "time",
-      `G: stored ${JSON.stringify(bad)} falls back to the "time" default (got ${JSON.stringify(R.settings.chainGuardMode)})`);
-    // ...and the row still works afterwards — a bad save never strands the player in an unreachable mode.
-    R.startGame(); R.game.state = "gameover";
-    R.game.menu.screen = "difficulty";
-    R.game.menu.index = R.DIFFICULTY_ROWS.indexOf("chainguard");
-    R.menuDifficulty("right");
-    assert(R.settings.chainGuardMode === "count",
-      `G: ...and the row still toggles normally after a ${JSON.stringify(bad)} save (not locked out)`);
-  }
-
-  // ---- LOCKED mid-run (CS016 P4), inherited automatically via `row !== "back"` ----
+  // ---- the surviving row is still LOCKED mid-run (CS016 P4) — the rule outlived the rows it gated ----
   {
     const L = build();
     L.startGame();                       // game.state === "playing"
     L.game.menu.screen = "difficulty";
-    L.game.menu.index = L.DIFFICULTY_ROWS.indexOf("chainguard");
+    L.game.menu.index = L.DIFFICULTY_ROWS.indexOf("autoshield");
     assert(L.game.state === "playing", "G: (precondition) a run is live");
-    L.settings.chainGuardMode = "time";
+    L.settings.autoShield = false;
     const callsBefore = L.setItemCalls();
     L.menuDifficulty("right"); L.menuDifficulty("left"); L.menuDifficulty("right");
-    assert(L.settings.chainGuardMode === "time", "G: LOCKED mid-run — ◄/► on the chain-guard row change nothing");
+    assert(L.settings.autoShield === false, "G: LOCKED mid-run — ◄/► change nothing");
     assert(L.setItemCalls() === callsBefore, "G: LOCKED mid-run — and write nothing to storage");
-    assert(L.game.menu.index === L.DIFFICULTY_ROWS.indexOf("chainguard"), "G: LOCKED — the cursor didn't move either");
-    // up/down still navigate, and Back is still live while locked.
     L.menuDifficulty("down");
     assert(L.DIFFICULTY_ROWS[L.game.menu.index] === "back", "G: LOCKED — down still reaches Back");
     L.menuDifficulty("confirm");
     assert(L.game.menu.screen === "options", "G: LOCKED — Back still navigates out");
   }
 
-  // ---- the renderer draws the new row, and the whole screen still fits its panel ----
+  // ---- the renderer no longer draws the row, and the shrunken screen still fits its panel ----
   {
     const R = build();
     R.startGame(); R.game.state = "gameover";
     R.game.menu.screen = "difficulty";
-    for (const idx of [0, 1, 2, 3, 4]) {
+    for (let idx = 0; idx < R.DIFFICULTY_ROWS.length; idx++) {
       R.game.menu.index = idx;
       const log = R.render(R.drawDifficulty);
       const box = log.find(e => e.c === "strokeRect");
       assert(!!box, `G: [row ${idx}] the panel drew its box`);
       const texts = log.filter(e => e.c === "fillText");
       assert(texts.every(t => t.y > box.y && t.y < box.y + box.h),
-        `G: [row ${idx}] every line of text falls inside the panel (nothing clipped by the 4th row)`);
-      assert(texts.some(t => t.str === "Chain guard expires"), `G: [row ${idx}] the Chain guard row label renders`);
-      assert(texts.some(t => t.str === "Intercepts"), `G: [row ${idx}] ...with its "Intercepts" toggle side`);
+        `G: [row ${idx}] every line of text falls inside the SHRUNKEN panel (nothing clipped or orphaned below it)`);
+      assert(!texts.some(t => t.str === "Chain guard expires"), `G: [row ${idx}] INVERTED — the Chain guard row label is gone`);
+      assert(!texts.some(t => t.str === "Intercepts"), `G: [row ${idx}] ...and so is its "Intercepts" toggle side`);
+      assert(texts.some(t => t.str === "Auto-shield"), `G: [row ${idx}] the surviving Auto-shield row renders`);
       assert(texts.some(t => t.str.endsWith("Back")), `G: [row ${idx}] Back still renders`);
     }
-    // the focused chain-guard row shows its own help line, and it names the live knob values
-    R.game.menu.index = R.DIFFICULTY_ROWS.indexOf("chainguard");
+    // the interpolated help line went with the row — nothing anywhere reads the deleted knob.
+    R.game.menu.index = 0;
     const log = R.render(R.drawDifficulty);
-    const help = log.filter(e => e.c === "fillText").find(e => e.str.includes("Intercepts ="));
-    assert(!!help, "G: the chain-guard row has its own help line");
-    assert(help.str.includes(String(R.DEBUG.chainGuardTime)) && help.str.includes(String(R.DEBUG.chainGuardIntercepts)),
-      `G: ...and it reports the LIVE knob values (got "${help && help.str}")`);
+    assert(!log.filter(e => e.c === "fillText").some(e => e.str.includes("Intercepts =")),
+      "G: INVERTED — the interpolated chain-guard help line (which read DEBUG.chainGuardTime) is gone");
   }
 })();
 
@@ -769,8 +749,9 @@ const chainIdentical = (g, snap) =>
   const atRow = (log, y) => log.filter(e => e.c === "arc" && near(e.x, 40) && near(e.y, y));
   for (const activeSet of [[], ["guard"], ["rapid", "guard"], POWERUP_DROP_TYPES.slice()]) {
     const g = quietRun(H);
-    H.settings.chainGuardMode = "time";
-    for (const t of activeSet) g.powerFx[t] = 10;
+    // CS024 P6: powerFx is deleted; "make this row active" is a budget now, and the grant differs
+    // per type (two of the five are live knobs), so read it rather than writing a literal.
+    for (const t of activeSet) g.powerBudget[t] = H.powerBudgetAmount(t);
     g.scoopLevel = 2;
     const log = H.render(H.drawHUD);
 
@@ -788,21 +769,23 @@ const chainIdentical = (g, snap) =>
   // An ACTIVE guard row draws its value arc in the guard colour; an inactive one does not.
   {
     const g = quietRun(H);
-    H.settings.chainGuardMode = "time";
     const gi = POWERUP_DROP_TYPES.indexOf("guard");
     let log = H.render(H.drawHUD);
     assert(!atRow(log, rowY(gi)).some(e => e.color === POWERUP_COLOR.guard),
       "H: an INACTIVE guard row draws no value arc");
-    g.powerFx.guard = 15;
+    g.powerBudget.guard = H.powerBudgetAmount("guard");
     log = H.render(H.drawHUD);
     assert(atRow(log, rowY(gi)).some(e => e.color === POWERUP_COLOR.guard),
       "H: an ACTIVE guard row draws its value arc in POWERUP_COLOR.guard");
-    // count mode has no denominator, so no value arc — same rule as the other count-mode rows
-    g.powerFx.guard = 0; g.powerBudget.guard = 3;
-    H.settings.chainGuardMode = "count";
+    // INVERTED BY CS024 P6: the old rule was "a count row has no denominator, so it draws no value
+    // arc." Every row is a budget now and every one HAS a denominator — powerBudgetAmount(t) — so the
+    // arc is drawn, and at a fraction of a full grant it must be a genuine partial sweep, not a full ring.
+    g.powerBudget.guard = H.powerBudgetAmount("guard") / 2;
     log = H.render(H.drawHUD);
-    assert(!atRow(log, rowY(gi)).some(e => e.color === POWERUP_COLOR.guard && e.blur > 0),
-      "H: an active COUNT-mode guard row draws no value arc (no denominator), like every other count row");
+    const halfArc = atRow(log, rowY(gi)).find(e => e.color === POWERUP_COLOR.guard);
+    assert(!!halfArc, "H: INVERTED — a budgeted guard row DOES draw a value arc (it has a real denominator now)");
+    assert(near(Math.abs(halfArc.sweep), A.TAU / 2, 1e-6),
+      `H: ...reading half a grant as half a turn (got ${halfArc && halfArc.sweep})`);
   }
 
   // The glyph exists — an unhandled type would stroke an empty path and render an invisible row.
@@ -815,11 +798,10 @@ const chainIdentical = (g, snap) =>
   // The chain glow: guarded links/canisters stroke in the guard hue and glow harder — no new fill.
   {
     const g = quietRun(H);
-    H.settings.chainGuardMode = "time";
     layChain(H, 6);
-    g.powerFx.guard = 0;
+    g.powerBudget.guard = 0;
     const plain = H.render(H.drawChain);
-    g.powerFx.guard = 30;
+    g.powerBudget.guard = 3;
     const lit = H.render(H.drawChain);
     const guardStrokes = s => s.filter(e => e.c === "stroke" && e.color === POWERUP_COLOR.guard).length;
     assert(guardStrokes(plain) === 0, "H: an UNGUARDED chain strokes nothing in the guard hue");
@@ -871,14 +853,16 @@ const chainIdentical = (g, snap) =>
   S.VoiceSys.say = ev => { saidEvents.push(ev); return realSay(ev); };
 
   const g = quietRun(S);
-  S.settings.chainGuardMode = "time";
   layChain(S, 10);
 
-  // pick it up, absorb a pile of breaks, let it expire, pick it up again in count mode and exhaust it
+  // REPOINTED BY CS024 P6: the guard no longer expires on a clock, so "let it expire, then pick it up
+  // again" becomes "spend it out, then pick it up again." Absorbed breaks never sever, so the chain
+  // survives the whole loop — but the loop must stop at the budget rather than run a fixed count, or
+  // the first UNABSORBED break would truncate the chain and the next breakChain(6) would index past it.
   S.applyPowerup("guard");
-  for (let k = 0; k < 5; k++) S.breakChain(6);
-  for (let i = 0; i < 60 * 40; i++) S.update(1 / 60);        // run well past chainGuardTime
-  S.settings.chainGuardMode = "count";
+  while (S.powerActive("guard")) S.breakChain(6);
+  assert(S.game.chain.length === 10, "I: (precondition) every absorbed break left the 10-node chain intact");
+  for (let i = 0; i < 60 * 40; i++) S.update(1 / 60);        // 40 s of idling spends nothing now
   S.applyPowerup("guard");
   while (S.powerActive("guard")) S.breakChain(6);
   for (let i = 0; i < 120; i++) S.update(1 / 60);
@@ -892,7 +876,7 @@ const chainIdentical = (g, snap) =>
   // CONTROL — the spy really does observe calls, and the existing chain_broken line still fires on an
   // UNGUARDED break. Without this the assertion above would pass even if say() were never reachable.
   const before = saidEvents.length;
-  S.game.powerFx.guard = 0; S.game.powerBudget.guard = 0;
+  S.game.powerBudget.guard = 0;
   layChain(S, 8);
   S.breakChain(3);
   assert(saidEvents.length > before, "I: CONTROL — the spy observes real say() calls");
@@ -901,8 +885,7 @@ const chainIdentical = (g, snap) =>
 
   // ...and a GUARDED break fires exactly chain_guard, nothing else (P7 landed).
   const before2 = saidEvents.length;
-  S.settings.chainGuardMode = "time";
-  S.game.powerFx.guard = 30;
+  S.game.powerBudget.guard = 99;
   layChain(S, 8);
   S.breakChain(3);
   assert(JSON.stringify(saidEvents.slice(before2)) === JSON.stringify(["chain_guard"]),

@@ -94,7 +94,8 @@ function resetShip(over = {}) {
     dead: false, hp: 250, invuln: 0, shieldOn: false, energy: 1,
     angle: 0, x: cx, y: cy, vx: 0, vy: 0, cooldown: 0
   }, over);
-  game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
+  // REPOINTED BY CS024 P6: game.powerFx is deleted; Engine now lives in powerBudget as SECONDS OF FUEL.
+  game.powerBudget = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
   game.state = "playing"; game.paused = false;
 }
 function fillChain(n, mass = 1.0, over = {}) {
@@ -225,7 +226,9 @@ const drag = Math.pow(1 - SHIP_DRAG, DT);
 // thrustMul measured: from rest, one thrust frame, angle 0 => vx = SHIP_THRUST*thrustMul*dt*drag
 function measureThrustMul(nodes, mass = 1.0, engine = false) {
   clearField(); resetShip();
-  game.powerFx.engine = engine ? 1 : 0;
+  // CS024 P6: 1 second of fuel is far more than the single DT frame measured below burns, and
+  // chainMass() is read BEFORE the burn, so the measured frame gets the full flat multiplier.
+  game.powerBudget.engine = engine ? 1 : 0;
   fillChain(nodes, mass);
   keys["w"] = true;                 // hold thrust
   game.ship.vx = 0; game.ship.vy = 0;
@@ -237,7 +240,9 @@ function measureThrustMul(nodes, mass = 1.0, engine = false) {
 // vx = maxSp*drag => maxSp = vx/drag ; ratio = maxSp / SHIP_MAX_SPEED
 function measureMaxSpRatio(nodes, mass = 1.0, engine = false) {
   clearField(); resetShip();
-  game.powerFx.engine = engine ? 1 : 0;
+  // CS024 P6: 1 second of fuel is far more than the single DT frame measured below burns, and
+  // chainMass() is read BEFORE the burn, so the measured frame gets the full flat multiplier.
+  game.powerBudget.engine = engine ? 1 : 0;
   fillChain(nodes, mass);
   keys["w"] = true;
   game.ship.vx = 99999; game.ship.vy = 0;

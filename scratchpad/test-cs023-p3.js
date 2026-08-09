@@ -605,18 +605,47 @@ function saucerAt(X, x, y, small) {
   // REPOINTED AGAIN BY CS024 P4: 36 -> 15 — the 21 tier knobs removed with levelDef()'s tier names.
   // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
   // entries plus smallUfoChance.
-  eq(X.DEBUG_ENTRIES.length, 32, "A: TRAP 4 — the debug registry is exactly 32 value entries after CS024 P5");
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
+  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
+  eq(X.DEBUG_ENTRIES.length, 33, "A: TRAP 4 — the debug registry is exactly 33 value entries after CS024 P6");
   assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
     "A: TRAP 4 — ...and P3 still contributed none of them");
   {
     // RAW source both sides (not codeOnly) — these must be byte-unchanged including their comments.
     const bodyOf = (src, sig) => { const i = src.indexOf(sig); return src.slice(i, src.indexOf("\n}\n", i)); };
     const hSrc = headSrc();
-    for (const sig of ["function shieldDeflect(obj) {", "function shieldBounce(obj) {", "function breakChain(",
+    // NARROWED BY CS024 P6, AND THE NARROWING IS THE POINT — flagged rather than quietly widened.
+    // breakChain LEAVES the byte-strict list because CS024 P6 genuinely edits it (spec §1.7: the
+    // guard's per-intercept charge stops being gated on the retired COUNT mode and becomes
+    // unconditional). Dropping it to a comment-insensitive or "some diff is fine" comparison would
+    // be a real loosening, so instead it moves to the strongest available form directly below: the
+    // pre-P6 body with EXACTLY the documented substitution applied must equal the current body —
+    // i.e. that one edit is the ONLY diff. The other three stay byte-strict, unchanged.
+    for (const sig of ["function shieldDeflect(obj) {", "function shieldBounce(obj) {",
                         "function scatterChain() {"]) {
       const b0 = bodyOf(hSrc, sig), b1 = bodyOf(scriptSrc, sig);
       assert(b0.length > 0 && b1.length > 0, `A: TRAP 2/3 — ${sig} found in both HEAD and current source`);
       eq(b1, b0, `A: TRAP 2/3 — ${sig.split("(")[0]} is BYTE-UNCHANGED`);
+    }
+    {
+      // Pinned to a FIXED SHA, not the moving HEAD — the test-cs017-p3 / test-cs024-p1 precedent for
+      // exactly this trap. c96a983 is CS024 P5, the commit immediately before P6 landed; against a
+      // moving HEAD this claim would evaporate into "the current file equals itself" the moment P6
+      // was committed.
+      const PRE_P6 = "c96a983";
+      const preSrc = execFileSync("git", ["show", PRE_P6 + ":asteroids-deluxe.html"], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 })
+        .toString().match(/<script>([\s\S]*?)<\/script>/)[1];
+      const before = bodyOf(preSrc, "function breakChain("), after = bodyOf(scriptSrc, "function breakChain(");
+      assert(before.length > 0 && after.length > 0, "A: TRAP 2/3 — breakChain found in both the pinned pre-P6 build and current source");
+      const OLD_GATE = '    // TIME mode: the clock alone governs — nothing is spent per intercept. COUNT mode: one charge each.\n' +
+        '    if (powerMode("guard") === "count") game.powerBudget.guard = Math.max(0, game.powerBudget.guard - 1);';
+      const NEW_SPEND = '    // CS024 P6: one charge per intercept, unconditionally — the retired TIME mode was the only reason\n' +
+        '    // this was ever gated (there, the clock alone governed and nothing was spent). Clamped at 0.\n' +
+        '    game.powerBudget.guard = Math.max(0, game.powerBudget.guard - 1);';
+      assert(before.includes(OLD_GATE), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did carry the powerMode gate (so this is not a vacuous pass)");
+      assert(!after.includes(OLD_GATE) && after.includes(NEW_SPEND), "A: TRAP 2/3 — ...and the current one carries the unconditional spend instead");
+      eq(after, before.replace(OLD_GATE, NEW_SPEND),
+        "A: TRAP 2/3 — CS024 P6's guard-spend edit is the ONLY diff in breakChain; everything else is byte-unchanged");
     }
     assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");

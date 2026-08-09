@@ -354,22 +354,27 @@ assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Soun
 // G) Persistence — afd_settings_v1 round-trips EVERY pre-existing field + the new musicTrack.
 // =====================================================================
 AudioSys.vol.master = 0.3; AudioSys.vol.sfx = 0.7; AudioSys.vol.music = 0.4;
-settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces"; settings.musicTrack = "warehouse";
+// REPOINTED BY CS024 P6: the three expiry-mode settings fields are deleted (spec §1.7/§3.7), so the
+// "every pre-existing field round-trips" regression now rides on autoShield + captions instead — both
+// additive booleans on the same frozen key, which is exactly the property this section guards.
+settings.autoShield = true; settings.captions = false; settings.musicTrack = "warehouse";
 bindings.fire.keys = ["z"]; // a pre-existing rebind field
 saveSettings();
 assert("afd_settings_v1" in lsStore, "G: saved under the FROZEN key afd_settings_v1");
 assert(STORAGE_KEY === "afd_settings_v1", "G: STORAGE_KEY constant is afd_settings_v1");
 const stored = JSON.parse(lsStore["afd_settings_v1"]);
 assert(stored.musicTrack === "warehouse", "G: musicTrack serialized");
-assert(stored.shotPowerupMode === "shots" && stored.magnetMode === "pieces", "G: v3.0 P5 fields serialized (regression)");
+assert(stored.autoShield === true && stored.captions === false, "G: the other additive fields serialized (regression)");
+for (const gone of ["shotPowerupMode", "magnetMode", "chainGuardMode"])
+  assert(!(gone in stored), `G: REPOINTED BY CS024 P6 — the retired "${gone}" key is no longer written`);
 
 // Corrupt in-memory, then load: every field must come back.
 AudioSys.vol.master = 1; AudioSys.vol.sfx = 1; AudioSys.vol.music = 1;
-settings.shotPowerupMode = "time"; settings.magnetMode = "time"; settings.musicTrack = "zen";
+settings.autoShield = false; settings.captions = true; settings.musicTrack = "zen";
 bindings.fire.keys = ["x"];
 loadSettings();
 assert(near(AudioSys.vol.master, 0.3) && near(AudioSys.vol.sfx, 0.7) && near(AudioSys.vol.music, 0.4), "G: volumes round-trip");
-assert(settings.shotPowerupMode === "shots" && settings.magnetMode === "pieces", "G: difficulty modes round-trip (regression)");
+assert(settings.autoShield === true && settings.captions === false, "G: the other additive fields round-trip (regression)");
 assert(settings.musicTrack === "warehouse", "G: musicTrack round-trips");
 assert(bindings.fire.keys[0] === "z", "G: rebindings round-trip (regression)");
 
@@ -390,7 +395,9 @@ assert(settings.musicTrack === "zen", "G: missing musicTrack -> keeps the defaul
 // afd_settings_v1 stays frozen — no key rename, no crash. Exercised through a real construction so
 // the startup loadSettings() (which only accepts a value in MUSIC_TRACK_VALUES) runs against it.
 for (const removed of ["retro", "tense", "ambient"]) {
-  const store = { "afd_settings_v1": JSON.stringify({ shotPowerupMode: "shots", magnetMode: "pieces", musicTrack: removed }) };
+  // CS024 P6: the seed keeps the three ORPHANED mode keys deliberately — a real old save carries them,
+  // and this block's whole point is that an old save loads cleanly rather than being rejected wholesale.
+  const store = { "afd_settings_v1": JSON.stringify({ shotPowerupMode: "shots", magnetMode: "pieces", chainGuardMode: "count", autoShield: true, musicTrack: removed }) };
   const ls = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
   const savedLS = global.localStorage; global.localStorage = ls;
   let freshA;
@@ -399,8 +406,10 @@ for (const removed of ["retro", "tense", "ambient"]) {
   global.localStorage = savedLS;
   assert(freshA.settings.musicTrack === "zen", `G(e): removed track "${removed}" falls back to the default "zen"`);
   // The rest of the (still-valid) save is honored — proving it was a track-value rejection, not a whole-save reject.
-  assert(freshA.settings.shotPowerupMode === "shots" && freshA.settings.magnetMode === "pieces",
+  assert(freshA.settings.autoShield === true,
     `G(e): the still-valid fields of the "${removed}" save loaded normally`);
+  for (const gone of ["shotPowerupMode", "magnetMode", "chainGuardMode"])
+    assert(!(gone in freshA.settings), `G(e): ...while the orphaned "${gone}" key is ignored, not resurrected`);
 }
 
 // =====================================================================
@@ -596,12 +605,13 @@ assert(near(AudioSys.vol.sfx, 0.6), "O: a non-repeat keydown on a volume slider 
 // CS016 P4 (§5): Difficulty value rows lock while game.state === "playing" (set above, section L, and
 // still live here) — this repeat-guard check is orthogonal to that lock, so drive it unlocked.
 game.state = "gameover";
-game.menu.screen = "difficulty"; game.menu.index = 0; // "shot" row
-settings.shotPowerupMode = "time";
+// CS024 P6: row 0 is now "autoshield" — the only value row left on the screen.
+game.menu.screen = "difficulty"; game.menu.index = 0; // "autoshield" row
+settings.autoShield = false;
 keydown("d", true);
-assert(settings.shotPowerupMode === "time", "O: a REPEAT keydown on a Difficulty toggle does not flip it");
+assert(settings.autoShield === false, "O: a REPEAT keydown on a Difficulty toggle does not flip it");
 keydown("d", false);
-assert(settings.shotPowerupMode === "shots", "O: a non-repeat keydown on a Difficulty toggle flips it exactly once");
+assert(settings.autoShield === true, "O: a non-repeat keydown on a Difficulty toggle flips it exactly once");
 
 // The guard must not leak into normal (non-menu) play: a repeat keydown there still records into
 // keys{}, same as any other keydown — gameplay legitimately wants held-key behavior.

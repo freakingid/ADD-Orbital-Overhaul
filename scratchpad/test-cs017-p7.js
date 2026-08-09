@@ -85,7 +85,7 @@ function makeLocalStorage() {
 
 const RETURN = [
   "game", "settings", "startGame", "update", "GAME_VERSION",
-  "breakChain", "scatterChain", "Bullet", "DebrisSatellite", "CHAIN_LINK", "WORLD_W", "WORLD_H",
+  "breakChain", "scatterChain", "powerActive", "Bullet", "DebrisSatellite", "CHAIN_LINK", "WORLD_W", "WORLD_H",
   "VoiceSys", "AudioSys", "VOICE_LINES", "VOICE_PRIORITY", "voiceEnabled",
   "parsePhonTokens", "buildUtterance", "VOICE_PARAMS",
 ];
@@ -193,10 +193,10 @@ const APPROVED = [
     S.VoiceSys.say = ev => { saidEvents.push(ev); return realSay(ev); };
 
     const g = quietRun(S);
-    S.settings.chainGuardMode = "time";
     layChain(S, 10);
-    g.powerFx.guard = 30;
-    assert(S.game.powerFx.guard > 0, "E: (precondition) the guard is up");
+    // CS024 P6: budget-only. 99 is far more than the one intercept this staging spends.
+    g.powerBudget.guard = 99;
+    assert(S.powerActive("guard"), "E: (precondition) the guard is up");
 
     const K = 5;
     const n = g.chain[K];
@@ -218,9 +218,8 @@ const APPROVED = [
     S.VoiceSys.say = ev => { saidEvents.push(ev); return realSay(ev); };
 
     const g = quietRun(S);
-    S.settings.chainGuardMode = "time";
     layChain(S, 10);
-    g.powerFx.guard = 30;
+    g.powerBudget.guard = 99;
     S.breakChain(2);  // absorbed: would have cut 7 nodes loose in one call
     S.breakChain(2);  // a second absorb on the same node — a SEPARATE event, so a second line is fine
 
@@ -238,7 +237,7 @@ const APPROVED = [
 
     const g = quietRun(S);
     layChain(S, 10);
-    assert(!(g.powerFx.guard > 0), "E: (precondition) the guard is NOT active");
+    assert(!S.powerActive("guard"), "E: (precondition) the guard is NOT active");
 
     const K = 5;
     const n = g.chain[K];
@@ -262,7 +261,7 @@ const APPROVED = [
 
   const g = quietRun(S);
   layChain(S, 8);
-  g.powerFx.guard = 30;
+  g.powerBudget.guard = 99;
   S.scatterChain();
   assert(g.chain.length === 0, "F: scatterChain() still scatters the full load with the guard active");
   assert(saidEvents.length === 0, `F: scatterChain() fired NO voice line at all (got ${JSON.stringify(saidEvents)})`);

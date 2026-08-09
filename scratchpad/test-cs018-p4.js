@@ -666,10 +666,15 @@ function levelForCap(n) {
   // hunterSpeedMedium/Small (3 — replacing the retired garbageAttractDelay knob outright, not renaming
   // it: coalescePause lives under HUNTER, not GARBAGE), and UFO gains all ten of its levers, split per
   // size. Section headers are pinned by exact order too, since a header can silently gain/lose members
-  // without moving the total. No POWERUPS header yet (CS024 P6).
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 32, "H: DEBUG_VARS holds 32 value entries as of CS024 P5");
+  // without moving the total.
+  //
+  // REPOINTED BY CS024 P6 (spec §1.7/§3.4/§3.5/§5): 32 -> 33, and the POWERUPS header P5 deliberately
+  // left unwritten is created here — an empty header renders as a stray label, so it waits for its
+  // first knob. Net +1 from -1 (chainGuardTime, deleted with timed expiry) +2 (engineBurnSeconds,
+  // engineMassMult). CHAIN GUARD survives as a header on 3 knobs rather than 4.
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 33, "H: DEBUG_VARS holds 33 value entries as of CS024 P6");
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
-  const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "GLOBAL"];
+  const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),
     `H: section headers are exactly ${WANT_HEADERS.join("/")}, in order (got ${headerOrder.join("/")})`);
 

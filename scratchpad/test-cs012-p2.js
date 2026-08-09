@@ -126,8 +126,8 @@ global.localStorage = {
 
 const returnList = [
   "startGame", "update", "drawHUD", "drawRingSegments", "game", "settings", "AudioSys",
-  "clamp01", "TAU", "COLOR", "POWERUP_COLOR", "POWERUP_DROP_TYPES", "POWERUP_DURATION", "MAGNET_DURATION",
-  "HUD_FX_BASE_Y", "HUD_FX_ROW_H", "HUD_FX_RING_R", "HUD_FX_LOW", "HUD_RING_TRACK_W", "HUD_RING_BLUR",
+  "clamp01", "TAU", "COLOR", "POWERUP_COLOR", "POWERUP_DROP_TYPES", "POWERUP_BUDGET", "powerBudgetAmount",
+  "HUD_FX_BASE_Y", "HUD_FX_ROW_H", "HUD_FX_RING_R", "HUD_RING_TRACK_W", "HUD_RING_BLUR",
   "SCOOP_MAX_LEVEL"
 ];
 const factory = new Function(
@@ -137,8 +137,8 @@ const factory = new Function(
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, global.localStorage);
 const {
   startGame, update, drawHUD, drawRingSegments, game, settings, AudioSys,
-  clamp01, TAU, COLOR, POWERUP_COLOR, POWERUP_DROP_TYPES, POWERUP_DURATION, MAGNET_DURATION,
-  HUD_FX_BASE_Y, HUD_FX_ROW_H, HUD_FX_RING_R, HUD_FX_LOW, HUD_RING_TRACK_W, HUD_RING_BLUR,
+  clamp01, TAU, COLOR, POWERUP_COLOR, POWERUP_DROP_TYPES, POWERUP_BUDGET, powerBudgetAmount,
+  HUD_FX_BASE_Y, HUD_FX_ROW_H, HUD_FX_RING_R, HUD_RING_TRACK_W, HUD_RING_BLUR,
   SCOOP_MAX_LEVEL
 } = A;
 
@@ -183,17 +183,20 @@ function reduceLog(log) {
 function fresh() {
   startGame();
   game.state = "playing"; game.paused = false;
-  settings.shotPowerupMode = "time";
-  settings.magnetMode = "time";
   game.powerups = [];
-  game.powerFx = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
-  game.powerBudget = { rapid: 0, triple: 0, magnet: 0 };
-  game.powerBank = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
-  game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
+  // REPOINTED BY CS024 P6: game.powerFx is deleted; every row is a budget row now, and `engine`/`guard`
+  // are budget keys like the rest. `fx(t, v)` below is the one place this file expresses "make row t
+  // read as v of its own budget", so the repoint is a single seam rather than 20 scattered edits.
+  game.powerBudget = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
+  game.powerBank = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
+  game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
   game.scoopLevel = 0;
 }
 
 const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && near(a.r, r));
+// CS024 P6: "activate row t at a fraction f of its own grant". Never a bare literal — the five grants
+// differ, and two of them are live debug knobs.
+const fx = (t, f = 0.25) => { game.powerBudget[t] = powerBudgetAmount(t) * f; };
 const rowY = i => HUD_FX_BASE_Y - (i + 1) * HUD_FX_ROW_H;  // i = index into POWERUP_DROP_TYPES
 
 // ================= (B) drawRingSegments in isolation =================
@@ -240,7 +243,7 @@ const rowY = i => HUD_FX_BASE_Y - (i + 1) * HUD_FX_ROW_H;  // i = index into POW
   ];
   for (const activeSet of combos) {
     fresh();
-    for (const t of activeSet) game.powerFx[t] = 10;
+    for (const t of activeSet) fx(t);
     game.scoopLevel = 2;
     const { arcs } = captureHUD();
     // scoop row's segmented ring always present at HUD_FX_BASE_Y
@@ -254,11 +257,11 @@ const rowY = i => HUD_FX_BASE_Y - (i + 1) * HUD_FX_ROW_H;  // i = index into POW
   }
   // expiring one type never moves another's row
   fresh();
-  game.powerFx.rapid = 10; game.powerFx.engine = 10;
+  fx("rapid"); fx("engine");
   const { arcs: before } = captureHUD();
   const engineBefore = atRow(before, rowY(3), HUD_FX_RING_R).find(a => a.color === POWERUP_COLOR.engine);
   assert(!!engineBefore, "C: engine's value arc present at its fixed row while rapid is also active");
-  game.powerFx.rapid = 0;   // rapid expires
+  game.powerBudget.rapid = 0;   // rapid expires
   const { arcs: after } = captureHUD();
   const engineAfter = atRow(after, rowY(3), HUD_FX_RING_R).find(a => a.color === POWERUP_COLOR.engine);
   assert(!!engineAfter, "C: engine's row did NOT move after rapid expired (still at its own fixed y)");
@@ -282,25 +285,25 @@ const rowY = i => HUD_FX_BASE_Y - (i + 1) * HUD_FX_ROW_H;  // i = index into POW
   // number text can't be read off the recording ctx directly (fillText args aren't asserted against
   // the real font metrics here), so assert the underlying VALUES the num expression reads are the
   // idle 0s drawHUD would format to "0s"/"0" — the expression itself is untouched game code.
-  assert(game.powerFx.rapid === 0 && game.powerBudget.rapid === 0,
-    "D: idle rapid state is powerFx=0/powerBudget=0 -> num expression yields \"0s\" (time mode)");
+  assert(game.powerBudget.rapid === 0,
+    "D: REPOINTED — idle rapid state is powerBudget=0 -> the num expression yields \"0\" (no \"s\" suffix survives)");
 
   // an ACTIVE row still logs its value arc
   fresh();
-  game.powerFx.triple = 8;
+  fx("triple");
   const { arcs: arcs2 } = captureHUD();
   const tripleIdx = POWERUP_DROP_TYPES.indexOf("triple");
   const value = atRow(arcs2, rowY(tripleIdx), HUD_FX_RING_R).find(a => a.color === POWERUP_COLOR.triple && a.glow);
   assert(!!value, "D: an ACTIVE row still logs its value arc");
 
-  // count-mode idle -> "0" (no "s"); verified via the same live-state approach
+  // an idle row reads "0"; verified via the same live-state approach. REPOINTED BY CS024 P6: there is
+  // no mode to select any more, so this is now simply "a second idle row", checked for the same shape.
   fresh();
-  settings.magnetMode = "pieces";
   const magnetIdx = POWERUP_DROP_TYPES.indexOf("magnet");
   const { arcs: arcs3 } = captureHUD();
   const magnetValue = atRow(arcs3, rowY(magnetIdx), HUD_FX_RING_R).find(a => a.color === POWERUP_COLOR.magnet && a.glow);
-  assert(!magnetValue, "D: inactive count-mode magnet also logs no value arc");
-  assert(game.powerBudget.magnet === 0, "D: idle count-mode magnet budget is 0 -> num expression yields \"0\"");
+  assert(!magnetValue, "D: inactive magnet also logs no value arc");
+  assert(game.powerBudget.magnet === 0, "D: idle magnet budget is 0 -> num expression yields \"0\"");
 })();
 
 // ================= (E) Scoop segmented ring: level 0 and level 3; zero ctx.fill() =================
@@ -325,7 +328,7 @@ const rowY = i => HUD_FX_BASE_Y - (i + 1) * HUD_FX_ROW_H;  // i = index into POW
   // also exercise a fully-active HUD (every timed row + bank pop + scoop) — still zero ctx.fill()
   fresh();
   game.scoopLevel = 5;
-  POWERUP_DROP_TYPES.forEach(t => { game.powerFx[t] = 10; game.powerBank[t] = 0.4; game.powerBankAmt[t] = 5; });
+  POWERUP_DROP_TYPES.forEach(t => { fx(t, 0.5); game.powerBank[t] = 0.4; game.powerBankAmt[t] = 5; });
   const { fillCount: fillCountBusy } = captureHUD();
   assert(fillCountBusy === 0, `E: zero ctx.fill() calls even with every row active + banked (got ${fillCountBusy})`);
 })();

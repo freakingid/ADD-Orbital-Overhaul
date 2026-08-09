@@ -116,7 +116,7 @@ function makeCtxStub() {
 // Every symbol here exists in BOTH builds, so the same list drives the pre-fix module too.
 const RETURN = [
   "game", "settings", "startGame", "update", "draw", "breakChain", "scatterChain",
-  "applyPowerup", "dropPowerup", "powerMode", "powerDuration", "powerActive", "powerBudgetAmount",
+  "applyPowerup", "dropPowerup", "powerActive", "powerBudgetAmount",
   "Bullet", "DebrisSatellite", "HunterSatellite", "Garbage", "FloatText",
   "DEBUG", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "DebugPanel", "debugShown", "applyDebug",
   "menuDebug", "enterDebug", "debugSelectedVar", "debugEntryKey", "debugEntryCommit", "debugEntryActive",
@@ -239,7 +239,7 @@ function run(X, frames, counter) {
   for (let f = 1; f <= frames; f++) {
     X.update(1 / 60);
     if (counter) counter.sample();
-    log.push({ f, budget: g.powerBudget.guard, fx: g.powerFx.guard, chain: g.chain.length,
+    log.push({ f, budget: g.powerBudget.guard, chain: g.chain.length,   // CS024 P6: the timed field is deleted
       garbage: g.garbage.length, deliveries: g.deliveryCount,
       guarded: counter ? counter.guarded : 0, pings: counter ? counter.pings : 0 });
   }
@@ -319,10 +319,13 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // Appended INSIDE the CHAIN GUARD group, immediately after chainGuardMinTow.
   const ids = DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
   const iHeader = ids.indexOf("#CHAIN GUARD");
-  assert(iHeader > -1 && ids[iHeader + 1] === "chainGuardTime" && ids[iHeader + 2] === "chainGuardIntercepts" &&
-    ids[iHeader + 3] === "chainGuardMinTow" && ids[iHeader + 4] === "chainGuardCooldown",
-    `A: the CHAIN GUARD group is [time, intercepts, minTow, cooldown] in that order (got ${JSON.stringify(ids.slice(iHeader, iHeader + 5))})`);
-  assert(typeof ids[iHeader + 5] === "undefined" || String(ids[iHeader + 5]).startsWith("#"),
+  // REPOINTED BY CS024 P6 (spec §3.5): FOUR knobs -> THREE. chainGuardTime is deleted with timed
+  // expiry, so the group loses its FIRST member; cooldown is still last, and this phase's own claim
+  // (that cooldown was APPENDED rather than inserted) is unaffected and still checked below.
+  assert(iHeader > -1 && ids[iHeader + 1] === "chainGuardIntercepts" &&
+    ids[iHeader + 2] === "chainGuardMinTow" && ids[iHeader + 3] === "chainGuardCooldown",
+    `A: the CHAIN GUARD group is [intercepts, minTow, cooldown] in that order (got ${JSON.stringify(ids.slice(iHeader, iHeader + 4))})`);
+  assert(typeof ids[iHeader + 4] === "undefined" || String(ids[iHeader + 4]).startsWith("#"),
     "A: cooldown is the LAST entry in its group — appended, not inserted");
   assert(A.DEBUG_ENTRIES.length === A.DEBUG_VARS.filter(v => !v.header).length,
     "A: DEBUG_ENTRIES still derives from the registry (headers filtered)");
@@ -332,8 +335,8 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
     "A: the registry is still append-only (CS015 P4's entry is the first VALUE entry)");
 
   // TRAP 3: the other three chain-guard knobs are untouched this phase.
-  const t = byId("chainGuardTime"), n = byId("chainGuardIntercepts"), mt = byId("chainGuardMinTow");
-  assert(t.def === 30 && t.min === 5 && t.max === 120 && t.step === 5, "A: chainGuardTime is unchanged (30 / [5,120] / 5)");
+  const n = byId("chainGuardIntercepts"), mt = byId("chainGuardMinTow");
+  assert(!byId("chainGuardTime"), "A: REPOINTED BY CS024 P6 — chainGuardTime is deleted from the registry");
   assert(n.def === 3 && n.min === 1 && n.max === 10 && n.step === 1,
     "A: chainGuardIntercepts is unchanged (3 / [1,10] / 1) — retuning it is deliberately deferred to P2 (FLAG-CS019-b)");
   assert(mt.def === 5 && mt.min === 0 && mt.max === 24 && mt.step === 1, "A: chainGuardMinTow is unchanged (5 / [0,24] / 1)");
@@ -420,9 +423,15 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // Staging shared by (B)/(C)/(D)/(G): count mode, a 10-node tow, one STATIONARY large debris parked on
   // node 5. Its 46 + 7 = 53 px reach also covers nodes 3 and 7, so the scan's first overlapping pair is
   // node 3 — still mid-chain, with 6 nodes aft of it to fall loose if anything severs.
-  function stage(X, { mode, intercepts, cooldown, nodes = 10 } = {}) {
+  // CS024 P6: the `mode` argument is gone with the modes — every call site already passed "count",
+  // which is now the only rule there is. THE ONE EXCEPTION IS THE HISTORICAL BUILD: §B3 stages the
+  // PINNED pre-fix source through this same helper, and THAT build still has the setting and still
+  // defaults it to "time", where applyPowerup seeds a clock instead of a budget. Probing for the field
+  // rather than branching on a flag keeps the current build untouched (it has no such key) while the
+  // historical control still gets the count path it was written against.
+  function stage(X, { intercepts, cooldown, nodes = 10 } = {}) {
     const g = quietRun(X);
-    X.settings.chainGuardMode = mode;
+    if ("chainGuardMode" in X.settings) X.settings.chainGuardMode = "count";
     if (intercepts !== undefined) X.applyDebug("chainGuardIntercepts", intercepts);
     if (cooldown !== undefined && X.DEBUG.chainGuardCooldown !== undefined) X.applyDebug("chainGuardCooldown", cooldown);
     layChain(X, nodes);
@@ -434,7 +443,7 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // ---- B1: exactly ONE cooldown period (45 frames = 0.75 s) -> exactly ONE absorbed break ----------
   {
     const X = build();
-    const { g, h } = stage(X, { mode: "count", intercepts: 3 });
+    const { g, h } = stage(X, { intercepts: 3 });
     assert(g.powerBudget.guard === 3, `B1: (precondition) applyPowerup seeded 3 intercepts (got ${g.powerBudget.guard})`);
     assert(X.powerActive("guard"), "B1: (precondition) the guard is up");
     assert(h.radius === DEBRIS_RADII[3], `B1: (precondition) the staged body is a LARGE debris (radius ${h.radius})`);
@@ -466,7 +475,7 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // frame. B1 above pins the "exactly one" case over exactly one cooldown period.
   {
     const X = build();
-    const { g } = stage(X, { mode: "count", intercepts: 3 });
+    const { g } = stage(X, { intercepts: 3 });
     const c = makeTellCounter(X);
     const log = run(X, 60, c);
     const spends = spendFrames(log, 3);
@@ -489,7 +498,7 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // ---- B3: the PRE-FIX build, same staging — the permanent red control -----------------------------
   {
     const X = build({ src: preFixSrc() });
-    const { g } = stage(X, { mode: "count", intercepts: 3 });
+    const { g } = stage(X, { intercepts: 3 });
     assert(g.powerBudget.guard === 3, `B3: (precondition) the pre-fix build also seeds 3 intercepts (got ${g.powerBudget.guard})`);
     const c = makeTellCounter(X);
     const log = run(X, 60, c);
@@ -510,20 +519,21 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
 
 // ================= (C) TIME mode =====================
 (function sectionC() {
-  console.log("(C) TIME mode: the tell fires once per cooldown, the clock is the only thing that moves");
+  console.log("(C) INVERTED: no clock — the BUDGET is the only thing that moves, one charge per cooldown");
+  // REPOINTED BY CS024 P6 (spec §1.7): this section was TIME mode's half of the cooldown claim — the
+  // tell fires once per cooldown while the CLOCK alone governs and no budget is spent. The clock is
+  // deleted, so the claim inverts: the cooldown still paces the tell exactly as before (that is CS019
+  // P1's real subject and it is untouched), but the thing it paces is now a BUDGET spend, and the
+  // sentinel that used to prove "no budget was touched" becomes a proof that exactly one is, per tell.
   const X = build();
   const g = quietRun(X);
-  X.settings.chainGuardMode = "time";
-  X.applyDebug("chainGuardTime", 30);
   layChain(X, 10);
+  // A LARGE budget, granted the real way, so the window below can never exhaust it — this section is
+  // about the cooldown's cadence, not about running out (that is a later section's job).
+  X.applyDebug("chainGuardIntercepts", 99);
   X.applyPowerup("guard");
-  assert(near(g.powerFx.guard, 30), `C: (precondition) the clock is seeded to chainGuardTime (got ${g.powerFx.guard})`);
-
-  // A SENTINEL budget (the test-cs017-p6.js §D idiom): time mode leaves powerBudget.guard at 0 in real
-  // play, so "still 0" would pass even if the intercept decremented unconditionally. A non-zero value is
-  // what makes the powerMode check itself the thing under test.
-  const SENTINEL = 99;
-  g.powerBudget.guard = SENTINEL;
+  const SEEDED = g.powerBudget.guard;
+  assert(SEEDED === 99, `C: (precondition) applyPowerup seeded the full 99-charge budget (got ${SEEDED})`);
 
   stageDebris(X, 5, 3);
   const c = makeTellCounter(X);
@@ -536,11 +546,10 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   assert(c.sparks === expected * GUARD_ABSORB_SPARKS,
     `C: one ${GUARD_ABSORB_SPARKS}-particle burst per tell (got ${c.sparks})`);
   assert(log.every(r => r.chain === 10 && r.garbage === 0), "C: the chain is intact on every one of the 60 frames");
-  assert(g.powerBudget.guard === SENTINEL,
-    `C: NO budget was spent — time mode is governed by the clock alone (sentinel ${SENTINEL}, got ${g.powerBudget.guard})`);
-  assert(near(g.powerFx.guard, 30 - 60 * (1 / 60), 1e-9),
-    `C: powerFx.guard fell by exactly 60 * dt and nothing else (expected ${30 - 60 / 60}, got ${g.powerFx.guard})`);
+  assert(g.powerBudget.guard === SEEDED - expected,
+    `C: INVERTED — exactly ONE charge per tell was spent, no more (expected ${SEEDED - expected}, got ${g.powerBudget.guard})`);
   assert(X.powerActive("guard"), "C: the guard is still up at the end of the window");
+  X.applyDebug("chainGuardIntercepts", 3);
 
   // A tell every ~45 frames, evenly — not a burst then silence.
   const tellFrames = log.filter((r, i) => r.guarded > (i === 0 ? 0 : log[i - 1].guarded)).map(r => r.f);
@@ -554,7 +563,6 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   console.log("(D) cooldown expiry: a short cooldown bills repeatedly, at the cooldown's own cadence");
   const X = build();
   const g = quietRun(X);
-  X.settings.chainGuardMode = "count";
   X.applyDebug("chainGuardIntercepts", 10);
   X.applyDebug("chainGuardCooldown", 0.2);
   layChain(X, 10);
@@ -594,7 +602,6 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   console.log("(E) a stamped hazard on an EARLY node must not hide an unstamped one on a LATER node");
   const X = build();
   const g = quietRun(X);
-  X.settings.chainGuardMode = "count";
   X.applyDebug("chainGuardIntercepts", 10);
   X.applyDebug("chainGuardCooldown", 0.75);
   layChain(X, 20);
@@ -702,7 +709,6 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   console.log("(G) the stamp must not outlive the guard: budget spent on frame 1, chain severed on frame 2");
   const X = build();
   const g = quietRun(X);
-  X.settings.chainGuardMode = "count";
   X.applyDebug("chainGuardIntercepts", 1);
   X.applyDebug("chainGuardCooldown", 3);   // deliberately much longer than the window: the stamp is live
   layChain(X, 10);
@@ -733,7 +739,6 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   console.log("(H) hostile bullet vs a guarded node: one absorb, one spend, no guardT, no second absorb");
   const X = build();
   const g = quietRun(X);
-  X.settings.chainGuardMode = "count";
   X.applyDebug("chainGuardIntercepts", 3);
   layChain(X, 10);
   X.applyPowerup("guard");
@@ -786,8 +791,8 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
     "I: (precondition) no AudioContext was available, so AudioSys.ctx is null");
   noThrow(() => {
     const g = quietRun(X);
-    for (const mode of ["time", "count"]) {
-      X.settings.chainGuardMode = mode;
+    // CS024 P6: one mode now — the loop keeps two passes so the smoke still runs the whole staging twice.
+    for (const pass of [1, 2]) {
       layChain(X, 12);
       X.applyPowerup("guard");
       stageDebris(X, 5, 3);

@@ -67,7 +67,8 @@ assert(Math.abs(RAPID_FIRE_COOLDOWN - 0.09) < 1e-9, "A: RAPID_FIRE_COOLDOWN is 0
 console.log("(B) post-shot cooldown == FIRE_COOLDOWN with Rapid inactive");
 startGame();
 game.state = "playing"; game.paused = false;
-game.powerFx.rapid = 0; game.powerFx.triple = 0;
+// REPOINTED BY CS024 P6: game.powerFx is deleted — the effects live on powerBudget now.
+game.powerBudget.rapid = 0; game.powerBudget.triple = 0;
 game.ship.cooldown = 0;
 keys[" "] = true;
 update(1 / 60);
@@ -78,7 +79,7 @@ keys[" "] = false;
 console.log("(C) post-shot cooldown == RAPID_FIRE_COOLDOWN with Rapid active");
 startGame();
 game.state = "playing"; game.paused = false;
-game.powerFx.rapid = 15; game.powerFx.triple = 0;
+game.powerBudget.rapid = 40; game.powerBudget.triple = 0;
 game.ship.cooldown = 0;
 keys[" "] = true;
 update(1 / 60);
@@ -95,15 +96,17 @@ function countVolleys(seconds, { rapid = 0, triple = 0 } = {}) {
   startGame();
   game.state = "playing"; game.paused = false;
   game.ship.x = 1000; game.ship.y = 1000; game.ship.vx = 0; game.ship.vy = 0;
-  game.powerFx.rapid = rapid; game.powerFx.triple = triple;
+  game.powerBudget.rapid = rapid; game.powerBudget.triple = triple;
   game.ship.cooldown = 0;
   keys[" "] = true;
   let volleys = 0;
   const dt = 1 / 60;
   const steps = Math.round(seconds / dt);
   for (let i = 0; i < steps; i++) {
-    if (rapid) game.powerFx.rapid = rapid;   // hold the timer up so it can't expire mid-run
-    if (triple) game.powerFx.triple = triple;
+    // CS024 P6: the budget is spent by FIRING now, not by a clock — this re-arm was already the
+    // right shape and simply keeps the effect up across the measured window for the same reason.
+    if (rapid) game.powerBudget.rapid = rapid;
+    if (triple) game.powerBudget.triple = triple;
     game.bullets.length = 0;                 // clear each frame so MAX_BULLETS/RAPID/TRIPLE caps
                                               // never gate fire — isolates cooldown-driven cadence
     // Also clear ambient hazards each frame: this test measures *cooldown-driven* cadence only,
@@ -121,8 +124,8 @@ function countVolleys(seconds, { rapid = 0, triple = 0 } = {}) {
 
 const window_s = 1.0;
 const baseVolleys = countVolleys(window_s, {});
-const rapidVolleys = countVolleys(window_s, { rapid: 15 });
-const tripleVolleys = countVolleys(window_s, { triple: 15 });
+const rapidVolleys = countVolleys(window_s, { rapid: 40 });
+const tripleVolleys = countVolleys(window_s, { triple: 30 });
 
 console.log(`    volleys/${window_s}s — base = ${baseVolleys}, rapid = ${rapidVolleys}, triple = ${tripleVolleys}`);
 assert(rapidVolleys > baseVolleys, "D: Rapid Fire produces more shots/sec than base");
@@ -136,7 +139,7 @@ assert(rapidVolleys >= 9 && rapidVolleys <= 12, "D: rapid cadence ~10-11 shots/s
 console.log("(E) crash-free regression smoke with Rapid active");
 startGame();
 game.state = "playing"; game.paused = false;
-game.powerFx.rapid = 15;
+game.powerBudget.rapid = 40;
 keys[" "] = true;
 for (let i = 0; i < 60; i++) { update(1 / 60); draw(); }
 keys[" "] = false;

@@ -69,7 +69,7 @@ const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => new 
 const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
 
 const RETURN = ["VoiceSys", "AudioSys", "game", "startGame", "update", "applyPowerup", "damageShip",
-  "powerActive", "powerMode", "breakChain", "scatterChain", "saveSettings", "settings", "Garbage",
+  "powerActive", "powerBudgetAmount", "breakChain", "scatterChain", "saveSettings", "settings", "Garbage",
   "openPause", "closePause", "killShip", "SHIP_MAX_HP", "LOW_HP_THRESHOLD", "POWERUP_DROP_TYPES",
   "POWERUP_BUDGET", "CARGO_BASE", "SCOOP_HITS_PER_LEVEL", "DOCK_RADIUS", "VOICE_COOLDOWN",
   "VOICE_PRIORITY", "VOICE_LINES", "STORAGE_KEY"];
@@ -315,38 +315,58 @@ function count(arr, v) { return arr.filter(x => x === v).length; }
   A.applyPowerup("health"); assert(log.length === before, "Health pickup says NOTHING in applyPowerup (it speaks via the hull-full latch)");
 })();
 
-// ================= (E5) powerup expired: falling edge of powerActive (TIME and COUNT mode) =====================
+// ================= (E5) powerup expired: falling edge of powerActive =====================
 (function () {
-  console.log("(E5) expire_<type> on powerActive() falling edge — TIME mode AND COUNT mode (not powerFx-only)");
-  // TIME mode
+  console.log("(E5) expire_<type> on powerActive() falling edge — every type, routed through powerActive()");
+  // REPOINTED BY CS024 P6 (spec §1.7): this section's whole point was that the latch reads
+  // powerActive() rather than powerFx, so it catches BOTH modes. Timed expiry is deleted — powerFx no
+  // longer exists — so the two-mode contrast is gone, but the RULE is unchanged and is now structural:
+  // powerActive() is exactly "budget remains", and the standing CLAUDE.md rule ("route did-an-effect-end
+  // through powerActive(), never powerFx") can no longer be broken by reaching for the wrong field.
+  // The contrast is replaced by BREADTH — the falling edge is driven for every announcing type, which
+  // includes the two (engine, guard) that could never reach the count path before.
   const A = buildInstance();
   prepPlaying(A, A.SHIP_MAX_HP);
   const log = spyVoice(A);
-  A.applyPowerup("rapid");                                // time mode default
+  A.applyPowerup("rapid");
   A.update(1 / 60);                                      // prime: powerVoiced.rapid → true
-  assert(A.powerActive("rapid") === true, "rapid active after pickup (time mode)");
+  assert(A.powerActive("rapid") === true, "rapid active after pickup");
   log.length = 0;
-  A.game.powerFx.rapid = 0.001;                          // force it to lapse this frame
+  A.game.powerBudget.rapid = 0;                          // spend the last shot
   clearHazards(A); A.update(1 / 60);
   assert(A.powerActive("rapid") === false, "rapid lapsed");
   assert(count(log, "expire_rapid") === 1, `expire_rapid fires once on the falling edge; got ${count(log, "expire_rapid")}`);
   clearHazards(A); A.update(1 / 60);
   assert(count(log, "expire_rapid") === 1, "expire_rapid does not re-fire (edge-detected)");
 
-  // COUNT mode — the case a powerFx-only hook would MISS. magnet in "pieces" mode lives in powerBudget.
-  const B = buildInstance();
-  B.settings.magnetMode = "pieces";
-  prepPlaying(B, B.SHIP_MAX_HP);
-  const logB = spyVoice(B);
-  B.applyPowerup("magnet");
-  assert(B.powerMode("magnet") === "pieces" && B.powerActive("magnet") === true, "magnet active via powerBudget (count mode)");
-  assert(B.game.powerFx.magnet === 0, "count-mode magnet has NO powerFx time — a powerFx hook would never see it expire");
-  B.update(1 / 60);                                      // prime powerVoiced.magnet → true
-  logB.length = 0;
-  B.game.powerBudget.magnet = 0;                         // spend the last piece
-  clearHazards(B); B.update(1 / 60);
-  assert(B.powerActive("magnet") === false, "magnet budget exhausted → powerActive false");
-  assert(count(logB, "expire_magnet") === 1, `expire_magnet fires on the COUNT-mode falling edge; got ${count(logB, "expire_magnet")}`);
+  // Every announcing type, including engine — which was timed-only before CS024 P6 and whose budget is
+  // now fractional seconds of fuel, so its falling edge crosses zero from a non-integer.
+  for (const t of ["triple", "magnet", "engine"]) {
+    const B = buildInstance();
+    prepPlaying(B, B.SHIP_MAX_HP);
+    const logB = spyVoice(B);
+    B.applyPowerup(t);
+    assert(B.powerActive(t) === true, `${t} active via powerBudget`);
+    assert(B.game.powerBudget[t] === B.powerBudgetAmount(t), `${t} was granted exactly powerBudgetAmount("${t}")`);
+    B.update(1 / 60);                                    // prime powerVoiced[t] → true
+    logB.length = 0;
+    B.game.powerBudget[t] = 0;                           // spend the last of it
+    clearHazards(B); B.update(1 / 60);
+    assert(B.powerActive(t) === false, `${t} budget exhausted → powerActive false`);
+    assert(count(logB, "expire_" + t) === 1, `expire_${t} fires on the falling edge; got ${count(logB, "expire_" + t)}`);
+  }
+
+  // "guard" is latched like the rest but deliberately has NO expire_ line (CS017 P6) — unchanged here.
+  const C = buildInstance();
+  prepPlaying(C, C.SHIP_MAX_HP);
+  const logC = spyVoice(C);
+  C.applyPowerup("guard");
+  C.update(1 / 60);
+  logC.length = 0;
+  C.game.powerBudget.guard = 0;
+  clearHazards(C); C.update(1 / 60);
+  assert(C.powerActive("guard") === false, "guard budget exhausted → powerActive false");
+  assert(count(logC, "expire_guard") === 0, "guard still has NO expire_ line, latch or not (CS017 P6)");
 })();
 
 // ================= (E6) scoop lost a level (by damage) =====================

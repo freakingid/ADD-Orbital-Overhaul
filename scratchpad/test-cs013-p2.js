@@ -126,7 +126,7 @@ const localStorageStub = {
 const RETURN = [
   "startGame", "update", "game", "gotoScreen", "rootItems", "COLOR", "MENU_HINT_SIZE", "ROOT_MENU_HINT",
   "drawRootMenu", "drawOptionsMenu", "drawSound", "drawDifficulty", "drawControlsMenu",
-  "MENU_OPTIONS", "SOUND_ROWS", "VOL_LABELS", "REBINDABLE", "bindings", "AudioSys", "VIEW_W", "VIEW_H"
+  "MENU_OPTIONS", "SOUND_ROWS", "VOL_LABELS", "DIFFICULTY_ROWS", "REBINDABLE", "bindings", "AudioSys", "VIEW_W", "VIEW_H"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -136,7 +136,7 @@ const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorS
 const {
   startGame, update, game, gotoScreen, rootItems, COLOR, MENU_HINT_SIZE, ROOT_MENU_HINT,
   drawRootMenu, drawOptionsMenu, drawSound, drawDifficulty, drawControlsMenu,
-  MENU_OPTIONS, SOUND_ROWS, VOL_LABELS, REBINDABLE, bindings, AudioSys, VIEW_W, VIEW_H
+  MENU_OPTIONS, SOUND_ROWS, VOL_LABELS, DIFFICULTY_ROWS, REBINDABLE, bindings, AudioSys, VIEW_W, VIEW_H
 } = A;
 
 AudioSys.init();
@@ -253,17 +253,21 @@ const cx = VIEW_W / 2;
 // ================= (F) drawDifficulty =================
 (function sectionF() {
   console.log("(F) drawDifficulty: row label + Back swap; toggle inactive-side + \"|\" glyph stay dim; help/footer via drawMenuHint");
-  // CS016 P4 (§5): the three value rows render COLOR.dim unconditionally while game.state === "playing"
+  // CS016 P4 (§5): the value rows render COLOR.dim unconditionally while game.state === "playing"
   // (the mid-run lock) — this section is about the baseline selected/unselected contrast, not the lock
   // (covered in test-cs016-p4.js), so it stays off "playing" to exercise the unlocked colors.
   game.state = "gameover";
-  gotoScreen("difficulty", 1); // select the second toggle row ("Magnet expires")
-  // CS017 P6: the panel grew 418 -> 476 for the fourth value row (Chain guard), and Back/help/footer
-  // shifted down by the same 58. Repointed, not relaxed — every assertion below is unchanged.
-  const x0 = (VIEW_W - 620) / 2, y0 = (VIEW_H - 476) / 2;
+  // REPOINTED BY CS024 P6 (spec §3.7): the screen drops from FOUR value rows to ONE (Auto-shield) —
+  // the three expiry-mode toggles go with timed expiry itself. The panel shrinks 476 -> 302 and
+  // Back/help/footer come up by the same 58-per-row (378/422/452 -> 204/248/278). Every assertion
+  // below is unchanged in kind and strength; the row loop simply has one row to walk, and the row
+  // COUNT is derived from DIFFICULTY_ROWS rather than a literal 4 so the next change moves one line.
+  gotoScreen("difficulty", 0); // select the one toggle row ("Auto-shield")
+  const nRows = DIFFICULTY_ROWS.length - 1;   // every row but "back"
+  const x0 = (VIEW_W - 620) / 2, y0 = (VIEW_H - 302) / 2;
   const log = render(drawDifficulty);
 
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < nRows; i++) {
     const rcy = y0 + 122 + i * 58 + 6;
     const isSel = game.menu.index === i;
     const labelEntries = at(log, x0 + 40, rcy);
@@ -279,13 +283,13 @@ const cx = VIEW_W / 2;
     assert(barEntries.length === 1 && barEntries[0].color === COLOR.dim, `F: row ${i} toggle "|" glyph stays COLOR.dim`);
     assert(leftEntries[0].color !== COLOR.menuIdle && rightEntries[0].color !== COLOR.menuIdle, `F: row ${i} toggle sides never read menuIdle`);
   }
-  const backSel = game.menu.index === 4;
-  const backEntries = at(log, cx, y0 + 378);
+  const backSel = game.menu.index === nRows;
+  const backEntries = at(log, cx, y0 + 204);
   assert(backEntries.length === 1 && backEntries[0].color === (backSel ? COLOR.text : COLOR.menuIdle), "F: Back draws in the expected color");
-  const help = at(log, cx, y0 + 422);
+  const help = at(log, cx, y0 + 248);
   assert(help.length === 1 && help[0].color === COLOR.menuIdle, "F: the per-row help line now routes through drawMenuHint (COLOR.menuIdle)");
   assert(fontSize(help[0]) === MENU_HINT_SIZE, "F: the help line draws at MENU_HINT_SIZE");
-  const footer = at(log, cx, y0 + 452);
+  const footer = at(log, cx, y0 + 278);
   assert(footer.length === 1 && footer[0].color === COLOR.menuIdle, "F: difficulty footer draws in COLOR.menuIdle");
   assert(fontSize(footer[0]) === MENU_HINT_SIZE, "F: difficulty footer draws at MENU_HINT_SIZE");
 })();

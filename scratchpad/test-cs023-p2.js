@@ -409,10 +409,16 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // lever knobs (def: null, the "follow the live odometer" sentinel) join the survivors across SHIP,
   // GARBAGE, CHAIN GUARD, DELIVERY, JUNK, HUNTER, UFO, GLOBAL — and garbageAttractDelay drops out with
   // the constant it derived from (retired outright, replaced by the coalescePause lever).
-  eq(X.DEBUG_ENTRIES.length, 32, "A: TRAP 4 REPOINTED BY CS024 P5 — the debug registry is 32 value entries");
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
+  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
+  eq(X.DEBUG_ENTRIES.length, 33, "A: TRAP 4 REPOINTED BY CS024 P6 — the debug registry is 33 value entries");
+  // The id filter below is deliberately LEFT WIDE (it still matches /gravity|drift/), because a
+  // silently-restored drift knob is exactly what it exists to catch. CS024 P6's engineMassMult joins
+  // the matched set only because /mass/i catches it — it is a POWERUP knob, nothing to do with the
+  // drift — so the expectation grows by that one id rather than the regex being narrowed to hide it.
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
-    "debrisBounceRestitution",
-    "A: REPOINTED BY CS024 P1 — debrisBounceRestitution is the ONLY survivor of CS023 P4's two knobs; debrisDriftAccel is gone");
+    "engineMassMult,debrisBounceRestitution",
+    "A: REPOINTED BY CS024 P1/P6 — debrisBounceRestitution is still the ONLY survivor of CS023 P4's two knobs (debrisDriftAccel gone); engineMassMult is CS024 P6's new POWERUPS knob");
   assert(!/\bdrifting\b/.test(codeOnly),
     "A: REPOINTED BY CS024 P1 (inverted) — the `drifting` field appears NOWHERE in executable source");
   eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 0,

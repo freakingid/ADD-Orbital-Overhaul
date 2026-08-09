@@ -302,7 +302,9 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // own three additions are pinned by name directly below; only the live total moves.
   // REPOINTED BY CS024 P5: 15 was the P4 interim count (21-knob tier prune, before the odometer was
   // wired). P5's registry rebuild adds 17 lever knobs + smallUfoChance, back to 32.
-  eq(X.DEBUG_ENTRIES.length, 32, "A: the registry holds 32 value entries after CS024 P5's registry rebuild");
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
+  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
+  eq(X.DEBUG_ENTRIES.length, 33, "A: the registry holds 33 value entries after CS024 P6's POWERUPS section");
 
   // Tombstones are checked POSITIVELY and separately, so a comment naming a dead symbol can never be
   // confused for a live one (the standing test-cs024-p1/p2 idiom).

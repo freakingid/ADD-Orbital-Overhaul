@@ -33,7 +33,7 @@
 //      unread); DEBUG.saucerAimPressure/saucerPressureSecs and their DEBUG_VARS entries + header are gone.
 //  (G) Persistence: a surviving registry field round-trips through afd_settings_v1.debug across a reload.
 //  (H) Regression: cargoMax/junk/hunters untouched; GAME_VERSION unchanged; DEBUG_VARS/DEBUG_ROWS
-//      counts (32 value entries as of CS024 P5's registry rebuild); logDifficultySnapshot's saucerAimErr
+//      counts (33 value entries as of CS024 P6's POWERUPS section); logDifficultySnapshot's saucerAimErr
 //      column follows the live lever-derived value.
 //  (I) AudioSys.ctx null: startGame()/update()/nextWave() smoke across many levels.
 
@@ -372,7 +372,12 @@ function fireOnce(small, wave) {
   // 2 GLOBAL). Section-by-section: SHIP 2 + GARBAGE 4 + CHAIN GUARD 4 + DELIVERY 1 + JUNK 4 + HUNTER 4 +
   // UFO 11 + GLOBAL 2 = 32. Same claim, same strength — an exact live-registry count. P7's own three UFO
   // WEAPONS quantities are now folded into that single UFO section and pinned by id in section B above.
-  eq(nEntries, 32, `H: DEBUG_ENTRIES count is 32 after CS024 P5's registry rebuild (got ${nEntries})`);
+  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry is deleted (spec §1.7/§3.4/§3.5),
+  // taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and a new POWERUPS section arrives holding
+  // Engine-as-fuel's two knobs (engineBurnSeconds, engineMassMult). Net -1 +2. Section-by-section:
+  // SHIP 2 + GARBAGE 4 + CHAIN GUARD 3 + DELIVERY 1 + JUNK 4 + HUNTER 4 + UFO 11 + POWERUPS 2 +
+  // GLOBAL 2 = 33.
+  eq(nEntries, 33, `H: DEBUG_ENTRIES count is 33 after CS024 P6's POWERUPS section (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

@@ -787,10 +787,15 @@ function evalSlice(literal) {
   // + smallUfoChance, a flat non-lever knob living in the same reintroduced UFO section) = 32.
   const values = X.DEBUG_VARS.filter(e => e.id);
   const headers = X.DEBUG_VARS.filter(e => e.header).map(e => e.header);
-  eq(values.length, 32, "H: 32 value entries remain — the 21-tier-knob prune plus P5's lever-knob rebuild");
-  eq(X.DEBUG_ENTRIES.length, 32, "H: DEBUG_ENTRIES agrees — headers are not values");
-  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,GLOBAL",
-    "H: eight section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier");
+  // REPOINTED BY CS024 P6: 32 -> 33 and an eight-header list becomes nine. Timed powerup expiry is
+  // deleted (spec §1.7/§3.4/§3.5), taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and the
+  // POWERUPS header P5 deliberately left unwritten arrives holding Engine-as-fuel's two knobs
+  // (engineBurnSeconds, engineMassMult). Net -1 +2. The claim is unchanged in kind and strength —
+  // an exact live count plus an exact ordered header list.
+  eq(values.length, 33, "H: 33 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section");
+  eq(X.DEBUG_ENTRIES.length, 33, "H: DEBUG_ENTRIES agrees — headers are not values");
+  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
+    "H: nine section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {
     const i = X.DEBUG_VARS.findIndex(e => e.header === h);
     assert(X.DEBUG_VARS[i + 1] && X.DEBUG_VARS[i + 1].id, `H: the "${h}" header has at least one value entry under it`);

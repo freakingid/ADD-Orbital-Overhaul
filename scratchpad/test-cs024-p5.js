@@ -18,7 +18,8 @@
 //   4. Large Hunters have NO speed lever (frozen HUNTER_SPEED_CEIL[3] * HUNTER_FLOOR_FRAC); ALL Hunter
 //      turn rates stay frozen at every tier. Only hunterSpeedMedium/hunterSpeedSmall are real levers.
 //   5. THE REGISTRY IS REBUILT: 32 value entries, sections SHIP / GARBAGE / CHAIN GUARD / DELIVERY /
-//      JUNK / HUNTER / UFO / GLOBAL (no POWERUPS header yet — P6's). Every lever knob has `def: null`
+//      JUNK / HUNTER / UFO / GLOBAL (no POWERUPS header yet — P6's; REPOINTED BY CS024 P6, which took
+//      it to 33 entries and nine headers). Every lever knob has `def: null`
 //      (the "no override, follow the odometer" sentinel) with min/max = Math.min/max(floor, ceil) — a
 //      UI-range-only bound that never reorders the LEVERS table itself.
 //
@@ -35,7 +36,8 @@
 //  (E) the 20% small-UFO roll's distribution, and it is NOT wave-dependent.
 //  (F) big saucers still fire genuinely unaimed.
 //  (G) the registry: ids, section order, def:null sentinel, min/max, clamping, persistence round-trip.
-//  (H) TRAPs: GAME_VERSION unchanged; powerMode/powerFx untouched; no floor<=ceil validator anywhere;
+//  (H) TRAPs: GAME_VERSION unchanged; powerMode/powerFx were P5-untouched and are now CS024 P6-DELETED
+//      (the claim is INVERTED below, not dropped); no floor<=ceil validator anywhere;
 //      docs untouched.
 //  (I) AudioSys.ctx === null smoke over a long real run across many levels.
 
@@ -399,10 +401,15 @@ function atWave(A, w) {
   const A = build().exports;
   const values = A.DEBUG_VARS.filter(e => !e.header);
   const headers = A.DEBUG_VARS.filter(e => e.header).map(e => e.header);
-  eq(values.length, 32, "G: DEBUG_VARS has exactly 32 value entries");
-  eq(A.DEBUG_ENTRIES.length, 32, "G: DEBUG_ENTRIES agrees — headers are not values");
-  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,GLOBAL",
-    "G: section headers, in the specced order, no POWERUPS yet (P6's)");
+  // REPOINTED BY CS024 P6: 32 -> 33 and an eight-header list becomes nine. Timed powerup expiry is
+  // deleted (spec §1.7/§3.4/§3.5), taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and the
+  // POWERUPS header P5 deliberately left unwritten arrives holding Engine-as-fuel's two knobs
+  // (engineBurnSeconds, engineMassMult). Net -1 +2. The claim is unchanged in kind and strength —
+  // an exact live count plus an exact ordered header list.
+  eq(values.length, 33, "G: DEBUG_VARS has exactly 33 value entries");
+  eq(A.DEBUG_ENTRIES.length, 33, "G: DEBUG_ENTRIES agrees — headers are not values");
+  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
+    "G: section headers, in the specced order, POWERUPS now present (CS024 P6's)");
   for (const h of headers) {
     const i = A.DEBUG_VARS.findIndex(e => e.header === h);
     assert(A.DEBUG_VARS[i + 1] && A.DEBUG_VARS[i + 1].id, `G: the "${h}" header has at least one value entry under it (never a stray label)`);
@@ -482,10 +489,14 @@ function atWave(A, w) {
 
 // ================= (H) TRAPs =====================
 (function sectionH() {
-  console.log("(H) TRAPs: GAME_VERSION, powerMode/powerFx untouched, no floor<=ceil validator, docs untouched");
+  console.log("(H) TRAPs: GAME_VERSION, powerMode/powerFx now DELETED (CS024 P6), no floor<=ceil validator, docs untouched");
   eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is still 1.0.0.22");
-  assert(/function powerMode\(/.test(execOnly), "H: TRAP 2 — powerMode() still exists, untouched by this phase (P6's job)");
-  assert(/game\.powerFx/.test(execOnly), "H: TRAP 2 — game.powerFx still exists, untouched by this phase (P6's job)");
+  // INVERTED BY CS024 P6 (spec §1.7), the standing mirror-image convention rather than a deletion:
+  // P5's TRAP 2 was "these two are NOT mine to touch — they are P6's job." P6 did that job and deleted
+  // them outright, so the claim that still does work is their ABSENCE. Asserting it here keeps the trap
+  // load-bearing: if either ever creeps back, this file catches it.
+  assert(!/function powerMode\(/.test(execOnly), "H: TRAP 2 INVERTED BY CS024 P6 — powerMode() is deleted, exactly as P5 said P6 would");
+  assert(!/game\.powerFx/.test(execOnly), "H: TRAP 2 INVERTED BY CS024 P6 — game.powerFx is deleted with timed expiry");
   assert(!/floor\s*<=?\s*ceil|ceil\s*<=?\s*floor/.test(execOnly), "H: TRAP 3 — no floor<=ceil validator anywhere in executable source");
   try {
     const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString()

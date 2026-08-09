@@ -5,23 +5,31 @@
 //
 //   node scratchpad/test-p5.js
 //
+// REPOINTED THROUGHOUT BY CS024 P6 (spec §1.7/§3.4/§3.7). This file's subject was "expiry MODES" — a
+// choice between a timer and a count. THE CHOICE IS GONE: timed expiry is deleted and the count path is
+// the only path. The file is NOT deleted, because sections D-H are precisely the count behaviours that
+// SURVIVE as the shipped rule (and are the strongest existing proof of them); the mode-selection halves
+// (A's defaults, B's routing, C's time path, I's three toggle rows, K's duration table) are INVERTED to
+// their absence rather than dropped, per the standing mirror-image convention.
+//
 // Checks:
-//  (A) config + defaults: modes default "time"; MENU_OPTIONS has "Difficulty" right before "Back";
-//      POWERUP_BUDGET maps to the shot/piece constants.
-//  (B) powerMode routing: rapid/triple follow shotPowerupMode, magnet follows magnetMode, engine
-//      is ALWAYS "time" (never configurable).
-//  (C) default "time" reproduces the shipped behaviour EXACTLY — firing/hooking never touches the
-//      count budgets; the timer path alone drives activity.
-//  (D) "shots" mode ends Rapid after EXACTLY RAPID_SHOTS trigger-pulls; cadence flips to base after.
+//  (A) config: MENU_OPTIONS has "Difficulty" right before "Back"; POWERUP_BUDGET maps to the shot/piece
+//      constants; INVERTED — the three mode settings fields no longer exist.
+//  (B) INVERTED — powerMode()/powerDuration() are deleted, and powerActive(t) is exactly
+//      `powerBudget[t] > 0` for EVERY type, engine included.
+//  (C) INVERTED — there is no timer path left to reproduce: a pickup grants a BUDGET for every type,
+//      and firing/hooking always spends it (the old "time mode never touches the budget" claim, reversed).
+//  (D) Rapid ends after EXACTLY RAPID_SHOTS trigger-pulls; cadence flips to base after.
 //  (E) a Triple 3-fan is ONE pull (3 bullets, budget -1).
 //  (F) Rapid+Triple budgets decrement independently and each ends on its own.
-//  (G) "pieces" mode ends Magnet after EXACTLY MAGNET_PIECES hooks; a draw-then-hook counts once (B-5-a).
-//  (H) v3.6 P4: same-type pickup BANKS (adds duration/budget on top of what's left, never refreshes);
+//  (G) Magnet ends after EXACTLY MAGNET_PIECES hooks; a draw-then-hook counts once (B-5-a).
+//  (H) v3.6 P4: same-type pickup BANKS (adds budget on top of what's left, never refreshes);
 //      magnitude (fire cadence) never stacks.
-//  (I) Difficulty screen: reachable via Options, toggles flip + persist, Back returns to Options;
-//      persistence round-trips and tolerates an old save missing the mode keys.
-//  (J) the Difficulty screen + the count-mode HUD draw without throwing.
-//  (K/K2) Magnet's doubled duration and the HUD bar denominator that must track it.
+//  (I) Difficulty screen: reachable via Options, its ONE surviving row (auto-shield) flips + persists,
+//      Back returns to Options; persistence tolerates a save carrying the three orphaned mode keys.
+//  (J) the Difficulty screen + the budgeted HUD draw without throwing.
+//  (K/K2) INVERTED — the duration table is deleted; per-type grant size now comes from
+//      powerBudgetAmount(), including two LIVE debug knobs.
 //  (L) v3.6 P4: HUD rebuild — TARGETS readout gone, shield bar in the left column, hull bar reads
 //      distinctly at max HP, count-mode powerup rows have no bar (glyph + number only), time-mode
 //      rows keep their bar.
@@ -77,11 +85,12 @@ global.localStorage = {
 
 const returnList = [
   "startGame", "update", "draw", "game", "keys",
-  "settings", "powerActive", "powerMode", "applyPowerup", "saveSettings", "loadSettings",
-  "openPause", "closePause", "menuInput", "rootItems", "MENU_OPTIONS", "STORAGE_KEY",
-  "RAPID_SHOTS", "TRIPLE_SHOTS", "MAGNET_PIECES", "POWERUP_DURATION", "POWERUP_BUDGET",
-  "MAGNET_DURATION", "powerDuration",
-  "RAPID_FIRE_COOLDOWN", "FIRE_COOLDOWN", "AudioSys"
+  "settings", "powerActive", "applyPowerup", "saveSettings", "loadSettings",
+  "openPause", "closePause", "menuInput", "rootItems", "MENU_OPTIONS", "DIFFICULTY_ROWS", "STORAGE_KEY",
+  "RAPID_SHOTS", "TRIPLE_SHOTS", "MAGNET_PIECES", "POWERUP_BUDGET", "powerBudgetAmount",
+  "POWERUP_DROP_TYPES", "ENGINE_BURN_SECONDS", "DEBUG",
+  "RAPID_FIRE_COOLDOWN", "FIRE_COOLDOWN", "AudioSys",
+  'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -90,11 +99,11 @@ const factory = new Function(
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, global.localStorage);
 const {
   startGame, update, draw, game, keys,
-  settings, powerActive, powerMode, applyPowerup, saveSettings, loadSettings,
-  openPause, closePause, menuInput, rootItems, MENU_OPTIONS, STORAGE_KEY,
-  RAPID_SHOTS, TRIPLE_SHOTS, MAGNET_PIECES, POWERUP_DURATION, POWERUP_BUDGET,
-  MAGNET_DURATION, powerDuration,
-  RAPID_FIRE_COOLDOWN, FIRE_COOLDOWN, AudioSys
+  settings, powerActive, applyPowerup, saveSettings, loadSettings,
+  openPause, closePause, menuInput, rootItems, MENU_OPTIONS, DIFFICULTY_ROWS, STORAGE_KEY,
+  RAPID_SHOTS, TRIPLE_SHOTS, MAGNET_PIECES, POWERUP_BUDGET, powerBudgetAmount,
+  POWERUP_DROP_TYPES, ENGINE_BURN_SECONDS, DEBUG,
+  RAPID_FIRE_COOLDOWN, FIRE_COOLDOWN, AudioSys, probe
 } = A;
 
 let passed = 0, failed = 0;
@@ -138,49 +147,53 @@ function hookOne() {
 }
 
 // =====================================================================
-console.log("(A) config + defaults");
-assert(settings.shotPowerupMode === "time", "A: shotPowerupMode defaults to time");
-assert(settings.magnetMode === "time", "A: magnetMode defaults to time");
-assert(MENU_OPTIONS.includes("Difficulty"), "A: MENU_OPTIONS has a Difficulty row");
+console.log("(A) config + defaults (INVERTED: the mode fields are deleted)");
+for (const dead of ["shotPowerupMode", "magnetMode", "chainGuardMode"])
+  assert(!(dead in settings), `A: INVERTED BY CS024 P6 — settings.${dead} no longer exists`);
+for (const dead of ["powerMode", "powerDuration", "POWERUP_DURATION", "MAGNET_DURATION"])
+  assert(probe(dead) === "__ReferenceError__", `A: INVERTED BY CS024 P6 — ${dead} is deleted outright`);
+assert(MENU_OPTIONS.includes("Difficulty"), "A: MENU_OPTIONS still has a Difficulty row (the SCREEN is kept, spec §3.7)");
 assert(MENU_OPTIONS.indexOf("Difficulty") === MENU_OPTIONS.indexOf("Back") - 1, "A: Difficulty sits immediately before Back");
 assert(POWERUP_BUDGET.rapid === RAPID_SHOTS && POWERUP_BUDGET.triple === TRIPLE_SHOTS && POWERUP_BUDGET.magnet === MAGNET_PIECES,
   "A: POWERUP_BUDGET maps rapid/triple/magnet to their constants");
 assert([RAPID_SHOTS, TRIPLE_SHOTS, MAGNET_PIECES].every(n => Number.isFinite(n) && n > 0), "A: budget constants are positive numbers");
 
 // =====================================================================
-console.log("(B) powerMode routing (engine is never configurable)");
-settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces";
-assert(powerMode("rapid") === "shots" && powerMode("triple") === "shots", "B: rapid/triple follow shotPowerupMode");
-assert(powerMode("magnet") === "pieces", "B: magnet follows magnetMode");
-assert(powerMode("engine") === "time", "B: engine is ALWAYS time, even with count modes set");
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";
-assert(powerMode("rapid") === "time" && powerMode("magnet") === "time", "B: modes flip back to time");
+console.log("(B) INVERTED — powerActive(t) is exactly `powerBudget[t] > 0`, for EVERY type");
+startGame(); isolate();
+for (const t of POWERUP_DROP_TYPES) {
+  game.powerBudget[t] = 0;
+  assert(powerActive(t) === false, `B: ${t} at budget 0 reads INACTIVE`);
+  game.powerBudget[t] = 0.5;   // a fraction is enough — engine's budget is fractional seconds
+  assert(powerActive(t) === true, `B: ${t} at any positive budget reads ACTIVE`);
+  game.powerBudget[t] = 0;
+}
+assert(POWERUP_DROP_TYPES.includes("engine"),
+  "B: engine — once the ONE type that could never be counted — is now budgeted like the rest");
 
 // =====================================================================
-console.log("(C) default time mode reproduces shipped behaviour (no budget side-effects)");
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";
+console.log("(C) INVERTED — there is no timer path: a pickup grants a BUDGET and use always spends it");
 startGame(); isolate();
 applyPowerup("rapid");
-assert(near(game.powerFx.rapid, POWERUP_DURATION) && game.powerBudget.rapid === 0, "C: time-mode Rapid sets the timer, not the budget");
-assert(powerActive("rapid"), "C: Rapid active via the timer");
+assert(game.powerBudget.rapid === RAPID_SHOTS, "C: a Rapid pickup grants its budget (no timer exists to arm instead)");
+assert(powerActive("rapid"), "C: Rapid active via the budget");
 firePull();
-assert(game.powerBudget.rapid === 0, "C: firing in time mode does NOT touch the shot budget");
-assert(near(game.ship.cooldown, RAPID_FIRE_COOLDOWN), "C: rapid cadence still applies in time mode");
-// engine always timed
+assert(game.powerBudget.rapid === RAPID_SHOTS - 1, "C: INVERTED — firing ALWAYS spends a shot now (no mode gates it)");
+assert(near(game.ship.cooldown, RAPID_FIRE_COOLDOWN), "C: rapid cadence applies while the budget lasts");
+// engine: fuel, granted from the live knob rather than a frozen duration
 applyPowerup("engine");
-assert(near(game.powerFx.engine, POWERUP_DURATION), "C: engine uses the timer (always)");
-// magnet time mode: hooking does not spend a budget
+assert(near(game.powerBudget.engine, DEBUG.engineBurnSeconds), "C: an Engine pickup grants DEBUG.engineBurnSeconds of FUEL");
+// magnet: hooking always spends
 startGame(); isolate(); applyPowerup("magnet");
-assert(near(game.powerFx.magnet, MAGNET_DURATION) && game.powerBudget.magnet === 0, "C: time-mode Magnet sets the timer (MAGNET_DURATION, v3.4 P4), not the budget");
+assert(game.powerBudget.magnet === MAGNET_PIECES, "C: a Magnet pickup grants MAGNET_PIECES of budget");
 hookOne();
-assert(game.powerBudget.magnet === 0 && game.chain.length === 1, "C: hooking in time mode spends no budget (and still hooks)");
+assert(game.powerBudget.magnet === MAGNET_PIECES - 1 && game.chain.length === 1, "C: INVERTED — hooking ALWAYS spends one piece now (and still hooks)");
 
 // =====================================================================
-console.log("(D) shots mode: Rapid ends after EXACTLY RAPID_SHOTS pulls; cadence flips to base");
-settings.shotPowerupMode = "shots"; settings.magnetMode = "time";
+console.log("(D) Rapid ends after EXACTLY RAPID_SHOTS pulls; cadence flips to base");
 startGame(); isolate();
 applyPowerup("rapid");
-assert(game.powerBudget.rapid === RAPID_SHOTS && game.powerFx.rapid === 0, "D: shots-mode Rapid sets the budget, not the timer");
+assert(game.powerBudget.rapid === RAPID_SHOTS, "D: a Rapid pickup seeds exactly RAPID_SHOTS of budget");
 firePull();
 assert(game.powerBudget.rapid === RAPID_SHOTS - 1, "D: one pull spends one shot");
 assert(near(game.ship.cooldown, RAPID_FIRE_COOLDOWN), "D: cadence is rapid while budget remains");
@@ -193,8 +206,7 @@ firePull();                                                  // first post-expir
 assert(near(game.ship.cooldown, FIRE_COOLDOWN), "D: cadence returns to base after Rapid expires");
 
 // =====================================================================
-console.log("(E) shots mode: a Triple 3-fan is ONE pull");
-settings.shotPowerupMode = "shots";
+console.log("(E) a Triple 3-fan is ONE pull");
 startGame(); isolate();
 applyPowerup("triple");
 assert(game.powerBudget.triple === TRIPLE_SHOTS, "E: Triple budget set to TRIPLE_SHOTS");
@@ -203,8 +215,7 @@ assert(shotsFired() === 3, "E: one pull fired a 3-bullet fan");
 assert(game.powerBudget.triple === TRIPLE_SHOTS - 1, "E: the 3-fan spent exactly ONE triple shot");
 
 // =====================================================================
-console.log("(F) shots mode: Rapid + Triple budgets are independent");
-settings.shotPowerupMode = "shots";
+console.log("(F) Rapid + Triple budgets are independent");
 startGame(); isolate();
 applyPowerup("rapid"); applyPowerup("triple");
 for (let i = 0; i < TRIPLE_SHOTS; i++) firePull();           // exhaust Triple first (TRIPLE_SHOTS < RAPID_SHOTS)
@@ -217,11 +228,10 @@ for (let i = 0; i < RAPID_SHOTS - TRIPLE_SHOTS - 1; i++) firePull();
 assert(game.powerBudget.rapid === 0 && !powerActive("rapid"), "F: Rapid then ends on its own budget");
 
 // =====================================================================
-console.log("(G) pieces mode: Magnet ends after EXACTLY MAGNET_PIECES hooks (count at the hook)");
-settings.magnetMode = "pieces"; settings.shotPowerupMode = "time";
+console.log("(G) Magnet ends after EXACTLY MAGNET_PIECES hooks (count at the hook)");
 startGame(); isolate();
 applyPowerup("magnet");
-assert(game.powerBudget.magnet === MAGNET_PIECES && game.powerFx.magnet === 0, "G: pieces-mode Magnet sets the budget, not the timer");
+assert(game.powerBudget.magnet === MAGNET_PIECES, "G: a Magnet pickup seeds exactly MAGNET_PIECES of budget");
 hookOne();
 assert(game.chain.length === 1 && game.powerBudget.magnet === MAGNET_PIECES - 1, "G: one hooked canister spends exactly one piece (B-5-a: no double-spend on draw-then-hook)");
 for (let i = 1; i < MAGNET_PIECES - 1; i++) hookOne();
@@ -234,7 +244,6 @@ assert(game.powerBudget.magnet === 0, "G: no further budget spend once Magnet is
 
 // =====================================================================
 console.log("(H) same-type pickup BANKS (v3.6 P4: adds, doesn't refresh) — magnitude never stacks");
-settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces";
 startGame(); isolate();
 applyPowerup("rapid");
 for (let i = 0; i < 10; i++) firePull();
@@ -249,20 +258,21 @@ for (let i = 0; i < 5; i++) hookOne();
 assert(game.powerBudget.magnet === MAGNET_PIECES - 5, "H: magnet budget partially spent");
 applyPowerup("magnet");
 assert(game.powerBudget.magnet === MAGNET_PIECES - 5 + MAGNET_PIECES, "H: same-type pickup ADDS a full Magnet budget on top of what's left");
-// time mode: duration banks too, and magnitude (fire cadence) is unaffected by stacking.
-settings.shotPowerupMode = "time";
+// REPOINTED: the old "time mode banks its duration too" block becomes "EVERY type banks", which is the
+// stronger claim CS024 P6 makes possible — engine and guard could never be banked before.
 startGame(); isolate();
-applyPowerup("rapid");
-assert(near(game.powerFx.rapid, POWERUP_DURATION), "H: first Rapid pickup arms the timer to POWERUP_DURATION");
-applyPowerup("rapid");
-assert(near(game.powerFx.rapid, POWERUP_DURATION * 2), "H: a second Rapid pickup BANKS — timer is 2x duration, not refreshed to 1x");
+for (const t of POWERUP_DROP_TYPES) {
+  const grant = powerBudgetAmount(t);
+  applyPowerup(t); applyPowerup(t);
+  assert(near(game.powerBudget[t], grant * 2), `H: ${t} BANKS — two pickups = 2x its grant, not refreshed to 1x`);
+}
+startGame(); isolate();
+applyPowerup("rapid"); applyPowerup("rapid");
 firePull();
 assert(near(game.ship.cooldown, RAPID_FIRE_COOLDOWN), "H: magnitude never stacks — cadence after two Rapids is the same as after one");
-settings.shotPowerupMode = "time"; settings.magnetMode = "time"; // restore defaults for later sections
 
 // =====================================================================
-console.log("(I) Difficulty screen: navigation, toggles, persistence");
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";
+console.log("(I) Difficulty screen: navigation, the one surviving toggle, persistence");
 // CS016 P4 (§5): Difficulty's value rows lock while game.state === "playing" (a live run's rules can't
 // change mid-run) — reaching them via Pause during a live game is no longer this section's scenario, so
 // this drives the UNLOCKED path (post-game, via the gameover root) to keep exercising toggle +
@@ -273,19 +283,12 @@ game.menu.index = rootItems().indexOf("Options"); menuInput("confirm");
 assert(game.menu.screen === "options", "I: reached Options");
 game.menu.index = MENU_OPTIONS.indexOf("Difficulty"); menuInput("confirm");
 assert(game.menu.screen === "difficulty" && game.menu.index === 0, "I: Options -> Difficulty (cursor on first row)");
-// shot row (index 0): right = shots, left = time
-menuInput("right"); assert(settings.shotPowerupMode === "shots", "I: ► on shot row selects Shots");
-menuInput("left");  assert(settings.shotPowerupMode === "time", "I: ◄ on shot row selects Time");
-menuInput("down");  assert(game.menu.index === 1, "I: down -> magnet row");
-menuInput("right"); assert(settings.magnetMode === "pieces", "I: ► on magnet row selects Pieces");
-menuInput("left");  assert(settings.magnetMode === "time", "I: ◄ on magnet row selects Time");
-menuInput("down");  assert(game.menu.index === 2, "I: down -> auto-shield row (CS012 P5)");
+// REPOINTED BY CS024 P6 (spec §3.7): FOUR value rows down to ONE. The shot/magnet/chain-guard rows are
+// deleted with the modes they selected; auto-shield — index 2 before, index 0 now — is the whole screen.
+assert(DIFFICULTY_ROWS.join(",") === "autoshield,back", `I: DIFFICULTY_ROWS is exactly [autoshield, back] (got ${DIFFICULTY_ROWS.join(",")})`);
 menuInput("right"); assert(settings.autoShield === true,  "I: ► on auto-shield row turns it On");
 menuInput("left");  assert(settings.autoShield === false, "I: ◄ on auto-shield row turns it Off");
-menuInput("down");  assert(game.menu.index === 3, "I: down -> chain-guard row (CS017 P6)");
-menuInput("right"); assert(settings.chainGuardMode === "count", "I: ► on chain-guard row selects Intercepts");
-menuInput("left");  assert(settings.chainGuardMode === "time",  "I: ◄ on chain-guard row selects Time");
-menuInput("down");  assert(game.menu.index === 4, "I: down -> Back row");
+menuInput("down");  assert(game.menu.index === 1, "I: down -> Back row (the row AFTER the one value row)");
 menuInput("confirm");
 assert(game.menu.screen === "options" && game.menu.index === MENU_OPTIONS.indexOf("Difficulty"),
   "I: Back returns to Options with the cursor on Difficulty");
@@ -295,69 +298,73 @@ menuInput("back");
 assert(game.menu.screen === "options" && game.menu.index === MENU_OPTIONS.indexOf("Difficulty"), "I: back action also -> Options");
 closePause();
 
-// persist round-trip driven by the menu toggles (they call saveSettings)
-game.menu.screen = "difficulty"; game.menu.index = 0; menuInput("right"); // shots
-game.menu.index = 1; menuInput("right");                                   // pieces
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";           // wipe in-memory
+// persist round-trip driven by the menu toggle (it calls saveSettings)
+game.menu.screen = "difficulty"; game.menu.index = 0; menuInput("right"); // auto-shield On
+settings.autoShield = false;                                              // wipe in-memory
 loadSettings();
-assert(settings.shotPowerupMode === "shots" && settings.magnetMode === "pieces", "I: menu toggles persisted + reload restores them");
+assert(settings.autoShield === true, "I: the menu toggle persisted + a reload restores it");
 // direct save/load round-trip
-settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces"; saveSettings();
-settings.shotPowerupMode = "time"; settings.magnetMode = "time"; loadSettings();
-assert(settings.shotPowerupMode === "shots" && settings.magnetMode === "pieces", "I: direct saveSettings/loadSettings round-trip");
-// tolerate an OLD save with no mode keys (additive fields, no schema bump)
+settings.autoShield = false; saveSettings();
+settings.autoShield = true; loadSettings();
+assert(settings.autoShield === false, "I: direct saveSettings/loadSettings round-trip");
+// REPOINTED BY CS024 P6: A PRE-EDIT SAVE LOADS CLEANLY. The three mode keys every earlier build wrote
+// are now ORPHANED keys on the frozen afd_settings_v1 — ignored under known-value-else-default, with no
+// schema bump, no rename and no migration shim — and every field this build DOES understand still loads.
+lsStore[STORAGE_KEY] = JSON.stringify({
+  vol: { master: 0.8, sfx: 1, music: 1 }, bindings: {},
+  shotPowerupMode: "shots", magnetMode: "pieces", chainGuardMode: "count",   // the three orphans
+  musicTrack: "drift", autoShield: true, captions: false
+});
+settings.autoShield = false; settings.musicTrack = "zen"; settings.captions = true;
+loadSettings();
+assert(settings.autoShield === true, "I: a pre-CS024-P6 save loads its autoShield normally");
+assert(settings.musicTrack === "drift" && settings.captions === false, "I: ...and every other field it understands");
+for (const orphan of ["shotPowerupMode", "magnetMode", "chainGuardMode"])
+  assert(!(orphan in settings), `I: ...while the orphaned ${orphan} key is ignored, not resurrected onto settings`);
+// an OLD save with no mode keys at all still loads (additive fields, no schema bump)
 lsStore[STORAGE_KEY] = JSON.stringify({ vol: { master: 1, sfx: 1, music: 1 }, bindings: {} });
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";
+settings.autoShield = true;
 loadSettings();
-assert(settings.shotPowerupMode === "time" && settings.magnetMode === "time", "I: an old save missing the mode keys loads without error -> defaults kept");
-// a corrupt mode value falls back to default (not stuck)
-lsStore[STORAGE_KEY] = JSON.stringify({ shotPowerupMode: "bogus", magnetMode: "pieces" });
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";
-loadSettings();
-assert(settings.shotPowerupMode === "time" && settings.magnetMode === "pieces", "I: a bogus mode value is ignored; a valid one still loads");
+assert(settings.autoShield === true, "I: an old save missing every additive key loads without error -> runtime values kept");
 
 // =====================================================================
-console.log("(J) Difficulty screen + count-mode HUD draw without throwing");
-settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces";
+console.log("(J) Difficulty screen + the budgeted HUD draw without throwing");
 startGame();
 game.state = "playing"; game.paused = true;
 game.menu.screen = "difficulty"; game.menu.index = 0;
-draw(); // difficulty screen, both toggles in count state
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";
-draw(); // difficulty screen, both toggles in time state
-game.menu.screen = "options"; draw();  // Options with the new Difficulty row
+settings.autoShield = true;  draw();   // difficulty screen, toggle On
+settings.autoShield = false; draw();   // ...and Off
+game.menu.index = 1;         draw();   // ...with Back focused (index past the help array — no HELP read)
+game.menu.screen = "options"; draw();  // Options with the Difficulty row
 game.paused = false;
-// count-mode HUD: active Rapid/Triple (shots) + Magnet (pieces) render the numeric-count bars
-settings.shotPowerupMode = "shots"; settings.magnetMode = "pieces";
-applyPowerup("rapid"); applyPowerup("triple"); applyPowerup("magnet"); applyPowerup("engine");
+// the budgeted HUD: every row active at once, including the two live-knob types
+for (const t of POWERUP_DROP_TYPES) applyPowerup(t);
 draw();
-assert(true, "J: drawing the Difficulty screen, Options, and the count-mode HUD did not throw");
+assert(true, "J: drawing the Difficulty screen, Options, and the fully-active budgeted HUD did not throw");
 
 // =====================================================================
 // (K) v3.4 P4 — the Magnet gets a DOUBLED duration (30 s), in BOTH expiry modes, without
 //     touching the shared POWERUP_DURATION the other three effects use.
 // =====================================================================
-console.log("(K) v3.4 P4: Magnet duration doubled (30 s) in time AND pieces modes; other effects unchanged");
-// the powerDuration(type) helper mirrors powerMode(type): Magnet is the one long effect.
-assert(MAGNET_DURATION === 30 && MAGNET_DURATION === POWERUP_DURATION * 2, `K: MAGNET_DURATION === 30 === 2*POWERUP_DURATION (got ${MAGNET_DURATION})`);
-assert(POWERUP_DURATION === 15, `K: POWERUP_DURATION still 15 — NOT doubled (got ${POWERUP_DURATION})`);
-assert(powerDuration("magnet") === 30, `K: powerDuration("magnet") === 30 (got ${powerDuration("magnet")})`);
-for (const t of ["rapid", "triple", "engine"]) {
-  assert(powerDuration(t) === 15, `K: powerDuration("${t}") === 15 — the other three keep the shared 15 s (got ${powerDuration(t)})`);
-}
-// time mode: applyPowerup("magnet") sets powerFx to 30, while the other three set 15.
-settings.shotPowerupMode = "time"; settings.magnetMode = "time";
-startGame(); isolate(); applyPowerup("magnet");
-assert(near(game.powerFx.magnet, 30), `K: time-mode applyPowerup("magnet") arms powerFx.magnet to 30 (got ${game.powerFx.magnet})`);
-startGame(); isolate();
-for (const t of ["rapid", "triple", "engine"]) { applyPowerup(t); assert(near(game.powerFx[t], 15), `K: applyPowerup("${t}") still arms to 15 (got ${game.powerFx[t]})`); }
-// pieces mode: the budget doubled for free (POWERUP_BUDGET reads MAGNET_PIECES, now 40).
+console.log("(K) INVERTED — the duration table is deleted; grant size is powerBudgetAmount(), per type");
+// v3.4 P4's durable half was "the per-type quantity is read through a FUNCTION, never a shared literal,
+// and it genuinely differs by type." That survives verbatim — only the function's name and unit moved.
 assert(MAGNET_PIECES === 40, `K: MAGNET_PIECES === 40 (v3.4 P4: 20->40; got ${MAGNET_PIECES})`);
 assert(POWERUP_BUDGET.magnet === 40, `K: POWERUP_BUDGET.magnet reads MAGNET_PIECES === 40 for free (got ${POWERUP_BUDGET.magnet})`);
-settings.magnetMode = "pieces";
-startGame(); isolate(); applyPowerup("magnet");
-assert(game.powerBudget.magnet === 40 && near(game.powerFx.magnet, 0), `K: pieces-mode applyPowerup("magnet") arms the budget to 40, not the timer (got ${game.powerBudget.magnet})`);
-settings.magnetMode = "time"; // restore
+assert(powerBudgetAmount("rapid") === RAPID_SHOTS && powerBudgetAmount("triple") === TRIPLE_SHOTS &&
+  powerBudgetAmount("magnet") === MAGNET_PIECES, "K: the three frozen grants come from POWERUP_BUDGET");
+assert(!("guard" in POWERUP_BUDGET) && !("engine" in POWERUP_BUDGET),
+  "K: ...and the two LIVE-knob types are deliberately absent from that table");
+assert(powerBudgetAmount("guard") === DEBUG.chainGuardIntercepts, "K: guard's grant is the live DEBUG.chainGuardIntercepts");
+assert(powerBudgetAmount("engine") === DEBUG.engineBurnSeconds, "K: engine's grant is the live DEBUG.engineBurnSeconds");
+assert(ENGINE_BURN_SECONDS === 5.0 && DEBUG.engineBurnSeconds === 5.0, `K: ENGINE_BURN_SECONDS is 5.0 s and seeds the knob (got ${ENGINE_BURN_SECONDS})`);
+// a retune of the live knob moves the grant on the NEXT pickup, without a reload
+DEBUG.engineBurnSeconds = 9;
+startGame(); isolate(); applyPowerup("engine");
+assert(near(game.powerBudget.engine, 9), `K: a retuned engineBurnSeconds grants 9 s of fuel (got ${game.powerBudget.engine})`);
+DEBUG.engineBurnSeconds = ENGINE_BURN_SECONDS;
+startGame(); isolate();
+for (const t of POWERUP_DROP_TYPES) { applyPowerup(t); assert(near(game.powerBudget[t], powerBudgetAmount(t)), `K: applyPowerup("${t}") grants exactly powerBudgetAmount("${t}")`); }
 
 // (K2) CS009 P4 SUPERSEDES v3.4 P4 here: the HUD active-effect FILL BAR is gone — every powerup row is
 // now a ring (drawn via drawRingArc/glowStroke, not fillRect). So the magnet row draws NO bar fill at
@@ -385,12 +392,10 @@ console.log("(K2) CS009 P4: the powerup fill bar is gone — magnet row draws no
     "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
     scriptSrc + "\n;return { startGame, draw, game, settings };"
   )(windowStub, recDoc, performanceStub, rafStub, navigatorStub, global.localStorage);
-  B.settings.shotPowerupMode = "time"; B.settings.magnetMode = "time";
   B.startGame();
   B.game.state = "playing"; B.game.paused = false;
-  // ONLY the magnet is active, at HALF its (doubled) duration. Old build: a bar fill at x=59, h=4. Now: none.
-  B.game.powerFx = { rapid: 0, triple: 0, magnet: 15, engine: 0 };
-  B.game.powerBudget = { rapid: 0, triple: 0, magnet: 0, engine: 0 };
+  // ONLY the magnet is active, at HALF its budget. Old build: a bar fill at x=59, h=4. Now: none.
+  B.game.powerBudget = { rapid: 0, triple: 0, magnet: 20, engine: 0, guard: 0 };
   recCtx.calls.length = 0;
   B.draw();
   const bar = recCtx.calls.find(a => a.length === 4 && a[0] === 59 && a[3] === 4);
@@ -423,9 +428,8 @@ console.log("(L) HUD rebuild — TARGETS removed, hull/shield ring (P2), powerup
   const recDoc = { getElementById: () => recCanvas };
   const C = new Function(
     "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
-    scriptSrc + "\n;return { startGame, draw, game, settings, COLOR, applyPowerup, SHIP_MAX_HP };"
+    scriptSrc + "\n;return { startGame, draw, game, settings, COLOR, applyPowerup, SHIP_MAX_HP, POWERUP_DROP_TYPES };"
   )(windowStub, recDoc, performanceStub, rafStub, navigatorStub, global.localStorage);
-  C.settings.shotPowerupMode = "time"; C.settings.magnetMode = "time";
   C.startGame();
   C.game.state = "playing"; C.game.paused = false;
 
@@ -460,10 +464,9 @@ console.log("(L) HUD rebuild — TARGETS removed, hull/shield ring (P2), powerup
   assert(!noMaxTag, "L3: no MAX tag when HP is just below max");
   C.game.ship.hp = C.SHIP_MAX_HP;
 
-  // (L4) count-mode powerup row: CS009 P4 keeps the "no bar, plain number" read, but the row is now a
-  // ring, the number moved to x=64 (was 58), and it's the raw budget with NO "s" suffix. No fillRect
-  // anywhere in the row (the number is fillText via drawText; the ring is a stroked arc).
-  C.settings.shotPowerupMode = "shots"; C.settings.magnetMode = "time";
+  // (L4) a budgeted powerup row: CS009 P4 keeps the "no bar, plain number" read, the row is a ring, the
+  // number sits at x=64, and it is the raw budget with NO "s" suffix. No fillRect anywhere in the row
+  // (the number is fillText via drawText; the ring is a stroked arc).
   C.applyPowerup("rapid");
   recCtx.calls.length = 0;
   C.draw();
@@ -472,18 +475,21 @@ console.log("(L) HUD rebuild — TARGETS removed, hull/shield ring (P2), powerup
   const rapidBarFill = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 59 && c.args[3] === 4);
   assert(!rapidBarFill, "L4: count-mode Rapid row draws NO bar rect (never did; the row is now a ring)");
 
-  // (L5) CS009 P4 SUPERSEDES v3.6 P4: a time-mode row no longer draws a fill BAR — it's a ring arc now.
-  // The remaining time reads as "Ns" text (Math.ceil), drawn via drawText (fillText), not a rect.
-  C.settings.shotPowerupMode = "time";
+  // (L5) INVERTED BY CS024 P6: there is no time-mode row left, so NO row anywhere draws an "Ns" string.
+  // The old claim ("a time row draws its seconds as Ns text") is exactly what must now be false — and
+  // the engine row is the case that would regress it first, since its budget really is in seconds.
   C.startGame();
   C.game.state = "playing"; C.game.paused = false;
-  C.applyPowerup("rapid");
+  for (const t of C.POWERUP_DROP_TYPES) C.applyPowerup(t);
   recCtx.calls.length = 0;
   C.draw();
   const rapidTimeBar = recCtx.calls.find(c => c.fn === "fillRect" && c.args[0] === 59 && c.args[3] === 4);
-  assert(!rapidTimeBar, "L5: time-mode Rapid row draws NO fill bar (replaced by the ring arc, CS009 P4)");
-  const rapidSecsText = recCtx.calls.find(c => c.fn === "fillText" && c.args[0] === (Math.ceil(C.game.powerFx.rapid) + "s") && c.args[1] === 64);
-  assert(!!rapidSecsText, "L5: time-mode Rapid row draws its remaining seconds as 'Ns' text at x=64");
+  assert(!rapidTimeBar, "L5: no active-effect fill bar (replaced by the ring arc, CS009 P4)");
+  const secsText = recCtx.calls.find(c => c.fn === "fillText" && c.args[1] === 64 && /^\d+s$/.test(String(c.args[0])));
+  assert(!secsText, "L5: INVERTED — NO powerup row draws an 'Ns' seconds string any more (every row is a budget)");
+  const engineNum = recCtx.calls.find(c => c.fn === "fillText" && c.args[1] === 64 &&
+    String(c.args[0]) === String(Math.ceil(C.game.powerBudget.engine)));
+  assert(!!engineNum, "L5: the engine row draws its fuel as a plain ceil'd number (no suffix), not '5s'");
 }
 
 // =====================================================================
