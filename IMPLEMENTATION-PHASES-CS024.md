@@ -18,8 +18,19 @@ session, one commit per phase, on `main`.** Claude Code commits; Paul pushes.
 | **P4** | The odometer mechanism | **Opus** | high | **yes** |
 | **P5** | Lever wiring + UFO per-size independence | Sonnet | high | no |
 | **P6** | Count-only powerups + Engine-as-fuel | **Opus** | high | no |
+| **P6b** | ⚠️ *corrective* — drivers-only-wrap + UFO restage | **Opus** | high | **yes** |
+| **P6c** | ⚠️ *corrective* — lever floor/ceil/steps knobs | **Opus** | high | **yes** |
 | ⛔ | **GATE B** — blocking playtest ← *Paul plays; answers go in `STATUS.md`* | — | — | — |
 | **P7** | Retune, version bump, full doc rewrite | **Opus** | high | no |
+
+**P6b and P6c are IN-ROUND CORRECTIVE PHASES**, opened in conversation after P4
+and P5 landed, following the CS020 P1b / CS021 P1b / CS023 P4b precedent. They
+were not in this document's original plan. Each fixes something the phase above
+it shipped, and **both must land before Gate B**, because Gate B's whole job is
+tuning a ramp — it cannot do that against a mechanism that regresses at level 33
+with sliders that flatten whatever they touch. **Order matters: P6b before P6c**,
+since P6c derives every slider's range from the `LEVERS` table and P6b changes
+nine step counts and removes two `carriesTo` lists in it.
 
 **Setting the model/effort in Claude Code:** use the session-level `/model`
 command before pasting the prompt. Where the table says `ultrathink`, the keyword
@@ -472,6 +483,14 @@ numbers**; that is far cheaper than P4 guessing.
 
 **Commit:** `cs-24 p4: the lever odometer, payloadSlots curve, musicIntensity rename`
 
+> **✅ LANDED as `9e70891`. AS BUILT, and what it left open.** `leverState(wave)`
+> shipped with the ORIGINAL unrestricted carry semantics — a carried lever that
+> itself declares `carriesTo` wraps like any other, and `ufoFlightSpeedBig` /
+> `ufoFlightSpeedSmall` still carry at 4 steps each. **The FORK-CS025-A
+> drivers-only-wrap amendment did not reach this session**, so the level-33 UFO
+> flight-speed regression is live in the build and the second-generation levers
+> do not saturate until level 97. **Corrected by P6b.**
+
 ---
 
 ## P5 — Lever wiring + UFO per-size independence
@@ -546,6 +565,16 @@ numbers**; that is far cheaper than P4 guessing.
 > **TRAP 4:** docs untouched.
 
 **Commit:** `cs-24 p5: wire the levers, UFO per-size independence, registry rebuild`
+
+> **✅ LANDED as `c96a983`. AS BUILT, and what it left open.** The one-knob-per-
+> lever instruction above was **incoherent and this is where that surfaced.** P5
+> did the only sensible thing available to it: `leverKnob(id, label, unit)`
+> returns `{ def: null, min, max, step }` with `min`/`max` from
+> `Math.min`/`Math.max` of the shipped pair, and consumers read
+> `DEBUG.<leverId> ?? lv.<leverId>`. So an untouched slider leaves the odometer
+> alone, but **moving one PINS that lever to a flat constant at every level** —
+> it cannot tune the ramp's floor, ceiling or period, and it cannot move an
+> endpoint past its partner. **Corrected by P6c.**
 
 ---
 
@@ -623,22 +652,267 @@ numbers**; that is far cheaper than P4 guessing.
 > the same shape as P3's: **GATE B is open, P7 must not run until it is answered
 > here**, Gate B's seven questions verbatim, what to play (levels 1→20 minimum),
 > and a briefing listing **every one of the 17 levers with its knob id, current
-> value, range and step**, so retuning at the gate is a matter of dragging a
-> slider rather than hunting for it. Restate the standing instruction: report the
+> value, range and step** — remembering each lever has TWO rows, a floor and a
+> ceiling — so retuning at the gate is dragging a slider rather than hunting for
+> one. Note explicitly which levers are inverted, so a floor above its ceiling
+> reads as correct rather than as a bug. Restate the standing instruction: report the
 > number landed on, not a yes/no.
 
 **Commit:** `cs-24 p6: count-only powerups, engine-as-fuel, difficulty menu`
 
 ---
 
-## ⛔ GATE B — BLOCKING PLAYTEST (after P6)
+## P6b — ⚠️ CORRECTIVE: drivers-only-wrap + UFO restage
+
+**Model: Opus · Effort: high · `ultrathink` baked in**
+
+> Changeset 024, Phase 6b — an **in-round corrective phase**, not in the original
+> plan. It lands the FORK-CS025-A amendment that P4 was supposed to carry and
+> did not, plus the UFO step-count restage that depends on it. Design source:
+> `PLANNED-FEATURES-CS025.md` §1 and §2 — read both.
+>
+> **Grep every anchor by symbol first.** Everything in this prompt was written
+> against `c96a983`, and **P6 has landed since**, touching `DEBUG_VARS` and the
+> powerup paths. Re-measure before editing.
+>
+> **What is wrong in the build.** `leverState()` shipped with unrestricted carry
+> semantics: a carried lever that itself declares `carriesTo` wraps like any
+> other. Plotted level by level, that makes `ufoFlightSpeedSmall` climb 150 → 210
+> px/s by level 25 and then **reset to 150 at level 33** — a UFO genuinely slower
+> at level 33 than at 25, a difficulty regression on one of the most legible
+> quantities in the game. And the second-generation levers (`ufoDirChange*`,
+> `ufoShotSpeed*`, `ufoAccuracySmall`) move twice in 64 levels and do not reach
+> their ceilings until level 97.
+>
+> **The rule: a lever may declare `carriesTo` ONLY if it also declares
+> `everyNLevels`.** Every carried lever plateaus at its ceiling. There is no
+> second carry generation.
+>
+> **ultrathink the closed form before editing it.** Under depth-1 the propagation
+> collapses: a dependent's carry count is
+> `Math.floor((wave - 1) / (everyN × steps))` of its **driver**, computed
+> directly, no iteration and no recursion. Three things to get right:
+>
+> 1. **The junk and hunter chains must be byte-identical in output.** Their
+>    dependents already have empty `carriesTo` lists, so nothing about them
+>    changes. **Prove it** — compare `leverState(n)` for every junk and hunter
+>    lever at every level 1–200 against `HEAD`. A diff there means the closed form
+>    is wrong, not that the rule is.
+> 2. **Replace the guard, don't delete it.** A cycle is unreachable by
+>    construction now, so the load-time assertion becomes a stronger and cheaper
+>    one: **throw if any lever declares `carriesTo` without `everyNLevels`, or
+>    names an unknown id.** Same idiom as `SCOOP_WIDTH[0] !== 0`. A deliberate
+>    invariant, **not test scaffolding** — say so in a comment at the site.
+> 3. **Restage the UFO table.** `ufoAppearFreq` stays the driver (25 → 12,
+>    8 steps, `everyNLevels` 1) and carries to **all nine** other UFO levers
+>    directly. Neither `ufoFlightSpeedBig` nor `ufoFlightSpeedSmall` may keep a
+>    `carriesTo`. New step counts — floors and ceils **unchanged**:
+>
+> | Lever | steps | reaches ceil |
+> |---|---|---|
+> | `ufoFlightSpeedBig` / `ufoFlightSpeedSmall` | 5 | L33 |
+> | `ufoFireFreqBig` / `ufoFireFreqSmall` | 6 | L41 |
+> | `ufoDirChangeBig` / `ufoDirChangeSmall` | 7 | L49 |
+> | `ufoShotSpeedBig` / `ufoShotSpeedSmall` | 8 | L57 |
+> | `ufoAccuracySmall` | 9 | L65 |
+>
+> **The stagger is the design, and a comment at the table should say so:** speed
+> arrives first, then rate of fire, then evasiveness, then shot velocity, and
+> **accuracy last** — the most lethal quantity creeping in over the longest span
+> in the smallest per-carry increments (9 steps across 22° is ~2.75° per carry).
+> Do not "tidy" these into a uniform number; the unevenness is the point.
+>
+> **`ufoAppearFreq` still cycles forever** and never permanently tightens — at
+> level 100 exactly as at level 1. Deliberate: it is the driver, and a driver
+> that stopped cycling would freeze every lever under it. Do not "fix" it.
+>
+> **New `scratchpad/test-cs024-p6b.js`.** The headline assertion is the one that
+> would have caught this defect: **no lever in the shipped table returns toward
+> its floor at any level 1–200 except a driver.** Also: the guard firing on a
+> `carriesTo`-without-`everyNLevels` table and on an unknown id, with a control
+> table that passes; junk and hunter output identical to `HEAD` at every level
+> 1–200; each UFO lever reaching its ceiling at exactly the level tabled above;
+> and the values arriving at the real `Saucer` constructor and `update()` through
+> the actual spawn path, not read off `leverState` alone. Where
+> `test-cs024-p4.js` asserts depth-2 propagation, **invert those assertions to
+> their mirror image** with a `CORRECTED BY CS024 P6b` note — the standing
+> convention since CS017 P6 — rather than deleting them.
+>
+> **TRAP 1:** `GAME_VERSION` stays `"1.0.0.22"`. P7 owns the bump.
+> **TRAP 2:** the registry is P6c's. Do not add or reshape a knob here.
+> **TRAP 3:** no `floor <= ceil` validator, anywhere.
+> **TRAP 4:** `leverState()` must stay pure and evaluable alone in a bare
+> context — its slice test must still pass unmodified.
+> **TRAP 5:** P6's POWERUPS section and powerup paths are untouched — pin them
+> against `HEAD`.
+> **TRAP 6:** docs untouched.
+
+**Commit:** `cs-24 p6b: only drivers may wrap; restage the UFO chain`
+
+---
+
+## P6c — ⚠️ CORRECTIVE: lever floor/ceil/steps knobs
+
+**Model: Opus · Effort: high · `ultrathink` baked in**
+
+> Changeset 024, Phase 6c — an **in-round corrective phase**, not in the original
+> plan. Design source: `PLANNED-FEATURES-CS024.md` §2.6, **rewritten for this
+> phase — read it before anything else.** Runs **after P6b**, which changes nine
+> step counts and two `carriesTo` lists in `LEVERS`.
+>
+> **Grep every anchor by symbol first.** P6 and P6b have both landed since this
+> was written; `DEBUG_VARS`' contents, its entry count and every registry-count
+> pin in the suite will have moved twice. Expect a large repoint sweep and report
+> every file you touch — P5's rebuild already forced one, P6's POWERUPS section a
+> second, and this is the third.
+>
+> **What is wrong in the build.** `leverKnob(id, label, unit)` returns
+> `{ def: null, min, max, step }` with `min`/`max` from `Math.min`/`Math.max` of
+> the shipped pair, and consumers read `DEBUG.<leverId> ?? lv.<leverId>`. An
+> untouched slider correctly leaves the odometer alone — **keep that property** —
+> but moving one **pins the lever to a flat constant at every level.** It cannot
+> tune the ramp's floor, its ceiling or its period, and it cannot move an
+> endpoint past its partner. Gate B's job is tuning the ramp; it currently
+> cannot.
+>
+> **Replace the one flat row per lever with THREE: `<leverId>Floor`,
+> `<leverId>Ceil`, `<leverId>Steps` — 51 rows.** Moving any of the three
+> re-derives that lever's whole ramp immediately, at every level.
+>
+> **The flat pin is subsumed, not lost:** setting Floor equal to Ceil pins the
+> lever to a constant at every level, which is exactly what the retired row did.
+> Do not keep a fourth row for it.
+>
+> **ultrathink these four, because each is a place a plausible edit is wrong:**
+>
+> 1. **⛔ RANGES MUST SPAN BOTH DIRECTIONS.** Several levers are inverted —
+>    `coalescePause` 5.0 → 1.5, `ufoAccuracySmall` 30 → 8, every `ufoFireFreq*`
+>    and `ufoDirChange*`, `ufoAppearFreq`. The current
+>    `Math.min`/`Math.max`-of-the-shipped-pair locks each slider inside its
+>    *current* span, so a ceiling cannot be raised above where it already sits.
+>    Each row needs a range wide enough to move either endpoint **past** its
+>    partner, and **nothing may assert or clamp `floor <= ceil` in the panel any
+>    more than in the table.** Half the levers are ordinary, so a spot check will
+>    look fine — test this explicitly on at least one inverted lever per chain.
+> 2. **A WRAP MUST LAND EXACTLY ON `floor`, never on an interpolated value.**
+>    This already holds (`step 0` short-circuits to `lev.floor`), and it must
+>    survive the Steps knob: at any step count, passing the top returns the lever
+>    to precisely `floor`, not to a fraction near it. Assert it directly across a
+>    sweep of step counts.
+> 3. **⛔ INTEGER-VALUED LEVERS NEED ROUNDING AT THE CONSUMER, AND THIS IS NEW.**
+>    `junkCount` is a satellite count and `spawnFieldSatellites(count, speed)`
+>    currently takes it **raw**. At the shipped 3/12/10 every step is a whole
+>    number, so nothing has broken. **The Steps knob breaks that** — 3/12/**7**
+>    interpolates to 3, 4.5, 6, 7.5, 9, 10.5, 12, i.e. four and a half satellites.
+>    Round at the consumer, and pick the rule deliberately rather than reaching
+>    for `Math.round`: state in a comment which levers are integer-valued and
+>    why the chosen rounding is right for a *spawn count* specifically. Sweep
+>    every step count the knob can reach and assert an integer arrives at the
+>    spawn every time.
+> 4. **Steps is an INTEGER knob with a floor of 2.** `steps: 1` divides by zero
+>    in the `(steps - 1)` span; `steps: 0` is meaningless. Guard it at the row's
+>    `min`, not with a runtime clamp.
+>
+> **Purity:** `leverState()` must not read `DEBUG`; that would drag the registry
+> into its bare-context slice and destroy its testability. Keep the existing
+> `DEBUG.x ?? lv.x` shape at the consumers, or give `leverState` an optional
+> table parameter — **your call, but justify it in `STATUS.md`**, and either way
+> the slice test must pass unmodified.
+>
+> **⛔ THE PANEL MUST SHOW THE CHAIN, NOT JUST THE ROWS.** 51 rows with no
+> structure is a wall. A section maps 1:1 to a chain, and within it every row
+> either **drives** or **is driven** — the panel has to say which, or a retune is
+> guesswork about what a slider will knock on to. Encode it in the label text, so
+> **no new registry rows and no renderer change**:
+>
+> - **Driver lever** — `▼` prefix, unindented. The glyph means "everything
+>   indented below moves when this one wraps."
+> - **Dependent lever** — two leading spaces and `↳`.
+> - **Non-lever flat knob** (`smallUfoChance`, `lastStandSpeed`,
+>   `garbageAttractRadius`/`Force`, `sweepCoalescePause`, the CHAIN GUARD and
+>   POWERUPS rows) — **no glyph, no indent.** They belong to no chain and must not
+>   look as though they do.
+> - **Inverted lever** — suffix the label `(inv)`, on all three of its rows. A
+>   Floor numerically above its Ceil is correct for these and must not read as a
+>   bug at 2am.
+>
+> Target shape:
+>
+> ```
+> JUNK
+> ▼ Junk count · floor
+> ▼ Junk count · ceil
+> ▼ Junk count · steps
+>   ↳ Junk speed (large) · floor
+>   ↳ Junk speed (large) · ceil
+>   ↳ Junk speed (large) · steps
+>   ↳ Junk speed (medium) · floor
+>   ...
+> HUNTER
+> ▼ Coalescence inert delay (inv) · floor
+> ...
+>   ↳ Hunter speed (medium) · floor
+> ...
+> Hunter last-stand speed
+> ```
+>
+> **Derive the glyph and the `(inv)` suffix from the `LEVERS` table inside
+> `leverKnob()`** — `everyNLevels` decides driver vs dependent, `floor > ceil`
+> decides inverted. **Never hand-type them into the label strings**, or a future
+> table edit silently desyncs the panel from the mechanism. Assert the derivation
+> in the test rather than asserting the literal strings.
+>
+> **Check the rendered width** before settling on the glyphs. Labels grow by up to
+> ~8 characters and the panel truncates rather than wraps; if `(inv)` does not
+> fit, shorten the base labels rather than dropping the marker.
+>
+> **New `scratchpad/test-cs024-p6c.js`**: each of the three knobs per lever
+> observably moving that lever's derived value — drag Floor, prove level 1 moved;
+> drag Ceil, prove the saturated level moved; drag Steps, prove the saturation
+> level itself moved; all three on an **inverted** lever, proving no clamp or
+> flip; Floor equal to Ceil producing a genuine constant at every level; the
+> exact-`floor` wrap across a sweep of step counts; an integer arriving at
+> `spawnFieldSatellites` at every reachable step count; the `steps >= 2` guard;
+> and a persistence round-trip through `afd_settings_v1`. Plus the hierarchy:
+> every driver carrying `▼`, every dependent `↳`, every non-lever knob neither,
+> every inverted lever `(inv)` — all **derived from `LEVERS`**, proven by mutating
+> a lever's `everyNLevels` or flipping its floor/ceil and watching the label
+> follow.
+>
+> **FINALLY — REWRITE THE GATE-OPEN BLOCK.** P6 already wrote a Gate B block into
+> `STATUS.md` describing the **retired** one-flat-row-per-lever sliders. It is now
+> wrong. Rewrite it: 51 lever rows, three per lever, what each does, **which
+> levers are inverted** (so a Floor above its Ceil reads as correct rather than as
+> a bug), the note that Floor equal to Ceil pins a lever flat, and the P6b
+> restage's new saturation levels. Extend the play instruction to **levels 1 → 45**
+> — P6b's stagger does its work between 33 and 65, and the old range stopped at 30.
+>
+> **TRAP 1:** `GAME_VERSION` stays `"1.0.0.22"`.
+> **TRAP 2:** an untouched panel must leave shipped behaviour byte-identical —
+> pin `leverState` output at every level 1–200 against `HEAD`.
+> **TRAP 3:** no `floor <= ceil` validator or clamp, in the panel or anywhere.
+> **TRAP 4:** P6's POWERUPS rows survive, and §5's section order holds: SHIP ·
+> GARBAGE · CHAIN GUARD · DELIVERY · JUNK · HUNTER · UFO · POWERUPS · GLOBAL.
+> **TRAP 5:** no schema bump, no rename of `afd_settings_v1`. Orphaned ids from
+> the retired flat rows are ignored under known-value-else-default.
+> **TRAP 6:** docs untouched.
+
+**Commit:** `cs-24 p6c: lever floor/ceil/steps knobs`
+
+---
+
+## ⛔ GATE B — BLOCKING PLAYTEST (after P6c)
 
 **P7 must not run until the questions below are answered in `STATUS.md`'s
-`## Playtest asks` section.** P6's own prompt ends by writing them there.
+`## Playtest asks` section.** P6 writes a first version of that block; **P6c
+rewrites it**, and P6c's version is the one to read — P6's describes sliders that
+no longer exist.
 
-**What to play:** **levels 1 → 20 minimum**, ideally to 30. Every one of the 17
-levers is a live slider in the hidden Debug panel — **retune in-session and
-report the number you landed on, not a yes/no.**
+**What to play:** **levels 1 → 45**, reached by playing rather than by jumping
+the counter — how the ramp *arrives* is the whole question, and P6b's UFO stagger
+does its work between 33 and 65. Every lever has **three** live sliders (Floor,
+Ceil, Steps) — **retune in-session and report the number you landed on, not a
+yes/no.**
 
 **The questions:**
 
@@ -648,14 +922,35 @@ report the number you landed on, not a yes/no.**
    visibly faster, does that land as an escalation?
 9. **Three chains breathing on different periods** — `junkCount` every 10 levels,
    `coalescePause` every 8, `ufoAppearFreq` every 8. Rich, or arrhythmic?
-10. **Any lever whose floor or ceiling is wrong.** Slide it, land on a number,
-    report the number.
-11. **Engine-as-fuel:** does 5 seconds of thrust feel like a powerup or a tease?
+10. **Any lever whose floor or ceiling is wrong.** Each lever has **two**
+    sliders — `<leverId>Floor` and `<leverId>Ceil`. Slide either, land on a
+    number, report the number. Step counts are *not* sliders: if a ramp feels the
+    wrong *length* rather than the wrong *height*, say so in words and P7 changes
+    it at the source.
+11. **All five powerup budgets** — Engine 5.0 s, Rapid 40 shots, Triple 30 pulls,
+    Magnet 40 hooks, Guard 3 intercepts. Count-only is new for four of them and
+    the engine's 5.0 was never a decision, only a conversational example. All
+    five are knobs: **land on numbers and report them.**
 12. **Count-only powerups:** does losing timed mode make Magnet (40 hooks) or
     Rapid (40 shots) feel meaningfully different?
 13. **Level 12 and the Super Mega Delivery** — now that 24 slots is the first
     moment an SMD is possible at all, does hitting it land as the payoff it
     should be?
+
+*The four below were CS025's gate before P6b absorbed that changeset. They need
+levels 25–45, which is why the play range above extends that far.*
+
+14. **Levels 25 → 40:** do the UFOs read as continuously escalating? The pre-P6b
+    build got visibly slower at 33; this one must not.
+15. **Is the stagger legible?** Around 40–50 the UFOs should start feeling
+    *evasive* rather than merely fast. A change in character, or undifferentiated
+    pressure?
+16. **Accuracy last:** by level 45, are small UFO shots feeling genuinely
+    threatening? If accuracy still feels harmless, 9 steps is too many.
+17. **Levels 41+:** with junk fully ramped at 41 and hunters at 33, does the late
+    game feel flat, or does the UFO chain plus the two sawtooths carry it? If
+    flat, P7 raises the step counts on the six junk/hunter dependents — a table
+    edit, and it will not happen unless you ask.
 
 ---
 
@@ -717,7 +1012,12 @@ report the number you landed on, not a yes/no.**
 > years of entries onto one physical line.
 >
 > **8. Archive** `PLANNED-FEATURES-CS023.md` and `IMPLEMENTATION-PHASES-CS023.md`
-> to `archive/`, and check whether the CS022 pair is already there.
+> to `archive/`, and check whether the CS022 pair is already there. **Also
+> archive the CS025 pair** — that changeset was absorbed into this one as P6b/P6c
+> and has nothing left to build; both files carry a SUPERSEDED banner saying so.
+> `DIFFICULTY-LEVERS.md` should cite `PLANNED-FEATURES-CS025.md` §0 as the record
+> of *why* the drivers-only-wrap rule exists, since the evidence for it came from
+> plotting the tables rather than from reading them.
 >
 > **TRAP 1:** the GDD must not describe a single removed system. Grep it for
 > `orbit`, `bonus canister`, `decay`, `powerFx`, `tier`, `phase` before

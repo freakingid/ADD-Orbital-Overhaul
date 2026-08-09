@@ -248,6 +248,74 @@ plan says so explicitly so nobody re-levers them on a cleanup pass:
 - **`HUNTER_LAST_STAND_SPEED`** — 50 px/s, with a **new debug knob**
   (`lastStandSpeed`). Not a lever.
 
+### 2.6 Every lever gets THREE knobs: floor, ceiling, steps
+
+> **Added after P4 and P5 shipped; implemented by the corrective phase P6c.**
+> P5's original instruction — "one knob per lever" — was incoherent, and this
+> section is the correction.
+
+**A lever is not a value, so it cannot be one knob.** Its shipped quantity is
+derived from a floor, a ceiling, a step count and `game.wave`. P5 did the only
+sensible thing the instruction allowed: a single row per lever that, when
+touched, **pins that lever to a flat constant at every level** — useful for
+isolating one quantity's feel, useless for tuning a ramp. Gate B's entire job is
+tuning ramps.
+
+**So each of the 17 levers gets three registry rows — `<leverId>Floor`,
+`<leverId>Ceil`, `<leverId>Steps` — 51 in total.** Moving any of the three
+re-derives that lever's whole ramp immediately, at every level.
+
+**Steps is included, reversing an earlier call.** It was excluded on the grounds
+that dragging a period mid-run moves your position in the odometer
+discontinuously. True, but the mitigation is simply to start a fresh run after
+changing it — and the gain is real: Gate B question 9 ("three chains breathing on
+different periods — rich or arrhythmic?") and question 17 ("do levels 41+ feel
+flat?") are *both* questions about step counts. Without the knob they can only be
+answered in words, and the answer waits for P7.
+
+**The flat pin is subsumed, not lost.** Setting Floor equal to Ceil pins the
+lever to a constant at every level — exactly what P5's single row did. No fourth
+row is needed for it.
+
+**How a lever advances — the part that is easy to get backwards.** Only a
+**driver** (a lever with `everyNLevels`) advances on the level clock, one step
+every N levels. A **dependent** never advances on the clock at all; it moves one
+step only when its driver **wraps**. That asymmetry is the odometer:
+`junkCount` steps every level and sawtooths 3 → 12 across ten of them, and each
+time it resets, the three junk speeds move up one notch underneath it.
+
+**Passing the top returns a lever to exactly `floor`, never to a fraction near
+it.** `leverState()` short-circuits step 0 to `lev.floor` rather than
+interpolating to it, so the reset is exact at any step count. P6c must keep this
+true across the whole range the Steps knob can reach, and assert it.
+
+**⛔ THE INVERTED-LEVER TRAP NOW REACHES THE PANEL.** Several levers have
+`floor > ceil` — a shorter delay, a smaller aim error, is *harder*. P5's
+`leverKnob` derives `min`/`max` from `Math.min`/`Math.max` of the shipped pair,
+which locks each slider inside its *current* span: a ceiling cannot be raised
+above where it already sits. Every row's range must be wide enough to move either
+endpoint **past** its partner, and **nothing may assert or clamp `floor <= ceil`
+in the panel any more than in the table.** Half the levers are ordinary, so a
+spot check looks fine — this needs testing on an inverted lever per chain.
+
+**⛔ INTEGER-VALUED LEVERS NOW NEED ROUNDING, AND THIS IS NEW.** `junkCount` is a
+satellite count, and `spawnFieldSatellites(count, speed)` takes it **raw**. At
+the shipped 3 / 12 / 10 every step lands on a whole number, so nothing has ever
+broken. **The Steps knob breaks it:** 3 / 12 / **7** interpolates to 3, 4.5, 6,
+7.5, 9, 10.5, 12 — four and a half satellites. P6c rounds at the consumer and
+records which levers are integer-valued and why the chosen rounding suits a spawn
+count specifically.
+
+**Purity is not negotiable.** `leverState()` must not read `DEBUG` — that drags
+the whole registry into its bare-context slice and destroys its testability. The
+existing `DEBUG.x ?? lv.x`-at-the-consumer shape satisfies this; an optional
+table parameter would too. Either is fine; the slice test passing unmodified is
+the requirement.
+
+**Registry consequence:** 51 lever rows. **This document does not predict the
+panel's total** — P6c measures it, then pins it. Every changeset in this project
+that predicted a registry count undercounted it.
+
 ---
 
 ## 3. Gameplay changes (as distinct from removals)
@@ -311,7 +379,13 @@ unchanged from today's count-mode values:
 | Triple | 30 | trigger pulls (a 3-fan is ONE pull) |
 | Magnet | 40 | canisters hooked |
 | Guard | 3 | intercepts (`DEBUG.chainGuardIntercepts`) |
-| **Engine** | **5.0** | **seconds of forward thrust** (NEW) |
+| **Engine** | **5.0** | **seconds of forward thrust** (NEW — starting point, see below) |
+
+**The five budgets above are STARTING POINTS, not decisions** (FLAG-CS024-f).
+The four count budgets are carried forward from today's count-mode values, which
+is defensible but has never been the *only* mode; and the engine's 5.0 came from
+an offhand example in conversation, not a design call. All five are debug knobs
+and all five are Gate B's to move.
 
 **Engine as fuel (resolved):** `ENGINE_BURN_SECONDS = 5.0`, a debug knob.
 `game.powerBudget.engine` is decremented by `dt` **only on frames where forward
@@ -449,8 +523,10 @@ branch, gated on thrust actually being applied that frame — **not** in the mai
 
 ## 5. Debug registry
 
-The registry goes **46 → ~44 entries**, but almost none of them are the same
-entries. Registry order fixes row index, so this is a **deliberate rebuild**, not
+The registry grows substantially — the 34 lever rows alone are most of a panel.
+**This document deliberately does not predict the total**; P5 measures it, and
+every prior changeset that predicted a registry count undercounted it. Almost
+none of the surviving entries are the same entries. Registry order fixes row index, so this is a **deliberate rebuild**, not
 an append. Removal is safe under the standing rule: orphaned keys in
 `afd_settings_v1.debug` are ignored by known-value-else-default loading. **No
 schema bump. No rename of `afd_settings_v1` / `afd_scores_v1` /
@@ -466,8 +542,16 @@ UFO · POWERUPS · GLOBAL**.
 `garbageAttractForce` · `chainGuardIntercepts` / `MinTow` / `Cooldown` ·
 `dockComboGrace` · `sweepCoalescePause` · `debrisBounceRestitution`.
 
-**New:** one knob per lever (17) · `smallUfoChance` · `lastStandSpeed` ·
+**New:** **three knobs per lever — `<leverId>Floor`, `<leverId>Ceil`,
+`<leverId>Steps`, 51 rows** (§2.6 — P5 shipped one flat row per lever; **P6c**
+replaces them) · `smallUfoChance` · `lastStandSpeed` ·
 `engineBurnSeconds` · `engineMassMult` · `garbageSoftMax` · `garbageHardMax`.
+
+**Note `garbageAttractDelay` is REPLACED, not kept.** It was a fixed-value knob;
+the quantity is now the `coalescePause` lever, so it becomes
+`coalescePauseFloor` / `coalescePauseCeil` and sits beside the two surviving
+`garbageAttract*` rows in the GARBAGE section. The old id orphans harmlessly
+under known-value-else-default.
 
 ---
 
@@ -504,8 +588,11 @@ rationale for *why* each gate exists.
 9. **Chain lengths:** `junkCount` wraps every 10 levels, `coalescePause` every
    8, `ufoAppearFreq` every 8. Do three chains breathing on different periods
    feel rich, or arrhythmic?
-10. Each of the 17 levers is a live slider. **Retune in-session and report the
-    number you landed on, not a yes/no.**
+10. Each of the 17 levers has **two** live sliders — floor and ceiling (§2.6).
+    Slide either and the whole ramp re-derives. **Retune in-session and report
+    the number you landed on, not a yes/no.** Step counts are *not* sliders; if a
+    lever's ramp feels the wrong *length* rather than the wrong *height*, say so
+    in words and P7 changes the step count at the source.
 11. **Engine-as-fuel:** does 5 seconds of thrust feel like a powerup or like a
     tease?
 12. **Count-only powerups:** does losing the timed mode make Magnet (40 hooks)
@@ -531,10 +618,20 @@ no driver, with the two pursuit speeds ramping on their own `everyNLevels`.
 **FLAG-CS024-c — `GARBAGE_SOFT_MAX = 220`.** A pure guess. Gate A question 3 is
 its A/B.
 
-**FLAG-CS024-d — two-generation UFO carry.** `ufoAppearFreq` bumps four levers,
-which each bump two or three more. This is the deepest chain in the changeset
-and the most likely to feel arrhythmic. Flattening it to one generation is a
-one-line table edit.
+**✅ FLAG-CS024-d — RESOLVED by P6b.** The two-generation UFO carry made
+`ufoFlightSpeedSmall` reset to its floor at level 33 — the UFO getting genuinely
+slower — while the second generation did not saturate until level 97. P6b
+restricts carrying to drivers only and restages the nine UFO step counts
+(5/5/6/6/7/7/8/8/9). Found by plotting the tables level by level, not by reading
+them; the assertion that now guards it is "no lever returns toward its floor at
+any level except a driver."
+
+**FLAG-CS024-g — the integer-lever rounding rule** (§2.6) is invented by P6c and
+has no precedent in the build. `junkCount` is the only lever affected today.
+
+**FLAG-CS024-f — the five powerup budgets (§3.4)** are starting points. The
+engine's 5.0 in particular originated as a conversational example, not a
+decision. Gate B question 11 owns all five.
 
 **FLAG-CS024-e — the cull's ordering rule** ("oldest, preferring singles") is
 invented here. It has no precedent in the build.
