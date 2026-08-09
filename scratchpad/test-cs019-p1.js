@@ -372,9 +372,12 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // Answered by DRIVING the real paths, not by inspection. Note the 0.05 step is NOT the registry's
   // first sub-1.0 step — CS018 P6/P7 already ship eight entries at step 0.1 — so this is a
   // confirmation, not a new capability.
+  // REPOINTED BY CS024 P4: the eight step-0.1 entries this pointed at were UFO tier knobs, deleted with
+  // the level table's tier names. The CLAIM is unchanged and still true — a sub-1.0 step is not new
+  // machinery — but its witness is now the surviving fractional-step entries rather than a named UFO one.
   const fractional = A.DEBUG_VARS.filter(v => !v.header && v.step < 1).map(v => v.id);
-  assert(fractional.length > 1 && fractional.includes("ufoDirChangeFreqNormal"),
-    `A: fractional steps already shipped before this phase (${fractional.length} entries), so 0.05 needs no new machinery`);
+  assert(fractional.length >= 1 && fractional.includes("chainGuardCooldown"),
+    `A: a fractional step is not new machinery (${fractional.length} sub-1.0 entries: ${fractional.join(", ")})`);
   const P = build();
   P.enterDebug();
   const rowIdx = P.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === "chainGuardCooldown");

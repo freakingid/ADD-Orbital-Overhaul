@@ -51,7 +51,6 @@ const returnList = ["startGame", "update", "draw", "game", "nextWave", "Dock",
   "WORLD_W", "WORLD_H", "VIEW_W", "VIEW_H",
   "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "DOCK_MIN_DIST", "DOCK_MAX_DIST",
   "STAR_DENSITY", "STAR_COUNT", "dist2",
-  "levelDef",   // CS021 P1: section (B) is archetype-aware now
   // CS022 P1: the world-size seam. worldDims + game.worldSize are how a test reads the size the sim
   // is CURRENTLY running at — the destructured WORLD_W/WORLD_H below are only a load-time snapshot.
   "worldDims", "worldSizeFor", "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT", "WORLD_SIZE_MAX"];
@@ -63,7 +62,8 @@ const wrapped = new Function(
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, game, nextWave, Dock, WORLD_W, WORLD_H, VIEW_W, VIEW_H,
   SPAWN_MIN_DIST, SPAWN_MAX_DIST, DOCK_MIN_DIST, DOCK_MAX_DIST,
-  STAR_DENSITY, STAR_COUNT, dist2, levelDef,
+  STAR_DENSITY, STAR_COUNT, dist2,   // CS024 P4: levelDef dropped — the archetype it made this section
+                                     // aware of went in CS024 P1, and the table itself is gone now
   worldDims, worldSizeFor, WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT, WORLD_SIZE_MAX } = G;
 
 // CS022 P1: the LIVE torus period, read off the game's own state rather than a stale snapshot.

@@ -67,8 +67,11 @@ function makeCtx(canvasStub) {
 const RETURN = [
   "startGame", "update", "nextWave", "game", "settings",
   "DebrisSatellite", "HunterSatellite", "Saucer",
-  "ramp", "difficultyFactor",
-  "levelDef", "junkSpeedMul", "DEBRIS_SPEEDS",              // CS018 P4 (sections B, F)
+  // CS024 P4: ramp() is DELETED and difficultyFactor is RENAMED musicIntensity (curve byte-identical);
+  // levelDef() is deleted with the whole level table. The junk count nextWave() actually consumes is
+  // FROZEN_JUNK_COUNT for this one phase (TRAP 2 — P5 wires leverState).
+  "musicIntensity", "leverState", "FROZEN_UFO_APPEAR_FREQ",
+  "FROZEN_JUNK_COUNT", "junkSpeedMul", "DEBRIS_SPEEDS",     // CS018 P4 (sections B, F)
   "DEBUG",                                                  // CS018 P6 (section F: tiered saucer gap)
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
   "MusicSys", "AudioSys",
@@ -144,15 +147,21 @@ function build() {
     // levels for three changesets — now spawns exactly levelDef(game.wave).junkCount, through the one
     // unconditional spawnFieldSatellites() call. The archetype field itself no longer exists on the
     // level table, which is asserted directly so a quiet reintroduction fails here.
-    assert(g.debris.length === A.levelDef(g.wave).junkCount,
-      `B: level ${w}: spawned junk ${g.debris.length} === levelDef(${w}).junkCount ${A.levelDef(w).junkCount}`);
-    assert(!("archetype" in A.levelDef(w)),
-      `B: level ${w}: levelDef has NO archetype column any more (CS024 P1 — one spawn rule, not two)`);
+    // REPOINTED AGAIN BY CS024 P4: the level table is deleted outright, so the source of the count
+    // moved to FROZEN_JUNK_COUNT for one phase. THE CLAIM IS UNCHANGED — one clock, proven by its
+    // effect, at every level with no archetype dispatch — and the archetype probe is now made against
+    // the table's total absence, which is a stronger statement than an absent column was.
+    assert(g.debris.length === A.FROZEN_JUNK_COUNT,
+      `B: level ${w}: spawned junk ${g.debris.length} === the one spawn rule's count ${A.FROZEN_JUNK_COUNT}`);
+    assert(A.probe("levelDef") === "__ReferenceError__",
+      `B: level ${w}: there is no level table at all any more (CS024 P4 — one spawn rule, not two)`);
   }
-  // CONTROL: the level table is genuinely not a 9-long sawtooth — level 1 and level 10 (same cycleWave
-  // under the retired CYCLE_LENGTH 9) do not have to agree, and in fact do not on the shipped table.
-  assert(A.levelDef(1).junkCount !== A.levelDef(10).junkCount,
-    "B: control — levels 1 and 10 differ, so nothing is still reading a 9-long cycle position");
+  // CONTROL: the difficulty clock is genuinely not a 9-long sawtooth. REPOINTED BY CS024 P4 — the count
+  // is frozen this phase so levels 1 and 10 necessarily agree, and the control moves onto the mechanism
+  // that WILL drive the count: leverState's junkCount sawtooth has a period of 10, not 9, so levels 1
+  // and 10 differ there and the retired CYCLE_LENGTH-9 position is provably not what anything reads.
+  assert(A.leverState(1).junkCount !== A.leverState(10).junkCount,
+    "B: control — the odometer's junkCount differs at levels 1 and 10, so nothing reads a 9-long cycle position");
 })();
 
 // ================= (C) the game literals: waveTime survives, cycle/cycleWave are gone — SOURCE ==========
@@ -225,7 +234,7 @@ function build() {
 (function sectionE() {
   console.log("(E) cycleValue / CYCLE_LENGTH / CYCLE_GAIN no longer exist");
   const A = build();
-  assert(A.probe("RAMP_WAVES") === 8, "E: (meta) the scope probe genuinely resolves a live constant");
+  assert(A.probe("MUSIC_INTENSITY_WAVES") === 8, "E: (meta) the scope probe genuinely resolves a live constant (RAMP_WAVES, renamed by CS024 P4)");
   for (const id of ["cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN"]) {
     assert(A.probe(id) === "__ReferenceError__", `E: ${id} is undefined in the script block's scope`);
   }
@@ -235,9 +244,13 @@ function build() {
     assert(hits.length === 0, `E: zero live source references to ${id} (found: ${JSON.stringify(hits)})`);
   }
   // FLAG-l: the one piece of the old machinery that was RETAINED, and why — the music-intensity curve.
-  assert(typeof A.difficultyFactor === "function" && typeof A.ramp === "function",
-    "E: difficultyFactor()/ramp() are retained (FLAG-l: the music-intensity curve)");
-  assert(Math.abs(A.difficultyFactor(1)) < 1e-12, "E: difficultyFactor(1) is still 0");
+  // REPOINTED BY CS024 P4: the curve is retained and RENAMED musicIntensity (§1.6) — same expression,
+  // same constant, same value at every level — while ramp(), which merely composed it, is DELETED with
+  // its last lever. So the pair splits: one survives under a name that says what it does, one does not.
+  assert(typeof A.musicIntensity === "function", "E: the curve is retained as musicIntensity() (FLAG-l)");
+  assert(A.probe("difficultyFactor") === "__ReferenceError__", "E: ...under that name only — difficultyFactor is gone");
+  assert(A.probe("ramp") === "__ReferenceError__", "E: ...and ramp() is deleted outright with its last lever");
+  assert(Math.abs(A.musicIntensity(1)) < 1e-12, "E: musicIntensity(1) is still 0");
 })();
 
 // ================= (F) lever wiring after the retirement: table-driven, frozen, and still-on-ramp ======
@@ -271,7 +284,7 @@ function build() {
     // rule, so the tier envelope applies to EVERY piece at EVERY level with no dispatch at all. The
     // per-entity rail check is INVERTED to a positive assertion that no spawned piece carries rail state.
     const expectedSpeedMul = A.junkSpeedMul();
-    const expectedCount = A.levelDef(w).junkCount;
+    const expectedCount = A.FROZEN_JUNK_COUNT;   // CS024 P4: was levelDef(w).junkCount
     assert(g.debris.length === expectedCount,
       `F: level ${w}: junk count expected ${expectedCount}, got ${g.debris.length}`);
     // Every piece's speed magnitude was DEBRIS_SPEEDS[3] * speedMul * rand(0.7,1.3); check the piece speed
@@ -299,8 +312,11 @@ function build() {
       if (size === 3) { frozenSpeeds.push(h.speed); frozenTurns.push(h.turnRate); }
       // CONTROL: the old ramp is provably GONE — past level 1 the frozen value must NOT equal what
       // ramp(floor, ceil, wave) would have produced (they coincide only at wave 1, where the factor is 0).
+      // REPOINTED BY CS024 P4: ramp() is deleted, so the control rebuilds it from its retired
+      // definition verbatim — floor + (ceil - floor) * musicIntensity(wave) — using the REAL surviving
+      // curve for the factor. Same control, same strength, no live helper left to borrow.
       if (w > 1 && A.HUNTER_SPEED_CEIL[size] !== 0) {
-        const rampedSpeed = A.ramp(expSpeed, A.HUNTER_SPEED_CEIL[size], w);
+        const rampedSpeed = expSpeed + (A.HUNTER_SPEED_CEIL[size] - expSpeed) * A.musicIntensity(w);
         assert(Math.abs(h.speed - rampedSpeed) > 1e-9,
           `F: level ${w} size ${size}: frozen speed must differ from the retired ramp() value ${rampedSpeed.toFixed(3)}`);
       }
@@ -320,13 +336,15 @@ function build() {
       Math.random = savedRandom;
     }
     assert(g.saucers.length === 1, `F: level ${w}: forcing the spawn timer produced exactly one saucer`);
-    const tier = A.levelDef(g.wave).ufoAppearFreq;
-    const center = tier === "low" ? A.DEBUG.ufoAppearFreqLow : tier === "high" ? A.DEBUG.ufoAppearFreqHigh : A.DEBUG.ufoAppearFreqNormal;
     // CS024 P2: freqJitter is no longer a live DEBUG knob — jitteredInterval() reads the frozen
-    // FREQ_JITTER constant (0.25) instead. Same expected value, different source.
+    // FREQ_JITTER constant (0.25) instead. CS024 P4: the TIER lookup is gone too, and the centre is the
+    // frozen level-1 appearance frequency for one phase. The claim — the gap is jitteredInterval() around
+    // whatever the difficulty system's centre is, sampled at the real spawn site — is untouched, and the
+    // centre is read from the live helper rather than restated, so P5's rewiring carries it.
+    const center = A.FROZEN_UFO_APPEAR_FREQ;
     const expGapLo = center * (1 - 0.25);
     assert(Math.abs(g.saucerTimer - expGapLo) < 1e-9,
-      `F: level ${w}: saucer gap (Math.random pinned to 0) expected the tier's jitter lower bound=${expGapLo}, got ${g.saucerTimer}`);
+      `F: level ${w}: saucer gap (Math.random pinned to 0) expected the jitter lower bound=${expGapLo}, got ${g.saucerTimer}`);
   }
 
   // The frozen claim, stated globally: every large Hunter sampled across levels 1..12 got the SAME value.

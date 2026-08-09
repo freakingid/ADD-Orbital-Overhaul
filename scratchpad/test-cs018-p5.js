@@ -1,4 +1,5 @@
-// Headless test for CS018 Phase 5 — payload capacity GRANTED by level (levelDef(n).payloadSlots),
+// Headless test for CS018 Phase 5 — payload capacity GRANTED by level (payloadSlots(n); levelDef(n).payloadSlots
+// until CS024 P4 lifted the column out of the retired level table into its own function, unchanged),
 // the delivery-earned growCap curve retired.
 //
 //   node scratchpad/test-cs018-p5.js
@@ -12,7 +13,7 @@
 //  (A) node --check on the extracted <script>.
 //  (B) cargoMax INTEGRATION: real startGame()/nextWave() calls across levels 1-63(+), matching the
 //      phase prompt's pinned 8 (1-4), 10/12/.../24 (5-12), 24 (13-63+) curve, and equal to
-//      levelDef(n).payloadSlots at every level, including a fresh run starting at 8 (not CARGO_BASE).
+//      payloadSlots(n) at every level, including a fresh run starting at 8 (not CARGO_BASE).
 //  (C) growCap RETIRED: CARGO_GROW_PER has zero live (non-definition) readers; the "TOW +1" / "+1 CAP"
 //      floater strings are gone from source; a long real run of deliveries (via update()'s dock-offload
 //      path) never grows cargoMax mid-run — it only steps on a nextWave() level change.
@@ -76,7 +77,10 @@ function makeLocalStorage() {
   const store = {};
   return { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
 }
-const RETURN = ["game", "startGame", "update", "nextWave", "draw", "levelDef",
+// CS024 P4: levelDef is DELETED and its payloadSlots COLUMN moved out into a standalone fixed curve,
+// payloadSlots(n), deliberately outside the odometer (§2.5). Same expression, same values, same single
+// consumer — so this whole file repoints by swapping levelDef(n).payloadSlots for payloadSlots(n).
+const RETURN = ["game", "startGame", "update", "nextWave", "draw", "payloadSlots",
                 "CARGO_BASE", "CARGO_CAP_MAX", "HUD_CAP_FLASH", "Achievements", "GAME_VERSION",
                 'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'];
 function build(src = scriptSrc, windowExtra) {
@@ -102,7 +106,7 @@ let X;
   if (threw) return;
 
   eq(X.game.cargoMax, 8, "B: a fresh run (level 1) starts at cargoMax 8, not CARGO_BASE (12)");
-  eq(X.game.cargoMax, X.levelDef(1).payloadSlots, "B: level 1 cargoMax === levelDef(1).payloadSlots");
+  eq(X.game.cargoMax, X.payloadSlots(1), "B: level 1 cargoMax === payloadSlots(1)");
 
   const got = [X.game.cargoMax];
   for (let n = 2; n <= 70; n++) {
@@ -117,7 +121,7 @@ let X;
     `B: cargoMax levels 1-13 === ${WANT_1_13.join(",")} (got ${got.slice(0, 13).join(",")})`);
   console.log("    levels 1-13 cargoMax: " + got.slice(0, 13).join(","));
   for (let n = 13; n <= 70; n++) eq(got[n - 1], 24, `B: level ${n} (>=13) holds 24`);
-  for (let n = 1; n <= 70; n++) eq(got[n - 1], X.levelDef(n).payloadSlots, `B: level ${n} cargoMax === levelDef(${n}).payloadSlots`);
+  for (let n = 1; n <= 70; n++) eq(got[n - 1], X.payloadSlots(n), `B: level ${n} cargoMax === payloadSlots(${n})`);
 })();
 if (!X) { console.error("Cannot continue without a built instance."); process.exit(1); }
 
@@ -129,7 +133,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   const growPerHits = codeOnly.filter(l => l.includes("CARGO_GROW_PER") && !l.trim().startsWith("const CARGO_GROW_PER"));
   eq(growPerHits.length, 0, `C: CARGO_GROW_PER has zero readers left (found: ${JSON.stringify(growPerHits)})`);
 
-  // "growCap" survives as PROSE in levelDef's payloadSlots comment (documenting what it replaced) —
+  // "growCap" survives as PROSE in payloadSlots's comment (documenting what it replaced) —
   // only the CODE construct (the retired `const growCap = ...` declaration) must be gone.
   assert(!scriptSrc.includes("const growCap"), "C: the growCap local variable/derivation is gone from source");
   assert(!scriptSrc.includes("TOW +1"), 'C: the "TOW +1" floater string is gone from source');

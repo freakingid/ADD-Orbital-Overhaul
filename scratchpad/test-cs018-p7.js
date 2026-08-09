@@ -60,7 +60,14 @@ function close(got, want, msg, eps = 1e-9) { assert(Math.abs(got - want) < eps, 
 const canvasCtxNoop = new Proxy({}, { get: () => () => {} });
 const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => canvasCtxNoop };
 const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
-const RETURN = ["game", "startGame", "update", "nextWave", "levelDef", "Saucer", "angleTo",
+// CS024 P4: levelDef DELETED with the level table, and all nine UFO WEAPONS tier knobs (with the twelve
+// others) deleted from the registry. The three quantities are FROZEN at the retired table's level-1
+// answers for one phase (TRAP 2) — P5 puts them on the ufoFireFreqBig/Small, ufoAccuracySmall and
+// ufoShotSpeedBig/Small levers. Every INTEGRATION claim below survives untouched; the per-tier
+// bookkeeping inverts, because there are no tiers.
+const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "Saucer", "angleTo",
+                "FROZEN_UFO_FIRE_MULT", "FROZEN_UFO_ACCURACY_DEG", "FROZEN_UFO_SHOT_SPEED",
+                "FROZEN_JUNK_COUNT",
                 "ufoFireMult", "ufoAccuracyRad", "ufoShotSpeedPx",
                 "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "applyDebug",
                 "saveSettings", "loadSettings", "STORAGE_KEY",
@@ -114,39 +121,24 @@ function fireOnce(small, wave) {
 (function sectionB() {
   console.log("(B) DEBUG_VARS: UFO WEAPONS (9) entries; SAUCER PRESSURE header + its 2 knobs gone");
 
+  // REPOINTED BY CS024 P4, INVERTED: the UFO WEAPONS header and its nine tier entries are deleted with
+  // the other twelve tier knobs. What each trio's "low" value held is not lost — it is the frozen
+  // constant the build reads this phase, and the matching lever's FLOOR from P5 — so the deletion is
+  // checked as a hand-off rather than a hole.
   const hIdx = X.DEBUG_VARS.findIndex(v => v.header === "UFO WEAPONS");
-  assert(hIdx >= 0, "B: a UFO WEAPONS section header exists in DEBUG_VARS");
-  const weaponIds = X.DEBUG_VARS.slice(hIdx + 1, hIdx + 10).map(v => v.id);
-  const wantWeaponIds = [
-    "ufoFireFreqLow", "ufoFireFreqNormal", "ufoFireFreqHigh",
-    "ufoAccuracyLow", "ufoAccuracyNormal", "ufoAccuracyHigh",
-    "ufoShotSpeedLow", "ufoShotSpeedNormal", "ufoShotSpeedHigh",
-  ];
-  assert(JSON.stringify(weaponIds) === JSON.stringify(wantWeaponIds),
-    `B: UFO WEAPONS header immediately followed by the 9 expected ids (got ${JSON.stringify(weaponIds)})`);
-
-  const specs = {
-    ufoFireFreqLow:      { unit: "x",   def: 1.8, min: 0.1, max: 4,    step: 0.1 },
-    ufoFireFreqNormal:   { unit: "x",   def: 1.0, min: 0.1, max: 4,    step: 0.1 },
-    ufoFireFreqHigh:     { unit: "x",   def: 0.7, min: 0.1, max: 4,    step: 0.1 },
-    ufoAccuracyLow:      { unit: "deg", def: 30,  min: 0,   max: 60,   step: 5 },
-    ufoAccuracyNormal:   { unit: "deg", def: 20,  min: 0,   max: 60,   step: 5 },
-    ufoAccuracyHigh:     { unit: "deg", def: 10,  min: 0,   max: 60,   step: 5 },
-    ufoShotSpeedLow:     { unit: "px/s", def: 300, min: 50, max: 1200, step: 2 },
-    ufoShotSpeedNormal:  { unit: "px/s", def: 380, min: 50, max: 1200, step: 2 },
-    ufoShotSpeedHigh:    { unit: "px/s", def: 470, min: 50, max: 1200, step: 2 },
-  };
-  for (const [id, spec] of Object.entries(specs)) {
-    const e = X.DEBUG_VARS.find(v => v.id === id);
-    assert(!!e, `B: DEBUG_VARS has ${id}`);
-    if (!e) continue;
-    eq(e.unit, spec.unit, `B: ${id} unit is "${spec.unit}"`);
-    eq(e.def, spec.def, `B: ${id} default is ${spec.def}`);
-    eq(e.min, spec.min, `B: ${id} min is ${spec.min}`);
-    eq(e.max, spec.max, `B: ${id} max is ${spec.max}`);
-    eq(e.step, spec.step, `B: ${id} step is ${spec.step}`);
-    eq(X.DEBUG[id], spec.def, `B: DEBUG.${id} seeded to ${spec.def}`);
+  eq(hIdx, -1, "B: the UFO WEAPONS header is gone with its nine tier entries (CS024 P4)");
+  for (const id of ["ufoFireFreqLow", "ufoFireFreqNormal", "ufoFireFreqHigh",
+                    "ufoAccuracyLow", "ufoAccuracyNormal", "ufoAccuracyHigh",
+                    "ufoShotSpeedLow", "ufoShotSpeedNormal", "ufoShotSpeedHigh"]) {
+    assert(!X.DEBUG_VARS.some(v => v.id === id), `B: the ${id} tier knob is gone (CS024 P4)`);
+    assert(!(id in X.DEBUG), `B: ...and DEBUG.${id} with it`);
   }
+  eq(X.FROZEN_UFO_FIRE_MULT, 1.8, "B: the retired ufoFireFreqLow's 1.8x survives as FROZEN_UFO_FIRE_MULT");
+  eq(X.FROZEN_UFO_ACCURACY_DEG, 30, "B: ...ufoAccuracyLow's 30 deg as FROZEN_UFO_ACCURACY_DEG");
+  eq(X.FROZEN_UFO_SHOT_SPEED, 300, "B: ...and ufoShotSpeedLow's 300 px/s as FROZEN_UFO_SHOT_SPEED");
+  const ls1 = X.leverState(1);
+  assert(ls1.ufoFireFreqBig === 1.8 && ls1.ufoAccuracySmall === 30 && ls1.ufoShotSpeedBig === 300,
+    "B: ...and each is the matching lever's floor, so P5's wiring keeps level 1 where it is");
 
   for (const id of ["saucerPressureSecs", "saucerAimPressure", "saucerGapPressure"]) {
     assert(!X.DEBUG_VARS.some(v => v.id === id), `B: ${id} entry is gone from DEBUG_VARS`);
@@ -156,25 +148,22 @@ function fireOnce(small, wave) {
 
   // Standing prohibition: no code anywhere may assume low <= normal <= high (fire freq + accuracy
   // genuinely descend). A crude but effective proof: normal/high are numerically SMALLER than low.
-  assert(X.DEBUG.ufoFireFreqHigh < X.DEBUG.ufoFireFreqLow, "B: fire frequency genuinely descends (high < low)");
-  assert(X.DEBUG.ufoAccuracyHigh < X.DEBUG.ufoAccuracyLow, "B: accuracy genuinely descends (high < low)");
-  assert(X.DEBUG.ufoShotSpeedHigh > X.DEBUG.ufoShotSpeedLow, "B: shot speed still climbs (not inverted)");
+  assert(X.leverState(1).ufoFireFreqBig > X.leverState(33).ufoFireFreqBig, "B: fire frequency genuinely descends over its lever run");
+  // REPOINTED BY CS024 P4 onto the odometer, where the same prohibition binds harder — ufoAccuracySmall
+  // ships with floor > ceil outright, which is normal and correct, and nothing may validate it.
+  assert(X.leverState(1).ufoAccuracySmall > X.leverState(129).ufoAccuracySmall, "B: accuracy genuinely descends over its lever run");
+  assert(X.leverState(1).ufoShotSpeedBig < X.leverState(129).ufoShotSpeedBig, "B: shot speed still climbs (not inverted)");
 })();
 
 // ================= (C) UFO firing frequency =====================
 (function sectionC() {
   console.log("(C) UFO firing frequency: tiered multiplier on the shipped per-size ranges, no jitter");
   // TIER_STEPS.ufoFireFreq = [[1,"low"],[21,"normal"],[42,"high"]]
-  const cases = [
-    { level: 1,  tier: "low",    mult: X.DEBUG.ufoFireFreqLow },
-    { level: 20, tier: "low",    mult: X.DEBUG.ufoFireFreqLow },
-    { level: 21, tier: "normal", mult: X.DEBUG.ufoFireFreqNormal },
-    { level: 41, tier: "normal", mult: X.DEBUG.ufoFireFreqNormal },
-    { level: 42, tier: "high",   mult: X.DEBUG.ufoFireFreqHigh },
-    { level: 100, tier: "high",  mult: X.DEBUG.ufoFireFreqHigh },
-  ];
+  // REPOINTED BY CS024 P4: the tiers and their breakpoints (21/42) are deleted, so the SAME six probe
+  // levels expect the SAME frozen multiplier — which turns the "no jitter, exact through a real Saucer"
+  // claim into an equality across the whole range rather than within a band.
+  const cases = [1, 20, 21, 41, 42, 100].map(level => ({ level, mult: X.FROZEN_UFO_FIRE_MULT }));
   for (const c of cases) {
-    eq(X.levelDef(c.level).ufoFireFreq, c.tier, `C: level ${c.level} ufoFireFreq tier is "${c.tier}"`);
     X.game.wave = c.level;
     eq(X.ufoFireMult(), c.mult, `C: level ${c.level} ufoFireMult() === ${c.mult}`);
 
@@ -188,23 +177,16 @@ function fireOnce(small, wave) {
       eq(s2.rollFireTimer([1, 1]), c.mult, `C: level ${c.level} rollFireTimer is deterministic (no jitter) on repeat ${i}`);
     }
   }
-  console.log(`    fire freq: low=${X.DEBUG.ufoFireFreqLow}x normal=${X.DEBUG.ufoFireFreqNormal}x high=${X.DEBUG.ufoFireFreqHigh}x`);
+  console.log(`    fire freq: FROZEN at ${X.FROZEN_UFO_FIRE_MULT}x at every level (CS024 P4 TRAP 2)`);
 })();
 
 // ================= (D) UFO shot accuracy =====================
 (function sectionD() {
   console.log("(D) UFO shot accuracy: real fired-bullet aim error matches ufoAccuracyRad(); big saucer never aims");
   // TIER_STEPS.ufoAccuracy = [[1,"low"],[13,"normal"],[34,"high"]]
-  const cases = [
-    { level: 1,  tier: "low",    deg: X.DEBUG.ufoAccuracyLow },
-    { level: 12, tier: "low",    deg: X.DEBUG.ufoAccuracyLow },
-    { level: 13, tier: "normal", deg: X.DEBUG.ufoAccuracyNormal },
-    { level: 33, tier: "normal", deg: X.DEBUG.ufoAccuracyNormal },
-    { level: 34, tier: "high",   deg: X.DEBUG.ufoAccuracyHigh },
-    { level: 100, tier: "high",  deg: X.DEBUG.ufoAccuracyHigh },
-  ];
+  // REPOINTED BY CS024 P4: same six probe levels, one frozen value (breakpoints 13/34 deleted).
+  const cases = [1, 12, 13, 33, 34, 100].map(level => ({ level, deg: X.FROZEN_UFO_ACCURACY_DEG }));
   for (const c of cases) {
-    eq(X.levelDef(c.level).ufoAccuracy, c.tier, `D: level ${c.level} ufoAccuracy tier is "${c.tier}"`);
     X.game.wave = c.level;
     const expectedRad = c.deg * Math.PI / 180;
     close(X.ufoAccuracyRad(), expectedRad, `D: level ${c.level} ufoAccuracyRad() === ${c.deg}deg in radians`);
@@ -216,8 +198,11 @@ function fireOnce(small, wave) {
     const diff = Math.atan2(Math.sin(firedAngle - aimAngle), Math.cos(firedAngle - aimAngle));
     close(diff, expectedRad, `D: level ${c.level} real small-saucer fired aim error === ${c.deg}deg in radians`, 1e-6);
   }
-  assert(X.DEBUG.ufoAccuracyHigh < X.DEBUG.ufoAccuracyNormal && X.DEBUG.ufoAccuracyNormal < X.DEBUG.ufoAccuracyLow,
-    "D: accuracy genuinely descends (high < normal < low) — one of CS018's four inverted levers");
+  // REPOINTED BY CS024 P4: the three tier knobs are deleted; the inversion lives on the ufoAccuracySmall
+  // LEVER, whose floor (30 deg) is genuinely larger than its ceil (8 deg) — floor > ceil in the table
+  // itself, which nothing anywhere is permitted to validate or reorder.
+  assert(X.leverState(1).ufoAccuracySmall > X.leverState(129).ufoAccuracySmall,
+    "D: accuracy genuinely descends over its lever run — still one of the inverted levers");
 
   // Big saucer never aims: 200 fired shots at a fixed level scatter across the full circle, unrelated
   // to accuracy tier or ship position.
@@ -246,16 +231,9 @@ function fireOnce(small, wave) {
 (function sectionE() {
   console.log("(E) UFO shot speed: real fired bullet's velocity magnitude matches the tiered px/s, both sizes");
   // TIER_STEPS.ufoShotSpeed = [[1,"low"],[51,"normal"],[63,"high"]]
-  const cases = [
-    { level: 1,  tier: "low",    px: X.DEBUG.ufoShotSpeedLow },
-    { level: 50, tier: "low",    px: X.DEBUG.ufoShotSpeedLow },
-    { level: 51, tier: "normal", px: X.DEBUG.ufoShotSpeedNormal },
-    { level: 62, tier: "normal", px: X.DEBUG.ufoShotSpeedNormal },
-    { level: 63, tier: "high",   px: X.DEBUG.ufoShotSpeedHigh },
-    { level: 200, tier: "high",  px: X.DEBUG.ufoShotSpeedHigh },
-  ];
+  // REPOINTED BY CS024 P4: same six probe levels, one frozen value (breakpoints 51/63 deleted).
+  const cases = [1, 50, 51, 62, 63, 200].map(level => ({ level, px: X.FROZEN_UFO_SHOT_SPEED }));
   for (const c of cases) {
-    eq(X.levelDef(c.level).ufoShotSpeed, c.tier, `E: level ${c.level} ufoShotSpeed tier is "${c.tier}"`);
     X.game.wave = c.level;
     eq(X.ufoShotSpeedPx(), c.px, `E: level ${c.level} ufoShotSpeedPx() === ${c.px}`);
 
@@ -265,7 +243,7 @@ function fireOnce(small, wave) {
       close(Math.hypot(b.vx, b.vy), c.px, `E: level ${c.level} real fired bullet speed (small=${small}) === ${c.px} px/s`, 1e-6);
     }
   }
-  console.log(`    shot speed: low=${X.DEBUG.ufoShotSpeedLow} normal=${X.DEBUG.ufoShotSpeedNormal} high=${X.DEBUG.ufoShotSpeedHigh} px/s`);
+  console.log(`    shot speed: FROZEN at ${X.FROZEN_UFO_SHOT_SPEED} px/s at every level (CS024 P4 TRAP 2)`);
 })();
 
 // ================= (F) retirement =====================
@@ -290,14 +268,14 @@ function fireOnce(small, wave) {
 
 // ================= (G) persistence round-trip =====================
 (function sectionG() {
-  console.log("(G) the 9 new fields round-trip through afd_settings_v1.debug across a reload");
+  // REPOINTED BY CS024 P4: all nine of this phase's fields are deleted with the tier knobs, so the
+  // round-trip rides on the nearest surviving registry entry instead. The CLAIM is unchanged and is a
+  // property of the persistence path, not of these particular ids: a registry field survives a save and
+  // a reload, in both debugShown (display units) and DEBUG (native units).
+  console.log("(G) a registry field round-trips through afd_settings_v1.debug across a reload");
   const inst = build();
   const A = inst.exports;
-  const newIds = [
-    "ufoFireFreqLow", "ufoFireFreqNormal", "ufoFireFreqHigh",
-    "ufoAccuracyLow", "ufoAccuracyNormal", "ufoAccuracyHigh",
-    "ufoShotSpeedLow", "ufoShotSpeedNormal", "ufoShotSpeedHigh",
-  ];
+  const newIds = ["chainGuardCooldown", "sweepCoalescePause", "garbageSoftMax"];
   const want = {};
   for (const id of newIds) {
     const e = A.DEBUG_VARS.find(v => v.id === id);
@@ -316,9 +294,15 @@ function fireOnce(small, wave) {
     eq(reload.debugShown[id], want[id], `G: reload restored debugShown.${id}`);
     eq(reload.DEBUG[id], want[id], `G: reload restored DEBUG.${id}`);
   }
-  // Untouched knobs from earlier phases still load at their defaults alongside the new ones.
-  eq(reload.debugShown.junkSpeedNormal, 70, "G: untouched junkSpeedNormal still loads at its default");
-  eq(reload.debugShown.ufoFlightSpeedNormal, 150, "G: untouched (P6) ufoFlightSpeedNormal still loads at its default");
+  // Untouched knobs still load at their defaults alongside the changed ones.
+  eq(reload.debugShown.garbageHardMax, 300, "G: an untouched sibling knob still loads at its default");
+  // ORPHANED KEYS ARE IGNORED (the standing known-value-else-default rule) — this phase has just created
+  // twenty-one of them for every player who ever opened the debug panel, so it is worth exercising.
+  const orphaned = JSON.parse(blob);
+  orphaned.debug.ufoAccuracyHigh = 999;
+  const reload2 = build({ "afd_settings_v1": JSON.stringify(orphaned) }).exports;
+  assert(!("ufoAccuracyHigh" in reload2.DEBUG), "G: a saved key the registry no longer knows is IGNORED, not resurrected");
+  eq(reload2.debugShown.chainGuardCooldown, want.chainGuardCooldown, "G: ...and the surviving keys still load beside it");
 })();
 
 // ================= (H) regression =====================
@@ -327,12 +311,10 @@ function fireOnce(small, wave) {
   const Y = build().exports;
   Y.startGame();
   eq(Y.game.cargoMax, 8, "H: cargoMax still starts at 8 (CS018 P5, untouched by P7)");
-  eq(Y.levelDef(5).junkCount, 3, "H: junk count table untouched by P7");
-  // REPOINTED BY CS024 P3: the level table lost its maxLargeHunters column when HUNTER_CAP_STEPS was
-  // deleted and the ceiling became the flat LARGE_HUNTER_MAX. The regression this line guards — "P7 did
-  // not touch the hunter side of the table" — is now stated as the column being absent entirely.
-  eq(Y.levelDef(5).maxLargeHunters, undefined, "H: hunter cap column is gone from levelDef (CS024 P3)");
-  eq(Y.levelDef(1).ufoFlightSpeed, "low", "H: UFO MOVEMENT tiers (P6) untouched by P7");
+  eq(Y.FROZEN_JUNK_COUNT, 3, "H: the junk count is untouched by P7 (frozen at 3 as of CS024 P4)");
+  // REPOINTED BY CS024 P4: the level table this pair inspected is deleted outright.
+  eq(Y.probe("levelDef"), "__ReferenceError__", "H: there is no level table left to carry a hunter-cap column");
+  eq(Y.leverState(1).ufoFlightSpeedSmall, 150, "H: the UFO MOVEMENT quantities (P6) are untouched by P7 — now their own levers");
   // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
   // the version has since moved past what P7 (this phase) shipped.
   assert(Y.GAME_VERSION !== "1.0.0.17", "H: GAME_VERSION has moved past what P7 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
@@ -354,7 +336,7 @@ function fireOnce(small, wave) {
   // /^orbit/i claim is INVERTED to its positive successor rather than dropped.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
   // the FREQ_JITTER constant instead).
-  eq(nEntries, 36, `H: DEBUG_ENTRIES count is 36 after CS024 P3 (got ${nEntries})`);  // CS024 P3: 34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed
+  eq(nEntries, 15, `H: DEBUG_ENTRIES count is 15 after CS024 P4 (got ${nEntries})`);  // CS024 P4: 34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
@@ -370,9 +352,12 @@ function fireOnce(small, wave) {
   // logDifficultySnapshot's saucerAimErr column follows the tier-derived value, not the retired ramp() mirror.
   Y.game.wave = 34; // "high" accuracy tier
   Y.DiffLog.rows.length = 0;
-  Y.logDifficultySnapshot(Y.levelDef(34).junkCount, 1, 0);
+  Y.logDifficultySnapshot(Y.FROZEN_JUNK_COUNT, 1, 0);
   const row = Y.DiffLog.rows[0];
-  close(row.saucerAimErr, Y.DEBUG.ufoAccuracyHigh * Math.PI / 180, "H: DiffLog row's saucerAimErr matches the tier-derived value", 1e-6);
+  // REPOINTED BY CS024 P4: the column still MIRRORS THE LIVE CALL at the saucer aim site — which is the
+  // claim — but the value behind that call is the frozen one, so it is read off the helper rather than
+  // off a tier knob that no longer exists.
+  close(row.saucerAimErr, Y.FROZEN_UFO_ACCURACY_DEG * Math.PI / 180, "H: DiffLog row's saucerAimErr matches the live aim value", 1e-6);
 })();
 
 // ================= (I) AudioSys.ctx null smoke =====================

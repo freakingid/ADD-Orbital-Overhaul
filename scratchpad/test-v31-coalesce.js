@@ -77,7 +77,8 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "DebrisSatellite", "HunterSatellite", "destroyDebris", "destroyHunter", "shatterClump", "Bullet", "AudioSys", "Achievements",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
-  "levelDef", "largeHunterCount", "LARGE_HUNTER_MAX",   // CS024 P3: largeHunterCap() deleted, ceiling now flat
+  "largeHunterCount", "LARGE_HUNTER_MAX",   // CS024 P3: largeHunterCap() deleted, ceiling now flat
+                                            // CS024 P4: levelDef dropped — the level table is gone
   "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",     // CS024 P3: GARBAGE_FADE deleted with the blink-out
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
@@ -92,7 +93,7 @@ const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafS
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
   destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
-  levelDef, largeHunterCount, LARGE_HUNTER_MAX,
+  largeHunterCount, LARGE_HUNTER_MAX,
   SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
   MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
@@ -141,11 +142,18 @@ const CAP_OK_LEVEL = 1;
 console.log("(0) config + inheritance: constants sane; emission sites + fromNode inherit defaults");
 assert(LARGE_HUNTER_MAX >= 2,
   `0: the flat large-Hunter ceiling (${LARGE_HUNTER_MAX}) permits a coalesced core, and permits a second`);
-assert(levelDef(1).maxLargeHunters === undefined, "0: the level table no longer carries a maxLargeHunters column at all (CS024 P3)");
-assert(GARBAGE_COALESCE_DELAY === 3.0, `0: GARBAGE_COALESCE_DELAY is 3.0 (v3.3 P4 retune 6.0->3.0; got ${GARBAGE_COALESCE_DELAY})`);
+// REPOINTED BY CS024 P4: the "no maxLargeHunters column" probe went with the LEVEL TABLE ITSELF —
+// levelDef() no longer exists to have a column. The claim it stood for is unchanged and is now made
+// the only way it can be: the ceiling is a flat constant and nothing per-level decides it.
+assert(typeof LARGE_HUNTER_MAX === "number", "0: the large-Hunter ceiling is a flat constant, not a per-level lookup (CS024 P3/P4)");
+// REPOINTED BY CS024 P4 (Gate A Q1): 3.0 -> 5.0. Paul played Gate A, found hunters coalescing too fast
+// now that garbage is permanent, retuned the live slider and reported 5000 ms. This file measures the
+// coalescence MACHINERY, not this number, and every timing below derives from the constant rather than
+// assuming it, so the retune moves one literal here and nothing else.
+assert(GARBAGE_COALESCE_DELAY === 5.0, `0: GARBAGE_COALESCE_DELAY is 5.0 (CS024 P4 Gate A Q1 retune 3.0->5.0; got ${GARBAGE_COALESCE_DELAY})`);
 assert(GARBAGE_MERGE_DIST === 12, `0: GARBAGE_MERGE_DIST is 12 (got ${GARBAGE_MERGE_DIST})`);
 assert(HUNTER_COALESCE_COUNT === 12, `0: HUNTER_COALESCE_COUNT is 12 (got ${HUNTER_COALESCE_COUNT})`);
-assert(GARBAGE_MAGNET_RANGE === 180, `0: GARBAGE_MAGNET_RANGE is 180 (v3.3 P4 retune 260->180; got ${GARBAGE_MAGNET_RANGE})`);
+assert(GARBAGE_MAGNET_RANGE === 160, `0: GARBAGE_MAGNET_RANGE is 160 (CS024 P4 Gate A Q1 retune 180->160; got ${GARBAGE_MAGNET_RANGE})`);
 assert(GARBAGE_MAGNET_RANGE > GARBAGE_MERGE_DIST, "0: magnet range exceeds merge distance");
 // REPOINTED BY CS024 P3. The two assertions here checked the coalescence economy's load-bearing
 // relationship: a single had to live long ENOUGH past its inert window to find neighbours, or nothing

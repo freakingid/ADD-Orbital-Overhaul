@@ -78,7 +78,8 @@ function makeLocalStorage() {
 }
 
 const RETURN = [
-  "game", "startGame", "nextWave", "update", "Saucer", "angleTo", "levelDef",
+  // CS024 P4: levelDef dropped — the level table and all 21 tier knobs are deleted (spec §1.6).
+  "game", "startGame", "nextWave", "update", "Saucer", "angleTo", "ufoAccuracyRad",
   "ufoAccuracyRad", "DEBUG", "DEBUG_VARS", "applyDebug", "AudioSys",
   'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
 ];
@@ -190,29 +191,33 @@ function actualGap(inst, wave, waveTime, randomVal) {
   }
 })();
 
-// ================= (D) aim error is now LEVEL-tiered instead — steps at the UFO WEAPONS breakpoints =====
+// ================= (D) aim error follows the ONE live helper, at every level ============================
+// REPOINTED BY CS024 P4. This section's subject is CS017 P4's retired time-in-level pressure axis, and its
+// job is to prove aim error does NOT track waveTime. CS018 P7 made the positive half of that "it steps
+// with LEVEL at the tier breakpoints"; the tiers and their nine knobs are now deleted (spec §1.6), and the
+// quantity is FROZEN at the retired table's level-1 answer until P5 puts it on the ufoAccuracySmall lever.
+// So the positive half becomes "it is exactly what ufoAccuracyRad() says, at every level, with a nonzero
+// waveTime" — which is what actually matters here and is checked off a REAL fired bullet, and the
+// mirror-image control that a nonzero waveTime changes nothing is untouched below in (E)/(F).
 (function sectionD() {
-  console.log("(D) aim error now steps with LEVEL at the UFO WEAPONS accuracy tier breakpoints (1/13/34), not with time-in-level");
+  console.log("(D) aim error is exactly ufoAccuracyRad() at every level, with waveTime deliberately nonzero");
   const inst = buildInstance();
-  const { DEBUG, levelDef } = inst;
-  // TIER_STEPS.ufoAccuracy = [[1,"low"],[13,"normal"],[34,"high"]]
-  const cases = [
-    { level: 1,  tier: "low",    deg: DEBUG.ufoAccuracyLow },
-    { level: 12, tier: "low",    deg: DEBUG.ufoAccuracyLow },
-    { level: 13, tier: "normal", deg: DEBUG.ufoAccuracyNormal },
-    { level: 33, tier: "normal", deg: DEBUG.ufoAccuracyNormal },
-    { level: 34, tier: "high",   deg: DEBUG.ufoAccuracyHigh },
-    { level: 63, tier: "high",   deg: DEBUG.ufoAccuracyHigh },
-  ];
-  for (const c of cases) {
-    assert(levelDef(c.level).ufoAccuracy === c.tier, `D: level ${c.level} ufoAccuracy tier is "${c.tier}"`);
-    const expectedRad = c.deg * Math.PI / 180;
-    const actualErr = actualAimErr(inst, c.level, 999); // waveTime is irrelevant now — pick a nonzero value to prove it
+  const { DEBUG, ufoAccuracyRad, game } = inst;
+  // The nine UFO WEAPONS tier knobs are gone; nothing here can be reading one by accident.
+  for (const id of ["ufoAccuracyLow", "ufoAccuracyNormal", "ufoAccuracyHigh"])
+    assert(!(id in DEBUG), `D: DEBUG.${id} is gone with the 21 tier knobs (CS024 P4)`);
+  const errs = [];
+  for (const level of [1, 12, 13, 33, 34, 63]) {
+    game.wave = level;
+    const expectedRad = ufoAccuracyRad();
+    const actualErr = actualAimErr(inst, level, 999); // waveTime is irrelevant — a nonzero value proves it
     assert(near(actualErr, expectedRad, 1e-6),
-      `D: level ${c.level} real fired aim error (${actualErr}) === ${c.deg}deg in radians (${expectedRad})`);
+      `D: level ${level} real fired aim error (${actualErr}) === ufoAccuracyRad() (${expectedRad})`);
+    errs.push(actualErr);
   }
-  assert(DEBUG.ufoAccuracyHigh < DEBUG.ufoAccuracyNormal && DEBUG.ufoAccuracyNormal < DEBUG.ufoAccuracyLow,
-    "D: the accuracy tier genuinely descends (high < normal < low) — one of CS018's four inverted levers");
+  // FROZEN this phase — the former breakpoints at 13 and 34 no longer step, because they no longer exist.
+  for (let i = 1; i < errs.length; i++)
+    assert(near(errs[i], errs[0], 1e-9), `D: ...and it is FLAT across every probed level (TRAP 2: P5 wires the lever)`);
 })();
 
 // ================= (F) nextWave() still resets waveTime, but it no longer affects the aim error =====

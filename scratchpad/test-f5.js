@@ -46,13 +46,12 @@ const navigatorStub = { getGamepads: () => [] };
 
 const returnList = [
   "startGame", "update", "nextWave", "game", "keys",
-  "ramp", // CS018 P4: section (D) builds its CONTROL from the REAL retired-ramp helper
   "HunterSatellite", "Garbage", "destroyHunter",
   "HUNTER_RADII", "HUNTER_SCORE", "HUNTER_DAMAGE",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC", "HUNTER_SCATTER",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS",
   "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN",
-  "difficultyFactor", "angleTo",
+  "musicIntensity", "angleTo",   // CS024 P4: difficultyFactor renamed (curve byte-identical)
   "WORLD_W", "WORLD_H",
   // CS022 P1: WORLD_W/WORLD_H are a load-time SNAPSHOT now (the field size). Section (D) drives real
   // nextWave() calls through orbit levels (21, 63), which resize the torus to 3840x2160 — so (H2),
@@ -66,13 +65,12 @@ const factory = new Function(
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
 const {
   startGame, update, nextWave, game, keys,
-  ramp,
   HunterSatellite, Garbage, destroyHunter,
   HUNTER_RADII, HUNTER_SCORE, HUNTER_DAMAGE,
   HUNTER_SPEED_CEIL, HUNTER_TURN_CEIL, HUNTER_FLOOR_FRAC, HUNTER_SCATTER,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS,
   HUNTER_LAST_STAND_SPEED, HUNTER_LAST_STAND_TURN,
-  difficultyFactor, angleTo,
+  musicIntensity, angleTo,
   WORLD_W, WORLD_H, WORLD_SIZE_FIELD
 } = A;
 
@@ -203,7 +201,7 @@ function tier(size, wave) {
   nextWave();
   return new HunterSatellite(cx, cy, size, 0);
 }
-assert(near(difficultyFactor(1), 0), "D: difficultyFactor(1) == 0 (retained as the music-intensity curve, FLAG-l)");
+assert(near(musicIntensity(1), 0), "D: musicIntensity(1) == 0 (CS024 P4 renamed difficultyFactor; same curve, and it is now NAMED for its one job)");
 
 const PROBE_LEVELS = [1, 2, 5, 20, 21, 22, 43, 63, 200];
 for (const size of [3, 2, 1]) {
@@ -224,8 +222,13 @@ for (const size of [3, 2, 1]) {
   if (size === 3) assert(expTurn === 0, "D[large]: core turn rate is 0 at every level (passive drift)");
   // CONTROL: the retired ramp is really gone. At level 20 the old formula produced a strictly higher
   // value for every tier with a non-zero ceiling; the frozen value must NOT match it.
+  // REPOINTED BY CS024 P4: ramp() itself is now DELETED from the build (its last lever, the small-saucer
+  // chance, went with the level table), so the control can no longer be built from the real helper. It is
+  // rebuilt here from the retired definition verbatim — floor + (ceil - floor) * musicIntensity(wave),
+  // which is exactly what ramp() was — using the REAL surviving curve for the factor. The claim is
+  // unchanged and if anything stronger: the frozen speed must not equal what the deleted formula gave.
   else {
-    const ramped = ramp(expSpeed, HUNTER_SPEED_CEIL[size], 20);
+    const ramped = expSpeed + (HUNTER_SPEED_CEIL[size] - expSpeed) * musicIntensity(20);
     assert(ramped > expSpeed + 1, `D[size ${size}]: (context) the retired ramp would have given ${ramped.toFixed(1)} at level 20`);
     assert(!near(tier(size, 20).speed, ramped),
       `D[size ${size}]: CONTROL — the frozen speed does not equal the retired level-20 ramp value`);

@@ -64,14 +64,17 @@ function makeLocalStorage() {
   const store = {};
   return { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
 }
-const RETURN = ["game", "startGame", "update", "nextWave", "levelDef", "coalesceGarbage",
+// CS024 P4: levelDef DELETED with the level table; ramp() DELETED; difficultyFactor RENAMED
+// musicIntensity (curve byte-identical), RAMP_WAVES -> MUSIC_INTENSITY_WAVES.
+const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "coalesceGarbage",
                 "largeHunterCount", "LARGE_HUNTER_MAX", "noteLargeHunterSpawn",   // CS024 P3: largeHunterCap() deleted
                 "HunterSatellite", "Garbage", "destroyHunter", "shatterClump",
                 "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
                 "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN", "HUNTER_COALESCE_COUNT",
                 "ACH_LINEAGE_FULL", "DEBUG", "DEBUG_VARS", "AudioSys", "MusicSys",
                 "DiffLog", "DIFFLOG_FIELDS", "logDifficultySnapshot", "difficultyLogCSV",
-                "difficultyFactor", "ramp", "RAMP_WAVES", "GAME_VERSION",
+                "musicIntensity", "MUSIC_INTENSITY_WAVES", "FROZEN_JUNK_COUNT", "FROZEN_JUNK_SPEED",
+                "FROZEN_UFO_APPEAR_FREQ", "GAME_VERSION",
                 // Scope probe: asks "does this identifier exist at all?" without the factory's own return
                 // statement throwing a ReferenceError on a retired symbol. Direct eval keeps the script
                 // block's lexical scope, so it sees exactly what the game's own code would see.
@@ -153,7 +156,9 @@ function levelForCap(n) {
   g.wave = 30;
   for (const size of [2, 1]) {
     const frozen = X.HUNTER_SPEED_CEIL[size] * X.HUNTER_FLOOR_FRAC;
-    const ramped = X.ramp(frozen, X.HUNTER_SPEED_CEIL[size], 30);
+    // REPOINTED BY CS024 P4: ramp() is deleted, so the control rebuilds it from its retired definition
+    // verbatim — floor + (ceil - floor) * musicIntensity(wave) — using the real surviving curve.
+    const ramped = frozen + (X.HUNTER_SPEED_CEIL[size] - frozen) * X.musicIntensity(30);
     assert(ramped > frozen + 1, `B: (context) the retired ramp would give ${ramped.toFixed(1)} at level 30 for size ${size}`);
     const h = withRandom(0.5, () => new X.HunterSatellite(400, 400, size, 0));
     assert(Math.abs(h.speed - ramped) > 1e-6, `B: CONTROL — size ${size}'s frozen speed is not the level-30 ramp value`);
@@ -222,9 +227,9 @@ function levelForCap(n) {
   eq(X.probe("largeHunterCap"), "__ReferenceError__", "C: largeHunterCap() no longer exists");
   eq(X.probe("HUNTER_CAP_STEPS"), "__ReferenceError__", "C: ...nor does the HUNTER_CAP_STEPS schedule");
   eq(X.LARGE_HUNTER_MAX, 100, "C: the ceiling is the flat LARGE_HUNTER_MAX = 100");
-  for (const lvl of [1, 4, 5, 12, 21, 22, 63, 64, 1000]) {
-    eq(X.levelDef(lvl).maxLargeHunters, undefined, `C: level ${lvl} carries no per-level cap column`);
-  }
+  // REPOINTED BY CS024 P4: there is no level table left to carry a column, which says "the level makes
+  // no difference" more completely than an absent column did.
+  eq(X.probe("levelDef"), "__ReferenceError__", "C: ...and there is no level table left to hold a cap column at all");
 })();
 
 // ================= (D) REPOINTED BY CS024 P3 — producer 1 IS DELETED =====================
@@ -371,7 +376,6 @@ function levelForCap(n) {
   // producer, the level a Hunter arrives at is decided by how fast the player neglects garbage, not by
   // the clock. Levels 2-4 get their Hunter back, on merit.
   for (const lvl of [1, 2, 3, 4, 5]) {
-    eq(X.levelDef(lvl).maxLargeHunters, undefined, `F: level ${lvl} has no cap column at all`);
     quiet(X);
     g.wave = lvl;
     const a = new X.Garbage(1500, 1500, 0, 0, X.HUNTER_COALESCE_COUNT - 1);
@@ -461,7 +465,7 @@ function levelForCap(n) {
   for (const id of ["cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN"]) {
     eq(Y.probe(id), "__ReferenceError__", `H: ${id} does not exist`);
   }
-  assert(Y.probe("RAMP_WAVES") === 8, "H: (meta) the scope probe resolves a live constant");
+  assert(Y.probe("MUSIC_INTENSITY_WAVES") === 8, "H: (meta) the scope probe resolves a live constant (RAMP_WAVES, renamed by CS024 P4)");
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
   for (const id of ["cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN", "game.cycle", "game.cycleWave"]) {
     const hits = codeOnly.filter(l => l.includes(id));
@@ -471,43 +475,55 @@ function levelForCap(n) {
   for (let i = 0; i < 5; i++) { Y.game.debris.length = 0; Y.nextWave(); }
   assert(!("cycle" in Y.game) && !("cycleWave" in Y.game), "H: nor after several nextWave() calls");
 
-  // FLAG-l: difficultyFactor/RAMP_WAVES/ramp retained, and MusicSys.setIntensity is its only direct caller.
-  eq(typeof Y.difficultyFactor, "function", "H: difficultyFactor() is retained (FLAG-l)");
-  eq(typeof Y.ramp, "function", "H: ramp() is retained");
-  eq(Y.RAMP_WAVES, 8, "H: RAMP_WAVES is retained at 8");
-  close(Y.difficultyFactor(1), 0, "H: difficultyFactor(1) is still 0");
-  // Comment-stripped, because difficultyFactor is named in the file header block and in two trailing
-  // comments; `codeOnly` above only drops WHOLE-LINE // comments.
+  // FLAG-l: the curve is retained and MusicSys.setIntensity is its only caller.
+  // REPOINTED BY CS024 P4 (spec §1.6): retained AND RENAMED. difficultyFactor -> musicIntensity,
+  // RAMP_WAVES -> MUSIC_INTENSITY_WAVES, curve byte-identical — the code finally saying what CS018 P4
+  // decided. ramp(), which only composed the curve, is DELETED with its last lever, which is why the
+  // "exactly two references" count drops to one: the caller, and no ramp() body to be the other.
+  eq(typeof Y.musicIntensity, "function", "H: the curve is retained, as musicIntensity() (FLAG-l)");
+  eq(Y.probe("difficultyFactor"), "__ReferenceError__", "H: ...under that name only");
+  eq(Y.probe("ramp"), "__ReferenceError__", "H: ramp() is DELETED — its last lever went with the level table");
+  eq(Y.MUSIC_INTENSITY_WAVES, 8, "H: the knob is retained at 8, renamed");
+  close(Y.musicIntensity(1), 0, "H: musicIntensity(1) is still 0");
+  // Comment-stripped, because the name appears in the file header block and in trailing comments;
+  // `codeOnly` above only drops WHOLE-LINE // comments.
   const codeStripped = scriptSrc
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n").map(l => l.replace(/\/\/.*$/, "")).join("\n");
-  const dfCalls = codeStripped.split("\n").filter(l => /difficultyFactor\(/.test(l) && !/^function difficultyFactor\(/.test(l.trim()));
-  eq(dfCalls.length, 2, `H: difficultyFactor has exactly two live references (ramp's body + MusicSys.setIntensity) — found ${JSON.stringify(dfCalls)}`);
-  assert(dfCalls.some(l => /MusicSys\.setIntensity\(difficultyFactor\(game\.wave\)\)/.test(l)),
-    "H: MusicSys.setIntensity(difficultyFactor(game.wave)) is the retained purpose");
-  assert(dfCalls.some(l => /return floor \+ \(ceil - floor\) \* difficultyFactor\(wave\)/.test(l)),
-    "H: ...and the only other reference is ramp()'s own body");
+  const dfCalls = codeStripped.split("\n").filter(l => /musicIntensity\(/.test(l) && !/^function musicIntensity\(/.test(l.trim()));
+  eq(dfCalls.length, 1, `H: musicIntensity has exactly ONE live reference now that ramp() is gone — found ${JSON.stringify(dfCalls)}`);
+  assert(dfCalls.some(l => /MusicSys\.setIntensity\(musicIntensity\(game\.wave\)\)/.test(l)),
+    "H: MusicSys.setIntensity(musicIntensity(game.wave)) is the retained purpose");
 
   // logDifficultySnapshot rewritten: the retired columns are gone, the table columns are present.
   for (const gone of ["cycle", "cycleWave", "hunterSpeedFrac", "hunterTurnFrac"]) {
     assert(!Y.DIFFLOG_FIELDS.includes(gone), `H: DIFFLOG_FIELDS no longer carries "${gone}"`);
   }
+  // The column LIST is untouched by CS024 P4 — only the expressions feeding three groups of columns
+  // moved. P5 owns the list.
   for (const want of ["level", "phase", "rel", "junkCount", "maxLargeHunters", "prevLevelSecs",
                       "junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
                       "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
     assert(Y.DIFFLOG_FIELDS.includes(want), `H: DIFFLOG_FIELDS carries "${want}"`);
   }
   const row = Y.DiffLog.rows[Y.DiffLog.rows.length - 1];
-  const def = Y.levelDef(Y.game.wave);
   eq(row.level, Y.game.wave, "H: the logged level is game.wave");
-  eq(row.phase, def.phase, "H: the logged phase comes from levelDef");
-  eq(row.rel, def.rel, "H: the logged relative level comes from levelDef");
-  eq(row.junkCount, def.junkCount, "H: the logged junkCount comes from levelDef");
+  // REPOINTED BY CS024 P4: `phase` and `rel` were positions inside the 21-level three-phase structure,
+  // which is DELETED rather than renamed — so they log null (an empty CSV cell) instead of a re-derived
+  // number describing something that no longer exists. The COLUMN LIST is deliberately unchanged; P5
+  // owns the repoint onto leverState and any list change that comes with it.
+  eq(row.phase, null, "H: the logged phase is null — the three-phase structure is deleted");
+  eq(row.rel, null, "H: ...and so is the logged relative level");
+  eq(row.junkCount, Y.FROZEN_JUNK_COUNT, "H: the logged junkCount is what actually spawned (frozen this phase)");
   // REPOINTED BY CS024 P3: the column survives (a column follows its consumer) but its source moved off
   // the deleted levelDef column onto the flat LARGE_HUNTER_MAX.
   eq(row.maxLargeHunters, Y.LARGE_HUNTER_MAX, "H: the logged maxLargeHunters is LARGE_HUNTER_MAX");
+  // REPOINTED BY CS024 P4: the seven columns logged a TIER NAME; tiers are gone, so they log the NUMBER
+  // in play. That is the shape they keep — P5's leverState values are numbers too.
+  eq(row.junkSpeed, Y.FROZEN_JUNK_SPEED, "H: the logged junkSpeed is the live frozen number, not a tier name");
+  eq(row.ufoAppearFreq, Y.FROZEN_UFO_APPEAR_FREQ, "H: ...and so is the logged ufoAppearFreq");
   for (const k of ["junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq", "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
-    eq(row[k], def[k], `H: the logged "${k}" tier name comes from levelDef`);
+    assert(typeof row[k] === "number" && Number.isFinite(row[k]), `H: the logged "${k}" is a finite number now`);
   }
   // Every declared column is actually present in a real row, and the CSV shape follows the list.
   for (const f of Y.DIFFLOG_FIELDS) assert(f in row, `H: a real row carries the declared column "${f}"`);
@@ -556,7 +572,7 @@ function levelForCap(n) {
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead). AND AGAIN BY CS024 P3: 34 -> 36 — garbageLifetime out with
   // the decay clock, garbageSoftMax/garbageHardMax/lastStandSpeed in.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 36, "H: DEBUG_VARS holds 36 value entries as of CS024 P3");
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 15, "H: DEBUG_VARS holds 15 value entries as of CS024 P4");
   assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,

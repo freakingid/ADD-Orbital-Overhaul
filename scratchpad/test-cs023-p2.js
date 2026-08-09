@@ -104,7 +104,8 @@ function makeCtxStub() {
 }
 
 const RETURN = [
-  "game", "startGame", "update", "draw", "nextWave", "destroyDebris", "killShip", "levelDef",
+  // CS024 P4: levelDef dropped — the level table is deleted (replaced by the LEVERS odometer).
+  "game", "startGame", "update", "draw", "nextWave", "destroyDebris", "killShip", "FROZEN_JUNK_COUNT",
   "DebrisSatellite", "HunterSatellite", "Garbage", "Dock",
   // the CS023 P2 surface
   "debrisBounce", "DEBRIS_MASS", "DEBRIS_BOUNCE_RESTITUTION", "DEBRIS_BOUNCE_MIN",
@@ -391,7 +392,8 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // that now does the work, since a silently-restored drift is the thing this file should catch.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
-  eq(X.DEBUG_ENTRIES.length, 36, "A: TRAP 4 REPOINTED BY CS024 P3 — the debug registry is 36 value entries");
+  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 (the 21 tier knobs).
+  eq(X.DEBUG_ENTRIES.length, 15, "A: TRAP 4 REPOINTED BY CS024 P4 — the debug registry is 15 value entries");
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
     "debrisBounceRestitution",
     "A: REPOINTED BY CS024 P1 — debrisBounceRestitution is the ONLY survivor of CS023 P4's two knobs; debrisDriftAccel is gone");
@@ -734,7 +736,11 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     const X = seededBuild(0x6001);
     X.startGame();
     atWave(X, 4);
-    assert(!("archetype" in X.levelDef(4)), "G: (setup) REPOINTED BY CS024 P1 — there is no archetype column; every level is the one kind");
+    // REPOINTED AGAIN BY CS024 P4: there is no level table left to hold a column, which makes the same
+    // point more strongly than the absent-column check did — every level is the one kind, by
+    // construction. (Checked off the export list rather than a probe(): this file already has a LOCAL
+    // function called probe(level, seed, mode), and shadowing it here would be a trap for a later reader.)
+    assert(X.levelDef === undefined, "G: (setup) there is no level table at all now; every level is the one kind");
     X.game.debris.length = 0;
     X.game.state = "playing"; X.game.paused = false;
     const [W, H] = X.worldDims(X.game.worldSize);
@@ -894,18 +900,26 @@ const COALESCE_HARVEST_CEILING = 500000;
   // and looks like a pass. A fresh garbage burst cannot coalesce for GARBAGE_COALESCE_DELAY seconds, so
   // the control has to run well past that.
   {
-    const C = withRandom(seededRandom(0x9101), () => buildFrom(instrumented, { extra: ["__PROBE"] }));
+    // CS024 P4: GARBAGE_COALESCE_DELAY joins the export list so the control window below can DERIVE
+    // itself from the shipped constant instead of hard-coding a frame count that a retune invalidates.
+    const C = withRandom(seededRandom(0x9101), () => buildFrom(instrumented, { extra: ["__PROBE", "GARBAGE_COALESCE_DELAY"] }));
     withRandom(seededRandom(0x9101), () => { C.startGame(); atWave(C, 4); });
     C.game.state = "playing"; C.game.paused = false;
     for (const d of C.game.debris.filter(d => !d.dead).slice(0, 8)) C.destroyDebris(d, true);
     let cd = 0, cc = 0;
-    for (let i = 0; i < 300; i++) {
+    // REPOINTED BY CS024 P4: the window was a flat 300 frames (5.0 s), chosen when GARBAGE_COALESCE_DELAY
+    // was 3.0 s. Gate A Q1 moved that constant to 5.0 s — exactly the old window — so the control was
+    // sampling the last instant before any piece became active and the coalesce counter read 0, which is
+    // precisely the false pass these two assertions exist to prevent. The window is now DERIVED from the
+    // constant (delay + 5 s of live coalescence), so the next retune carries it instead of stranding it.
+    const CONTROL_FRAMES = Math.ceil((C.GARBAGE_COALESCE_DELAY + 5) * 60);
+    for (let i = 0; i < CONTROL_FRAMES; i++) {
       C.__PROBE.debrisPairs = 0; C.__PROBE.coalescePairs = 0;
       C.game.ship.hp = C.SHIP_MAX_HP; C.update(1 / 60);
       cd = Math.max(cd, C.__PROBE.debrisPairs); cc = Math.max(cc, C.__PROBE.coalescePairs);
     }
-    assert(cd > 0, `H: (control) the DEBRIS pair counter is live — ${cd} checks in the worst of 300 ordinary frames`);
-    assert(cc > 0, `H: (control) the COALESCE pair counter is live — ${cc} checks in the worst of 300 ordinary frames`);
+    assert(cd > 0, `H: (control) the DEBRIS pair counter is live — ${cd} checks in the worst of ${CONTROL_FRAMES} ordinary frames`);
+    assert(cc > 0, `H: (control) the COALESCE pair counter is live — ${cc} checks in the worst of ${CONTROL_FRAMES} ordinary frames`);
   }
 
   // THE MEASUREMENT, at level 21 — the peak wave. Same three probes CS022 P3 used, same reasons:
@@ -1003,8 +1017,14 @@ const COALESCE_HARVEST_CEILING = 500000;
   {
     const V = seededBuild(0x9500);
     V.startGame();
-    PEAK_SPAWN = V.levelDef(21).junkCount;
-    eq(PEAK_SPAWN, 13, "H: (validity) REPOINTED BY CS024 P1 — level 21's spawn is the level table's 13, the whole board now");
+    // REPOINTED AGAIN BY CS024 P4: the level table is gone and the junk count is FROZEN at 3 for one
+    // phase (P5 wires the junkCount lever, whose own ceiling is 12). Still DERIVED from the build rather
+    // than restated as a literal, so the next retune carries this probe instead of stranding it.
+    //   THE CEILINGS BELOW ARE STILL DELIBERATELY NOT LOWERED TO MATCH — same reasoning as CS024 P1's
+    // note: a gate whose bound tracks the measurement downward stops being a gate. The headroom grew
+    // again this phase, and P5 is the phase that puts the count back up.
+    PEAK_SPAWN = V.FROZEN_JUNK_COUNT;
+    eq(PEAK_SPAWN, 3, "H: (validity) level 21's spawn is the frozen count of 3 (CS024 P4; P5's lever takes it back to 12)");
     eq(atWave(V, 21), PEAK_SPAWN, "H: (validity) ...and the real nextWave() spawns exactly that many");
     eq(V.game.debris.every(d => d.size === 3), true, "H: (validity) ...and every one of them is a size-3 large, so the cascade bound holds");
   }
@@ -1145,10 +1165,19 @@ const COALESCE_HARVEST_CEILING = 500000;
     `H: ⛔ GATE — the realistic harvest did ${harvest.worstC.toLocaleString("en-US")} coalesce pair checks, over the ` +
     `${COALESCE_HARVEST_CEILING.toLocaleString("en-US")} ceiling. ${STOP}`);
   // ...and the gated measurement must not be vacuous.
-  assert(harvest.worstD > 1000,
+  // REPOINTED BY CS024 P4, and this is a REAL loss of measurement power that is being recorded rather
+  // than tuned away. Both thresholds were 1000, set when level 21 spawned 13 large satellites. P4 freezes
+  // the junk count at 3 for one phase (TRAP 2 — the levers are built but not yet wired), so the harvest
+  // cascade starts from under a quarter of the bodies and the worst frame does proportionally less work.
+  // The GATE CEILINGS ABOVE ARE DELIBERATELY UNTOUCHED — lowering a bound to match a smaller measurement
+  // is how a gate stops being a gate — so what moves is only the vacuity floor, and only far enough to
+  // stay meaningful at 3 satellites.
+  //   ⛔ P5 SHOULD PUT THESE BACK. The moment nextWave() reads leverState(game.wave).junkCount, level 21
+  // is spawning a real board again and a floor of 100 is no longer doing its job.
+  assert(harvest.worstD > 100,
     `H: (control) the harvest's worst debris frame really did substantial work (${harvest.worstD.toLocaleString("en-US")} checks ` +
     `over ${harvest.worstDBodies} bodies), so the ceiling is measuring something`);
-  assert(harvest.worstC > 1000,
+  assert(harvest.worstC > 100,
     `H: (control) ...and so did its worst coalesce frame (${harvest.worstC.toLocaleString("en-US")} checks)`);
 })();
 

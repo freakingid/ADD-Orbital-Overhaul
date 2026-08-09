@@ -371,8 +371,9 @@ function build({ audio = true, ctxLog = null } = {}) {
   // REPOINTED BY CS024 P3: 34 -> 36 (garbageLifetime out with the decay clock; garbageSoftMax,
   // garbageHardMax and lastStandSpeed in). The claim this TRAP carries — freqJitter is gone and stays
   // gone — is asserted directly below rather than through a total that later phases keep moving.
-  eq(X.DEBUG_ENTRIES.length, 36, "F: TRAP — the debug registry is exactly 36 value entries after CS024 P3");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 36, "F: ...and DEBUG_VARS agrees");
+  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names).
+  eq(X.DEBUG_ENTRIES.length, 15, "F: TRAP — the debug registry is exactly 15 value entries after CS024 P4");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 15, "F: ...and DEBUG_VARS agrees");
   assert(X.DEBUG_ENTRIES.some(e => e.id === "debrisBounceRestitution"),
     "F: debrisBounceRestitution (untouched by this phase) still survives in the registry");
   const docs = ["ORBITAL-OVERHAUL-GDD.md", "GDD-VERSION-HISTORY.md", "DIFFICULTY-LEVERS.md"];

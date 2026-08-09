@@ -67,10 +67,17 @@ function makeCtx(canvasStub) {
 const RETURN = [
   "startGame", "update", "nextWave", "game", "settings",
   "DiffLog", "DIFFLOG_MAX", "DIFFLOG_FIELDS",
+  // CS024 P4: a scope probe, so "the level table is gone" can be checked the same way every other
+  // deletion in this suite is, rather than by the absence of an export.
+  'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
   "logDifficultySnapshot", "difficultyLogCSV", "dumpDifficultyLog",
   "DEBUG_VARS", "menuDebug", "drawDebug", "debugReturn",
-  "ramp", "difficultyFactor", "HUNTER_FLOOR_FRAC",
-  "levelDef", "junkSpeedMul", "LARGE_HUNTER_MAX",                                     // CS024 P3 repoint (was largeHunterCap)
+  // CS024 P4: ramp() deleted; difficultyFactor renamed musicIntensity; levelDef() deleted with the whole
+  // level table. The junk count nextWave() consumes is FROZEN_JUNK_COUNT until P5 wires the lever.
+  "musicIntensity", "HUNTER_FLOOR_FRAC",
+  "FROZEN_JUNK_COUNT", "FROZEN_UFO_APPEAR_FREQ", "FROZEN_JUNK_SPEED",
+  "ufoFlightSpeedPx", "ufoFireMult", "ufoShotSpeedPx",
+  "junkSpeedMul", "LARGE_HUNTER_MAX",                                                 // CS024 P3 repoint (was largeHunterCap)
   "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
   "ufoAccuracyRad",                                    // CS018 P7 (section B: tiered saucer aim error)
   "AudioSys",
@@ -130,10 +137,15 @@ function build() {
   return { exports, created };
 }
 
-// The seven graded levers log a TIER NAME, not a number — the one non-numeric column group in the row.
+// REPOINTED BY CS024 P4. These seven columns used to log a TIER NAME — the one non-numeric group in the
+// row — because levelDef() decided a name and the value behind it was a debug knob. Tiers are gone, so
+// they log the NUMBER in play instead, which makes the whole row numeric for the first time and is the
+// shape it keeps: P5's leverState values are numbers too. `phase` and `rel` go the other way — they
+// described positions inside the deleted 21-level three-phase structure, so they log null (an empty CSV
+// cell) rather than a re-derived number describing a thing that no longer exists.
 const TIER_FIELDS = ["junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
                      "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"];
-const TIER_NAMES = ["low", "normal", "high"];
+const NULL_FIELDS = ["phase", "rel"];
 
 // ================= (B) one row per nextWave(), every field present/finite, matches the live sites =====
 (function sectionB() {
@@ -151,8 +163,8 @@ const TIER_NAMES = ["low", "normal", "high"];
     const row = A.DiffLog.rows[A.DiffLog.rows.length - 1];
     for (const f of A.DIFFLOG_FIELDS) {
       assert(f in row, `B: wave ${w}: row has field "${f}"`);
-      if (TIER_FIELDS.includes(f)) {
-        assert(TIER_NAMES.includes(row[f]), `B: wave ${w}: tier field "${f}" is a tier name (got ${row[f]})`);
+      if (NULL_FIELDS.includes(f)) {
+        assert(row[f] === null, `B: wave ${w}: retired structural field "${f}" logs null (got ${row[f]})`);
       } else {
         assert(typeof row[f] === "number" && Number.isFinite(row[f]), `B: wave ${w}: field "${f}" is a finite number (got ${row[f]})`);
       }
@@ -167,13 +179,13 @@ const TIER_NAMES = ["low", "normal", "high"];
     assert(!("cycle" in row) && !("cycleWave" in row), `B: wave ${w}: the retired cycle columns are gone from the row`);
     assert(!("hunterSpeedFrac" in row) && !("hunterTurnFrac" in row), `B: wave ${w}: the retired Hunter-fraction columns are gone`);
 
-    // REPOINTED BY CS018 P4: the level-table columns must agree with ONE levelDef(game.wave) call, so a
-    // row can never disagree with itself about which level it describes. Built from the REAL levelDef()
-    // and junkSpeedMul(), never re-derived arithmetic.
-    const def = A.levelDef(g.wave);
-    assert(row.phase === def.phase, `B: wave ${w}: row.phase expected ${def.phase}, got ${row.phase}`);
-    assert(row.rel === def.rel, `B: wave ${w}: row.rel expected ${def.rel}, got ${row.rel}`);
-    assert(row.junkCount === def.junkCount, `B: wave ${w}: junkCount expected ${def.junkCount}, got ${row.junkCount}`);
+    // REPOINTED BY CS024 P4: there is no levelDef() call left to agree with — the level table is gone.
+    // What the CLAIM was about, and still is, is that no row can disagree with itself about the level it
+    // describes: every column is built from the SAME live expression the spawn site used, never
+    // re-derived arithmetic. That is now checked against FROZEN_JUNK_COUNT and the live junkSpeedMul().
+    assert(row.phase === null, `B: wave ${w}: row.phase is null — the three-phase structure is deleted, not renamed`);
+    assert(row.rel === null, `B: wave ${w}: row.rel is null, for the same reason`);
+    assert(row.junkCount === A.FROZEN_JUNK_COUNT, `B: wave ${w}: junkCount expected ${A.FROZEN_JUNK_COUNT}, got ${row.junkCount}`);
     // REPOINTED BY CS024 P1, and it RETIRES FLAG-CS022-g outright. Two changesets ago this split so that
     // an ORBIT level's ring layout could be checked by its own rule; CS022 P3 then re-split it again when
     // orbit levels grew a scatter component on top of their rings, at which point the DiffLog's junkCount
@@ -185,16 +197,21 @@ const TIER_NAMES = ["low", "normal", "high"];
       `B: wave ${w}: the level spawned exactly junkCount pieces — table, DiffLog column and spawn all agree`);
     assert(g.debris.every(d => d.orbitCenter === undefined),
       `B: wave ${w}: REPOINTED BY CS024 P1 (inverted) — NO satellite carries orbit state, at any level`);
-    assert(!("archetype" in def) && !("fieldCount" in def) && !("orbitRings" in def),
-      `B: wave ${w}: levelDef has no archetype/fieldCount/orbitRings columns any more`);
+    assert(A.probe("levelDef") === "__ReferenceError__",
+      `B: wave ${w}: there is no level table left to carry an archetype/fieldCount/orbitRings column`);
     assert(Math.abs(row.junkSpeedMul - A.junkSpeedMul()) < 1e-9, `B: wave ${w}: junkSpeedMul matches the live helper`);
     // REPOINTED BY CS024 P3: the maxLargeHunters COLUMN survives (a column follows its consumer), but
     // its source moved off the deleted levelDef column / largeHunterCap() onto the flat LARGE_HUNTER_MAX.
-    assert(!("maxLargeHunters" in def), `B: wave ${w}: levelDef no longer carries a maxLargeHunters column`);
     assert(row.maxLargeHunters === A.LARGE_HUNTER_MAX, `B: wave ${w}: the DiffLog column logs LARGE_HUNTER_MAX (${A.LARGE_HUNTER_MAX}), got ${row.maxLargeHunters}`);
-    for (const f of TIER_FIELDS) {
-      assert(row[f] === def[f], `B: wave ${w}: tier "${f}" expected ${def[f]}, got ${row[f]}`);
-    }
+    // REPOINTED BY CS024 P4: the seven former tier columns log the frozen NUMBER in play. Each is checked
+    // against the SAME live helper its consumer reads, which is the invariant this section is really
+    // about and the one P5 must preserve when it repoints them onto leverState.
+    assert(row.junkSpeed === A.FROZEN_JUNK_SPEED, `B: wave ${w}: junkSpeed logs the live frozen value`);
+    assert(Math.abs(row.ufoFlightSpeed - A.ufoFlightSpeedPx(true)) < 1e-9, `B: wave ${w}: ufoFlightSpeed matches the live helper (small)`);
+    assert(Math.abs(row.ufoFireFreq - A.ufoFireMult()) < 1e-9, `B: wave ${w}: ufoFireFreq matches the live helper`);
+    assert(Math.abs(row.ufoShotSpeed - A.ufoShotSpeedPx()) < 1e-9, `B: wave ${w}: ufoShotSpeed matches the live helper`);
+    assert(Math.abs(row.ufoAccuracy * Math.PI / 180 - A.ufoAccuracyRad()) < 1e-9, `B: wave ${w}: ufoAccuracy (deg) matches the live helper (rad)`);
+    assert(row.ufoAppearFreq === A.FROZEN_UFO_APPEAR_FREQ, `B: wave ${w}: ufoAppearFreq logs the live frozen centre`);
 
     // REPOINTED BY CS018 P7 (mirror-image of the old claim): saucerAimErr no longer mirrors
     // ramp()+SAUCER_ACCURACY_RAMP_SCALE — it logs the tier-derived ufoAccuracyRad() value directly.
@@ -202,8 +219,7 @@ const TIER_NAMES = ["low", "normal", "high"];
     assert(Math.abs(row.saucerAimErr - expAimErr) < 1e-9, `B: wave ${w}: saucerAimErr expected ${expAimErr}, got ${row.saucerAimErr}`);
     // REPOINTED BY CS018 P6 (mirror-image of the old claim): saucerGapMin/saucerGapMax no longer mirror
     // ramp() — they log the jittered-interval bounds around the ufoAppearFreq TIER centre.
-    const appearTier = def.ufoAppearFreq;
-    const appearCenter = appearTier === "low" ? A.DEBUG.ufoAppearFreqLow : appearTier === "high" ? A.DEBUG.ufoAppearFreqHigh : A.DEBUG.ufoAppearFreqNormal;
+    const appearCenter = A.FROZEN_UFO_APPEAR_FREQ;   // CS024 P4: was the ufoAppearFreq TIER centre
     // CS024 P2: freqJitter is no longer a live DEBUG knob — jitteredInterval() reads the frozen
     // FREQ_JITTER constant (0.25) instead. Same expected value, different source.
     const appearJitter = 0.25;
@@ -267,17 +283,19 @@ const TIER_NAMES = ["low", "normal", "high"];
   // (hand-authoring 23 fields three times is exactly how a column list and a fixture drift apart), with the
   // runtime columns set to distinct literals so a wrong-column bug can't hide behind an equal value. Three
   // levels are chosen to span two phases and to move the tier columns off "low".
+  // REPOINTED BY CS024 P4: there is no levelDef() to build the fixture from, so the former table columns
+  // are literals again — but DELIBERATELY DISTINCT per row and per column, which is the property this
+  // fixture actually needs: a wrong-column bug cannot hide behind an equal value.
   A.DiffLog.rows = [1, 22, 63].map((lvl, i) => {
-    const def = A.levelDef(lvl);
     const row = {
-      t: 1000 + i, level: def.level, phase: def.phase, rel: def.rel,
+      t: 1000 + i, level: lvl, phase: null, rel: null,
       score: 300 * i, prevLevelSecs: 12.5 + i,
-      junkCount: def.junkCount, junkSpeedMul: 0.8 + i * 0.1,
+      junkCount: 3 + i, junkSpeedMul: 0.8 + i * 0.1,
       maxLargeHunters: A.LARGE_HUNTER_MAX, hunterCount: i,   // CS024 P3: flat, no longer a per-level column
       saucerAimErr: 0.35 - i * 0.01, saucerGapMin: 20 - i, saucerGapMax: 30 - i,
       chainLen: 2 * i, cargoMax: 8 + i, scoopLevel: i,
     };
-    for (const f of TIER_FIELDS) row[f] = def[f];
+    TIER_FIELDS.forEach((f, k) => { row[f] = 100 + 10 * k + i; });
     return row;
   });
   // The fixture must cover the column list exactly — this is what stops a future column from being added
@@ -285,7 +303,7 @@ const TIER_NAMES = ["low", "normal", "high"];
   for (const f of A.DIFFLOG_FIELDS) assert(f in A.DiffLog.rows[0], `E: fixture covers column "${f}"`);
   assert(Object.keys(A.DiffLog.rows[0]).length === A.DIFFLOG_FIELDS.length,
     `E: fixture has no extra columns (fixture ${Object.keys(A.DiffLog.rows[0]).length} vs list ${A.DIFFLOG_FIELDS.length})`);
-  assert(A.DiffLog.rows[2].junkSpeed === "high", "E: sanity — the level-63 fixture row is off the 'low' tier");
+  assert(A.DiffLog.rows[2].junkSpeed !== A.DiffLog.rows[0].junkSpeed, "E: sanity — the three fixture rows differ on the former tier columns");
 
   const csv = A.difficultyLogCSV();
   const lines = csv.split("\n");
@@ -298,7 +316,8 @@ const TIER_NAMES = ["low", "normal", "high"];
     A.DIFFLOG_FIELDS.forEach((f, j) => {
       const want = A.DiffLog.rows[i][f];
       // Tier columns are names, so they round-trip as text; every other column round-trips numerically.
-      const got = TIER_FIELDS.includes(f) ? cells[j] : Number(cells[j]);
+      // REPOINTED BY CS024 P4: the tier columns are numeric now, and phase/rel are null -> empty cells.
+      const got = NULL_FIELDS.includes(f) ? (cells[j] === "" ? null : cells[j]) : Number(cells[j]);
       assert(got === want, `E: row ${i}: field "${f}" round-trips (expected ${want}, got ${cells[j]})`);
     });
   }

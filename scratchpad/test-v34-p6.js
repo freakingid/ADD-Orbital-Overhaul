@@ -97,7 +97,9 @@ const returnList = [
   "menuActive", "openPause", "closePause", "gotoScreen", "menuInput",
   "settings", "saveSettings", "loadSettings", "STORAGE_KEY",
   "MENU_OPTIONS", "MENU_TITLE", "SOUND_ROWS", "VOL_CATS", "bindings", "REBINDABLE", "keys",
-  "nextWave", "difficultyFactor", "RAMP_WAVES", "updateMusic", "musicStateFor", "MUSIC_LAYER_THRESHOLD",
+  // CS024 P4: difficultyFactor -> musicIntensity, RAMP_WAVES -> MUSIC_INTENSITY_WAVES. A rename only —
+  // the curve is byte-identical, and the music layer gating this section tests is untouched by it.
+  "nextWave", "musicIntensity", "MUSIC_INTENSITY_WAVES", "updateMusic", "musicStateFor", "MUSIC_LAYER_THRESHOLD",
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -109,7 +111,7 @@ const {
   menuActive, openPause, closePause, gotoScreen, menuInput,
   settings, saveSettings, loadSettings, STORAGE_KEY,
   MENU_OPTIONS, MENU_TITLE, SOUND_ROWS, VOL_CATS, bindings, REBINDABLE, keys,
-  nextWave, difficultyFactor, RAMP_WAVES, updateMusic, musicStateFor, MUSIC_LAYER_THRESHOLD,
+  nextWave, musicIntensity, MUSIC_INTENSITY_WAVES, updateMusic, musicStateFor, MUSIC_LAYER_THRESHOLD,
 } = A;
 
 // Fire a real keydown through the actual window listener(s) registered by the script (both the menu

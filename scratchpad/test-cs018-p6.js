@@ -67,7 +67,14 @@ function deepEq(a, b) {
 const canvasCtxNoop = new Proxy({}, { get: () => () => {} });
 const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => canvasCtxNoop };
 const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
-const RETURN = ["game", "startGame", "update", "nextWave", "levelDef", "stepAt", "Saucer",
+// CS024 P4: levelDef/stepAt DELETED with the level table, and all nine UFO MOVEMENT tier knobs (with the
+// twelve others) deleted from the registry. The three quantities are FROZEN at the retired table's
+// level-1 answers for one phase (TRAP 2) — P5 puts them on the ufoFlightSpeedBig/Small, ufoAppearFreq and
+// ufoDirChangeBig/Small levers. Every INTEGRATION claim in this file survives untouched; what inverts is
+// the per-tier bookkeeping, because there are no tiers.
+const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "Saucer",
+                "FROZEN_UFO_FLIGHT_SPEED", "FROZEN_UFO_APPEAR_FREQ", "FROZEN_UFO_DIR_CHANGE",
+                "FROZEN_JUNK_COUNT",
                 "ufoFlightSpeedPx", "ufoAppearInterval", "ufoZigInterval", "jitteredInterval",
                 "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "applyDebug",
                 "saveSettings", "loadSettings", "STORAGE_KEY",
@@ -103,16 +110,17 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 (function sectionB() {
   console.log("(B) DEBUG_VARS: UFO MOVEMENT (9) entries, GLOBAL down to 1 (freqJitter removed, CS024 P2), saucerGapPressure gone");
 
+  // REPOINTED BY CS024 P4, INVERTED: the UFO MOVEMENT header and its nine tier entries are deleted with
+  // the other twelve tier knobs. The grouping claim (a header immediately followed by its own entries and
+  // nothing else) is preserved as a property of the WHOLE registry rather than of this one section, which
+  // is the form that survives P5's rebuild.
   const hIdx = X.DEBUG_VARS.findIndex(v => v.header === "UFO MOVEMENT");
-  assert(hIdx >= 0, "B: a UFO MOVEMENT section header exists in DEBUG_VARS");
-  const movementIds = X.DEBUG_VARS.slice(hIdx + 1, hIdx + 10).map(v => v.id);
-  const wantMovementIds = [
-    "ufoFlightSpeedLow", "ufoFlightSpeedNormal", "ufoFlightSpeedHigh",
-    "ufoAppearFreqLow", "ufoAppearFreqNormal", "ufoAppearFreqHigh",
-    "ufoDirChangeFreqLow", "ufoDirChangeFreqNormal", "ufoDirChangeFreqHigh",
-  ];
-  assert(deepEq(movementIds, wantMovementIds),
-    `B: UFO MOVEMENT header immediately followed by the 9 expected ids (got ${JSON.stringify(movementIds)})`);
+  eq(hIdx, -1, "B: the UFO MOVEMENT header is gone with its nine tier entries (CS024 P4)");
+  for (const [i, e] of X.DEBUG_VARS.entries()) {
+    if (!e.header) continue;
+    const next = X.DEBUG_VARS[i + 1];
+    assert(next && next.id, `B: the "${e.header}" header is immediately followed by a value entry, not another header or the end`);
+  }
 
   const gIdx = X.DEBUG_VARS.findIndex(v => v.header === "GLOBAL");
   assert(gIdx >= 0, "B: a GLOBAL section header exists in DEBUG_VARS");
@@ -125,16 +133,22 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   assert(!X.DEBUG_VARS.some(v => v.id === "freqJitter"), "B: freqJitter entry is gone from DEBUG_VARS (CS024 P2)");
   assert(!("freqJitter" in X.DEBUG), "B: DEBUG.freqJitter is gone (CS024 P2)");
 
+  // REPOINTED BY CS024 P4, INVERTED. The nine UFO MOVEMENT entries this phase added are deleted with the
+  // other twelve tier knobs, and their section header with them. What each held is not lost: the "low"
+  // value of each trio is the frozen constant the build reads this phase, and becomes the matching
+  // lever's FLOOR in P5 — asserted below, so the deletion is checked as a hand-off rather than a hole.
+  for (const id of ["ufoFlightSpeedLow", "ufoFlightSpeedNormal", "ufoFlightSpeedHigh",
+                    "ufoAppearFreqLow", "ufoAppearFreqNormal", "ufoAppearFreqHigh",
+                    "ufoDirChangeFreqLow", "ufoDirChangeFreqNormal", "ufoDirChangeFreqHigh"]) {
+    assert(!X.DEBUG_VARS.some(v => v.id === id), `B: the ${id} tier knob is gone (CS024 P4)`);
+    assert(!(id in X.DEBUG), `B: ...and DEBUG.${id} with it`);
+  }
+  assert(!X.DEBUG_VARS.some(v => v.header === "UFO MOVEMENT"), "B: the now-empty UFO MOVEMENT header is gone too");
+  eq(X.FROZEN_UFO_FLIGHT_SPEED, 120, "B: the retired ufoFlightSpeedLow's 120 px/s survives as FROZEN_UFO_FLIGHT_SPEED");
+  eq(X.FROZEN_UFO_APPEAR_FREQ, 25, "B: ...ufoAppearFreqLow's 25 s as FROZEN_UFO_APPEAR_FREQ");
+  eq(X.FROZEN_UFO_DIR_CHANGE, 2.0, "B: ...and ufoDirChangeFreqLow's 2.0 s as FROZEN_UFO_DIR_CHANGE");
+  eq(X.leverState(1).ufoAppearFreq, 25, "B: ...and 25 s is the ufoAppearFreq lever's floor, so P5's wiring keeps level 1 where it is");
   const specs = {
-    ufoFlightSpeedLow:      { unit: "px/s", def: 120, min: 20, max: 600, step: 2 },
-    ufoFlightSpeedNormal:   { unit: "px/s", def: 150, min: 20, max: 600, step: 2 },
-    ufoFlightSpeedHigh:     { unit: "px/s", def: 190, min: 20, max: 600, step: 2 },
-    ufoAppearFreqLow:       { unit: "s",    def: 25,  min: 1,  max: 60,  step: 1 },
-    ufoAppearFreqNormal:    { unit: "s",    def: 18,  min: 1,  max: 60,  step: 1 },
-    ufoAppearFreqHigh:      { unit: "s",    def: 13,  min: 1,  max: 60,  step: 1 },
-    ufoDirChangeFreqLow:    { unit: "s",    def: 2.0, min: 0.1, max: 10, step: 0.1 },
-    ufoDirChangeFreqNormal: { unit: "s",    def: 1.3, min: 0.1, max: 10, step: 0.1 },
-    ufoDirChangeFreqHigh:   { unit: "s",    def: 0.8, min: 0.1, max: 10, step: 0.1 },
     sweepCoalescePause:     { unit: "s",    def: 10,  min: 0,  max: 60,  step: 1 },
   };
   for (const [id, spec] of Object.entries(specs)) {
@@ -158,27 +172,26 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   assert(!X.DEBUG_VARS.some(v => v.header === "SAUCER PRESSURE"), "B: the SAUCER PRESSURE header is gone (CS018 P7)");
 
   // Standing prohibition: no code anywhere may assume low <= normal <= high (two of these three levers
-  // descend). A crude but effective proof: normal/high are numerically SMALLER than low for the two
-  // inverted levers here, and nothing in source rejects that.
-  assert(X.DEBUG.ufoAppearFreqHigh < X.DEBUG.ufoAppearFreqLow, "B: appearance frequency genuinely descends (high < low)");
-  assert(X.DEBUG.ufoDirChangeFreqHigh < X.DEBUG.ufoDirChangeFreqLow, "B: direction-change frequency genuinely descends (high < low)");
-  assert(X.DEBUG.ufoFlightSpeedHigh > X.DEBUG.ufoFlightSpeedLow, "B: flight speed still climbs (not inverted)");
+  // descend). REPOINTED BY CS024 P4 onto the odometer, where the same prohibition binds harder — several
+  // levers ship with floor > ceil outright, which is normal and correct, and nothing may validate it.
+  assert(X.leverState(1).ufoAppearFreq > X.leverState(8).ufoAppearFreq, "B: appearance frequency genuinely descends over its lever run");
+  assert(X.leverState(1).ufoDirChangeBig > X.leverState(129).ufoDirChangeBig, "B: direction-change frequency genuinely descends too");
+  // Level 9 is the ufoAppearFreq driver's first wrap, so it is the first level ufoFlightSpeedBig moves at
+  // all. (Level 33 would be its FOURTH bump, which wraps ufoFlightSpeedBig itself back to its floor — a
+  // real property of the two-generation carry, and exactly the sort of thing an eyeballed probe level
+  // gets wrong.)
+  assert(X.leverState(1).ufoFlightSpeedBig < X.leverState(9).ufoFlightSpeedBig, "B: flight speed still climbs (not inverted)");
 })();
 
 // ================= (C) UFO flight speed =====================
 (function sectionC() {
   console.log("(C) UFO flight speed: tiered, no jitter, 100/150 big/small ratio preserved");
   // TIER_STEPS.ufoFlightSpeed = [[1,"low"],[17,"normal"],[38,"high"]]
-  const cases = [
-    { level: 1,  tier: "low",    px: X.DEBUG.ufoFlightSpeedLow },
-    { level: 16, tier: "low",    px: X.DEBUG.ufoFlightSpeedLow },
-    { level: 17, tier: "normal", px: X.DEBUG.ufoFlightSpeedNormal },
-    { level: 37, tier: "normal", px: X.DEBUG.ufoFlightSpeedNormal },
-    { level: 38, tier: "high",   px: X.DEBUG.ufoFlightSpeedHigh },
-    { level: 100, tier: "high",  px: X.DEBUG.ufoFlightSpeedHigh },
-  ];
+  // REPOINTED BY CS024 P4: the three tiers and their breakpoints (17/38) are deleted, so the SAME six
+  // probe levels now expect the SAME frozen value — which makes the "no jitter, exact reproduction
+  // through a real Saucer" claim an equality across the whole range rather than within a band.
+  const cases = [1, 16, 17, 37, 38, 100].map(level => ({ level, px: X.FROZEN_UFO_FLIGHT_SPEED }));
   for (const c of cases) {
-    eq(X.levelDef(c.level).ufoFlightSpeed, c.tier, `C: level ${c.level} ufoFlightSpeed tier is "${c.tier}"`);
     X.game.wave = c.level;
     eq(X.ufoFlightSpeedPx(true), c.px, `C: level ${c.level} ufoFlightSpeedPx(small) === ${c.px}`);
     close(X.ufoFlightSpeedPx(false), c.px * (100 / 150), `C: level ${c.level} ufoFlightSpeedPx(big) preserves the 100/150 ratio`);
@@ -207,14 +220,14 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
     .filter(l => l.includes("ufoZigInterval()") && !l.trim().startsWith("function ufoZigInterval("));
   eq(zigCallSites.length, 2, `D: ufoZigInterval() is called at exactly 2 live sites (ctor + update()) (found: ${JSON.stringify(zigCallSites.map(l => l.trim()))})`);
 
-  const j = 0.25; // shipped default freqJitter
-  const centers = { low: X.DEBUG.ufoDirChangeFreqLow, normal: X.DEBUG.ufoDirChangeFreqNormal, high: X.DEBUG.ufoDirChangeFreqHigh };
-  // TIER_STEPS.ufoDirChangeFreq = [[1,"low"],[30,"normal"],[55,"high"]]
+  const j = 0.25; // shipped FREQ_JITTER
+  // REPOINTED BY CS024 P4: one frozen centre instead of three tier centres, probed at the SAME three
+  // levels the tier breakpoints used to sit at — so a level dependence sneaking back in would still fail.
+  const centers = { low: X.FROZEN_UFO_DIR_CHANGE, normal: X.FROZEN_UFO_DIR_CHANGE, high: X.FROZEN_UFO_DIR_CHANGE };
   const levelForTier = { low: 1, normal: 30, high: 55 };
 
   for (const tier of ["low", "normal", "high"]) {
     X.game.wave = levelForTier[tier];
-    eq(X.levelDef(X.game.wave).ufoDirChangeFreq, tier, `D: level ${levelForTier[tier]} ufoDirChangeFreq tier is "${tier}"`);
     const center = centers[tier];
     const lo = center * (1 - j), hi = center * (1 + j);
 
@@ -254,13 +267,12 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   assert(!codeOnly.some(l => /ramp\(\s*SAUCER_GAP_FLOOR/.test(l)), "E: no live ramp(SAUCER_GAP_FLOOR...) call remains");
 
   const j = 0.25;
-  const centers = { low: X.DEBUG.ufoAppearFreqLow, normal: X.DEBUG.ufoAppearFreqNormal, high: X.DEBUG.ufoAppearFreqHigh };
-  // TIER_STEPS.ufoAppearFreq = [[1,"low"],[26,"normal"],[47,"high"]]
+  // REPOINTED BY CS024 P4, same as (D): one frozen centre, probed at the three former breakpoints.
+  const centers = { low: X.FROZEN_UFO_APPEAR_FREQ, normal: X.FROZEN_UFO_APPEAR_FREQ, high: X.FROZEN_UFO_APPEAR_FREQ };
   const levelForTier = { low: 1, normal: 26, high: 47 };
 
   for (const tier of ["low", "normal", "high"]) {
     X.game.wave = levelForTier[tier];
-    eq(X.levelDef(X.game.wave).ufoAppearFreq, tier, `E: level ${levelForTier[tier]} ufoAppearFreq tier is "${tier}"`);
     const center = centers[tier];
     const lo = center * (1 - j), hi = center * (1 + j);
     let sawAbove = false, sawBelow = false;
@@ -291,7 +303,8 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   assert(Y.game.saucerTimer >= loN - 1e-6 && Y.game.saucerTimer <= hiN + 1e-6,
     `E: real spawn-block saucerTimer at normal tier within [${loN.toFixed(3)}, ${hiN.toFixed(3)}] (got ${Y.game.saucerTimer.toFixed(4)})`);
 
-  // Integration: startGame()'s pre-nextWave() init (game.wave === 0 -> stepAt falls back to the "low" tier).
+  // Integration: startGame()'s pre-nextWave() init (game.wave === 0; leverState(0) === leverState(1) by
+  // the same "first breakpoint" rule stepAt gave, so this reads the same centre as level 1).
   const loL = centers.low * (1 - j), hiL = centers.low * (1 + j);
   for (let i = 0; i < 20; i++) {
     const Z = build().exports;
@@ -348,12 +361,12 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   console.log("(H) the 10 surviving fields round-trip through afd_settings_v1.debug across a reload");
   const inst = build();
   const A = inst.exports;
-  const newIds = [
-    "ufoFlightSpeedLow", "ufoFlightSpeedNormal", "ufoFlightSpeedHigh",
-    "ufoAppearFreqLow", "ufoAppearFreqNormal", "ufoAppearFreqHigh",
-    "ufoDirChangeFreqLow", "ufoDirChangeFreqNormal", "ufoDirChangeFreqHigh",
-    "sweepCoalescePause",
-  ];
+  // REPOINTED BY CS024 P4: nine of the ten are deleted with the tier knobs, leaving sweepCoalescePause.
+  // The CLAIM — a registry field round-trips through afd_settings_v1.debug across a reload, and orphaned
+  // keys are ignored rather than breaking the load — is unchanged, and the second half of it is now
+  // exercised for real, because this test's own saved blob from a previous build would carry nine keys
+  // the registry no longer knows.
+  const newIds = ["sweepCoalescePause"];
   const want = {};
   for (const id of newIds) {
     const e = A.DEBUG_VARS.find(v => v.id === id);
@@ -373,7 +386,15 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
     eq(reload.DEBUG[id], want[id], `H: reload restored DEBUG.${id}`);
   }
   // Untouched knobs from earlier phases still load at their defaults alongside the new ones.
-  eq(reload.debugShown.junkSpeedNormal, 70, "H: untouched junkSpeedNormal still loads at its default");
+  eq(reload.debugShown.chainGuardCooldown, 0.75, "H: an untouched sibling knob still loads at its default");
+  // ORPHANED KEYS ARE IGNORED (the standing known-value-else-default rule) — exercised directly, because
+  // CS024 P4 has just created nine of them for every player who ever opened the debug panel.
+  const orphaned = JSON.parse(blob);
+  orphaned.debug.ufoFlightSpeedLow = 999;
+  orphaned.debug.junkSpeedNormal = 999;
+  const reload2 = build({ "afd_settings_v1": JSON.stringify(orphaned) }).exports;
+  assert(!("ufoFlightSpeedLow" in reload2.DEBUG), "H: a saved key the registry no longer knows is IGNORED, not resurrected");
+  eq(reload2.debugShown.sweepCoalescePause, want.sweepCoalescePause, "H: ...and the surviving keys still load beside it");
 })();
 
 // ================= (I) regression =====================
@@ -382,10 +403,9 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   const Y = build().exports;
   Y.startGame();
   eq(Y.game.cargoMax, 8, "I: cargoMax still starts at 8 (CS018 P5, untouched by P6)");
-  eq(Y.levelDef(5).junkCount, 3, "I: junk count table untouched by P6");
-  // REPOINTED BY CS024 P3: see the identical note in test-cs018-p7 §H — the maxLargeHunters column was
-  // deleted with HUNTER_CAP_STEPS, replaced by the flat LARGE_HUNTER_MAX.
-  eq(Y.levelDef(5).maxLargeHunters, undefined, "I: hunter cap column is gone from levelDef (CS024 P3)");
+  eq(Y.FROZEN_JUNK_COUNT, 3, "I: the junk count is untouched by P6 (frozen at 3 as of CS024 P4)");
+  // REPOINTED BY CS024 P4: the level table this pair inspected is deleted outright.
+  eq(Y.probe("levelDef"), "__ReferenceError__", "I: there is no level table left to carry a hunter-cap column");
   // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
   // the version has since moved past what P6 (this phase) shipped.
   assert(Y.GAME_VERSION !== "1.0.0.17", "I: GAME_VERSION has moved past what P6 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
@@ -412,7 +432,8 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // deleted, per the standing convention: "none match" is the assertion that catches a knob creeping back.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
   // the FREQ_JITTER constant instead). Section B/F/G/H above carry the rest of this phase's own claims.
-  eq(nEntries, 36, `I: DEBUG_ENTRIES count is 36 after CS024 P3 (got ${nEntries})`);  // CS024 P3: 34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed
+  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 (the 21 tier knobs, this phase's nine among them).
+  eq(nEntries, 15, `I: DEBUG_ENTRIES count is 15 after CS024 P4 (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

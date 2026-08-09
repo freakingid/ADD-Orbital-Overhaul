@@ -18,7 +18,9 @@
 //   5. worldSizeFor() loses its archetype key and returns WORLD_SIZE_FIELD unconditionally — but
 //      worldSizeFor / resizeWorld / worldDims / the size table / WORLD_SIZE_MAX / WORLD_SIZE_ORBIT all
 //      STAY, because Paul's explicit instruction is that the 9x path remains live and testable.
-//   6. levelDef() survives this phase minus its archetype / orbitRings / fieldCount columns (CS024 P4
+//   6. REPOINTED BY CS024 P4: levelDef() no longer survives at all — the whole table is replaced by the
+//      LEVERS odometer, so section (B)'s column check inverts into a deletion check. Originally:
+//      levelDef() survives this phase minus its archetype / orbitRings / fieldCount columns (CS024 P4
 //      replaces it outright); nextWave() calls spawnFieldSatellites() unconditionally.
 //
 // Follows the standing rule (CLAUDE.md): stub window/document/rAF/navigator/localStorage, eval the REAL
@@ -134,7 +136,9 @@ function makeCtxStub() {
 }
 
 const RETURN = [
-  "game", "startGame", "nextWave", "update", "draw", "levelDef", "spawnFieldSatellites",
+  // CS024 P4: levelDef dropped from the export list — the level table is deleted outright, replaced by
+  // the LEVERS odometer. FROZEN_JUNK_COUNT is what nextWave() reads for one phase, until P5 wires it.
+  "game", "startGame", "nextWave", "update", "draw", "FROZEN_JUNK_COUNT", "spawnFieldSatellites",
   "debrisBounce", "destroyDebris", "destroySaucer", "junkSpeedMul",
   "DebrisSatellite", "HunterSatellite", "Saucer", "Garbage", "Dock",
   "DEBRIS_MASS", "DEBRIS_BOUNCE_MIN", "DEBRIS_BOUNCE_RESTITUTION", "DEBRIS_RADII", "DEBRIS_SPEEDS",
@@ -315,7 +319,10 @@ function atWave(X, w) {
   // --- the debug registry ---
   // REPOINTED BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via the
   // FREQ_JITTER constant instead).
-  eq(X.DEBUG_ENTRIES.length, 36, "B: the debug registry holds 36 value entries (46 - 10 ORBIT - debrisDriftAccel - freqJitter - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed)");
+  // REPOINTED BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names). What THIS
+  // phase's trap guards — that its own twelve orbit/drift removals happened and nothing crept back —
+  // is asserted directly below and is untouched; only the live total moves.
+  eq(X.DEBUG_ENTRIES.length, 15, "B: the debug registry holds 15 value entries after CS024 P4's 21-knob tier prune");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,
@@ -346,15 +353,17 @@ function atWave(X, w) {
   for (const keep of ["music-lab.html", "scoop-lab.html", "voice-lab.html", "voice-robot-lab.html"])
     assert(fs.existsSync(path.join(repoRoot, "tools", keep)), `B: (control) tools/${keep} is untouched`);
 
-  // --- levelDef keeps existing, minus three columns (CS024 P4 replaces it outright) ---
-  assert(typeof X.levelDef === "function", "B: levelDef() still exists this phase (P4 replaces it, not P1)");
-  // REPOINTED BY CS024 P3: maxLargeHunters moves from the "kept" list to the "gone" list. P1 left it
-  // alone; P3 deleted it along with HUNTER_CAP_STEPS when the large-Hunter ceiling became the flat
-  // LARGE_HUNTER_MAX. Everything P1 itself removed is unchanged.
-  for (const k of ["archetype", "orbitRings", "fieldCount", "maxLargeHunters"])
-    assert(!(k in X.levelDef(3)), `B: ...minus its ${k} column`);
-  for (const k of ["level", "phase", "rel", "junkCount", "payloadSlots"])
-    assert(k in X.levelDef(3), `B: ...and keeping ${k}`);
+  // --- levelDef: REPOINTED BY CS024 P4, and INVERTED. ---
+  // P1 asserted the table SURVIVED this phase minus its three orbit columns, and P3 took a fourth
+  // (maxLargeHunters). P4 deletes the whole table, so the column-by-column check has nothing left to
+  // inspect. What P1's claim was actually about — that the ORBIT columns went with the archetype and
+  // nothing else did — is now made against the deletion itself: the table is gone, and so are the two
+  // orbit constants it read, while the two columns that outlived it did so as standalone code.
+  assert(X.probe("levelDef") === "__ReferenceError__", "B: levelDef() is gone outright (CS024 P4 replaced it with the LEVERS odometer)");
+  for (const k of ["stepAt", "TIER_STEPS", "PHASE_LEN", "LEVEL_MAX", "JUNK_CYCLE"])
+    assert(X.probe(k) === "__ReferenceError__", `B: ...along with ${k}`);
+  assert(typeof X.probe("leverState") === "function", "B: ...and leverState() is what replaced it");
+  assert(typeof X.probe("payloadSlots") === "function", "B: the payloadSlots column outlived the table as its own fixed curve (§2.5)");
 
   // --- nextWave() calls spawnFieldSatellites() unconditionally ---
   {
@@ -552,7 +561,6 @@ function atWave(X, w) {
   const sizes = new Set();
   for (let w = 1; w <= 20; w++) {
     const spawned = withRandom(seededRandom(0xD100 + w), () => atWave(X, w));
-    const def = X.levelDef(w);
 
     // ONE WORLD SIZE. This is the phase's §3.6 claim, checked at every level rather than at a sample —
     // levels 3, 6, 9, 12, 15 and 18 were all orbit levels and all ran at 3840x2160 before this phase.
@@ -563,8 +571,11 @@ function atWave(X, w) {
     eq(lh, 1440, `D: level ${w}: ...and 1440 tall`);
     sizes.add(`${lw}x${lh}`);
 
-    // ONE SPAWN RULE: the level table's junkCount, consumed at every level.
-    eq(spawned, def.junkCount, `D: level ${w} spawned exactly levelDef(${w}).junkCount (${def.junkCount})`);
+    // ONE SPAWN RULE, consumed at every level. REPOINTED BY CS024 P4: the source of the number moved
+    // from levelDef(w).junkCount to FROZEN_JUNK_COUNT (and, in P5, to leverState(w).junkCount). THE
+    // CLAIM THIS PHASE MADE IS UNCHANGED and is what is still being checked — one unconditional spawn
+    // path, consuming whatever the difficulty system says, on every level with no archetype branch.
+    eq(spawned, X.FROZEN_JUNK_COUNT, `D: level ${w} spawned exactly the one spawn rule's count (${X.FROZEN_JUNK_COUNT})`);
     // NO RAIL STATE anywhere, and every piece a size-3 large from the scatter.
     for (const d of X.game.debris) {
       assert(d.orbitCenter === undefined && d.orbitRadius === undefined &&
@@ -589,7 +600,7 @@ function atWave(X, w) {
   });
   for (const d of X.game.debris)
     assert(d.orbitCenter === undefined, "D: 600 real frames later, still no rail state on any satellite");
-  console.log(`    levels 1-20: junk counts ${Array.from({ length: 20 }, (_, i) => X.levelDef(i + 1).junkCount).join(",")}`);
+  console.log(`    levels 1-20: junk counts ${Array.from({ length: 20 }, () => X.FROZEN_JUNK_COUNT).join(",")} (CS024 P4: frozen until P5 wires the lever)`);
 })();
 
 // ================= (E) resizeWorld AT SIZE 9 — THE KEPT 9x PATH =====================

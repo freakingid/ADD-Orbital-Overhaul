@@ -411,16 +411,22 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // JUNK — is unaffected and is still asserted directly below; only the live total moves.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
+  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 — all 21 tier knobs removed with levelDef()'s tier names,
+  // and the three headers left empty by that (JUNK, UFO MOVEMENT, UFO WEAPONS) removed with them.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 36, "A: DEBUG_VARS holds 36 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 36, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 15, "A: DEBUG_VARS holds 15 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 15, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");
   const iDeliv = DEBUG_VARS.findIndex(e => e.header === "DELIVERY");
-  const iJunk = DEBUG_VARS.findIndex(e => e.header === "JUNK");
-  assert(iGuard >= 0 && iDeliv > iGuard && iJunk > iDeliv,
-    "A: DELIVERY sits AFTER CHAIN GUARD and before JUNK — the specified placement");
+  // REPOINTED BY CS024 P4: the JUNK header that used to follow DELIVERY is GONE (its three tier knobs
+  // went with the level table), so the placement claim is re-anchored on what actually follows DELIVERY
+  // now. THE CLAIM ITSELF IS UNCHANGED — this phase put DELIVERY immediately after CHAIN GUARD, and it
+  // is still there. P5 reintroduces a JUNK header, at which point the original neighbour returns.
+  assert(iGuard >= 0 && iDeliv > iGuard, "A: DELIVERY still sits AFTER CHAIN GUARD — the specified placement");
+  assert(!DEBUG_VARS.some(e => e.header === "JUNK"),
+    "A: ...and the JUNK header it used to precede is gone with the 21 tier knobs (CS024 P4)");
   // A header with nothing under it renders as a stray label (the retired SAUCER PRESSURE lesson).
   assert(!DEBUG_VARS[iDeliv + 1].header, "A: the DELIVERY header is not left empty — a value entry follows it");
 

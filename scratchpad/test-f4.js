@@ -43,11 +43,13 @@ const navigatorStub = { getGamepads: () => [] };
 const returnList = [
   "startGame", "update", "game", "keys", "angleTo",
   "Saucer",
-  "difficultyFactor", "ramp", "RAMP_WAVES",
-  "levelDef", "ufoAccuracyRad", "ufoFireMult", "DEBUG",           // CS018 P7 (section C, live wiring)
+  // CS024 P4: difficultyFactor -> musicIntensity, RAMP_WAVES -> MUSIC_INTENSITY_WAVES (rename only,
+  // curve byte-identical); ramp(), levelDef() and SAUCER_SMALL_CHANCE_FLOOR/_CEIL are all DELETED.
+  "musicIntensity", "MUSIC_INTENSITY_WAVES",
+  "ufoAccuracyRad", "ufoFireMult", "DEBUG",                        // CS018 P7 (section C, live wiring)
   "SAUCER_FIRE_INIT", "SAUCER_FIRE_BIG", "SAUCER_FIRE_SMALL",
-  "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL",
-  "WORLD_W", "WORLD_H"
+  "WORLD_W", "WORLD_H",
+  'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }' 
   // CS024 P2: SAUCER_GAP_FLOOR/CEIL_MIN/MAX, SAUCER_FIRE_MULT_FLOOR/CEIL and SAUCER_AIM_ERR_FLOOR/CEIL +
   // SAUCER_ACCURACY_RAMP_SCALE are REMOVED (dead constants, spec §1.8) — dropped from this list. The
   // ramp()-driven sub-blocks of section (B) that tested them directly are pruned below rather than
@@ -62,11 +64,10 @@ const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorS
 const {
   startGame, update, game, keys, angleTo,
   Saucer,
-  difficultyFactor, ramp, RAMP_WAVES,
-  levelDef, ufoAccuracyRad, ufoFireMult, DEBUG,
+  musicIntensity, MUSIC_INTENSITY_WAVES,
+  ufoAccuracyRad, ufoFireMult, DEBUG,
   SAUCER_FIRE_INIT, SAUCER_FIRE_BIG, SAUCER_FIRE_SMALL,
-  SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL,
-  WORLD_W, WORLD_H
+  WORLD_W, WORLD_H, probe
 } = A;
 
 const cx = WORLD_W / 2, cy = WORLD_H / 2;
@@ -79,20 +80,24 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
 startGame();
 game.state = "playing"; game.paused = false;
-console.log(`(config) RAMP_WAVES=${RAMP_WAVES}`);
+console.log(`(config) MUSIC_INTENSITY_WAVES=${MUSIC_INTENSITY_WAVES}`);
 
 // =====================================================================
-// (A) difficultyFactor curve shape across waves 1..25
+// (A) the curve's shape across waves 1..25
+// REPOINTED BY CS024 P4: difficultyFactor is now musicIntensity — a RENAME, with the expression and
+// the constant (8) byte-identical, so every threshold below is unchanged and still passing against the
+// same numbers. What changed is only what the curve is honestly called: it has driven nothing but the
+// music layer gates since CS018 P4, and difficulty now comes from the lever odometer instead.
 // =====================================================================
-console.log("(A) difficultyFactor(wave) curve shape, waves 1..25");
+console.log("(A) musicIntensity(wave) curve shape, waves 1..25 (was difficultyFactor; same curve)");
 const df = [];
-for (let w = 1; w <= 25; w++) df[w] = difficultyFactor(w);
+for (let w = 1; w <= 25; w++) df[w] = musicIntensity(w);
 
 // print the curve so it's eyeball-verifiable in the log
 console.log("     " + [1, 2, 3, 5, 8, 12, 20, 25]
   .map(w => `w${w}=${df[w].toFixed(3)}`).join("  "));
 
-assert(near(df[1], 0), `A: difficultyFactor(1) is exactly 0 (got ${df[1]})`);
+assert(near(df[1], 0), `A: musicIntensity(1) is exactly 0 (got ${df[1]})`);
 let monotonic = true;
 for (let w = 2; w <= 25; w++) if (!(df[w] > df[w - 1])) monotonic = false;
 assert(monotonic, "A: strictly increasing across waves 1..25");
@@ -119,12 +124,23 @@ console.log("(B) saucer floor/ceiling interpolation, wave 1 vs wave 20");
 // end-to-end wiring against the tiered replacements (ufoAccuracyRad()/ufoFireMult()), and it is
 // untouched by this deletion.
 
-// -- small-saucer appearance chance: rarer early, common late — SAUCER_SMALL_CHANCE_* survives P2 --
-const chance1 = ramp(SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL, 1);
-const chance20 = ramp(SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL, 20);
-console.log(`     small-saucer chance  wave1=${(chance1*100).toFixed(0)}%   wave20=${(chance20*100).toFixed(0)}%`);
-assert(near(chance1, 0.15), `B: wave-1 small-saucer chance is the 15% floor (got ${chance1})`);
-assert(chance20 > chance1 && chance20 > 0.55, `B: small (dangerous) saucer is far more likely by wave 20 (got ${(chance20*100).toFixed(0)}%)`);
+// -- small-saucer appearance chance: REPOINTED BY CS024 P4, and INVERTED --
+// This was the last block in the file still calling ramp(), and the small-saucer chance was ramp()'s
+// last lever anywhere in the build. Both go together (spec §2.4/§4.6): which SIZE of saucer spawns
+// stops being an escalation at all and becomes a flat roll for the whole game — 20% via
+// DEBUG.smallUfoChance once P5 wires it, frozen at the retired level-1 value of 0.15 in between.
+// The small saucer's danger now scales through its OWN levers (accuracy, shot speed, fire frequency),
+// not through how often it turns up. So the claim inverts: there is no wave-driven chance left to
+// interpolate, and the three symbols that made one are gone from the build entirely.
+for (const sym of ["ramp", "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL"])
+  assert(probe(sym) === "__ReferenceError__", `B: ${sym} is gone from the build (CS024 P4)`);
+// Executable source only — the deleted call survives as a tombstone COMMENT at the spawn site, which
+// is exactly what a tombstone is for and must not be mistaken for a live call.
+const f4CodeOnly = scriptSrc.split("\n").map(l => l.replace(/\s\/\/.*$/, ""))
+  .filter(l => !l.trim().startsWith("//")).join("\n");
+assert(!/ramp\(SAUCER_SMALL_CHANCE/.test(f4CodeOnly), "B: the spawn site no longer ramps the small-saucer chance");
+assert(/const smallChance = FROZEN_SMALL_UFO_CHANCE;/.test(f4CodeOnly),
+  "B: ...it reads a flat frozen chance instead, which P5 replaces with DEBUG.smallUfoChance");
 
 // =====================================================================
 // (C) end-to-end wiring through a real Saucer
@@ -136,14 +152,16 @@ assert(chance20 > chance1 && chance20 > 0.55, `B: small (dangerous) saucer is fa
 // frequency at 21) — so "wave 1 vs wave 20" no longer demonstrates a difference for either one. Level
 // 50 is past both breakpoints ("high" tier for both), so the late-game comparison moves there instead;
 // the early-game comparison stays at wave 1.
-console.log("(C) end-to-end: real Saucer fired-bullet aim + reload scale with LEVEL TIER (wave 1 'low' vs wave 50 'high')");
+// REPOINTED AGAIN BY CS024 P4: the tiers themselves are gone with levelDef(), and both quantities are
+// FROZEN at their level-1 values for this one phase (P5 puts them on the ufoAccuracySmall and
+// ufoFireFreqSmall levers). So the early/late COMPARISON has nothing to compare for a phase — but the
+// claim that actually matters here, and the reason this section exists, is untouched: what a REAL
+// fired bullet carries must equal what the live helper says, at every level, measured off the bullet
+// via angleTo rather than recomputed. That is asserted at both levels below, as an exact equality.
+console.log("(C) end-to-end: a real Saucer's fired-bullet aim + reload match the live helpers exactly (levels 1 and 50)");
 
 const realRandom = Math.random;
 const LATE_WAVE = 50;
-assert(levelDef(1).ufoAccuracy === "low" && levelDef(LATE_WAVE).ufoAccuracy === "high",
-  "C: sanity — wave 1 is the 'low' accuracy tier, wave 50 is 'high'");
-assert(levelDef(1).ufoFireFreq === "low" && levelDef(LATE_WAVE).ufoFireFreq === "high",
-  "C: sanity — wave 1 is the 'low' fire-frequency tier, wave 50 is 'high'");
 
 // (C1) aim error: force one aimed shot with Math.random pinned to 1 so rand(-e,e) => +e.
 // Ship sits directly +x of the saucer, so angleTo == 0 and the bullet's angle == the error.
@@ -172,7 +190,11 @@ game.wave = LATE_WAVE;
 const tierErrLate = ufoAccuracyRad();
 assert(near(firedErr1, tierErr1, 1e-6), `C: wave-1 fired bullet carries the "low"-tier aim error (got ${firedErr1.toFixed(4)}, exp ${tierErr1.toFixed(4)})`);
 assert(near(firedErrLate, tierErrLate, 1e-6), `C: wave-${LATE_WAVE} fired bullet carries the "high"-tier aim error (got ${firedErrLate.toFixed(4)}, exp ${tierErrLate.toFixed(4)})`);
-assert(firedErr1 > firedErrLate * 1.8, `C: the actual fired shot is still meaningfully wider at wave 1 than wave ${LATE_WAVE} under the tiered accuracy lever`);
+// REPOINTED BY CS024 P4: this asserted the late-game shot was meaningfully TIGHTER. With aim frozen
+// for one phase there is no level dependence left to measure, so the claim inverts to an exact
+// equality — a strictly sharper statement about the current build than an inequality would be, and the
+// one that will fail loudly if P5 forgets to reconnect the ufoAccuracySmall lever.
+assert(near(firedErr1, firedErrLate, 1e-12), `C: aim error is FROZEN — level 1 and level ${LATE_WAVE} fire identically this phase (${firedErr1} vs ${firedErrLate})`);
 
 // (C2) reload: rollFireTimer() on a real Saucer, Math.random pinned to 0.5 (range midpoint).
 function measureReload(wave, range) {
@@ -193,7 +215,9 @@ game.wave = LATE_WAVE;
 const tierMultLate = ufoFireMult();
 assert(near(reload1, mid * tierMult1, 1e-9), `C: wave-1 reload = midpoint x "low"-tier mult (got ${reload1.toFixed(4)}, exp ${(mid*tierMult1).toFixed(4)})`);
 assert(near(reloadLate, mid * tierMultLate, 1e-9), `C: wave-${LATE_WAVE} reload = midpoint x "high"-tier mult (got ${reloadLate.toFixed(4)}, exp ${(mid*tierMultLate).toFixed(4)})`);
-assert(reload1 > reloadLate, `C: a wave-1 saucer waits longer between shots than a wave-${LATE_WAVE} one (${reload1.toFixed(2)}s > ${reloadLate.toFixed(2)}s)`);
+// REPOINTED BY CS024 P4, same inversion and for the same reason: the fire multiplier is frozen until
+// P5 puts it on the ufoFireFreqSmall lever.
+assert(near(reload1, reloadLate, 1e-12), `C: reload is FROZEN — level 1 and level ${LATE_WAVE} reload identically this phase (${reload1.toFixed(4)}s)`);
 
 // ---- Summary ----
 console.log(`\n${passed} passed, ${failed} failed`);

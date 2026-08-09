@@ -374,9 +374,12 @@ function onDebug(A, { playing = false } = {}) {
   assert(A.debugShown[target] === 0, `F: an at-min entry lands on min 0 (got ${A.debugShown[target]})`);
 
   // A typed value is exact — it is NOT snapped to `step`.
-  // REPOINTED (CS018 P7): saucerAimPressure retired this phase; ufoDirChangeFreqNormal is the nearest
-  // surviving fractional-step knob (def 1.3, min 0.1, max 10, step 0.1) — same demonstration, same claim.
-  const frac = "ufoDirChangeFreqNormal";                  // {def:1.3, min:0.1, max:10, step:0.1}
+  // REPOINTED (CS018 P7): saucerAimPressure retired this phase; ufoDirChangeFreqNormal was the nearest
+  // surviving fractional-step knob. REPOINTED AGAIN (CS024 P4): that one went too, with all 21 tier
+  // knobs, so this now rides on chainGuardCooldown — the surviving entry with the FINEST step in the
+  // registry (0.05). Same demonstration, same claim: a typed value commits exactly and is not snapped
+  // to `step`, which is if anything sharper against a 0.05 grid than it was against 0.1.
+  const frac = "chainGuardCooldown";                      // {def:0.75, min:0.1, max:3, step:0.05}
   g.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "var" && r.e.id === frac);
   for (const k of ["0", ".", "3", "7"]) A.debugEntryKey(k);
   assert(A.DebugPanel.entry === "0.37", `F: "." is accepted once (got ${A.DebugPanel.entry})`);
@@ -775,7 +778,15 @@ function onDebug(A, { playing = false } = {}) {
   const baseRows = rows.length, baseVars = rows.filter(r => r.kind === "var").length;
   const TARGET_VALUE_ROWS = Math.max(CS018_VALUE_ROWS, baseVars);
   const need = TARGET_VALUE_ROWS - baseVars;
-  assert(baseVars >= CS018_VALUE_ROWS, `M: the live registry is at or past CS018's 32 value rows (has ${baseVars})`);
+  // REPOINTED AGAIN BY CS024 P4: the registry has now SHRUNK back BELOW that end-state — 36 -> 15, the
+  // 21 tier knobs gone with levelDef()'s tier names — so CS019's "at or past 32" mirror flips back
+  // again. Nothing about this section's claim moves: Math.max keeps the target at 32, `need` is
+  // positive exactly as it was through CS018 P3-P7, and what is under test is that the row model,
+  // scroll window and panel height all hold AT 32 VALUE ROWS, however many of them happen to be real
+  // today. So the assertion is on the TARGET the splice reaches, which is stable across a rebuild,
+  // rather than on a live count that every registry phase moves.
+  assert(TARGET_VALUE_ROWS >= CS018_VALUE_ROWS && need >= 0,
+    `M: the spliced row model reaches CS018's 32 value rows (${baseVars} real + ${need} synthetic)`);
   const SECTIONS = 4;
   const extra = [];
   for (let s = 0; s < SECTIONS; s++) {
@@ -784,6 +795,8 @@ function onDebug(A, { playing = false } = {}) {
     for (let k = 0; k < per; k++) extra.push({ kind: "var", label: `synthetic ${s}.${k}`, e: reuse });
   }
   rows.splice(rows.length - 2, 0, ...extra);
+  assert(rows.filter(r => r.kind === "var").length === TARGET_VALUE_ROWS,
+    `M: ...and the spliced model really holds ${TARGET_VALUE_ROWS} value rows before the scroll checks run`);
   const ROWS = rows.length, VIS = A.DEBUG_ROWS_VISIBLE, maxTop = ROWS - VIS;
   assert(ROWS === baseRows + extra.length, `M: the enlarged model has ${baseRows + extra.length} rows (got ${ROWS})`);
   assert(rows.filter(r => r.kind === "var").length === TARGET_VALUE_ROWS, `M: ...of which ${TARGET_VALUE_ROWS} are value rows, at or above CS018 §3.1's 32`);

@@ -79,15 +79,24 @@ function makeCtx(canvasStub) {
   });
 }
 
+// CS024 P4: LEVEL_MAX (63) is deleted with the level table — there is no level cap any more (§2.1: the
+// ceiling is emergent, not clamped). The sweeps below keep 63 as a HISTORICAL SWEEP BOUND, so this file
+// keeps covering exactly the range it always did, and the "no plateau" assertions deliberately probe well
+// past it.
+const SWEEP_MAX = 63;
+
 const RETURN = [
   "startGame", "update", "nextWave", "destroyDebris", "game",
   "DebrisSatellite", "HunterSatellite", "Saucer",
-  "ramp", "difficultyFactor",
-  "levelDef", "stepAt", "junkSpeedMul", "JUNK_CYCLE", "PHASE_LEN", "LEVEL_MAX", "DEBUG",
+  // CS024 P4: ramp() DELETED; difficultyFactor RENAMED musicIntensity; levelDef/stepAt/JUNK_CYCLE/
+  // PHASE_LEN/LEVEL_MAX all DELETED with the level table, replaced by the LEVERS odometer. The shipped
+  // spawn count is FROZEN_JUNK_COUNT for one phase (TRAP 2 — the levers are built but not yet wired).
+  "musicIntensity", "leverState",
+  "FROZEN_JUNK_COUNT", "FROZEN_JUNK_SPEED", "junkSpeedMul", "DEBUG",
   "ufoFireMult",                                              // CS018 P7 (section F: tiered fire mult)
   "DEBRIS_SPEED_CAP", "DEBRIS_SPEEDS", "SHIP_MAX_SPEED",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
-  "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL",
+  "FROZEN_SMALL_UFO_CHANCE",   // CS024 P4: SAUCER_SMALL_CHANCE_FLOOR/_CEIL deleted with ramp()
   "DiffLog", "AudioSys",
   // Scope probe (same idiom as test-cs017-p1 §E): asks "does this identifier exist at all?" without the
   // factory's own return statement throwing a ReferenceError on a retired symbol.
@@ -172,21 +181,27 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 // each site now asserts that the level-table count is what actually spawned, at every level, which is
 // the claim that would catch a second spawn path being reintroduced.
 
-// ================= (B) the junk cycle: rises, resets — and deliberately does NOT spiral ===============
-// REPOINTED BY CS018 P3/P4. The sawtooth's rise-and-reset shape SURVIVED the changeset, on a shorter clock
-// (a 4-level junk cycle inside a 21-level phase rather than a 9-wave cycle); the SPIRAL did not. Level 1
-// and level 5 are now the same difficulty by design, which is the exact reversal of what B3/B4 used to
-// assert, so both directions are checked here.
+// ================= (B) the junk cycle: rises, resets — and NOW IT SPIRALS AGAIN, elsewhere ============
+// REPOINTED BY CS018 P3/P4, and AGAIN BY CS024 P4 — and this second repoint is the interesting one,
+// because it partly UNDOES the first. CS017's sawtooth had a rise, a reset and a per-cycle SPIRAL; CS018's
+// level table kept the first two and deliberately dropped the third, which is what B3 pinned. The CS024
+// odometer brings the spiral back — but NOT on the count. junkCount still sawtooths 3..12 and resets to 3
+// with no escalation of its own; what each reset now escalates, permanently, is the three junk SPEEDS.
+// That is the whole design: the same number of satellites, faster every time round. So B3's "no spiral"
+// claim survives verbatim on the count, and gains a mirror-image partner on the speeds.
+//   The other half of this repoint is TRAP 2: P4 builds the odometer and does NOT wire it, so the SHIPPED
+// spawn is frozen at the level-1 count of 3 at every level. Both are checked — what the mechanism says,
+// and what the game currently does — because they deliberately disagree this phase and must not by P5.
 (function sectionB() {
-  console.log("(B) junk count — the table's 4-level cycle rises and resets, with NO per-cycle spiral");
+  console.log("(B) junk count — the odometer's sawtooth rises and resets; the SPEEDS carry; the shipped spawn is frozen (TRAP 2)");
   const A = build();
   A.startGame();
 
   // First: the retired machinery is provably gone, so nothing below can be measuring the old clock.
-  for (const id of ["cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN"]) {
+  for (const id of ["cycleValue", "CYCLE_LENGTH", "CYCLE_GAIN", "levelDef", "stepAt", "JUNK_CYCLE", "PHASE_LEN", "LEVEL_MAX"]) {
     assert(A.probe(id) === "__ReferenceError__", `B: ${id} no longer exists`);
   }
-  assert(A.probe("levelDef") !== "__ReferenceError__", "B: (meta) the probe resolves a live symbol");
+  assert(A.probe("leverState") !== "__ReferenceError__", "B: (meta) the probe resolves a live symbol");
 
   // count[w] = the level's REAL spawned junk count, driven through the REAL nextWave().
   // table[w] = the LEVEL TABLE's junkCount column.
@@ -199,74 +214,61 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   // one kind, and no level carries rail state.
   const count = {}, table = {};
   let levelsChecked = 0;
-  for (let w = 1; w <= A.LEVEL_MAX; w++) {
+  for (let w = 1; w <= SWEEP_MAX; w++) {
     count[w] = withPinnedRandom(PIN, () => atWave(A, w));
-    table[w] = A.levelDef(w).junkCount;
+    table[w] = A.leverState(w).junkCount;
     // The DiffLog row P2 pushes must report the LEVEL TABLE's count — the log is the instrument this
     // progression is evaluated with, so a drift here would silently invalidate the data.
     const row0 = A.DiffLog.rows[A.DiffLog.rows.length - 1];
-    assert(row0.junkCount === table[w], `B: level ${w}: DiffLog.junkCount (${row0.junkCount}) === the table's column (${table[w]})`);
     levelsChecked++;
-    assert(count[w] === table[w],
-      `B: level ${w}: spawned ${count[w]} === levelDef(${w}).junkCount ${table[w]}`);
+    // TRAP 2: the DiffLog logs what ACTUALLY SPAWNED, which this phase freezes at 3 — not what the
+    // odometer says. Those two must agree again the moment P5 wires the lever, and this pair of
+    // assertions is what will catch it if they do not.
+    assert(count[w] === A.FROZEN_JUNK_COUNT,
+      `B: level ${w}: the SHIPPED spawn is the frozen ${A.FROZEN_JUNK_COUNT} (CS024 P4 TRAP 2 — levers built, not wired)`);
     assert(row0.junkCount === count[w], `B: level ${w}: DiffLog.junkCount (${row0.junkCount}) === pieces actually spawned (${count[w]})`);
     assert(A.game.debris.every(d => d.orbitCenter === undefined), `B: level ${w}: no satellite carries orbit state`);
   }
   assert(levelsChecked === 63,
-    `B: REPOINTED BY CS024 P1 (inverted) — all 63 levels now prove the spawn consumes the column, not 42 of them (got ${levelsChecked})`);
+    `B: all 63 levels checked, both what the odometer says and what the game spawns (got ${levelsChecked})`);
 
-  // B1/B2 — RISE and RESET, classified by the level's own position in the cycle (read off levelDef's
-  // `rel`, never re-derived). A phase's last level (rel === PHASE_LEN) holds 13 rather than restarting,
-  // which is the one documented flat step.
-  const CYC = A.JUNK_CYCLE.length;
-  for (let w = 1; w < A.LEVEL_MAX; w++) {
-    const nextRel = A.levelDef(w + 1).rel;
-    const startsGroup = nextRel === 1 || ((nextRel - 1) % CYC === 0 && nextRel !== A.PHASE_LEN);
-    if (nextRel === A.PHASE_LEN) {
-      assert(table[w + 1] === table[w], `B1: level ${w} -> ${w + 1}: a phase's last level HOLDS at ${table[w]}`);
-    } else if (startsGroup) {
-      assert(table[w + 1] < table[w], `B2: level ${w} -> ${w + 1}: the junk cycle RESETS (${table[w]} -> ${table[w + 1]})`);
-    } else {
-      assert(table[w + 1] > table[w], `B1: level ${w} -> ${w + 1}: count RISES within the cycle (${table[w]} -> ${table[w + 1]})`);
-    }
+  // B1/B2 — RISE and RESET, now read off the odometer's own period (junkCount's `steps`) rather than a
+  // level table's `rel` column. The retired table had one documented flat step (a phase's last level held
+  // at 13); the odometer has none — every step either rises by one or resets to the floor.
+  const CYC = 10;   // junkCount's `steps` — the odometer's period for this lever
+  for (let w = 1; w < SWEEP_MAX; w++) {
+    if (w % CYC === 0) assert(table[w + 1] < table[w], `B2: level ${w} -> ${w + 1}: the junk sawtooth RESETS (${table[w]} -> ${table[w + 1]})`);
+    else assert(table[w + 1] > table[w], `B1: level ${w} -> ${w + 1}: count RISES within the run (${table[w]} -> ${table[w + 1]})`);
   }
 
-  // B3 — NO SPIRAL, the deliberate reversal of CS017 P3's core claim. Every junk cycle is identical: the
-  // same position in a later cycle, or a later phase, carries exactly the same count.
-  for (let w = 1; w + CYC <= A.LEVEL_MAX; w++) {
-    const relA = A.levelDef(w).rel, relB = A.levelDef(w + CYC).rel;
-    if (relA !== A.PHASE_LEN && relB !== A.PHASE_LEN && (relB - relA) % CYC === 0) {
-      assert(table[w + CYC] === table[w],
-        `B3: level ${w} and level ${w + CYC} share a cycle position and carry the SAME count (${table[w]} vs ${table[w + CYC]}) — no spiral`);
-    }
-  }
-  assert(table[1] === table[5] && table[5] === table[22],
-    `B3: levels 1, 5 and 22 all carry ${table[1]} — the per-cycle escalation is genuinely gone`);
+  // B3 — NO SPIRAL ON THE COUNT. Unchanged claim, unchanged strength: the same position in a later run
+  // carries exactly the same count, forever. (CS017's per-cycle escalation is still gone from here.)
+  for (let w = 1; w + CYC <= SWEEP_MAX; w++)
+    assert(table[w + CYC] === table[w],
+      `B3: level ${w} and level ${w + CYC} share a sawtooth position and carry the SAME count (${table[w]} vs ${table[w + CYC]}) — no spiral on the count`);
 
-  // B4 — the ENDGAME PLATEAU replaces the old unbounded climb: from level 64 the count is permanently 13.
-  // 64, 80, 200 and 2000 are all FIELD levels (none is divisible by 3), so the spawn itself is checked.
+  // B3b — ...AND THE SPIRAL IS BACK, ON THE SPEEDS. This is CS024's actual thesis and the mirror image of
+  // B3: a reset does not make the level easier, it makes every satellite permanently faster. Checked at
+  // the reset boundary itself, where the count drops and all three speeds step up in the same level.
+  for (const w of [10, 20, 30]) {
+    const before = A.leverState(w), after = A.leverState(w + 1);
+    assert(after.junkCount < before.junkCount, `B3b: level ${w} -> ${w + 1}: the count resets`);
+    for (const id of ["junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"])
+      assert(after[id] > before[id], `B3b: ...and ${id} steps UP in the same breath (${before[id]} -> ${after[id]})`);
+  }
+
+  // B4 — the ENDGAME PLATEAU is GONE, and that is deliberate (§2.1: "no LEVEL_MAX; the ceiling is
+  // emergent"). The count keeps sawtoothing forever, while the SPEEDS plateau at their own ceilings.
+  // The shipped spawn, meanwhile, is frozen at 3 out to any level anyone will ever reach.
   for (const w of [64, 80, 200, 2000]) {
     const n = withPinnedRandom(PIN, () => atWave(A, w));
-    assert(n === A.levelDef(A.LEVEL_MAX).junkCount,
-      `B4: level ${w} spawns level-${A.LEVEL_MAX}'s count (${A.levelDef(A.LEVEL_MAX).junkCount}), got ${n}`);
+    assert(n === A.FROZEN_JUNK_COUNT, `B4: level ${w} spawns the frozen count (${A.FROZEN_JUNK_COUNT}), got ${n}`);
+    assert(A.leverState(w).junkCount === ((w - 1) % CYC) + 3,
+      `B4: level ${w}: the odometer keeps sawtoothing past any level cap — there is no LEVEL_MAX left`);
+    assert(A.leverState(w).junkSpeedSmall === 240, `B4: level ${w}: ...while junkSpeedSmall has plateaued at its ceiling`);
   }
-  // B4b — REPOINTED BY CS024 P1 to its mirror image. CS021 P1 wrote this to prove the plateau did NOT
-  // freeze the archetype: past LEVEL_MAX the every-3rd orbit rhythm kept going (66, 99, 2001 are all
-  // divisible by 3) while the junkCount column stayed pinned at 13 underneath it. There is no rhythm left
-  // to survive the plateau, so the claim inverts: THESE LEVELS ARE NOW INDISTINGUISHABLE from the field
-  // levels above them, which is the property that would break if an archetype were ever reintroduced
-  // without updating the plateau.
-  for (const w of [66, 99, 2001]) {
-    const n = withPinnedRandom(PIN, () => atWave(A, w));
-    assert(!("archetype" in A.levelDef(w)),
-      `B4b: level ${w} — REPOINTED BY CS024 P1 (inverted): no archetype column exists past the plateau either`);
-    assert(A.levelDef(w).junkCount === A.levelDef(A.LEVEL_MAX).junkCount,
-      `B4b: level ${w} still carries the level-${A.LEVEL_MAX} plateau count in the table`);
-    assert(n === A.levelDef(A.LEVEL_MAX).junkCount,
-      `B4b: level ${w} spawns exactly that plateau count (${A.levelDef(A.LEVEL_MAX).junkCount}), got ${n}`);
-  }
-  console.log(`  junk count, levels 1-21: table ${Array.from({ length: 21 }, (_, i) => table[i + 1]).join(",")}` +
-              `  spawned ${Array.from({ length: 21 }, (_, i) => count[i + 1]).join(",")}`);
+  console.log(`  junk count, levels 1-21: odometer ${Array.from({ length: 21 }, (_, i) => table[i + 1]).join(",")}` +
+              `  spawned ${Array.from({ length: 21 }, (_, i) => count[i + 1]).join(",")} (frozen, TRAP 2)`);
 })();
 
 // ================= (C) speedMul steps by TIER; Hunter speed/turn are FROZEN ============================
@@ -280,7 +282,7 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   A.startGame();
 
   const mul = {}, hsp = { 3: {}, 2: {}, 1: {} }, htn = { 3: {}, 2: {}, 1: {} };
-  for (let w = 1; w <= A.LEVEL_MAX; w++) {
+  for (let w = 1; w <= SWEEP_MAX; w++) {
     withPinnedRandom(PIN, () => atWave(A, w));
     // REPOINTED BY CS024 P1. CS021 P1 split this because an orbit level's satellites had their random
     // drift replaced by the orbital tangent (angVel × radius), so recovering the junk multiplier from one
@@ -306,40 +308,50 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   // preserved through the freeze.
   for (const s of [3, 2, 1]) {
     const speeds = new Set(Object.values(hsp[s])), turns = new Set(Object.values(htn[s]));
-    assert(speeds.size === 1, `C1 [size ${s}]: ONE speed across levels 1..${A.LEVEL_MAX} (got ${JSON.stringify([...speeds])})`);
-    assert(turns.size === 1, `C1 [size ${s}]: ONE turn rate across levels 1..${A.LEVEL_MAX} (got ${JSON.stringify([...turns])})`);
+    assert(speeds.size === 1, `C1 [size ${s}]: ONE speed across levels 1..${SWEEP_MAX} (got ${JSON.stringify([...speeds])})`);
+    assert(turns.size === 1, `C1 [size ${s}]: ONE turn rate across levels 1..${SWEEP_MAX} (got ${JSON.stringify([...turns])})`);
     assert(near(hsp[s][1], A.HUNTER_SPEED_CEIL[s] * A.HUNTER_FLOOR_FRAC),
       `C1 [size ${s}]: speed === HUNTER_SPEED_CEIL x HUNTER_FLOOR_FRAC (${A.HUNTER_SPEED_CEIL[s] * A.HUNTER_FLOOR_FRAC})`);
     assert(near(htn[s][1], A.HUNTER_TURN_CEIL[s] * A.HUNTER_FLOOR_FRAC),
       `C1 [size ${s}]: turnRate === HUNTER_TURN_CEIL x HUNTER_FLOOR_FRAC (${A.HUNTER_TURN_CEIL[s] * A.HUNTER_FLOOR_FRAC})`);
   }
-  assert(htn[3][1] === 0 && htn[3][A.LEVEL_MAX] === 0, "C1: the large core's turn rate is exactly 0 at every level (passive drift)");
+  assert(htn[3][1] === 0 && htn[3][SWEEP_MAX] === 0, "C1: the large core's turn rate is exactly 0 at every level (passive drift)");
   // CONTROL: the retired ramp is really gone — at level 63 the frozen value must differ from what
   // ramp(floor, ceil, wave) would have produced (they only coincide at level 1, where the factor is 0).
+  // REPOINTED BY CS024 P4: ramp() is DELETED, so the control rebuilds it from its retired definition
+  // verbatim — floor + (ceil - floor) * musicIntensity(wave) — using the real surviving curve.
   for (const s of [2, 1]) {
-    const ramped = A.ramp(A.HUNTER_SPEED_CEIL[s] * A.HUNTER_FLOOR_FRAC, A.HUNTER_SPEED_CEIL[s], A.LEVEL_MAX);
-    assert(!near(hsp[s][A.LEVEL_MAX], ramped),
-      `C1 [size ${s}]: CONTROL — the frozen speed ${hsp[s][A.LEVEL_MAX]} differs from the retired ramp value ${ramped.toFixed(3)}`);
+    const floorSpeed = A.HUNTER_SPEED_CEIL[s] * A.HUNTER_FLOOR_FRAC;
+    const ramped = floorSpeed + (A.HUNTER_SPEED_CEIL[s] - floorSpeed) * A.musicIntensity(SWEEP_MAX);
+    assert(!near(hsp[s][SWEEP_MAX], ramped),
+      `C1 [size ${s}]: CONTROL — the frozen speed ${hsp[s][SWEEP_MAX]} differs from the retired ramp value ${ramped.toFixed(3)}`);
   }
+  // ...and BOTH hunter pursuit speeds are levers again in the odometer (hunterSpeedMedium/Small), which
+  // P5 wires. Until then the ctor still reads the frozen constants, and that split is the point of the
+  // control above — the freeze is real today and is scheduled to end, not to persist by accident.
+  assert(A.leverState(1).hunterSpeedMedium === 60 && A.leverState(1).hunterSpeedSmall === 90,
+    "C1: the odometer already carries the two hunter pursuit-speed levers (P5 wires them to the ctor)");
 
-  // C2 — junk speedMul is a STEP function of the junkSpeed tier: constant inside a tier band, strictly
-  // higher at each boundary. Expectations come from the live DEBUG knobs, so a retune moves both together.
-  const tierPx = t => (t === "low" ? A.DEBUG.junkSpeedLow : t === "high" ? A.DEBUG.junkSpeedHigh : A.DEBUG.junkSpeedNormal);
-  for (let w = 1; w <= A.LEVEL_MAX; w++) {
-    const tier = A.levelDef(w).junkSpeed;
-    assert(near(mul[w], tierPx(tier) / 70), `C2: level ${w}: speedMul === DEBUG.junkSpeed<${tier}> / 70`);
-    if (w > 1) {
-      const prevTier = A.levelDef(w - 1).junkSpeed;
-      if (tier === prevTier) assert(near(mul[w], mul[w - 1]), `C2: level ${w}: speedMul is FLAT inside the "${tier}" band`);
-      else assert(mul[w] > mul[w - 1], `C2: level ${w}: speedMul STEPS UP at the "${prevTier}" -> "${tier}" boundary`);
-    }
+  // C2 — REPOINTED BY CS024 P4, and this is TRAP 2 again on the speed side. junk speedMul was a
+  // three-step TIER function of the level; the tiers are deleted, and the shipped multiplier is FROZEN at
+  // the retired table's level-1 answer until P5 splits it into three independent per-size levers. So the
+  // "flat inside a band, steps at a boundary" claim collapses to "flat everywhere, no boundary anywhere",
+  // which is an exact equality and therefore a tighter statement than the step version was.
+  for (let w = 1; w <= SWEEP_MAX; w++) {
+    assert(near(mul[w], A.FROZEN_JUNK_SPEED / 70), `C2: level ${w}: speedMul === FROZEN_JUNK_SPEED / 70`);
+    if (w > 1) assert(near(mul[w], mul[w - 1]), `C2: level ${w}: speedMul is FLAT — no level dependence at all this phase`);
   }
-  const boundaries = [];
-  for (let w = 2; w <= A.LEVEL_MAX; w++) if (A.levelDef(w).junkSpeed !== A.levelDef(w - 1).junkSpeed) boundaries.push(w);
-  assert(boundaries.length === 2, `C2: exactly two tier boundaries across 1..63 (got ${JSON.stringify(boundaries)})`);
-  // CONTROL: no per-level rise survives inside a band — the sawtooth would have made 21 !== 22 - 1 etc.
-  assert(near(mul[1], mul[21]), "C2: CONTROL — levels 1 and 21 share a speedMul (nothing rises per level any more)");
-  console.log(`  speedMul by tier: low ${mul[1].toFixed(4)}  normal ${mul[22].toFixed(4)}  high ${mul[43].toFixed(4)}  (steps at ${boundaries.join(", ")})`);
+  let boundaries = 0;
+  for (let w = 2; w <= SWEEP_MAX; w++) if (!near(mul[w], mul[w - 1])) boundaries++;
+  assert(boundaries === 0, `C2: zero tier boundaries survive across 1..63 (got ${boundaries})`);
+  // ...and the odometer that will replace it is already built, with the three sizes INDEPENDENT — the
+  // shared-ratio derivation this file has measured since CS018 P3 is what P5 deletes.
+  const ls1 = A.leverState(1), ls41 = A.leverState(41);
+  assert(ls1.junkSpeedLarge === 60 && ls1.junkSpeedMedium === 95 && ls1.junkSpeedSmall === 140,
+    "C2: the odometer's three junk-speed levers start at their own independent floors");
+  assert(ls41.junkSpeedLarge === 110 && ls41.junkSpeedMedium === 165 && ls41.junkSpeedSmall === 240,
+    "C2: ...and reach their own independent ceilings, not a shared multiple of one base");
+  console.log(`  speedMul: FROZEN at ${mul[1].toFixed(4)} across levels 1..${SWEEP_MAX} (CS024 P4 TRAP 2; P5 splits it into three levers)`);
 })();
 
 // ================= (D) both debris-speed sites agree ==================================================
@@ -456,7 +468,7 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   // Sanity that these really are two different builds — otherwise every identity below is vacuous.
   assert(hm[1] !== scriptSrc, "F: the pre-P3 build and the worktree build are genuinely different sources");
 
-  let divergedCount = 0, hunterDiverged = 0, gapDiverged = 0, fireMultDiverged = 0;
+  let divergedCount = 0, hunterDiverged = 0, gapDiverged = 0, fireMultDiverged = 0, smallChanceDiverged = 0;
   for (let w = 1; w <= 30; w++) {
     const nH = withPinnedRandom(PIN, () => atWave(H, w));
     const nW = withPinnedRandom(PIN, () => atWave(W, w));
@@ -471,13 +483,21 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     assert(fH === H.ramp(H.SAUCER_FIRE_MULT_FLOOR, H.SAUCER_FIRE_MULT_CEIL, w),
       `F: level ${w}: the PRE-P7 pinned build's fire multiplier still samples the ABSOLUTE game.wave via ramp() (unaffected by this worktree's P7 change)`);
     assert(fW === W.ufoFireMult(),
-      `F: level ${w}: the LIVE worktree's fire multiplier is exactly the tier value, not a ramp() sample`);
+      `F: level ${w}: the LIVE worktree's fire multiplier is exactly what ufoFireMult() says, not a ramp() sample`);
 
-    // --- UNCHANGED: small-saucer chance, probed at the LIVE spawn site. small = Math.random() < smallChance,
-    // so pinning Math.random either side of the expected threshold must flip the spawned saucer's type.
+    // --- REPOINTED BY CS024 P4 (CONTROL, mirror-image of the last "UNCHANGED" claim in this section):
+    // the small-saucer chance was the FINAL lever still sampling ramp()/game.wave, which is why it was the
+    // one identity left here. §2.4 retires it — the size roll becomes a FLAT chance for the whole game —
+    // and ramp() itself goes with it, so the identity inverts into a divergence. They still coincide at
+    // level 1 and ONLY at level 1, because musicIntensity(1) is exactly 0, which is a sharper fact than
+    // either "identical" or "different" alone and is asserted as such.
     const thrH = H.ramp(H.SAUCER_SMALL_CHANCE_FLOOR, H.SAUCER_SMALL_CHANCE_CEIL, w);
-    const thrW = W.ramp(W.SAUCER_SMALL_CHANCE_FLOOR, W.SAUCER_SMALL_CHANCE_CEIL, w);
-    assert(thrH === thrW, `F: level ${w}: small-saucer chance identical to the pre-P3 build (${thrH} vs ${thrW})`);
+    const thrW = W.FROZEN_SMALL_UFO_CHANCE;
+    if (w === 1) assert(near(thrH, thrW), `F: level 1: the flat chance still coincides with the pre-P3 ramp floor (${thrH} vs ${thrW})`);
+    else {
+      assert(!near(thrH, thrW), `F: level ${w}: the flat chance DIVERGES from the pre-P3 ramp (${thrH} vs ${thrW})`);
+      smallChanceDiverged++;
+    }
     // REPOINTED BY CS023 P3: this probe is about the small/big SPAWN DECISION only, but P3 added a
     // UFO<->debris collision pass (spec §4.6) that runs inside this same update(0) call — with
     // Math.random() PINNED to a constant, the freshly-spawned saucer's (fixed) entry position can
@@ -493,9 +513,11 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
       return A.game.saucers.length === 1 ? A.game.saucers[0].small : null;
     };
     assert(probe(W, thrW - 1e-9) === true && probe(W, thrW + 1e-9) === false,
-      `F: level ${w}: the LIVE spawn site's small-saucer boundary sits exactly at ramp(..., game.wave)`);
-    assert(probe(H, thrH - 1e-9) === probe(W, thrW - 1e-9) && probe(H, thrH + 1e-9) === probe(W, thrW + 1e-9),
-      `F: level ${w}: the pre-P3 and post-P3 builds make the same small/big decision`);
+      `F: level ${w}: the LIVE spawn site's small-saucer boundary sits exactly at the flat chance`);
+    // REPOINTED BY CS024 P4: the two builds no longer agree past level 1, by design — probing the LIVE
+    // threshold against the PRE-P3 build is the direct demonstration that the ramp is gone from the roll.
+    if (w > 1) assert(probe(H, thrW + 1e-9) === true,
+      `F: level ${w}: the pre-P3 build would still have spawned a SMALL saucer just above the live flat threshold — the ramp really is gone`);
 
     // --- REPOINTED BY CS018 P6 (CONTROL, mirror-image of the old "UNCHANGED" claim): saucer spawn gap
     // moved OFF ramp()/game.wave onto the UFO MOVEMENT appearance-frequency TIER + jitteredInterval(), so
@@ -520,19 +542,24 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     `F: CONTROL (CS018 P6) — the tiered+jittered spawn gap genuinely diverges from the pre-P3 ramped gap (${gapDiverged} levels)`);
   assert(fireMultDiverged > 0,
     `F: CONTROL (CS018 P7) — the tiered fire multiplier genuinely diverges from the pre-P3 ramped multiplier (${fireMultDiverged} levels)`);
-  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer spawn gap on ${gapDiverged}/30 (CS018 P6), fire mult on ${fireMultDiverged}/30 (CS018 P7), small-chance saucer lever on 0`);
+  assert(smallChanceDiverged === 29,
+    `F: CONTROL (CS024 P4) — the flat small-saucer chance diverges from the pre-P3 ramp at every level but 1 (${smallChanceDiverged}/29)`);
+  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer spawn gap on ${gapDiverged}/30 (CS018 P6), fire mult on ${fireMultDiverged}/30 (CS018 P7), small-saucer chance on ${smallChanceDiverged}/30 (CS024 P4 — the last lever off ramp())`);
 })();
 
-// ================= (G) the TABLE is the count ceiling now ==============================================
-// REPOINTED BY CS018 P3: DEBRIS_COUNT_MAX / DEBRIS_COUNT_HARD_MAX have no readers left (P3 removed both
-// clamps from nextWave() because the table is already bounded), so "the clamp binds" is no longer a
-// meaningful claim — a clamp with no readers cannot bind. The ceiling story is now the table's own: 13
-// pieces, at every level, forever, with no clamp needed to enforce it.
+// ================= (G) the ODOMETER is the count ceiling now ===========================================
+// REPOINTED BY CS018 P3: DEBRIS_COUNT_MAX / DEBRIS_COUNT_HARD_MAX have no readers left, so "the clamp
+// binds" stopped being a meaningful claim — a clamp with no readers cannot bind. The ceiling story became
+// the table's own: 13 pieces, forever, with no clamp needed.
+// REPOINTED AGAIN BY CS024 P4: the table is gone and the ceiling is the junkCount LEVER's `ceil` (12),
+// which is a bound BY CONSTRUCTION rather than by a column of literals — a lever cannot exceed its top
+// step. And the shipped spawn is frozen at 3 for one phase (TRAP 2), so both are checked: what bounds the
+// mechanism, and what the game currently puts on the board.
 (function sectionG() {
-  console.log("(G) the level table bounds the count at 13 with no clamp — including past LEVEL_MAX");
+  console.log("(G) the odometer bounds the count at its lever ceiling with no clamp; the shipped spawn is frozen");
   const A = build();
   A.startGame();
-  const TABLE_MAX = 13;
+  const TABLE_MAX = 12;   // junkCount's `ceil` — its top step, by construction
   let maxCount = 0, bindingLevels = 0, orbitSeen = 0;
   // REPOINTED BY CS021 P1: the ceiling claim is about the JUNK CYCLE, and only a field level spawns from
   // it. An orbit level's population is its ring geometry (a deliberate, documented step up — FORK-CS021-D
@@ -541,8 +568,10 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   for (let w = 1; w <= 130; w++) {
     const n = withPinnedRandom(PIN, () => atWave(A, w));
     const logged = A.DiffLog.rows[A.DiffLog.rows.length - 1].junkCount;
-    assert(logged === A.levelDef(w).junkCount && logged <= TABLE_MAX,
-      `G: level ${w}: the logged count is the table's column and stays <= ${TABLE_MAX} (got ${logged})`);
+    assert(A.leverState(w).junkCount <= TABLE_MAX,
+      `G: level ${w}: the odometer's junkCount stays <= its own ceiling ${TABLE_MAX} (got ${A.leverState(w).junkCount})`);
+    assert(logged === n && logged <= TABLE_MAX,
+      `G: level ${w}: the logged count is what spawned and stays <= ${TABLE_MAX} (got ${logged})`);
     // REPOINTED BY CS024 P1: the ceiling claim is about the JUNK CYCLE, and every level spawns from it
     // now — CS021 P1's carve-out for the ring bonanza (FORK-CS021-D) has nothing left to except. So the
     // ceiling is asserted at all 130 levels rather than at the ~87 field ones, which is strictly stronger.
@@ -552,8 +581,14 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     if (n === TABLE_MAX) bindingLevels++;
     maxCount = Math.max(maxCount, n);
   }
-  assert(maxCount === TABLE_MAX && bindingLevels > 0,
-    `G: the table actually reaches its own ceiling on ${bindingLevels} of the levels in 1..130 (peak ${maxCount})`);
+  // REPOINTED BY CS024 P4: the SPAWN can no longer reach the ceiling, because it is frozen at 3 — so the
+  // "the ceiling is actually reached" control moves onto the odometer, which does reach it, 13 times in
+  // 1..130. ⛔ P5 SHOULD MOVE IT BACK once nextWave() reads the lever.
+  let leverBinding = 0;
+  for (let w = 1; w <= 130; w++) if (A.leverState(w).junkCount === TABLE_MAX) leverBinding++;
+  assert(leverBinding === 13, `G: the odometer reaches its own ceiling on exactly 13 of the levels in 1..130 (got ${leverBinding})`);
+  assert(maxCount === A.FROZEN_JUNK_COUNT,
+    `G: the SHIPPED spawn never varies from the frozen ${A.FROZEN_JUNK_COUNT} across 1..130 (peak ${maxCount}) — TRAP 2`);
   assert(orbitSeen === 130,
     `G: REPOINTED BY CS024 P1 (inverted) — the ceiling is now checked at ALL 130 levels, not just the field ones (got ${orbitSeen})`);
 
@@ -563,10 +598,11 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   // that used to take a different path is exactly the one worth keeping under the single rule.
   for (const w of [200, 500, 909, 2000]) {
     const n = withPinnedRandom(PIN, () => atWave(A, w));
-    assert(Number.isFinite(A.levelDef(w).junkCount) && A.levelDef(w).junkCount === A.levelDef(A.LEVEL_MAX).junkCount,
-      `G: level ${w}: the table still carries the level-${A.LEVEL_MAX} plateau count`);
-    assert(Number.isFinite(n) && n === A.levelDef(A.LEVEL_MAX).junkCount,
-      `G: level ${w}: ${n} pieces — the plateau, unchanged, on the one spawn rule`);
+    const lv = A.leverState(w).junkCount;
+    assert(Number.isFinite(lv) && lv >= 3 && lv <= TABLE_MAX,
+      `G: level ${w}: the odometer's count is finite and inside [3, ${TABLE_MAX}] (got ${lv}) — bounded with no clamp and no level cap`);
+    assert(Number.isFinite(n) && n === A.FROZEN_JUNK_COUNT,
+      `G: level ${w}: ${n} pieces spawned — the frozen count, unchanged, on the one spawn rule`);
   }
 
   // The retired clamps are provably unread (non-comment lines, excluding their own definitions), so this

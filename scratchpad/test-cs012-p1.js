@@ -22,6 +22,22 @@
 //   (D) was "bounds: SAUCER_AIM_ERR_CEIL <= err <= SAUCER_AIM_ERR_FLOOR, sourced from those two consts"
 //       -> bounds still hold, but now sourced from DEBUG.ufoAccuracyHigh/DEBUG.ufoAccuracyLow (the live
 //          DEBUG_VARS knobs) — the retired consts are provably unread, so nothing here can be measuring them.
+//
+// **REPOINTED AGAIN BY CS024 P4 — THE TIER SYSTEM IS GONE TOO.** levelDef() and all 21 tier knobs are
+// deleted with the rest of the pre-CS024 difficulty apparatus (spec §1.6). Small-saucer aim error is
+// FROZEN at the retired table's level-1 answer (30 deg) for exactly one phase, and P5 repoints
+// ufoAccuracyRad() onto the ufoAccuracySmall LEVER (30 -> 8 deg over four steps, still inverted, still
+// small-only). The sections mirror again, at the same strength, against the same real code:
+//   (B) level-1 aim error is exactly ufoAccuracyRad() — sourced from the ONE live helper rather than
+//       from a tier knob that no longer exists.
+//   (C) was "FLAT within a tier band, drops at each of the three boundaries (1/13/34)"
+//       -> the step function has collapsed to ONE step: err is flat at EVERY level, with no boundary
+//          anywhere, because nothing wave-driven feeds it this phase. Asserted as an equality across a
+//          wide level sweep, which is a strictly tighter claim than "non-increasing" was.
+//   (D) bounds are now sourced from the live ufoAccuracyRad() itself; the retired tier knobs are
+//       provably absent from the build, so nothing here can be measuring them.
+// WHAT NEVER MOVED THROUGH EITHER REPOINT, and is the actual point of the file: the aim error is read
+// off a REAL fired bullet via angleTo, never recomputed, and must equal what the helper says.
 // (A) syntax and (E) the headless smoke are unchanged claims, run against the current code.
 //
 //   node scratchpad/test-cs012-p1.js
@@ -75,7 +91,7 @@ function makeLocalStorage() {
 }
 
 const RETURN = [
-  "game", "startGame", "update", "Saucer", "angleTo", "levelDef", "ufoAccuracyRad", "DEBUG",
+  "game", "startGame", "update", "Saucer", "angleTo", "ufoAccuracyRad", "DEBUG",   // CS024 P4: levelDef dropped
   // CS024 P2: SAUCER_AIM_ERR_FLOOR/CEIL and SAUCER_ACCURACY_RAMP_SCALE are REMOVED (dead constants,
   // spec §1.8) — dropped from this list; section (retirement) below probes for their absence instead.
   'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
@@ -142,63 +158,57 @@ function actualAimErr(inst, wave) {
 
 // ================= (B) level-1 identity =====================
 (function () {
-  console.log("(B) level-1 identity: aim error is exactly the 'low' tier value — no scaled-wave collapse left to test");
+  console.log("(B) level-1 identity: the fired bullet's aim error is exactly what ufoAccuracyRad() says");
   const inst = buildInstance();
-  const { levelDef, ufoAccuracyRad, DEBUG, game } = inst;
-  assert(levelDef(1).ufoAccuracy === "low", "B: level 1 is the 'low' accuracy tier");
+  const { ufoAccuracyRad, game } = inst;
   game.wave = 1;
-  const expectedRad = DEBUG.ufoAccuracyLow * Math.PI / 180;
+  // The retired table's level-1 answer was the "low" tier, 30 deg. CS024 P4 freezes exactly that.
+  const expectedRad = 30 * Math.PI / 180;
   assert(Math.abs(ufoAccuracyRad() - expectedRad) < 1e-9,
-    `B: ufoAccuracyRad() at level 1 (${ufoAccuracyRad()}) === DEBUG.ufoAccuracyLow in radians (${expectedRad})`);
+    `B: ufoAccuracyRad() at level 1 (${ufoAccuracyRad()}) === the frozen 30 deg in radians (${expectedRad})`);
   const actual = actualAimErr(inst, 1);
   assert(Math.abs(actual - expectedRad) < 1e-9,
-    `B: level-1 actual fired-bullet err (${actual}) === the 'low' tier value in radians (${expectedRad})`);
+    `B: level-1 actual fired-bullet err (${actual}) === ufoAccuracyRad() (${expectedRad}) — read off a REAL bullet`);
 })();
 
 // ================= (C) a STEP function of level: flat within a tier, drops at each boundary =====================
 (function () {
-  console.log("(C) err is FLAT within a tier band (no continuous tightening) and drops exactly at the tier boundaries (1/13/34)");
+  console.log("(C) the step function has collapsed to ONE step: err is FLAT at every level, no boundary anywhere");
   const inst = buildInstance();
-  const { levelDef } = inst;
 
-  // Flat within a band: several levels sharing the same tier produce byte-identical error.
-  for (const band of [[1, 5, 12], [13, 20, 33], [34, 50, 200]]) {
-    const tier = levelDef(band[0]).ufoAccuracy;
-    const errs = band.map(w => actualAimErr(inst, w));
-    for (const w of band) assert(levelDef(w).ufoAccuracy === tier, `C: level ${w} shares the "${tier}" tier with ${band[0]}`);
-    for (let i = 1; i < errs.length; i++) {
-      assert(Math.abs(errs[i] - errs[0]) < 1e-9,
-        `C: level ${band[i]} err (${errs[i]}) === level ${band[0]} err (${errs[0]}) — flat within the "${tier}" tier`);
-    }
-  }
-
-  // Steps DOWN exactly at each boundary (one of the four inverted levers — high tier holds the SMALLEST error).
-  const boundaries = [[12, 13], [33, 34]];
-  for (const [below, at] of boundaries) {
-    const errBelow = actualAimErr(inst, below), errAt = actualAimErr(inst, at);
-    assert(errAt < errBelow - 1e-9, `C: level ${below}->${at} err drops at the tier boundary (${errBelow} -> ${errAt})`);
-  }
-
-  // Wider sample: monotonically non-increasing across levels 1..63 (no tier ever reverts to a larger error).
-  const waves = [1, 5, 9, 13, 17, 25, 34, 50, 63];
+  // REPOINTED BY CS024 P4. The three tier boundaries (1/13/34) went with TIER_STEPS, so there is nothing
+  // left for the error to step at — this phase deliberately freezes it. Equality across a wide sweep is
+  // a STRICTLY TIGHTER claim than the "non-increasing" one it replaces: it would fail on any residual
+  // wave dependence in either direction, which "non-increasing" would have let through downward.
+  const waves = [1, 2, 5, 9, 12, 13, 17, 25, 33, 34, 50, 63, 200, 1000];
   const errs = waves.map(w => actualAimErr(inst, w));
   for (let i = 1; i < errs.length; i++) {
-    assert(errs[i] <= errs[i - 1] + 1e-9,
-      `C: err at level ${waves[i]} (${errs[i]}) <= err at level ${waves[i - 1]} (${errs[i - 1]}) (steps down or holds)`);
+    assert(Math.abs(errs[i] - errs[0]) < 1e-9,
+      `C: level ${waves[i]} err (${errs[i]}) === level ${waves[0]} err (${errs[0]}) — flat, no level dependence at all`);
+  }
+  // The former boundaries specifically, since they are what the retired claim was about.
+  for (const [below, at] of [[12, 13], [33, 34]]) {
+    assert(Math.abs(actualAimErr(inst, at) - actualAimErr(inst, below)) < 1e-9,
+      `C: level ${below}->${at} no longer steps — the tier boundary it stepped at is deleted`);
   }
 })();
 
 // ================= (D) bounds, now sourced from the live DEBUG_VARS tier knobs =====================
 (function () {
-  console.log("(D) bounds: DEBUG.ufoAccuracyHigh <= err <= DEBUG.ufoAccuracyLow (in radians), not the retired consts");
+  console.log("(D) bounds: err is exactly ufoAccuracyRad() at every level, and the retired knobs are provably absent");
   const inst = buildInstance();
-  const { DEBUG } = inst;
-  const lowRad = DEBUG.ufoAccuracyLow * Math.PI / 180, highRad = DEBUG.ufoAccuracyHigh * Math.PI / 180;
-  assert(highRad < lowRad, "D: sanity — the high tier genuinely holds a SMALLER error than the low tier (inverted lever)");
+  // REPOINTED BY CS024 P4: the three DEBUG.ufoAccuracy* tier knobs this used to bound against are gone
+  // from the registry with the other 18. The bound therefore collapses onto the single live helper —
+  // and a "measuring the retired thing by accident" failure is now impossible rather than merely
+  // unlikely, because the retired thing cannot be referenced at all.
+  for (const id of ["ufoAccuracyLow", "ufoAccuracyNormal", "ufoAccuracyHigh"]) {
+    assert(!(id in inst.DEBUG), `D: DEBUG.${id} is gone (deleted with the 21 tier knobs)`);
+    assert(inst.probe(id) === "__ReferenceError__", `D: ...and ${id} resolves nowhere in the build`);
+  }
   for (const wave of [1, 2, 5, 9, 13, 17, 25, 34, 50, 200]) {
-    const err = actualAimErr(inst, wave);
-    assert(err <= lowRad + 1e-9, `D: level ${wave} err (${err}) <= DEBUG.ufoAccuracyLow in radians (${lowRad})`);
-    assert(err >= highRad - 1e-9, `D: level ${wave} err (${err}) >= DEBUG.ufoAccuracyHigh in radians (${highRad})`);
+    inst.game.wave = wave;
+    const want = inst.ufoAccuracyRad(), err = actualAimErr(inst, wave);
+    assert(Math.abs(err - want) < 1e-9, `D: level ${wave} fired-bullet err (${err}) === ufoAccuracyRad() (${want})`);
   }
 })();
 

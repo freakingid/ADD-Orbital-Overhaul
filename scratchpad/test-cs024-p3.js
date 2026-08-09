@@ -143,7 +143,10 @@ const RETURN = [
   "GARBAGE_SOFT_MAX", "GARBAGE_HARD_MAX", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_COALESCE_DELAY", "GARBAGE_PICKUP", "HUNTER_COALESCE_COUNT", "LARGE_HUNTER_MAX",
   "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN", "DEBRIS_GARBAGE",
-  "levelDef", "stepAt", "ramp", "difficultyFactor", "RAMP_WAVES", "JUNK_CYCLE", "TIER_STEPS",
+  // REPOINTED BY CS024 P4: every symbol on this line is now DELETED (levelDef, stepAt, ramp, JUNK_CYCLE,
+  // TIER_STEPS) or RENAMED (difficultyFactor -> musicIntensity, RAMP_WAVES -> MUSIC_INTENSITY_WAVES),
+  // which is exactly what P3's TRAP 2 said P4 would do. §H below inverts to check the deletion.
+  "musicIntensity", "MUSIC_INTENSITY_WAVES", "leverState", "payloadSlots", "FROZEN_JUNK_COUNT",
   "DiffLog", "DIFFLOG_FIELDS", "logDifficultySnapshot",
   "Achievements", "AudioSys", "COLOR", "WORLD_W", "WORLD_H",
   "DEBUG", "DEBUG_VARS", "DEBUG_ENTRIES", "applyDebug", "GAME_VERSION",
@@ -291,7 +294,9 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
       eq(X.DEBUG[id], def, `A: ...and DEBUG.${id} is seeded from it`);
     }
   }
-  eq(X.DEBUG_ENTRIES.length, 36, "A: the registry holds 36 value entries (34 - garbageLifetime + 3)");
+  // REPOINTED BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names). This phase's
+  // own three additions are pinned by name directly below; only the live total moves.
+  eq(X.DEBUG_ENTRIES.length, 15, "A: the registry holds 15 value entries after CS024 P4's 21-knob tier prune");
 
   // Tombstones are checked POSITIVELY and separately, so a comment naming a dead symbol can never be
   // confused for a live one (the standing test-cs024-p1/p2 idiom).
@@ -845,23 +850,24 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // --- TRAP 1: the version does not move. P7 owns the bump.
   eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is still 1.0.0.22");
 
-  // --- TRAP 2: levelDef, the tier tables and ramp() are P4's. The ONE forced exception is stated.
+  // --- TRAP 2, REPOINTED BY CS024 P4 AND INVERTED. P3's trap said "levelDef, the tier tables and ramp()
+  //     are P4's — do not touch them", and pinned each as still present. P4 has now run and deleted the
+  //     lot, so the same line items are checked from the other side. The pin was doing its job either
+  //     way: it made the boundary between the two phases visible in a test rather than in a comment.
   {
-    eq(typeof X.levelDef, "function", "H: TRAP 2 — levelDef() still exists");
-    eq(typeof X.ramp, "function", "H: TRAP 2 — ramp() still exists");
-    eq(typeof X.difficultyFactor, "function", "H: TRAP 2 — difficultyFactor() still exists");
-    eq(X.RAMP_WAVES, 8, "H: TRAP 2 — RAMP_WAVES is untouched");
-    eq(Object.keys(X.TIER_STEPS).length, 7, "H: TRAP 2 — all seven graded tier tables are untouched");
-    eq(typeof X.stepAt, "function", "H: TRAP 2 — stepAt() survives (it lost one caller, not its job)");
-    eq(X.levelDef(22).junkCount, 3, "H: TRAP 2 — the junkCount column is untouched");
-    eq(X.levelDef(12).payloadSlots, 24, "H: TRAP 2 — the payloadSlots curve is untouched");
-    eq(X.levelDef(1).junkSpeed, "low", "H: TRAP 2 — the tier columns are untouched");
-    eq(X.JUNK_CYCLE.length, 4, "H: TRAP 2 — JUNK_CYCLE is untouched");
+    for (const gone of ["levelDef", "stepAt", "ramp", "difficultyFactor", "RAMP_WAVES", "JUNK_CYCLE",
+                        "TIER_STEPS", "PHASE_LEN", "LEVEL_MAX"])
+      eq(X.probe(gone), "__ReferenceError__", `H: TRAP 2 (inverted) — ${gone} is deleted by CS024 P4`);
+    eq(typeof X.leverState, "function", "H: TRAP 2 (inverted) — leverState() is what replaced the level table");
+    eq(typeof X.musicIntensity, "function", "H: TRAP 2 (inverted) — the music curve survives, renamed");
+    eq(X.MUSIC_INTENSITY_WAVES, 8, "H: TRAP 2 (inverted) — its knob is unchanged at 8, renamed");
+    eq(X.FROZEN_JUNK_COUNT, 3, "H: TRAP 2 (inverted) — the junk count is frozen at 3 until P5 wires the lever");
+    eq(X.payloadSlots(12), 24, "H: TRAP 2 (inverted) — the payloadSlots curve outlived the table, unchanged");
     // THE ONE FORCED EXCEPTION, stated rather than hidden: maxLargeHunters had to go with
-    // HUNTER_CAP_STEPS or levelDef would ReferenceError on the first nextWave().
-    eq(X.levelDef(9).maxLargeHunters, undefined, "H: TRAP 2 (stated exception) — the maxLargeHunters column went with HUNTER_CAP_STEPS");
-    assert(!("maxLargeHunters" in X.levelDef(9)), "H: ...and the key is absent, not merely undefined-valued");
-    eq(Object.keys(X.levelDef(9)).length, 5 + 7, "H: ...leaving 12 columns, one fewer than before");
+    // HUNTER_CAP_STEPS or levelDef would ReferenceError on the first nextWave(). That exception is moot
+    // now — the whole table it reached into is gone — but the removal it forced is still checked here.
+    eq(X.probe("HUNTER_CAP_STEPS"), "__ReferenceError__", "H: TRAP 2 (stated exception) — HUNTER_CAP_STEPS stayed gone");
+    eq(X.LARGE_HUNTER_MAX, 100, "H: ...and the flat ceiling that replaced it is still what the cap reads");
   }
 
   // --- the DiffLog column was REPOINTED, not dropped ("a column follows its consumer").
@@ -894,8 +900,14 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     // session, so a phase that left it alone would be the thing worth flagging.
     const touched = worktree.filter(f => docs.includes(f));
     eq(touched.length, 0, `H: TRAP 4 — no design doc was modified (found ${JSON.stringify(touched)})`);
-    assert(worktree.includes("asteroids-deluxe.html") || inHead.includes("asteroids-deluxe.html"),
-      "H: TRAP 4 (sanity) — this phase's edits are visible, whether still staged or already committed");
+    // REPOINTED BY CS024 P4. The union of "the working tree" and "HEAD's own file list" still goes empty
+    // whenever an unrelated doc-only commit lands on top — which is exactly what happened between P3 and
+    // P4 (a STATUS.md commit carrying Gate A's answers), and it left this file red for a reason that had
+    // nothing to do with the code it tests. The sanity check now looks for the phase's edits IN THE FILE,
+    // which is durable: cullGarbage() is P3's, and it is either there or the phase did not land.
+    assert(/function cullGarbage\(/.test(scriptSrc),
+      "H: TRAP 4 (sanity) — this phase's edits are visible in the shipped file, whatever git happens to say");
+    assert(worktree.length + inHead.length > 0, "H: (meta) the git probes returned something to filter");
   }
 })();
 

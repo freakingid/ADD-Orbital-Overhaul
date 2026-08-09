@@ -428,8 +428,12 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // than loosening it: a second unplanned knob still fails.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
+  // AND AGAIN BY CS024 P4: 36 -> 15 — the biggest single prune the registry has ever taken. All 21 tier
+  // knobs (7 levers x low/normal/high) went with levelDef()'s tier names, along with their three now-
+  // empty section headers. P5 rebuilds JUNK and UFO around one knob per LEVER, which is a different
+  // shape, not a restoration — so expect this number to move again next phase.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 36, "A: TRAP 3 — DEBUG_VARS holds exactly 36 value entries after CS024 P3 (34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed)");
+  eq(valueEntries, 15, "A: TRAP 3 — DEBUG_VARS holds exactly 15 value entries after CS024 P4 (36 - the 21 tier knobs)");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

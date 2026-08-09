@@ -190,11 +190,19 @@ function beginPlaying(A) {
   assert(A.DEBUG.garbageAttractRadius === A.GARBAGE_MAGNET_RANGE, "E: DEBUG.garbageAttractRadius === GARBAGE_MAGNET_RANGE at default");
   assert(A.DEBUG.garbageAttractForce === A.GARBAGE_MAGNET_PULL, "E: DEBUG.garbageAttractForce === GARBAGE_MAGNET_PULL at default");
 
-  // The consts themselves are untouched (documented shipped defaults, not the live value).
+  // The consts themselves are the documented shipped defaults, not the live value.
+  // REPOINTED BY CS024 P4 — and this is a VALUE change, which is exactly why these three assertions
+  // exist. Gate A question 1 came back "hunters form, but too fast"; Paul retuned the three live
+  // sliders in-session and reported the trio he landed on, and it is baked in here:
+  //     GARBAGE_COALESCE_DELAY 3.0 -> 5.0 s   GARBAGE_MAGNET_RANGE 180 -> 160 px
+  //     GARBAGE_MAGNET_PULL     40 -> 30 px/s²
+  // The CLAIM this section makes is unchanged: the const is the single source of truth and the
+  // registry `def` derives from it, which every assertion above still checks symbolically. Only the
+  // three literals moved.
   assert(A.SCOOP_HITS_PER_LEVEL === 5, "E: SCOOP_HITS_PER_LEVEL const unchanged (5)");
-  assert(A.GARBAGE_COALESCE_DELAY === 3.0, "E: GARBAGE_COALESCE_DELAY const unchanged (3.0)");
-  assert(A.GARBAGE_MAGNET_RANGE === 180, "E: GARBAGE_MAGNET_RANGE const unchanged (180)");
-  assert(A.GARBAGE_MAGNET_PULL === 40, "E: GARBAGE_MAGNET_PULL const unchanged (40)");
+  assert(A.GARBAGE_COALESCE_DELAY === 5.0, "E: GARBAGE_COALESCE_DELAY is 5.0 (CS024 P4 Gate A Q1: was 3.0)");
+  assert(A.GARBAGE_MAGNET_RANGE === 160, "E: GARBAGE_MAGNET_RANGE is 160 (CS024 P4 Gate A Q1: was 180)");
+  assert(A.GARBAGE_MAGNET_PULL === 30, "E: GARBAGE_MAGNET_PULL is 30 (CS024 P4 Gate A Q1: was 40)");
 
   // A freshly-constructed Garbage still inherits the shipped coalesce delay at default.
   const fresh = new A.Garbage(100, 100);
