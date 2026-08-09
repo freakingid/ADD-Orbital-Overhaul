@@ -233,6 +233,14 @@ plan says so explicitly so nobody re-levers them on a cleanup pass:
   forever after**. Level 12 is therefore the first level at which a Super Mega
   Delivery is possible at all.
 - **`smallUfoChance`** — 20%, knob, not a lever.
+- **`startLevel`** — gate tooling, added by the corrective phase P6d. Seeds
+  `game.wave` at `startGame()` so a deep level can be sampled without playing to
+  it. **A run started above level 1 records nothing** — no high score, no
+  achievement unlock, no lifetime stat — riding the same principle as the
+  `awardScore = false` contract, and flagged in the HUD. It is a spawn-side
+  sampling tool only: a level-33 field arrives with a level-1 ship (no scoop
+  upgrades, no banked powerups, no accumulated garbage). Not a lever, not a
+  simulation of having played there.
 - **`freqJitter`** — **frozen at 25%**. It applies to the four frequency-shaped
   levers (`ufoAppearFreq`, `ufoDirChangeBig/Small`) via `jitteredInterval()`.
   `ufoFireFreq*` deliberately does **not** jitter — it multiplies two ranges

@@ -20,13 +20,15 @@ session, one commit per phase, on `main`.** Claude Code commits; Paul pushes.
 | **P6** | Count-only powerups + Engine-as-fuel | **Opus** | high | no |
 | **P6b** | ⚠️ *corrective* — drivers-only-wrap + UFO restage | **Opus** | high | **yes** |
 | **P6c** | ⚠️ *corrective* — lever floor/ceil/steps knobs | **Opus** | high | **yes** |
+| **P6d** | ⚠️ *corrective* — `startLevel` debug knob (gate tooling) | Sonnet | medium | no |
 | ⛔ | **GATE B** — blocking playtest ← *Paul plays; answers go in `STATUS.md`* | — | — | — |
 | **P7** | Retune, version bump, full doc rewrite | **Opus** | high | no |
 
-**P6b and P6c are IN-ROUND CORRECTIVE PHASES**, opened in conversation after P4
-and P5 landed, following the CS020 P1b / CS021 P1b / CS023 P4b precedent. They
-were not in this document's original plan. Each fixes something the phase above
-it shipped, and **both must land before Gate B**, because Gate B's whole job is
+**P6b, P6c and P6d are IN-ROUND CORRECTIVE PHASES**, opened in conversation
+after P4 and P5 landed, following the CS020 P1b / CS021 P1b / CS023 P4b
+precedent. They were not in this document's original plan. P6b and P6c each fix
+something the phase above them shipped; P6d is gate tooling. **All three must
+land before Gate B**, because Gate B's whole job is
 tuning a ramp — it cannot do that against a mechanism that regresses at level 33
 with sliders that flatten whatever they touch. **Order matters: P6b before P6c**,
 since P6c derives every slider's range from the `LEVERS` table and P6b changes
@@ -901,17 +903,114 @@ numbers**; that is far cheaper than P4 guessing.
 
 ---
 
-## ⛔ GATE B — BLOCKING PLAYTEST (after P6c)
+## P6d — ⚠️ CORRECTIVE: `startLevel` debug knob
 
-**P7 must not run until the questions below are answered in `STATUS.md`'s
-`## Playtest asks` section.** P6 writes a first version of that block; **P6c
-rewrites it**, and P6c's version is the one to read — P6's describes sliders that
-no longer exist.
+**Model: Sonnet · Effort: medium**
 
-**What to play:** **levels 1 → 45**, reached by playing rather than by jumping
-the counter — how the ramp *arrives* is the whole question, and P6b's UFO stagger
-does its work between 33 and 65. Every lever has **three** live sliders (Floor,
-Ceil, Steps) — **retune in-session and report the number you landed on, not a
+> Changeset 024, Phase 6d — an **in-round corrective phase**, not in the original
+> plan. It is **gate tooling**: Gate B needs to sample a deep level without
+> playing thirty levels to reach it, and nothing in the build can currently jump
+> the level counter.
+>
+> **Grep every anchor by symbol first.** P6, P6b and P6c have all landed since
+> this was written; `DEBUG_VARS` has been reshaped twice.
+>
+> **The knob.** `startLevel` in the GLOBAL section, `def: 1, min: 1, max: 99,
+> step: 1`. `startGame()` seeds `game.wave` from it so the first `nextWave()`
+> lands on that level — today the seed is the literal `game.wave = 0`. Everything
+> downstream is already a pure function of `game.wave` (`leverState`,
+> `payloadSlots`, `musicIntensity`), so nothing else needs a change to make a
+> deep level spawn correctly. **Verify that rather than assuming it.**
+>
+> **⛔ A RUN STARTED ABOVE LEVEL 1 MUST NOT RECORD.** No high-score entry, no
+> achievement unlock, no lifetime-stat write. A debug jump must not be able to
+> pollute real progress, and this is the same principle as the standing
+> `awardScore = false` contract: the run plays normally and pays nothing out.
+>
+> Four things to get right about the suppression:
+>
+> 1. **Set a sticky `game.debugRun` flag ONCE, in `startGame()`, from the knob's
+>    value at that instant.** Never re-read the knob mid-run. Otherwise dragging
+>    `startLevel` back to 1 during a run would silently re-arm recording for a run
+>    that started at 33 — and dragging it up mid-run would retroactively void a
+>    legitimate one.
+> 2. **Gate the three PERSISTENCE points, not the in-memory counters.** Score,
+>    `stats.*` and achievement progress should keep updating normally so the HUD,
+>    the gameover screen and toasts all behave as they would in a real run — what
+>    is suppressed is the write: `HighScores.add()`, the achievement unlock
+>    commit, and the lifetime-stats save. Find all three by grep; do not trust
+>    this list.
+> 3. **Give it a visible tell.** A short `DEBUG RUN` marker in the HUD whenever
+>    `game.debugRun` is true, in `COLOR.dim`, positioned so it reflows nothing.
+>    Without it there is no way to tell a voided run from a real one, and the
+>    first time a good score silently fails to record will be baffling.
+> 4. **`startLevel` is NOT a lever** — a plain flat knob, no `▼`/`↳` glyph, no
+>    `(inv)`, no floor/ceil/steps triple. It belongs to no chain.
+>
+> **Document the fidelity limit in a comment at the knob**, because it is real and
+> a future session will otherwise treat the knob as more than it is: a run started
+> at level 33 gives a **level-33 field with a level-1 ship** — no scoop upgrades,
+> no banked powerups, no accumulated garbage, no towed load. It is a spawn-side
+> sampling tool, not a simulation of having played there. **Do not "fix" this by
+> seeding scoop level or powerups** — that is unrequested design.
+>
+> **New `scratchpad/test-cs024-p6d.js`**: a real `startGame()` at several
+> `startLevel` values landing on exactly that level; `leverState`, `payloadSlots`
+> and the spawned satellite count all matching what the same level produces in a
+> played-through run; the three persistence points provably not writing on a
+> debug run, and provably still writing at `startLevel === 1`; the flag being
+> sticky against a mid-run knob change in both directions; and in-memory score and
+> stats still updating normally so the HUD is unaffected.
+>
+> **TRAP 1:** `GAME_VERSION` stays `"1.0.0.22"`. P7 owns the bump.
+> **TRAP 2:** `startLevel === 1` must be byte-identical to today in every
+> respect — pin a full run against `HEAD`.
+> **TRAP 3:** no lever, no `LEVERS` edit, no `leverState` change.
+> **TRAP 4:** the three frozen `localStorage` keys are untouched; suppression is a
+> write gate, not a schema change.
+> **TRAP 5:** docs untouched.
+>
+> **FINALLY — CHECK THE GATE-OPEN BLOCK.** P6c rewrote `STATUS.md`'s Gate B block.
+> Add `startLevel` to it: what it does, that it voids recording, and that the
+> gate's spot-check step uses it.
+
+**Commit:** `cs-24 p6d: startLevel debug knob, recording suppressed on debug runs`
+
+---
+
+## ⛔ GATE B — BLOCKING PLAYTEST (after P6d)
+
+**P7 must not run until questions 7–13 are answered in `STATUS.md`'s
+`## Playtest asks` section.** Questions 14–17 are **non-blocking** — see Step 3
+below. P6 writes a first version of that block, **P6c rewrites it** and P6d adds
+`startLevel` to it; P6c/P6d's version is the one to read, since P6's describes
+sliders that no longer exist.
+
+**What to play — this is one evening, not a marathon.**
+
+**Step 1 (blocking): one run, levels 1 → 12, played through.** That is all
+questions 7–13. Twelve levels is enough because it crosses every wrap boundary
+there is: the junk chain wraps at 11, the hunter and UFO chains at 9, and
+`payloadSlots` reaches 24 at level 12 — the first level a Super Mega Delivery is
+possible at all.
+
+**Step 2 (blocking, short): set `startLevel` to 33 and play two or three waves.**
+A spot-check for anything obviously broken deep in the ramp. **Note the two
+limits of this step**, so it isn't over-read: a debug run records nothing, and
+you get a level-33 *field* with a level-1 *ship* — no scoop upgrades, no banked
+powerups, no accumulated garbage.
+
+**Step 3 (NOT blocking): questions 14–17.** These came from the absorbed CS025
+and are about how the UFO stagger *feels* between levels 25 and 45. The headless
+tests already prove those curves are monotone, so the only thing playing adds is
+feel — and feel at level 40 is only honest in a run you actually played to level
+40. **Do not hold P7 for them.** Answer them whenever you next play the game for
+its own sake, and if something is wrong the fix is a step-count table edit in a
+later changeset.
+
+Every lever has **three** live sliders (Floor, Ceil, Steps). Setting Floor equal
+to Ceil pins that lever flat at every level, which is the way to isolate one
+quantity's feel. **Retune in-session and report the number you landed on, not a
 yes/no.**
 
 **The questions:**
@@ -937,8 +1036,8 @@ yes/no.**
     moment an SMD is possible at all, does hitting it land as the payoff it
     should be?
 
-*The four below were CS025's gate before P6b absorbed that changeset. They need
-levels 25–45, which is why the play range above extends that far.*
+**⚠️ The four below are NOT BLOCKING** — they came from the absorbed CS025 and
+need levels 25–45 played for real. P7 runs without them. Answer them at leisure.
 
 14. **Levels 25 → 40:** do the UFOs read as continuously escalating? The pre-P6b
     build got visibly slower at 33; this one must not.
