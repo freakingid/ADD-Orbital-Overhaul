@@ -792,7 +792,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // (4) THE CONTROL THAT MAKES ALL OF THE ABOVE MEAN SOMETHING: the contact really happened, repeatedly.
   //     Measured by the free body being ACTED ON — its velocity must differ from the inward one it was
   //     given, on every single frame. (Final geometric clearance is a weaker signal here and is reported
-  //     rather than asserted: a full-ramp shell puts rings 138 px apart while a size-3 body is 92 px
+  //     rather than asserted: a full-ramp shell puts rings 200 px apart while a size-3 body is 92 px
   //     across, so a free body wedged between two rings can be resolved against one and end up back
   //     inside the other — real behaviour of a sequential pair-walk, not a defect.)
   let contacts = 0, clear = 0;
@@ -838,10 +838,69 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   const X = seededBuild(0xE001);
   X.startGame();
 
-  // (1) THE CORRIDOR, AS A DERIVATION. 138 px of ring spacing minus a 92 px satellite diameter.
+  // (1) THE CORRIDOR, AS A DERIVATION. 200 px of ring spacing minus a 92 px satellite diameter.
+  // REPOINTED BY CS023 P4C: the step moved 138 -> 200, so the corridor moved 46 -> 108.
   const corridor = X.ORBIT_RADIUS_STEP - 2 * X.DEBRIS_RADII[3];
-  eq(corridor, 46, "E: the inter-ring radial corridor is ORBIT_RADIUS_STEP - 2 x DEBRIS_RADII[3] = 46 px");
+  eq(corridor, 108, "E: P4C — the inter-ring radial corridor is ORBIT_RADIUS_STEP - 2 x DEBRIS_RADII[3] = 108 px (was 46)");
   assert(corridor > 0, "E: ...and it is positive, which is the whole claim");
+
+  // (1b) A TIGHTER FLOOR THAN THE CORRIDOR, FOUND BY CS023 P4C AND PREDICTED BY NOTHING IN THE SPEC.
+  // Every separation in this section is WRAP-AWARE, and once the outer ring reaches 1,000 px it very
+  // nearly folds onto itself across a 2,160 px-tall world: an ANTIPODAL pair on ring 4 (6 satellites, so
+  // k = 3 always exists) standing vertically is 2,000 px apart the long way and only 160 px the SHORT
+  // way. That is 68 px of clear space, and it — not the 108 px corridor — is now the true minimum any two
+  // rail-borne bodies can reach. At P1's 814 px outer ring the same pair cleared by 440 px, so this is
+  // squarely P4c's doing and the reason blocks (3) and (4) below had to be repointed off `corridor`.
+  //
+  // C11 SURVIVES, AND NOT BY LUCK. The clearance is exactly 2 x (wrap-clean budget - outer satellite
+  // edge) + 40 — the SAME 14 px margin orbitEffectiveCount() guards (spec C16a), doubled — so any
+  // geometry the clamp accepts keeps it positive, down to 44 px at the 204 px step ceiling.
+  const [SW, SH] = X.worldDims(X.WORLD_SIZE_ORBIT);
+  const outerR = X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP;
+  const seamFloor = SH - 2 * outerR - 2 * X.DEBRIS_RADII[3];
+  eq(seamFloor, 68, "E: P4C — the outer ring folds onto itself to within 68 px of clear space");
+  const orbitBudget = SH / 2 - 20, outerEdge = outerR + X.DEBRIS_RADII[3];
+  eq(seamFloor, 2 * (orbitBudget - outerEdge) + 40,
+    "E: ...which is EXACTLY 2 x the C16a budget margin + 40 — the same 14 px, doubled");
+  assert(seamFloor > 0, "E: ...and positive, so C11's rail/rail no-op branch stays unreachable");
+  assert(seamFloor < corridor,
+    "E: ...but TIGHTER than the inter-ring corridor, which is why it is the number blocks (3) and (4) use");
+  // The same floor, found by search over the PHYSICAL same-ring separations rather than asserted from the
+  // closed form: only multiples of a ring's own angular spacing can occur, so a free-angle sweep (which is
+  // what (2) does for DISTINCT rings) would model a pair that cannot exist.
+  {
+    const torS = (dx, dy) => {
+      let ax = Math.abs(dx); if (ax > SW / 2) ax = SW - ax;
+      let ay = Math.abs(dy); if (ay > SH / 2) ay = SH - ay;
+      return Math.hypot(ax, ay);
+    };
+    const LFULL = X.generateOrbitLayout({
+      satelliteDiameter: X.DEBRIS_RADII[3] * 2, shipDiameter: X.SHIP_RADIUS * 2,
+      centerX: 1280, centerY: 720,
+      orbitCount: X.ORBIT_RING_COUNT, innerRadius: X.ORBIT_INNER_RADIUS,
+      radiusStep: X.orbitRadiusStepFor(X.ORBIT_RING_COUNT), safetyMargin: X.DEBUG.orbitSafetyMargin,
+      minGapMultiplier: X.orbitEffectiveGapMult(X.ORBIT_LEVEL_EVERY * X.ORBIT_RING_COUNT),
+      densityByOrbit: X.ORBIT_DENSITY,
+      baseAngVel: X.ORBIT_ANG_VEL, fastRingIndices: X.ORBIT_FAST_RING.map(n => n - 1),
+      fastRingMult: X.ORBIT_FAST_MULT, activeRings: null,
+    });
+    let sameSweep = Infinity, sameArg = null;
+    for (const r of LFULL.rings) {
+      for (let k = 1; k < r.count; k++) {
+        const dA = k * X.TAU / r.count;
+        for (let t = 0; t < 3600; t++) {
+          const th = t / 3600 * X.TAU;
+          const sep = torS(Math.cos(th) * r.radius - Math.cos(th + dA) * r.radius,
+                           Math.sin(th) * r.radius - Math.sin(th + dA) * r.radius) - 2 * X.DEBRIS_RADII[3];
+          if (sep < sameSweep) { sameSweep = sep; sameArg = [r.radius, r.count, k]; }
+        }
+      }
+    }
+    close(sameSweep, seamFloor, "E: P4C — a full same-ring angular sweep finds exactly that 68 px floor", 0.01);
+    eq(sameArg[0], outerR, "E: ...on the OUTERMOST ring, which is the one the world height nearly folds");
+    eq(sameArg[2] * 2, sameArg[1], "E: ...and on its ANTIPODAL pair (k = count / 2), the only one that can reach it");
+    console.log(`    same-ring seam floor ${sameSweep.toFixed(2)} px on r=${sameArg[0]} (${sameArg[1]} sats, k=${sameArg[2]})`);
+  }
 
   // (2) EXHAUSTIVE ANGLE SWEEP over the real layout, on the real torus. Only the two angles matter: the
   //     wrap-aware separation of centre + r_i*u(a) and centre + r_j*u(b) depends on the two points'
@@ -879,7 +938,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   }
   assert(sweepMin > 0, `E: over every DISTINCT ring pair x 360 x 360 angle pairs on the real torus, the CLOSEST two ` +
     `rail-borne satellites can ever come is ${sweepMin.toFixed(2)} px of clear space — they cannot touch`);
-  close(sweepMin, corridor, "E: ...and that closest approach IS the 46 px inter-ring corridor", 0.2);
+  close(sweepMin, corridor, "E: P4C — ...and that closest approach IS the 108 px inter-ring corridor (was 46)", 0.2);
   console.log(`    exhaustive sweep (distinct rings): minimum rail-to-rail separation ${sweepMin.toFixed(3)} px ` +
               `(rings r=${sweepMinPair[0]} and r=${sweepMinPair[1]}), corridor ${corridor} px`);
 
@@ -911,7 +970,11 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
       sameMin = Math.min(sameMin, Math.sqrt(X.dist2(rails[i], rails[j])) - rails[i].radius - rails[j].radius);
     }
     assert(sameChecked > 0, "E: (setup) there really are same-ring pairs to measure");
-    assert(sameMin > corridor, `E: ...and the ${sameChecked} real same-ring pairs measure ${sameMin.toFixed(1)} px apart at the closest`);
+    // REPOINTED BY CS023 P4C off `corridor` and onto the seam floor (1b): a real spawn's ring-4 antipodal
+    // pair can now sit 68 px apart, under the 108 px corridor. This passed at P1's geometry, and would
+    // have gone on passing here only by the luck of a start angle.
+    assert(sameMin >= seamFloor - 1e-6,
+      `E: P4C — ...and the ${sameChecked} real same-ring pairs measure ${sameMin.toFixed(1)} px apart at the closest, never under the ${seamFloor} px seam floor`);
   }
 
   // (3) THE SAME CLAIM ON REAL SPAWNS, at every occurrence of the archetype.
@@ -927,9 +990,11 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
       realMin = Math.min(realMin, Math.sqrt(Y.dist2(rs[i], rs[j])) - rs[i].radius - rs[j].radius);
     }
   }
-  assert(realMin >= corridor - 1e-6,
-    `E: across all 21 occurrences (${pairsChecked} real rail-to-rail pairs) the minimum separation is ` +
-    `${realMin.toFixed(1)} px, never below the ${corridor} px corridor`);
+  // REPOINTED BY CS023 P4C: the floor is the SEAM floor now, not the corridor — see (1b).
+  assert(realMin >= seamFloor - 1e-6,
+    `E: P4C — across all 21 occurrences (${pairsChecked} real rail-to-rail pairs) the minimum separation is ` +
+    `${realMin.toFixed(1)} px, never below the ${seamFloor} px seam floor`);
+  assert(realMin > 0, "E: ...and always strictly positive — C11's rail/rail branch is unreachable at spawn");
 
   // (4) ...AND OVER TIME, not just at spawn: rings spin at different rates, so the relative angles move.
   {
@@ -948,8 +1013,15 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
         liveMin = Math.min(liveMin, Math.sqrt(Y.dist2(rs[p], rs[q])) - rs[p].radius - rs[q].radius);
     }
     eq(frames, 1800, "E: (setup) the 30 s live sweep ran to completion with the shell intact");
-    assert(liveMin >= corridor - 1e-6,
-      `E: over 1800 REAL frames the minimum live rail-to-rail separation is ${liveMin.toFixed(1)} px — never below ${corridor}`);
+    // REPOINTED BY CS023 P4C, AND THIS IS THE BLOCK THAT FOUND THE SEAM FLOOR. Thirty seconds of real
+    // rotation is long enough to walk ring 4's antipodal pair through vertical, so unlike the snapshot
+    // blocks above this one reaches the true minimum every run rather than depending on a start angle.
+    assert(liveMin >= seamFloor - 1e-6,
+      `E: P4C — over 1800 REAL frames the minimum live rail-to-rail separation is ${liveMin.toFixed(1)} px — never below the ${seamFloor} px seam floor`);
+    assert(liveMin > 0,
+      `E: ...and never zero: C11's rail/rail no-op stays unreachable through a full relative revolution`);
+    assert(liveMin < corridor,
+      `E: ...while genuinely dipping UNDER the ${corridor} px corridor (${liveMin.toFixed(1)} px), which is the finding P4c added`);
     console.log(`    30 s of real play: minimum live rail-to-rail separation ${liveMin.toFixed(1)} px`);
   }
 
@@ -1214,9 +1286,10 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
 // The prompt asks for the derivation to be anchored on CS022 P3's 49,203-check measurement and the
 // entity-count ratio, so start there and say where the ratio does and does not apply.
 //   * CS022 P3 measured 49,203 coalesceGarbage pair-checks in the worst live frame at its 84-satellite
-//     peak, over 337 standing canisters. CS023's peak wave (level 21) is 29 satellites, a ratio of
-//     29/84 = 0.345. Canister VOLUME scales roughly linearly with satellite count and pair count
-//     quadratically, so that ratio would project CS022's figure down to ~5,900 checks.
+//     peak, over 337 standing canisters. CS023's peak wave (level 21) is 31 satellites (REPOINTED BY
+//     CS023 P4C: 29 -> 31, since the wider rings carry 18 ring satellites rather than 16), a ratio of
+//     31/84 = 0.369. Canister VOLUME scales roughly linearly with satellite count and pair count
+//     quadratically, so that ratio would project CS022's figure down to ~6,700 checks.
 //   * THAT PROJECTION IS WRONG FOR GARBAGE, and CS023 P1 already measured why: it re-ran the same probe
 //     on the new shell and got 36,816, six times the projection. Standing garbage is governed by how
 //     fast coalescence MERGES, not by how much is emitted, so the entity-count ratio does not carry.
@@ -1225,21 +1298,26 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
 //   * THE RATIO ARGUMENT DOES CARRY FOR game.debris, because that population has no merge dynamics at
 //     all — it is a closed-form function of the spawn count through the 3-way split cascade. So the
 //     debris ceiling is derived from the cascade directly rather than from a scaling:
-//       - level 21 spawns 29 size-3 satellites (16 ring + 13 field);
-//       - the full cascade is 29 larges -> 87 mediums -> 261 smalls, i.e. 377 bodies ever created;
+//       - level 21 spawns 31 size-3 satellites (18 ring + 13 field — P4C: was 16 + 13);
+//       - the full cascade is 31 larges -> 93 mediums -> 279 smalls, i.e. 403 bodies ever created;
 //       - the counter increments BEFORE the dead check (matching coalesceGarbage's own instrumentation),
 //         and the pass runs BEFORE the end-of-frame filter, so the array length that matters is bounded
 //         by all 377 coexisting in one frame — reachable only if every parent dies on the same frame its
 //         children are born, i.e. the deliberately-unreachable blitz;
-//       - C(377, 2) = 70,876 pair-checks. That is a HARD structural bound for one orbit level, because
-//         a wave cannot clear until game.debris is empty, so nothing carries over from the level before.
-//   * CEILING = 250,000, ~3.5x that bound. The margin covers the pair count's QUADRATIC sensitivity to a
+//       - C(403, 2) = 81,003 pair-checks (P4C: was C(377, 2) = 70,876 — the +2 satellites cost ~14% more
+//         pairs, which is the quadratic sensitivity this ceiling's margin exists to absorb). That is a
+//         HARD structural bound for one orbit level, because a wave cannot clear until game.debris is
+//         empty, so nothing carries over from the level before.
+//   * CEILING = 250,000, ~3.1x that bound (~3.5x before P4C). The margin covers the pair count's QUADRATIC sensitivity to a
 //     body-count error (a 40% miss doubles the pairs) and the fact that the bound assumes exactly the
 //     shipped spawn counts.
 //   * A TIGHTER CEILING FOR THE REALISTIC PATH, derived the same way and also before measuring: a
-//     progressive harvest converts tier by tier, so its peak array is the small-tier population, 261,
-//     plus a handful of dead-but-unfiltered bodies. C(263, 2) = 34,453. CEILING = 100,000, ~2.9x — the
-//     same order of margin CS022 P3 used for its own realistic ceiling.
+//     progressive harvest converts tier by tier, so its peak array is the small-tier population, 279,
+//     plus a handful of dead-but-unfiltered bodies. C(281, 2) = 39,340 (P4C: was C(263, 2) = 34,453).
+//     CEILING = 100,000, ~2.5x — the same order of margin CS022 P3 used for its own realistic ceiling.
+//   * NEITHER CEILING IS RAISED FOR P4C. The +2 satellites move both bounds by ~14%, well inside the
+//     margins as derived, and moving a ceiling to accommodate a measurement is the one thing this gate
+//     exists to prevent. If a later density change breaches one, that is a STOP AND REPORT, not a bump.
 //
 // ── CEILINGS 2 AND 3: coalesceGarbage. CARRIED FORWARD FROM CS022 P3, DELIBERATELY NOT TIGHTENED. ────
 // 8,000,000 (worst case) and 500,000 (realistic path). STATUS.md's standing rule is explicit that these
@@ -1369,11 +1447,11 @@ const COALESCE_HARVEST_CEILING = 500000;
   const blitz   = probe(21, 0x9021, "blitz");
 
   // Validity: no probe may silently degenerate into a cheaper code path.
-  const PEAK_SPAWN = 29;   // spec §1.4's published peak, re-derived below rather than trusted
+  const PEAK_SPAWN = 31;   // spec §1.4's published peak as amended by C16 (P4C: 29 -> 31), re-derived below rather than trusted
   {
     const V = seededBuild(0x9500);
     V.startGame();
-    eq(atWave(V, 21), PEAK_SPAWN, "H: (validity) level 21 really is the 29-satellite peak wave");
+    eq(atWave(V, 21), PEAK_SPAWN, "H: (validity) P4C — level 21 really is the 31-satellite peak wave (was 29)");
     eq(V.game.debris.every(d => d.size === 3), true, "H: (validity) ...and every one of them is a size-3 large, so the cascade bound holds");
   }
   for (const p of [harvest, blitz, death]) eq(p.spawned, PEAK_SPAWN, `H: (validity) the ${p.mode} probe started from the ${PEAK_SPAWN}-satellite peak wave`);

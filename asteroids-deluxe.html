@@ -102,7 +102,7 @@
 const VIEW_W = 1280, VIEW_H = 720;      // visible viewport = canvas size
 // CS022 P1 (spec §4.1, FORK-CS022-B/C): THE TORUS PERIOD IS NO LONGER FIXED. A world "size" counts
 // VIEWPORT-SIZED SCREENS OF AREA — size 4 is 2x2 viewports (2560x1440, every build through CS021),
-// size 9 is 3x3 (3840x2160, what four rings at CS023's 138 px spacing need). The size is chosen by
+// size 9 is 3x3 (3840x2160, what four rings at CS023's 200 px spacing need). The size is chosen by
 // the LEVEL'S ARCHETYPE (worldSizeFor), not by a level-table column and not by a ramp, so game.wave
 // stays the ONE difficulty clock. FORK-CS022-B: this is a general seam with two values wired — a
 // finer per-level scheme later is a data change, not a re-plumb.
@@ -118,10 +118,12 @@ const WORLD_SIZE_FIELD = 4;             // field levels: 2560x1440 — deliberat
 const WORLD_SIZE_ORBIT = 9;             // orbit levels: 3840x2160. CS023 P1 (spec §1.3, C2): 16 -> 9.
                                         // CS022's four rings at a 276 px step reached a 1,334 px
                                         // satellite edge and needed size 16's 1,420 px wrap-clean
-                                        // budget; CS023's 138 px step reaches 860 px, which fits
-                                        // size 9's 1,060 px budget with 200 px to spare. This is a
-                                        // VALUE change, not a rename — worldSizeFor() and
-                                        // orbitEffectiveCount() read the symbol, not the number.
+                                        // budget; CS023's 200 px step reaches 1,046 px, which fits
+                                        // size 9's 1,060 px budget with 14 px to spare (P4c widened
+                                        // the step from P1's 138 and ate the other 186 px of that
+                                        // margin — spec C16). This is a VALUE change, not a rename —
+                                        // worldSizeFor() and orbitEffectiveCount() read the symbol,
+                                        // not the number.
 const WORLD_SIZE_MAX = Math.max(WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT); // largest size in the table; the
                                         // starfield is generated once for THIS (§4.3/FLAG-CS022-d)
 let WORLD_W = 2560, WORLD_H = 1440;     // simulation space (the wrap boundary). WAS `const` through
@@ -537,33 +539,49 @@ const STAR_NEAR_BRIGHT_MAX = 1.0;
 // shootable, breakable, harvestable — so shooting a lane open is a legitimate strategy and the whole
 // arrangement erodes into a normal field as it is harvested (FORK-CS021-C2).
 //
-// THE RADII ARE DERIVED FROM SATELLITE SIZE AND FITTED TO THE *ORBIT-LEVEL* WORLD (CS023 P1, spec §1.3 /
-// §4.1). CS022 shipped 460/276 — ring 1 five large-satellite diameters out and every further ring three
-// more — which needed a size-16 world and put four rings across 1,334 px of satellite edge. CS023 keeps
-// the derive-from-satellite-size rule and tightens the SHELL: ring 1 stays a round 400 px off the dock
-// and the step drops to 138 px, which is 1.5 x the 92 px large-satellite diameter (DEBRIS_RADII[3] * 2).
-// The four rings land at 400 / 538 / 676 / 814 and the OUTERMOST SATELLITE EDGE at 814 + 46 = 860 px.
+// THE RADII ARE FITTED TO THE *ORBIT-LEVEL* WORLD (CS023 P1, spec §1.3 / §4.1; RESPACED BY CS023 P4C,
+// spec C16). CS022 shipped 460/276 — ring 1 five large-satellite diameters out and every further ring
+// three more — which needed a size-16 world and put four rings across 1,334 px of satellite edge. CS023
+// tightens the SHELL: ring 1 sits a round 400 px off the dock, and the step is 200 px. The four rings
+// land at 400 / 600 / 800 / 1000 and the OUTERMOST SATELLITE EDGE at 1000 + 46 = 1,046 px.
 //
-// 860 px is why WORLD_SIZE_ORBIT could come back down to 9: an ORBIT level runs at 3840x2160, whose
-// wrap-clean budget is 2160/2 - 20 = 1,060 px. 860 against 1,060 — four rings fit with 200 px spare (a
-// FIFTH would reach 998 px and now also fits; a sixth, 1,136, does not — spec C6). They fit from the
-// FIRST occurrence: THE WORLD SIZE DOES NOT RAMP EVEN THOUGH THE RINGS DO (activeRingsFor() below).
-// Anything re-deriving these must budget against worldDims(WORLD_SIZE_ORBIT), never the live WORLD_H —
-// see orbitEffectiveCount() for the same rule.
+// P4C RETIRED THE "STEP IS 1.5 LARGE-SATELLITE DIAMETERS" RULE, AND THAT IS THE ONE DERIVATION THIS
+// BLOCK NO LONGER MAKES. P1 shipped 138 px on exactly that rule (1.5 x the 92 px diameter,
+// DEBRIS_RADII[3] * 2), which packed all four rings into a 506 px band and read in the hands as one
+// thick belt rather than four orbits. 200 px is ~2.17 diameters — a round number chosen for READABLE
+// SEPARATION and then checked against the budget, not derived from satellite size. The satellite
+// diameter still sets the corridor (2) below; it no longer sets the step.
 //
-// TWO CORRIDOR FACTS, STATED HERE SO NOBODY HAS TO RE-DERIVE THEM — AND SO NOBODY "FIXES" THE SECOND.
+// 1,046 px is what makes WORLD_SIZE_ORBIT 9 work: an ORBIT level runs at 3840x2160, whose wrap-clean
+// budget is 2160/2 - 20 = 1,060 px. 1,046 against 1,060 — FOUR RINGS FIT WITH 14 px OF HEADROOM, and
+// that margin is the whole reason C16 exists. THE MAXIMUM UNIFORM STEP AT ORBIT_INNER_RADIUS 400 WITH
+// FOUR RINGS IS 204 px (400 + 3 x 204 + 46 = 1,058); 205 px does not fit, and orbitEffectiveCount()
+// would silently return THREE rings rather than error. A FIFTH ring reaches 1,246 px and does not fit
+// either — P1's 138 px step briefly made one fit at 998 px (spec C6), and P4c takes that back, so
+// orbitDensity5 is once again a knob no shipped spawn ever reads. They fit from the FIRST occurrence:
+// THE WORLD SIZE DOES NOT RAMP EVEN THOUGH THE RINGS DO (activeRingsFor() below). Anything re-deriving
+// these must budget against worldDims(WORLD_SIZE_ORBIT), never the live WORLD_H — see
+// orbitEffectiveCount() for the same rule, and for the walk-down this margin is 14 px away from.
+//
+// TWO CORRIDOR FACTS, STATED HERE SO NOBODY HAS TO RE-DERIVE THEM.
 //   (1) Ring 1 clears the permanent 88 px dock (radius DOCK_RADIUS x 2 at every level — LEVER_DOCK_SIZE
 //       ships disabled) by 400 - 46 - 88 = 266 px. That is the point of the retune: the shell now sits
-//       right where the player already is, rather than out past a field of dead space.
-//   (2) The INTER-RING RADIAL CORRIDOR is 138 - 92 = 46 px — the gap a ship crossing the shell radially
-//       passes through between two adjacent rings' satellite edges. THAT IS NARROWER THAN THE 65 px
-//       IN-RING FAIRNESS FLOOR (minRequiredGap below), AND IT IS CORRECT, NOT A BUG. minRequiredGap has
-//       only ever governed TANGENTIAL lanes between two adjacent satellites in the SAME ring; it says
-//       nothing about the radial distance between rings and never has. Nobody had to notice at CS022's
-//       276 px step, where the corridor was 184 px and comfortably wider than the floor. Do not "repair"
-//       the mismatch by feeding ORBIT_RADIUS_STEP through the fairness floor — that would be a new rule.
+//       right where the player already is, rather than out past a field of dead space. UNCHANGED BY P4C,
+//       which moved the step and not the inner radius.
+//   (2) The INTER-RING RADIAL CORRIDOR is 200 - 92 = 108 px — the gap a ship crossing the shell radially
+//       passes through between two adjacent rings' satellite edges. P4C REVERSES WHAT THIS NOTE SAID,
+//       and the reversal is worth reading rather than skipping: at P1's 138 px step the corridor was
+//       46 px, NARROWER than the 65 px in-ring fairness floor (minRequiredGap below), and this block
+//       argued at length that the mismatch was correct and must not be "repaired". At 108 px there is no
+//       mismatch left to repair. THE RULE BEHIND THAT ARGUMENT STILL STANDS AND IS THE DURABLE HALF:
+//       minRequiredGap has only ever governed TANGENTIAL lanes between two adjacent satellites in the
+//       SAME ring; it says nothing about the radial distance between rings and never has. So do not feed
+//       ORBIT_RADIUS_STEP through the fairness floor if a future retune narrows the corridor again —
+//       that would be a new rule, not a repair, exactly as it would have been at 46 px.
 const ORBIT_INNER_RADIUS  = 400;  // ring 1 radius, px from the dock — 266 px of clear water over the dock
-const ORBIT_RADIUS_STEP   = 138;  // px per further ring (1.5 x 92); rings 1-4 land at 400 / 538 / 676 / 814
+const ORBIT_RADIUS_STEP   = 200;  // px per further ring; rings 1-4 land at 400 / 600 / 800 / 1000. CS023
+                                  // P4C (spec C16): 138 -> 200. THE BUDGET CEILING IS 204 px AT FOUR
+                                  // RINGS — 205 silently drops the shell to three (orbitEffectiveCount).
 // ORBIT_RING_COUNT IS NOT DECLARED HERE ANY MORE. CS022 P3 moved it down into the LEVEL PROGRESSION
 // TABLE block, beside ORBIT_LEVEL_EVERY, because levelDef()'s new `orbitRings` column reads it and
 // levelDef must stay evaluable ALONE in a bare context — the identical reason ORBIT_LEVEL_EVERY lives
@@ -583,10 +601,11 @@ const ORBIT_RADIUS_STEP_PAD = 40;
 // per-ring crowding within one level.
 //
 // The cut is large and deliberate. CS022 shipped 27 satellites at level 3 rising to a peak of 84; CS023's
-// FULL four-ring shell is 15 satellites at occurrences 1-2 and 16 from occurrence 3 through level 63 — a
-// ~5x reduction, and it is what pays for CS023's two new O(n^2)-shaped collision passes (spec §1.1/§1.2).
-// Per-ring counts at the shipped geometry are 3 / 3 / 4 / 5 at occurrence 1, becoming 3 / 4 / 4 / 5 from
-// occurrence 3 on, with tangential lanes of 746 / 1035 / 970 / 931 px — every ring is now a wide ring.
+// FULL four-ring shell is 18 satellites, FLAT ACROSS THE WHOLE 63-LEVEL GAME — a ~5x reduction, and it is
+// what pays for CS023's two new O(n^2)-shaped collision passes (spec §1.1/§1.2). Per-ring counts at the
+// shipped geometry are 3 / 4 / 5 / 6 at EVERY occurrence, with tangential lanes of 746 / 850 / 913 / 955
+// px — every ring is a wide ring. CS023 P4C (spec C16) raised the shell from 15/16 to a flat 18: wider
+// rings have more circumference at the same density, and the +3 is the price of the 108 px corridor.
 //
 // All four are live debug sliders (CS021 P3) and are the first lever if the level 12-63 plateau reads as
 // repetitive or if the frame budget says so.
@@ -602,15 +621,18 @@ const ORBIT_DENSITY       = [0.12, 0.12, 0.12, 0.12];
 // of the archetype and is clamped at the hard ORBIT_GAP_MULT_FLOOR, the point past which the gap would
 // stop being a fair minimum at all. The floor lands at occurrence 8 (level 24) and holds through level 63.
 //
-// CS023 P1 (spec Correction C5) — THIS CURVE STILL RUNS AND IS NO LONGER OBSERVABLE. RECORDED, NOT
-// RETUNED AND NOT DELETED. The generator picks a count in two steps: maxCount = floor(circumference /
-// spacePerSatellite), then count = round(1 + density * (maxCount - 1)). The occurrence curve acts only on
-// the FIRST step — 2.5 -> 1.8 shrinks spacePerSatellite 157 -> 138.8 px and raises maxCount by ~13%
-// (16/21/27/32 -> 18/24/30/36 at the four radii). At ORBIT_DENSITY 0.12 that 13% is 13% OF THE 0.12 TERM,
-// i.e. roughly half a satellite per ring, and rounding eats almost all of it: across the WHOLE 63-level
-// game the curve buys exactly ONE satellite — ring 2, at occurrence 3 (level 9), 3 -> 4. The full shell is
-// 15 at levels 3-6 and 16 from level 9 through 63. At CS022's 0.85 ring-4 density the same maxCount move
-// was worth four satellites on that ring alone; at 0.12 it is worth zero.
+// CS023 P1 (spec Correction C5), STRENGTHENED BY CS023 P4C (spec C16) — THIS CURVE STILL RUNS AND IS NOW
+// COMPLETELY INERT. RECORDED, NOT RETUNED AND NOT DELETED. The generator picks a count in two steps:
+// maxCount = floor(circumference / spacePerSatellite), then count = round(1 + density * (maxCount - 1)).
+// The occurrence curve acts only on the FIRST step — 2.5 -> 1.8 shrinks spacePerSatellite 157 -> 138.8 px
+// and raises maxCount by ~13% (16/24/32/40 -> 18/27/36/45 at the four radii). At ORBIT_DENSITY 0.12 that
+// 13% is 13% OF THE 0.12 TERM, i.e. well under one satellite per ring, and the rounding eats ALL of it:
+// across the WHOLE 63-level game the curve now buys EXACTLY ZERO satellites. P1's 138 px step left one
+// survivor (ring 2 stepped 3 -> 4 at occurrence 3, so the shell was 15 then 16); at P4c's 200 px step the
+// wider rings' arithmetic absorbs the decay on ALL FOUR rings and the per-ring counts are 3 / 4 / 5 / 6 at
+// occurrence 1 and identical at occurrence 21. THE FULL SHELL IS 18 AT EVERY OCCURRENCE, FULL STOP. At
+// CS022's 0.85 ring-4 density the same maxCount move was worth four satellites on that ring alone; at
+// 0.12 it is worth nothing anywhere.
 //
 // DO NOT retune a lever that is not connected to anything, and DO NOT delete a working mechanism because
 // one density array quieted it. Escalation is now carried by the RAMP (activeRingsFor(): ring count 1 -> 4
@@ -624,13 +646,14 @@ const ORBIT_SAFETY_MARGIN  = 8;    // px in the ADDITIVE half of minRequiredGap
 // knobs whose `def` DERIVES from these constants (shown in degrees/second, via toNative), and the
 // playtest gate is where they get settled — the fork resolution is explicit that Paul tunes them live
 // rather than accepting a specced guess. ORBIT_ANG_VEL is deliberately slow: a full revolution in 60 s,
-// which at CS023's ring-1 radius (400) is ~41.9 px/s of tangential travel and at ring 3's (676) ~70.8 —
-// the px/s figures scale with the radii, so this whole paragraph's numbers moved when the geometry did,
-// the °/s did not.
+// which at CS023's ring-1 radius (400) is ~41.9 px/s of tangential travel and at ring 3's (800) ~83.8 —
+// the px/s figures scale with the radii, so this whole paragraph's numbers moved when the geometry did
+// (twice now: P1's retune and P4c's respacing), the °/s did not.
 const ORBIT_ANG_VEL       = 6 * Math.PI / 180;  // 6 deg/s
-const ORBIT_FAST_MULT     = 3.0;  // the fast rings' multiplier — ~18 deg/s: ~169 px/s at ring 2's radius
-                                  // (538) and ~256 px/s at ring 4's (814), the fastest a satellite ever
-                                  // moves in orbit at the shipped constants.
+const ORBIT_FAST_MULT     = 3.0;  // the fast rings' multiplier — ~18 deg/s: ~188.5 px/s at ring 2's radius
+                                  // (600) and ~314.2 px/s at ring 4's (1000), the fastest a satellite ever
+                                  // moves in orbit at the shipped constants — and therefore the drift's
+                                  // speed cap, maxOrbitSpeed() below (P4c raised it from 255.7).
 // CS023 P1 (spec C3, FORK-CS023-G): A LIST, NOT A NUMBER. Human, 1-BASED ring numbers, ANY LENGTH —
 // including empty (no fast ring at all). It has exactly one consumer, spawnOrbitWave() below, which maps
 // it to the 0-based `fastRingIndices` generateOrbitLayout() tests by MEMBERSHIP. The arbitrary length is
@@ -656,7 +679,7 @@ const ORBIT_SPAWN_TRIES   = 60;
 // the TRIGGER and in nothing else, and the two radii below are used purely as REFERENCE DISTANCES. The
 // rings themselves never move; what moves is the junk that has drifted out to the far side of the world.
 //
-// BOTH RADII ARE DERIVED AND ARE NEVER WRITTEN AS 814 AND 676, so a future geometry retune carries them:
+// BOTH RADII ARE DERIVED AND ARE NEVER WRITTEN AS 1000 AND 800, so a future geometry retune carries them:
 // the trigger IS ring 4's radius and the target IS ring 3's, and they stay those rings whatever the
 // geometry becomes. The ring COUNT is deliberately not read here — these are distances, not a ring
 // lookup, so a debug orbitCount below 4 leaves them exactly where they are: they describe the
@@ -664,14 +687,23 @@ const ORBIT_SPAWN_TRIES   = 60;
 // (P4b): the ring geometry only ever SUPPLIED these two distances, it never SCOPED them — the ORBIT_
 // prefix is what made a universal, every-level mechanic read as archetype-scoped once already (C15), and
 // the rename is the fix. The derivation from the ring constants stays exactly as it was; only the name of
-// what it feeds changed.
-const DEBRIS_DRIFT_TRIGGER_R = ORBIT_INNER_RADIUS + 3 * ORBIT_RADIUS_STEP;  // 814 px — ring 4's radius
-const DEBRIS_DRIFT_TARGET_R  = ORBIT_INNER_RADIUS + 2 * ORBIT_RADIUS_STEP;  // 676 px — ring 3's radius
+// what it feeds changed. CS023 P4C: the ring step moved 138 -> 200, so BOTH RADII MOVED WITH IT — trigger
+// 814 -> 1000, target 676 -> 800 — with no edit here at all. That is the derivation doing its job, and it
+// was Paul's explicit call (derived, not pinned). It has a KNOWN COST, recorded rather than compensated
+// for (spec C16c): the reclaimed dead zone — the share of a world lying beyond the trigger, which is what
+// this mechanic exists to sweep back in — shrank from 75% to 62% of an orbit world and from 46% to 29% of
+// a field world. Decoupling the two radii from the ring geometry is a two-line change if the gate says the
+// field drift has gone quiet; it is not a P4c retune.
+const DEBRIS_DRIFT_TRIGGER_R = ORBIT_INNER_RADIUS + 3 * ORBIT_RADIUS_STEP;  // 1000 px — ring 4's radius
+const DEBRIS_DRIFT_TARGET_R  = ORBIT_INNER_RADIUS + 2 * ORBIT_RADIUS_STEP;  //  800 px — ring 3's radius
 // px/s^2 toward the dock. FLAG-CS023-d: THE ONE PURE GUESS LEFT IN THE MECHANIC — maxOrbitSpeed()'s cap
-// below is DERIVED from the game's own motion constants, this is not. At 30 px/s^2 a piece needs 8.5 s and
-// 1,090 px of fall to reach the 255.7 px/s cap, so the cap binds only for pieces starting beyond ~1,766 px
-// from the dock (real on an orbit torus whose farthest point is 2,203 px away, but not the common case,
-// and never at all on a field level, whose farthest point is 1,469 px — C15).
+// below is DERIVED from the game's own motion constants, this is not. At 30 px/s^2 a piece needs 10.5 s
+// and 1,645 px of fall to reach the 314.2 px/s cap, so the cap binds only for pieces starting beyond
+// ~2,445 px from the dock — AND NEITHER WORLD IS THAT BIG. CS023 P4C (spec C16b): widening the rings
+// raised the cap 255.7 -> 314.2 px/s AND moved the target radius outward, shortening every possible fall,
+// so the cap NO LONGER BINDS ON EITHER ARCHETYPE. The longest armed falls are 1,403 px on an orbit level
+// (farthest point 2,203 px, arriving at ~290 px/s) and 669 px on a field one (farthest point 1,469 px,
+// ~200 px/s). RAISING THIS NUMBER IS WHAT WAKES THE CAP UP — which is exactly why the cap stays.
 // Live debug slider (debrisDriftAccel); 0 disables the drift outright, which is the gate's A/B.
 // FLAG-CS023-e: FLAT — NO FALLOFF AND NO DAMPING, unlike MAGNET_PULL. The Magnet ramps with proximity and
 // applies MAGNET_DAMP because it is a precision tool for hooking one canister; a proximity ramp here would
@@ -3094,12 +3126,18 @@ const DEBUG_VARS = [
   // been moved off its own default — see orbitEffectiveGapMult() below; left untouched, every orbit level
   // still gets its own occurrence-scaled value, not a level-3-forever freeze. orbitCount carries a
   // `clampShown` hook (the one addition to the generic registry idiom this phase makes, applyDebug()
-  // below) so a requested 5 — ungeometry-fittable at size-3, FLAG-CS021-a — collapses to the achievable
-  // 4 EVERYWHERE at once: what's stored, what's persisted, and what the panel shows, never a silent
-  // mismatch between the slider and the level that actually spawns. orbitDensity1-5 are consumed
-  // first-orbitCount (FLAG-CS021-b); orbitDensity5 has no shipped 5th-ring value to derive from (the
-  // geometry never reaches 5 rings at size-3), so it mirrors ring 4's climax density rather than
-  // inventing a new number. orbitAngVel is the one DEGREES/SECOND knob, following the unit:"ms" +
+  // below) so a requested 5 — ungeometry-fittable, FLAG-CS021-a — collapses to the achievable 4
+  // EVERYWHERE at once: what's stored, what's persisted, and what the panel shows, never a silent
+  // mismatch between the slider and the level that actually spawns. CS023 P4C (spec C16): that sentence
+  // is TRUE AGAIN. CS023 P1's 138 px step briefly made a fifth ring fit (998 px inside the 1,060 px
+  // budget, spec C6) and the registry's own [3, 5] range became fully achievable for one changeset; at
+  // P4c's 200 px step a fifth reaches 1,246 px, so clampShown(5) is back to 4 and the knob's max of 5 is
+  // once again a request the geometry refuses. The RANGE is deliberately left at 5 — it is the clamp's
+  // job to refuse, not the range's, and narrowing it would hide the refusal the hook exists to make
+  // visible. orbitDensity1-5 are consumed first-orbitCount (FLAG-CS021-b); orbitDensity5 has no shipped
+  // 5th-ring value to derive from (P4c: no shipped spawn reaches five rings, and none ever has except
+  // under P1's step), so it mirrors ring 4's climax density rather than inventing a new number.
+  // orbitAngVel is the one DEGREES/SECOND knob, following the unit:"ms" +
   // toNative precedent (autoShieldRegenPause et al.) rather than exposing raw radians.
   { header: "ORBIT" },
   { id: "orbitGapMult", label: "Orbit gap multiplier", unit: "",
@@ -5404,9 +5442,10 @@ function generateOrbitLayout({ satelliteDiameter, shipDiameter, centerX, centerY
     // `rings` holds only ACTIVE rings, in ascending index order, so this is the OUTERMOST ACTIVE ring's
     // satellite edge. CS023 P1 (FORK-CS023-A) REVERSES WHAT THIS USED TO SAY: under CS022's
     // outermost-first ramp it was a constant 1,334 px at every occurrence; the ramp now fills from the
-    // INSIDE OUT, so the outer edge GROWS with the occurrence — 446 / 584 / 722 / 860 px at occurrences
-    // 1-4, held at 860 from level 12 on. It is still bounded by the same wrap-clean budget, and the
-    // level-12 figure is the one to budget against.
+    // INSIDE OUT, so the outer edge GROWS with the occurrence — 446 / 646 / 846 / 1046 px at occurrences
+    // 1-4 (P4c's 200 px step; 446 / 584 / 722 / 860 at P1's 138), held at 1046 from level 12 on. It is
+    // still bounded by the same wrap-clean budget, and the level-12 figure is the one to budget against —
+    // it is now 14 px under it (spec C16).
     outerEdge: rings.length ? rings[rings.length - 1].radius + satelliteDiameter / 2 : 0,
   };
 }
@@ -5554,18 +5593,22 @@ function orbitEffectiveCount(requested) {
 // `r.radius` is still the right habit and every test that adopted it stays correct unchanged — but it is
 // no longer load-bearing, and the two CS022 P3 notes claiming position and index DIVERGE are now false.
 //
-// THE RAMP IS ALSO THE ARCHETYPE'S ESCALATION AXIS NOW (spec C5). At the flat 0.12 density curve the
-// occurrence-scaled gap multiplier buys one satellite in the whole game, so ring COUNT 1 -> 4 across
-// levels 3-12 is what carries the difficulty step; levels 12-63 are deliberately flat at 16 ring
-// satellites. See ORBIT_GAP_MULT's block above for the arithmetic.
+// THE RAMP IS ALSO THE ARCHETYPE'S ESCALATION AXIS NOW (spec C5, and MORE SO after P4c's C16). At the
+// flat 0.12 density curve the occurrence-scaled gap multiplier buys NOTHING AT ALL in the whole game —
+// P1's 138 px step left it worth one satellite; P4c's 200 px step absorbed that too — so ring COUNT
+// 1 -> 4 across levels 3-12 is the ONLY thing carrying the difficulty step, and levels 12-63 are
+// deliberately flat at 18 ring satellites. See ORBIT_GAP_MULT's block above for the arithmetic.
 //
 // NO NEW CONSTANT AND NO NEW CLOCK. Occurrence is CS021 P2's own derivation, level / ORBIT_LEVEL_EVERY,
 // the same coarse tick orbitGapMult() above reads — game.wave stays the ONE difficulty clock.
 //
 // IT COMPOSES WITH THE orbitCount DEBUG KNOB RATHER THAN IGNORING IT (FLAG-CS022-h): the count it clamps
 // against is the EFFECTIVE ring count, so a requested 3 gives [0], [0,1], [0,1,2] and completes at
-// occurrence 3 instead of 4 — and, at CS023's geometry, a requested 5 genuinely spawns 5 (spec C6) and
-// completes at occurrence 5. No knob is added for the ramp itself. orbitEffectiveCount() is idempotent
+// occurrence 3 instead of 4. CS023 P4C REVERSES WHAT P1 WROTE HERE: at P1's 138 px step a requested 5
+// genuinely spawned five rings (spec C6) and completed at occurrence 5; at P4c's 200 px step a fifth ring
+// would reach 1,246 px against a 1,060 px budget, so orbitEffectiveCount walks it back to 4 and the ramp
+// completes at occurrence 4 again, whatever the knob asks for (spec C16). No knob is added for the ramp
+// itself. orbitEffectiveCount() is idempotent
 // at this call — applyDebug()'s clampShown has already run on every write to DEBUG.orbitCount — so this
 // can never disagree with the ring count spawnOrbitWave() actually lays down.
 function activeRingsFor(level) {
@@ -6654,12 +6697,25 @@ function shieldBounce(obj) {
 //   free / rail  — shieldBounce's EXACT shape with the free body in the ship's role: reflect its
 //                  approaching component IN THE RAIL BODY'S FRAME, apply the floor, push it out of
 //                  overlap, wrap() it. The rail body is left COMPLETELY untouched.
-//   rail / rail  — a NO-OP. Correction C11: rings are ORBIT_RADIUS_STEP (138 px) apart and a large
-//                  satellite is 92 px across, so two rail-borne bodies clear each other by 46 px and
-//                  cannot touch; same-ring bodies hold a fixed angular spacing at a shared angVel. The
-//                  branch is only reachable under a debug orbitCount / orbitAngVel change. Specced and
+//   rail / rail  — a NO-OP. Correction C11: rings are ORBIT_RADIUS_STEP (200 px) apart and a large
+//                  satellite is 92 px across, so two bodies on DIFFERENT rails clear each other by
+//                  108 px; same-ring bodies hold a fixed angular spacing at a shared angVel. The branch
+//                  is only reachable under a debug orbitCount / orbitAngVel change. Specced and
 //                  asserted, never tuned against — and CS023 keeps it true, because P4's drift moves
 //                  only FREE bodies and never re-radiuses a rail.
+//                    CS023 P4C FOUND A TIGHTER FLOOR THAN THE CORRIDOR, and it is worth knowing about
+//                  because nothing in the spec predicted it. Every measurement here is WRAP-AWARE, and a
+//                  1,000 px ring in a 2,160 px-tall world nearly folds onto itself: an ANTIPODAL PAIR on
+//                  ring 4 (6 satellites, so k = 3 always exists) sitting vertically is 2,000 px apart the
+//                  long way and 2160 - 2000 = 160 px the SHORT way, i.e. 68 px of clear space. That, not
+//                  the 108 px corridor, is the true minimum separation two rail-borne bodies can reach —
+//                  and it was 440 px at P1's 814 px outer ring, so P4c is what brought it down.
+//                    It is still positive, so the branch stays unreachable, AND THE MARGIN IS NOT A
+//                  COINCIDENCE: the clearance is exactly 2 x (wrap-clean budget - outer satellite edge)
+//                  + 40 = 2 x 14 + 40 = 68 px. It is the SAME 14 px that orbitEffectiveCount() guards
+//                  (spec C16a), doubled. Any geometry the clamp accepts keeps this positive — at the
+//                  204 px step ceiling it is 44 px — so "rail/rail cannot touch" survives by
+//                  construction rather than by luck, but it now survives by a lot less than it did.
 //
 // THE THREE PROPERTIES CARRIED OVER FROM shieldBounce VERBATIM, and why each is load-bearing here too:
 //   1. ONLY THE APPROACHING COMPONENT IS REFLECTED. A body already separating is never yanked
@@ -6669,8 +6725,8 @@ function shieldBounce(obj) {
 //      STATIONARY bodies touching, which is exactly the case this exists to fix — see DEBRIS_BOUNCE_MIN
 //      for the case CS023 creates on purpose.
 //   3. EVERY MEASUREMENT IS WRAP-AWARE — angleTo for the normal, dist2 for the distance, wrap() after
-//      the push. On an orbit level the rings straddle the seam routinely (an 814 px outer ring around a
-//      dock anywhere within 814 px of an edge of a 3840x2160 torus is over one), so naive subtraction is
+//      the push. On an orbit level the rings straddle the seam routinely (a 1,000 px outer ring around a
+//      dock anywhere within 1,000 px of an edge of a 3840x2160 torus is over one), so naive subtraction is
 //      not a theoretical risk here. A pair sitting on exactly the same point yields atan2(0,0) === 0,
 //      i.e. a defined direction rather than a NaN — shieldBounce's own documented property.
 //
@@ -6776,16 +6832,27 @@ function debrisBounce(a, b) {
 }
 
 // CS023 P4 (spec §4.7, Correction C14): THE DRIFT'S SPEED CAP — the fastest tangential speed any
-// satellite reaches on a rail, i.e. max over rings of angVel x radius. 255.7 px/s at the shipped
-// constants (ring 4, the outer fast ring). The number is not a tuning guess: it is the game's own
-// existing maximum, which is the whole justification for capping there. Nothing the drift delivers is
-// moving faster than something the player has already had to read on a rail.
+// satellite reaches on a rail, i.e. max over rings of angVel x radius. 314.2 px/s at the shipped
+// constants (ring 4, the outer fast ring; 255.7 px/s before P4c widened the rings). The number is not a
+// tuning guess: it is the game's own existing maximum, which is the whole justification for capping
+// there. Nothing the drift delivers is moving faster than something the player has already had to read
+// on a rail.
+//
+// AFTER CS023 P4C IT NEVER ACTUALLY BINDS, AND IT STAYS ANYWAY (spec C16b). Widening the rings raised
+// this ceiling AND moved DEBRIS_DRIFT_TARGET_R outward, shortening every possible fall: the longest
+// armed fall is 1,403 px on an orbit level (~290 px/s on arrival) and 669 px on a field one (~200 px/s),
+// both under 314.2. DO NOT DELETE IT FOR BEING UNREACHABLE. It is derived rather than guessed, it costs
+// one dot product per drifting body, and it is the guard rail that makes raising DEBUG.debrisDriftAccel
+// at the playtest gate safe — the acceleration is the one pure guess in the mechanic and the gate exists
+// to move it. This is the same trap Correction C5 describes for the gap-multiplier curve: a lever that is
+// quiet at today's numbers is not a lever that is dead. A sandbox in test-cs023-p4.js raises the
+// acceleration until the cap DOES bind, so this stays proven-live code rather than proven-unreachable.
 //
 // IT MUST SCAN EVERY RING, AND "JUST USE THE OUTERMOST ONE" IS A LATENT BUG RATHER THAN A SHORTCUT.
 // angVel is NOT uniform — ORBIT_FAST_RING multiplies some rings by ORBIT_FAST_MULT — so the maximum does
 // not have to fall on the largest radius. At the shipped 1-based list [2, 4] it happens to (ring 4,
-// 255.7 px/s); at a list of [1, 2] it falls on RING 2 at 169.0 px/s while the OUTERMOST ring only reaches
-// 85.2. CS023 P1 made that list arbitrary-length, so this is a live hazard, not a hypothetical one.
+// 314.2 px/s); at a list of [1, 2] it falls on RING 2 at 188.5 px/s while the OUTERMOST ring only reaches
+// 104.7. CS023 P1 made that list arbitrary-length, so this is a live hazard, not a hypothetical one.
 //
 // A HELPER RATHER THAN A CONSTANT, because it depends on three LIVE debug knobs — orbitAngVel,
 // orbitFastMult and orbitCount — so a playtest-gate retune of the orbit motion carries the cap with it
@@ -6836,8 +6903,8 @@ function updateDebrisDrift(dt) {
   // frame. Ring 4 sits at EXACTLY DEBRIS_DRIFT_TRIGGER_R, so a ring-4 satellite is never "closer than"
   // the trigger and the shell can never block itself on its own outermost ring. On a field level no body
   // ever carries orbit state, so nothing here changes: the trigger still counts every live body.
-  //   dist2 throughout, never raw subtraction: an 814 px shell around a dock anywhere within 814 px of an
-  // edge straddles the seam, which on either archetype is the normal case rather than the edge case.
+  //   dist2 throughout, never raw subtraction: a 1,000 px shell around a dock anywhere within 1,000 px of
+  // an edge straddles the seam, which on either archetype is the normal case rather than the edge case.
   let blocked = false;
   for (const d of game.debris) {
     if (d.dead) continue;
@@ -6856,7 +6923,7 @@ function updateDebrisDrift(dt) {
   // ---- FORCE -------------------------------------------------------------------------------------
   // DELIBERATELY OUTSIDE THE `blocked` GATE ABOVE. FLAG-CS023-b: arming is STICKY AND PER-PIECE — a piece
   // armed on the triggering frame keeps its force until it arrives or is interrupted, even though the
-  // global condition goes false the moment the first piece crosses 814 px. That is Paul's "they will
+  // global condition goes false the moment the first piece crosses 1,000 px. That is Paul's "they will
   // continue it until their direction is changed" made literal, and it is what stops the whole population
   // oscillating on and off around the trigger radius. Gating the force here would let the first arrival
   // freeze every other piece in mid-flight.

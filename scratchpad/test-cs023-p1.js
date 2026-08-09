@@ -1,23 +1,24 @@
-// Headless test for CS023 Phase 1 — GEOMETRY, WORLD SIZE, AND THE INVERTED RAMP.
+// Headless test for CS023 Phase 1 — GEOMETRY, WORLD SIZE, AND THE INVERTED RAMP — and its respacing,
+// Phase 4c (spec C16).
 //
 //   node scratchpad/test-cs023-p1.js
 //
-// WHAT LANDED (PLANNED-FEATURES-CS023 §1.3/§1.4/§4.1/§4.2, Corrections C2-C8, FORK-CS023-A/G). Five
-// moving parts, all of them about what an ORBIT LEVEL CONTAINS and none of them touching a field level:
+// WHAT LANDED (PLANNED-FEATURES-CS023 §1.3/§1.4/§4.1/§4.2, Corrections C2-C8 and C16, FORK-CS023-A/G).
+// Five moving parts, all of them about what an ORBIT LEVEL CONTAINS and none of them touching a field
+// level:
 //
 //   1. THE WORLD (§1.3, C2). WORLD_SIZE_ORBIT 16 -> 9, i.e. 5120x2880 -> 3840x2160. A VALUE change, not
 //      a rename. WORLD_SIZE_MAX is derived (Math.max) and follows; STAR_COUNT is area-derived from THAT
 //      and follows (1280 -> 720, C8), while the active-at-field-size count stays ~320 because the field
 //      world is 4/9 of a size-9 world's area exactly as it was 1/4 of a size-16 one.
-//   2. THE SHELL (§1.3, §4.1). ORBIT_INNER_RADIUS 460 -> 400 and ORBIT_RADIUS_STEP 276 -> 138 (1.5x the
-//      92 px large-satellite diameter), putting the four rings at 400 / 538 / 676 / 814 and the outermost
-//      satellite EDGE at 860 px against the size-9 world's 1,060 px wrap-clean budget. Ring 1 clears the
-//      permanent 88 px dock by 266 px; the INTER-RING radial corridor is 46 px, which is NARROWER than
-//      the 65 px in-ring fairness floor and is correct — minRequiredGap has only ever governed tangential
-//      lanes within one ring.
+//   2. THE SHELL (§1.3, §4.1; RESPACED BY P4C, C16). ORBIT_INNER_RADIUS 460 -> 400 and ORBIT_RADIUS_STEP
+//      276 -> 200, putting the four rings at 400 / 600 / 800 / 1000 and the outermost satellite EDGE at
+//      1,046 px against the size-9 world's 1,060 px wrap-clean budget — 14 px of headroom, and a 204 px
+//      ceiling on any future step. Ring 1 clears the permanent 88 px dock by 266 px; the INTER-RING
+//      radial corridor is 108 px.
 //   3. THE DENSITY CURVE GOES FLAT (§1.3). ORBIT_DENSITY -> [0.12, 0.12, 0.12, 0.12]. The full four-ring
-//      shell is 15 satellites at occurrences 1-2 and 16 from occurrence 3 through level 63, against
-//      CS022's 65-71 — the ~5x cut that pays for CS023 P2/P3's two new O(n^2) passes.
+//      shell is 18 satellites at EVERY occurrence, against CS022's 65-71 — the ~5x cut that pays for
+//      CS023 P2/P3's two new O(n^2) passes.
 //   4. ORBIT_FAST_RING BECOMES A LIST (C3, FORK-CS023-G). `3` -> `[2, 4]`, human 1-based ring numbers, ANY
 //      length including empty. generateOrbitLayout's parameter is renamed `fastRingIndices` and its
 //      `i === fastRingIndex` becomes set membership. Arbitrary length is the point of the type change —
@@ -26,6 +27,28 @@
 //      [0,1,2,3] — INNERMOST first, complete at occurrence 4 (level 12) and held. One line of code. Two
 //      consequences: level 3's whole shell is ring 1, 266 px off the dock; and layout.rings' ARRAY
 //      POSITION is its RING INDEX again, reversing CS022 P3's known issue.
+//
+// WHAT PHASE 4C CHANGED, AND WHICH OF THIS FILE'S OWN CLAIMS IT REVERSED (spec C16). P4c moves ONE
+// constant — ORBIT_RADIUS_STEP 138 -> 200 — and everything else here follows by derivation. Three
+// assertions in this file were not merely re-numbered but INVERTED, each with a CORRECTED BY CS023 P4C
+// note beside it rather than a deletion, because a claim that quietly disappears is a behaviour the suite
+// has stopped watching:
+//   * §G — orbitEffectiveCount(5). P1 shipped a FIFTH ring that fitted (998 px inside 1,060) and asserted
+//     that as a CHANGE from CS022's clamp-to-4. At a 200 px step a fifth reaches 1,246 px, so the clamp
+//     walks back to four and the CS022 reference build AGREES with the live one again. orbitDensity5 is
+//     back to being a knob no shipped spawn ever reads.
+//   * §C — C5's occurrence curve. P1 found it bought exactly ONE satellite in the whole game (ring 2 at
+//     occurrence 3). At a 200 px step it buys ZERO: the rounding in `round(1 + 0.12 * (maxCount - 1))`
+//     absorbs the gap-multiplier decay on ALL FOUR rings, so the shell is IDENTICAL at every occurrence
+//     from 1 to 21. "Nearly inert" became "inert", and the test moved from "find the one step" to "prove
+//     there is no step".
+//   * §A — the step's DERIVATION. P1's 138 px was 1.5 large-satellite diameters and this file asserted
+//     that as arithmetic. 200 px is ~2.17 diameters: P4c retired the derive-from-satellite-size rule for
+//     the STEP (it still sets the corridor), so the assertion is inverted to prove the rule is gone.
+//   And one consequence that is a re-numbering rather than a reversal, but is the reason C16 exists: the
+//   four-ring outer edge is 1,046 px against a 1,060 px budget. §G pins that 14 px MARGIN as a named
+//   value and adds a sandbox proving a 205 px step silently drops the shell to THREE rings — the failure
+//   mode the walk-down in orbitEffectiveCount() has no log line for.
 //
 // Follows the standing rule (CLAUDE.md): stub window/document/rAF/navigator/localStorage, eval the REAL
 // <script> block, and drive the ACTUAL startGame/nextWave/update(1/60)/draw path. NOTHING under test is
@@ -37,13 +60,14 @@
 // Sections (spec §6 items 1, 2, 3, 4, 5, 19, 20):
 //  (A) item 20 — node --check + source pins for every constant this phase moves and every one it does not
 //  (B) item 1  — the §1.4 table at EVERY orbit level 3..63, via a REAL nextWave(), grouped by orbitRadius
-//  (C) item 1  — the counts through the GENERATOR, with C5's single-satellite step asserted as the only
-//                density-driven change across the whole curve
+//  (C) item 1  — the counts through the GENERATOR, with C5's curve asserted INERT: the shell is
+//                identical at every occurrence from 1 to 21 (P4c inverted P1's single-satellite step)
 //  (D) item 4  — the fast-ring LIST: keyed by ring index at every occurrence, plus lengths 0/1/3/4
 //  (E) item 5  — RAMP DIRECTION as a BEHAVIOURAL claim against a pinned-SHA CS022 reference module,
 //                plus rings[k].index === k at every occurrence
 //  (F) item 2  — world size: every orbit level 3840x2160, every field level 2560x1440, dmax 1020/660
-//  (G) item 3  — the budget and the clamp: outer edge 860 vs 1060, orbitEffectiveCount(5) === 5 (C6)
+//  (G) item 3  — the budget and the clamp: outer edge 1046 vs 1060, the 14 px margin as a NAMED value,
+//                orbitEffectiveCount(5) === 4 (C6 REVERSED by C16), and the step-205 three-ring sandbox
 //  (H) C8      — STAR_COUNT follows WORLD_SIZE_MAX by derivation; active-at-field-size stays ~320
 //  (I) TRAPs 1-4, including field levels BYTE-IDENTICAL to the pre-P1 build under one seed
 //  (J) item 19 — determinism
@@ -250,7 +274,12 @@ const shippedRadii = X =>
   eq(X.WORLD_SIZE_ORBIT, 9, "A: WORLD_SIZE_ORBIT is 9 (spec C2 — a VALUE change from 16, never a rename)");
   assert(/^const WORLD_SIZE_ORBIT = 9;/m.test(codeOnly), "A: ...declared as the literal 9 in the source");
   eq(X.ORBIT_INNER_RADIUS, 400, "A: ORBIT_INNER_RADIUS is 400 (was 460)");
-  eq(X.ORBIT_RADIUS_STEP, 138, "A: ORBIT_RADIUS_STEP is 138 (was 276)");
+  // CORRECTED BY CS023 P4C (spec C16): 138 -> 200. P1 shipped 138 and packed all four rings into a
+  // 506 px band; P4c respaces to 200 so they read as four orbits. The 138 is left named here as the
+  // value this pin used to carry, so the diff is legible rather than silent.
+  eq(X.ORBIT_RADIUS_STEP, 200, "A: P4C — ORBIT_RADIUS_STEP is 200 (276 -> 138 at P1 -> 200 here)");
+  assert(/^const ORBIT_RADIUS_STEP   = 200;/m.test(codeOnly),
+    "A: ...declared as the literal 200 in the source");
   eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]", "A: ORBIT_DENSITY is flat 0.12 on all four rings");
   eq(JSON.stringify(X.ORBIT_FAST_RING), "[2,4]", "A: ORBIT_FAST_RING is the LIST [2, 4] (was the scalar 3)");
   assert(Array.isArray(X.ORBIT_FAST_RING), "A: ...and it really is an Array");
@@ -278,26 +307,51 @@ const shippedRadii = X =>
   eq(JSON.stringify(X.worldDims(X.WORLD_SIZE_ORBIT)), "[3840,2160]", "A: worldDims(orbit) === [3840, 2160]");
   eq(JSON.stringify(X.worldDims(X.WORLD_SIZE_FIELD)), "[2560,1440]", "A: worldDims(field) === [2560, 1440]");
 
-  // --- ORBIT_RADIUS_STEP is a derivation from satellite size, and the corridor facts ----------------
-  eq(X.ORBIT_RADIUS_STEP, 1.5 * X.DEBRIS_RADII[3] * 2, "A: 138 IS 1.5 large-satellite diameters, not a free number");
+  // --- THE STEP'S DERIVATION, AND THE CORRIDOR FACTS -------------------------------------------------
+  // CORRECTED BY CS023 P4C (spec C16). P1 asserted `ORBIT_RADIUS_STEP === 1.5 * satelliteDiameter` as
+  // arithmetic — 138 really was 1.5 x 92 — and that assertion is now FALSE. It is INVERTED rather than
+  // deleted: P4c retires the derive-the-STEP-from-satellite-size rule outright (200 px is ~2.17
+  // diameters, a round number chosen for readable separation and then checked against the budget), and a
+  // suite that simply dropped the claim would go quiet on a rule that was deliberately abandoned.
   const satR = X.DEBRIS_RADII[3];
+  assert(X.ORBIT_RADIUS_STEP !== 1.5 * satR * 2,
+    "A: P4C — the step is NO LONGER 1.5 large-satellite diameters (that rule shipped at P1's 138 and is retired)");
+  eq(X.ORBIT_RADIUS_STEP, 200, "A: ...it is a round 200 px");
+  close(X.ORBIT_RADIUS_STEP / (satR * 2), 2.174, "A: ...which is ~2.17 diameters, not a satellite-size derivation", 0.001);
+  // The satellite diameter still sets the CORRIDOR. That half of the derivation survives.
   const dock = X.DOCK_RADIUS * X.leverScale(X.LEVER_DOCK_SIZE, 1);
   eq(dock, 88, "A: (setup) the dock is a permanent 88 px at every level");
-  eq(X.ORBIT_INNER_RADIUS - satR - dock, 266, "A: ring 1 clears the dock by 266 px (spec §4.1)");
-  eq(X.ORBIT_RADIUS_STEP - satR * 2, 46, "A: the inter-ring radial corridor is 46 px");
+  eq(X.ORBIT_INNER_RADIUS - satR - dock, 266, "A: ring 1 clears the dock by 266 px (spec §4.1) — UNMOVED by P4c");
+  eq(X.ORBIT_RADIUS_STEP - satR * 2, 108, "A: P4C — the inter-ring radial corridor is 108 px (was 46 at P1's step)");
   const minRequiredGap = Math.max(X.SHIP_RADIUS * 2 + X.ORBIT_SAFETY_MARGIN, X.SHIP_RADIUS * 2 * X.ORBIT_GAP_MULT);
   eq(minRequiredGap, 65, "A: (setup) the in-ring fairness floor is 65 px at the base multiplier");
-  assert(X.ORBIT_RADIUS_STEP - satR * 2 < minRequiredGap,
-    "A: ...and the 46 px corridor is NARROWER than it — deliberate, not a bug (spec §4.1)");
+  // ...AND THE SECOND REVERSAL IN THE SAME PARAGRAPH. P1 asserted the corridor was NARROWER than the
+  // fairness floor and that the mismatch was correct. At 108 px it is WIDER and there is no mismatch
+  // left. The RULE the old assertion defended is the durable half and is re-asserted below.
+  assert(X.ORBIT_RADIUS_STEP - satR * 2 > minRequiredGap,
+    "A: P4C — the 108 px corridor is now WIDER than the 65 px in-ring floor (it was narrower at P1's 46 px)");
 
   // --- the constants-block comments this phase is required to write --------------------------------
   const constBlock = scriptSrc.slice(scriptSrc.indexOf("// ---------- CS021 P1: ORBIT LEVELS"),
                                      scriptSrc.indexOf("const ORBIT_SPAWN_TRIES"));
-  assert(/860/.test(constBlock) && /1,060/.test(constBlock),
-    "A: the fitted-radii paragraph names the 860 px edge against the 1,060 px budget");
+  assert(/1,046/.test(constBlock) && /1,060/.test(constBlock),
+    "A: P4C — the fitted-radii paragraph names the 1,046 px edge against the 1,060 px budget");
+  assert(/14 px/.test(constBlock),
+    "A: ...and states the 14 px MARGIN explicitly (spec C16a — the walk-down is silent, so the margin must not be)");
+  assert(/204 px/.test(constBlock),
+    "A: ...and the 204 px CEILING on any future uniform step at four rings");
   assert(/266/.test(constBlock), "A: ...and ring 1's 266 px clearance over the dock");
-  assert(/46 px/.test(constBlock) && /fairness floor/.test(constBlock),
-    "A: ...and the 46 px corridor, said to be narrower than the fairness floor ON PURPOSE");
+  assert(/108 px/.test(constBlock) && /fairness floor/.test(constBlock),
+    "A: ...and the 108 px corridor, against the fairness floor it is now WIDER than");
+  // The corridor note is a REVERSAL of what P1 wrote there, and must say so rather than quietly restate.
+  assert(/REVERSES WHAT THIS NOTE SAID/.test(constBlock),
+    "A: ...flagged as a reversal of P1's narrower-than-the-floor argument, not a silent rewrite");
+  assert(/never a repair|not a repair/.test(constBlock),
+    "A: ...while KEEPING the durable rule — minRequiredGap governs tangential lanes only, so feeding the " +
+    "step through it would still be a new rule if a future retune narrows the corridor again");
+  // The retired 1.5-diameters derivation is named as retired, not simply absent.
+  assert(/RETIRED THE "STEP IS 1\.5 LARGE-SATELLITE DIAMETERS" RULE/.test(constBlock),
+    "A: ...and the block records that P4c retired the derive-the-step-from-satellite-size rule");
   // The rhythm sentence is DELETED, not amended — there is no rhythm at a flat curve. Both historical
   // wordings must be gone, and no new one may have appeared in their place.
   assert(!/tight -> breather -> widest -> wide/.test(constBlock) &&
@@ -308,8 +362,15 @@ const shippedRadii = X =>
   const gapBlock = scriptSrc.slice(scriptSrc.indexOf("// THE FAIRNESS FLOOR"),
                                    scriptSrc.indexOf("const ORBIT_GAP_MULT_FLOOR"));
   assert(/C5/.test(gapBlock), "A: the ORBIT_GAP_MULT block cites Correction C5");
-  assert(/ONE satellite/.test(gapBlock) || /one satellite/.test(gapBlock),
-    "A: ...and states that the whole curve buys one satellite in the game");
+  // CORRECTED BY CS023 P4C (spec C16): P1's block said the curve buys ONE satellite in the whole game and
+  // this asserted that wording. At a 200 px step it buys ZERO, so the claim is inverted rather than
+  // loosened — "nearly inert" and "inert" are different findings and the comment has to pick one.
+  assert(/EXACTLY ZERO satellites/.test(gapBlock),
+    "A: P4C — ...and states that the whole curve now buys EXACTLY ZERO satellites (was ONE at P1's step)");
+  assert(/COMPLETELY INERT/.test(gapBlock),
+    "A: ...calling the curve INERT rather than merely quiet");
+  assert(/18 AT EVERY OCCURRENCE/.test(gapBlock),
+    "A: ...and pinning the shell at 18 satellites at every occurrence");
   assert(/DO NOT retune/.test(gapBlock) && /DO NOT delete/.test(gapBlock),
     "A: ...and says not to retune a silent lever nor delete a working one");
   assert(/activeRingsFor/.test(gapBlock), "A: ...and names the ramp as what now carries escalation");
@@ -336,8 +397,8 @@ const shippedRadii = X =>
   // who finds only silence cannot tell whether the constant edge was retired or merely forgotten.
   assert(/REVERSES WHAT THIS USED TO SAY/.test(genSrcBlock),
     "A: ...and it explicitly flags itself as a reversal of the retired claim");
-  assert(/446 \/ 584 \/ 722 \/ 860/.test(genSrcBlock),
-    "A: ...naming the outer edge's new per-occurrence progression rather than a constant");
+  assert(/446 \/ 646 \/ 846 \/ 1046/.test(genSrcBlock),
+    "A: P4C — naming the outer edge's per-occurrence progression rather than a constant (446/584/722/860 at P1's step)");
 
   // --- the one-line code change, and the fast-ring type change --------------------------------------
   const arf = codeOnly.slice(codeOnly.indexOf("function activeRingsFor(level)"));
@@ -385,20 +446,23 @@ const shippedRadii = X =>
 // array position. Spec §1.4's published totals are pinned as LITERALS here on purpose — that table is
 // the changeset's headline claim, and a wiring check alone would happily agree with a wrong-but-
 // self-consistent build.
+// REPOINTED BY CS023 P4C (spec C16, amended §1.4): the ring halves rise 3/6/11/16 -> 3/7/12/18 because
+// the wider rings carry 3/4/5/6 satellites instead of 3/3/4/5. The FIELD halves are untouched — they come
+// from levelDef(n-1).junkCount and have nothing to do with ring geometry.
 const WANT_14 = {   // level: [ring, field, total]
   3:  [ 3,  5,  8],
-  6:  [ 6,  3,  9],
-  9:  [11, 13, 24],
-  12: [16,  9, 25],
-  15: [16,  5, 21],
-  18: [16,  3, 19],
-  21: [16, 13, 29],
+  6:  [ 7,  3, 10],
+  9:  [12, 13, 25],
+  12: [18,  9, 27],
+  15: [18,  5, 23],
+  18: [18,  3, 21],
+  21: [18, 13, 31],
 };
 (function sectionB() {
   console.log("(B) spec §6 item 1 — the §1.4 ramp table at EVERY orbit level 3..63, via a real nextWave()");
   const X = seededBuild(0xB001);
   const RAD = shippedRadii(X);
-  eq(RAD.join(","), "400,538,676,814", "B: the four ring radii are 400 / 538 / 676 / 814");
+  eq(RAD.join(","), "400,600,800,1000", "B: P4C — the four ring radii are 400 / 600 / 800 / 1000 (was 400/538/676/814)");
   let orbitLevels = 0, peak = 0;
   const seen = [];
   withRandom(seededRandom(0x1403), () => {
@@ -445,26 +509,33 @@ const WANT_14 = {   // level: [ring, field, total]
     }
   });
   eq(orbitLevels, 21, "B: 21 orbit levels across 3..63");
-  eq(JSON.stringify(seen.slice(0, 4).map(s => s.ring)), "[3,6,11,16]",
-    "B: the ring totals at occurrences 1-4 are 3 / 6 / 11 / 16");
+  eq(JSON.stringify(seen.slice(0, 4).map(s => s.ring)), "[3,7,12,18]",
+    "B: P4C — the ring totals at occurrences 1-4 are 3 / 7 / 12 / 18 (were 3 / 6 / 11 / 16 at P1's step)");
   // From level 12 the ring half is FROZEN — the ramp is complete and the occurrence curve buys nothing
-  // more (spec C5). Levels 12-63 are deliberately flat.
-  assert(seen.filter(s => s.n >= 12).every(s => s.ring === 16),
-    "B: from level 12 the ring population is frozen at 16 — the 12-63 plateau is deliberate");
-  eq(JSON.stringify([...new Set(seen.filter(s => s.n >= 12).map(s => s.total))].sort((a, b) => a - b)), "[19,21,25,29]",
-    "B: ...and the level total breathes 19 / 21 / 25 / 29 with the junk cycle alone");
-  eq(peak, 29, "B: the peak level total is 29 (84 at CS022's geometry — spec §1.3's ~5x cut)");
-  eq(JSON.stringify(seen.filter(s => s.total === 29).map(s => s.n)), "[21,30,42,51,63]",
+  // more (spec C5; nothing AT ALL after P4c's C16). Levels 12-63 are deliberately flat.
+  assert(seen.filter(s => s.n >= 12).every(s => s.ring === 18),
+    "B: from level 12 the ring population is frozen at 18 — the 12-63 plateau is deliberate");
+  eq(JSON.stringify([...new Set(seen.filter(s => s.n >= 12).map(s => s.total))].sort((a, b) => a - b)), "[21,23,27,31]",
+    "B: ...and the level total breathes 21 / 23 / 27 / 31 with the junk cycle alone");
+  eq(peak, 31, "B: the peak level total is 31 (84 at CS022's geometry — spec §1.3's ~5x cut survives P4c's +3)");
+  eq(JSON.stringify(seen.filter(s => s.total === 31).map(s => s.n)), "[21,30,42,51,63]",
     "B: ...reached at levels 21, 30, 42, 51 and 63");
   console.log("    " + seen.filter(s => s.n <= 24).map(s => `L${s.n}:${s.ring}+${s.field}=${s.total}`).join("  "));
 })();
 
 // ================= (C) spec §6 item 1 — THE COUNTS THROUGH THE GENERATOR, AND C5 =====================
-// The per-ring counts, computed through the REAL generator across the whole occurrence curve, with
-// Correction C5's finding asserted as arithmetic: the occurrence curve moves exactly ONE ring's count by
-// exactly ONE satellite across the entire 63-level game, and it is ring 2 at occurrence 3.
+// The per-ring counts, computed through the REAL generator across the whole occurrence curve.
+//
+// CORRECTED BY CS023 P4C (spec C16). P1 asserted Correction C5's finding as arithmetic: the occurrence
+// curve moves exactly ONE ring's count by exactly ONE satellite across the entire 63-level game, ring 2
+// at occurrence 3. THAT IS NOW FALSE, and it is inverted rather than relaxed. At a 200 px step the
+// rounding in `round(1 + 0.12 * (maxCount - 1))` absorbs the gap-multiplier decay on ALL FOUR rings, so
+// the shell is IDENTICAL at every occurrence from 1 to 21 and the curve buys NOTHING. The mechanism is
+// still asserted to RUN (maxCount really does widen ~13%) — that is the whole point of keeping the
+// section: a lever that is silent at today's densities is not a lever that is broken, and deleting the
+// evidence either way is how a build loses track of which of its levers are connected.
 (function sectionC() {
-  console.log("(C) spec §6 item 1 — per-ring counts through the generator; C5's single-satellite step");
+  console.log("(C) spec §6 item 1 — per-ring counts through the generator; C5's curve, now INERT (P4c)");
   const X = seededBuild(0xC001);
 
   // The FULL four-ring shell at every occurrence, so the ramp cannot hide a density-driven move.
@@ -478,37 +549,54 @@ const WANT_14 = {   // level: [ring, field, total]
     eq(L.inactive.length, 0, `C: occurrence ${occ}: ...and none is inactive`);
     perOcc.push(L.rings.map(r => r.count));
   }
-  eq(JSON.stringify(perOcc[0]), "[3,3,4,5]", "C: occurrence 1's full shell is 3 / 3 / 4 / 5");
-  eq(JSON.stringify(perOcc[20]), "[3,4,4,5]", "C: occurrence 21's is 3 / 4 / 4 / 5");
-  eq(perOcc[0].reduce((a, b) => a + b), 15, "C: 15 satellites in the full shell at occurrence 1");
-  eq(perOcc[20].reduce((a, b) => a + b), 16, "C: 16 at occurrence 21");
+  eq(JSON.stringify(perOcc[0]), "[3,4,5,6]", "C: P4C — occurrence 1's full shell is 3 / 4 / 5 / 6 (was 3 / 3 / 4 / 5)");
+  eq(JSON.stringify(perOcc[20]), "[3,4,5,6]", "C: P4C — occurrence 21's is THE SAME 3 / 4 / 5 / 6 (was 3 / 4 / 4 / 5)");
+  eq(perOcc[0].reduce((a, b) => a + b), 18, "C: 18 satellites in the full shell at occurrence 1");
+  eq(perOcc[20].reduce((a, b) => a + b), 18, "C: ...and 18 at occurrence 21 — flat, not 15 then 16");
 
-  // C5, STATED AS ARITHMETIC. Walk the whole curve and collect every place a ring's count changes.
+  // C5, STATED AS ARITHMETIC — AND INVERTED BY P4C. Walk the whole curve and collect every place a ring's
+  // count changes. P1's version asserted `steps.length === 1` (ring 2, occurrence 3, +1); the claim now is
+  // that the list is EMPTY, which is a strictly stronger statement about the same walk.
   const steps = [];
   for (let i = 1; i < perOcc.length; i++) {
     for (let r = 0; r < 4; r++) {
       if (perOcc[i][r] !== perOcc[i - 1][r]) steps.push({ occ: i + 1, ring: r + 1, from: perOcc[i - 1][r], to: perOcc[i][r] });
     }
   }
-  eq(steps.length, 1, "C: spec C5 — the occurrence curve changes exactly ONE ring's count in the whole game");
-  eq(steps[0].ring, 2, "C: ...and it is RING 2");
-  eq(steps[0].occ, 3, "C: ...at occurrence 3 (level 9)");
-  eq(steps[0].to - steps[0].from, 1, "C: ...by exactly one satellite");
+  eq(steps.length, 0,
+    `C: P4C — the occurrence curve changes NO ring's count anywhere in the game (spec C16; saw ${JSON.stringify(steps)})`);
+  // Said the other way round, so a future regression fails on the shape as well as on the count: EVERY
+  // occurrence's full shell is byte-identical to occurrence 1's.
+  const shell1 = JSON.stringify(perOcc[0]);
+  for (let occ = 1; occ <= 21; occ++) {
+    eq(JSON.stringify(perOcc[occ - 1]), shell1,
+      `C: P4C — occurrence ${occ}'s full shell is identical to occurrence 1's`);
+  }
+  eq(new Set(perOcc.map(p => p.reduce((a, b) => a + b))).size, 1,
+    "C: ...so the whole 63-level game has exactly ONE full-shell total, 18");
   // The mechanism itself is untouched and STILL RUNS: maxCount really does widen ~13% across the curve.
+  // This is what makes "inert" a finding about the DENSITIES rather than about a broken curve, and it is
+  // why the curve is recorded rather than retuned or deleted (spec C5's own instruction).
   const mc1 = fullAt(3).rings.map(r => r.maxCount), mc24 = fullAt(24).rings.map(r => r.maxCount);
-  eq(mc1.join("/"), "16/21/27/32", "C: maxCounts at the base multiplier are 16/21/27/32");
-  eq(mc24.join("/"), "18/24/30/36", "C: ...widening to 18/24/30/36 at the 1.8 floor — the curve is not dead, just quiet");
+  eq(mc1.join("/"), "16/24/32/40", "C: P4C — maxCounts at the base multiplier are 16/24/32/40 (16/21/27/32 at P1's step)");
+  eq(mc24.join("/"), "18/27/36/45", "C: ...widening to 18/27/36/45 at the 1.8 floor — the curve is not dead, just inaudible");
   assert(mc24.every((v, i) => v > mc1[i]), "C: ...every ring's maxCount genuinely widened");
-  close(mc24.reduce((a, b) => a + b) / mc1.reduce((a, b) => a + b), 1.13, "C: ...by ~13% overall", 0.01);
+  close(mc24.reduce((a, b) => a + b) / mc1.reduce((a, b) => a + b), 1.125, "C: ...by ~13% overall", 0.01);
+  // ...and the rounding is what eats it: at every ring, both ends of the curve round to the same count.
+  for (let r = 0; r < 4; r++) {
+    const lo = Math.round(1 + X.ORBIT_DENSITY[r] * (mc1[r] - 1));
+    const hi = Math.round(1 + X.ORBIT_DENSITY[r] * (mc24[r] - 1));
+    eq(hi, lo, `C: ring ${r + 1}: round(1 + 0.12 x (maxCount - 1)) is the same at both ends of the curve (${lo})`);
+  }
 
   // The lanes the flat curve produces, and the fact that ALL of them are wide now.
   const L1 = fullAt(3);
   const gaps = L1.rings.map(r => r.actualGapPx);
   close(gaps[0], X.TAU * 400 / 3 - 92, "C: ring 1's lane === circumference/count - satelliteDiameter, exactly", 1e-9);
-  close(gaps[0], 745.8, "C: ...which is ~746 px", 0.1);
-  close(gaps[1], 1034.8, "C: ring 2's is ~1035 px", 0.1);
-  close(gaps[2], 969.9, "C: ring 3's is ~970 px", 0.1);
-  close(gaps[3], 930.9, "C: ring 4's is ~931 px", 0.1);
+  close(gaps[0], 745.8, "C: ...which is ~746 px — UNMOVED by P4c, ring 1 did not change", 0.1);
+  close(gaps[1], 850.4, "C: P4C — ring 2's is ~850 px (was ~1035 at P1's radius/count)", 0.1);
+  close(gaps[2], 913.3, "C: P4C — ring 3's is ~913 px (was ~970)", 0.1);
+  close(gaps[3], 955.2, "C: P4C — ring 4's is ~955 px (was ~931)", 0.1);
   assert(gaps.every(g => g > 700), "C: every lane is over 700 px wide");
   assert(gaps[0] === Math.min(...gaps), "C: ring 1 is the tightest of them");
   eq(new Set(L1.rings.map(r => r.density)).size, 1, "C: all four densities are ONE number — the curve is flat");
@@ -517,8 +605,8 @@ const WANT_14 = {   // level: [ring, field, total]
   // outward without touching the ones already there.
   const ramped = [3, 6, 9, 12].map(lv => withRandom(seededRandom(0xC200 + lv), () =>
     X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(lv), X.activeRingsFor(lv)))));
-  eq(JSON.stringify(ramped.map(L => L.rings.map(r => r.count))), "[[3],[3,3],[3,4,4],[3,4,4,5]]",
-    "C: the ramped per-ring counts across occurrences 1-4");
+  eq(JSON.stringify(ramped.map(L => L.rings.map(r => r.count))), "[[3],[3,4],[3,4,5],[3,4,5,6]]",
+    "C: P4C — the ramped per-ring counts across occurrences 1-4 (was [[3],[3,3],[3,4,4],[3,4,4,5]])");
   assert(ramped.every(L => L.rings[0].count === 3), "C: ring 1 carries 3 satellites at every occurrence");
   assert(ramped.every(L => L.rings.every(r => r.radius === X.ORBIT_INNER_RADIUS + r.index * X.ORBIT_RADIUS_STEP)),
     "C: ...and every active ring sits at its ORIGINAL radius — the ramp selects, it never re-spaces");
@@ -584,10 +672,12 @@ const WANT_14 = {   // level: [ring, field, total]
   // Tangential speeds at the full shell, spec §1.3's own table.
   const LFull = withRandom(seededRandom(0xD0FF), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.ORBIT_GAP_MULT, null)));
   const tang = LFull.rings.map(r => r.angVel * r.radius);
-  close(tang[0], 41.9, "D: ring 1's tangential speed is ~41.9 px/s", 0.1);
-  close(tang[1], 169.0, "D: ring 2's (fast) is ~169.0 px/s", 0.1);
-  close(tang[2], 70.8, "D: ring 3's is ~70.8 px/s", 0.1);
-  close(tang[3], 255.7, "D: ring 4's (fast) is ~255.7 px/s — the fastest a satellite ever moves in orbit", 0.1);
+  // REPOINTED BY CS023 P4C: tangential speed is angVel x radius, so widening the rings raised three of the
+  // four (ring 1's radius did not move). The last of them IS the drift's speed cap — see test-cs023-p4.js.
+  close(tang[0], 41.9, "D: ring 1's tangential speed is ~41.9 px/s — UNMOVED by P4c", 0.1);
+  close(tang[1], 188.5, "D: P4C — ring 2's (fast) is ~188.5 px/s (was ~169.0)", 0.1);
+  close(tang[2], 83.8, "D: P4C — ring 3's is ~83.8 px/s (was ~70.8)", 0.1);
+  close(tang[3], 314.2, "D: P4C — ring 4's (fast) is ~314.2 px/s (was ~255.7) — the fastest a satellite ever moves in orbit", 0.1);
   assert(Math.max(...tang) === tang[3], "D: ...and the maximum falls on ring 4 at THIS list");
 
   // ---- LISTS OF ANY LENGTH, in a sandbox. Arbitrary-length support is the point of the type change,
@@ -614,8 +704,8 @@ const WANT_14 = {   // level: [ring, field, total]
   // C14's own case, as a live control: at [1, 2] the FASTEST satellite is on ring 2, not the outermost.
   const alt = sandbox([0, 1]);
   const altTang = alt.rings.map(r => r.angVel * r.radius);
-  close(altTang[1], 169.0, "D: spec C14 — at the 1-based list [1, 2] ring 2 reaches 169.0 px/s", 0.1);
-  close(altTang[3], 85.2, "D: ...while the OUTERMOST ring only reaches 85.2 px/s", 0.1);
+  close(altTang[1], 188.5, "D: P4C — spec C14: at the 1-based list [1, 2] ring 2 reaches 188.5 px/s (was 169.0)", 0.1);
+  close(altTang[3], 104.7, "D: ...while the OUTERMOST ring only reaches 104.7 px/s (was 85.2)", 0.1);
   assert(Math.max(...altTang) === altTang[1],
     "D: ...so the maximum falls on ring 2 — 'just use the outer ring' is a latent bug (C14)");
 })();
@@ -683,7 +773,8 @@ const WANT_14 = {   // level: [ring, field, total]
   // The outer edge follows from that: constant on the reference, growing here.
   const edges = [3, 6, 9, 12].map(n => withRandom(seededRandom(0xE200 + n), () =>
     X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(n), X.activeRingsFor(n)))).outerEdge);
-  eq(JSON.stringify(edges), "[446,584,722,860]", "E: the outer edge GROWS 446 / 584 / 722 / 860 with the occurrence");
+  eq(JSON.stringify(edges), "[446,646,846,1046]",
+    "E: P4C — the outer edge GROWS 446 / 646 / 846 / 1046 with the occurrence (446/584/722/860 at P1's step)");
   const preEdges = [3, 6, 9, 12].map(n => withRandom(seededRandom(0xE300 + n), () =>
     P.generateOrbitLayout(preArgs(P, 1280, 720, P.orbitGapMult(n), P.activeRingsFor(n)))).outerEdge);
   eq(JSON.stringify(preEdges), "[1334,1334,1334,1334]", "E: (control) on the reference it was a constant 1334");
@@ -745,51 +836,141 @@ const WANT_14 = {   // level: [ring, field, total]
   const budget = OH / 2 - 20;
   eq(budget, 1060, "F: the orbit world's wrap-clean budget is 1060 px");
   const outerEdge = X.ORBIT_INNER_RADIUS + (X.ORBIT_RING_COUNT - 1) * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
-  eq(outerEdge, 860, "F: the four-ring outer satellite edge is 860 px");
+  eq(outerEdge, 1046, "F: P4C — the four-ring outer satellite edge is 1,046 px (was 860 at P1's step)");
   assert(outerEdge <= budget, `F: ...which clears the budget with ${budget - outerEdge} px to spare`);
+  eq(budget - outerEdge, 14, "F: ...and that margin is exactly 14 px (spec C16 — §G pins it as a named value)");
   assert(outerEdge > FH / 2 - 20,
     "F: (control) and it still does NOT fit the FIELD world's 700 px budget — CS022 P1 stays load-bearing");
 })();
 
-// ================= (G) spec §6 item 3 — THE BUDGET AND THE CLAMP (C6) =====================
+// ================= (G) spec §6 item 3 — THE BUDGET AND THE CLAMP (C6, REVERSED BY C16) ===============
+// CORRECTED BY CS023 P4C. This whole section is the load-bearing reversal of the phase.
+//
+// P1 shipped a 138 px step, which put a FIFTH ring's outer edge at 998 px inside the 1,060 px budget, so
+// orbitEffectiveCount(5) returned 5 — and P1 asserted that here AS A CHANGE from the CS022 reference,
+// which clamped it to 4. P4c's 200 px step puts a fifth ring at 1,246 px and the clamp walks back to
+// four, so the live build AGREES with the CS022 reference again and P1's disagreement control has to be
+// inverted with it. Every one of those assertions is kept in mirror-image form rather than deleted: a
+// suite that simply stops mentioning a five-ring shell has stopped watching whether one can appear.
+//
+// The 14 px margin (spec C16a) gets its own guard here, because orbitEffectiveCount() walks the count
+// DOWN in silence — no throw, no log line. Any later bump to ORBIT_INNER_RADIUS, ORBIT_RADIUS_STEP or
+// DEBRIS_RADII[3] would return THREE rings and the shell would just quietly lose a layer. So: the margin
+// is asserted as a named value, the 204 px ceiling is asserted as the largest step that still fits, and a
+// sandbox build at 205 proves the three-ring collapse is real rather than theoretical.
 (function sectionG() {
-  console.log("(G) spec §6 item 3 — orbitEffectiveCount at the new geometry (spec C6)");
+  console.log("(G) spec §6 item 3 — the budget, the 14 px margin, and orbitEffectiveCount (C6 reversed by C16)");
   const X = seededBuild(0x6001);
   const P = seededBuildPre(0x6001);
   const budget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
   const edgeAt = c => X.ORBIT_INNER_RADIUS + (c - 1) * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3];
 
-  eq(edgeAt(4), 860, "G: a 4-ring outer edge is 860 px");
-  eq(edgeAt(5), 998, "G: a 5-ring outer edge is 998 px");
-  eq(edgeAt(6), 1136, "G: a 6-ring outer edge would be 1136 px");
-  assert(edgeAt(5) <= budget && edgeAt(6) > budget, "G: ...so five fit and six do not");
+  eq(budget, 1060, "G: (setup) the orbit world's wrap-clean budget is 1,060 px");
+  eq(edgeAt(4), 1046, "G: P4C — a 4-ring outer edge is 1,046 px (was 860 at P1's step)");
+  eq(edgeAt(5), 1246, "G: P4C — a 5-ring outer edge is 1,246 px (was 998, and it FITTED then — spec C6)");
+  eq(edgeAt(6), 1446, "G: P4C — a 6-ring outer edge would be 1,446 px (was 1,136)");
+  assert(edgeAt(4) <= budget && edgeAt(5) > budget,
+    "G: P4C — so FOUR fit and five do not; P1's boundary sat one ring further out");
 
-  eq(X.orbitEffectiveCount(4), 4, "G: orbitEffectiveCount(4) === 4");
-  eq(X.orbitEffectiveCount(5), 5, "G: spec C6 — orbitEffectiveCount(5) === 5, accepted outright");
-  eq(X.orbitEffectiveCount(6), 5, "G: orbitEffectiveCount(6) walks down to 5");
-  eq(X.orbitEffectiveCount(50), 5, "G: a wild request lands on the same 5");
-  // ASSERTED AS A CHANGE against the pinned reference, not as a fresh literal (spec §6 item 3).
+  // ---- THE 14 px MARGIN, AS A NAMED VALUE (spec C16a) ----------------------------------------------
+  // Not left implicit in "edgeAt(4) <= budget": the whole point of C16(a) is that the number is small and
+  // the failure is silent, so the number itself is what has to fail a test when it moves.
+  const MARGIN = budget - edgeAt(4);
+  eq(MARGIN, 14, "G: C16a — the four-ring shell clears the budget by EXACTLY 14 px");
+  assert(MARGIN > 0 && MARGIN < X.DEBRIS_RADII[3],
+    "G: ...less than one satellite RADIUS of headroom — this geometry has no room left in it");
+  // The 204 px ceiling, computed rather than restated: the largest integer uniform step that still fits
+  // four rings at ORBIT_INNER_RADIUS 400. Stated in the constants block too (§A pins that).
+  const fitsAtStep = s => X.ORBIT_INNER_RADIUS + 3 * s + X.DEBRIS_RADII[3] <= budget;
+  let ceiling = X.ORBIT_RADIUS_STEP;
+  while (fitsAtStep(ceiling + 1)) ceiling++;
+  eq(ceiling, 204, "G: C16a — 204 px is the largest uniform step that still fits four rings");
+  assert(fitsAtStep(204) && !fitsAtStep(205), "G: ...and 205 px is the first that does not");
+  assert(X.ORBIT_RADIUS_STEP <= ceiling,
+    `G: ...so the shipped ${X.ORBIT_RADIUS_STEP} px step is ${ceiling - X.ORBIT_RADIUS_STEP} px under the ceiling`);
+
+  // ---- THE CLAMP ITSELF — P1'S FIVE-RING ASSERTION, INVERTED ---------------------------------------
+  eq(X.orbitEffectiveCount(4), 4,
+    "G: C16a — orbitEffectiveCount(4) === 4, and THIS is the pin the 14 px margin protects");
+  eq(X.orbitEffectiveCount(5), 4,
+    "G: P4C — orbitEffectiveCount(5) === 4, REVERSING P1's `=== 5` (spec C6 undone by C16)");
+  eq(X.orbitEffectiveCount(6), 4, "G: P4C — orbitEffectiveCount(6) walks down to 4 (was 5)");
+  eq(X.orbitEffectiveCount(50), 4, "G: P4C — a wild request lands on the same 4 (was 5)");
+  // P1 asserted the live build DISAGREED with the pinned CS022 reference here. It agrees again — and the
+  // control is kept in that mirror-image form, because "they agree" is only interesting if something is
+  // still checking that the reference genuinely clamps rather than having been mis-built.
   eq(P.orbitEffectiveCount(5), 4, "G: (control) the CS022 reference walked a requested 5 back down to 4");
-  assert(X.orbitEffectiveCount(5) !== P.orbitEffectiveCount(5),
-    "G: ...so the two builds genuinely disagree — this is a change, not a coincidence");
+  eq(X.orbitEffectiveCount(5), P.orbitEffectiveCount(5),
+    "G: P4C — ...and the live build AGREES with it again, reversing P1's disagreement control");
+  assert(P.ORBIT_INNER_RADIUS !== X.ORBIT_INNER_RADIUS && P.ORBIT_RADIUS_STEP !== X.ORBIT_RADIUS_STEP,
+    "G: ...for a genuinely different reason, though — the two builds' geometries are still nothing alike");
   // The shipped count stays a fixed point, which activeRingsFor relies on.
   eq(X.orbitEffectiveCount(X.ORBIT_RING_COUNT), X.ORBIT_RING_COUNT,
     "G: the shipped ring count is still a FIXED POINT of the clamp");
 
-  // The registry's own orbitCount range now brackets the clamp on the other side: nothing a player can
-  // dial through the panel clamps any more. Stated positively so it is a recorded fact, not a surprise.
+  // The registry's own orbitCount range: P1 recorded that nothing a player could dial clamped any more.
+  // P4c puts the ceiling back inside the range, so the hook is load-bearing again. The RANGE is
+  // deliberately NOT narrowed to 4 — refusing is the clamp's job, and a range that cannot express the
+  // refusal hides it (TRAP 3: no compensating retunes).
   const e = X.DEBUG_ENTRIES.find(v => v.id === "orbitCount");
-  eq(e.max, 5, "G: the orbitCount knob's registry max is 5");
-  eq(e.clampShown(e.max), 5, "G: ...and clampShown leaves it alone now — the whole [3,5] range is achievable");
-  eq(e.clampShown(6), 5, "G: ...while a value past the range still clamps, so the hook is not dead");
+  eq(e.max, 5, "G: the orbitCount knob's registry max is still 5 — the range is NOT narrowed by this phase");
+  eq(e.clampShown(e.max), 4,
+    "G: P4C — ...and clampShown now collapses that 5 to 4, reversing P1's 'the whole [3,5] range is achievable'");
+  eq(e.clampShown(6), 4, "G: ...and a value past the range clamps to the same 4");
+  eq(e.clampShown(3), 3, "G: ...while 3 is genuinely achievable and passes through untouched");
 
-  // A five-ring request spawns five rings for real, and the ramp needs one more occurrence to finish.
+  // A five-ring request can no longer spawn five rings, and the ramp finishes at occurrence 4 again.
   X.DEBUG.orbitCount = 5;
-  eq(JSON.stringify(X.activeRingsFor(3)), "[0]", "G: at orbitCount 5, occurrence 1 is still [0]");
+  eq(JSON.stringify(X.activeRingsFor(3)), "[0]", "G: at a requested orbitCount 5, occurrence 1 is still [0]");
   eq(JSON.stringify(X.activeRingsFor(12)), "[0,1,2,3]", "G: ...occurrence 4 is four rings");
-  eq(JSON.stringify(X.activeRingsFor(15)), "[0,1,2,3,4]", "G: ...and occurrence 5 completes the fifth");
+  eq(JSON.stringify(X.activeRingsFor(15)), "[0,1,2,3]",
+    "G: P4C — ...and occurrence 5 adds NOTHING, reversing P1's fifth ring (activeRingsFor clamps to the effective count)");
   X.DEBUG.orbitCount = X.ORBIT_RING_COUNT;
   eq(JSON.stringify(X.activeRingsFor(15)), "[0,1,2,3]", "G: (control) back at 4, the ramp holds at four rings");
+  // orbitDensity5 is therefore back to being a knob NO SHIPPED SPAWN EVER READS — the state P1 briefly
+  // took it out of. Said here rather than only in a comment, because the registry entry still exists and
+  // a reader has no other way to find out it is inert.
+  {
+    const d5 = X.DEBUG_ENTRIES.find(v => v.id === "orbitDensity5");
+    assert(!!d5, "G: (setup) the orbitDensity5 knob still exists in the registry");
+    const L = withRandom(seededRandom(0x6099), () =>
+      X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.ORBIT_GAP_MULT, null)));
+    eq(L.rings.length, 4,
+      "G: P4C — the un-ramped shipped generator lays FOUR rings, so the fifth density is never consumed");
+    eq(X.orbitEffectiveCount(5), 4,
+      "G: ...and no orbitCount a player can dial makes it five — orbitDensity5 is a dead knob again");
+  }
+
+  // ---- THE SILENT WALK-DOWN, MADE LOUD: a 205 px step drops the shell to THREE rings (spec C16a) ----
+  // This is the failure mode the margin guard exists to catch, driven for real on a sandbox build rather
+  // than argued from arithmetic. Nothing throws, nothing logs — the shell just loses a layer.
+  {
+    const SRC205 = scriptSrc.replace("const ORBIT_RADIUS_STEP   = 200;", "const ORBIT_RADIUS_STEP   = 205;");
+    assert(SRC205 !== scriptSrc, "G: (sandbox) the ORBIT_RADIUS_STEP declaration was found and replaced");
+    const S = withRandom(seededRandom(0x6100), () => buildFrom(SRC205));
+    eq(S.ORBIT_RADIUS_STEP, 205, "G: (sandbox) the sandbox build really runs at a 205 px step");
+    eq(S.ORBIT_INNER_RADIUS, 400, "G: (sandbox) ...with the inner radius untouched");
+    eq(S.ORBIT_INNER_RADIUS + 3 * 205 + S.DEBRIS_RADII[3], 1061,
+      "G: (sandbox) a four-ring shell at 205 px reaches 1,061 px — ONE px over the budget");
+    eq(S.orbitEffectiveCount(4), 3,
+      "G: C16a — ...and orbitEffectiveCount(4) SILENTLY RETURNS 3. No throw, no log: the shell just loses a ring");
+    eq(S.orbitEffectiveCount(S.ORBIT_RING_COUNT), 3,
+      "G: ...so the shipped ring count is no longer a fixed point of the clamp on that build");
+    // ...and it is observable end to end, through the real ramp, not only through the clamp helper.
+    eq(JSON.stringify(S.activeRingsFor(12)), "[0,1,2]",
+      "G: ...the ramp completes at THREE rings at occurrence 4, and never lays a fourth at any level");
+    eq(JSON.stringify(S.activeRingsFor(63)), "[0,1,2]", "G: ...still three at level 63");
+    const L205 = withRandom(seededRandom(0x6101), () => S.generateOrbitLayout(shippedArgs(S, 1280, 720, S.ORBIT_GAP_MULT,
+      S.activeRingsFor(12))));
+    eq(L205.rings.length, 3, "G: ...and a real generator call at occurrence 4 lays three rings, not four");
+    // The 204 px control: one px less and the fourth ring survives. Without this the assertion above
+    // could pass on a build that had lost the fourth ring for some entirely different reason.
+    const SRC204 = scriptSrc.replace("const ORBIT_RADIUS_STEP   = 200;", "const ORBIT_RADIUS_STEP   = 204;");
+    const S4 = withRandom(seededRandom(0x6102), () => buildFrom(SRC204));
+    eq(S4.orbitEffectiveCount(4), 4,
+      "G: (control) at 204 px the fourth ring survives — the collapse really is the budget, not the sandbox");
+    eq(JSON.stringify(S4.activeRingsFor(12)), "[0,1,2,3]", "G: ...and its ramp still completes at four rings");
+  }
 })();
 
 // ================= (H) spec C8 — STAR_COUNT FOLLOWS BY DERIVATION =====================

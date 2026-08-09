@@ -1,30 +1,36 @@
-// Headless test for CS023 Phase 4 — THE INWARD DRIFT — and its correction, Phase 4b (spec C15).
+// Headless test for CS023 Phase 4 — THE INWARD DRIFT — and its corrections, Phase 4b (spec C15) and
+// Phase 4c (spec C16).
 //
 //   node scratchpad/test-cs023-p4.js
 //
-// WHAT LANDED (PLANNED-FEATURES-CS023 §1.5/§4.7/§4.8, Correction C14, FORK-CS023-B/C/H):
+// WHAT LANDED (PLANNED-FEATURES-CS023 §1.5/§4.7/§4.8, Corrections C14 and C16, FORK-CS023-B/C/H):
 //
 //   1. Two DERIVED radii and one guessed acceleration. DEBRIS_DRIFT_TRIGGER_R = ORBIT_INNER_RADIUS +
-//      3 * ORBIT_RADIUS_STEP (814 px, ring 4's radius) and DEBRIS_DRIFT_TARGET_R = ORBIT_INNER_RADIUS +
-//      2 * ORBIT_RADIUS_STEP (676 px, ring 3's) — never written as literals, so a geometry retune carries
-//      them. DEBRIS_DRIFT_ACCEL = 30 px/s^2 is the one guess left (FLAG-CS023-d).
+//      3 * ORBIT_RADIUS_STEP (1,000 px, ring 4's radius) and DEBRIS_DRIFT_TARGET_R = ORBIT_INNER_RADIUS +
+//      2 * ORBIT_RADIUS_STEP (800 px, ring 3's) — never written as literals, so a geometry retune carries
+//      them. IT CARRIED THEM AT P4C, WITH NO EDIT AT THE DECLARATION SITE: the ring step moved 138 -> 200
+//      and the two radii moved 814 -> 1000 and 676 -> 800 by derivation alone, which was Paul's explicit
+//      call (derived, not pinned) and is what §B's sandbox exists to keep true.
+//      DEBRIS_DRIFT_ACCEL = 30 px/s^2 is the one guess left (FLAG-CS023-d).
 //   2. maxOrbitSpeed() — the cap, DERIVED, and it SCANS EVERY RING (C14). angVel is not uniform, so the
-//      outermost ring is not always the fastest: at the shipped [2, 4] the max falls on ring 4 (255.7 px/s)
-//      but at [1, 2] it falls on ring 2 (169.0) while ring 4 only reaches 85.2. Reads three LIVE debug
-//      knobs, so a gate retune carries the cap. Called ONCE PER FRAME, not once per body. UNCHANGED by
-//      P4b — it is genuinely a statement about orbital speeds, not archetype-scoped, and stays the name.
+//      outermost ring is not always the fastest: at the shipped [2, 4] the max falls on ring 4 (314.2
+//      px/s) but at [1, 2] it falls on ring 2 (188.5) while ring 4 only reaches 104.7. Reads three LIVE
+//      debug knobs, so a gate retune carries the cap. Called ONCE PER FRAME, not once per body. UNCHANGED
+//      by P4b — it is genuinely a statement about orbital speeds, not archetype-scoped, and stays the
+//      name.
 //   3. updateDebrisDrift(dt) — one pass in update(), after the entity updates and before the collision
 //      passes. CORRECTED BY P4B (C15, FORK-CS023-H re-resolved): RUNS ON EVERY LEVEL, field and orbit
 //      alike — P4 shipped an `if (!game.orbitLayout || !game.dock) return;` archetype gate that read the
-//      mechanic as orbit-specific; that premise was wrong (the ring radii only ever NAMED 814/676 px, they
-//      never SCOPED the mechanic to the archetype that happens to use those rings), so P4b deletes the
+//      mechanic as orbit-specific; that premise was wrong (the ring radii only ever NAMED the two
+//      distances, they never SCOPED the mechanic to the archetype that uses those rings), so P4b deletes the
 //      gate, leaving only a defensive `if (!game.dock) return;`. ARMING is gated on "no live debris,
 //      orbiting or free (FLAG-CS023-a), inside the trigger radius"; the FORCE is NOT (FLAG-CS023-b:
 //      arming is sticky and per-piece). Only free bodies beyond the target radius are ever armed. On a
 //      field level no body ever carries orbit state, so nothing else about the pass changes.
 //   4. The force is an ACCELERATION added to vx/vy, flat, no falloff, no damping (FLAG-CS023-e), with the
-//      INWARD RADIAL COMPONENT ONLY capped at maxOrbitSpeed(). Tangential motion is untouched. The cap
-//      never binds on a field level (longest fall 792 px, arrival speed ~218 px/s vs a 255.7 px/s cap).
+//      INWARD RADIAL COMPONENT ONLY capped at maxOrbitSpeed(). Tangential motion is untouched. AFTER P4C
+//      THE CAP NEVER BINDS ON EITHER ARCHETYPE (C16b) — see the note below, which is this phase's main
+//      reversal of what §D used to assert.
 //   5. Release is per-piece at the target radius and KEEPS the accumulated velocity.
 //   6. Disarm on contact: one line at the top of debrisBounce (satellite contact + UFO contact). Player
 //      shot and ship ram need no code — both destroy the body, and destroyDebris's children are fresh
@@ -33,10 +39,30 @@
 //      still 46, position still row 45, still inside the ORBIT block) and debrisBounceRestitution,
 //      APPENDED after the ORBIT block.
 //
-// SECTIONS MARKED "P4B" throughout this file are the correction: P4's own field-level assertions proved
-// the pass INERT there and are now INVERTED, with a CORRECTED BY CS023 P4B note left beside each one — the
-// standing repoint idiom this suite already uses when a later phase changes what an earlier claim means
-// (see test-cs023-p3.js's own "REPOINTED BY CS023 P4" notes for precedent).
+// SECTIONS MARKED "P4B" throughout this file are the first correction: P4's own field-level assertions
+// proved the pass INERT there and are now INVERTED, with a CORRECTED BY CS023 P4B note left beside each
+// one — the standing repoint idiom this suite already uses when a later phase changes what an earlier
+// claim means (see test-cs023-p3.js's own "REPOINTED BY CS023 P4" notes for precedent).
+//
+// SECTIONS MARKED "P4C" ARE THE SECOND CORRECTION, AND THE ONE WORTH READING BEFORE TOUCHING §D.
+// P4c moved ORBIT_RADIUS_STEP 138 -> 200, which did two things to the cap AT ONCE and in opposite
+// directions: it RAISED the ceiling (ring 4's tangential speed, 255.7 -> 314.2 px/s) and it SHORTENED
+// every possible fall (the target radius moved 676 -> 800, so the longest armed fall dropped from 1,527
+// to 1,403 px on an orbit level and from 793 to 669 px on a field one). The result is that **the cap no
+// longer binds anywhere in the shipped game**: the longest falls arrive at ~290 and ~200 px/s.
+//
+// P4's §D was built entirely around observing the cap bind — an exact ramp, then a PLATEAU at
+// maxOrbitSpeed(), then a release at exactly the cap. Every one of those assertions is now unreachable at
+// the shipped acceleration, and simply deleting them would leave the suite with nothing checking that the
+// clamp arithmetic is correct at all. So §D is restructured rather than trimmed:
+//   * the shipped-values fall now proves the OPPOSITE — an unbroken exact ramp all the way in, the cap
+//     never touched, the release speed matching the constant-acceleration closed form — measured over the
+//     LONGEST FALL EITHER WORLD ALLOWS, computed live from worldDims rather than staged at a guess;
+//   * a SANDBOX raises DEBUG.debrisDriftAccel until the cap DOES bind, and the old plateau assertions run
+//     there unchanged. That is what keeps the clamp proven-LIVE code rather than proven-unreachable, and
+//     it is exactly the trap Correction C5 describes for the gap-multiplier curve: a lever that is quiet
+//     at today's numbers is not a lever that is dead. Raising this acceleration is the first thing the
+//     playtest gate is asked to try, so the guard rail it needs has to be known-working, not assumed.
 //
 // ONE DERIVATION THIS PHASE MADE AND IS FLAGGING RATHER THAN BURYING (see STATUS.md): adding the
 // debrisBounceRestitution ROW is only half a knob — a slider that changes nothing cannot be "retuned
@@ -57,7 +83,9 @@
 //                and both radii proven derived (a source pin PLUS a behavioural ORBIT_RADIUS_STEP move)
 //  (C) item 13 — the trigger and the arming pass; P4B — the SAME proof re-run on a field level: trigger,
 //                lateness, target, arrival, all four disarm paths, and the cap never binding
-//  (D) item 14 — drift motion, the exact per-frame ramp, the plateau at the cap, and the tangential proof
+//  (D) item 14 — drift motion, the exact per-frame ramp, the tangential proof, and — P4C — the cap NOT
+//                binding over the longest fall either archetype allows, with a raised-acceleration
+//                sandbox where it does bind, proving the clamp is live code (C16b)
 //  (E) item 16 — release and disarm: all four interrupts driven for real
 //  (F) item 17 — edge cases: a new dock, a real resizeWorld, destruction, split children, the seam
 //  (G) item 19 — determinism
@@ -239,7 +267,7 @@ function quiesce(X) {
 
   const X = seededBuild(0xA001);
 
-  // --- the two radii are DERIVED IN SOURCE, never written as 814 / 676 ------------------------------
+  // --- the two radii are DERIVED IN SOURCE, never written as 1000 / 800 -----------------------------
   assert(/const DEBRIS_DRIFT_TRIGGER_R = ORBIT_INNER_RADIUS \+ 3 \* ORBIT_RADIUS_STEP;/.test(codeOnly),
     "A: DEBRIS_DRIFT_TRIGGER_R is derived — ORBIT_INNER_RADIUS + 3 * ORBIT_RADIUS_STEP");
   assert(/const DEBRIS_DRIFT_TARGET_R  = ORBIT_INNER_RADIUS \+ 2 \* ORBIT_RADIUS_STEP;/.test(codeOnly),
@@ -250,14 +278,20 @@ function quiesce(X) {
     const decl = codeOnly.split("\n").filter(l => /^const DEBRIS_DRIFT_(TRIGGER|TARGET)_R/.test(l))
       .map(l => l.replace(/\/\/.*$/, "")).join("\n");
     eq(decl.split("\n").length, 2, "A: exactly two DEBRIS_DRIFT_*_R declarations");
-    assert(!/\b(814|676)\b/.test(decl), "A: ...and neither 814 nor 676 is inlined on either of them");
+    // REPOINTED BY CS023 P4C: the numbers that must not be inlined are the CURRENT ones. P1's 814/676
+    // are kept in the guard as well — a build that reverted them to literals would be just as broken.
+    assert(!/\b(1000|800|814|676)\b/.test(decl),
+      "A: ...and none of 1000 / 800 (nor the retired 814 / 676) is inlined on either of them");
   }
   eq(X.DEBRIS_DRIFT_TRIGGER_R, X.ORBIT_INNER_RADIUS + 3 * X.ORBIT_RADIUS_STEP,
     "A: the live trigger radius IS ring 4's radius");
   eq(X.DEBRIS_DRIFT_TARGET_R, X.ORBIT_INNER_RADIUS + 2 * X.ORBIT_RADIUS_STEP,
     "A: the live target radius IS ring 3's radius");
-  eq(X.DEBRIS_DRIFT_TRIGGER_R, 814, "A: ...which at the shipped geometry is 814 px");
-  eq(X.DEBRIS_DRIFT_TARGET_R, 676, "A: ...and 676 px");
+  // CORRECTED BY CS023 P4C (spec C16): the ring step moved 138 -> 200 and BOTH RADII FOLLOWED, with no
+  // edit at the declaration site. That is the derivation doing exactly what it was written to do — see
+  // §B's sandbox, whose own step substitution had to be inverted for the same reason.
+  eq(X.DEBRIS_DRIFT_TRIGGER_R, 1000, "A: P4C — which at the shipped geometry is 1,000 px (was 814 at P1's step)");
+  eq(X.DEBRIS_DRIFT_TARGET_R, 800, "A: P4C — ...and 800 px (was 676)");
   eq(X.DEBRIS_DRIFT_ACCEL, 30, "A: DEBRIS_DRIFT_ACCEL is the specced 30 px/s^2 (FLAG-CS023-d, the one guess)");
   assert(X.DEBRIS_DRIFT_TARGET_R < X.DEBRIS_DRIFT_TRIGGER_R,
     "A: the target is strictly inside the trigger — otherwise arming could never release");
@@ -350,7 +384,8 @@ function quiesce(X) {
       "A: no naive subtraction of raw dock coordinates anywhere in the pass");
     // No inlined magic numbers: both radii and the acceleration are read by name.
     const stripped = drift.replace(/DEBRIS_DRIFT_(TRIGGER_R|TARGET_R)/g, "").replace(/debrisDriftAccel/g, "");
-    assert(!/\b(814|676|30)\b/.test(stripped), "A: no inlined 814 / 676 / 30 — the constants are read by name");
+    assert(!/\b(1000|800|814|676|30)\b/.test(stripped),
+      "A: P4C — no inlined 1000 / 800 (nor the retired 814 / 676) / 30 — the constants are read by name");
     // The acceleration is the LIVE KNOB, so 0 is a real A/B (spec §4.8).
     assert(/DEBUG\.debrisDriftAccel \* dt/.test(drift), "A: the force reads DEBUG.debrisDriftAccel, not the const");
     // FLAG-CS023-b: the FORCE is outside the `blocked` gate — the failure mode that would be silent.
@@ -482,17 +517,38 @@ function quiesce(X) {
     for (const sig of ["function destroyDebris(a, awardScore = true) {", "function coalesceGarbage(dt) {",
                        "class Garbage {", "function shieldBounce(obj) {", "function shieldDeflect(obj) {",
                        "function destroySaucer(s, awardScore = true) {", "function spawnOrbitWave(",
-                       "function generateOrbitLayout({ satelliteDiameter", "function activeRingsFor(level) {",
+                       "function activeRingsFor(level) {",
                        "function orbitEffectiveCount(requested) {", "function orbitRadiusStepFor(count) {"]) {
       const b0 = bodyOf(hSrc, sig), b1 = bodyOf(scriptSrc, sig);
       assert(b0.length > 0 && b1.length > 0, `A: TRAP — ${sig.split("(")[0].trim()} found in both builds`);
       eq(b1, b0, `A: TRAP — ${sig.split("(")[0].trim()} is BYTE-UNCHANGED this phase`);
     }
+    // CORRECTED BY CS023 P4C. generateOrbitLayout was in the byte-strict list above and no longer can be:
+    // its `outerEdge` comment states the per-occurrence progression of the outer satellite edge, which the
+    // ring respacing moves (446/584/722/860 -> 446/646/846/1046). Documenting that is a DUTY of this phase,
+    // not a violation of the trap — so the claim narrows from "byte-unchanged" to "EXECUTABLY unchanged"
+    // rather than being dropped, and the comment's own new content is asserted in test-cs023-p1.js §A.
+    // Every other entry above stays byte-strict; a comment-insensitive sweep across all of them would be a
+    // real loosening, which is exactly what this note exists to stop happening quietly.
+    {
+      const exec = t => t.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
+      const sig = "function generateOrbitLayout({ satelliteDiameter";
+      const b0 = bodyOf(hSrc, sig), b1 = bodyOf(scriptSrc, sig);
+      assert(b0.length > 0 && b1.length > 0, "A: TRAP — generateOrbitLayout found in both builds");
+      eq(exec(b1), exec(b0),
+        "A: P4C — generateOrbitLayout's EXECUTABLE body is unchanged this phase (its outerEdge comment is not)");
+      assert(b1 !== b0,
+        "A: P4C — ...and it really did change in comments only, so this narrowing is not silently covering a no-op");
+    }
   }
   // Every geometry constant this changeset does NOT move, pinned.
-  eq(X.ORBIT_INNER_RADIUS, 400, "A: ORBIT_INNER_RADIUS unmoved at 400");
-  eq(X.ORBIT_RADIUS_STEP, 138, "A: ORBIT_RADIUS_STEP unmoved at 138");
+  eq(X.ORBIT_INNER_RADIUS, 400, "A: ORBIT_INNER_RADIUS unmoved at 400 (TRAP 2 — P4c moves the STEP, not this)");
+  // CORRECTED BY CS023 P4C: this pin said "unmoved at 138" and P4c is precisely the phase that moves it.
+  eq(X.ORBIT_RADIUS_STEP, 200, "A: P4C — ORBIT_RADIUS_STEP is 200 (this file used to pin it unmoved at 138)");
   eq(X.ORBIT_RING_COUNT, 4, "A: ORBIT_RING_COUNT unmoved at 4");
+  // ...and the four-ring shell still fits, which is the constraint that bounded how far P4c could go.
+  eq(X.ORBIT_INNER_RADIUS + 3 * X.ORBIT_RADIUS_STEP + X.DEBRIS_RADII[3], 1046,
+    "A: P4C — the outer satellite edge is 1,046 px, 14 px inside the 1,060 px budget (spec C16; §G of test-cs023-p1 owns the guard)");
   eq(JSON.stringify(X.ORBIT_FAST_RING), "[2,4]", "A: ORBIT_FAST_RING unmoved at [2, 4]");
   close(X.ORBIT_ANG_VEL, 6 * Math.PI / 180, "A: ORBIT_ANG_VEL unmoved at 6 deg/s", 1e-12);
   eq(X.ORBIT_FAST_MULT, 3.0, "A: ORBIT_FAST_MULT unmoved at 3.0");
@@ -521,21 +577,26 @@ function quiesce(X) {
     return { cap: best, ring: arg };
   }
 
-  // --- the shipped list [2, 4]: ring 4 at 255.7 px/s -------------------------------------------------
+  // --- the shipped list [2, 4]: ring 4 at 314.2 px/s (P4C — was 255.7 at P1's 138 px step) -----------
   {
     const e = expectedCap(X);
     close(X.maxOrbitSpeed(), e.cap, "B: maxOrbitSpeed() === max over rings of angVel x radius", 1e-9);
-    close(X.maxOrbitSpeed(), 255.7, "B: ...which at the shipped constants is 255.7 px/s", 0.05);
+    close(X.maxOrbitSpeed(), 314.2, "B: P4C — which at the shipped constants is 314.2 px/s (was 255.7)", 0.05);
     eq(e.ring, 3, "B: ...and the argmax falls on ring 4 (0-based index 3) at THIS list");
-    // Every ring's speed, so the claim is legible and a geometry slip fails HERE.
+    // Every ring's speed, so the claim is legible and a geometry slip fails HERE. Ring 1 is the one that
+    // did not move at P4c — its radius is ORBIT_INNER_RADIUS, which TRAP 2 holds fixed.
     const speeds = [0, 1, 2, 3].map(i =>
       X.DEBUG.orbitAngVel * (X.ORBIT_FAST_RING.indexOf(i + 1) !== -1 ? X.DEBUG.orbitFastMult : 1)
       * (X.ORBIT_INNER_RADIUS + i * X.ORBIT_RADIUS_STEP));
-    close(speeds[0], 41.9, "B: ring 1 reaches 41.9 px/s", 0.05);
-    close(speeds[1], 169.0, "B: ring 2 (fast) reaches 169.0 px/s", 0.05);
-    close(speeds[2], 70.8, "B: ring 3 reaches 70.8 px/s", 0.05);
-    close(speeds[3], 255.7, "B: ring 4 (fast) reaches 255.7 px/s", 0.05);
+    close(speeds[0], 41.9, "B: ring 1 reaches 41.9 px/s — unmoved by P4c", 0.05);
+    close(speeds[1], 188.5, "B: P4C — ring 2 (fast) reaches 188.5 px/s (was 169.0)", 0.05);
+    close(speeds[2], 83.8, "B: P4C — ring 3 reaches 83.8 px/s (was 70.8)", 0.05);
+    close(speeds[3], 314.2, "B: P4C — ring 4 (fast) reaches 314.2 px/s (was 255.7)", 0.05);
     close(X.maxOrbitSpeed(), Math.max(...speeds), "B: ...and the cap is exactly the largest of the four", 1e-9);
+    // The cap moved because the GEOMETRY moved, not because anything here was retuned: the motion
+    // constants TRAP 2 pins are untouched, and the ratio is exactly the ratio of ring 4's two radii.
+    close(X.maxOrbitSpeed() / 255.7, 1000 / 814,
+      "B: P4C — the whole rise is ring 4's radius moving 814 -> 1000; angVel and the multiplier never moved", 1e-3);
   }
 
   // --- THE C14 CASE, IN A SANDBOX: at [1, 2] the max is RING 2, not the outermost --------------------
@@ -547,13 +608,13 @@ function quiesce(X) {
     eq(JSON.stringify(A.ORBIT_FAST_RING), "[1,2]", "B: (sandbox) the sandbox build really runs at [1, 2]");
     const e = expectedCap(A);
     close(A.maxOrbitSpeed(), e.cap, "B: (sandbox) maxOrbitSpeed() still equals the recomputed max over rings", 1e-9);
-    close(A.maxOrbitSpeed(), 169.0,
-      "B: spec C14 — at [1, 2] the cap is RING 2's 169.0 px/s", 0.05);
+    close(A.maxOrbitSpeed(), 188.5,
+      "B: P4C — spec C14: at [1, 2] the cap is RING 2's 188.5 px/s (was 169.0)", 0.05);
     eq(e.ring, 1, "B: ...and the argmax is ring 2 (0-based index 1), NOT the outermost ring");
     const outer = A.DEBUG.orbitAngVel * (A.ORBIT_INNER_RADIUS + 3 * A.ORBIT_RADIUS_STEP);
-    close(outer, 85.2, "B: ...while the OUTERMOST ring only reaches 85.2 px/s", 0.05);
+    close(outer, 104.7, "B: P4C — ...while the OUTERMOST ring only reaches 104.7 px/s (was 85.2)", 0.05);
     assert(A.maxOrbitSpeed() > outer + 80,
-      "B: ...so a 'use the outer ring' shortcut would return 85.2 and is a latent bug, not a shortcut (C14)");
+      `B: ...so a 'use the outer ring' shortcut would return ${outer.toFixed(1)} and is a latent bug, not a shortcut (C14)`);
   }
   // --- lists of any length, since P1 made the length arbitrary --------------------------------------
   // (An EMPTY list makes no ring fast, so the max falls back to the outermost — which is the ONE case the
@@ -609,24 +670,41 @@ function quiesce(X) {
 
   // --- BOTH RADII ARE DERIVED — the BEHAVIOURAL half (a source pin lives in section A) ---------------
   // Move ORBIT_RADIUS_STEP in a sandbox and show both follow, without either literal being touched.
+  //
+  // CORRECTED BY CS023 P4C, AND THIS IS THE SANDBOX THAT PREDICTED ITS OWN PHASE. P4 wrote this block
+  // with the substitution `138 -> 200` and asserted the derived radii would become 1,000 and 800 "not 814
+  // and 676". P4c then shipped exactly that step, so the sandbox was substituting the LIVE value and
+  // proving nothing — a sandbox that agrees with the build is not a sandbox. It is inverted to the mirror
+  // substitution, 200 -> 138: the radii must come back to P1's 814 / 676, which is the same claim read
+  // from the other end and keeps a real difference between build and sandbox.
   {
-    const SRC = scriptSrc.replace("const ORBIT_RADIUS_STEP   = 138;", "const ORBIT_RADIUS_STEP   = 200;");
+    const SRC = scriptSrc.replace("const ORBIT_RADIUS_STEP   = 200;", "const ORBIT_RADIUS_STEP   = 138;");
     assert(SRC !== scriptSrc, "B: (sandbox) the ORBIT_RADIUS_STEP declaration was found and replaced");
     const S = withRandom(seededRandom(0xB600), () => buildFrom(SRC));
-    eq(S.ORBIT_RADIUS_STEP, 200, "B: (sandbox) the sandbox build really runs at a 200 px ring step");
+    eq(S.ORBIT_RADIUS_STEP, 138, "B: (sandbox) the sandbox build really runs at P1's retired 138 px ring step");
     eq(S.ORBIT_INNER_RADIUS, 400, "B: (sandbox) ...with the inner radius untouched");
-    eq(S.DEBRIS_DRIFT_TRIGGER_R, 400 + 3 * 200, "B: the trigger radius FOLLOWS the step — 1,000 px, not 814");
-    eq(S.DEBRIS_DRIFT_TARGET_R, 400 + 2 * 200, "B: the target radius FOLLOWS the step — 800 px, not 676");
+    eq(S.DEBRIS_DRIFT_TRIGGER_R, 400 + 3 * 138,
+      "B: P4C — the trigger radius FOLLOWS the step back down to 814 px, so 1,000 is nowhere pinned");
+    eq(S.DEBRIS_DRIFT_TARGET_R, 400 + 2 * 138,
+      "B: P4C — the target radius FOLLOWS it to 676 px, so 800 is nowhere pinned either");
     // ...and the cap follows the geometry too, since it multiplies the same radii.
     const e = expectedCap(S);
     close(S.maxOrbitSpeed(), e.cap, "B: ...and maxOrbitSpeed() follows the new radii as well", 1e-9);
-    assert(S.maxOrbitSpeed() > X.maxOrbitSpeed(), "B: ...a wider shell really does raise the cap");
+    assert(S.maxOrbitSpeed() < X.maxOrbitSpeed(),
+      "B: P4C — a NARROWER shell really does lower the cap (P4 asserted the widening direction here)");
+    close(S.maxOrbitSpeed(), 255.7, "B: ...to exactly the 255.7 px/s this file used to pin as shipped", 0.05);
+    // A third step, unrelated to either shipped value, so the claim is "it derives" rather than "it
+    // happens to match the one other number this project has used".
+    const SRC3 = scriptSrc.replace("const ORBIT_RADIUS_STEP   = 200;", "const ORBIT_RADIUS_STEP   = 111;");
+    const S3 = withRandom(seededRandom(0xB601), () => buildFrom(SRC3));
+    eq(S3.DEBRIS_DRIFT_TRIGGER_R, 400 + 3 * 111, "B: ...and at an arbitrary 111 px step the trigger is 733 px");
+    eq(S3.DEBRIS_DRIFT_TARGET_R, 400 + 2 * 111, "B: ...and the target 622 px — a derivation, not a lookup table");
   }
   {
     const SRC = scriptSrc.replace("const ORBIT_INNER_RADIUS  = 400;", "const ORBIT_INNER_RADIUS  = 500;");
     const S = withRandom(seededRandom(0xB700), () => buildFrom(SRC));
-    eq(S.DEBRIS_DRIFT_TRIGGER_R, 500 + 3 * 138, "B: the trigger radius follows ORBIT_INNER_RADIUS too — 914 px");
-    eq(S.DEBRIS_DRIFT_TARGET_R, 500 + 2 * 138, "B: ...and so does the target — 776 px");
+    eq(S.DEBRIS_DRIFT_TRIGGER_R, 500 + 3 * 200, "B: P4C — the trigger radius follows ORBIT_INNER_RADIUS too — 1,100 px");
+    eq(S.DEBRIS_DRIFT_TARGET_R, 500 + 2 * 200, "B: ...and so does the target — 900 px");
   }
 
   // --- CALLED ONCE PER FRAME, proven by an instrumented copy of the REAL source ----------------------
@@ -640,7 +718,11 @@ function quiesce(X) {
     quiesce(I);
     // Stage MANY drifting bodies, so "once per frame" and "once per body" differ by two orders of magnitude.
     I.game.debris.length = 0;
-    for (let k = 0; k < 40; k++) I.game.debris.push(placeFromDock(I, 1200, k * I.TAU / 40, 1));
+    // REPOINTED BY CS023 P4C: spreading 40 bodies at a flat 1,200 px around the WHOLE circle put the ones
+    // near +/-PI/2 at a wrap-aware 960 px once the 2,160 px world height folded them — inside the new
+    // 1,000 px trigger, where a single one of them blocks the arming pass for all forty. They are spread
+    // over radius AND a bounded arc instead, so every nominal distance is the wrap-aware one.
+    for (let k = 0; k < 40; k++) I.game.debris.push(placeFromDock(I, 1100 + k * 12, -0.5 + k * 0.025, 1));
     I.__capCalls.n = 0;
     const FRAMES = 30;
     for (let f = 0; f < FRAMES; f++) { quiesce(I); I.update(1 / 60); }
@@ -664,14 +746,14 @@ function quiesce(X) {
   assert(!!ring, "C: (setup) the level laid at least one RAIL-BORNE satellite");
   X.game.debris = [ring];
   assert(dockDist(X, ring) < X.DEBRIS_DRIFT_TRIGGER_R,
-    `C: (setup) ...and it sits inside the trigger radius (${dockDist(X, ring).toFixed(1)} < 814)`);
+    `C: (setup) ...and it sits inside the trigger radius (${dockDist(X, ring).toFixed(1)} < 1000)`);
   // Free bodies well beyond the trigger radius, at a spread of sizes.
   const far = [];
   for (let k = 0; k < 6; k++) far.push(placeFromDock(X, 1300, k * X.TAU / 6, k % 3 + 1));
   X.game.debris.push(...far);
   X.update(1 / 60);
   eq(X.game.debris.filter(d => d.drifting).length, 0,
-    "C: with ONE ring satellite alive inside 814 px, NOTHING is armed — the shell must be harvested first");
+    "C: with ONE ring satellite alive inside 1,000 px, NOTHING is armed — the shell must be harvested first");
   assert(far.every(d => d.drifting === undefined), "C: ...not even the bodies 1,300 px out");
 
   // --- destroy it, and observe that its own CHILDREN keep the trigger blocked (FLAG-CS023-a) ---------
@@ -695,10 +777,10 @@ function quiesce(X) {
     "C: ...exactly those bodies, and nothing else");
 
   // --- THE TRIGGER DOMINATES THE TARGET, AND THAT IS A FINDING WORTH STATING -------------------------
-  // The arming rule has two distance tests: "nothing live inside 814" (global) and "this body is beyond
-  // 676" (per body). Because the TARGET radius is INSIDE the trigger radius, any body in the 676-814 band
+  // The arming rule has two distance tests: "nothing live inside 1,000" (global) and "this body is beyond
+  // 800" (per body). Because the TARGET radius is INSIDE the trigger radius, any body in the 800-1000 band
   // BLOCKS THE WHOLE PASS — including itself. So whenever arming runs at all, every live debris body is
-  // already at 814 or more, and the per-body target test can never exclude anything. It is correct
+  // already at 1,000 or more, and the per-body target test can never exclude anything. It is correct
   // belt-and-braces (it is what keeps the rule self-consistent if a future retune ever put the target
   // OUTSIDE the trigger), not dead weight — but the observable rule in this build is the TRIGGER.
   {
@@ -706,13 +788,13 @@ function quiesce(X) {
     withRandom(seededRandom(0xC101), () => { B.startGame(); atWave(B, 3); });
     quiesce(B);
     B.game.debris.length = 0;
-    const between = placeFromDock(B, 700, 0.7, 1);            // in the 676-814 band
+    const between = placeFromDock(B, 900, 0.7, 1);            // REPOINTED BY P4C: in the 800-1000 band (was 700, in P1's 676-814)
     const outer = [];
     for (let k = 0; k < 4; k++) outer.push(placeFromDock(B, 1300, 1 + k * 1.4, 1));
     B.game.debris.push(between, ...outer);
     B.update(1 / 60);
     eq(between.drifting, undefined,
-      "C: a body in the 676-814 band is NOT armed — it is inside the trigger, so it blocks the pass");
+      "C: a body in the 800-1000 band is NOT armed — it is inside the trigger, so it blocks the pass");
     assert(outer.every(d => d.drifting === undefined), "C: ...and it blocks every other body too, including itself");
     between.dead = true;
     B.game.debris = B.game.debris.filter(d => !d.dead);
@@ -720,11 +802,18 @@ function quiesce(X) {
     assert(outer.every(d => d.drifting === true), "C: ...remove it and they all arm on the next frame");
     // The sweep: whenever the pass arms ANYTHING, nothing armed is inside the target radius — vacuously,
     // because nothing live is inside the trigger. Checked over a spread of staged distances.
-    for (const stage of [[900, 1000, 1100], [815, 1500, 2000], [1200, 1201, 1202]]) {
+    // REPOINTED BY P4C, on both axes of the staging. Every distance must now clear a 1,000 px trigger
+    // rather than P1's 814 — and the BEARINGS had to come in with them: at bearing 2.0 rad a nominal
+    // 1,500 px placement folds across the 2,160 px world height to a true wrap-aware 1,011 px, which
+    // cleared 814 comfortably and clears 1,000 by eleven. Bearings are kept inside 0.6 rad so every
+    // nominal distance IS the wrap-aware one, and the sweep tests what it says it tests.
+    for (const stage of [[1100, 1200, 1300], [1010, 1500, 1800], [1400, 1401, 1402]]) {
       const S = seededBuild(0xC110 + stage[0]);
       withRandom(seededRandom(0xC111), () => { S.startGame(); atWave(S, 3); });
       quiesce(S);
-      S.game.debris = stage.map((r, i) => placeFromDock(S, r, i * 2.0, 1));
+      S.game.debris = stage.map((r, i) => placeFromDock(S, r, i * 0.3, 1));
+      assert(S.game.debris.every((d, i) => Math.abs(dockDist(S, d) - stage[i]) < 1e-6),
+        `C: (sweep ${stage}) (setup) every nominal distance really is the wrap-aware one`);
       S.update(1 / 60);
       assert(S.game.debris.every(d => d.drifting === true), `C: (sweep ${stage}) every staged body arms`);
       assert(S.game.debris.every(d => dockDist(S, d) > S.DEBRIS_DRIFT_TARGET_R),
@@ -732,10 +821,10 @@ function quiesce(X) {
     }
   }
 
-  // --- the trigger boundary is STRICT: a body at exactly 814 does not block, one just inside does -----
+  // --- the trigger boundary is STRICT: a body at exactly 1,000 does not block, one just inside does ---
   {
-    // Integer dock and an axis-aligned placement, so "exactly 814" is exact in floating point rather
-    // than 814 +/- 1e-13 either side of the comparison.
+    // Integer dock and an axis-aligned placement, so "exactly 1,000" is exact in floating point rather
+    // than 1,000 +/- 1e-13 either side of the comparison.
     const C2 = seededBuild(0xC200);
     withRandom(seededRandom(0xC201), () => { C2.startGame(); atWave(C2, 3); });
     quiesce(C2);
@@ -743,14 +832,17 @@ function quiesce(X) {
     C2.game.debris.length = 0;
     const onTrigger = new C2.DebrisSatellite(1000 + C2.DEBRIS_DRIFT_TRIGGER_R, 1000, 3, 1);
     onTrigger.vx = 0; onTrigger.vy = 0;
-    const other = new C2.DebrisSatellite(1000, 1000 + 1000, 1, 1);
+    // REPOINTED BY P4C: the control used to sit 1,000 px out, comfortably past P1's 814 px trigger. At a
+    // 1,000 px trigger that would put it ON the boundary too, conflating the control with the case under
+    // test — so it moves out to 1,400, along +x where the 3840-wide world cannot fold it.
+    const other = new C2.DebrisSatellite(1000 + 1400, 1000, 1, 1);
     other.vx = 0; other.vy = 0;
     C2.game.debris.push(onTrigger, other);
-    close(dockDist(C2, onTrigger), C2.DEBRIS_DRIFT_TRIGGER_R, "C: (setup) the body sits at exactly 814 px", 1e-9);
+    close(dockDist(C2, onTrigger), C2.DEBRIS_DRIFT_TRIGGER_R, "C: (setup) the body sits at exactly 1,000 px", 1e-9);
     C2.update(1 / 60);
     eq(other.drifting, true,
-      "C: a body sitting EXACTLY at 814 px does NOT block the trigger — FLAG-CS023-a's 'ring 4 never blocks itself'");
-    eq(onTrigger.drifting, true, "C: ...and, being beyond 676, it is armed itself");
+      "C: a body sitting EXACTLY at 1,000 px does NOT block the trigger — FLAG-CS023-a's 'ring 4 never blocks itself'");
+    eq(onTrigger.drifting, true, "C: ...and, being beyond 800, it is armed itself");
 
     const C3 = seededBuild(0xC300);
     withRandom(seededRandom(0xC301), () => { C3.startGame(); atWave(C3, 3); });
@@ -759,11 +851,11 @@ function quiesce(X) {
     C3.game.debris.length = 0;
     const justIn = new C3.DebrisSatellite(1000 + C3.DEBRIS_DRIFT_TRIGGER_R - 2, 1000, 3, 1);
     justIn.vx = 0; justIn.vy = 0;
-    const other3 = new C3.DebrisSatellite(1000, 1000 + 1000, 1, 1);
+    const other3 = new C3.DebrisSatellite(1000 + 1400, 1000, 1, 1);   // REPOINTED BY P4C, as above
     other3.vx = 0; other3.vy = 0;
     C3.game.debris.push(justIn, other3);
     C3.update(1 / 60);
-    eq(other3.drifting, undefined, "C: ...but one 2 px INSIDE 814 px blocks everything");
+    eq(other3.drifting, undefined, "C: ...but one 2 px INSIDE 1,000 px blocks everything");
     eq(justIn.drifting, undefined, "C: ...itself included");
   }
 
@@ -809,32 +901,36 @@ function quiesce(X) {
     quiesce(F);
     F.game.debris.length = 0;
 
-    // --- SAME TRIGGER, SAME RADII: one live body inside 814 px blocks EVERYTHING, exactly as on an
+    // --- SAME TRIGGER, SAME RADII: one live body inside 1,000 px blocks EVERYTHING, exactly as on an
     // orbit level (mirrors the load-bearing orbit-level case earlier in this section).
-    // Bearings kept close to the x-axis (0 or PI): a FIELD world is only 2560x1440, so a bearing with
-    // any real y component risks the SHORT side wrapping a nominal 900-1200 px placement back to a
-    // shorter wrap-aware distance than intended (the trap the original P4 inertness test's own comment
-    // named). Radii 87-88 px apart keeps every pair separated enough that debris-vs-debris never fires.
+    // Bearings kept ON the x-axis (0 or PI): a FIELD world is only 2560x1440, so a bearing with any real
+    // y component risks the SHORT side wrapping a nominal placement back to a shorter wrap-aware distance
+    // than intended (the trap the original P4 inertness test's own comment named). REPOINTED BY P4C, and
+    // this is where the field world gets TIGHT: the trigger moved out to 1,000 px while the greatest
+    // wrap-aware distance ALONG THE X-AXIS is only W/2 = 1,280 px, so the whole "beyond the trigger"
+    // band on this bearing is 280 px wide. The four radii are spread 60 px apart inside it — still
+    // comfortably more than the 59 px worst-case pair of radii, so debris-vs-debris never fires. That
+    // narrowness IS spec C16c's cost, observed: the drift reclaims 29% of a field world now, not 46%.
     const blocker = placeFromDock(F, 700, 0, 1);
     assert(dockDist(F, blocker) < F.DEBRIS_DRIFT_TRIGGER_R,
-      "C: P4B (setup) the blocker sits inside the SAME 814 px trigger radius used on an orbit level");
-    const far = [900, 987, 1075, 1162].map((r, k) => placeFromDock(F, r, k % 2 ? Math.PI : 0, k % 3 + 1));
+      "C: P4B (setup) the blocker sits inside the SAME 1,000 px trigger radius used on an orbit level");
+    const far = [1050, 1110, 1170, 1230].map((r, k) => placeFromDock(F, r, k % 2 ? Math.PI : 0, k % 3 + 1));
     assert(far.every(d => dockDist(F, d) > F.DEBRIS_DRIFT_TRIGGER_R),
-      "C: P4B (setup) every far body really is beyond the SAME 814 px trigger");
+      "C: P4B (setup) every far body really is beyond the SAME 1,000 px trigger");
     F.game.debris.push(blocker, ...far);
     F.update(1 / 60);
     assert(F.game.debris.every(d => d.drifting === undefined),
-      "C: P4B — with a live body inside 814 px of the dock, NOTHING is armed on a field level — no archetype gate anywhere");
+      "C: P4B — with a live body inside 1,000 px of the dock, NOTHING is armed on a field level — no archetype gate anywhere");
 
-    // --- destroy the blocker: on the VERY NEXT FRAME every free body beyond 676 px arms, the same
+    // --- destroy the blocker: on the VERY NEXT FRAME every free body beyond 800 px arms, the same
     // lateness as on an orbit level.
     F.destroyDebris(blocker);
     F.game.debris = F.game.debris.filter(d => !d.dead);
     F.update(1 / 60);
     assert(far.every(d => d.drifting === true),
-      "C: P4B — destroy the last blocker and, on the next frame, every free body beyond 676 px arms — same lateness as an orbit level");
+      "C: P4B — destroy the last blocker and, on the next frame, every free body beyond 800 px arms — same lateness as an orbit level");
     assert(far.every(d => dockDist(F, d) > F.DEBRIS_DRIFT_TARGET_R),
-      "C: P4B — ...and every armed body is beyond the SAME 676 px target radius");
+      "C: P4B — ...and every armed body is beyond the SAME 800 px target radius");
 
     // --- ARRIVAL: released at (or inside) the target radius, keeping its accumulated velocity ------------
     const arriver = far[0];
@@ -848,8 +944,8 @@ function quiesce(X) {
     {
       quiesce(F);
       F.game.debris.length = 0;
-      const p = placeFromDock(F, 1000, 0.5, 2);
-      const q = placeFromDock(F, 1000, 0.5, 2);
+      const p = placeFromDock(F, 1200, 0.5, 2);   // REPOINTED BY P4C: clear of the 1,000 px trigger
+      const q = placeFromDock(F, 1200, 0.5, 2);
       q.x = p.x + (p.radius + q.radius) * 0.8; q.y = p.y;
       F.game.debris.push(p, q);
       F.update(1 / 60);
@@ -860,7 +956,7 @@ function quiesce(X) {
     {
       quiesce(F);
       F.game.debris.length = 0;
-      const a = placeFromDock(F, 1000, 1.4, 2);
+      const a = placeFromDock(F, 1200, 0.3, 2);   // REPOINTED BY P4C: 1,200 px, and a bearing the 1,440-tall field world cannot fold
       a.drifting = true;
       F.game.debris.push(a);
       const s = withRandom(seededRandom(0xC502), () => new F.Saucer(false));
@@ -877,7 +973,7 @@ function quiesce(X) {
     {
       quiesce(F);
       F.game.debris.length = 0;
-      const a = placeFromDock(F, 1000, 2.9, 3);
+      const a = placeFromDock(F, 1200, 2.9, 3);   // REPOINTED BY P4C: clear of the 1,000 px trigger
       F.game.debris.push(a);
       F.update(1 / 60);
       eq(a.drifting, true, "C: P4B (setup) armed");
@@ -893,7 +989,7 @@ function quiesce(X) {
     {
       quiesce(F);
       F.game.debris.length = 0;
-      const a = placeFromDock(F, 1000, 4.0, 2);
+      const a = placeFromDock(F, 1200, 3.4, 2);   // REPOINTED BY P4C: as above — at bearing 4.0 a 1,200 px placement folds to 948 px, inside the trigger
       F.game.debris.push(a);
       F.game.ship.invuln = 9999;
       F.update(1 / 60);
@@ -933,8 +1029,8 @@ function quiesce(X) {
       assert(worstVr < cap - 1,
         `C: P4B — the cap NEVER binds on a field level (worst inward speed ${worstVr.toFixed(1)} px/s, cap ${cap.toFixed(1)})`);
       // Cross-checked against the closed form for a constant-acceleration fall over the same distance
-      // (spec C15's table: ~218 px/s over the ~792 px longest field fall, recomputed here rather than
-      // restated as a literal).
+      // (spec C15's table as amended by C16: ~200 px/s over the ~669 px longest field fall — P4c moved
+      // the target radius out to 800 px and SHORTENED the fall, recomputed here rather than restated).
       const fallDist = maxDist - F.DEBRIS_DRIFT_TARGET_R;
       const expectedSpeed = Math.sqrt(2 * F.DEBUG.debrisDriftAccel * fallDist);
       close(releaseSpeed, expectedSpeed,
@@ -945,30 +1041,63 @@ function quiesce(X) {
 
 // ================= (D) item 14 — drift motion and the cap ===========================================
 (function sectionD() {
-  console.log("(D) item 14 — the exact per-frame ramp, the plateau at maxOrbitSpeed(), the tangential proof");
+  console.log("(D) item 14 — the exact per-frame ramp; P4C: the cap NOT binding at the shipped values, " +
+              "and a raised-acceleration sandbox where it does");
   const DT = 1 / 60;
 
-  // --- A PURELY RADIAL FALL, LONG ENOUGH TO REACH THE CAP -------------------------------------------
-  // 1,900 px out, no initial velocity: the cap (255.7 px/s) is reached after 8.52 s and 1,089 px of fall,
-  // leaving 811 px — still outside the 676 px target — so there is a genuine plateau to observe before
-  // release. (FLAG-CS023-d's "the cap binds only beyond ~1,766 px" is exactly this arithmetic.)
+  // --- THE LONGEST FALL AN ORBIT LEVEL ALLOWS, AND THE CAP NEVER TOUCHING IT ------------------------
+  // CORRECTED BY CS023 P4C (spec C16b). P4 staged a body 1,900 px out precisely so the 255.7 px/s cap
+  // would be reached after 8.52 s and 1,089 px, leaving a genuine PLATEAU to observe before release. P4c
+  // moved the cap to 314.2 px/s AND the target radius out to 800 px, so that fall now arrives at 256.9
+  // px/s and never clamps — and neither does any other fall the shipped game can produce.
+  //
+  // So the shipped-values case proves the OPPOSITE claim, and proves it at the WORST CASE rather than at
+  // a staged distance: the body starts at the true wrap-aware farthest point from the dock (computed live
+  // from worldDims, never hardcoded, so a WORLD_SIZE_ORBIT retune carries this), which is the longest
+  // armed fall the archetype can physically produce. The exact per-frame ramp, the untouched tangential
+  // component and the release-keeps-its-velocity rule are all still asserted here — only the plateau
+  // moved, and it moved to the sandbox below rather than being deleted.
   const X = seededBuild(0xD001);
   withRandom(seededRandom(0xD002), () => { X.startGame(); atWave(X, 3); });
   quiesce(X);
   X.game.debris.length = 0;
-  const D0 = 1900;
-  const d = placeFromDock(X, D0, 0, 3);         // bearing 0 => the dock lies exactly in -x from the body
+  const [OW, OH] = X.worldDims(X.game.worldSize);
+  const D0 = Math.hypot(OW / 2, OH / 2);                 // 2,202.9 px — the far corner of the torus
+  close(D0, 2202.9, "D: (setup) the orbit world's farthest wrap-aware point from the dock is ~2,203 px", 0.1);
+  const d = placeFromDock(X, D0, Math.atan2(OH / 2, OW / 2), 3);
   X.game.debris.push(d);
+  close(dockDist(X, d), D0, "D: (setup) ...and the body really sits on it", 1e-6);
   X.update(DT);
   eq(d.drifting, true, "D: (setup) the lone far body arms on the first frame");
 
   const cap = X.maxOrbitSpeed();
   const accel = X.DEBUG.debrisDriftAccel;
+  // The two numbers spec C16b turns on, recomputed rather than restated.
+  const orbitFall = D0 - X.DEBRIS_DRIFT_TARGET_R;
+  close(orbitFall, 1402.9, "D: C16b — the longest armed fall on an orbit level is ~1,403 px", 0.1);
+  close(Math.sqrt(2 * accel * orbitFall), 290.1,
+    "D: C16b — ...worth ~290 px/s on arrival at 30 px/s^2, under the 314.2 px/s cap", 0.1);
+  assert(Math.sqrt(2 * accel * orbitFall) < cap,
+    `D: C16b — SO THE CAP CANNOT BIND ON AN ORBIT LEVEL (${Math.sqrt(2 * accel * orbitFall).toFixed(1)} < ${cap.toFixed(1)})`);
+  // ...and it could NOT bind on a field level either, whose world is smaller still. Both halves of C16b's
+  // claim in one place, each derived from the world it describes.
+  {
+    const [FW, FH] = X.worldDims(X.WORLD_SIZE_FIELD);
+    const fieldFall = Math.hypot(FW / 2, FH / 2) - X.DEBRIS_DRIFT_TARGET_R;
+    close(fieldFall, 668.6, "D: C16b — the longest armed fall on a FIELD level is ~669 px", 0.1);
+    close(Math.sqrt(2 * accel * fieldFall), 200.3, "D: C16b — ...worth ~200 px/s on arrival", 0.1);
+    assert(Math.sqrt(2 * accel * fieldFall) < cap, "D: C16b — so the cap cannot bind there either");
+    // The distance a body would have to START from for the cap to bind at all — beyond both worlds.
+    const reachCap = X.DEBRIS_DRIFT_TARGET_R + cap * cap / (2 * accel);
+    close(reachCap, 2444.9, "D: C16b — the cap binds only from ~2,445 px out...", 0.5);
+    assert(reachCap > D0 && reachCap > Math.hypot(FW / 2, FH / 2),
+      "D: ...which is farther than EITHER world's farthest point — unreachable, not merely unlikely");
+  }
+
   let prev = { vx: d.vx, vy: d.vy };
-  let rampFrames = 0, plateauFrames = 0, released = -1, worstVr = -Infinity;
-  let releaseSpeed = 0, preReleaseSpeed = 0, capReached = false;
-  const HIST = [];
-  for (let f = 1; f <= 700 && released < 0; f++) {
+  let rampFrames = 0, clampedFrames = 0, released = -1, worstVr = -Infinity;
+  let releaseSpeed = 0, preReleaseSpeed = 0;
+  for (let f = 1; f <= 900 && released < 0; f++) {
     quiesce(X);
     const speedBefore = Math.hypot(d.vx, d.vy);
     X.update(DT);
@@ -989,24 +1118,26 @@ function quiesce(X) {
         `D: frame ${f} — the inward component grew by exactly debrisDriftAccel x dt`, 1e-9);
       rampFrames++;
     } else {
-      close(vrNow, cap, `D: frame ${f} — ...and then PLATEAUS at exactly maxOrbitSpeed()`, 1e-9);
-      plateauFrames++; capReached = true;
+      clampedFrames++;                                           // must stay 0 at the shipped values
     }
-    HIST.push(+vrNow.toFixed(6));
     prev = { vx: d.vx, vy: d.vy };
   }
   assert(released > 0, "D: the piece reached the target radius and was released");
-  assert(rampFrames > 400, `D: ...after a long ramp (${rampFrames} frames of exact acceleration)`);
-  assert(capReached && plateauFrames > 10,
-    `D: ...and a genuine PLATEAU at the cap (${plateauFrames} frames), not just an asymptote`);
-  assert(worstVr <= cap + 1e-9, `D: the inward component NEVER exceeded the cap (worst ${worstVr.toFixed(6)} vs ${cap.toFixed(6)})`);
-  close(rampFrames * DT, cap / accel,
-    "D: the ramp lasted cap / accel seconds, to within a frame or two (8.52 s at the shipped values)", 3 * DT);
-  // The release keeps the accumulated velocity — no stop, no park, no damping.
+  assert(rampFrames > 500, `D: ...after a long ramp (${rampFrames} frames of exact acceleration)`);
+  // THE INVERSION. P4 asserted `capReached && plateauFrames > 10` here; the claim is now that the clamp
+  // never engaged for a single frame of the longest fall the archetype can produce.
+  eq(clampedFrames, 0,
+    "D: P4C — the cap NEVER engaged, not on ONE frame of the longest possible orbit fall (C16b)");
+  eq(rampFrames, released - 1,
+    "D: ...so every single pre-release frame was an exact, unclamped debrisDriftAccel x dt step");
+  assert(worstVr < cap - 20,
+    `D: ...and the fastest it ever closed was ${worstVr.toFixed(1)} px/s, a clear ${(cap - worstVr).toFixed(1)} px/s under the ${cap.toFixed(1)} px/s cap`);
+  // The release speed is now the UNCAPPED closed form, where P4 asserted it was exactly the cap.
   close(releaseSpeed, preReleaseSpeed, "D: the released piece KEEPS its accumulated speed exactly (no damping)", 1e-9);
-  assert(releaseSpeed <= cap + 1e-9,
-    `D: ...and on a purely radial fall that speed is <= the cap (${releaseSpeed.toFixed(3)} <= ${cap.toFixed(3)})`);
-  close(releaseSpeed, cap, "D: ...in this case exactly the cap, since it plateaued before arriving", 1e-6);
+  close(releaseSpeed, Math.sqrt(2 * accel * orbitFall),
+    "D: P4C — ...and that speed is the CONSTANT-ACCELERATION closed form, not the cap (nothing was ever clamped)", 5);
+  assert(releaseSpeed < cap,
+    `D: P4C — ...strictly under the cap (${releaseSpeed.toFixed(1)} < ${cap.toFixed(1)}), reversing P4's "exactly the cap"`);
   eq(d.drifting, false, "D: ...and `drifting` is false, not deleted — the field stays a boolean once used");
   // It COASTS ON rather than parking: the next second carries it well inside the shell region.
   {
@@ -1017,7 +1148,10 @@ function quiesce(X) {
     eq(d.drifting, false, "D: ...still released — a body inside the target is never re-armed");
   }
 
-  // --- A TANGENTIALLY-MOVING PIECE: the cap clamps the RADIAL component only -------------------------
+  // --- A TANGENTIALLY-MOVING PIECE: the force leaves the perpendicular component alone ---------------
+  // At the shipped acceleration this is the pure "the force is radial" claim; the CLAMP half of it (total
+  // speed legitimately exceeding the cap) moved into the raised-acceleration sandbox below, since nothing
+  // clamps here any more.
   {
     const T = seededBuild(0xD100);
     withRandom(seededRandom(0xD101), () => { T.startGame(); atWave(T, 3); });
@@ -1029,7 +1163,7 @@ function quiesce(X) {
     T.update(DT);
     eq(t.drifting, true, "D: (setup) the tangential piece arms");
     let p = { vx: t.vx, vy: t.vy };
-    let sawClamp = false, maxTotal = 0, maxTotalVt = 0, minVt = Infinity;
+    let minVt = Infinity, sawClamp = false;
     for (let f = 1; f <= 900 && t.drifting; f++) {
       quiesce(T);
       T.update(DT);
@@ -1043,21 +1177,135 @@ function quiesce(X) {
       // motion, not the force touching it, and it is exactly why total speed may exceed the cap.)
       close(vtN, vtP, `D: (tangential) frame ${f} — the perpendicular component is untouched by the force`, 1e-9);
       minVt = Math.min(minVt, Math.abs(vtN));
-      if (vrP + accel * DT > cap + 1e-9) {
-        close(vrN, cap, `D: (tangential) frame ${f} — the RADIAL component is clamped at the cap`, 1e-9);
+      if (vrP + accel * DT > cap + 1e-9) sawClamp = true;
+      else close(vrN, vrP + accel * DT, `D: (tangential) frame ${f} — ...and the radial one ramps exactly`, 1e-9);
+      p = { vx: t.vx, vy: t.vy };
+    }
+    assert(!sawClamp, "D: P4C — (tangential) nothing clamped at the shipped acceleration either");
+    assert(minVt > 1, `D: ...and the tangential drift is never zeroed by the force (min ${minVt.toFixed(1)} px/s)`);
+  }
+
+  // --- THE SANDBOX WHERE THE CAP DOES BIND: proof that the clamp is LIVE CODE (spec C16b) ------------
+  // The point of this block, and why it is not optional. The cap is unreachable at the shipped numbers,
+  // which is exactly the state in which a clamp quietly rots: nothing exercises it, a later refactor
+  // "simplifies" it away, and the guard rail is gone the moment somebody raises the acceleration — which
+  // is the FIRST thing the playtest gate is asked to try (FLAG-CS023-d, gate question 12). So the old
+  // plateau assertions are not deleted; they are re-run here with DEBUG.debrisDriftAccel raised until the
+  // cap engages. Nothing about the SHIPPED build changes: this is the same source, the same update(), the
+  // same live knob a player can move in the debug panel.
+  {
+    const C = seededBuild(0xD400);
+    withRandom(seededRandom(0xD401), () => { C.startGame(); atWave(C, 3); });
+    quiesce(C);
+    const capC = C.maxOrbitSpeed();
+    const A = 150;                                        // inside the knob's own [0, 200] registry range
+    const e = C.DEBUG_ENTRIES.find(v => v.id === "debrisDriftAccel");
+    assert(A > e.min && A <= e.max, "D: (sandbox) the raised acceleration is inside the knob's shipped range");
+    C.applyDebug("debrisDriftAccel", A);
+    eq(C.DEBUG.debrisDriftAccel, A, "D: (sandbox) the live knob really took the raised value");
+    // The threshold, stated: below this the cap cannot bind over the longest orbit fall, above it it must.
+    const [CW, CH] = C.worldDims(C.game.worldSize);
+    const start = Math.hypot(CW / 2, CH / 2);
+    const fall = start - C.DEBRIS_DRIFT_TARGET_R;
+    const wakeAt = capC * capC / (2 * fall);
+    close(wakeAt, 35.2, "D: (sandbox) the cap wakes up at ~35.2 px/s^2 over the longest orbit fall", 0.2);
+    assert(X.DEBUG.debrisDriftAccel < wakeAt && A > wakeAt,
+      "D: (sandbox) ...so the shipped 30 is below it and the sandbox's 150 is above it — a real threshold, not a staging trick");
+
+    C.game.debris.length = 0;
+    const c = placeFromDock(C, start, Math.atan2(CH / 2, CW / 2), 3);
+    C.game.debris.push(c);
+    C.update(DT);
+    eq(c.drifting, true, "D: (sandbox) armed at the far corner");
+    let pv = { vx: c.vx, vy: c.vy };
+    let ramp = 0, plateau = 0, worst = -Infinity, relSpeed = 0;
+    for (let f = 1; f <= 900; f++) {
+      quiesce(C);
+      C.update(DT);
+      const fr = dockFrame(C, c);
+      const vrP = radial(pv, fr), vrN = radial(c, fr);
+      if (c.drifting === false) { relSpeed = Math.hypot(c.vx, c.vy); break; }
+      worst = Math.max(worst, vrN);
+      if (vrP + A * DT <= capC + 1e-9) {
+        close(vrN, vrP + A * DT, `D: (sandbox) frame ${f} — exact acceleration below the cap`, 1e-9);
+        ramp++;
+      } else {
+        close(vrN, capC, `D: (sandbox) frame ${f} — PLATEAUS at exactly maxOrbitSpeed()`, 1e-9);
+        plateau++;
+      }
+      pv = { vx: c.vx, vy: c.vy };
+    }
+    assert(ramp > 50, `D: (sandbox) a real ramp before the cap (${ramp} frames)`);
+    assert(plateau > 100,
+      `D: (sandbox) AND A REAL PLATEAU AT THE CAP (${plateau} frames) — the clamp is LIVE CODE, not dead code (C16b)`);
+    close(ramp * DT, capC / A, "D: (sandbox) the ramp lasted cap / accel seconds, to within a frame or two", 3 * DT);
+    assert(worst <= capC + 1e-9,
+      `D: (sandbox) the inward component NEVER exceeded the cap (worst ${worst.toFixed(6)} vs ${capC.toFixed(6)})`);
+    close(relSpeed, capC, "D: (sandbox) ...and it arrived at exactly the cap, having plateaued long before", 1e-6);
+    assert(relSpeed < Math.sqrt(2 * A * fall),
+      `D: (sandbox) ...which is well under the uncapped closed form (${Math.sqrt(2 * A * fall).toFixed(1)} px/s) — the clamp really removed energy`);
+    // A CONTROL, so "the clamp engaged" cannot be an artefact of the raised acceleration alone: the SAME
+    // build, the SAME staging, at the shipped 30, must run the whole fall without one clamped frame.
+    C.applyDebug("debrisDriftAccel", e.def);
+    eq(C.DEBUG.debrisDriftAccel, 30, "D: (sandbox control) the knob is back at its shipped default");
+    C.game.debris.length = 0;
+    const c2 = placeFromDock(C, start, Math.atan2(CH / 2, CW / 2), 3);
+    C.game.debris.push(c2);
+    C.update(DT);
+    let pv2 = { vx: c2.vx, vy: c2.vy }, clamped2 = 0, worst2 = -Infinity;
+    for (let f = 1; f <= 900; f++) {
+      quiesce(C);
+      C.update(DT);
+      if (c2.drifting === false) break;
+      const fr = dockFrame(C, c2);
+      if (radial(pv2, fr) + 30 * DT > capC + 1e-9) clamped2++;
+      worst2 = Math.max(worst2, radial(c2, fr));
+      pv2 = { vx: c2.vx, vy: c2.vy };
+    }
+    eq(clamped2, 0, "D: (sandbox control) at the shipped 30 the same fall clamps on ZERO frames");
+    assert(worst2 < capC, `D: ...topping out at ${worst2.toFixed(1)} px/s against the ${capC.toFixed(1)} px/s cap`);
+  }
+
+  // --- THE CLAMP TOUCHES THE RADIAL COMPONENT ONLY, proven where it actually clamps ------------------
+  // P4 proved this at the shipped acceleration; after P4c the only place it CAN be proved is a raised one.
+  {
+    const T = seededBuild(0xD500);
+    withRandom(seededRandom(0xD501), () => { T.startGame(); atWave(T, 3); });
+    quiesce(T);
+    const capT = T.maxOrbitSpeed();
+    T.applyDebug("debrisDriftAccel", 150);
+    T.game.debris.length = 0;
+    const V_T = 300;                                  // px/s of pure tangential drift, above the cap's own scale
+    const t = placeFromDock(T, 1850, 0, 2, 0, V_T);   // dock is at -x; the velocity is +y, i.e. tangential
+    T.game.debris.push(t);
+    T.update(DT);
+    eq(t.drifting, true, "D: (tangential/clamped) (setup) the tangential piece arms");
+    let p = { vx: t.vx, vy: t.vy };
+    let sawClamp = false, maxTotal = 0, maxTotalVt = 0, minVt = Infinity;
+    for (let f = 1; f <= 900 && t.drifting; f++) {
+      quiesce(T);
+      T.update(DT);
+      if (t.drifting === false) break;
+      const fr = dockFrame(T, t);
+      const vrP = radial(p, fr), vrN = radial(t, fr);
+      const vtP = tangen(p, fr), vtN = tangen(t, fr);
+      close(vtN, vtP, `D: (tangential/clamped) frame ${f} — the perpendicular component is untouched`, 1e-9);
+      minVt = Math.min(minVt, Math.abs(vtN));
+      if (vrP + 150 * DT > capT + 1e-9) {
+        close(vrN, capT, `D: (tangential/clamped) frame ${f} — the RADIAL component is clamped at the cap`, 1e-9);
         sawClamp = true;
         const tot = Math.hypot(t.vx, t.vy);
         if (tot > maxTotal) { maxTotal = tot; maxTotalVt = vtN; }
       } else {
-        close(vrN, vrP + accel * DT, `D: (tangential) frame ${f} — ...and ramps exactly until then`, 1e-9);
+        close(vrN, vrP + 150 * DT, `D: (tangential/clamped) frame ${f} — ...and ramps exactly until then`, 1e-9);
       }
       p = { vx: t.vx, vy: t.vy };
     }
-    assert(sawClamp, "D: (tangential) the run really did reach the cap");
-    assert(maxTotal > cap + 1e-6,
-      `D: (tangential) TOTAL speed legitimately EXCEEDS the cap (${maxTotal.toFixed(1)} > ${cap.toFixed(1)}) — ` +
+    assert(sawClamp, "D: (tangential/clamped) the run really did reach the cap");
+    assert(maxTotal > capT + 1e-6,
+      `D: (tangential/clamped) TOTAL speed legitimately EXCEEDS the cap (${maxTotal.toFixed(1)} > ${capT.toFixed(1)}) — ` +
       "the cap bounds the inward component only");
-    close(maxTotal, Math.hypot(cap, maxTotalVt),
+    close(maxTotal, Math.hypot(capT, maxTotalVt),
       "D: ...and at that frame it is EXACTLY hypot(cap, the body's own tangential component)", 1e-9);
     assert(minVt > 1, `D: ...and the tangential drift is never zeroed by the force (min ${minVt.toFixed(1)} px/s)`);
   }
@@ -1104,7 +1352,8 @@ function quiesce(X) {
     quiesce(A);
     A.game.debris.length = 0;
     // Just outside the TRIGGER radius (a body inside it would block the pass — see section C), so it arms
-    // immediately and has only ~140 px to fall before the target releases it.
+    // immediately and has only ~220 px to fall before the target releases it (P4C: ~140 px at P1's step —
+    // the gap between the two radii IS ORBIT_RADIUS_STEP, so it widened with everything else).
     const a = placeFromDock(A, A.DEBRIS_DRIFT_TRIGGER_R + 20, 0, 1);
     A.game.debris.push(a);
     A.update(DT);
@@ -1169,7 +1418,9 @@ function quiesce(X) {
     withRandom(seededRandom(0xE301), () => { U.startGame(); atWave(U, 3); });
     quiesce(U);
     U.game.debris.length = 0;
-    const a = placeFromDock(U, 1400, 1.4, 2);
+    // REPOINTED BY P4C: bearing 1.4 folded a nominal 1,400 px to a wrap-aware 816 px — harmless here,
+    // since this block arms the piece by hand, but it read as a far body and was not one any more.
+    const a = placeFromDock(U, 1400, 0.4, 2);
     a.drifting = true;
     U.game.debris.push(a);
     const s = withRandom(seededRandom(0xE302), () => new U.Saucer(false));
@@ -1291,7 +1542,7 @@ function quiesce(X) {
     withRandom(seededRandom(0xF002), () => { X.startGame(); atWave(X, 3); });
     quiesce(X);
     X.game.debris.length = 0;
-    const d = placeFromDock(X, 1500, 0.8, 2);
+    const d = placeFromDock(X, 1500, 0.6, 2);   // REPOINTED BY P4C: bearing 0.8 sat 4 px from folding across the world height
     X.game.debris.push(d);
     X.update(DT);
     eq(d.drifting, true, "F: (setup) armed on the first orbit level");
@@ -1334,8 +1585,11 @@ function quiesce(X) {
     withRandom(seededRandom(0xF102), () => { X.startGame(); atWave(X, 3); });
     quiesce(X);
     X.game.debris.length = 0;
-    const d = placeFromDock(X, 1500, 1.9, 1);
-    const ctl = placeFromDock(X, 1500, 1.9 + 0.6, 1);   // an UNARMED control that must re-home identically
+    // REPOINTED BY CS023 P4C: at bearing 1.9 a nominal 1,500 px folds across the 2,160 px world height to
+    // a wrap-aware 885 px — outside P1's 814 px trigger, INSIDE the 1,000 px one, so the piece blocked its
+    // own arming and this whole resizeWorld proof would have gone vacuous.
+    const d = placeFromDock(X, 1500, 2.5, 1);
+    const ctl = placeFromDock(X, 1500, 2.5 + 0.35, 1);   // an UNARMED control that must re-home identically
     X.game.debris.push(d, ctl);
     X.update(DT);
     eq(d.drifting, true, "F: (setup) armed in the size-9 orbit world");
@@ -1396,7 +1650,7 @@ function quiesce(X) {
     let n = 0;
     while (d.drifting && n < 900) { quiesce(X); X.update(DT); n++; }
     eq(d.drifting, false, "F: P4B — ...and it genuinely arrives at the target radius on a field level");
-    assert(dockDist(X, d) <= X.DEBRIS_DRIFT_TARGET_R, "F: P4B — ...inside 676 px of the field dock");
+    assert(dockDist(X, d) <= X.DEBRIS_DRIFT_TARGET_R, "F: P4B — ...inside 800 px of the field dock");
   }
 
   // --- an armed piece that is DESTROYED leaves nothing dangling -------------------------------------
@@ -1443,19 +1697,21 @@ function quiesce(X) {
     const [W, H] = X.worldDims(X.game.worldSize);
     X.game.dock.x = 30; X.game.dock.y = H / 2;             // a dock hard against the left seam
     X.game.debris.length = 0;
-    // 900 px to the RIGHT of the dock THE SHORT WAY ROUND — i.e. off the LEFT edge, wrapped.
-    const px = ((30 - 900) % W + W) % W;
+    // 1,200 px to the RIGHT of the dock THE SHORT WAY ROUND — i.e. off the LEFT edge, wrapped.
+    // REPOINTED BY CS023 P4C: 900 px was comfortably outside P1's 814 px trigger and is INSIDE the 1,000 px
+    // one, where the body would block its own arming and this whole seam proof would go silently vacuous.
+    const px = ((30 - 1200) % W + W) % W;
     const d = new X.DebrisSatellite(px, H / 2, 1, 1);
     d.x = px; d.y = H / 2; d.vx = 0; d.vy = 0;
     X.game.debris.push(d);
     const [sdx, sdy] = X.shortDelta(d.x, d.y, X.game.dock.x, X.game.dock.y);
-    close(Math.hypot(sdx, sdy), 900, "F: (setup) the wrap-aware distance to the dock is 900 px", 1e-6);
+    close(Math.hypot(sdx, sdy), 1200, "F: (setup) the wrap-aware distance to the dock is 1,200 px", 1e-6);
     assert(sdx > 0, "F: (setup) ...and the wrap-aware direction is +x, across the seam");
     const naiveDx = X.game.dock.x - d.x;
     assert(naiveDx < 0, "F: (setup) ...while NAIVE subtraction says -x — the control that must be wrong");
     assert(Math.abs(naiveDx) > 2000, "F: (setup) ...and by nearly a whole world period");
     X.update(DT);
-    eq(d.drifting, true, "F: the seam-straddling body arms (900 px > 814, so it does not block itself)");
+    eq(d.drifting, true, "F: the seam-straddling body arms (1,200 px > 1,000, so it does not block itself)");
     assert(d.vx > 0, "F: THE FORCE PUSHES +x — the SHORT way across the seam, exactly as shortDelta says");
     close(d.vx, X.DEBUG.debrisDriftAccel * DT,
       "F: ...by exactly one frame of acceleration, along the wrap-aware unit vector", 1e-9);
@@ -1466,7 +1722,7 @@ function quiesce(X) {
     let n = 0;
     while (d.drifting && n < 900) { quiesce(X); X.update(DT); n++; }
     eq(d.drifting, false, "F: ...and it genuinely arrives at the target radius across the seam");
-    assert(dockDist(X, d) <= X.DEBRIS_DRIFT_TARGET_R, "F: ...inside 676 px of the dock, measured wrap-aware");
+    assert(dockDist(X, d) <= X.DEBRIS_DRIFT_TARGET_R, "F: ...inside 800 px of the dock, measured wrap-aware");
   }
 })();
 
@@ -1480,7 +1736,11 @@ function quiesce(X) {
       atWave(X, 3);
       quiesce(X);
       X.game.debris.length = 0;
-      for (let k = 0; k < 8; k++) X.game.debris.push(placeFromDock(X, 1000 + k * 90, k * 0.77, k % 3 + 1));
+      // REPOINTED BY CS023 P4C: the base distance was 1,000 px, which is now EXACTLY the trigger radius —
+      // a float hair either way decides whether the whole staging arms, which is the opposite of what a
+      // determinism harness wants. Moved clear of it, and the bearings kept inside 0.8 rad so a nominal
+      // distance in a 3840x2160 world is always the wrap-aware one.
+      for (let k = 0; k < 8; k++) X.game.debris.push(placeFromDock(X, 1100 + k * 90, k * 0.09, k % 3 + 1));
       const out = [];
       for (let f = 0; f < 400; f++) {
         quiesce(X);

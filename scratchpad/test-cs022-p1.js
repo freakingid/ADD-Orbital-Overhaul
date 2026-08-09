@@ -285,7 +285,7 @@ console.log("(A) source pins: the mutable world, the both-places rule, ordering,
   // REPOINTED AGAIN BY CS023 P1 — same treatment, one round on: the geometry moved a second time
   // (spec §1.3), so each pin follows the live value rather than being loosened to a range.
   eq(X.ORBIT_INNER_RADIUS, 400, "A: REPOINTED BY CS023 P1 — ORBIT_INNER_RADIUS is now 400 (180 -> 460 -> 400)");
-  eq(X.ORBIT_RADIUS_STEP, 138, "A: REPOINTED BY CS023 P1 — ORBIT_RADIUS_STEP is now 138 (150 -> 276 -> 138)");
+  eq(X.ORBIT_RADIUS_STEP, 200, "A: REPOINTED BY CS023 P4C — ORBIT_RADIUS_STEP is now 200 (150 -> 276 -> 138 -> 200)");
   eq(X.ORBIT_RING_COUNT, 4, "A: ORBIT_RING_COUNT untouched (P3 relocated its declaration, not its value)");
   eq(X.ORBIT_GAP_MULT, 2.5, "A: ORBIT_GAP_MULT untouched — the occurrence curve is not part of CS022 or CS023");
   eq(JSON.stringify(X.ORBIT_DENSITY), "[0.12,0.12,0.12,0.12]", "A: REPOINTED BY CS023 P1 — the density curve is FLAT now (spec §1.3)");

@@ -309,13 +309,15 @@ function shippedArgs(X, centerX, centerY) {
 // from and never re-spaces. The ramp's own per-occurrence table is §4.7 and is driven through a real
 // nextWave() in test-cs022-p3.js; the two are cross-checked at the foot of this section.
 // REPOINTED BY CS023 P1 (spec §1.3): 460/276 -> 400/138 and the density curve went FLAT at 0.12, so
-// every column below moved. The un-ramped four-ring shell is 15 satellites at the base multiplier, not 65.
+// every column below moved. REPOINTED AGAIN BY CS023 P4C (spec C16): 400/138 -> 400/200. Ring 1 is the
+// only row that did not move — its radius IS ORBIT_INNER_RADIUS, which P4c holds fixed — and the
+// un-ramped four-ring shell is 18 satellites at the base multiplier, not 15 and not CS022's 65.
 const WANT_RINGS = [
   // radius, maxCount, density, count, actualGapPx (arc) — at the base ORBIT_GAP_MULT (occurrence 1)
-  { radius: 400, maxCount: 16, density: 0.12, count: 3, gap: 745.8 },
-  { radius: 538, maxCount: 21, density: 0.12, count: 3, gap: 1034.8 },
-  { radius: 676, maxCount: 27, density: 0.12, count: 4, gap: 969.9 },
-  { radius: 814, maxCount: 32, density: 0.12, count: 5, gap: 930.9 },
+  { radius: 400,  maxCount: 16, density: 0.12, count: 3, gap: 745.8 },
+  { radius: 600,  maxCount: 24, density: 0.12, count: 4, gap: 850.5 },
+  { radius: 800,  maxCount: 32, density: 0.12, count: 5, gap: 913.3 },
+  { radius: 1000, maxCount: 40, density: 0.12, count: 6, gap: 955.2 },
 ];
 (function sectionB() {
   console.log("(B) the CS022 §1.3 geometry table, pinned exactly");
@@ -324,13 +326,16 @@ const WANT_RINGS = [
 
   // The inputs, so a constant drifting away from the spec fails HERE rather than three sections later.
   eq(X.ORBIT_INNER_RADIUS, 400, "B: innerRadius 400 (CS023 P1, spec §1.3 — was 460)");
-  eq(X.ORBIT_RADIUS_STEP, 138, "B: radiusStep 138 (CS023 P1 — was 276)");
-  // REPOINTED BY CS023 P1. CS022's radii were 5x and 3x the satellite diameter; CS023 keeps the
-  // derive-from-satellite-size rule for the STEP (1.5x) and derives the inner radius from the CLEARANCE
-  // it has to leave over the permanent 88 px dock instead. Both are asserted as derivations, not literals.
-  eq(X.ORBIT_RADIUS_STEP, 1.5 * X.DEBRIS_RADII[3] * 2, "B: ...and 138 really is 1.5 x the satellite diameter, not a coincidence");
-  eq(X.ORBIT_RADIUS_STEP - X.DEBRIS_RADII[3] * 2, 46,
-    "B: ...so the INTER-RING radial corridor is 46 px — narrower than the 65 px in-ring floor, and correct (spec §4.1)");
+  eq(X.ORBIT_RADIUS_STEP, 200, "B: P4C — radiusStep 200 (276 at CS022, 138 at CS023 P1)");
+  // REPOINTED BY CS023 P1, THEN REVERSED BY CS023 P4C. CS022's radii were 5x and 3x the satellite
+  // diameter and CS023 P1 kept that rule for the STEP at 1.5x; P4c RETIRES it — 200 px is ~2.17
+  // diameters, a round number chosen for readable ring separation and checked against the budget. The
+  // inner radius has never been a diameter multiple: it is set by the clearance it leaves over the
+  // permanent 88 px dock, which is the derivation that survives untouched.
+  assert(X.ORBIT_RADIUS_STEP !== 1.5 * X.DEBRIS_RADII[3] * 2,
+    "B: P4C — the step is NO LONGER 1.5 x the satellite diameter; that rule shipped at P1's 138 and is retired");
+  eq(X.ORBIT_RADIUS_STEP - X.DEBRIS_RADII[3] * 2, 108,
+    "B: P4C — so the INTER-RING radial corridor is 108 px, now WIDER than the 65 px in-ring floor (it was 46 and narrower)");
   eq(X.ORBIT_RING_COUNT, 4, "B: 4 rings (FORK-CS021-B)");
   eq(X.ORBIT_GAP_MULT, 2.5, "B: gap multiplier 2.5 (P1 ships it fixed; P2 makes it occurrence-scaled)");
   eq(X.ORBIT_SAFETY_MARGIN, 8, "B: safety margin 8");
@@ -360,8 +365,8 @@ const WANT_RINGS = [
     close(r.angleStep, X.TAU / w.count, `B: ring ${i + 1} angleStep = TAU / count`);
     r.satellites.forEach((s, k) => close(s.angle, r.startAngle + k * r.angleStep, `B: ring ${i + 1} satellite ${k} angle`));
   });
-  eq(L.total, 15, "B: 15 size-3 satellites with ALL FOUR rings at the base multiplier (CS022 shipped 65 here)");
-  eq(L.outerEdge, 860, "B: outermost satellite EDGE is 814 + 46 = 860 px");
+  eq(L.total, 18, "B: P4C — 18 size-3 satellites with ALL FOUR rings at the base multiplier (15 at P1's step, 65 at CS022's)");
+  eq(L.outerEdge, 1046, "B: P4C — outermost satellite EDGE is 1000 + 46 = 1046 px (was 814 + 46 = 860)");
   // The budget that edge has to clear is the ORBIT world's, never the live WORLD_H (which is 1440
   // whenever a field level is on screen). This is the constraint that made CS022 P1 a prerequisite.
   const orbitBudget = X.worldDims(X.WORLD_SIZE_ORBIT)[1] / 2 - 20;
@@ -471,7 +476,7 @@ const WANT_RINGS = [
       `C: level ${n}: innerRadius - satRadius (${X.ORBIT_INNER_RADIUS - satR}) >= dock radius (${wave1Dock})`);
     eq(L.rejected.length, 0, `C: level ${n}: no ring was rejected`);
     eq(L.inactive.length, 0, `C: level ${n}: the un-ramped control really does place all four rings`);
-    eq(L.total, 15, `C: level ${n}: 15 satellites un-ramped and un-scaled (this is the control P2/P3 move away from — CS022 shipped 65)`);
+    eq(L.total, 18, `C: P4C — level ${n}: 18 satellites un-ramped and un-scaled (this is the control P2/P3 move away from — 15 at CS023 P1, 65 at CS022)`);
   }
   eq(orbitLevels, 21, "C: 21 orbit levels across 1..63 (FORK-CS021-E — every 3rd)");
   console.log(`    tightest lane across all 21 occurrences: ${worstGap.toFixed(2)} px (floor ${shipDiameter * X.ORBIT_GAP_MULT}); widest edge ${worstEdge} px (budget ${budget})`);
@@ -641,8 +646,8 @@ function expectedOrbitSpawn(X, level) {
 
   // The fast ring really moves faster on the field, not just in the layout object.
   // REPOINTED BY CS022 P3: radii read from the shipped constants, never restated — 180/330/480/630
-  // became 460/736/1012/1288 there and 400/538/676/814 at CS023 P1. Three geometries in three rounds;
-  // hardcoding them again would just re-arm the same trap.
+  // became 460/736/1012/1288 there, 400/538/676/814 at CS023 P1 and 400/600/800/1000 at CS023 P4C.
+  // FOUR geometries in four rounds; hardcoding them again would just re-arm the same trap.
   const byRadius = {};
   for (const d of X.game.debris) if (d.orbitCenter) byRadius[d.orbitRadius] = Math.abs(d.orbitAngVel);
   // REPOINTED BY CS023 P1: ORBIT_FAST_RING is a LIST, so this checks a SET of fast radii against the
@@ -769,7 +774,8 @@ function expectedOrbitSpawn(X, level) {
   // REPOINTED BY CS022 P3. The corners USED to be read off X.WORLD_W/X.WORLD_H — the load-time FIELD
   // snapshot (2560x1440). That was already the wrong period after CS022 P1 (an orbit level runs at
   // a bigger world) and it only kept passing because CS021's outermost radius, 630, still fitted a 720
-  // px half-height. At 814 it does not: wrapPos folds a ring that big in a 1440-tall world, and the
+  // px half-height. At 1,000 (P4C; 814 at CS023 P1) it does not: wrapPos folds a ring that big in a
+  // 1440-tall world, and the
   // toroidal-distance claim breaks for the right reason. The world is driven to an orbit level FIRST
   // and the corners are read off the LIVE period, which is the standing CS022 P1 idiom.
   withRandom(seededRandom(0x5EA12), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
@@ -855,8 +861,8 @@ function expectedOrbitSpawn(X, level) {
   const X = build();
   // REPOINTED BY CS022 P3, same reason as (H): these probes place a ship at a RING RADIUS around a fixed
   // centre and then measure wrap-aware distances, so they only mean anything in a world whose wrap-clean
-  // circle contains the outermost ring. At 814 px that is the ORBIT world, not the load-time field
-  // snapshot the centre used to be hardcoded to.
+  // circle contains the outermost ring. At 1,000 px (P4C; 814 at CS023 P1) that is the ORBIT world, not
+  // the load-time field snapshot the centre used to be hardcoded to.
   withRandom(seededRandom(0x5AFD), () => { X.startGame(); atWave(X, X.ORBIT_LEVEL_EVERY); });
   eq(X.game.worldSize, X.WORLD_SIZE_ORBIT, "I: (setup) the probes run at the ORBIT world size");
   const [IW, IH] = X.worldDims(X.game.worldSize);

@@ -128,7 +128,7 @@ const RETURN = [
   "DEBRIS_RADII", "SHIP_MAX_HP", "KNOCKBACK_SPEED", "WORLD_W", "WORLD_H", "TAU",
   "AudioSys", "GAME_VERSION", "DEBUG_VARS",
   // CS022 P3: both builds have these (CS021 P1 shipped them), so they stay on the SHARED list — which
-  // is the point: each build resolves a ring index against its own geometry, 180/150 or 400/138.
+  // is the point: each build resolves a ring index against its own geometry, 180/150 or 400/200.
   // CS023 P1 adds ORBIT_FAST_RING to the same shared list. It exists in both builds but with DIFFERENT
   // TYPES — a bare 1-based number at PRE_FIX_REF, a LIST of them as of CS023 (spec C3) — so it is read
   // through fastRingIndices() below rather than directly, and each build answers for its own rings.
@@ -227,8 +227,9 @@ function placeShipAt(X, h, d) {
 }
 // CS022 P3: resolve a RING INDEX (0-based) into the { level, radius } that build actually puts it at.
 // The two builds this file compares no longer agree on either: PRE_FIX_REF (CS021 P1) has radii
-// 180/330/480/630 with all four rings present from level 3, while the live build has 400/538/676/814
-// (CS023 P1; 460/736/1012/1288 through CS022) and a RAMP that lays them one per occurrence. CS022 filled
+// 180/330/480/630 with all four rings present from level 3, while the live build has 400/600/800/1000
+// (CS023 P4C; 400/538/676/814 at CS023 P1, 460/736/1012/1288 through CS022) and a RAMP that lays them
+// one per occurrence. CS022 filled
 // OUTERMOST-first, so ring 1 did not exist until level 12; CS023 fills INNERMOST-first, so it is ring 4
 // that arrives last. Naming a ring by index and letting each build answer for itself keeps section (B)'s
 // comparison about the SHIELD BEHAVIOUR, which is what it has always been about, instead of about

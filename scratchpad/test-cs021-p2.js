@@ -280,7 +280,7 @@ function atWave(X, w) {
 // (C2) is different: it drives the REAL nextWave(), so it sees the ramp AND the field component too, and
 // its expectations are recomputed from activeRingsFor()/levelDef() rather than restated.
 (function sectionC() {
-  console.log("(C) satellite totals: 65 at occurrence 1, 71 at the floor, maxCount widening 18/29/40/51 -> 20/33/45/58");
+  console.log("(C) satellite totals: 18 at EVERY occurrence (P4C), maxCount widening 16/24/32/40 -> 18/27/36/45");
   const X = build();
 
   // -- (C1) the pure generator, fed orbitGapMult() directly, with EVERY ring active --
@@ -288,24 +288,28 @@ function atWave(X, w) {
   const L24 = withRandom(seededRandom(0xC024), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(24))));
   const L63 = withRandom(seededRandom(0xC063), () => X.generateOrbitLayout(shippedArgs(X, 1280, 720, X.orbitGapMult(63))));
 
-  // REPOINTED BY CS023 P1 (spec §1.3 + C5). The maxCounts still widen by ~13% as the multiplier decays
-  // 2.5 -> 1.8 — that mechanism is untouched — but at the flat 0.12 density curve the widening buys ONE
-  // satellite in the whole game (ring 2, at occurrence 3), so the four-ring total goes 15 -> 16 rather
-  // than 65 -> 71. That is C5's finding, and pinning it here is what stops anyone "fixing" the quiet
-  // curve or deleting it.
-  eq(L1.total, 15, "C1: occurrence 1's multiplier over all four rings totals 15");
-  eq(L24.total, 16, "C1: occurrence 8 (level 24, the floor) totals 16");
-  eq(L63.total, 16, "C1: occurrence 21 (level 63) still totals 16 — held at the floor");
+  // REPOINTED BY CS023 P1 (spec §1.3 + C5), AND INVERTED BY CS023 P4C (spec C16). The maxCounts still
+  // widen by ~13% as the multiplier decays 2.5 -> 1.8 — that mechanism is untouched and is still pinned
+  // below — but the widening now buys NOTHING AT ALL. P1's 138px step left exactly one survivor (ring 2
+  // stepped 3 -> 4 at occurrence 3, total 15 -> 16); P4c's 200px step widens every ring enough that the
+  // rounding in round(1 + 0.12 x (maxCount - 1)) absorbs the decay on all four, so the four-ring total is
+  // a FLAT 18 from occurrence 1 to occurrence 21. That is C5's finding at full strength, and pinning it
+  // here is what stops anyone "fixing" the silent curve or deleting it.
+  eq(L1.total, 18, "C1: P4C — occurrence 1's multiplier over all four rings totals 18 (was 15)");
+  eq(L24.total, 18, "C1: P4C — occurrence 8 (level 24, the floor) totals THE SAME 18 (was 16)");
+  eq(L63.total, 18, "C1: P4C — occurrence 21 (level 63) still 18 — flat, not a 15 -> 16 climb");
 
-  const WANT_MAXCOUNT_1  = [16, 21, 27, 32];
-  const WANT_MAXCOUNT_24 = [18, 24, 30, 36];
-  const WANT_COUNT_1     = [3, 3, 4, 5];
-  const WANT_COUNT_24    = [3, 4, 4, 5];
-  // C5 stated as arithmetic rather than as prose: the whole occurrence curve moves exactly ONE ring's
-  // count, by exactly one satellite, and it is ring 2.
+  const WANT_MAXCOUNT_1  = [16, 24, 32, 40];
+  const WANT_MAXCOUNT_24 = [18, 27, 36, 45];
+  const WANT_COUNT_1     = [3, 4, 5, 6];
+  const WANT_COUNT_24    = [3, 4, 5, 6];
+  // C5 stated as arithmetic rather than as prose — and P4c turns "exactly one ring, by one satellite"
+  // into "no ring, at all". The list is asserted EMPTY rather than the assertion being dropped: a suite
+  // that stops counting the curve's effect has stopped noticing if it comes back.
   const movedRings = WANT_COUNT_1.map((c, i) => c !== WANT_COUNT_24[i] ? i : -1).filter(i => i >= 0);
-  eq(JSON.stringify(movedRings), "[1]", "C1: spec C5 — ring 2 is the ONLY ring the occurrence curve moves");
-  eq(WANT_COUNT_24[1] - WANT_COUNT_1[1], 1, "C1: ...and it moves it by exactly one satellite, across the whole 63-level game");
+  eq(JSON.stringify(movedRings), "[]", "C1: P4C — spec C16: the occurrence curve moves NO ring's count (it moved ring 2 at P1's step)");
+  eq(WANT_COUNT_24.reduce((a, b) => a + b) - WANT_COUNT_1.reduce((a, b) => a + b), 0,
+    "C1: ...so it is worth exactly ZERO satellites across the whole 63-level game");
   L1.rings.forEach((r, i) => {
     eq(r.maxCount, WANT_MAXCOUNT_1[i], `C1: occurrence 1 ring ${i + 1} maxCount unchanged at ${WANT_MAXCOUNT_1[i]}`);
     eq(r.count, WANT_COUNT_1[i], `C1: occurrence 1 ring ${i + 1} count is ${WANT_COUNT_1[i]}`);
@@ -374,7 +378,8 @@ function atWave(X, w) {
     assert(L.total >= L1.total && L.total <= L24.total, `C3: occurrence ${occ}: total ${L.total} stays within [${L1.total}, ${L24.total}]`);
     prevTotal = L.total;
   }
-  eq(prevTotal, 16, "C3: the climb really does reach 16 by occurrence 21 (one satellite in the whole game — spec C5)");
+  eq(prevTotal, 18, "C3: P4C — the 'climb' ends at the same 18 it started at (ZERO satellites in the whole game — spec C5 as strengthened by C16)");
+  eq(prevTotal, L1.total, "C3: ...i.e. occurrence 21's total is identical to occurrence 1's, not one higher");
 })();
 
 // ================= (D) THE FAIRNESS SWEEP RE-RUN — spec §8 items 1-4, occurrence-scaled ===============
