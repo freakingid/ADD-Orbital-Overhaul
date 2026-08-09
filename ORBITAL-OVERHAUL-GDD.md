@@ -326,6 +326,16 @@ Implements Pillar 6 ("Ease players in", §1). **CS018 replaced the game's diffic
 
 #### 2.13.1 Orbit levels — a recurring level archetype (CS021 P1/P1b, scaled P2, knobs P3; ramp + geometry CS022 P1/P3)
 
+> **2026-08-09 — between changesets.** CS023 (P1–P4c, see `GDD-VERSION-HISTORY.md`)
+> retuned this archetype's shell geometry and added an inward debris drift, but
+> was interrupted before its doc-sweep phase (P5) ran — this section still
+> describes the CS022 build, not what's currently in `asteroids-deluxe.html`.
+> CS024 (`PLANNED-FEATURES-CS024.md`) removes the orbit archetype outright,
+> along with every §2 reference to it below. Nothing in this section — or
+> elsewhere in §2 that mentions the orbit archetype — has been rewritten for
+> either change; that rewrite is CS024 P7's job. Treat this section, and any
+> other §2 material describing orbit levels, as stale until then.
+
 **Every `ORBIT_LEVEL_EVERY`-th level (3) is an orbit level: 3, 6, 9 … 63 — 21 of the 63.** Instead of `nextWave()`'s scatter (a `junkCount` ring of drifting size-3 debris 260–640 px from the ship), the wave's satellites are laid out as **concentric rings orbiting the recycling dock**, plus (CS022 P3, below) an ordinary scatter component on top. It is a spawn **arrangement** plus a motion **mode**, never a wall: the satellites are ordinary `DebrisSatellite`s — shootable, breakable, harvestable — so opening a lane by shooting is a legitimate strategy and the salvage loop is unchanged. The satellites exist to be destroyed, not threaded past — an orbit level is neglected orbital junk made literal, a shell of accumulated debris around the one place that recycles it, and every fairness number below is chosen against that reading, not against "can a skilled pilot fly the gauntlet." `nextWave()` branches on `levelDef(game.wave).archetype` immediately after the world resize + `game.dock = new Dock()` (§2.11.1); everything else in the function (voice, music intensity, the `cargoMax` grant, the bonus-canister roll, stats, `logDifficultySnapshot`) runs identically for both archetypes, and the `"field"` path is untouched.
 
 - **The geometry is fitted to the orbit-level world, not derived from satellite size (CS022 P3, gate Q1 + FORK-CS022-A).** Four rings at `ORBIT_INNER_RADIUS` **460** + `ORBIT_RADIUS_STEP` **276** each — **460 / 736 / 1012 / 1288** px from the dock, measured **centre-to-centre**: five large-satellite diameters (5 × 92) out for ring 1, three more (3 × 92) for each further ring. That puts the outermost satellite *edge* at 1288 + 46 = **1,334 px**, inside an orbit level's `WORLD_SIZE_ORBIT`-sized wrap-clean circle (**1,420 px**, `WORLD_H/2 − 20` at 5120×2880 — §2.11.1) — this geometry does not fit the smaller field-level world at all, which is why orbit levels run at the bigger size from the first occurrence. Ring 1 clears the permanent 88 px dock (`Dock.radius` is `DOCK_RADIUS × 2` at every level — `LEVER_DOCK_SIZE` ships disabled) by 460 − 46 − 88 = **326 px**.

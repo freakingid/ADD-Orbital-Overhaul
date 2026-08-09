@@ -1,5 +1,12 @@
 # DIFFICULTY LEVERS — living registry
 
+> **2026-08-09 — between changesets.** CS023 (P1–P4c) retuned orbit-archetype
+> levers but was interrupted before its doc-sweep phase (P5); CS024
+> (`PLANNED-FEATURES-CS024.md`) removes the orbit archetype and the whole
+> tier/ramp difficulty apparatus this file describes, replacing it with a lever
+> odometer. This file has not been updated for either change — treat it as
+> describing the CS022 build until CS024 P7's doc sweep lands.
+
 This is a **living document** — it is never archived, unlike the version-suffixed
 planning docs (`PLANNED-FEATURES-*.md` / `IMPLEMENTATION-PHASES-*.md`). Every
 difficulty lever, present and future, gets an entry here regardless of which
