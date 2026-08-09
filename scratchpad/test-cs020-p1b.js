@@ -413,20 +413,27 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // via the FREQ_JITTER constant instead).
   // REPOINTED AGAIN BY CS024 P4: 36 -> 15 — all 21 tier knobs removed with levelDef()'s tier names,
   // and the three headers left empty by that (JUNK, UFO MOVEMENT, UFO WEAPONS) removed with them.
+  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
+  // entries (JUNK header restored around junkCount/junkSpeedLarge/junkSpeedMedium/junkSpeedSmall,
+  // among others) plus smallUfoChance.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 15, "A: DEBUG_VARS holds 15 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 15, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 32, "A: DEBUG_VARS holds 32 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 32, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");
   const iDeliv = DEBUG_VARS.findIndex(e => e.header === "DELIVERY");
-  // REPOINTED BY CS024 P4: the JUNK header that used to follow DELIVERY is GONE (its three tier knobs
-  // went with the level table), so the placement claim is re-anchored on what actually follows DELIVERY
-  // now. THE CLAIM ITSELF IS UNCHANGED — this phase put DELIVERY immediately after CHAIN GUARD, and it
-  // is still there. P5 reintroduces a JUNK header, at which point the original neighbour returns.
   assert(iGuard >= 0 && iDeliv > iGuard, "A: DELIVERY still sits AFTER CHAIN GUARD — the specified placement");
-  assert(!DEBUG_VARS.some(e => e.header === "JUNK"),
-    "A: ...and the JUNK header it used to precede is gone with the 21 tier knobs (CS024 P4)");
+  // REPOINTED BY CS024 P5: the JUNK header that CS024 P4 emptied out is BACK — P5 rebuilds it around
+  // four real lever-knob entries (one driver + three sizes), and DELIVERY's dockComboGrace is
+  // immediately followed by it again, restoring the original neighbour this TRAP used to name.
+  const iJunk = DEBUG_VARS.findIndex(e => e.header === "JUNK");
+  assert(iJunk > iDeliv, "A: ...and the JUNK header is back, after DELIVERY (CS024 P5)");
+  eq(DEBUG_VARS[iJunk + 1].header, undefined, "A: JUNK is not left empty — a value entry follows it");
+  const junkIds = DEBUG_VARS.slice(iJunk + 1, iJunk + 5).map(e => e.id);
+  eq(JSON.stringify(junkIds),
+    JSON.stringify(["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"]),
+    "A: ...and its four entries are junkCount/junkSpeedLarge/junkSpeedMedium/junkSpeedSmall, in order (CS024 P5)");
   // A header with nothing under it renders as a stray label (the retired SAUCER PRESSURE lesson).
   assert(!DEBUG_VARS[iDeliv + 1].header, "A: the DELIVERY header is not left empty — a value entry follows it");
 

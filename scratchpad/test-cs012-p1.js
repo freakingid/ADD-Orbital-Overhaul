@@ -92,6 +92,7 @@ function makeLocalStorage() {
 
 const RETURN = [
   "game", "startGame", "update", "Saucer", "angleTo", "ufoAccuracyRad", "DEBUG",   // CS024 P4: levelDef dropped
+  "leverState",   // CS024 P5: the pure lever-graph function ufoAccuracyRad() now reads at the point of use
   // CS024 P2: SAUCER_AIM_ERR_FLOOR/CEIL and SAUCER_ACCURACY_RAMP_SCALE are REMOVED (dead constants,
   // spec §1.8) — dropped from this list; section (retirement) below probes for their absence instead.
   'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
@@ -171,26 +172,34 @@ function actualAimErr(inst, wave) {
     `B: level-1 actual fired-bullet err (${actual}) === ufoAccuracyRad() (${expectedRad}) — read off a REAL bullet`);
 })();
 
-// ================= (C) a STEP function of level: flat within a tier, drops at each boundary =====================
+// ================= (C) genuinely LEVERED: tracks leverState(w).ufoAccuracySmall, converging on the ceiling =====================
 (function () {
-  console.log("(C) the step function has collapsed to ONE step: err is FLAT at every level, no boundary anywhere");
+  console.log("(C) err is NOT flat any more — it tracks leverState(w).ufoAccuracySmall (INVERTED, floor 30deg -> ceil 8deg)");
   const inst = buildInstance();
 
-  // REPOINTED BY CS024 P4. The three tier boundaries (1/13/34) went with TIER_STEPS, so there is nothing
-  // left for the error to step at — this phase deliberately freezes it. Equality across a wide sweep is
-  // a STRICTLY TIGHTER claim than the "non-increasing" one it replaces: it would fail on any residual
-  // wave dependence in either direction, which "non-increasing" would have let through downward.
+  // REPOINTED BY CS024 P5 (spec §2.4/§4.6). The FROZEN-at-30deg answer P4 shipped is gone: ufoAccuracyRad()
+  // now reads the ufoAccuracySmall LEVER at the point of use (leverState(game.wave).ufoAccuracySmall,
+  // floor 30 -> ceil 8 over 4 steps, INVERTED — higher level means a SMALLER error, i.e. harder). The old
+  // claim here was "flat at every level, no boundary anywhere" (CS024 P4's one-phase freeze); that is now
+  // FALSE, so this section inverts to prove genuine, level-tracking variation instead — against the SAME
+  // real fired-bullet path, never a reimplementation of the lever math.
   const waves = [1, 2, 5, 9, 12, 13, 17, 25, 33, 34, 50, 63, 200, 1000];
   const errs = waves.map(w => actualAimErr(inst, w));
-  for (let i = 1; i < errs.length; i++) {
-    assert(Math.abs(errs[i] - errs[0]) < 1e-9,
-      `C: level ${waves[i]} err (${errs[i]}) === level ${waves[0]} err (${errs[0]}) — flat, no level dependence at all`);
+  for (let i = 0; i < waves.length; i++) {
+    const w = waves[i];
+    const expected = inst.leverState(w).ufoAccuracySmall * Math.PI / 180;
+    assert(Math.abs(errs[i] - expected) < 1e-9,
+      `C: level ${w} err (${errs[i]}) === leverState(${w}).ufoAccuracySmall in radians (${expected})`);
   }
-  // The former boundaries specifically, since they are what the retired claim was about.
-  for (const [below, at] of [[12, 13], [33, 34]]) {
-    assert(Math.abs(actualAimErr(inst, at) - actualAimErr(inst, below)) < 1e-9,
-      `C: level ${below}->${at} no longer steps — the tier boundary it stepped at is deleted`);
-  }
+  // Level 1 reads the lever's floor (30 deg) and every later probed level here is at or past the lever's
+  // ceiling step (8 deg) — so the sweep must show genuine downward movement, not a flat line.
+  assert(Math.abs(errs[0] - 30 * Math.PI / 180) < 1e-9,
+    `C: level 1 err (${errs[0]}) === the lever floor, 30 deg in radians`);
+  const lastErr = errs[errs.length - 1];
+  assert(lastErr < errs[0] - 1e-9,
+    `C: level ${waves[waves.length - 1]} err (${lastErr}) < level 1 err (${errs[0]}) — the lever genuinely moved`);
+  assert(lastErr >= 8 * Math.PI / 180 - 1e-9,
+    `C: level ${waves[waves.length - 1]} err (${lastErr}) never drops below the lever's ceiling, 8 deg in radians`);
 })();
 
 // ================= (D) bounds, now sourced from the live DEBUG_VARS tier knobs =====================

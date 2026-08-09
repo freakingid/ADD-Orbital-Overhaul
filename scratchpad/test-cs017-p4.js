@@ -80,7 +80,7 @@ function makeLocalStorage() {
 const RETURN = [
   // CS024 P4: levelDef dropped — the level table and all 21 tier knobs are deleted (spec §1.6).
   "game", "startGame", "nextWave", "update", "Saucer", "angleTo", "ufoAccuracyRad",
-  "ufoAccuracyRad", "DEBUG", "DEBUG_VARS", "applyDebug", "AudioSys",
+  "ufoAccuracyRad", "DEBUG", "DEBUG_VARS", "applyDebug", "AudioSys", "leverState",
   'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
 ];
 
@@ -192,22 +192,26 @@ function actualGap(inst, wave, waveTime, randomVal) {
 })();
 
 // ================= (D) aim error follows the ONE live helper, at every level ============================
-// REPOINTED BY CS024 P4. This section's subject is CS017 P4's retired time-in-level pressure axis, and its
-// job is to prove aim error does NOT track waveTime. CS018 P7 made the positive half of that "it steps
-// with LEVEL at the tier breakpoints"; the tiers and their nine knobs are now deleted (spec §1.6), and the
-// quantity is FROZEN at the retired table's level-1 answer until P5 puts it on the ufoAccuracySmall lever.
-// So the positive half becomes "it is exactly what ufoAccuracyRad() says, at every level, with a nonzero
-// waveTime" — which is what actually matters here and is checked off a REAL fired bullet, and the
-// mirror-image control that a nonzero waveTime changes nothing is untouched below in (E)/(F).
+// REPOINTED BY CS024 P4, THEN AGAIN BY CS024 P5. This section's subject is CS017 P4's retired time-in-level
+// pressure axis, and its job is to prove aim error does NOT track waveTime — that half is unchanged below.
+// P4 additionally froze the level axis itself (the tiers and their nine knobs were deleted, spec §1.6, and
+// nothing wave-driven fed the quantity for that one phase, so it read flat everywhere). P5 wires the
+// ufoAccuracySmall LEVER at the point of use (spec §2.4/§4.6): aim error is "exactly what ufoAccuracyRad()
+// says, at every level, with a nonzero waveTime" (unchanged — still checked off a REAL fired bullet), but
+// ufoAccuracyRad() itself now genuinely varies by level (leverState(w).ufoAccuracySmall, INVERTED, floor
+// 30deg -> ceil 8deg), so the former "FLAT across every probed level" claim inverts to "tracks the lever,
+// level by level" instead. The mirror-image control that a nonzero waveTime changes nothing is untouched
+// below in (E)/(F).
 (function sectionD() {
   console.log("(D) aim error is exactly ufoAccuracyRad() at every level, with waveTime deliberately nonzero");
   const inst = buildInstance();
-  const { DEBUG, ufoAccuracyRad, game } = inst;
+  const { DEBUG, ufoAccuracyRad, leverState, game } = inst;
   // The nine UFO WEAPONS tier knobs are gone; nothing here can be reading one by accident.
   for (const id of ["ufoAccuracyLow", "ufoAccuracyNormal", "ufoAccuracyHigh"])
     assert(!(id in DEBUG), `D: DEBUG.${id} is gone with the 21 tier knobs (CS024 P4)`);
+  const levels = [1, 12, 13, 33, 34, 63];
   const errs = [];
-  for (const level of [1, 12, 13, 33, 34, 63]) {
+  for (const level of levels) {
     game.wave = level;
     const expectedRad = ufoAccuracyRad();
     const actualErr = actualAimErr(inst, level, 999); // waveTime is irrelevant — a nonzero value proves it
@@ -215,9 +219,17 @@ function actualGap(inst, wave, waveTime, randomVal) {
       `D: level ${level} real fired aim error (${actualErr}) === ufoAccuracyRad() (${expectedRad})`);
     errs.push(actualErr);
   }
-  // FROZEN this phase — the former breakpoints at 13 and 34 no longer step, because they no longer exist.
-  for (let i = 1; i < errs.length; i++)
-    assert(near(errs[i], errs[0], 1e-9), `D: ...and it is FLAT across every probed level (TRAP 2: P5 wires the lever)`);
+  // REPOINTED BY CS024 P5: no longer FROZEN — err now tracks leverState(level).ufoAccuracySmall exactly,
+  // level by level, off the SAME real fired-bullet reading captured above.
+  for (let i = 0; i < levels.length; i++) {
+    const expected = leverState(levels[i]).ufoAccuracySmall * Math.PI / 180;
+    assert(near(errs[i], expected, 1e-6),
+      `D: level ${levels[i]} err (${errs[i]}) === leverState(${levels[i]}).ufoAccuracySmall in radians (${expected})`);
+  }
+  // And it genuinely moves across the sweep — level 1 sits at the lever's floor (30deg), level 63 is well
+  // past the lever's 4-step span and sits at (or past) its ceiling (8deg); the two must differ.
+  assert(errs[levels.length - 1] < errs[0] - 1e-9,
+    `D: level ${levels[levels.length - 1]} err (${errs[levels.length - 1]}) < level 1 err (${errs[0]}) — the lever genuinely moved (TRAP 2: P5 wires the lever)`);
 })();
 
 // ================= (F) nextWave() still resets waveTime, but it no longer affects the aim error =====

@@ -215,9 +215,11 @@ const SHIELD_BOUNCE_MIN = 120;
 const AUTO_SHIELD_SCORE_PENALTY = 500; // PLAYTEST KNOB — score lost per auto-save. Flat (FLAG-4d).
 const AUTO_SHIELD_REGEN_PAUSE = 1.0; // sec — passive regen freezes this long after an auto-save. PLAYTEST KNOB (>= HIT_STUN_DURATION guarantees no recharge between i-frame end and next hit).
 
-const DEBRIS_SPEEDS = { 3: 70, 2: 110, 1: 160 };  // base drift speed by size; 70 is also the JUNK
-                                 // section's "normal" DEBUG_VARS default (junkSpeedMul() divides by
-                                 // it). Its cap is DEBRIS_SPEED_CAP in the difficulty-ramp block below.
+const DEBRIS_SPEEDS = { 3: 70, 2: 110, 1: 160 };  // base drift speed by size. CS024 P5: the junkSpeed*
+                                 // levers now supply this directly at every lever-driven spawn site —
+                                 // this table's only surviving reader is DebrisSatellite's own default
+                                 // parameter, used solely by the (non-lever-driven) title-screen
+                                 // decoration. Its cap is DEBRIS_SPEED_CAP, declared further down.
 const DEBRIS_RADII  = { 3: 46, 2: 26, 1: 13 };
 const DEBRIS_SCORE  = { 3: 20, 2: 50, 1: 100 };
 const DEBRIS_GARBAGE = 4;       // canisters emitted at EVERY tier's destruction (F3). PLAYTEST KNOB:
@@ -252,16 +254,25 @@ const SAUCER_SCORE = { big: 200, small: 1000 };
 // Hunter Satellites (F4) — the reshaped killer-satellite/wedge system: a diamond core that
 // drifts passively toward the ship, then splits 3-ways into actively-homing children,
 // emitting garbage at every tier.
-// CS018 P4 (FLAG-a): every Hunter's speed and turn rate is now FROZEN at _CEIL × HUNTER_FLOOR_FRAC
-// for the WHOLE GAME — no difficulty ramp, no cycle, no clock of any kind. The two _CEIL tables are
-// therefore the FROZEN VALUE'S DERIVATION, not a target anything climbs toward; nothing interpolates
-// between the floor fraction and the ceiling any more. Rising Hunter pressure is expressed purely as
-// COUNT now — bounded by LARGE_HUNTER_MAX below (CS024 P3; it was the level table's maxLargeHunters
-// column, off HUNTER_CAP_STEPS, until this phase collapsed the whole clock into one flat ceiling).
+// CS018 P4 (FLAG-a): every Hunter's TURN RATE is FROZEN at _CEIL × HUNTER_FLOOR_FRAC for the WHOLE
+// GAME, at every tier, no exceptions — no difficulty ramp, no cycle, no clock of any kind, and CS024 P5
+// does not lever it either (spec §2.4: "All Hunter turn rates stay frozen"). HUNTER_TURN_CEIL is
+// therefore a FROZEN VALUE'S DERIVATION, not a target anything climbs toward.
+// SPEED SPLITS BY TIER as of CS024 P5. The large core still has no speed lever (spec §2.4 — it does not
+// pursue) and keeps this same frozen _CEIL × HUNTER_FLOOR_FRAC derivation, unconditionally. Medium and
+// small speed are now the HUNTER chain's two carried levers (hunterSpeedMedium/hunterSpeedSmall, driven
+// by the coalescePause lever's wraps) — HUNTER_SPEED_CEIL[2]/[1] below now describe only the RETIRED
+// derivation base for those two tiers; the live figures come from leverState(game.wave), not this table.
+// Rising Hunter pressure used to be expressed purely as COUNT (LARGE_HUNTER_MAX below, CS024 P3; it was
+// the level table's maxLargeHunters column, off HUNTER_CAP_STEPS, until that phase collapsed the whole
+// clock into one flat ceiling) — CS024 P5 adds a second axis on top: how fast a coalesced Hunter homes.
 const HUNTER_RADII      = { 3: 24, 2: 15, 1: 10 };    // collision radius by tier
 const HUNTER_SCORE      = { 3: 200, 2: 150, 1: 250 }; // large core / medium / small (small worth most — hardest to hit)
 const HUNTER_DAMAGE     = { 3: 60, 2: 45, 1: 30 };    // contact damage — harder than the equivalent Debris tier (F2/F4)
-const HUNTER_SPEED_CEIL = { 3: 70, 2: 120, 1: 175 };  // frozen-speed DERIVATION base (px/s): large drifts, medium/small home (anchored on the old wedge 120/175)
+const HUNTER_SPEED_CEIL = { 3: 70, 2: 120, 1: 175 };  // [3] is the LIVE frozen-speed derivation base for the
+                                       // large core (still read every construction). [2]/[1] are now read
+                                       // only as historical reference — CS024 P5's hunterSpeedMedium/Small
+                                       // levers replaced them as medium/small's actual speed source.
 const HUNTER_TURN_CEIL  = { 3: 0, 2: 1.6, 1: 2.6 };   // frozen turn-rate DERIVATION base (rad/s); large's is 0, so it never turns (passive drift)
 const HUNTER_FLOOR_FRAC = 0.58;   // THE Hunter speed/turn knob: EVERY Hunter, at EVERY level, moves at this × its _CEIL
                                   // (40.6 / 69.6 / 101.5 px/s and 0 / 0.928 / 1.508 rad/s by tier 3/2/1)
@@ -282,10 +293,10 @@ const LARGE_HUNTER_MAX  = 100;
 // the site" idiom (see GARBAGE_MAGNET_RANGE/garbageAttractRadius) — and the ONE consumer in
 // HunterSatellite.update() reads DEBUG.lastStandSpeed. HUNTER_LAST_STAND_TURN stays hardcoded: the
 // phase scoped one knob, not two.
-const HUNTER_LAST_STAND_SPEED = 50;    // px/s — slower than a medium homer, which since CS018 P4 is the
-                                       // FROZEN HUNTER_SPEED_CEIL[2]*HUNTER_FLOOR_FRAC = 69.6 px/s at
-                                       // EVERY level (it used to range 69.6 -> 120 and beyond); a
-                                       // search-ender, not a second homing tier.
+const HUNTER_LAST_STAND_SPEED = 50;    // px/s — slower than a medium homer's floor (CS024 P5:
+                                       // hunterSpeedMedium ranges 60 -> 110 px/s by level, so this sits
+                                       // below even level 1's pursuit speed); a search-ender, not a
+                                       // second homing tier.
 const HUNTER_LAST_STAND_TURN  = 0.5;   // rad/s — well below HUNTER_TURN_CEIL[2] (1.6); a slow, inevitable turn.
 // PLAYTEST KNOB (v3.4 P1): canisters per Hunter KILL, by tier — was a flat HUNTER_GARBAGE=3 for
 // both large/medium plus a separate HUNTER_SMALL_GARBAGE=6 for the small tier; now one per-tier
@@ -455,28 +466,20 @@ const GARBAGE_HARD_MAX = 300;   // ...and above which the field is drained back 
 
 // Garbage coalescence (v3.1 P3): uncollected canisters mutually attract and, on contact, fuse into a
 // growing clump; at HUNTER_COALESCE_COUNT pieces the clump collapses into a fresh large Hunter core
-// (neglect breeds danger). A piece stays inert for GARBAGE_COALESCE_DELAY sec after emission so a
-// fresh burst rides its explosion kick APART first — both the attraction AND the merge are gated on
-// it. This is a separate, weaker, always-on force from the Magnet powerup (that pulls garbage→ship);
-// Magnet is the natural anti-coalescence tool (vacuum pieces before they clump). All math wrap-aware.
-// ALL THREE NUMBERS BELOW ARE GATE A's ANSWER TO Q1, MEASURED IN THE HANDS AND BAKED IN (CS024 P4).
-// The gate asked "do hunters still appear at all, now that coalescence is the only producer?" and the
-// answer came back the other way round: they appear, and they appear TOO FAST. Paul retuned the three
-// live sliders in-session and reported the trio he landed on — attraction delay 5000 ms, radius 160 px,
-// force 30 px/s² — so those become the shipped defaults here. The registry entries derive their `def`
-// from these constants, so the panel follows automatically and cannot disagree with them.
-// The delay's new value is ALSO exactly the coalescePause lever's `floor` (5.0 s, §2.4), which is not a
-// coincidence and is worth knowing before anyone "reconciles" the two: when P5 wires the lever, level 1
+// (neglect breeds danger). A piece stays inert for the coalescePause lever's value (seconds) after
+// emission so a fresh burst rides its explosion kick APART first — both the attraction AND the merge
+// are gated on it. This is a separate, weaker, always-on force from the Magnet powerup (that pulls
+// garbage→ship); Magnet is the natural anti-coalescence tool (vacuum pieces before they clump). All
+// math wrap-aware.
+// GARBAGE_MAGNET_RANGE/_PULL BELOW ARE GATE A's ANSWER TO Q1, MEASURED IN THE HANDS AND BAKED IN
+// (CS024 P4). The gate asked "do hunters still appear at all, now that coalescence is the only
+// producer?" and the answer came back the other way round: they appear, and they appear TOO FAST. Paul
+// retuned three live sliders in-session and reported the trio he landed on — attraction delay 5000 ms,
+// radius 160 px, force 30 px/s². The inert delay's 5000 ms answer is now carried forward as the
+// coalescePause lever's `floor` (5.0 s, §2.4, CS024 P5) rather than a standalone constant — level 1
 // keeps playing at precisely the value the gate validated, and the lever's job is to shorten it from
-// there. The other two are NOT levers (§2.5) and stay plain debug knobs.
-const GARBAGE_COALESCE_DELAY = 5.0;    // PLAYTEST KNOB (v3.3 P4: 6.0→3.0; CS024 P4 Gate A Q1: 3.0→5.0).
-                                       // sec a fresh piece stays inert before it attracts/merges. The
-                                       // 3.0 was tuned when garbage DECAYED and a ~22 s single life made
-                                       // a long inert window mean pieces died before they could clump.
-                                       // CS024 P3 made garbage permanent, which removed that pressure
-                                       // entirely and left clumping — and hunters — arriving too fast.
-                                       // Still gates BOTH attraction and merge; the shatter path reuses
-                                       // this same constant — one knob, not two.
+// there as the game progresses. The other two (range/pull) are NOT levers (§2.5) and stay plain debug
+// knobs, their `def`s still deriving from the constants below.
 const GARBAGE_MAGNET_RANGE = 160;      // PLAYTEST KNOB — TUNE THIS FIRST BY FEEL (v3.3 P4: 260→180;
                                        // CS024 P4 Gate A Q1: 180→160). px: garbage↔garbage mutual-
                                        // attraction range. Tighter clumps a fresh burst without dragging
@@ -664,8 +667,9 @@ const LEVERS = [
   { id: "junkSpeedMedium",     floor: 95,  ceil: 165, steps: 5 },
   { id: "junkSpeedSmall",      floor: 140, ceil: 240, steps: 5 },
   // HUNTER chain, INVERTED driver. coalescePause is the seconds a fresh canister stays inert before it
-  // attracts or merges (the constant GARBAGE_COALESCE_DELAY / knob garbageAttractDelay), so a SHORTER
-  // pause means hunters arrive sooner. It is the only hunter-side quantity that varies per level and
+  // attracts or merges (CS024 P5: replaces the retired GARBAGE_COALESCE_DELAY constant / garbageAttractDelay
+  // knob outright — this lever IS the inert delay now), so a SHORTER pause means hunters arrive sooner.
+  // It is the only hunter-side quantity that varies per level and
   // therefore the only candidate driver (FLAG-CS024-b). Large hunters DO NOT PURSUE and deliberately
   // have no speed lever — they keep the frozen HUNTER_SPEED_CEIL[3] * HUNTER_FLOOR_FRAC drift — and
   // every hunter turn rate stays frozen too. Neither is an oversight; do not lever them.
@@ -803,45 +807,26 @@ function payloadSlots(n) {
   return n <= 4 ? 8 : n >= 12 ? 24 : 8 + (n - 4) * 2;
 }
 
-// ---------- CS024 P4 (TRAP 2): THE TEMPORARY FREEZE — P5 DELETES THIS ENTIRE BLOCK ----------
-// P4 builds the odometer and deletes the old apparatus; it does NOT wire the levers to their call
-// sites, which is P5's job. But the deletion cannot be half-done: every consumer of levelDef()'s
-// junkCount and tier names would be a ReferenceError the moment nextWave() ran. So the NINE quantities
-// that used to come off the level table are FROZEN AT THEIR LEVEL-1 VALUES for exactly one phase —
-// the shipped game stops ramping and plays every level as level 1.
-// THAT IS AN INTENTIONAL, TEMPORARY STATE, NOT A BALANCE DECISION. Level 1 is precisely "what the
-// removed table's absence leaves", and all nine sites are repointed onto leverState(game.wave) in P5,
-// after which nothing reads these constants and this block goes with them.
-// Every value is the retired table's own LEVEL-1 answer, verbatim: all seven tier tables opened at
-// [1,"low"], so seven of these are the shipped "low"-tier DEBUG_VARS defaults; JUNK_CYCLE's first
-// entry was 3; and the small-saucer chance is ramp(0.15, 0.60, 1) === 0.15 because musicIntensity(1)
-// is exactly 0. Nothing here is a new number.
-const FROZEN_JUNK_COUNT       = 3;    // was levelDef(w).junkCount  -> leverState(w).junkCount in P5
-const FROZEN_JUNK_SPEED       = 58;   // px/s, was DEBUG.junkSpeedLow -> the three junkSpeed* levers
-const FROZEN_UFO_FLIGHT_SPEED = 120;  // px/s, SMALL saucer; big still derives at the shipped 100/150
-const FROZEN_UFO_APPEAR_FREQ  = 25;   // s between saucers (jittered around this centre, as before)
-const FROZEN_UFO_DIR_CHANGE   = 2.0;  // s between zig-zags (jittered around this centre, as before)
-const FROZEN_UFO_FIRE_MULT    = 1.8;  // x multiplier on the two SAUCER_FIRE_* reload ranges
-const FROZEN_UFO_ACCURACY_DEG = 30;   // deg of small-saucer aim error (big saucers never read it)
-const FROZEN_UFO_SHOT_SPEED   = 300;  // px/s, both saucer sizes alike
-const FROZEN_SMALL_UFO_CHANCE = 0.15; // P5 replaces this with the flat DEBUG.smallUfoChance (0.20)
-
+// ---------- CS024 P4's TEMPORARY FREEZE BLOCK IS GONE — P5 DELETED IT WHOLE ----------
+// P4 built the odometer but left nine quantities frozen at the retired level table's level-1 answers
+// (FROZEN_JUNK_COUNT and eight siblings) because deleting the old apparatus without wiring the new one
+// would have been a ReferenceError on the first nextWave(). P5 repoints all nine consumers onto
+// leverState(game.wave) at their own point of use (spec §4.5) and deletes the whole block in the same
+// edit — nothing reads a FROZEN_* constant any more.
 const DEBRIS_SPEED_CAP = 2 * SHIP_MAX_SPEED; // 1040 px/s. FLAG-CS017-a GUARD RAIL, applied to the RESULTING
-                                    // per-entity speed in the DebrisSatellite ctor (never to the multiplier —
-                                    // the three sizes have different bases). Insurance, not a live constraint:
-                                    // at CS018 P3's tier system the fastest small debris reaches ~267 px/s
-                                    // (160 base x 1.286 "high"-tier junkSpeedMul x 1.3 roll) against a 1040
-                                    // cap — it does not bind at the shipped tiers; insurance against a retune.
+                                    // per-entity speed in the DebrisSatellite ctor. Insurance, not a live
+                                    // constraint: CS024 P5's junkSpeedSmall lever tops out at 240 px/s
+                                    // (ceil, x1.3 roll = 312) against a 1040 cap — it does not bind at the
+                                    // shipped lever range; insurance against a future retune.
 // Saucer between-shot intervals: base [min,max] ranges, multiplied by the fire multiplier.
 const SAUCER_FIRE_INIT  = [0.6, 1.4]; // delay before a saucer's first shot after entering
 const SAUCER_FIRE_BIG   = [0.9, 1.6]; // big saucer reload (fires randomly)
 const SAUCER_FIRE_SMALL = [0.7, 1.1]; // small saucer reload (fires aimed)
 // CS024 P4 (spec §2.4/§4.6): SAUCER_SMALL_CHANCE_FLOOR (0.15) and _CEIL (0.60) STOOD HERE — the
 // 15% -> 60% small-saucer ramp, and the LAST lever anywhere on ramp(), which is why ramp() itself
-// could finally go with them. Which saucer size spawns is no longer an escalation of any kind: it
-// becomes a FLAT 20% chance for the whole game (DEBUG.smallUfoChance, P5), deliberately NOT a lever,
-// so the small saucer's danger scales through its own levers rather than through how often it shows
-// up. FROZEN_SMALL_UFO_CHANCE holds the level-1 value (0.15) for the one phase in between.
+// could finally go with them. Which saucer size spawns is no longer an escalation of any kind: CS024
+// P5 makes it a FLAT 20% chance for the whole game (DEBUG.smallUfoChance), deliberately NOT a lever, so
+// the small saucer's danger scales through its own levers rather than through how often it shows up.
 
 // Powerups (F6) — five free-floating pickups. Health spawns ambiently on a saucer-like timer
 // and is instant; the other four (rapid/triple/magnet/engine) are timed effects, dropped by
@@ -2931,19 +2916,44 @@ const settings = {
 // / GLOBAL. CS024 P4 then retired those first three in turn with the 21 tier knobs beneath them. THE
 // RULE THAT KILLED ALL FOUR IS THE SAME ONE, and it still binds: A HEADER LEFT WITH NO ENTRIES UNDER IT
 // RENDERS AS A STRAY LABEL, so a header dies with its last knob rather than being left standing empty.
-// P5 reintroduces JUNK and UFO with a knob per LEVER, which is a different shape, not a restoration.
+// CS024 P5 reintroduces JUNK, HUNTER and UFO with a knob per LEVER (§5) — a different shape from the
+// retired tier trios, one entry per QUANTITY rather than three per quantity.
+//
+// THE LEVER KNOBS ARE LIVE OVERRIDES, NOT THE VALUE SOURCE (spec §4.5's "exposed as a debug knob so it
+// can be overridden live"). leverState(game.wave) is what actually drives the game at every wired
+// call site; every one of those sites reads `DEBUG.<id> ?? leverState(w).<id>`, so the odometer's own
+// per-level ramp keeps running untouched until a slider is actually moved. That is why `def: null` for
+// every lever knob below — null is the "no override yet" sentinel, not a duplicated literal, and it is
+// what makes `??` meaningful. `min`/`max` derive from Math.min/max(floor, ceil) — a UI RANGE only, never
+// a reordering of the lever's own floor/ceil (several are inverted on purpose; see the LEVERS table and
+// the standing "no floor <= ceil validator, anywhere" rule, which this does not violate: LEVERS itself
+// is never touched or read in reordered form). `step` is exactly one odometer step, so each ◄/► press
+// moves a slider by the same increment `leverState` would move the real curve. `debugShown[id] == null`
+// (the "auto" state) is handled explicitly at the two UI sites that need a concrete number: the ◄/►
+// nudge in menuDebug (bases off leverState(game.wave)[id] instead of null) and the value string in
+// drawDebug() (renders "auto" instead of "null px/s"). Persistence needs NO special handling: `null`
+// round-trips through JSON fine, and loadSettings' `Number.isFinite(dv)` gate already rejects it,
+// leaving the seeded (also null) default in place — a saved-but-never-touched lever knob loads back to
+// "auto", exactly as it shipped.
+function leverKnob(id, label, unit) {
+  const lev = LEVERS.find(l => l.id === id);
+  const lo = Math.min(lev.floor, lev.ceil), hi = Math.max(lev.floor, lev.ceil);
+  const step = Math.round((hi - lo) / (lev.steps - 1) * 100) / 100;
+  return { id, label, unit, def: null, min: lo, max: hi, step };
+}
 const DEBUG_VARS = [
   { header: "SHIP" },
   { id: "autoShieldRegenPause", label: "Auto Shield Regen Pause", unit: "ms",
     def: AUTO_SHIELD_REGEN_PAUSE * 1000, min: 0, max: 5000, step: 100, toNative: v => v / 1000 },
-  // CS015 P5 (items 7, 11, 12): four more knobs, same registry/toNative idiom — defaults derive from
-  // the shipped consts (SCOOP_HITS_PER_LEVEL, GARBAGE_COALESCE_DELAY/MAGNET_RANGE/MAGNET_PULL), which
-  // stay in place as the documented shipped values. No panel/persistence code changes.
+  // CS015 P5 (item 7): defaults derive from the shipped const (SCOOP_HITS_PER_LEVEL), which stays in
+  // place as the documented shipped value. No panel/persistence code changes.
   { id: "scoopHitsPerLevel", label: "Hits before losing scoop", unit: "",
     def: SCOOP_HITS_PER_LEVEL, min: 1, max: 20, step: 1 },
   { header: "GARBAGE" },
-  { id: "garbageAttractDelay", label: "Garbage attraction delay", unit: "ms",
-    def: GARBAGE_COALESCE_DELAY * 1000, min: 0, max: 10000, step: 250, toNative: v => v / 1000 },
+  // CS024 P5 (spec §2.5): garbageAttractRadius/Force are resolved as NOT levers (GARBAGE_MAGNET_RANGE/
+  // _PULL are frozen constants, Gate A Q1's answer) and stay plain flat knobs, unchanged in shape from
+  // every prior changeset. garbageAttractDelay is GONE — the inert delay is now the coalescePause lever,
+  // under HUNTER below (it drives the HUNTER chain, spec §2.4), not a standalone GARBAGE knob.
   { id: "garbageAttractRadius", label: "Garbage attraction radius", unit: "px",
     def: GARBAGE_MAGNET_RANGE, min: 0, max: 600, step: 10 },
   { id: "garbageAttractForce", label: "Garbage attraction force", unit: "px/s²",
@@ -2982,31 +2992,52 @@ const DEBUG_VARS = [
     def: 0.75, min: 0.1, max: 3, step: 0.05 },
   // CS020 P1b: the delivery combo's one-effort grace window — how long a delivery run survives while
   // the ship is outside the dock's neighborhood. Same `unit: "ms"` + `toNative: v => v / 1000` idiom
-  // as autoShieldRegenPause / garbageAttractDelay: the panel shows and persists milliseconds, the
-  // consumer (the dock block's grace gate) reads seconds. DOCK_COMBO_GRACE stays in place as the
-  // documented shipped value and this `def` derives from it, so the two can never disagree.
-  // Its own section header, chain-adjacent, with room for future delivery knobs.
+  // as autoShieldRegenPause: the panel shows and persists milliseconds, the consumer (the dock block's
+  // grace gate) reads seconds. DOCK_COMBO_GRACE stays in place as the documented shipped value and this
+  // `def` derives from it, so the two can never disagree.
   { header: "DELIVERY" },
   { id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
     def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
-  // CS024 P4 (spec §1.6/§5): ALL 21 TIER KNOBS ARE GONE — CS018 P3's three JUNK entries stood here,
-  // then nine under UFO MOVEMENT and nine under UFO WEAPONS (below). Each trio was one lever's
-  // low/normal/high VALUES, selected by the tier NAME the retired levelDef() returned; with the level
-  // table deleted there is no name to select on and nothing reads any of the 21. Their three section
-  // headers go with them rather than being left standing over nothing — an empty header would render
-  // a section with no rows. JUNK and UFO come back in P5 with a knob per LEVER (§5), which is a
-  // different shape entirely: one entry per quantity, not three per quantity.
-  // Orphaned keys in afd_settings_v1.debug are IGNORED under the standing known-value-else-default
-  // rule (loadSettings validates per registry entry), so no migration and no schema bump — the same
-  // path CS024 P1's twelve ORBIT removals already took.
-  // CS024 P3 (spec §2.5/§3.3): the large core's "last stand" speed — how fast it steers toward the ship
-  // once no Debris remain. HUNTER_LAST_STAND_SPEED supplies the `def`, HunterSatellite.update() reads
-  // the knob; the constant stays in place as the documented shipped value (the autoShieldRegenPause /
-  // garbageAttractRadius idiom). NOT a lever and never will be — it is a search-ender, not a difficulty
-  // dial. This section header is new; CS024 §5 gives HUNTER its full contents in P5.
+  // CS024 P5 (spec §2.4/§4.5/§5): the JUNK chain, one knob per lever — see leverKnob() above for what
+  // `def: null` means. junkCount is the driver (sawtooths every 10 levels); the three sizes are fully
+  // independent (no shared ratio) and carried from junkCount's own wraps.
+  { header: "JUNK" },
+  leverKnob("junkCount", "Junk count", ""),
+  leverKnob("junkSpeedLarge", "Junk speed (large)", "px/s"),
+  leverKnob("junkSpeedMedium", "Junk speed (medium)", "px/s"),
+  leverKnob("junkSpeedSmall", "Junk speed (small)", "px/s"),
+  // CS024 P5 (spec §2.4/§4.5): the HUNTER chain. coalescePause is the driver (INVERTED — shorter is
+  // harder) and replaces the retired garbageAttractDelay knob outright; it carries to the two pursuit
+  // speeds. Large Hunters have NO speed lever (frozen drift, spec §2.4) — only medium/small pursuit
+  // speed varies. lastStandSpeed is NOT a lever (spec §2.5, CS024 P3) and stays the flat knob it always
+  // was, kept in this section since it is Hunter-specific.
   { header: "HUNTER" },
+  leverKnob("coalescePause", "Coalescence inert delay", "s"),
+  leverKnob("hunterSpeedMedium", "Hunter speed (medium)", "px/s"),
+  leverKnob("hunterSpeedSmall", "Hunter speed (small)", "px/s"),
   { id: "lastStandSpeed", label: "Hunter last-stand speed", unit: "px/s",
     def: HUNTER_LAST_STAND_SPEED, min: 0, max: 200, step: 5 },
+  // CS024 P5 (spec §2.4/§4.5/§4.6): the UFO chain, the deepest in the odometer (a two-generation carry,
+  // FLAG-CS024-d) and the one where §4.6 splits every quantity by saucer size. ufoAppearFreq (INVERTED)
+  // is the ONE driver — there is exactly one appearance timer, which size spawns is the flat
+  // smallUfoChance roll below and NOT a lever. ufoAccuracySmall is small-only, by design (big saucers
+  // stay genuinely unaimed) — it deliberately has no big-saucer counterpart.
+  { header: "UFO" },
+  leverKnob("ufoAppearFreq", "UFO appearance interval", "s"),
+  leverKnob("ufoFlightSpeedBig", "UFO flight speed (big)", "px/s"),
+  leverKnob("ufoFlightSpeedSmall", "UFO flight speed (small)", "px/s"),
+  leverKnob("ufoDirChangeBig", "UFO dir-change interval (big)", "s"),
+  leverKnob("ufoDirChangeSmall", "UFO dir-change interval (small)", "s"),
+  leverKnob("ufoFireFreqBig", "UFO fire-freq mult (big)", "x"),
+  leverKnob("ufoFireFreqSmall", "UFO fire-freq mult (small)", "x"),
+  leverKnob("ufoShotSpeedBig", "UFO shot speed (big)", "px/s"),
+  leverKnob("ufoShotSpeedSmall", "UFO shot speed (small)", "px/s"),
+  leverKnob("ufoAccuracySmall", "UFO aim error (small)", "deg"),
+  { id: "smallUfoChance", label: "Small UFO chance", unit: "",
+    def: 0.20, min: 0, max: 1, step: 0.05 },
+  // CS024 P6 (not this phase): a POWERUPS section joins here once count-only powerup expiry + Engine-
+  // as-fuel land (engineBurnSeconds, engineMassMult) — an empty header renders as a stray label (the
+  // standing rule, above), so it is not created ahead of having anything to put in it.
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -3017,24 +3048,9 @@ const DEBUG_VARS = [
   { header: "GLOBAL" },
   { id: "sweepCoalescePause", label: "Coalescence pause after sweep", unit: "s",
     def: 10, min: 0, max: 60, step: 1 },
-  // CS024 P1 (spec §1.1/§1.5/§4.1/§5): CS021 P3's TEN ORBIT KNOBS AND THEIR SECTION HEADER STOOD HERE,
-  // followed by CS023 P4's debrisDriftAccel. All twelve entries are REMOVED OUTRIGHT — not zeroed, not
-  // left inert — because the systems they drove are gone permanently.
-  //
-  // THIS SHIFTS EVERY ROW INDEX BELOW IT, AND THAT IS EXPECTED. The standing rule is that the registry is
-  // APPEND-ONLY (an entry's order fixes its row index in DEBUG_ROWS), which is why CS023 P4 appended its
-  // two knobs after the ORBIT block rather than inserting among them. That rule governs GROWTH; this is a
-  // deliberate REBUILD, which CS024 §5 scopes and which P5 finishes by re-sectioning the whole registry.
-  //
-  // Orphaned keys in afd_settings_v1.debug — the ten orbit ids plus debrisDriftAccel — are IGNORED under
-  // the standing known-value-else-default loading rule: loadSettings validates per registry entry, so a
-  // saved key with no matching entry is simply never read. NO SCHEMA BUMP, NO MIGRATION, NO SHIM, and no
-  // rename of afd_settings_v1 (one of the three frozen localStorage keys).
-  //
-  // debrisBounceRestitution SURVIVES — it is CS023 P2's satellite-vs-satellite bounce, which is
-  // archetype-independent and stays (spec §0). It was appended after the ORBIT block, so with that block
-  // gone it now trails the GLOBAL section. That is a layout artefact of the removal, not a claim that it
-  // is a global knob; CS024 P5 gives it its proper section in the registry rebuild.
+  // CS023 P2's satellite-vs-satellite bounce restitution — archetype-independent, stays (spec §0).
+  // CS024 P5 gives it its proper GLOBAL-trailing home in this rebuild (it previously trailed the ORBIT
+  // block as a layout artefact of that block's CS024 P1 removal, not a scoping claim).
   { id: "debrisBounceRestitution", label: "Satellite bounce restitution", unit: "",
     def: DEBRIS_BOUNCE_RESTITUTION, min: 0, max: 1.5, step: 0.05 },
 ];
@@ -3100,61 +3116,61 @@ const DebugCode = { armed: false, buf: "", last: 0 };
 const DIFFLOG_MAX = 2000; // cap so a long dev session can't grow the buffer without bound; drops oldest
 const DiffLog = { rows: [] };
 const DIFFLOG_FIELDS = [
-  "t", "level", "phase", "rel", "score", "prevLevelSecs",
-  "junkCount", "junkSpeedMul", "maxLargeHunters", "hunterCount",
-  "junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
-  "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed",
+  "t", "level", "score", "prevLevelSecs",
+  "junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall",
+  "maxLargeHunters", "hunterCount", "coalescePause", "hunterSpeedMedium", "hunterSpeedSmall",
+  "ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall",
+  "ufoDirChangeBig", "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
+  "ufoAccuracySmall", "ufoShotSpeedBig", "ufoShotSpeedSmall",
   "saucerAimErr", "saucerGapMin", "saucerGapMax",
   "chainLen", "cargoMax", "scoopLevel",
 ];
+// CS024 P5 (spec §4.5): REPOINTED OFF the retired levelDef fields, ONTO leverState — the list itself
+// changes too (P4 deliberately left that decision open). `phase`/`rel` are DROPPED, not just nulled:
+// they named positions inside CS018's 21-level three-phase structure, which the odometer has no
+// equivalent of, so a column that always logs an empty cell serves nobody. The seven old tier-name
+// columns are gone with them; the JUNK/HUNTER/UFO lever ids replace them one-for-one (17 total),
+// keeping DIFFLOG_FIELDS a straight mirror of the LEVERS table plus the handful of non-lever context
+// columns (maxLargeHunters, hunterCount, saucerAimErr/GapMin/Max, chainLen, cargoMax, scoopLevel).
+//
 // Snapshots read every lever from the SAME expressions the live sites use — never a re-derived formula.
-// junkCount/junkSpeedMul are passed in verbatim from nextWave()'s own `count`/`speedMul` locals (the exact
-// values that level's DebrisSatellite spawns just used). maxLargeHunters was REPOINTED in CS024 P3 (not
-// dropped — the standing rule is that a column follows its consumer): the cap stopped being a level-table
-// column and became the flat LARGE_HUNTER_MAX, so the column now logs that constant and reads the same
-// 100 on every row.
-// prevLevelSecs is game.waveTime captured by nextWave() BEFORE the reset — how long the level that just
-// ended took (FLAG-k, the field's only reader now that wavePressure() is retired).
-// saucerAimErr mirrors the exact ufoAccuracyRad() call at the saucer aim site (there is no cached
-// variable to read at nextWave() time) — REPOINTED in P7 from the retired ramp()+wavePressure() mirror,
-// following this column with its consumer rather than leaving it stale.
-// saucerGapMin/saucerGapMax were REPOINTED in P6 (not deleted): they log the jittered-interval bounds —
-// center*(1 - FREQ_JITTER) / center*(1 + FREQ_JITTER) around the appearance centre — the same "where the
-// actual sampled timer can land" meaning the old ramp()-based gapMin/gapMax pair had.
-// CS024 P4 (TRAP 2): REPOINTED OFF levelDef, WITHOUT TOUCHING DIFFLOG_FIELDS. The column LIST is
-// unchanged — P5 owns the repoint onto leverState and any list change that comes with it — but the
-// expressions feeding three groups of columns had to move when the level table went:
-//   - `phase` and `rel` log null (an EMPTY CSV cell — Array.join renders null as ""). They were
-//     positions inside CS018's 21-level three-phase structure, and that structure is DELETED, not
-//     renamed: the odometer has no phases. Logging a re-derived number would mean reintroducing
-//     PHASE_LEN to describe a thing that no longer exists, so the honest row says nothing.
-//   - the seven tier columns logged a TIER NAME ("low"/"normal"/"high"). Tiers are gone, so they now
-//     log the actual FROZEN NUMBER in play. That is a unit change (name -> value) and it is the right
-//     direction: P5's leverState values are numbers too, so the column stays numeric from here on.
-//   - `appearCenter` reads the frozen appearance centre, keeping saucerGapMin/Max's meaning exactly
-//     what P6 gave them — where the sampled timer can actually land.
-function logDifficultySnapshot(junkCount, junkSpeedMul, prevLevelSecs) {
-  const appearCenter = FROZEN_UFO_APPEAR_FREQ;
+// junkCount/junkSpeedLarge are passed in verbatim from nextWave()'s own `count`/`speed` locals (the
+// exact, DEBUG-override-resolved values that level's DebrisSatellite spawns just used) — every other
+// lever column re-applies the identical `DEBUG.<id> ?? lv.<id>` expression its own consumer uses, which
+// is what keeps this an honest mirror rather than a second source of truth. maxLargeHunters logs the
+// flat LARGE_HUNTER_MAX constant (CS024 P3 repoint, unchanged this phase — the cap is flat now, not a
+// lever). saucerAimErr mirrors the exact ufoAccuracyRad() call at the saucer aim site. saucerGapMin/Max
+// log the jittered-interval bounds around the resolved appearance centre — the same "where the actual
+// sampled timer can land" meaning this pair has always had.
+function logDifficultySnapshot(junkCount, junkSpeedLarge, prevLevelSecs) {
+  const lv = leverState(game.wave);
+  const appearCenter = DEBUG.ufoAppearFreq ?? lv.ufoAppearFreq;
   const appearJitter = FREQ_JITTER;
   DiffLog.rows.push({
     t: performance.now(),
     level: game.wave,
-    phase: null,
-    rel: null,
     score: game.score,
     prevLevelSecs,
     junkCount,
-    junkSpeedMul,
+    junkSpeedLarge,
+    junkSpeedMedium: DEBUG.junkSpeedMedium ?? lv.junkSpeedMedium,
+    junkSpeedSmall: DEBUG.junkSpeedSmall ?? lv.junkSpeedSmall,
     maxLargeHunters: LARGE_HUNTER_MAX, // CS024 P3: was def.maxLargeHunters; the cap is flat now
     hunterCount: game.hunters.length, // FLAG-CS017-g: seeds the future music-intensity changeset
-    junkSpeed: FROZEN_JUNK_SPEED,
-    ufoAppearFreq: FROZEN_UFO_APPEAR_FREQ,
-    ufoFlightSpeed: FROZEN_UFO_FLIGHT_SPEED,
-    ufoDirChangeFreq: FROZEN_UFO_DIR_CHANGE,
-    ufoFireFreq: FROZEN_UFO_FIRE_MULT,
-    ufoAccuracy: FROZEN_UFO_ACCURACY_DEG,
-    ufoShotSpeed: FROZEN_UFO_SHOT_SPEED,
-    saucerAimErr: ufoAccuracyRad(), // CS018 P7: tiered, was ramp() over the two SAUCER_AIM_ERR_* floor/ceil constants (deleted, CS024 P2)
+    coalescePause: DEBUG.coalescePause ?? lv.coalescePause,
+    hunterSpeedMedium: DEBUG.hunterSpeedMedium ?? lv.hunterSpeedMedium,
+    hunterSpeedSmall: DEBUG.hunterSpeedSmall ?? lv.hunterSpeedSmall,
+    ufoAppearFreq: appearCenter,
+    ufoFlightSpeedBig: DEBUG.ufoFlightSpeedBig ?? lv.ufoFlightSpeedBig,
+    ufoFlightSpeedSmall: DEBUG.ufoFlightSpeedSmall ?? lv.ufoFlightSpeedSmall,
+    ufoDirChangeBig: DEBUG.ufoDirChangeBig ?? lv.ufoDirChangeBig,
+    ufoDirChangeSmall: DEBUG.ufoDirChangeSmall ?? lv.ufoDirChangeSmall,
+    ufoFireFreqBig: DEBUG.ufoFireFreqBig ?? lv.ufoFireFreqBig,
+    ufoFireFreqSmall: DEBUG.ufoFireFreqSmall ?? lv.ufoFireFreqSmall,
+    ufoAccuracySmall: DEBUG.ufoAccuracySmall ?? lv.ufoAccuracySmall,
+    ufoShotSpeedBig: DEBUG.ufoShotSpeedBig ?? lv.ufoShotSpeedBig,
+    ufoShotSpeedSmall: DEBUG.ufoShotSpeedSmall ?? lv.ufoShotSpeedSmall,
+    saucerAimErr: ufoAccuracyRad(),
     saucerGapMin: appearCenter * (1 - appearJitter),
     saucerGapMax: appearCenter * (1 + appearJitter),
     chainLen: game.chain.length,
@@ -3670,7 +3686,12 @@ function menuDebug(a) {
   else if (a === "left" || a === "right") {
     const e = debugSelectedVar();   // null on a header / the dump action / Back — left/right is a no-op there
     if (e) {
-      const next = Math.max(e.min, Math.min(e.max, debugShown[e.id] + (a === "right" ? e.step : -e.step)));
+      // CS024 P5: a lever knob's `debugShown` starts null (spec §4.5's "auto" state, see leverKnob()
+      // above) — nudge FROM the odometer's current value for this wave rather than from 0 (null + step
+      // would otherwise coerce to just `step`), so the first press moves relative to what's actually
+      // playing right now. Every non-lever knob is never null, so this is a no-op for them.
+      const base = debugShown[e.id] == null ? leverState(game.wave)[e.id] : debugShown[e.id];
+      const next = Math.max(e.min, Math.min(e.max, base + (a === "right" ? e.step : -e.step)));
       applyDebug(e.id, next);
       saveSettings();
       AudioSys.ui(false);
@@ -3911,17 +3932,12 @@ function noteLargeHunterSpawn() {
   if (largeHunterCount() === 0) game.stats.hunterLineageKills = 0;
 }
 
-// CS018 P3: the ONE debris speedMul derivation, shared by nextWave() and destroyDebris()'s split
-// branch (see the byte-identical comment at each call site). Dividing by 70 — the shipped
-// DEBRIS_SPEEDS[3] base — turns a px/s figure into the multiplier DebrisSatellite's ctor already
-// applies to all three sizes, preserving the 70/110/160 ratio rather than flattening it.
-// CS024 P4 (TRAP 2): the tier lookup — levelDef's junkSpeed name selecting one of three DEBUG knobs —
-// is gone with the level table, and this reads the FROZEN level-1 value for one phase. P5 replaces
-// THIS WHOLE DERIVATION, not just its source: the three sizes become three independent levers
-// (junkSpeedLarge/Medium/Small), so the shared-ratio multiplier disappears at the same time.
-function junkSpeedMul() {
-  return FROZEN_JUNK_SPEED / 70;
-}
+// CS024 P5 (spec §2.4/§4.5): junkSpeedMul() STOOD HERE — the ONE shared debris speedMul derivation
+// (px / 70, the shipped DEBRIS_SPEEDS[3] base) that nextWave() and destroyDebris()'s split branch both
+// called, preserving the 70/110/160 ratio across all three sizes from one lever. That is a DELETION,
+// not a repoint: the three junk sizes are now fully independent levers (junkSpeedLarge/Medium/Small),
+// so there is no shared ratio left to derive — each call site reads its own size's lever from
+// leverState(game.wave) directly and passes the resulting px/s straight into DebrisSatellite's ctor.
 
 // CS024 P3 (spec §1.2/§4.2): CS018 P3's bonusSpawnChance() STOOD HERE — the bonus canister's
 // easing-off per-wave spawn probability, and the one lever in CS017/CS018 that got easier as the game
@@ -3939,56 +3955,62 @@ function jitteredInterval(center) {
   return rand(center * (1 - FREQ_JITTER), center * (1 + FREQ_JITTER));
 }
 
-// THE SIX UFO DERIVATION HELPERS (CS018 P6/P7), ALL FROZEN FOR ONE PHASE BY CS024 P4 (TRAP 2).
-// Each used to open with `const tier = levelDef(game.wave).<lever>` and pick one of three DEBUG_VARS
-// tier knobs off the name. The level table and all 21 tier knobs are gone, so each now returns the
-// retired table's LEVEL-1 answer from a FROZEN_* constant. THE CALL SITES ARE UNTOUCHED, deliberately:
-// every one of these keeps its name, its signature and its unit conversion, so P5's job at each is to
-// swap one expression for `leverState(game.wave).<lever>` — and, where the spec splits a quantity by
-// saucer size (§4.6), to take the `small` flag it already receives seriously instead of deriving one
-// size from the other.
+// THE SIX UFO DERIVATION HELPERS (CS018 P6/P7), WIRED TO THE UFO CHAIN'S TEN LEVERS BY CS024 P5
+// (spec §2.4/§4.6). Each reads leverState(game.wave) at the point of use — its own call — with
+// DEBUG.<leverId> ?? lv.<leverId> so a live-override slider takes priority the instant it is touched.
+// PER-SIZE INDEPENDENCE (§4.6): the four that used to derive "big" from "small" (or vice versa) by a
+// fixed ratio now take the `small` flag seriously and read two fully independent levers instead.
 //
-// UFO flight speed: the frozen figure is the SMALL saucer's px/s (FLAG-c) and the big saucer derives
-// at the shipped 100/150 ratio. THAT DERIVATION IS EXACTLY WHAT §4.6 REMOVES — ufoFlightSpeedBig and
-// ufoFlightSpeedSmall are independent levers — so it is preserved here only so this phase changes no
-// behaviour, not because it is worth keeping.
+// UFO flight speed: ufoFlightSpeedPx(small)'s shipped 100/150 ratio derivation is GONE — ufoFlightSpeedBig
+// and ufoFlightSpeedSmall are independent levers, one per saucer size.
 function ufoFlightSpeedPx(small) {
-  const px = FROZEN_UFO_FLIGHT_SPEED;
-  return small ? px : px * (100 / 150);
+  const lv = leverState(game.wave);
+  return small ? (DEBUG.ufoFlightSpeedSmall ?? lv.ufoFlightSpeedSmall)
+               : (DEBUG.ufoFlightSpeedBig   ?? lv.ufoFlightSpeedBig);
 }
 
 // UFO appearance frequency — INVERTED (the number goes DOWN as difficulty rises), jittered around the
-// centre by jitteredInterval(). ONE timer for both sizes, now and after P5.
+// centre by jitteredInterval(). There is exactly ONE timer for both sizes (resolved, §2.4) — this stays
+// size-less.
 function ufoAppearInterval() {
-  return jitteredInterval(FROZEN_UFO_APPEAR_FREQ);
+  const lv = leverState(game.wave);
+  return jitteredInterval(DEBUG.ufoAppearFreq ?? lv.ufoAppearFreq);
 }
 
-// UFO direction-change frequency — INVERTED, jittered the same way. Read at both Saucer sites (ctor +
-// update()). P5 splits it per size (ufoDirChangeBig/Small).
-function ufoZigInterval() {
-  return jitteredInterval(FROZEN_UFO_DIR_CHANGE);
+// UFO direction-change frequency — INVERTED, jittered the same way, now SPLIT per size (ufoDirChangeBig/
+// Small) — read at both Saucer sites (ctor + update()), both of which know `this.small`.
+function ufoZigInterval(small) {
+  const lv = leverState(game.wave);
+  return jitteredInterval(small ? (DEBUG.ufoDirChangeSmall ?? lv.ufoDirChangeSmall)
+                                 : (DEBUG.ufoDirChangeBig   ?? lv.ufoDirChangeBig));
 }
 
 // UFO firing frequency — INVERTED, and a straight MULTIPLIER on the shipped SAUCER_FIRE_BIG/
 // SAUCER_FIRE_SMALL per-size ranges (FLAG-d), NOT a jittered interval: rollFireTimer() already draws
-// its own rand(range[0], range[1]), and a second draw here would double-randomize one quantity. That
-// stays true when P5 splits it into ufoFireFreqBig/Small.
-function ufoFireMult() {
-  return FROZEN_UFO_FIRE_MULT;
+// its own rand(range[0], range[1]), and a second draw here would double-randomize one quantity. Now
+// SPLIT per size (ufoFireFreqBig/Small) — rollFireTimer() passes its own `this.small`.
+function ufoFireMult(small) {
+  const lv = leverState(game.wave);
+  return small ? (DEBUG.ufoFireFreqSmall ?? lv.ufoFireFreqSmall)
+               : (DEBUG.ufoFireFreqBig   ?? lv.ufoFireFreqBig);
 }
 
 // Small-saucer shot accuracy — INVERTED. Entered as DEGREES (0 = perfectly accurate) and converted to
 // radians here, so every caller gets the unit Saucer.update()'s angleTo() aim math already expects.
 // BIG SAUCERS NEVER CALL THIS: they fire rand(0, TAU), genuinely unaimed, by design (FLAG-d), and
-// ufoAccuracySmall stays small-only after P5 — it deliberately takes no size parameter.
+// ufoAccuracySmall stays small-only — it deliberately takes no size parameter.
 function ufoAccuracyRad() {
-  return FROZEN_UFO_ACCURACY_DEG * Math.PI / 180;
+  const lv = leverState(game.wave);
+  return (DEBUG.ufoAccuracySmall ?? lv.ufoAccuracySmall) * Math.PI / 180;
 }
 
-// UFO shot (Bullet) speed. Not a frequency lever, so no jitter — one fixed px/s, applied to both
-// saucer sizes' shots alike (the shipped 380 literal was never size-split either; P5 splits it).
-function ufoShotSpeedPx() {
-  return FROZEN_UFO_SHOT_SPEED;
+// UFO shot (Bullet) speed. Not a frequency lever, so no jitter. Now SPLIT per size (ufoShotSpeedBig/
+// Small) — the shipped 380 literal was never size-split either, so this is a genuine behaviour change,
+// scoped exactly by spec §4.6.
+function ufoShotSpeedPx(small) {
+  const lv = leverState(game.wave);
+  return small ? (DEBUG.ufoShotSpeedSmall ?? lv.ufoShotSpeedSmall)
+               : (DEBUG.ufoShotSpeedBig   ?? lv.ufoShotSpeedBig);
 }
 
 function wrap(obj) {
@@ -4381,17 +4403,23 @@ const SAT_ART = [
 // (SAT_ART, v3.3 P2) — and splits 3-ways at the large/medium tiers, emitting garbage at
 // every tier.
 class DebrisSatellite {
-  constructor(x, y, size, speedMul = 1) {
+  // CS024 P5 (spec §2.4/§4.5): `speed` is now a direct base px/s figure, not a shared multiplier on
+  // DEBRIS_SPEEDS — the three junk sizes are fully independent levers with their own floor/ceil, so
+  // there is no longer one ratio to scale. Callers read leverState(game.wave)'s size-specific lever
+  // (junkSpeedLarge/Medium/Small) at their own point of use and pass the result straight in. The default
+  // is DEBRIS_SPEEDS[size] — the shipped base table survives as exactly that: the level-less fallback
+  // for the one caller that isn't lever-driven (the title-screen decoration, below).
+  constructor(x, y, size, speed = DEBRIS_SPEEDS[size]) {
     this.x = x; this.y = y;
     this.size = size;
     this.radius = DEBRIS_RADII[size];
     this.damage = DEBRIS_DAMAGE[size];   // contact damage to the ship (F2)
-    // CS017 P3 (FLAG-CS017-a): clamp the RESULTING speed, never the multiplier — the three sizes have
-    // different bases (70/110/160), so clamping the shared multiplier would squash the tier spread.
-    // GUARD RAIL only: at CS018 P3's tier system the fastest small debris reaches ~267 px/s (160 x the
-    // 1.286 "high"-tier junkSpeedMul x the 1.3 roll) against a 1040 cap, so this never binds in real
-    // play — it is insurance against a future tier retune, not a live constraint.
-    const sp = Math.min(DEBRIS_SPEEDS[size] * speedMul * rand(0.7, 1.3), DEBRIS_SPEED_CAP);
+    // CS017 P3 (FLAG-CS017-a): clamp the RESULTING speed, never the input — a lever value already IS the
+    // size-specific base, so clamping it directly can no longer squash the tier spread the way clamping
+    // a shared multiplier once could. GUARD RAIL only: junkSpeedSmall's ceil is 240 px/s, so the fastest
+    // roll is ~312 px/s (240 x 1.3) against a 1040 cap — it does not bind at the shipped lever range; it
+    // is insurance against a future retune.
+    const sp = Math.min(speed * rand(0.7, 1.3), DEBRIS_SPEED_CAP);
     const a = rand(0, TAU);
     this.vx = Math.cos(a) * sp;
     this.vy = Math.sin(a) * sp;
@@ -4461,20 +4489,24 @@ class HunterSatellite {
     // v3.3 P4 (9b, FORK-5): the `bornOfScrap` flag is GONE. Every Hunter of every origin now drops
     // garbage at its tier counts — the v3.2 P3 suppression is reversed. 9a's single-decay is the new
     // governor for the 12-in/66-out amplifier that flag used to close.
-    // CS018 P4 (FLAG-a): FROZEN at the level-1 value for the whole game — NO CLOCK. There is no ramp,
-    // no cycle, no game.wave and no game state of any kind in these two lines: a Hunter spawned at
-    // level 1 and a Hunter spawned at level 63 move and turn identically. The _CEIL constants are the
-    // frozen value's DERIVATION (× HUNTER_FLOOR_FRAC), NOT a ramp target — nothing climbs toward them
-    // any more. The expression is kept rather than baked into literals so that derivation stays
-    // visible: 40.6 / 69.6 / 101.5 px/s and 0 / 0.928 / 1.508 rad/s for tiers 3 / 2 / 1.
-    // This also RETIRES the CS017 P3 wrinkle that used to live here: because the value no longer
-    // depends on when a Hunter spawned, a Hunter carried across several levels can no longer be
-    // "stale-fast" relative to the field around it. Escalating Hunter pressure came from the level
-    // table's maxLargeHunters cap — how MANY can exist, not how fast they move — until CS024 P3
-    // replaced that whole schedule with the flat LARGE_HUNTER_MAX backstop; pressure is now expressed
-    // as how fast the coalescence pipeline feeds (spec §2.4's HUNTER chain, wired in P4/P5).
-    this.speed    = HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC;
-    this.turnRate = HUNTER_TURN_CEIL[size]  * HUNTER_FLOOR_FRAC;
+    // CS024 P5 (spec §2.4): TURN RATE STAYS FROZEN AT EVERY TIER, ALWAYS — no lever, never will be
+    // (0 / 0.928 / 1.508 rad/s for tiers 3 / 2 / 1). SPEED SPLITS BY TIER. The large core does not
+    // pursue and has no speed lever — it keeps the CS018 P4 frozen drift, HUNTER_SPEED_CEIL[3] *
+    // HUNTER_FLOOR_FRAC = 40.6 px/s, unconditionally. Medium/small speed is now the HUNTER chain's two
+    // carried levers (hunterSpeedMedium/hunterSpeedSmall), read at the point of use — a Hunter's own
+    // construction — via leverState(game.wave), with the live-override knob taking priority via `??`.
+    // This is what makes escalating Hunter pressure real again post-CS024 P3 (which retired the level
+    // table's maxLargeHunters cap in favour of the flat LARGE_HUNTER_MAX backstop): the HOW MANY axis is
+    // gone, but coalescePause (how fast the pipeline feeds) and hunterSpeedMedium/Small (how fast a
+    // homer closes once born) both still climb with wave.
+    this.turnRate = HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC;
+    if (size === 3) {
+      this.speed = HUNTER_SPEED_CEIL[3] * HUNTER_FLOOR_FRAC;
+    } else {
+      const lv = leverState(game.wave);
+      this.speed = size === 2 ? (DEBUG.hunterSpeedMedium ?? lv.hunterSpeedMedium)
+                               : (DEBUG.hunterSpeedSmall  ?? lv.hunterSpeedSmall);
+    }
     if (size === 3) {
       // Large core: passive drift toward the ship's position AT SPAWN — no continuous re-aim
       // (confirmed design). Only its drift *speed* scales with difficulty, not its behavior.
@@ -4574,24 +4606,24 @@ class Saucer {
     });
     this.x = p.x; this.y = p.y;
     this.baseY = this.y;   // vertical zig-zag stays in a band around the entry height
-    this.vx = (this.fromLeft ? 1 : -1) * ufoFlightSpeedPx(small); // CS018 P6: tiered, was (small ? 150 : 100)
+    this.vx = (this.fromLeft ? 1 : -1) * ufoFlightSpeedPx(small); // CS024 P5: ufoFlightSpeedBig/Small levers
     this.vy = 0;
     this.dead = false;
     this.fireTimer = this.rollFireTimer(SAUCER_FIRE_INIT);   // first shot delayed harder at low waves (F10)
-    this.zigTimer = ufoZigInterval(); // CS018 P6: tiered + jittered, was rand(0.8, 1.8)
+    this.zigTimer = ufoZigInterval(small); // CS024 P5: ufoDirChangeBig/Small levers, jittered
     this.travel = 0;
   }
-  // Between-shot / first-shot delay for a [min,max] base range, scaled by the CS018 P7 UFO WEAPONS
-  // fire-frequency tier: 1.8x slower at "low", 1.0x (shipped cadence) at "normal", 0.7x faster at "high".
+  // Between-shot / first-shot delay for a [min,max] base range, scaled by the CS024 P5 UFO WEAPONS
+  // fire-frequency lever: ufoFireFreqBig/Small independently.
   rollFireTimer(range) {
-    const mult = ufoFireMult(); // CS018 P7: tiered, was ramp() over the two SAUCER_FIRE_MULT_* floor/ceil constants (deleted, CS024 P2)
+    const mult = ufoFireMult(this.small); // CS024 P5: ufoFireFreqBig/Small levers
     return rand(range[0], range[1]) * mult;
   }
   update(dt) {
     this.zigTimer -= dt;
     if (this.zigTimer <= 0) {
       this.vy = randSign() * rand(40, 110);
-      this.zigTimer = ufoZigInterval(); // CS018 P6: tiered + jittered, was rand(0.8, 1.8)
+      this.zigTimer = ufoZigInterval(this.small); // CS024 P5: ufoDirChangeBig/Small levers, jittered
     }
     this.x += this.vx * dt;
     this.y += this.vy * dt;
@@ -4612,7 +4644,7 @@ class Saucer {
       } else {
         a = rand(0, TAU); // random
       }
-      const shotSpeed = ufoShotSpeedPx(); // CS018 P7: tiered, was the literal 380
+      const shotSpeed = ufoShotSpeedPx(this.small); // CS024 P5: ufoShotSpeedBig/Small levers
       game.bullets.push(new Bullet(this.x, this.y,
         Math.cos(a) * shotSpeed, Math.sin(a) * shotSpeed, true));
       this.fireTimer = this.rollFireTimer(this.small ? SAUCER_FIRE_SMALL : SAUCER_FIRE_BIG);
@@ -4694,7 +4726,10 @@ class Garbage {
     // v3.2 P1 reverses FORK-2: on merge `mass` now SUMS and `radius` DERIVES from pieces (a clump is
     // a real, heavy, big, un-hookable body — you must shoot it apart first). radius = 7*sqrt(pieces),
     // so a single piece still reads 7 (the base canister radius).
-    this.coalesceDelay = DEBUG.garbageAttractDelay; // CS015 P5: tunable live (captured per-piece at ctor time)
+    // CS024 P5 (spec §2.4/§4.5): the retired garbageAttractDelay knob is now the HUNTER chain's driver
+    // lever, coalescePause — read at the point of use (this ctor) exactly like every other lever, with
+    // the live-override knob taking priority via `??` when a slider has actually been touched.
+    this.coalesceDelay = DEBUG.coalescePause ?? leverState(game.wave).coalescePause; // captured per-piece at ctor time
     this.pieces = 1;
     this.radius = 7 * Math.sqrt(this.pieces);
     // CS024 P3: `this.bonus` STOOD HERE (CS017 P5's rare-canister marker). Removed with the bonus
@@ -5167,7 +5202,7 @@ function startGame() {
   game.ship = new Ship();
   game.hudHull = game.ship.hp / SHIP_MAX_HP;   // CS009 P1: no drain animation on a fresh run
   game.camera = { x: game.ship.x, y: game.ship.y };
-  game.saucerTimer = ufoAppearInterval(); // CS018 P6: first saucer waits one jittered appearance interval. CS024 P4: game.wave is still 0 here (pre-nextWave()), which the frozen constant ignores and which leverState() answers as level 1 — the same pre-wave-1 reading levelDef(0) gave through stepAt()
+  game.saucerTimer = ufoAppearInterval(); // CS018 P6: first saucer waits one jittered appearance interval. game.wave is still 0 here (pre-nextWave()), which leverState() answers as level 1 — the same pre-wave-1 reading levelDef(0) gave through stepAt()
   // CS024 P3: `game.hunterTimer = rand(14, 22);` STOOD HERE (the ambient producer's first-spawn seed).
   game.lowHpSiren = false; AudioSys.lowhp(false); // fresh run never carries the siren over (v3.4 P5)
   game.lowHpPhase = 0;      // CS010 P3: the pulse accumulator starts a fresh run at 0
@@ -5204,7 +5239,7 @@ function startGame() {
 // pure extraction: `git diff -w` on the field branch reads as an indent change, and test-cs022-p3.js
 // §E pins that against the pre-P3 commit rather than trusting the eye. Ship-relative and wrap-aware, so
 // it is correct at either world size without knowing which one it is running in.
-function spawnFieldSatellites(n, speedMul) {
+function spawnFieldSatellites(n, speed) {
   for (let i = 0; i < n; i++) {
     // spawn in a ring around the ship's current world position so the wave is
     // reachable (min distance keeps it off the ship, max keeps it from being
@@ -5212,7 +5247,7 @@ function spawnFieldSatellites(n, speedMul) {
     const a = rand(0, TAU);
     const d = rand(SPAWN_MIN_DIST, SPAWN_MAX_DIST);
     const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
-    game.debris.push(new DebrisSatellite(p.x, p.y, 3, speedMul));
+    game.debris.push(new DebrisSatellite(p.x, p.y, 3, speed));
   }
 }
 
@@ -5254,29 +5289,31 @@ function nextWave() {
   // F3 first-pass balance: trimmed from min(4+wave, 11) to offset the ~8x higher garbage
   // volume from guaranteed 3-per-tier drops. (CS024 P3 restores the v3.2 P3 rule: garbage no longer
   // decays, so density is held by coalescence + shatter-to-harvest + the cullGarbage() ceiling.)
-  // CS024 P4 (TRAP 2): was levelDef(game.wave).junkCount, off JUNK_CYCLE's 3/5/9/13 sawtooth. FROZEN at
-  // the level-1 count of 3 for exactly one phase — P5 repoints this to leverState(game.wave).junkCount,
-  // whose own sawtooth (3..12 over ten levels, then a reset that permanently speeds the field up) is
-  // what the odometer replaces it with. No count clamp here either way: the old in-cycle/hard-max
-  // debris clamps (deleted, CS024 P2) were never applied at this site, and the lever is bounded by
-  // construction — its ceiling IS its top step.
-  const count = FROZEN_JUNK_COUNT;
-  const speedMul = junkSpeedMul();
+  // CS024 P5 (spec §2.4/§4.5): was FROZEN_JUNK_COUNT for one phase (CS024 P4, TRAP 2). Now reads the
+  // JUNK chain's driver — leverState(game.wave).junkCount — at the point of use, its own sawtooth (3..12
+  // over ten levels, then a wrap that bumps all three junkSpeed* levers permanently) replacing the
+  // retired JUNK_CYCLE table. No count clamp here either way: the old in-cycle/hard-max debris clamps
+  // (deleted, CS024 P2) were never applied at this site, and the lever is bounded by construction — its
+  // ceiling IS its top step. `DEBUG.junkCount`/`junkSpeedLarge` are the live-override knobs (§4.5) —
+  // `??` so the odometer's own ramp keeps driving the game until a slider is actually touched.
+  const lv = leverState(game.wave);
+  const count = DEBUG.junkCount ?? lv.junkCount;
+  const speed = DEBUG.junkSpeedLarge ?? lv.junkSpeedLarge;
   // CS024 P1 (spec §4.1, consequence 3): THE ARCHETYPE BRANCH IS GONE. CS021 P1 put a two-way switch
   // here — "field" scattered junkCount satellites, "orbit" laid concentric rings around the dock and
   // (from CS022 P3) added the previous level's junkCount as scatter on top. spawnFieldSatellites() is now
-  // the ONLY spawn path and is called unconditionally, with the level table's own junkCount, on every
-  // level. That also retires FLAG-CS022-g: `count` is once again both what the table says AND what the
+  // the ONLY spawn path and is called unconditionally, with the lever's own junkCount, on every level.
+  // That also retires FLAG-CS022-g: `count` is once again both what the odometer says AND what the
   // level actually spawns, so logDifficultySnapshot()'s junkCount column can no longer disagree with the
   // field in front of the player.
-  spawnFieldSatellites(count, speedMul);
+  spawnFieldSatellites(count, speed);
   // CS024 P3 (spec §1.2/§4.2): CS017 P5's BONUS-CANISTER SPAWN BLOCK STOOD HERE — one bonusSpawnChance()
   // roll per wave that pushed a pre-linked 6-piece `Garbage` into the field on the same ring-around-the
   // -ship rule as the debris above. Removed outright. nextWave() now spawns satellites and nothing else,
   // and — the other half of this phase — IT STILL CLEARS NOTHING: loose garbage carries across the level
   // boundary and, with decay gone, does so permanently. That is what makes the density ceiling in
   // cullGarbage() necessary rather than defensive.
-  logDifficultySnapshot(count, speedMul, prevLevelSecs); // CS017 P2: dev-only, one row per level (see DiffLog above)
+  logDifficultySnapshot(count, speed, prevLevelSecs); // CS017 P2: dev-only, one row per level (see DiffLog above)
 }
 
 function addScore(pts) {
@@ -5318,18 +5355,20 @@ function destroyDebris(a, awardScore = true) {
   }
   // Large -> 3 mediums, medium -> 3 smalls, small -> destroyed (F3: 3-way splits)
   if (a.size > 1) {
-    // CS018 P3: the SECOND debris-speed site. Kept byte-identical to nextWave()'s speedMul expression —
-    // a split child must move like a freshly-spawned piece of the same wave, so if one site is retuned
-    // the other has to move with it. (These two are the only places debris speed is derived — both now
-    // just call the shared junkSpeedMul() helper.)
-    const speedMul = junkSpeedMul();
+    // CS024 P5 (spec §4.5): the SECOND debris-speed site — a split child must move like a freshly-spawned
+    // piece of THIS wave, at the CHILD'S OWN size lever (a large splitting to medium reads junkSpeedMedium,
+    // a medium splitting to small reads junkSpeedSmall; junkSpeedMul()'s shared-ratio derivation is gone,
+    // CS024 P5 deletion). Reads leverState(game.wave) at the point of use like every other consumer.
+    const lv = leverState(game.wave);
+    const childId = a.size - 1 === 2 ? "junkSpeedMedium" : "junkSpeedSmall";
+    const speed = DEBUG[childId] ?? lv[childId];
     // CS024 P1: CS021 P1's rail handoff (FORK-CS021-C2 -> (i)) STOOD HERE — a shattered ORBITING parent
     // handed its three children its instantaneous orbital tangent as vx/vy. `tangent` was null for every
     // field-level parent, so that conditional never fired off an orbit level; removing it leaves the
     // shipped scatter path exactly as it has always been, and every child now simply takes the fresh
     // random velocity its own constructor rolls.
     for (let i = 0; i < 3; i++) {
-      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speedMul));
+      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speed));
     }
   }
 }
@@ -6885,7 +6924,7 @@ function update(dt) {
           g.pieces -= take;
           g.mass  -= take * pMass;
           g.radius = 7 * Math.sqrt(g.pieces);
-          g.coalesceDelay = DEBUG.garbageAttractDelay;
+          g.coalesceDelay = DEBUG.coalescePause ?? leverState(game.wave).coalescePause; // CS024 P5: coalescePause lever
           const [ax, ay] = shortDelta(game.ship.x, game.ship.y, g.x, g.y); // ship -> leftover (wrap-aware)
           const d = Math.hypot(ax, ay) || 0.0001;
           g.vx += (ax / d) * SCOOP_SPILL_KICK;
@@ -7058,13 +7097,13 @@ function update(dt) {
   // --- Spawning ---
   game.saucerTimer -= dt;
   if (game.saucerTimer <= 0 && game.saucers.length === 0) {
-    // CS024 P4 (TRAP 2): was ramp(SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL, game.wave) —
-    // the 15% -> 60% wave ramp, and ramp()'s last lever anywhere. FROZEN at its level-1 value for one
-    // phase; P5 replaces it with the FLAT Math.random() < DEBUG.smallUfoChance (0.20), constant for the
-    // whole game and deliberately not a lever (§2.4). There is still exactly ONE appearance timer —
-    // this roll only picks the size of the saucer that timer just fired.
-    const smallChance = FROZEN_SMALL_UFO_CHANCE;
-    const small = Math.random() < smallChance;
+    // CS024 P5 (spec §2.4/§4.6): was ramp(SAUCER_SMALL_CHANCE_FLOOR, SAUCER_SMALL_CHANCE_CEIL, game.wave)
+    // — the 15% -> 60% wave ramp, and ramp()'s last lever anywhere. Now a FLAT Math.random() <
+    // DEBUG.smallUfoChance (def 0.20), constant for the whole game and deliberately NOT a lever — it is
+    // a plain debug knob, not part of the odometer, so it reads DEBUG directly with no leverState
+    // fallback. There is still exactly ONE appearance timer — this roll only picks the size of the
+    // saucer that timer just fired.
+    const small = Math.random() < DEBUG.smallUfoChance;
     game.saucers.push(new Saucer(small));
     AudioSys.saucer(true, small);
     // CS018 P6: appearance frequency, by TIER — INVERTED (§3.1), jittered around the tier centre.
@@ -7607,8 +7646,10 @@ function drawDebug() {
       drawText(e.label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
       // While typing, the pending digits REPLACE the live value (with a caret, in the "uncommitted" tint) so
       // it is unambiguous that nothing has been written yet — and the ◄► chevrons drop, because arrows don't
-      // step while an entry is pending.
-      const val = typing ? DebugPanel.entry + "_" : debugShown[e.id] + (e.unit ? " " + e.unit : "");
+      // step while an entry is pending. CS024 P5: a lever knob's untouched `debugShown` is null (§4.5's
+      // "auto" sentinel) — shown as "auto" rather than the literal string "null".
+      const val = typing ? DebugPanel.entry + "_"
+        : debugShown[e.id] == null ? "auto" : debugShown[e.id] + (e.unit ? " " + e.unit : "");
       drawText(val, ox, cy + 6, 18, typing ? COLOR.garbageBonus : sel ? COLOR.text : COLOR.menuIdle, "left");
       if (sel && !typing) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 120, cy + 7, 16, COLOR.text); }
     } else {   // the Dump action row and Back — centered, ▶ marker, no value, no chevrons

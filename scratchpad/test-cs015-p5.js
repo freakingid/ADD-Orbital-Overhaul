@@ -57,7 +57,9 @@ const RETURN = [
   "startGame", "update", "game", "damageShip", "settings",
   "DEBUG", "debugShown", "DEBUG_VARS", "applyDebug", "menuDebug",
   "Garbage", "coalesceGarbage", "AudioSys",
-  "SCOOP_HITS_PER_LEVEL", "GARBAGE_COALESCE_DELAY", "GARBAGE_MAGNET_RANGE", "GARBAGE_MAGNET_PULL",
+  // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY is deleted outright (replaced by the coalescePause
+  // lever) — leverState replaces it as this file's source of truth for the inert-delay quantity.
+  "SCOOP_HITS_PER_LEVEL", "leverState", "GARBAGE_MAGNET_RANGE", "GARBAGE_MAGNET_PULL",
   "GARBAGE_MERGE_DIST", "WORLD_W"
 ];
 
@@ -104,14 +106,12 @@ function beginPlaying(A) {
   assert(scoop.def === A.SCOOP_HITS_PER_LEVEL, `B: scoopHitsPerLevel def === SCOOP_HITS_PER_LEVEL (${A.SCOOP_HITS_PER_LEVEL})`);
   assert(!scoop.toNative, "B: scoopHitsPerLevel has no toNative (display === native)");
 
+  // REPOINTED BY CS024 P5: garbageAttractDelay is RETIRED — CS024 P5 deleted GARBAGE_COALESCE_DELAY
+  // outright and replaced the whole quantity with the coalescePause lever (HUNTER section, read live
+  // at ctor time as `DEBUG.coalescePause ?? leverState(game.wave).coalescePause`). This is now an
+  // absence proof, not a claim about a knob that no longer exists.
   const delay = byId("garbageAttractDelay");
-  assert(!!delay, "B: garbageAttractDelay entry exists");
-  assert(delay.unit === "ms" && delay.min === 0 && delay.max === 10000 && delay.step === 250,
-    "B: garbageAttractDelay is ms, [0,10000] step 250");
-  assert(delay.def === A.GARBAGE_COALESCE_DELAY * 1000,
-    `B: garbageAttractDelay def derives from GARBAGE_COALESCE_DELAY*1000 (${A.GARBAGE_COALESCE_DELAY * 1000})`);
-  assert(typeof delay.toNative === "function" && delay.toNative(1000) === 1,
-    "B: garbageAttractDelay toNative converts ms -> s (1000 -> 1)");
+  assert(!delay, "B: garbageAttractDelay no longer exists in DEBUG_VARS (CS024 P5: retired, replaced by the coalescePause lever)");
 
   const radius = byId("garbageAttractRadius");
   assert(!!radius, "B: garbageAttractRadius entry exists");
@@ -135,15 +135,12 @@ function beginPlaying(A) {
   assert(A.debugShown.scoopHitsPerLevel === A.SCOOP_HITS_PER_LEVEL, "C: scoopHitsPerLevel seeded display === const");
   assert(A.DEBUG.scoopHitsPerLevel === A.SCOOP_HITS_PER_LEVEL, "C: scoopHitsPerLevel seeded native === const");
 
-  assert(A.debugShown.garbageAttractDelay === A.GARBAGE_COALESCE_DELAY * 1000,
-    "C: garbageAttractDelay seeded display is the const in ms");
-  assert(A.DEBUG.garbageAttractDelay === A.GARBAGE_COALESCE_DELAY,
-    "C: garbageAttractDelay seeded native is the const in seconds");
-  A.applyDebug("garbageAttractDelay", 4500);
-  assert(A.debugShown.garbageAttractDelay === 4500 && A.DEBUG.garbageAttractDelay === 4.5,
-    "C: applyDebug round-trips 4500ms -> 4.5s");
-  A.applyDebug("garbageAttractDelay", 250);
-  assert(A.DEBUG.garbageAttractDelay === 0.25, "C: another round-trip (250ms -> 0.25s)");
+  // REPOINTED BY CS024 P5: garbageAttractDelay is gone — there is no knob left to seed or round-trip.
+  // (applyDebug looks the id up in DEBUG_ENTRIES and dereferences the result unconditionally, so
+  // calling it with a retired id throws rather than no-opping — the absence is proven by NOT calling
+  // it, exactly like test-cs024-p2.js's freqJitter precedent.)
+  assert(!("garbageAttractDelay" in A.debugShown), "C: debugShown carries no garbageAttractDelay field");
+  assert(!("garbageAttractDelay" in A.DEBUG), "C: DEBUG carries no garbageAttractDelay field");
 
   assert(A.debugShown.garbageAttractRadius === A.GARBAGE_MAGNET_RANGE && A.DEBUG.garbageAttractRadius === A.GARBAGE_MAGNET_RANGE,
     "C: garbageAttractRadius seeded display/native both equal the const (no unit conversion)");
@@ -186,7 +183,10 @@ function beginPlaying(A) {
   console.log("(E) at defaults, DEBUG.* equals the pre-P5 shipped consts exactly (no behavior change)");
   const A = build();
   assert(A.DEBUG.scoopHitsPerLevel === A.SCOOP_HITS_PER_LEVEL, "E: DEBUG.scoopHitsPerLevel === SCOOP_HITS_PER_LEVEL at default");
-  assert(A.DEBUG.garbageAttractDelay === A.GARBAGE_COALESCE_DELAY, "E: DEBUG.garbageAttractDelay === GARBAGE_COALESCE_DELAY at default");
+  // REPOINTED BY CS024 P5: garbageAttractDelay/GARBAGE_COALESCE_DELAY are both retired — the quantity
+  // they described is now the coalescePause lever, read live at the point of use, not seeded into DEBUG
+  // from a knob default (a lever knob's `def` is null — the "follow the live odometer" sentinel).
+  assert(!("garbageAttractDelay" in A.DEBUG), "E: DEBUG carries no garbageAttractDelay field (retired CS024 P5)");
   assert(A.DEBUG.garbageAttractRadius === A.GARBAGE_MAGNET_RANGE, "E: DEBUG.garbageAttractRadius === GARBAGE_MAGNET_RANGE at default");
   assert(A.DEBUG.garbageAttractForce === A.GARBAGE_MAGNET_PULL, "E: DEBUG.garbageAttractForce === GARBAGE_MAGNET_PULL at default");
 
@@ -199,14 +199,20 @@ function beginPlaying(A) {
   // The CLAIM this section makes is unchanged: the const is the single source of truth and the
   // registry `def` derives from it, which every assertion above still checks symbolically. Only the
   // three literals moved.
+  // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY itself is now deleted — replaced outright by the
+  // coalescePause lever's floor, which carries the exact same value (5.0) forward.
   assert(A.SCOOP_HITS_PER_LEVEL === 5, "E: SCOOP_HITS_PER_LEVEL const unchanged (5)");
-  assert(A.GARBAGE_COALESCE_DELAY === 5.0, "E: GARBAGE_COALESCE_DELAY is 5.0 (CS024 P4 Gate A Q1: was 3.0)");
+  assert(A.leverState(1).coalescePause === 5.0, "E: coalescePause lever's floor is 5.0 (replaces the retired GARBAGE_COALESCE_DELAY 3.0->5.0 retune)");
   assert(A.GARBAGE_MAGNET_RANGE === 160, "E: GARBAGE_MAGNET_RANGE is 160 (CS024 P4 Gate A Q1: was 180)");
   assert(A.GARBAGE_MAGNET_PULL === 30, "E: GARBAGE_MAGNET_PULL is 30 (CS024 P4 Gate A Q1: was 40)");
 
-  // A freshly-constructed Garbage still inherits the shipped coalesce delay at default.
+  // A freshly-constructed Garbage still inherits the live coalescePause lever at default. This build
+  // never calls startGame(), so game.wave is still its initial 0; leverState(0) === leverState(1) by
+  // construction (leverState's own "levels below 1 clamp to zero ticks" rule), so this is still the
+  // documented floor 5.0.
   const fresh = new A.Garbage(100, 100);
-  assert(fresh.coalesceDelay === A.GARBAGE_COALESCE_DELAY, "E: a new Garbage's coalesceDelay === the shipped const at default");
+  assert(fresh.coalesceDelay === A.leverState(A.game.wave).coalescePause,
+    "E: a new Garbage's coalesceDelay === the live coalescePause lever at the current wave");
 })();
 
 // ================= (F1) consumer: scoop loses a level after DEBUG.scoopHitsPerLevel non-lethal hits ===
@@ -234,30 +240,51 @@ function beginPlaying(A) {
   assert(A.game.scoopLevel === 1 && A.game.scoopHits === 0, "F1: the 3rd hit drops a level (reads the LIVE DEBUG value, not the frozen const)");
 })();
 
-// ================= (F2) consumer: a fresh piece stays inert for DEBUG.garbageAttractDelay then attracts =
+// ================= (F2) REPOINTED BY CS024 P5: garbageAttractDelay is retired; a fresh piece now stays
+// inert for the LIVE coalescePause lever instead, dialed via the real coalescePause knob that replaced it =
 (function sectionF2() {
-  console.log("(F2) a fresh Garbage inherits DEBUG.garbageAttractDelay at ctor time; stays inert until it elapses");
+  console.log("(F2) garbageAttractDelay is gone; a fresh Garbage inherits the live coalescePause lever, dialable via the real knob that replaced it");
   const A = build();
   beginPlaying(A);
-  A.applyDebug("garbageAttractDelay", 500); // 0.5s, dialed well away from the 3.0s default
-  assert(A.DEBUG.garbageAttractDelay === 0.5, "F2: DEBUG.garbageAttractDelay dialed to 0.5s");
 
+  // The retired knob no longer exists — proven as an absence, not exercised (applyDebug on an unknown
+  // id throws rather than no-ops; see sections B/C/E above).
+  assert(!("garbageAttractDelay" in A.DEBUG), "F2: DEBUG carries no garbageAttractDelay field (retired CS024 P5)");
+
+  // A fresh piece still captures its inert delay at ctor time — now from the live coalescePause lever
+  // (DEBUG.coalescePause ?? leverState(game.wave).coalescePause), which is the exact expression the
+  // real Garbage constructor and the scoop-leftover respill site both read.
+  const expected = A.DEBUG.coalescePause ?? A.leverState(A.game.wave).coalescePause;
   const a = new A.Garbage(1000, 1000, 0, 0);
-  const b = new A.Garbage(1080, 1000, 0, 0); // 80px apart: inside default+custom range, outside merge dist
-  assert(a.coalesceDelay === 0.5, `F2: a fresh piece captures the LIVE knob at ctor time (got ${a.coalesceDelay})`);
+  const b = new A.Garbage(1080, 1000, 0, 0); // 80px apart: inside the shipped magnet range, outside merge dist
+  assert(a.coalesceDelay === expected, `F2: a fresh piece captures the LIVE coalescePause lever at ctor time (got ${a.coalesceDelay})`);
   A.game.garbage = [a, b];
 
   A.coalesceGarbage(1 / 60);
   assert(a.vx === 0 && b.vx === 0, "F2: still inert immediately (coalesceDelay > 0) -> no attraction yet");
 
-  a.update(0.4); b.update(0.4); // short of the dialed 0.5s
-  A.coalesceGarbage(1 / 60);
-  assert(a.vx === 0 && b.vx === 0, "F2: still inert just short of the dialed delay");
+  // Dial the REAL knob that now governs this quantity — coalescePause, the lever's own debug entry —
+  // to prove the pipeline reads it live, exactly as the retired garbageAttractDelay test used to prove
+  // for the knob it replaced.
+  A.applyDebug("coalescePause", 0.5);
+  assert(A.DEBUG.coalescePause === 0.5, "F2: DEBUG.coalescePause dialed to 0.5s");
 
-  a.update(0.15); b.update(0.15); // now past 0.5s total
-  assert(a.coalesceDelay <= 0 && b.coalesceDelay <= 0, "F2: both active past the dialed delay");
+  const c = new A.Garbage(1000, 1000, 0, 0);
+  const d = new A.Garbage(1080, 1000, 0, 0);
+  assert(c.coalesceDelay === 0.5, `F2: a fresh piece captures the dialed coalescePause at ctor time (got ${c.coalesceDelay})`);
+  A.game.garbage = [c, d];
+
   A.coalesceGarbage(1 / 60);
-  assert(a.vx !== 0 || b.vx !== 0, "F2: now active -> attraction kicks in");
+  assert(c.vx === 0 && d.vx === 0, "F2: still inert immediately (coalesceDelay > 0) -> no attraction yet");
+
+  c.update(0.4); d.update(0.4); // short of the dialed 0.5s
+  A.coalesceGarbage(1 / 60);
+  assert(c.vx === 0 && d.vx === 0, "F2: still inert just short of the dialed delay");
+
+  c.update(0.15); d.update(0.15); // now past 0.5s total
+  assert(c.coalesceDelay <= 0 && d.coalesceDelay <= 0, "F2: both active past the dialed delay");
+  A.coalesceGarbage(1 / 60);
+  assert(c.vx !== 0 || d.vx !== 0, "F2: now active -> attraction kicks in");
 })();
 
 // ================= (F3) consumer: coalesceGarbage skips pairs beyond DEBUG.garbageAttractRadius ========

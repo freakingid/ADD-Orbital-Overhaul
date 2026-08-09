@@ -432,8 +432,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // knobs (7 levers x low/normal/high) went with levelDef()'s tier names, along with their three now-
   // empty section headers. P5 rebuilds JUNK and UFO around one knob per LEVER, which is a different
   // shape, not a restoration — so expect this number to move again next phase.
+  // AND AGAIN BY CS024 P5: 15 -> 32 — the levers wired: 17 new lever-knob entries (JUNK/HUNTER/UFO
+  // headers rebuilt around them) plus smallUfoChance, as predicted above.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 15, "A: TRAP 3 — DEBUG_VARS holds exactly 15 value entries after CS024 P4 (36 - the 21 tier knobs)");
+  eq(valueEntries, 32, "A: TRAP 3 — DEBUG_VARS holds exactly 32 value entries after CS024 P5 (15 + 17 wired lever knobs)");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

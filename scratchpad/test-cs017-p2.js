@@ -7,17 +7,27 @@
 // **REPOINTED BY CS018 P4 — the COLUMN LIST changed.** P2 declared DIFFLOG_FIELDS frozen, which was right
 // while the cycle clock was the thing being observed; P4 retires that clock, so four columns (`cycle`,
 // `cycleWave`, `hunterSpeedFrac`, `hunterTurnFrac`) described machinery that no longer exists — the last
-// two would log a fixed 0.58 forever now that Hunter speed/turn are frozen constants. They are replaced by
-// what the level table actually decides: level/phase/rel/junkCount/junkSpeedMul/maxLargeHunters, the seven
-// tier NAMES, and prevLevelSecs (FLAG-k). Sections (B), (D) and (E) follow the new shape; (C), (F), (G) and
-// (H) test the mechanism and are untouched.
+// two would log a fixed 0.58 forever now that Hunter speed/turn are frozen constants. They were replaced by
+// what the level table decided at the time: level/phase/rel/junkCount/junkSpeedMul/maxLargeHunters, the
+// seven tier NAMES, and prevLevelSecs (FLAG-k).
+//
+// **REPOINTED AGAIN BY CS024 P5 — the level table (and its phase/rel/tier-name columns) is gone, and the
+// LEVERS odometer's own field list is the new column list.** `phase`/`rel` are DROPPED ENTIRELY (not
+// nulled — they named positions inside a three-phase structure the odometer has no equivalent of), the
+// single `junkSpeedMul`/tier-name columns are replaced by 17 lever-id columns straight off `LEVERS`
+// (junkSpeedLarge/Medium/Small, coalescePause/hunterSpeedMedium/hunterSpeedSmall, and the ten-lever UFO
+// chain split by size — ufoFlightSpeedBig/Small, ufoDirChangeBig/Small, ufoFireFreqBig/Small,
+// ufoShotSpeedBig/Small, ufoAccuracySmall, plus the ufoAppearFreq driver), and EVERY row is numeric now —
+// there is no null/text column left at all. Sections (B) and (E) are rewritten for the new shape; (C),
+// (D), (F), (G) and (H) test the mechanism (buffer cap, CSV round-trip machinery, the dump action, the
+// debug-panel nav) and are unchanged.
 //
 //   node scratchpad/test-cs017-p2.js
 //
 // Follows the standing rule (GDD 5.4): stub window/document/rAF/navigator/localStorage, eval the REAL
 // <script> block, and drive the ACTUAL nextWave()/startGame()/menuDebug()/drawDebug()/dumpDifficultyLog()
 // — never reimplement the logging or CSV logic under test. Section (B) cross-checks each snapshot field
-// against the REAL levelDef()/junkSpeedMul()/ramp() helpers and live constants, never a re-derived formula.
+// against the REAL leverState()/ufoAccuracyRad() helpers and live constants, never a re-derived formula.
 
 "use strict";
 const fs = require("fs");
@@ -73,13 +83,15 @@ const RETURN = [
   "logDifficultySnapshot", "difficultyLogCSV", "dumpDifficultyLog",
   "DEBUG_VARS", "menuDebug", "drawDebug", "debugReturn",
   // CS024 P4: ramp() deleted; difficultyFactor renamed musicIntensity; levelDef() deleted with the whole
-  // level table. The junk count nextWave() consumes is FROZEN_JUNK_COUNT until P5 wires the lever.
-  "musicIntensity", "HUNTER_FLOOR_FRAC",
-  "FROZEN_JUNK_COUNT", "FROZEN_UFO_APPEAR_FREQ", "FROZEN_JUNK_SPEED",
-  "ufoFlightSpeedPx", "ufoFireMult", "ufoShotSpeedPx",
-  "junkSpeedMul", "LARGE_HUNTER_MAX",                                                 // CS024 P3 repoint (was largeHunterCap)
+  // level table. CS024 P5 wires the odometer and deletes the FROZEN_* constants + junkSpeedMul() outright
+  // — leverState(wave) is the one live source every snapshot column reads against now.
+  "musicIntensity", "leverState", "HUNTER_FLOOR_FRAC",
+  // CS024 P5: the six UFO derivation helpers all now read leverState() at the point of use; three of them
+  // (ufoFlightSpeedPx/ufoFireMult/ufoShotSpeedPx) additionally took on a `small` boolean parameter to
+  // split by saucer size, which the row-shape checks below must pass explicitly per column.
+  "ufoFlightSpeedPx", "ufoFireMult", "ufoShotSpeedPx", "ufoAccuracyRad",
+  "LARGE_HUNTER_MAX",                                                 // CS024 P3 repoint (was largeHunterCap)
   "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
-  "ufoAccuracyRad",                                    // CS018 P7 (section B: tiered saucer aim error)
   "AudioSys",
   // CS024 P1: the eight ORBIT_* constants and the three orbit functions (generateOrbitLayout,
   // orbitGapMult, activeRingsFor) CS021 P2 added here are REMOVED — they no longer exist in the build, so
@@ -137,15 +149,11 @@ function build() {
   return { exports, created };
 }
 
-// REPOINTED BY CS024 P4. These seven columns used to log a TIER NAME — the one non-numeric group in the
-// row — because levelDef() decided a name and the value behind it was a debug knob. Tiers are gone, so
-// they log the NUMBER in play instead, which makes the whole row numeric for the first time and is the
-// shape it keeps: P5's leverState values are numbers too. `phase` and `rel` go the other way — they
-// described positions inside the deleted 21-level three-phase structure, so they log null (an empty CSV
-// cell) rather than a re-derived number describing a thing that no longer exists.
-const TIER_FIELDS = ["junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
-                     "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"];
-const NULL_FIELDS = ["phase", "rel"];
+// REPOINTED BY CS024 P5. The seven former tier-name columns and the `phase`/`rel` null columns are gone
+// from DIFFLOG_FIELDS entirely (not renamed, not nulled — genuinely absent), replaced by the 17 lever-id
+// columns straight off LEVERS plus the same handful of non-lever context columns (maxLargeHunters,
+// hunterCount, saucerAimErr/GapMin/Max, chainLen, cargoMax, scoopLevel). EVERY column is numeric now —
+// there is no NULL_FIELDS group left, which is itself part of what section B below proves.
 
 // ================= (B) one row per nextWave(), every field present/finite, matches the live sites =====
 (function sectionB() {
@@ -161,14 +169,15 @@ const NULL_FIELDS = ["phase", "rel"];
     assert(A.DiffLog.rows.length === w, `B: wave ${w}: exactly one new row per nextWave() call (got ${A.DiffLog.rows.length})`);
 
     const row = A.DiffLog.rows[A.DiffLog.rows.length - 1];
+    // REPOINTED BY CS024 P5: EVERY column is numeric now — there is no NULL_FIELDS group left (phase/rel
+    // are gone from DIFFLOG_FIELDS entirely, not nulled), so this loop collapses to one branch.
     for (const f of A.DIFFLOG_FIELDS) {
       assert(f in row, `B: wave ${w}: row has field "${f}"`);
-      if (NULL_FIELDS.includes(f)) {
-        assert(row[f] === null, `B: wave ${w}: retired structural field "${f}" logs null (got ${row[f]})`);
-      } else {
-        assert(typeof row[f] === "number" && Number.isFinite(row[f]), `B: wave ${w}: field "${f}" is a finite number (got ${row[f]})`);
-      }
+      assert(typeof row[f] === "number" && Number.isFinite(row[f]), `B: wave ${w}: field "${f}" is a finite number (got ${row[f]})`);
     }
+    // The mirror image of the "logs null" claim these two used to carry: they are ABSENT from the row,
+    // not present-and-null — the three-phase structure they named has no equivalent in the odometer.
+    assert(!("phase" in row) && !("rel" in row), `B: wave ${w}: the retired phase/rel columns are gone from the row entirely, not nulled`);
 
     assert(row.level === g.wave, `B: wave ${w}: row.level matches game.wave`);
     assert(row.score === g.score, `B: wave ${w}: row.score matches game.score`);
@@ -179,47 +188,65 @@ const NULL_FIELDS = ["phase", "rel"];
     assert(!("cycle" in row) && !("cycleWave" in row), `B: wave ${w}: the retired cycle columns are gone from the row`);
     assert(!("hunterSpeedFrac" in row) && !("hunterTurnFrac" in row), `B: wave ${w}: the retired Hunter-fraction columns are gone`);
 
-    // REPOINTED BY CS024 P4: there is no levelDef() call left to agree with — the level table is gone.
-    // What the CLAIM was about, and still is, is that no row can disagree with itself about the level it
-    // describes: every column is built from the SAME live expression the spawn site used, never
-    // re-derived arithmetic. That is now checked against FROZEN_JUNK_COUNT and the live junkSpeedMul().
-    assert(row.phase === null, `B: wave ${w}: row.phase is null — the three-phase structure is deleted, not renamed`);
-    assert(row.rel === null, `B: wave ${w}: row.rel is null, for the same reason`);
-    assert(row.junkCount === A.FROZEN_JUNK_COUNT, `B: wave ${w}: junkCount expected ${A.FROZEN_JUNK_COUNT}, got ${row.junkCount}`);
+    // REPOINTED BY CS024 P5: the level table (and levelDef()) is gone for good; the ONE source every
+    // column now mirrors is leverState(game.wave), read with the same `DEBUG.<id> ?? lv.<id>` expression
+    // its own live consumer uses. What the CLAIM was about, and still is, is that no row can disagree with
+    // itself about the level it describes — every column is built from the SAME live expression the spawn
+    // site used, never re-derived arithmetic.
+    const lv = A.leverState(g.wave);
+    assert(row.junkCount === (A.DEBUG.junkCount ?? lv.junkCount),
+      `B: wave ${w}: junkCount matches leverState(${g.wave}).junkCount (got ${row.junkCount})`);
     // REPOINTED BY CS024 P1, and it RETIRES FLAG-CS022-g outright. Two changesets ago this split so that
     // an ORBIT level's ring layout could be checked by its own rule; CS022 P3 then re-split it again when
     // orbit levels grew a scatter component on top of their rings, at which point the DiffLog's junkCount
     // column meant "what the table says" rather than "what spawned". With the archetype gone those are
-    // ONE NUMBER AGAIN at every level: the column, the level table and the actual spawn all agree, which
+    // ONE NUMBER AGAIN at every level: the column, the odometer and the actual spawn all agree, which
     // is a stronger claim than either split version could make. The rail-state check is INVERTED from
     // "no FIELD-level satellite carries orbit state" to "no satellite anywhere does".
     assert(g.debris.length === row.junkCount,
-      `B: wave ${w}: the level spawned exactly junkCount pieces — table, DiffLog column and spawn all agree`);
+      `B: wave ${w}: the level spawned exactly junkCount pieces — the odometer, DiffLog column and spawn all agree`);
     assert(g.debris.every(d => d.orbitCenter === undefined),
       `B: wave ${w}: REPOINTED BY CS024 P1 (inverted) — NO satellite carries orbit state, at any level`);
     assert(A.probe("levelDef") === "__ReferenceError__",
       `B: wave ${w}: there is no level table left to carry an archetype/fieldCount/orbitRings column`);
-    assert(Math.abs(row.junkSpeedMul - A.junkSpeedMul()) < 1e-9, `B: wave ${w}: junkSpeedMul matches the live helper`);
+    // REPOINTED BY CS024 P5: the single junkSpeedMul column is gone — three independent per-size lever
+    // columns replace it, each checked against its own leverState field (junkSpeedMul() itself no longer
+    // exists — CS024 P5 deletion, spec §4.5).
+    assert(row.junkSpeedLarge === (A.DEBUG.junkSpeedLarge ?? lv.junkSpeedLarge), `B: wave ${w}: junkSpeedLarge matches leverState`);
+    assert(row.junkSpeedMedium === (A.DEBUG.junkSpeedMedium ?? lv.junkSpeedMedium), `B: wave ${w}: junkSpeedMedium matches leverState`);
+    assert(row.junkSpeedSmall === (A.DEBUG.junkSpeedSmall ?? lv.junkSpeedSmall), `B: wave ${w}: junkSpeedSmall matches leverState`);
     // REPOINTED BY CS024 P3: the maxLargeHunters COLUMN survives (a column follows its consumer), but
     // its source moved off the deleted levelDef column / largeHunterCap() onto the flat LARGE_HUNTER_MAX.
     assert(row.maxLargeHunters === A.LARGE_HUNTER_MAX, `B: wave ${w}: the DiffLog column logs LARGE_HUNTER_MAX (${A.LARGE_HUNTER_MAX}), got ${row.maxLargeHunters}`);
-    // REPOINTED BY CS024 P4: the seven former tier columns log the frozen NUMBER in play. Each is checked
-    // against the SAME live helper its consumer reads, which is the invariant this section is really
-    // about and the one P5 must preserve when it repoints them onto leverState.
-    assert(row.junkSpeed === A.FROZEN_JUNK_SPEED, `B: wave ${w}: junkSpeed logs the live frozen value`);
-    assert(Math.abs(row.ufoFlightSpeed - A.ufoFlightSpeedPx(true)) < 1e-9, `B: wave ${w}: ufoFlightSpeed matches the live helper (small)`);
-    assert(Math.abs(row.ufoFireFreq - A.ufoFireMult()) < 1e-9, `B: wave ${w}: ufoFireFreq matches the live helper`);
-    assert(Math.abs(row.ufoShotSpeed - A.ufoShotSpeedPx()) < 1e-9, `B: wave ${w}: ufoShotSpeed matches the live helper`);
-    assert(Math.abs(row.ufoAccuracy * Math.PI / 180 - A.ufoAccuracyRad()) < 1e-9, `B: wave ${w}: ufoAccuracy (deg) matches the live helper (rad)`);
-    assert(row.ufoAppearFreq === A.FROZEN_UFO_APPEAR_FREQ, `B: wave ${w}: ufoAppearFreq logs the live frozen centre`);
+    // REPOINTED BY CS024 P5: the new HUNTER-chain columns — coalescePause is the driver, and the two
+    // pursuit speeds are its carried levers.
+    assert(row.coalescePause === (A.DEBUG.coalescePause ?? lv.coalescePause), `B: wave ${w}: coalescePause matches leverState`);
+    assert(row.hunterSpeedMedium === (A.DEBUG.hunterSpeedMedium ?? lv.hunterSpeedMedium), `B: wave ${w}: hunterSpeedMedium matches leverState`);
+    assert(row.hunterSpeedSmall === (A.DEBUG.hunterSpeedSmall ?? lv.hunterSpeedSmall), `B: wave ${w}: hunterSpeedSmall matches leverState`);
+    // REPOINTED BY CS024 P5: the seven former tier columns are gone; the UFO chain's ten levers replace
+    // them one-for-one, split by saucer size where the spec calls for it (§4.6). Each is checked against
+    // the SAME live helper its consumer reads (passing the matching `small` flag where the helper takes
+    // one), which is the invariant this section is really about.
+    const appearCenter = A.DEBUG.ufoAppearFreq ?? lv.ufoAppearFreq;
+    assert(row.ufoAppearFreq === appearCenter, `B: wave ${w}: ufoAppearFreq logs the live odometer centre`);
+    assert(Math.abs(row.ufoFlightSpeedBig - A.ufoFlightSpeedPx(false)) < 1e-9, `B: wave ${w}: ufoFlightSpeedBig matches the live helper (big)`);
+    assert(Math.abs(row.ufoFlightSpeedSmall - A.ufoFlightSpeedPx(true)) < 1e-9, `B: wave ${w}: ufoFlightSpeedSmall matches the live helper (small)`);
+    assert(row.ufoDirChangeBig === (A.DEBUG.ufoDirChangeBig ?? lv.ufoDirChangeBig), `B: wave ${w}: ufoDirChangeBig matches leverState`);
+    assert(row.ufoDirChangeSmall === (A.DEBUG.ufoDirChangeSmall ?? lv.ufoDirChangeSmall), `B: wave ${w}: ufoDirChangeSmall matches leverState`);
+    assert(Math.abs(row.ufoFireFreqBig - A.ufoFireMult(false)) < 1e-9, `B: wave ${w}: ufoFireFreqBig matches the live helper (big)`);
+    assert(Math.abs(row.ufoFireFreqSmall - A.ufoFireMult(true)) < 1e-9, `B: wave ${w}: ufoFireFreqSmall matches the live helper (small)`);
+    assert(row.ufoAccuracySmall === (A.DEBUG.ufoAccuracySmall ?? lv.ufoAccuracySmall), `B: wave ${w}: ufoAccuracySmall matches leverState`);
+    assert(Math.abs(row.ufoShotSpeedBig - A.ufoShotSpeedPx(false)) < 1e-9, `B: wave ${w}: ufoShotSpeedBig matches the live helper (big)`);
+    assert(Math.abs(row.ufoShotSpeedSmall - A.ufoShotSpeedPx(true)) < 1e-9, `B: wave ${w}: ufoShotSpeedSmall matches the live helper (small)`);
 
     // REPOINTED BY CS018 P7 (mirror-image of the old claim): saucerAimErr no longer mirrors
-    // ramp()+SAUCER_ACCURACY_RAMP_SCALE — it logs the tier-derived ufoAccuracyRad() value directly.
+    // ramp()+SAUCER_ACCURACY_RAMP_SCALE — it logs the live ufoAccuracyRad() value directly (unchanged
+    // shape across CS018 P7 -> CS024 P5, since ufoAccuracyRad() itself absorbed the lever wiring).
     const expAimErr = A.ufoAccuracyRad();
     assert(Math.abs(row.saucerAimErr - expAimErr) < 1e-9, `B: wave ${w}: saucerAimErr expected ${expAimErr}, got ${row.saucerAimErr}`);
     // REPOINTED BY CS018 P6 (mirror-image of the old claim): saucerGapMin/saucerGapMax no longer mirror
-    // ramp() — they log the jittered-interval bounds around the ufoAppearFreq TIER centre.
-    const appearCenter = A.FROZEN_UFO_APPEAR_FREQ;   // CS024 P4: was the ufoAppearFreq TIER centre
+    // ramp() — they log the jittered-interval bounds around the ufoAppearFreq LEVER centre (CS024 P5: was
+    // the FROZEN_UFO_APPEAR_FREQ constant under P4).
     // CS024 P2: freqJitter is no longer a live DEBUG knob — jitteredInterval() reads the frozen
     // FREQ_JITTER constant (0.25) instead. Same expected value, different source.
     const appearJitter = 0.25;
@@ -279,23 +306,17 @@ const NULL_FIELDS = ["phase", "rel"];
 (function sectionE() {
   console.log("(E) difficultyLogCSV() builds a header line + one line per row; values round-trip");
   const { exports: A } = build();
-  // REPOINTED BY CS018 P4: the synthetic rows are built from the REAL levelDef() for their table columns
-  // (hand-authoring 23 fields three times is exactly how a column list and a fixture drift apart), with the
-  // runtime columns set to distinct literals so a wrong-column bug can't hide behind an equal value. Three
-  // levels are chosen to span two phases and to move the tier columns off "low".
-  // REPOINTED BY CS024 P4: there is no levelDef() to build the fixture from, so the former table columns
-  // are literals again — but DELIBERATELY DISTINCT per row and per column, which is the property this
-  // fixture actually needs: a wrong-column bug cannot hide behind an equal value.
+  // REPOINTED BY CS018 P4, then AGAIN BY CS024 P5: there is no levelDef() (nor a fixed 23/28-field literal
+  // list) to hand-author the fixture from any more, and hand-authoring N fields three times over is exactly
+  // how a column list and a fixture drift apart in the first place — the whole point of this fixture. Build
+  // it generically straight off the live A.DIFFLOG_FIELDS list instead: every column gets a value that is
+  // DELIBERATELY DISTINCT per row AND per column (100 + 10*columnIndex + rowIndex), so a wrong-column bug
+  // can never hide behind an equal value, and the fixture can never drift from the real column list because
+  // it IS built from it. This also makes the "fixture covers the column list exactly" assertions below
+  // true by construction for whatever DIFFLOG_FIELDS happens to contain today.
   A.DiffLog.rows = [1, 22, 63].map((lvl, i) => {
-    const row = {
-      t: 1000 + i, level: lvl, phase: null, rel: null,
-      score: 300 * i, prevLevelSecs: 12.5 + i,
-      junkCount: 3 + i, junkSpeedMul: 0.8 + i * 0.1,
-      maxLargeHunters: A.LARGE_HUNTER_MAX, hunterCount: i,   // CS024 P3: flat, no longer a per-level column
-      saucerAimErr: 0.35 - i * 0.01, saucerGapMin: 20 - i, saucerGapMax: 30 - i,
-      chainLen: 2 * i, cargoMax: 8 + i, scoopLevel: i,
-    };
-    TIER_FIELDS.forEach((f, k) => { row[f] = 100 + 10 * k + i; });
+    const row = {};
+    A.DIFFLOG_FIELDS.forEach((f, k) => { row[f] = 100 + 10 * k + i; });
     return row;
   });
   // The fixture must cover the column list exactly — this is what stops a future column from being added
@@ -303,7 +324,8 @@ const NULL_FIELDS = ["phase", "rel"];
   for (const f of A.DIFFLOG_FIELDS) assert(f in A.DiffLog.rows[0], `E: fixture covers column "${f}"`);
   assert(Object.keys(A.DiffLog.rows[0]).length === A.DIFFLOG_FIELDS.length,
     `E: fixture has no extra columns (fixture ${Object.keys(A.DiffLog.rows[0]).length} vs list ${A.DIFFLOG_FIELDS.length})`);
-  assert(A.DiffLog.rows[2].junkSpeed !== A.DiffLog.rows[0].junkSpeed, "E: sanity — the three fixture rows differ on the former tier columns");
+  assert(A.DiffLog.rows[2].ufoFlightSpeedBig !== A.DiffLog.rows[0].ufoFlightSpeedBig,
+    "E: sanity — the three fixture rows differ on every column, including the former tier columns' successors");
 
   const csv = A.difficultyLogCSV();
   const lines = csv.split("\n");
@@ -313,11 +335,11 @@ const NULL_FIELDS = ["phase", "rel"];
   for (let i = 0; i < A.DiffLog.rows.length; i++) {
     const cells = lines[i + 1].split(",");
     assert(cells.length === A.DIFFLOG_FIELDS.length, `E: row ${i}: cell count matches field count (got ${cells.length})`);
+    // REPOINTED BY CS024 P5: every column round-trips numerically now — there is no NULL_FIELDS group
+    // (phase/rel) and no text-tier-name group left to special-case.
     A.DIFFLOG_FIELDS.forEach((f, j) => {
       const want = A.DiffLog.rows[i][f];
-      // Tier columns are names, so they round-trip as text; every other column round-trips numerically.
-      // REPOINTED BY CS024 P4: the tier columns are numeric now, and phase/rel are null -> empty cells.
-      const got = NULL_FIELDS.includes(f) ? (cells[j] === "" ? null : cells[j]) : Number(cells[j]);
+      const got = Number(cells[j]);
       assert(got === want, `E: row ${i}: field "${f}" round-trips (expected ${want}, got ${cells[j]})`);
     });
   }

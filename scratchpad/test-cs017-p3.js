@@ -22,12 +22,32 @@
 //       -> that clamp has no readers left; the TABLE is the ceiling, and it is bounded at 13 forever.
 // (D) both debris-speed sites agree, and (H) the headless smoke, are unchanged claims and unchanged code.
 //
+// **REPOINTED AGAIN BY CS024 P5 — the LEVERS odometer is wired, junkSpeedMul() is deleted outright, and
+// TRAP 2 (the interim FROZEN_* freeze CS024 P4 left in place) is CLOSED.** Every section is repointed a
+// further time onto genuine level-dependence, read straight off leverState(game.wave):
+//   (B) was "the shipped spawn is frozen at 3, TRAP 2 open" -> the shipped spawn now MATCHES the
+//       odometer's own junkCount sawtooth at every level (TRAP 2 closed).
+//   (C) was "speedMul is frozen at the level-1 tier value; Hunter speed/turn are ALL frozen" -> junkSpeedMul()
+//       is deleted — junkSpeedLarge/Medium/Small are three independent per-size levers; Hunter turn rate and
+//       Hunter LARGE speed stay frozen (unchanged since P4), but Hunter MEDIUM/SMALL speed is now genuinely
+//       lever-driven.
+//   (D) was "the spawn site and the split site must never drift" -> junkSpeedMul()'s shared ratio is gone,
+//       so each site now reads its OWN size's independent lever and the two DELIBERATELY diverge.
+//   (E) is the same guard-rail claim, with the threshold formula repointed off DEBRIS_SPEEDS[size] (the
+//       ctor's 4th argument is a direct px/s `speed` now, not a `speedMul` multiplier).
+//   (F) the small-saucer-chance identity at level 1 (both builds agreed there) is GONE — P5's live default
+//       (DEBUG.smallUfoChance, 0.20) is not the old pre-P3 ramp floor (0.15), so the flat chance now
+//       diverges from the pre-P3 build at every level, level 1 included.
+//   (G) the "ceiling is actually reached" control, weakened under P4 to the odometer alone (⛔ flagged in
+//       STATUS.md for restoration), is RESTORED to its original strength: the real shipped spawn reaches
+//       the ceiling too, on the same 13 of 130 levels the odometer does.
+//
 //   node scratchpad/test-cs017-p3.js
 //
 // Follows the standing rule (GDD 5.4): stub window/document/rAF/navigator/localStorage, eval the REAL
 // <script> block, and drive the ACTUAL nextWave()/destroyDebris()/DebrisSatellite/HunterSatellite/Saucer
 // — never a reimplemented curve. Every expected value is computed from the REAL exported helpers
-// (levelDef/junkSpeedMul/ramp/difficultyFactor) and the REAL constants, never a hand-copied formula.
+// (leverState/musicIntensity) and the REAL constants, never a hand-copied formula.
 //
 // Section (F) additionally builds the PRE-P3 module from git and runs both builds side by side in this
 // process, so "the saucer levers are byte-identical to the pre-P3 build" is checked against the actual
@@ -89,14 +109,16 @@ const RETURN = [
   "startGame", "update", "nextWave", "destroyDebris", "game",
   "DebrisSatellite", "HunterSatellite", "Saucer",
   // CS024 P4: ramp() DELETED; difficultyFactor RENAMED musicIntensity; levelDef/stepAt/JUNK_CYCLE/
-  // PHASE_LEN/LEVEL_MAX all DELETED with the level table, replaced by the LEVERS odometer. The shipped
-  // spawn count is FROZEN_JUNK_COUNT for one phase (TRAP 2 — the levers are built but not yet wired).
-  "musicIntensity", "leverState",
-  "FROZEN_JUNK_COUNT", "FROZEN_JUNK_SPEED", "junkSpeedMul", "DEBUG",
+  // PHASE_LEN/LEVEL_MAX all DELETED with the level table, replaced by the LEVERS odometer. CS024 P5 wires
+  // every lever to its consumer and deletes the FROZEN_* constants + junkSpeedMul() outright (TRAP 2 is
+  // closed — the shipped spawn now genuinely reads leverState(game.wave)).
+  "musicIntensity", "leverState", "DEBUG",
+  // CS024 P5: the six UFO derivation helpers now take a `small` boolean parameter to split by saucer size.
   "ufoFireMult",                                              // CS018 P7 (section F: tiered fire mult)
   "DEBRIS_SPEED_CAP", "DEBRIS_SPEEDS", "SHIP_MAX_SPEED",
   "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
-  "FROZEN_SMALL_UFO_CHANCE",   // CS024 P4: SAUCER_SMALL_CHANCE_FLOOR/_CEIL deleted with ramp()
+  // CS024 P5: FROZEN_SMALL_UFO_CHANCE is deleted — the saucer-size roll now reads the flat, non-lever
+  // DEBUG.smallUfoChance knob (def 0.20) instead (already covered by "DEBUG" above).
   "DiffLog", "AudioSys",
   // Scope probe (same idiom as test-cs017-p1 §E): asks "does this identifier exist at all?" without the
   // factory's own return statement throwing a ReferenceError on a retired symbol.
@@ -167,10 +189,14 @@ function withPinnedRandom(v, fn) {
   try { return fn(); } finally { Math.random = saved; }
 }
 // Math.random() pinned to 0.5 makes rand(0.7, 1.3) return exactly 1.0, so a piece's speed magnitude is
-// DEBRIS_SPEEDS[size] * speedMul and the multiplier can be recovered exactly. (rand(0,TAU) also pins the
-// heading to PI, so hypot(vx,vy) === sp to double precision.)
+// exactly the base `speed` its constructor was given (rand(0,TAU) also pins the heading, but the
+// magnitude is all that's needed here).
+// REPOINTED BY CS024 P5: DebrisSatellite's 4th ctor argument is now a direct px/s `speed` base, not a
+// `speedMul` multiplier on DEBRIS_SPEEDS[size] (junkSpeedMul() and the shared 70/110/160 ratio it derived
+// from are deleted outright, spec §4.5) — so the old speedMulOf() helper (hypot(vx,vy) / DEBRIS_SPEEDS[size])
+// no longer recovers anything meaningful; a piece's magnitude IS its lever's px/s value directly at PIN=0.5.
 const PIN = 0.5;
-function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS_SPEEDS[piece.size]; }
+function pieceSpeed(piece) { return Math.hypot(piece.vx, piece.vy); }
 // CS024 P1 REMOVED orbitTotalAt(). The helper existed to recompute what an ORBIT level's nextWave()
 // actually spawned — ring generator + occurrence-scaled gap multiplier + ring ramp + the CS022 P3
 // field component — so a geometry or schedule move failed as a wiring mismatch rather than as a stale
@@ -182,18 +208,21 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 // the claim that would catch a second spawn path being reintroduced.
 
 // ================= (B) the junk cycle: rises, resets — and NOW IT SPIRALS AGAIN, elsewhere ============
-// REPOINTED BY CS018 P3/P4, and AGAIN BY CS024 P4 — and this second repoint is the interesting one,
-// because it partly UNDOES the first. CS017's sawtooth had a rise, a reset and a per-cycle SPIRAL; CS018's
-// level table kept the first two and deliberately dropped the third, which is what B3 pinned. The CS024
-// odometer brings the spiral back — but NOT on the count. junkCount still sawtooths 3..12 and resets to 3
-// with no escalation of its own; what each reset now escalates, permanently, is the three junk SPEEDS.
-// That is the whole design: the same number of satellites, faster every time round. So B3's "no spiral"
-// claim survives verbatim on the count, and gains a mirror-image partner on the speeds.
-//   The other half of this repoint is TRAP 2: P4 builds the odometer and does NOT wire it, so the SHIPPED
-// spawn is frozen at the level-1 count of 3 at every level. Both are checked — what the mechanism says,
-// and what the game currently does — because they deliberately disagree this phase and must not by P5.
+// REPOINTED BY CS018 P3/P4, AGAIN BY CS024 P4, and AGAIN BY CS024 P5 (TRAP 2 CLOSED). CS017's sawtooth had
+// a rise, a reset and a per-cycle SPIRAL; CS018's level table kept the first two and deliberately dropped
+// the third, which is what B3 pinned. The CS024 odometer brings the spiral back — but NOT on the count.
+// junkCount still sawtooths 3..12 and resets to 3 with no escalation of its own; what each reset now
+// escalates, permanently, is the three junk SPEEDS. That is the whole design: the same number of
+// satellites, faster every time round. So B3's "no spiral" claim survives verbatim on the count, and gains
+// a mirror-image partner on the speeds.
+//   The other half of this repoint is TRAP 2, and it is CLOSED now: P4 built the odometer without wiring
+// it, so the SHIPPED spawn was frozen at the level-1 count of 3 at every level; P5 wires nextWave() to read
+// leverState(game.wave).junkCount directly, so the shipped spawn now IS the odometer's own sawtooth again.
+// Both are still checked — what the mechanism says, and what the game actually does — because the whole
+// point of the trap was that they had to agree again the moment the lever was wired, and this is the pair
+// of assertions that would have caught it if they still didn't.
 (function sectionB() {
-  console.log("(B) junk count — the odometer's sawtooth rises and resets; the SPEEDS carry; the shipped spawn is frozen (TRAP 2)");
+  console.log("(B) junk count — the odometer's sawtooth rises and resets; the SPEEDS carry; the shipped spawn now MATCHES it (TRAP 2 closed)");
   const A = build();
   A.startGame();
 
@@ -221,11 +250,12 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     // progression is evaluated with, so a drift here would silently invalidate the data.
     const row0 = A.DiffLog.rows[A.DiffLog.rows.length - 1];
     levelsChecked++;
-    // TRAP 2: the DiffLog logs what ACTUALLY SPAWNED, which this phase freezes at 3 — not what the
-    // odometer says. Those two must agree again the moment P5 wires the lever, and this pair of
-    // assertions is what will catch it if they do not.
-    assert(count[w] === A.FROZEN_JUNK_COUNT,
-      `B: level ${w}: the SHIPPED spawn is the frozen ${A.FROZEN_JUNK_COUNT} (CS024 P4 TRAP 2 — levers built, not wired)`);
+    // TRAP 2 CLOSED (CS024 P5): the DiffLog logs what ACTUALLY SPAWNED, and nextWave() itself now reads
+    // leverState(game.wave).junkCount at its own spawn site — so the shipped spawn and the odometer's own
+    // count agree again at every level, exactly what this pair of assertions exists to catch if they ever
+    // stop agreeing.
+    assert(count[w] === table[w],
+      `B: level ${w}: the SHIPPED spawn (${count[w]}) matches the odometer's own junkCount (${table[w]}) — TRAP 2 closed`);
     assert(row0.junkCount === count[w], `B: level ${w}: DiffLog.junkCount (${row0.junkCount}) === pieces actually spawned (${count[w]})`);
     assert(A.game.debris.every(d => d.orbitCenter === undefined), `B: level ${w}: no satellite carries orbit state`);
   }
@@ -259,104 +289,135 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 
   // B4 — the ENDGAME PLATEAU is GONE, and that is deliberate (§2.1: "no LEVEL_MAX; the ceiling is
   // emergent"). The count keeps sawtoothing forever, while the SPEEDS plateau at their own ceilings.
-  // The shipped spawn, meanwhile, is frozen at 3 out to any level anyone will ever reach.
+  // REPOINTED BY CS024 P5 (TRAP 2 closed): the shipped spawn is no longer frozen at 3 — it tracks the
+  // odometer's own sawtooth out to any level anyone will ever reach, same as everywhere else in this file.
   for (const w of [64, 80, 200, 2000]) {
     const n = withPinnedRandom(PIN, () => atWave(A, w));
-    assert(n === A.FROZEN_JUNK_COUNT, `B4: level ${w} spawns the frozen count (${A.FROZEN_JUNK_COUNT}), got ${n}`);
+    const expected = A.leverState(w).junkCount;
+    assert(n === expected, `B4: level ${w} spawns leverState's count (${expected}), got ${n}`);
     assert(A.leverState(w).junkCount === ((w - 1) % CYC) + 3,
       `B4: level ${w}: the odometer keeps sawtoothing past any level cap — there is no LEVEL_MAX left`);
     assert(A.leverState(w).junkSpeedSmall === 240, `B4: level ${w}: ...while junkSpeedSmall has plateaued at its ceiling`);
   }
   console.log(`  junk count, levels 1-21: odometer ${Array.from({ length: 21 }, (_, i) => table[i + 1]).join(",")}` +
-              `  spawned ${Array.from({ length: 21 }, (_, i) => count[i + 1]).join(",")} (frozen, TRAP 2)`);
+              `  spawned ${Array.from({ length: 21 }, (_, i) => count[i + 1]).join(",")} (TRAP 2 closed — the two lines match)`);
 })();
 
-// ================= (C) speedMul steps by TIER; Hunter speed/turn are FROZEN ============================
-// REPOINTED BY CS018 P3/P4. The three properties this section used to assert of these levers (rise, reset,
-// spiral) are all gone, and gone in two different ways: junk speed became a three-step tier function of the
-// level, and Hunter speed/turn became constants with no clock at all (FLAG-a). Both replacements are
-// asserted positively AND with the mirror-image control that the old behaviour is absent.
+// ================= (C) junk speed is three INDEPENDENT per-size levers; Hunter turn (+large speed) stay
+// FROZEN, but Hunter MEDIUM/SMALL speed is now LEVER-DRIVEN ==============================================
+// REPOINTED BY CS018 P3/P4, then AGAIN BY CS024 P5. junkSpeedMul() — the one shared ratio all three junk
+// sizes used to derive from — is DELETED outright (spec §4.5): junkSpeedLarge/Medium/Small are three fully
+// independent per-size levers now, so "a single multiplier steps by tier" is no longer a coherent claim;
+// each size's own lever is checked against its own live consumer instead. Hunter turn rate stays frozen at
+// every size (no turn lever, ever — FLAG-a, unchanged since P4), and Hunter LARGE (size 3) speed stays
+// frozen too (no speed lever — large hunters don't pursue). But Hunter MEDIUM/SMALL speed is now genuinely
+// LEVER-DRIVEN (hunterSpeedMedium/hunterSpeedSmall) and varies across the sweep — the mirror image of the
+// freeze P4 pinned here.
 (function sectionC() {
-  console.log("(C) junk speedMul steps at the tier boundaries; Hunter speed/turn are level-independent");
+  console.log("(C) junk speed on three independent per-size levers; Hunter turn + large speed frozen, medium/small speed lever-driven");
   const A = build();
   A.startGame();
 
-  const mul = {}, hsp = { 3: {}, 2: {}, 1: {} }, htn = { 3: {}, 2: {}, 1: {} };
+  const largeSpeed = {}, hsp = { 3: {}, 2: {}, 1: {} }, htn = { 3: {}, 2: {}, 1: {} };
   for (let w = 1; w <= SWEEP_MAX; w++) {
     withPinnedRandom(PIN, () => atWave(A, w));
-    // REPOINTED BY CS024 P1. CS021 P1 split this because an orbit level's satellites had their random
-    // drift replaced by the orbital tangent (angVel × radius), so recovering the junk multiplier from one
-    // was a category error and the "a REAL spawned piece was built with it" claim could only be made at
-    // field levels. Every spawned piece now carries a junkSpeedMul()-derived drift, so the claim is made
-    // at EVERY level in the sweep with no dispatch.
-    mul[w] = A.junkSpeedMul();
-    assert(near(speedMulOf(A, A.game.debris[0]), mul[w]),
-      `C: level ${w}: a REAL spawned piece was built with junkSpeedMul()`);
+    const lv = A.leverState(w);
+    // REPOINTED BY CS024 P1 (the rail-state hazard that used to force a per-archetype dispatch is gone —
+    // checked at every level, no dispatch) AND CS024 P5 (junkSpeedMul() is gone; a spawned piece's speed
+    // magnitude is now the junkSpeedLarge lever's own px/s figure, exactly, since PIN=0.5 collapses
+    // rand(0.7,1.3) to 1.0).
+    largeSpeed[w] = lv.junkSpeedLarge;
+    assert(near(pieceSpeed(A.game.debris[0]), largeSpeed[w]),
+      `C: level ${w}: a REAL spawned piece was built with leverState(${w}).junkSpeedLarge`);
     for (const s of [3, 2, 1]) {
       const h = withPinnedRandom(PIN, () => new A.HunterSatellite(200, 200, s, 0));
       hsp[s][w] = h.speed; htn[s][w] = h.turnRate;
     }
     const row = A.DiffLog.rows[A.DiffLog.rows.length - 1];
-    assert(near(row.junkSpeedMul, mul[w]),
-      `C: level ${w}: DiffLog.junkSpeedMul matches the junkSpeedMul() the spawn consumed`);
+    assert(near(row.junkSpeedLarge, largeSpeed[w]),
+      `C: level ${w}: DiffLog.junkSpeedLarge matches the lever value the spawn consumed`);
     assert(!("hunterSpeedFrac" in row) && !("hunterTurnFrac" in row),
       `C: level ${w}: the Hunter-fraction columns are gone (they would log a constant 0.58 forever)`);
   }
 
-  // C1 — Hunter speed/turn are FROZEN: one value per size across all 63 levels, equal to the derivation
-  // _CEIL x HUNTER_FLOOR_FRAC. The large core still never turns (its ceiling is 0), so passive drift is
-  // preserved through the freeze.
+  // C1 — Hunter turn rate is FROZEN at every size: one value per size across all 63 levels, equal to the
+  // derivation _CEIL x HUNTER_FLOOR_FRAC. The large core still never turns (its ceiling is 0), so passive
+  // drift is preserved through the freeze. Hunter LARGE (size 3) speed is frozen the same way (no speed
+  // lever — spec §2.4).
   for (const s of [3, 2, 1]) {
-    const speeds = new Set(Object.values(hsp[s])), turns = new Set(Object.values(htn[s]));
-    assert(speeds.size === 1, `C1 [size ${s}]: ONE speed across levels 1..${SWEEP_MAX} (got ${JSON.stringify([...speeds])})`);
-    assert(turns.size === 1, `C1 [size ${s}]: ONE turn rate across levels 1..${SWEEP_MAX} (got ${JSON.stringify([...turns])})`);
-    assert(near(hsp[s][1], A.HUNTER_SPEED_CEIL[s] * A.HUNTER_FLOOR_FRAC),
-      `C1 [size ${s}]: speed === HUNTER_SPEED_CEIL x HUNTER_FLOOR_FRAC (${A.HUNTER_SPEED_CEIL[s] * A.HUNTER_FLOOR_FRAC})`);
+    const turns = new Set(Object.values(htn[s]));
+    assert(turns.size === 1, `C1 [size ${s}]: turn rate is ONE value across levels 1..${SWEEP_MAX} (got ${JSON.stringify([...turns])})`);
     assert(near(htn[s][1], A.HUNTER_TURN_CEIL[s] * A.HUNTER_FLOOR_FRAC),
       `C1 [size ${s}]: turnRate === HUNTER_TURN_CEIL x HUNTER_FLOOR_FRAC (${A.HUNTER_TURN_CEIL[s] * A.HUNTER_FLOOR_FRAC})`);
   }
   assert(htn[3][1] === 0 && htn[3][SWEEP_MAX] === 0, "C1: the large core's turn rate is exactly 0 at every level (passive drift)");
-  // CONTROL: the retired ramp is really gone — at level 63 the frozen value must differ from what
-  // ramp(floor, ceil, wave) would have produced (they only coincide at level 1, where the factor is 0).
-  // REPOINTED BY CS024 P4: ramp() is DELETED, so the control rebuilds it from its retired definition
-  // verbatim — floor + (ceil - floor) * musicIntensity(wave) — using the real surviving curve.
-  for (const s of [2, 1]) {
-    const floorSpeed = A.HUNTER_SPEED_CEIL[s] * A.HUNTER_FLOOR_FRAC;
-    const ramped = floorSpeed + (A.HUNTER_SPEED_CEIL[s] - floorSpeed) * A.musicIntensity(SWEEP_MAX);
-    assert(!near(hsp[s][SWEEP_MAX], ramped),
-      `C1 [size ${s}]: CONTROL — the frozen speed ${hsp[s][SWEEP_MAX]} differs from the retired ramp value ${ramped.toFixed(3)}`);
+  const largeSpeeds = new Set(Object.values(hsp[3]));
+  assert(largeSpeeds.size === 1, `C1 [size 3]: speed is ONE value across levels 1..${SWEEP_MAX} (got ${JSON.stringify([...largeSpeeds])})`);
+  assert(near(hsp[3][1], A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC),
+    `C1 [size 3]: speed === HUNTER_SPEED_CEIL x HUNTER_FLOOR_FRAC (${A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC})`);
+  // CONTROL: the retired ramp is really gone for the large core's still-frozen speed — at level 63 the
+  // frozen value must differ from what ramp(floor, ceil, wave) would have produced (they only coincide at
+  // level 1, where the factor is 0). ramp() is deleted, so the control rebuilds it from its retired
+  // definition verbatim — floor + (ceil - floor) * musicIntensity(wave) — using the real surviving curve.
+  {
+    const floorSpeed = A.HUNTER_SPEED_CEIL[3] * A.HUNTER_FLOOR_FRAC;
+    const ramped = floorSpeed + (A.HUNTER_SPEED_CEIL[3] - floorSpeed) * A.musicIntensity(SWEEP_MAX);
+    assert(!near(hsp[3][SWEEP_MAX], ramped),
+      `C1 [size 3]: CONTROL — the frozen speed ${hsp[3][SWEEP_MAX]} differs from the retired ramp value ${ramped.toFixed(3)}`);
   }
-  // ...and BOTH hunter pursuit speeds are levers again in the odometer (hunterSpeedMedium/Small), which
-  // P5 wires. Until then the ctor still reads the frozen constants, and that split is the point of the
-  // control above — the freeze is real today and is scheduled to end, not to persist by accident.
-  assert(A.leverState(1).hunterSpeedMedium === 60 && A.leverState(1).hunterSpeedSmall === 90,
-    "C1: the odometer already carries the two hunter pursuit-speed levers (P5 wires them to the ctor)");
 
-  // C2 — REPOINTED BY CS024 P4, and this is TRAP 2 again on the speed side. junk speedMul was a
-  // three-step TIER function of the level; the tiers are deleted, and the shipped multiplier is FROZEN at
-  // the retired table's level-1 answer until P5 splits it into three independent per-size levers. So the
-  // "flat inside a band, steps at a boundary" claim collapses to "flat everywhere, no boundary anywhere",
-  // which is an exact equality and therefore a tighter statement than the step version was.
+  // C1b — REPOINTED BY CS024 P5 (mirror image of the old freeze claim, TRAP 2 closed on the Hunter speed
+  // side too): Hunter MEDIUM/SMALL speed now genuinely VARIES across the sweep, and at every level matches
+  // leverState(w).hunterSpeedMedium/hunterSpeedSmall — the two levers carried off the HUNTER chain's
+  // coalescePause driver.
+  for (const s of [2, 1]) {
+    const leverId = s === 2 ? "hunterSpeedMedium" : "hunterSpeedSmall";
+    const values = new Set(Object.values(hsp[s]));
+    assert(values.size > 1,
+      `C1b [size ${s}]: speed VARIES across levels 1..${SWEEP_MAX} (control — no longer frozen; got ${JSON.stringify([...values])})`);
+    for (let w = 1; w <= SWEEP_MAX; w++) {
+      const expected = A.leverState(w)[leverId];
+      assert(near(hsp[s][w], expected),
+        `C1b [size ${s}]: level ${w}: speed (${hsp[s][w]}) matches leverState(${w}).${leverId} (${expected})`);
+    }
+  }
+
+  // C2 — REPOINTED BY CS024 P5: TRAP 2 is closed on the junk-speed side too. Junk speed was FROZEN at the
+  // retired table's level-1 answer under P4; it is genuinely level-dependent again now, split into three
+  // fully independent per-size levers with no shared ratio left to derive (junkSpeedMul() deleted). Checked
+  // positively (matches leverState at every level) and with the mirror-image control that it is no longer
+  // flat everywhere — the odometer's own carry mechanism (junkSpeedLarge only advances when junkCount
+  // wraps) means it steps a handful of times across the sweep, not continuously and not never.
   for (let w = 1; w <= SWEEP_MAX; w++) {
-    assert(near(mul[w], A.FROZEN_JUNK_SPEED / 70), `C2: level ${w}: speedMul === FROZEN_JUNK_SPEED / 70`);
-    if (w > 1) assert(near(mul[w], mul[w - 1]), `C2: level ${w}: speedMul is FLAT — no level dependence at all this phase`);
+    const lv = A.leverState(w);
+    assert(near(largeSpeed[w], lv.junkSpeedLarge), `C2: level ${w}: junkSpeedLarge matches leverState`);
   }
   let boundaries = 0;
-  for (let w = 2; w <= SWEEP_MAX; w++) if (!near(mul[w], mul[w - 1])) boundaries++;
-  assert(boundaries === 0, `C2: zero tier boundaries survive across 1..63 (got ${boundaries})`);
-  // ...and the odometer that will replace it is already built, with the three sizes INDEPENDENT — the
-  // shared-ratio derivation this file has measured since CS018 P3 is what P5 deletes.
+  for (let w = 2; w <= SWEEP_MAX; w++) if (!near(largeSpeed[w], largeSpeed[w - 1])) boundaries++;
+  assert(boundaries > 0,
+    `C2: CONTROL — junkSpeedLarge genuinely steps at least once across 1..${SWEEP_MAX} (got ${boundaries} boundaries) — no longer flat everywhere (TRAP 2 closed)`);
+  // ...and the three sizes are independent — the shared-ratio derivation this file measured since CS018 P3
+  // (junkSpeedMul()) is gone; each size has its own floor and ceiling with no fixed relationship to
+  // DEBRIS_SPEEDS (60/95/140 -> 110/165/240 are NOT a common multiple of the shipped 70/110/160 base).
   const ls1 = A.leverState(1), ls41 = A.leverState(41);
   assert(ls1.junkSpeedLarge === 60 && ls1.junkSpeedMedium === 95 && ls1.junkSpeedSmall === 140,
     "C2: the odometer's three junk-speed levers start at their own independent floors");
   assert(ls41.junkSpeedLarge === 110 && ls41.junkSpeedMedium === 165 && ls41.junkSpeedSmall === 240,
     "C2: ...and reach their own independent ceilings, not a shared multiple of one base");
-  console.log(`  speedMul: FROZEN at ${mul[1].toFixed(4)} across levels 1..${SWEEP_MAX} (CS024 P4 TRAP 2; P5 splits it into three levers)`);
+  console.log(`  junkSpeedLarge: ${largeSpeed[1]} -> ${largeSpeed[SWEEP_MAX]} across levels 1..${SWEEP_MAX}, stepping ${boundaries} time(s) (TRAP 2 closed; CS024 P5 split it into three independent levers)`);
 })();
 
-// ================= (D) both debris-speed sites agree ==================================================
+// ================= (D) each debris-speed SITE reads its OWN size's lever — no shared ratio anymore ======
+// REPOINTED BY CS018 P3/P4, then AGAIN BY CS024 P5 — the sharpest behavioural inversion in this file. The
+// original claim was "the spawn site and the split site must never drift apart", true when both derived
+// from the SAME shared junkSpeedMul() ratio scaled by DEBRIS_SPEEDS[size]. junkSpeedMul() is deleted
+// outright (spec §4.5): a large piece spawned by nextWave() now reads the junkSpeedLarge lever; a
+// large->medium split reads junkSpeedMedium — the CHILD's own size lever, not the parent's, not a shared
+// ratio; a medium->small split reads junkSpeedSmall. So the two sites deliberately DIVERGE now — each one
+// independently matches ITS OWN size's lever, not each other — and that per-size independence, checked
+// with its own mirror-image control, is what this section verifies.
 (function sectionD() {
-  console.log("(D) nextWave()'s speedMul and destroyDebris()'s split speedMul agree at the same level");
+  console.log("(D) each debris-speed site (spawn / split) reads its OWN size's independent lever, not a shared ratio");
   const A = build();
   A.startGame();
   for (const w of [1, 5, 9, 10, 21, 22, 30, 42, 43, 63]) {
@@ -364,15 +425,16 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     const spawned = A.game.debris[0];
     // REPOINTED BY CS024 P1, and this restores the section's ORIGINAL full-coverage claim. CS021 P1
     // (FORK-CS021-C2 -> (i)) carved out the orbit levels here: a rail-borne parent handed its children its
-    // INSTANTANEOUS ORBITAL TANGENT instead of a fresh junkSpeedMul()-derived drift, so "both sites derive
-    // the same multiplier" was deliberately not the rule at 5 of the 10 sampled levels (3, 9, 21, 30, 42
-    // — every one divisible by 3), and those got the tangent handoff asserted instead. destroyDebris()'s
-    // tangent handoff is removed this phase, so THE TWO-SITES CLAIM NOW HOLDS AT ALL TEN SAMPLED LEVELS.
-    // The carve-out is inverted into the assertion below rather than dropped: the parent must carry no
-    // rail state at all, which is what would fail if a rail handoff were ever reintroduced here.
+    // INSTANTANEOUS ORBITAL TANGENT instead of a fresh drift, so this claim was deliberately not the rule
+    // at 5 of the 10 sampled levels (3, 9, 21, 30, 42 — every one divisible by 3). destroyDebris()'s
+    // tangent handoff is removed this phase, so the no-rail-state claim now holds at ALL TEN SAMPLED
+    // LEVELS. The carve-out is inverted into the assertion below rather than dropped.
     assert(spawned.orbitCenter === undefined && spawned.orbitAngVel === undefined,
       `D: level ${w}: REPOINTED BY CS024 P1 (inverted) — the spawned parent carries no rail state, at any level`);
-    const spawnMul = speedMulOf(A, spawned);
+    const lv = A.leverState(w);
+    const spawnSpeed = pieceSpeed(spawned);
+    assert(near(spawnSpeed, lv.junkSpeedLarge),
+      `D: level ${w}: the spawn-site (size 3) speed matches leverState(${w}).junkSpeedLarge (${lv.junkSpeedLarge})`);
 
     // A REAL destroyDebris() split at this same level: awardScore=false keeps achievement counters still.
     const before = A.game.debris.length;
@@ -380,25 +442,35 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     const kids = A.game.debris.filter(d => d.size === 2);
     assert(A.game.debris.length === before + 3, `D: level ${w}: the real split appended exactly 3 children (${before} -> ${A.game.debris.length})`);
     assert(kids.length >= 3, `D: level ${w}: split produced medium-tier children`);
-    const splitMul = speedMulOf(A, kids[kids.length - 1]);
-    assert(near(spawnMul, splitMul),
-      `D: level ${w}: spawn-site speedMul (${spawnMul}) === split-site speedMul (${splitMul}) — the two sites must never drift`);
+    const medSpeed = pieceSpeed(kids[kids.length - 1]);
+    assert(near(medSpeed, lv.junkSpeedMedium),
+      `D: level ${w}: the large->medium split reads the CHILD's own lever, junkSpeedMedium (${lv.junkSpeedMedium}), got ${medSpeed}`);
+    // CONTROL: the mirror image of the old "must never drift" claim — the spawn-site and split-site speeds
+    // genuinely DIVERGE now, because junkSpeedLarge (60-110) and junkSpeedMedium (95-165) are disjoint
+    // bands with no shared ratio left to keep them equal.
+    assert(!near(spawnSpeed, medSpeed),
+      `D: level ${w}: CONTROL — the spawn-site speed (${spawnSpeed}) and the split-site speed (${medSpeed}) genuinely DIVERGE — no shared ratio left`);
 
-    // and a second-generation split (medium -> small) still agrees, so the whole lineage shares one curve
+    // and a second-generation split (medium -> small) reads ITS OWN size's lever too — junkSpeedSmall, not
+    // the medium child's lever and not the original parent's.
     const med = kids[kids.length - 1];
     withPinnedRandom(PIN, () => A.destroyDebris(med, false));
     const small = A.game.debris.filter(d => d.size === 1).pop();
-    assert(small && near(speedMulOf(A, small), spawnMul),
-      `D: level ${w}: the medium->small split shares the same speedMul (${small && speedMulOf(A, small)})`);
+    assert(small, `D: level ${w}: the medium->small split produced a small piece`);
+    const smallSpeed = pieceSpeed(small);
+    assert(near(smallSpeed, lv.junkSpeedSmall),
+      `D: level ${w}: the medium->small split reads junkSpeedSmall (${lv.junkSpeedSmall}), got ${smallSpeed}`);
   }
 })();
 
 // ================= (E) the FLAG-CS017-a guard rail ====================================================
 // REPOINTED BY CS018 P3/P4: the section used to reach the cap through the live path, at cycle 100, where
-// the spiral multiplied the base by 21x. With the spiral retired the live multiplier tops out at the
-// "high" tier (DEBUG.junkSpeedHigh / 70), so NOTHING on the live path can reach the cap any more — which
-// is the documented intent ("insurance against a retune", not a live constraint). The clamp is therefore
-// proven by direct construction, and the negative control now sweeps the entire 63-level table.
+// the spiral multiplied the base by 21x. With the spiral retired the live multiplier topped out at a fixed
+// tier ceiling, so nothing on the live path could reach the cap any more — the documented intent
+// ("insurance against a retune", not a live constraint). REPOINTED AGAIN BY CS024 P5: the live path's
+// ceiling is now junkSpeedLarge/Medium/Small's own top step (110/165/240 px/s), still nowhere near the
+// 1040 px/s cap, so the same "unreachable insurance" status holds under the odometer too. The clamp is
+// proven by direct construction, and the negative control sweeps the entire 63-level table.
 (function sectionE() {
   console.log("(E) DEBRIS_SPEED_CAP still clamps the RESULTING per-entity speed at every size");
   const A = build();
@@ -412,12 +484,16 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     assert(near(Math.hypot(d.vx, d.vy), A.DEBRIS_SPEED_CAP, 1e-6),
       `E: direct ctor, size ${s}, roll pin ${p}: speed clamped to the cap (got ${Math.hypot(d.vx, d.vy)})`);
   }
-  // And a multiplier just over the threshold for each size clamps too, so the clamp is not "only for 1e6".
+  // And a `speed` just over the threshold for each size clamps too, so the clamp is not "only for 1e6".
+  // REPOINTED BY CS024 P5: the 4th ctor argument is a direct px/s `speed` base now, not a `speedMul`
+  // multiplier on DEBRIS_SPEEDS[size] (spec §4.5) — so the threshold no longer scales with DEBRIS_SPEEDS[s]
+  // at all; it is the SAME threshold at every size, since `sp = min(speed * rand(0.7,1.3), CAP)` never
+  // reads size for anything but the label.
   for (const s of [3, 2, 1]) {
-    const justOver = (A.DEBRIS_SPEED_CAP / (A.DEBRIS_SPEEDS[s] * 0.7)) * 1.01;
+    const justOver = (A.DEBRIS_SPEED_CAP / 0.7) * 1.01;
     const d = withPinnedRandom(0, () => new A.DebrisSatellite(100, 100, s, justOver));
     assert(near(Math.hypot(d.vx, d.vy), A.DEBRIS_SPEED_CAP, 1e-6),
-      `E: size ${s}: a multiplier ${justOver.toFixed(2)} just past the threshold clamps exactly to the cap`);
+      `E: size ${s}: a speed ${justOver.toFixed(2)} just past the threshold clamps exactly to the cap`);
   }
   // A split child inherits the clamp too (the ctor is the ONE place it is applied).
   const parent = withPinnedRandom(0, () => new A.DebrisSatellite(100, 100, 3, 1e6));
@@ -454,7 +530,7 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 // the early levels, so the old "waves 1..6 spawn identically" identity is now false BY DESIGN and has been
 // replaced by the assertions that junk count AND Hunter speed both diverge from the pre-P3 build.
 (function sectionF() {
-  console.log("(F) saucer small-saucer chance unchanged; fire mult + spawn gap DIVERGE from the pre-P3 build (CS018 P6/P7)");
+  console.log("(F) saucer fire mult + spawn gap + small-saucer chance ALL DIVERGE from the pre-P3 build (CS018 P6/P7, CS024 P5)");
   // The pre-P3 build is commit 683de82 (CS017 P2), the commit immediately before the sawtooth landed.
   // A fixed SHA, deliberately — see this file's header for why `HEAD` was the wrong reference.
   const PRE_P3_REF = "683de82";
@@ -482,22 +558,22 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     if (!near(fH, fW)) fireMultDiverged++;
     assert(fH === H.ramp(H.SAUCER_FIRE_MULT_FLOOR, H.SAUCER_FIRE_MULT_CEIL, w),
       `F: level ${w}: the PRE-P7 pinned build's fire multiplier still samples the ABSOLUTE game.wave via ramp() (unaffected by this worktree's P7 change)`);
-    assert(fW === W.ufoFireMult(),
-      `F: level ${w}: the LIVE worktree's fire multiplier is exactly what ufoFireMult() says, not a ramp() sample`);
+    // CS024 P5: ufoFireMult() now takes a `small` boolean parameter (split by saucer size) — `new
+    // Saucer(false)` is a big saucer, so this must match ufoFireMult(false), the BIG lever.
+    assert(fW === W.ufoFireMult(false),
+      `F: level ${w}: the LIVE worktree's fire multiplier is exactly what ufoFireMult(false) says, not a ramp() sample`);
 
-    // --- REPOINTED BY CS024 P4 (CONTROL, mirror-image of the last "UNCHANGED" claim in this section):
-    // the small-saucer chance was the FINAL lever still sampling ramp()/game.wave, which is why it was the
-    // one identity left here. §2.4 retires it — the size roll becomes a FLAT chance for the whole game —
-    // and ramp() itself goes with it, so the identity inverts into a divergence. They still coincide at
-    // level 1 and ONLY at level 1, because musicIntensity(1) is exactly 0, which is a sharper fact than
-    // either "identical" or "different" alone and is asserted as such.
+    // --- REPOINTED BY CS024 P4, then AGAIN BY CS024 P5 (CONTROL, mirror-image of the last "UNCHANGED"
+    // claim this section ever made). The small-saucer chance was the FINAL lever still sampling
+    // ramp()/game.wave; P4 retired the ramp (FROZEN_SMALL_UFO_CHANCE = 0.15, the SAME as the pre-P3 ramp
+    // floor, so the two builds still coincided at level 1). P5 wires the live knob to a genuinely NEW flat
+    // default — DEBUG.smallUfoChance, def 0.20 — which is not the old floor value at all, so the level-1
+    // coincidence this section used to carry is GONE too: the flat chance now diverges from the pre-P3
+    // ramp at EVERY level, level 1 included.
     const thrH = H.ramp(H.SAUCER_SMALL_CHANCE_FLOOR, H.SAUCER_SMALL_CHANCE_CEIL, w);
-    const thrW = W.FROZEN_SMALL_UFO_CHANCE;
-    if (w === 1) assert(near(thrH, thrW), `F: level 1: the flat chance still coincides with the pre-P3 ramp floor (${thrH} vs ${thrW})`);
-    else {
-      assert(!near(thrH, thrW), `F: level ${w}: the flat chance DIVERGES from the pre-P3 ramp (${thrH} vs ${thrW})`);
-      smallChanceDiverged++;
-    }
+    const thrW = W.DEBUG.smallUfoChance;
+    assert(!near(thrH, thrW), `F: level ${w}: the flat chance (${thrW}) DIVERGES from the pre-P3 ramp (${thrH}) — including at level 1, since the new default (0.20) isn't the old floor (0.15)`);
+    smallChanceDiverged++;
     // REPOINTED BY CS023 P3: this probe is about the small/big SPAWN DECISION only, but P3 added a
     // UFO<->debris collision pass (spec §4.6) that runs inside this same update(0) call — with
     // Math.random() PINNED to a constant, the freshly-spawned saucer's (fixed) entry position can
@@ -514,8 +590,12 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     };
     assert(probe(W, thrW - 1e-9) === true && probe(W, thrW + 1e-9) === false,
       `F: level ${w}: the LIVE spawn site's small-saucer boundary sits exactly at the flat chance`);
-    // REPOINTED BY CS024 P4: the two builds no longer agree past level 1, by design — probing the LIVE
-    // threshold against the PRE-P3 build is the direct demonstration that the ramp is gone from the roll.
+    // REPOINTED BY CS024 P4, unaffected by P5's default-value change: at level 1 the pre-P3 ramp floor
+    // (0.15) sits BELOW the live flat threshold (0.20 as of P5, was 0.15 under P4), so the pre-P3 build
+    // would NOT have spawned small just above it there — this direction only holds once the pre-P3 ramp
+    // has climbed past the live threshold, which the sweep above (thrH(w) > 0.20 for every w >= 2) confirms.
+    // Probing the LIVE threshold against the PRE-P3 build is the direct demonstration that the ramp is
+    // gone from the roll.
     if (w > 1) assert(probe(H, thrW + 1e-9) === true,
       `F: level ${w}: the pre-P3 build would still have spawned a SMALL saucer just above the live flat threshold — the ramp really is gone`);
 
@@ -542,9 +622,9 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     `F: CONTROL (CS018 P6) — the tiered+jittered spawn gap genuinely diverges from the pre-P3 ramped gap (${gapDiverged} levels)`);
   assert(fireMultDiverged > 0,
     `F: CONTROL (CS018 P7) — the tiered fire multiplier genuinely diverges from the pre-P3 ramped multiplier (${fireMultDiverged} levels)`);
-  assert(smallChanceDiverged === 29,
-    `F: CONTROL (CS024 P4) — the flat small-saucer chance diverges from the pre-P3 ramp at every level but 1 (${smallChanceDiverged}/29)`);
-  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer spawn gap on ${gapDiverged}/30 (CS018 P6), fire mult on ${fireMultDiverged}/30 (CS018 P7), small-saucer chance on ${smallChanceDiverged}/30 (CS024 P4 — the last lever off ramp())`);
+  assert(smallChanceDiverged === 30,
+    `F: CONTROL (CS024 P5) — the flat small-saucer chance diverges from the pre-P3 ramp at EVERY level, including level 1 (${smallChanceDiverged}/30)`);
+  console.log(`  vs the pre-P3 build: junk count diverges on ${divergedCount}/30 levels, Hunter speed on ${hunterDiverged}/30, saucer spawn gap on ${gapDiverged}/30 (CS018 P6), fire mult on ${fireMultDiverged}/30 (CS018 P7), small-saucer chance on ${smallChanceDiverged}/30 (CS024 P5 — a new flat default, not the old ramp floor, so even level 1 diverges now)`);
 })();
 
 // ================= (G) the ODOMETER is the count ceiling now ===========================================
@@ -553,10 +633,15 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
 // the table's own: 13 pieces, forever, with no clamp needed.
 // REPOINTED AGAIN BY CS024 P4: the table is gone and the ceiling is the junkCount LEVER's `ceil` (12),
 // which is a bound BY CONSTRUCTION rather than by a column of literals — a lever cannot exceed its top
-// step. And the shipped spawn is frozen at 3 for one phase (TRAP 2), so both are checked: what bounds the
-// mechanism, and what the game currently puts on the board.
+// step. The shipped spawn was frozen at 3 for that one phase (TRAP 2), which is what forced the "ceiling
+// is actually reached" control to move off the real spawn and onto the odometer alone — a weakening the P3
+// STATUS.md notes flagged for restoration once the lever went live (⛔ "P5 SHOULD MOVE IT BACK").
+// REPOINTED AGAIN BY CS024 P5: TRAP 2 IS CLOSED — nextWave() reads leverState(game.wave).junkCount
+// directly, so the real spawn and the odometer are the same number again at every level. The control is
+// RESTORED to its original strength: the SHIPPED spawn itself reaches the ceiling (12), not just the
+// mechanism behind it, and both are checked at every one of levels 1..130.
 (function sectionG() {
-  console.log("(G) the odometer bounds the count at its lever ceiling with no clamp; the shipped spawn is frozen");
+  console.log("(G) the odometer bounds the count at its lever ceiling with no clamp; the shipped spawn now reaches it too");
   const A = build();
   A.startGame();
   const TABLE_MAX = 12;   // junkCount's `ceil` — its top step, by construction
@@ -581,14 +666,17 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
     if (n === TABLE_MAX) bindingLevels++;
     maxCount = Math.max(maxCount, n);
   }
-  // REPOINTED BY CS024 P4: the SPAWN can no longer reach the ceiling, because it is frozen at 3 — so the
-  // "the ceiling is actually reached" control moves onto the odometer, which does reach it, 13 times in
-  // 1..130. ⛔ P5 SHOULD MOVE IT BACK once nextWave() reads the lever.
+  // REPOINTED BY CS024 P5 (TRAP 2 closed, the ⛔ note's restoration): both the odometer AND the real
+  // shipped spawn reach the ceiling, and by construction they reach it on the SAME 13 levels in 1..130 —
+  // nextWave() now reads leverState(game.wave).junkCount directly, so there is no longer a mechanism/
+  // shipped-behavior gap to check separately.
   let leverBinding = 0;
   for (let w = 1; w <= 130; w++) if (A.leverState(w).junkCount === TABLE_MAX) leverBinding++;
   assert(leverBinding === 13, `G: the odometer reaches its own ceiling on exactly 13 of the levels in 1..130 (got ${leverBinding})`);
-  assert(maxCount === A.FROZEN_JUNK_COUNT,
-    `G: the SHIPPED spawn never varies from the frozen ${A.FROZEN_JUNK_COUNT} across 1..130 (peak ${maxCount}) — TRAP 2`);
+  assert(bindingLevels === 13,
+    `G: RESTORED (TRAP 2 closed) — the SHIPPED spawn itself also reaches the ceiling on exactly 13 of the levels in 1..130 (got ${bindingLevels})`);
+  assert(maxCount === TABLE_MAX,
+    `G: the SHIPPED spawn actually reaches the ceiling (${TABLE_MAX}) somewhere in 1..130 (peak ${maxCount}) — TRAP 2 closed`);
   assert(orbitSeen === 130,
     `G: REPOINTED BY CS024 P1 (inverted) — the ceiling is now checked at ALL 130 levels, not just the field ones (got ${orbitSeen})`);
 
@@ -596,13 +684,15 @@ function speedMulOf(A, piece) { return Math.hypot(piece.vx, piece.vy) / A.DEBRIS
   // REPOINTED BY CS024 P1: 909 is divisible by 3 and was kept in this list precisely because it exercised
   // the plateau on the OTHER archetype. It stays in the list — there is now only one rule, and a level
   // that used to take a different path is exactly the one worth keeping under the single rule.
+  // REPOINTED AGAIN BY CS024 P5: the shipped spawn is no longer frozen at 3 — it tracks the odometer's own
+  // plateau (12, its top step) out to any level anyone will ever reach, same as everywhere else in this file.
   for (const w of [200, 500, 909, 2000]) {
     const n = withPinnedRandom(PIN, () => atWave(A, w));
     const lv = A.leverState(w).junkCount;
     assert(Number.isFinite(lv) && lv >= 3 && lv <= TABLE_MAX,
       `G: level ${w}: the odometer's count is finite and inside [3, ${TABLE_MAX}] (got ${lv}) — bounded with no clamp and no level cap`);
-    assert(Number.isFinite(n) && n === A.FROZEN_JUNK_COUNT,
-      `G: level ${w}: ${n} pieces spawned — the frozen count, unchanged, on the one spawn rule`);
+    assert(Number.isFinite(n) && n === lv,
+      `G: level ${w}: ${n} pieces spawned — matches the odometer's own count (${lv}), not a frozen constant`);
   }
 
   // The retired clamps are provably unread (non-comment lines, excluding their own definitions), so this

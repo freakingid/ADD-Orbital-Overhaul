@@ -52,6 +52,7 @@ const returnList = [
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS",
   "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN",
   "musicIntensity", "angleTo",   // CS024 P4: difficultyFactor renamed (curve byte-identical)
+  "leverState",   // CS024 P5: medium/small Hunter speed now reads the HUNTER chain's carried levers
   "WORLD_W", "WORLD_H",
   // CS022 P1: WORLD_W/WORLD_H are a load-time SNAPSHOT now (the field size). Section (D) drives real
   // nextWave() calls through orbit levels (21, 63), which resize the torus to 3840x2160 — so (H2),
@@ -70,7 +71,7 @@ const {
   HUNTER_SPEED_CEIL, HUNTER_TURN_CEIL, HUNTER_FLOOR_FRAC, HUNTER_SCATTER,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS,
   HUNTER_LAST_STAND_SPEED, HUNTER_LAST_STAND_TURN,
-  musicIntensity, angleTo,
+  musicIntensity, angleTo, leverState,
   WORLD_W, WORLD_H, WORLD_SIZE_FIELD
 } = A;
 
@@ -185,16 +186,25 @@ assert(typeof HunterSatellite.spawnCore === "undefined", "C: spawnCore() is gone
 assert(L.size === 3 && L.homing === false, "C: a size-3 ctor still makes a passive large core — coalescence's one path");
 
 // =====================================================================
-// (D) Hunter speed & turn rate are FROZEN CONSTANTS — no difficulty clock at all
+// (D) Hunter turn rate is a FROZEN CONSTANT at every tier; speed splits — large frozen, medium/small levered
 // =====================================================================
-// REPOINTED TWICE. Originally (v1.6) this section asserted "the difficulty ramp is wired into every speed
-// and turn rate": a wave-1 floor at HUNTER_FLOOR_FRAC x ceiling climbing toward the ceiling by ~wave 20.
-// CS017 P3 repointed it onto the cycleWave sawtooth + cycleValue() spiral. **CS018 P4 (FLAG-a) removes the
-// clock entirely**: speed and turn rate are frozen at the level-1 value for the whole game, and escalating
-// Hunter pressure is carried by the large-Hunter CAP instead (how many may exist, not how fast they move).
-// The section therefore asserts the exact opposite of "climbs" — level-independence — plus the controls
-// that (a) the value still IS the documented derivation and (b) the retired ramp is genuinely absent.
-console.log("(D) Hunter speed & turn rate frozen at _CEIL x HUNTER_FLOOR_FRAC, at every level");
+// REPOINTED REPEATEDLY. Originally (v1.6) this section asserted "the difficulty ramp is wired into every
+// speed and turn rate": a wave-1 floor at HUNTER_FLOOR_FRAC x ceiling climbing toward the ceiling by ~wave
+// 20. CS017 P3 repointed it onto the cycleWave sawtooth + cycleValue() spiral. CS018 P4 (FLAG-a) removed
+// the clock entirely: speed AND turn rate were frozen at the level-1 value for the whole game, for every
+// tier, and escalating Hunter pressure was carried by the large-Hunter CAP instead (how many may exist,
+// not how fast they move).
+//
+// CS024 P5 (spec §2.4) SPLITS that freeze. TURN RATE stays exactly as CS018 P4 left it — frozen at
+// HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC, unconditionally, at every tier, no exceptions, no lever —
+// this is a longer-standing rule than CS024 and CS024 does not touch it. SPEED no longer does: the large
+// core (size 3) keeps the CS018 P4 frozen derivation verbatim (it does not pursue and deliberately has no
+// speed lever), but medium (size 2) and small (size 1) now read the HUNTER chain's two carried levers —
+// hunterSpeedMedium/hunterSpeedSmall, driven by coalescePause's wraps — via leverState(game.wave), at
+// construction. So the section now asserts THREE things per tier: turn rate is still frozen everywhere
+// (unchanged claim); large speed is still frozen (unchanged claim); medium/small speed now genuinely
+// tracks the live lever, level by level (inverted claim), and is no longer the old frozen constant.
+console.log("(D) Hunter turn rate frozen at every tier; large speed frozen, medium/small speed levered (HUNTER chain)");
 function tier(size, wave) {
   game.wave = wave - 1;
   game.debris.length = 0;
@@ -204,40 +214,75 @@ function tier(size, wave) {
 assert(near(musicIntensity(1), 0), "D: musicIntensity(1) == 0 (CS024 P4 renamed difficultyFactor; same curve, and it is now NAMED for its one job)");
 
 const PROBE_LEVELS = [1, 2, 5, 20, 21, 22, 43, 63, 200];
+
+// -- turn rate: unchanged claim, every tier, still frozen at _CEIL x HUNTER_FLOOR_FRAC --
 for (const size of [3, 2, 1]) {
+  const expTurn = HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC;
+  const turns = new Set();
+  for (const lvl of PROBE_LEVELS) {
+    const h = tier(size, lvl);
+    assert(near(h.turnRate, expTurn),
+      `D[size ${size}]: level-${lvl} turn rate == _CEIL x FLOOR_FRAC (${expTurn.toFixed(3)}, got ${h.turnRate.toFixed(3)})`);
+    turns.add(h.turnRate);
+  }
+  assert(turns.size === 1, `D[size ${size}]: ONE turn rate across every probed level (got ${JSON.stringify([...turns])})`);
+  // The large core still never turns — its ceiling is 0, so the freeze preserves passive drift.
+  if (size === 3) assert(expTurn === 0, "D[large]: core turn rate is 0 at every level (passive drift)");
+}
+
+// -- size 3 (large) speed: unchanged claim, still frozen at _CEIL x HUNTER_FLOOR_FRAC, no speed lever --
+{
+  const size = 3;
   const expSpeed = HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC;
-  const expTurn  = HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC;
-  const speeds = new Set(), turns = new Set();
+  const speeds = new Set();
   for (const lvl of PROBE_LEVELS) {
     const h = tier(size, lvl);
     assert(near(h.speed, expSpeed),
       `D[size ${size}]: level-${lvl} speed == _CEIL x FLOOR_FRAC (${expSpeed.toFixed(1)}, got ${h.speed.toFixed(1)})`);
-    assert(near(h.turnRate, expTurn),
-      `D[size ${size}]: level-${lvl} turn rate == _CEIL x FLOOR_FRAC (${expTurn.toFixed(3)}, got ${h.turnRate.toFixed(3)})`);
-    speeds.add(h.speed); turns.add(h.turnRate);
+    speeds.add(h.speed);
   }
   assert(speeds.size === 1, `D[size ${size}]: ONE speed across every probed level (got ${JSON.stringify([...speeds])})`);
-  assert(turns.size === 1, `D[size ${size}]: ONE turn rate across every probed level (got ${JSON.stringify([...turns])})`);
-  // The large core still never turns — its ceiling is 0, so the freeze preserves passive drift.
-  if (size === 3) assert(expTurn === 0, "D[large]: core turn rate is 0 at every level (passive drift)");
   // CONTROL: the retired ramp is really gone. At level 20 the old formula produced a strictly higher
-  // value for every tier with a non-zero ceiling; the frozen value must NOT match it.
-  // REPOINTED BY CS024 P4: ramp() itself is now DELETED from the build (its last lever, the small-saucer
-  // chance, went with the level table), so the control can no longer be built from the real helper. It is
-  // rebuilt here from the retired definition verbatim — floor + (ceil - floor) * musicIntensity(wave),
-  // which is exactly what ramp() was — using the REAL surviving curve for the factor. The claim is
-  // unchanged and if anything stronger: the frozen speed must not equal what the deleted formula gave.
-  else {
-    const ramped = expSpeed + (HUNTER_SPEED_CEIL[size] - expSpeed) * musicIntensity(20);
-    assert(ramped > expSpeed + 1, `D[size ${size}]: (context) the retired ramp would have given ${ramped.toFixed(1)} at level 20`);
-    assert(!near(tier(size, 20).speed, ramped),
-      `D[size ${size}]: CONTROL — the frozen speed does not equal the retired level-20 ramp value`);
-  }
+  // value; the frozen value must NOT match it. ramp() itself is DELETED from the build, so the control is
+  // rebuilt here from the retired definition verbatim — floor + (ceil - floor) * musicIntensity(wave).
+  const ramped = expSpeed + (HUNTER_SPEED_CEIL[size] - expSpeed) * musicIntensity(20);
+  assert(ramped > expSpeed + 1, `D[size ${size}]: (context) the retired ramp would have given ${ramped.toFixed(1)} at level 20`);
+  assert(!near(tier(size, 20).speed, ramped),
+    `D[size ${size}]: CONTROL — the frozen speed does not equal the retired level-20 ramp value`);
 }
-// concrete headline: a small homer is the same at level 1 and level 20 now
+
+// -- size 2/1 (medium/small) speed: INVERTED — no longer frozen, now tracks the HUNTER chain's carried
+// levers (hunterSpeedMedium/hunterSpeedSmall) exactly, via a real HunterSatellite constructed at each
+// probed wave. The old "flat, one value across every probed level" claim is now FALSE; it inverts to
+// "matches leverState(wave).<leverId> exactly, and genuinely varies (non-decreasing, since these two
+// levers are NOT inverted — floor 60/90 -> ceil 110/160 — even though their driver, coalescePause, is)".
+for (const [size, leverId] of [[2, "hunterSpeedMedium"], [1, "hunterSpeedSmall"]]) {
+  const speeds = [];
+  for (const lvl of PROBE_LEVELS) {
+    const h = tier(size, lvl);
+    const expSpeed = leverState(lvl)[leverId];
+    assert(near(h.speed, expSpeed),
+      `D[size ${size}]: level-${lvl} speed === leverState(${lvl}).${leverId} (${expSpeed}, got ${h.speed})`);
+    speeds.push(h.speed);
+  }
+  assert(new Set(speeds).size > 1,
+    `D[size ${size}]: speed is NOT flat any more — it varies across the probed levels (got ${JSON.stringify(speeds)})`);
+  for (let i = 1; i < speeds.length; i++) {
+    assert(speeds[i] >= speeds[i - 1] - 1e-9,
+      `D[size ${size}]: speed never decreases across the sweep (level ${PROBE_LEVELS[i - 1]}=${speeds[i - 1]} -> level ${PROBE_LEVELS[i]}=${speeds[i]})`);
+  }
+  // CONTROL: no longer equals the old CS018 P4 frozen derivation this tier used to sit on.
+  const oldFrozen = HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC;
+  assert(!near(tier(size, 1).speed, oldFrozen),
+    `D[size ${size}]: CONTROL — level-1 speed no longer equals the retired frozen derivation _CEIL x FLOOR_FRAC (${oldFrozen})`);
+}
+
+// concrete headline: a small homer now genuinely speeds up from level 1 to level 20
 const s1 = tier(1, 1), s20 = tier(1, 20);
-console.log(`  small homer speed: level1 ${s1.speed.toFixed(1)} px/s  ==  level20 ${s20.speed.toFixed(1)} px/s  (turn ${s1.turnRate.toFixed(3)} == ${s20.turnRate.toFixed(3)} rad/s)`);
-// the large core's drift speed no longer scales, and still never homes
+console.log(`  small homer speed: level1 ${s1.speed.toFixed(1)} px/s  ->  level20 ${s20.speed.toFixed(1)} px/s  (turn ${s1.turnRate.toFixed(3)} == ${s20.turnRate.toFixed(3)} rad/s, still frozen)`);
+assert(s20.speed > s1.speed, `D: small homer speed climbs from level 1 (${s1.speed.toFixed(1)}) to level 20 (${s20.speed.toFixed(1)}) — the HUNTER chain is live`);
+assert(near(s1.turnRate, s20.turnRate), "D: small homer turn rate is unchanged level 1 -> level 20 (still frozen)");
+// the large core's drift speed still doesn't scale, and still never homes
 const L1 = tier(3, 1), L20 = tier(3, 20);
 assert(near(L1.speed, L20.speed) && L1.homing === false && L20.homing === false,
   `D: large core drift speed is frozen (${L1.speed.toFixed(1)} == ${L20.speed.toFixed(1)}) and it never homes`);

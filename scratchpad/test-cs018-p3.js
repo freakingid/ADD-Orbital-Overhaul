@@ -10,13 +10,20 @@
 // Sections:
 //  (A) node --check on the extracted <script>.
 //  (B) debris COUNT integration: startGame() + real nextWave() calls across levels 1-63, comparing
-//      game.debris.length after each call against the phase prompt's pinned 3,5,9,13 cycle (13 at
-//      every rel-21 level), with the DEBRIS_COUNT_MAX/HARD_MAX clamps confirmed retired (unread).
-//      REPOINTED BY CS021 P1: split by archetype — field levels still spawn junkCount, orbit levels
-//      (every 3rd) spawn the 40-satellite ring layout and deliberately do not consume junkCount.
-//  (C) speedMul PARITY: the two derivation sites (nextWave, destroyDebris) are proven byte-identical
-//      at the source level (both read literally "const speedMul = junkSpeedMul();"), and
-//      junkSpeedMul() is proven correct against a hand-computed tier lookup at low/normal/high levels.
+//      game.debris.length after each call against leverState(wave).junkCount — the JUNK chain's driver,
+//      a 3..12 sawtooth over every 10-level period, forever (it has no plateau; it WRAPS). REPOINTED BY
+//      CS024 P5 (spec §2.4/§4.5): nextWave() now reads `DEBUG.junkCount ?? leverState(game.wave).junkCount`
+//      at the point of use, so the actual spawn and the odometer's own curve AGREE at every level — the
+//      one-phase "TRAP 2" disagreement CS024 P4 pinned (odometer built but not wired) is gone; this
+//      section's claim is the mirror image of that one.
+//  (C) the per-size JUNK SPEED levers: junkSpeedMul() (the one shared px/70 multiplier both derivation
+//      sites used to call) is proven gone outright — CS024 P5 deletes it because the three junk sizes
+//      are now fully independent levers (junkSpeedLarge/Medium/Small) with their own floor/ceil, so
+//      there is no shared ratio left to derive. Both real call sites — nextWave()'s fresh spawn (via
+//      spawnFieldSatellites) and destroyDebris()'s split branch (large->medium reads junkSpeedMedium,
+//      medium->small reads junkSpeedSmall) — are integration-tested through the real functions, and the
+//      old "70/110/160 ratio preserved at every tier" claim is proven to no longer hold (mirror image:
+//      the ratio now visibly drifts once one size's lever has plateaued and another hasn't).
 //  (D) REPOINTED BY CS024 P3: this section proved bonusSpawnChance() had been re-homed onto the junk
 //      cycle position (levelDef().rel), hitting both endpoints exactly. The bonus canister is removed
 //      outright (spec §1.2/§4.2), so the section now proves the WHOLE feature is gone — the function,
@@ -79,10 +86,15 @@ function makeLocalStorage() {
   return { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
 }
 // CS024 P4: levelDef, stepAt and JUNK_CYCLE are DELETED with the level table, replaced by the LEVERS
-// odometer. The shipped spawn count is FROZEN_JUNK_COUNT for one phase (TRAP 2 — levers built, not wired).
-const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "leverState",
-                "FROZEN_JUNK_COUNT", "FROZEN_JUNK_SPEED",
-                "junkSpeedMul", "DEBUG", "DEBUG_VARS",   // CS024 P3: bonusSpawnChance deleted
+// odometer. CS024 P5 wires it: FROZEN_JUNK_COUNT/FROZEN_JUNK_SPEED/junkSpeedMul() are ALL deleted along
+// with the freeze block (spec §4.5) — nothing reads a FROZEN_* constant any more, so exporting any of
+// the three would throw a ReferenceError out of the factory's own return statement (that is, in fact,
+// exactly what broke this file across the P4->P5 boundary — see git history). Repointed onto the real
+// P5 surface: LEVERS (the raw table, for floor/ceil pins) and spawnFieldSatellites (the extracted spawn
+// helper section C drives directly).
+const RETURN = ["game", "startGame", "update", "nextWave", "destroyDebris", "leverState", "LEVERS",
+                "spawnFieldSatellites",
+                "DEBUG", "DEBUG_VARS",   // CS024 P3: bonusSpawnChance deleted
                 "DEBRIS_SPEEDS",
                 "Garbage",     // CS024 P3: BONUS_SPAWN_CHANCE_EARLY/_LATE deleted with the canister
                 "CARGO_BASE", "GAME_VERSION",
@@ -112,13 +124,12 @@ function build(src, windowExtra) {
 }
 
 // ---- the phase prompt's pinned expected values (same table as P1's junkCount, restated as counts) ----
-// REPOINTED BY CS024 P4. The 3/5/9/13 cycle was JUNK_CYCLE's, and it is deleted with the level table. Two
-// separate expectations replace it, because this phase deliberately splits them apart:
-//   WANT_SPAWNED_1_21 — what the game ACTUALLY puts on the board, frozen at the level-1 count of 3 at
-//     every level (TRAP 2: P4 builds the odometer and does NOT wire it; P5 does).
-//   WANT_ODOMETER_1_21 — what the mechanism SAYS, junkCount's 3..12 sawtooth over a 10-level period.
-// They must disagree today and agree from P5, and both are asserted so either half going wrong is caught.
-const WANT_SPAWNED_1_21  = Array.from({ length: 21 }, () => 3);
+// REPOINTED BY CS024 P5 (mirror image of the P4 pin, which is now stale): P4 left the odometer built but
+// UNWIRED, so the actual spawn (frozen at the level-1 count of 3) and the odometer's own sawtooth
+// deliberately disagreed for one phase (TRAP 2). P5 wires nextWave() onto leverState(game.wave).junkCount
+// at the point of use (spec §2.4/§4.5), so there is exactly ONE expectation now, not two: the odometer's
+// own 3..12 sawtooth over a 10-level period IS what spawns, every level, forever (junkCount has no
+// plateau — it WRAPS, so this is not just a levels-1-21 fact but the steady-state shape of the curve).
 const WANT_ODOMETER_1_21 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3];
 
 // ================= (B) debris COUNT integration =====================
@@ -150,19 +161,21 @@ let X;
   const odoCounts = Array.from({ length: 21 }, (_, i) => X.leverState(i + 1).junkCount);
   assert(deepEq(odoCounts, WANT_ODOMETER_1_21),
     `B: the ODOMETER's junkCount levels 1-21 === ${WANT_ODOMETER_1_21.join(",")} (got ${odoCounts.join(",")})`);
-  console.log("    levels 1-21 debris count: " + got.slice(0, 21).join(",") + "  (frozen; odometer says " + odoCounts.join(",") + ")");
-  assert(got.slice(0, 21).every((c, i) => c === WANT_SPAWNED_1_21[i]),
-    `B: TRAP 2 — every level 1-21 spawns the FROZEN level-1 count (got ${got.slice(0, 21).join(",")})`);
-  assert(!deepEq(got.slice(0, 21), odoCounts),
-    "B: ...and the two deliberately disagree this phase — the odometer is built but not wired");
+  console.log("    levels 1-21 debris count: " + got.slice(0, 21).join(",") + "  (odometer says " + odoCounts.join(",") + ")");
+  // REPOINTED BY CS024 P5 (mirror image of the P4 "TRAP 2" pin): nextWave() now reads
+  // `DEBUG.junkCount ?? leverState(game.wave).junkCount` at the point of use, so the actual spawn and the
+  // odometer's own sawtooth AGREE at every level — the disagreement P4 pinned as expected behaviour would
+  // now itself be the regression.
+  assert(deepEq(got.slice(0, 21), odoCounts),
+    `B: every level 1-21 spawns exactly the ODOMETER's junkCount for that level (got ${got.slice(0, 21).join(",")}, want ${odoCounts.join(",")})`);
   for (const n of [21, 42, 63]) {
-    eq(got[n - 1], X.FROZEN_JUNK_COUNT, `B: level ${n} (a former phase boundary) spawns the frozen count like every other level`);
+    eq(got[n - 1], X.leverState(n).junkCount, `B: level ${n} (a former phase boundary) spawns leverState(${n}).junkCount, like every other level`);
     eq(X.probe("levelDef"), "__ReferenceError__", `B: level ${n}: there is no level table left to send it down a second path`);
   }
   let levelsChecked = 0;
   for (let n = 1; n <= 63; n++) {
     levelsChecked++;
-    eq(got[n - 1], X.FROZEN_JUNK_COUNT, `B: level ${n} debris count === FROZEN_JUNK_COUNT`);
+    eq(got[n - 1], X.leverState(n).junkCount, `B: level ${n} debris count === leverState(${n}).junkCount`);
   }
   eq(levelsChecked, 63, "B: all 63 levels checked against the one spawn rule");
 
@@ -177,65 +190,87 @@ let X;
 })();
 if (!X) { console.error("Cannot continue without a built instance."); process.exit(1); }
 
-// ================= (C) speedMul PARITY =====================
+// ================= (C) the per-size JUNK SPEED levers replace junkSpeedMul() (CS024 P5) =====================
 (function sectionC() {
-  console.log("(C) speedMul parity: the two derivation sites + junkSpeedMul() correctness");
+  console.log("(C) junk speed: junkSpeedMul() is gone; both derivation sites read the three per-size levers directly");
 
-  // Source-level proof the two sites are byte-identical, per the standing comment's demand.
-  const speedMulLines = scriptSrc.split("\n").map(l => l.trim()).filter(l => l === "const speedMul = junkSpeedMul();");
-  eq(speedMulLines.length, 2, `C: exactly TWO byte-identical "const speedMul = junkSpeedMul();" sites (got ${speedMulLines.length})`);
+  // junkSpeedMul() STOOD HERE as the one shared px/70 multiplier both nextWave() and destroyDebris()'s
+  // split branch called (retired comment site: CS024 P5, spec §2.4/§4.5). P5 deletes it outright — the
+  // three junk sizes are now fully independent levers with their own floor/ceil, so there is no shared
+  // ratio left to derive; each call site reads its own size's lever from leverState(game.wave) directly.
+  eq((scriptSrc.match(/function junkSpeedMul\(/g) || []).length, 0, "C: junkSpeedMul is not defined anywhere in source");
+  eq(X.probe("junkSpeedMul"), "__ReferenceError__", "C: ...and does not exist in the built game");
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
+  assert(!codeOnly.some(l => l.includes("junkSpeedMul(")), "C: ...and is never called anywhere in live source");
   const oldExpr = codeOnly.filter(l => l.includes("DEBRIS_SPEED_PER_WAVE") && l.includes("cycleValue"));
-  eq(oldExpr.length, 0, `C: the old cycleValue(...DEBRIS_SPEED_PER_WAVE...) expression is gone from both sites (found: ${JSON.stringify(oldExpr)})`);
-  eq((scriptSrc.match(/function junkSpeedMul\(/g) || []).length, 1, "C: exactly one junkSpeedMul definition");
+  eq(oldExpr.length, 0, `C: the old cycleValue(...DEBRIS_SPEED_PER_WAVE...) expression is gone (found: ${JSON.stringify(oldExpr)})`);
 
-  // Numeric correctness: junkSpeedMul() against a hand-computed tier lookup, at each tier + both
-  // phase-boundary transitions (21->22, 42->43).
-  // REPOINTED BY CS024 P4: the tier lookup is deleted, and the multiplier is FROZEN at the retired
-  // table's level-1 answer until P5 splits it into three independent per-size levers.
-  function expectedMul() { return X.FROZEN_JUNK_SPEED / 70; }
-  const shownLevels = [1, 21, 22, 42, 43, 62, 63, 100];
-  const shown = {};
-  for (const n of shownLevels) {
-    X.game.wave = n;
-    const got = X.junkSpeedMul();
-    close(got, expectedMul(), `C: junkSpeedMul() at level ${n} is the frozen multiplier (TRAP 2)`);
-    shown[n] = got;
-  }
-  console.log("    junkSpeedMul by level: " + shownLevels.map(n => `${n}:${shown[n].toFixed(4)}`).join("  "));
-  close(shown[1], 58 / 70, "C: level 1 is 58/70 — the retired 'low' tier value, now frozen");
-  close(shown[22], shown[1], "C: level 22 is the SAME (the 'normal' breakpoint is deleted)");
-  close(shown[43], shown[1], "C: level 43 is the SAME (the 'high' breakpoint is deleted)");
-  // ...and the odometer already carries the three independent per-size levers P5 wires in its place.
-  const ls = X.leverState(1);
-  assert(ls.junkSpeedLarge === 60 && ls.junkSpeedMedium === 95 && ls.junkSpeedSmall === 140,
-    "C: the odometer's three junk-speed levers exist, one per size, with independent floors");
+  // The three per-size levers exist with independent floor/ceil, read straight off the real LEVERS
+  // table (never a re-derived hand computation) — matching the phase prompt's pinned numbers exactly.
+  const large = X.LEVERS.find(l => l.id === "junkSpeedLarge");
+  const medium = X.LEVERS.find(l => l.id === "junkSpeedMedium");
+  const small = X.LEVERS.find(l => l.id === "junkSpeedSmall");
+  assert(large && medium && small, "C: LEVERS declares all three junk-speed levers");
+  eq(large.floor, 60, "C: junkSpeedLarge floor is 60 px/s"); eq(large.ceil, 110, "C: junkSpeedLarge ceil is 110 px/s");
+  eq(medium.floor, 95, "C: junkSpeedMedium floor is 95 px/s"); eq(medium.ceil, 165, "C: junkSpeedMedium ceil is 165 px/s");
+  eq(small.floor, 140, "C: junkSpeedSmall floor is 140 px/s"); eq(small.ceil, 240, "C: junkSpeedSmall ceil is 240 px/s");
 
-  // The shipped 70/110/160 ratio is preserved at every tier — sizes scale by the SAME multiplier.
-  for (const n of shownLevels) {
-    const mul = shown[n];
-    close(X.DEBRIS_SPEEDS[3] * mul / (X.DEBRIS_SPEEDS[2] * mul), 70 / 110, `C: size 3:2 ratio preserved at level ${n}`);
-    close(X.DEBRIS_SPEEDS[2] * mul / (X.DEBRIS_SPEEDS[1] * mul), 110 / 160, `C: size 2:1 ratio preserved at level ${n}`);
-  }
+  const ls1 = X.leverState(1);
+  assert(ls1.junkSpeedLarge === large.floor && ls1.junkSpeedMedium === medium.floor && ls1.junkSpeedSmall === small.floor,
+    "C: at wave 1 every junk-speed lever reads its own declared floor");
 
-  // Both call sites are the SAME function reading the SAME game.wave, so an integration split proves
-  // the destroyDebris() branch actually gets called and produces speeds consistent with junkSpeedMul().
-  // REPOINTED BY CS024 P4: level 22 was chosen because it sat in the "normal" tier where the multiplier
-  // was exactly 1, making the bounds exactly DEBRIS_SPEEDS[size] * rand(0.7, 1.3). The tiers are gone and
-  // the multiplier is frozen at 58/70, so the bounds are derived from junkSpeedMul() itself — which is
-  // what the section is really asserting anyway: BOTH call sites read the SAME helper.
+  // MIRROR IMAGE of the pre-CS024 claim ("the shipped 70/110/160 ratio is preserved at every tier"):
+  // that ratio required ALL THREE sizes to scale off one shared multiplier, which junkSpeedMul() no
+  // longer exists to provide. junkSpeedLarge plateaus at its ceil once junkCount has wrapped 4 times
+  // (wave 41 on — it has no carriesTo of its own, so it is a terminal/plateau lever), while medium and
+  // small keep climbing independently past that point, so the large:medium ratio must NOT be the same
+  // at wave 1 as it is once large has plateaued and the others haven't caught up.
+  const lsDeep = X.leverState(45);
+  const ratioFloor = ls1.junkSpeedLarge / ls1.junkSpeedMedium;
+  const ratioDeep = lsDeep.junkSpeedLarge / lsDeep.junkSpeedMedium;
+  assert(Math.abs(ratioFloor - ratioDeep) > 1e-6,
+    `C: the large:medium ratio is no longer constant across levels (wave 1: ${ratioFloor.toFixed(4)}, wave 45: ${ratioDeep.toFixed(4)}) — each size is a fully independent lever now`);
+
+  // Integration-test BOTH real call sites through the actual functions (never a re-derived formula):
+  // nextWave()'s fresh spawn (via the extracted spawnFieldSatellites helper) reads junkSpeedLarge;
+  // destroyDebris()'s split branch reads junkSpeedMedium for a large's children and junkSpeedSmall for
+  // a medium's — per the phase comment's own wording ("a large splitting to medium reads
+  // junkSpeedMedium, a medium splitting to small reads junkSpeedSmall").
   X.game.wave = 22;
-  const splitMul = X.junkSpeedMul();
-  const before = X.game.debris.length;
-  const large = { x: 500, y: 500, vx: 0, vy: 0, size: 3, dead: false };
-  X.game.debris.push(large);
-  X.destroyDebris(large, false);
-  const children = X.game.debris.filter(d => !d.dead && d.size === 2);
-  eq(children.length, 3, "C: destroying a large yields 3 medium children");
-  for (const c of children) {
+  X.game.debris = []; // clean slate — section B leaves the level-63 field behind in this same instance
+  const lv22 = X.leverState(22);
+
+  // Site 1: fresh spawn.
+  X.spawnFieldSatellites(20, lv22.junkSpeedLarge); // a big batch so rand(0.7,1.3) is well sampled
+  eq(X.game.debris.length, 20, "C: spawnFieldSatellites(20, ...) adds exactly 20 debris");
+  for (const d of X.game.debris) {
+    const sp = Math.hypot(d.vx, d.vy);
+    assert(sp >= lv22.junkSpeedLarge * 0.7 - 1e-6 && sp <= lv22.junkSpeedLarge * 1.3 + 1e-6,
+      `C: fresh spawn speed ${sp.toFixed(1)} within [${(lv22.junkSpeedLarge * 0.7).toFixed(1)}, ${(lv22.junkSpeedLarge * 1.3).toFixed(1)}] of junkSpeedLarge at level 22`);
+    eq(d.size, 3, "C: spawnFieldSatellites always spawns size-3 (large) debris");
+  }
+
+  // Site 2, first hop: a large (size 3) splits into 3 mediums (size 2) reading junkSpeedMedium.
+  const parentLarge = { x: 500, y: 500, vx: 0, vy: 0, size: 3, dead: false };
+  X.game.debris.push(parentLarge);
+  X.destroyDebris(parentLarge, false);
+  const mediumChildren = X.game.debris.filter(d => !d.dead && d.size === 2);
+  eq(mediumChildren.length, 3, "C: destroying a large yields 3 medium children");
+  for (const c of mediumChildren) {
     const sp = Math.hypot(c.vx, c.vy);
-    assert(sp >= X.DEBRIS_SPEEDS[2] * splitMul * 0.7 - 1e-6 && sp <= X.DEBRIS_SPEEDS[2] * splitMul * 1.3 + 1e-6,
-      `C: split child speed ${sp.toFixed(1)} within [${(X.DEBRIS_SPEEDS[2] * splitMul * 0.7).toFixed(1)}, ${(X.DEBRIS_SPEEDS[2] * splitMul * 1.3).toFixed(1)}] — the same junkSpeedMul() nextWave() reads`);
+    assert(sp >= lv22.junkSpeedMedium * 0.7 - 1e-6 && sp <= lv22.junkSpeedMedium * 1.3 + 1e-6,
+      `C: large->medium split child speed ${sp.toFixed(1)} within [${(lv22.junkSpeedMedium * 0.7).toFixed(1)}, ${(lv22.junkSpeedMedium * 1.3).toFixed(1)}] — junkSpeedMedium at level 22, NOT junkSpeedLarge`);
+  }
+
+  // Site 2, second hop: a medium (size 2) splits into 3 smalls (size 1) reading junkSpeedSmall.
+  const beforeSmallCount = X.game.debris.filter(d => !d.dead && d.size === 1).length;
+  X.destroyDebris(mediumChildren[0], false);
+  const smallChildren = X.game.debris.filter(d => !d.dead && d.size === 1).slice(beforeSmallCount);
+  eq(smallChildren.length, 3, "C: destroying a medium yields 3 small children");
+  for (const c of smallChildren) {
+    const sp = Math.hypot(c.vx, c.vy);
+    assert(sp >= lv22.junkSpeedSmall * 0.7 - 1e-6 && sp <= lv22.junkSpeedSmall * 1.3 + 1e-6,
+      `C: medium->small split child speed ${sp.toFixed(1)} within [${(lv22.junkSpeedSmall * 0.7).toFixed(1)}, ${(lv22.junkSpeedSmall * 1.3).toFixed(1)}] — junkSpeedSmall at level 22`);
   }
 })();
 
@@ -292,18 +327,44 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   eq(Y.probe("cycleValue"), "__ReferenceError__", "E: cycleValue is undefined in the script block's scope");
   assert(Y.probe("leverState") !== "__ReferenceError__", "E: (meta) the scope probe resolves a live symbol");
 
-  // DEBUG_VARS: REPOINTED BY CS024 P4, INVERTED. This phase's three JUNK tier knobs are deleted with the
-  // other 18, and their now-empty section header with them (a header over nothing renders as a stray
-  // label — the retired SAUCER PRESSURE lesson, applied again). P5 brings JUNK back with a knob per
-  // LEVER, which is a different shape: one entry per quantity, not three per quantity.
-  assert(Y.DEBUG_VARS.findIndex(v => v.header === "JUNK") === -1, "E: the JUNK section header is gone with its three tier knobs");
-  for (const id of ["junkSpeedLow", "junkSpeedNormal", "junkSpeedHigh"]) {
-    assert(!Y.DEBUG_VARS.some(v => v.id === id), `E: DEBUG_VARS no longer has ${id}`);
-    assert(!(id in Y.DEBUG), `E: ...and DEBUG.${id} is gone too`);
+  // DEBUG_VARS: REPOINTED BY CS024 P5, INVERTED AGAIN (mirror image of the P4 claim above, which is now
+  // stale). P4 deleted the JUNK header along with its three now-defunct tier knobs (an empty header
+  // renders as a stray label). P5 brings JUNK back with a knob PER LEVER — a different shape from the
+  // old tier trio: one entry per QUANTITY (junkCount, junkSpeedLarge, junkSpeedMedium, junkSpeedSmall),
+  // each built by leverKnob() with the "no override, follow the live odometer" `def: null` sentinel.
+  const junkHeaderIdx = Y.DEBUG_VARS.findIndex(v => v.header === "JUNK");
+  assert(junkHeaderIdx !== -1, "E: the JUNK section header is back (CS024 P5)");
+  const junkKnobIds = ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"];
+  for (const id of junkKnobIds) {
+    const entry = Y.DEBUG_VARS.find(v => v.id === id);
+    assert(entry, `E: DEBUG_VARS has a ${id} lever knob`);
+    eq(entry.def, null, `E: ${id}'s knob has def: null — the "follow leverState" sentinel, not a duplicated literal`);
+    assert(id in Y.DEBUG, `E: DEBUG.${id} exists`);
+    eq(Y.DEBUG[id], null, `E: DEBUG.${id} seeds to null (no override) — an untouched build follows leverState()`);
   }
-  // The value each knob held is not lost — it is the frozen constant this phase reads instead, and (from
-  // P5) the floor of the matching lever.
-  eq(Y.FROZEN_JUNK_SPEED, 58, "E: the retired 'low' knob's 58 px/s survives as FROZEN_JUNK_SPEED");
+  // min/max derive from Math.min/max(floor, ceil) — none of the four JUNK levers is inverted, so min ===
+  // floor and max === ceil for all four (unlike, say, coalescePause or ufoAppearFreq elsewhere in LEVERS).
+  const junkCountLever = Y.LEVERS.find(l => l.id === "junkCount");
+  eq(Y.DEBUG_VARS.find(v => v.id === "junkCount").min, junkCountLever.floor, "E: junkCount knob min === its floor (3)");
+  eq(Y.DEBUG_VARS.find(v => v.id === "junkCount").max, junkCountLever.ceil, "E: junkCount knob max === its ceil (12)");
+  const junkSpeedLargeLever = Y.LEVERS.find(l => l.id === "junkSpeedLarge");
+  eq(Y.DEBUG_VARS.find(v => v.id === "junkSpeedLarge").min, junkSpeedLargeLever.floor, "E: junkSpeedLarge knob min === its floor (60)");
+  eq(Y.DEBUG_VARS.find(v => v.id === "junkSpeedLarge").max, junkSpeedLargeLever.ceil, "E: junkSpeedLarge knob max === its ceil (110)");
+
+  // The pre-CS024 tier-name knobs stay gone — a different shape (per-tier, not per-lever) that never
+  // comes back.
+  for (const id of ["junkSpeedLow", "junkSpeedNormal", "junkSpeedHigh"]) {
+    assert(!Y.DEBUG_VARS.some(v => v.id === id), `E: DEBUG_VARS never regains the retired tier knob ${id}`);
+    assert(!(id in Y.DEBUG) || Y.DEBUG[id] === undefined, `E: ...and DEBUG.${id} stays absent`);
+  }
+
+  // REPOINTED BY CS024 P5: FROZEN_JUNK_SPEED (58 px/s, the retired 'low' tier knob's value) does not
+  // survive into P5 verbatim — it named a single-multiplier freeze that is itself deleted. The junk-speed
+  // floor a fresh level-1 game actually uses is junkSpeedLarge's floor, 60 px/s, not 58 — a genuine value
+  // change (the odometer's floors were chosen fresh for the three independent levers, spec §2.4), not a
+  // rename. FROZEN_JUNK_SPEED itself no longer exists.
+  eq(Y.probe("FROZEN_JUNK_SPEED"), "__ReferenceError__", "E: FROZEN_JUNK_SPEED no longer exists");
+  eq(junkSpeedLargeLever.floor, 60, "E: junkSpeedLarge's floor (what a fresh level 1 actually spawns at) is 60 px/s, not the old 58");
 })();
 
 // ================= summary =====================

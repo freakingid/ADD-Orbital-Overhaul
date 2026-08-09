@@ -22,11 +22,19 @@
 //      three live sliders and reported the trio: attraction delay 5000 ms, radius 160 px, force
 //      30 px/s². Those are the shipped constants now (3.0/180/40 before).
 //
-// TRAP 2 IS A FIRST-CLASS SUBJECT HERE, NOT A FOOTNOTE. This phase builds the mechanism and does NOT
-// wire it: leverState has ZERO callers in the whole build (§H proves the count is exactly one — its
-// own declaration), and the nine quantities that used to come off the level table are FROZEN at their
-// level-1 values by a named block P5 deletes. So the shipped game currently plays EVERY level as
-// level 1. §G proves that positively rather than taking the comment's word for it.
+// UPDATE (CS024 P5, done and on disk, uncommitted, on top of the phase this file was written for): TRAP
+// 2 HAS BEEN SPRUNG. P5 is exactly the phase that wires the odometer — it deletes the nine-quantity
+// FROZEN_* block and junkSpeedMul() outright and repoints all 17 levers onto leverState(game.wave) at
+// their real consumers (nextWave, destroyDebris, Garbage's ctor, HunterSatellite's ctor, the scoop-
+// leftover-respill site, and the six UFO derivation helpers). leverState now has thirteen real call
+// sites, not zero, and the shipped game plays every level as the odometer says, not as level 1 forever.
+// P5 also retires the GARBAGE_COALESCE_DELAY constant and its garbageAttractDelay knob outright — the
+// Gate A Q1 delay value (5.0s) survives only as the coalescePause lever's floor, so Gate A Q1's "three
+// live sliders" is now two flat knobs (radius/force) plus one lever (the old delay). Every assertion
+// below that used to prove the freeze now proves the opposite: this file has been repointed in place to
+// match the CURRENT phase-5 reality (see git history / STATUS.md for the phase-4-only snapshot). What
+// has NOT changed is the odometer mechanism itself — LEVERS, leverState, buildLeverOrder, payloadSlots,
+// musicIntensity are byte-identical in shape to what phase 4 shipped; only their WIRING moved.
 //
 // Follows the standing rule (CLAUDE.md): stub window/document/rAF/navigator/localStorage, eval the
 // REAL <script> block, and drive the ACTUAL startGame/nextWave/update(1/60) paths. Nothing under test
@@ -50,9 +58,13 @@
 //  (F) THE GUARDS FIRE: unknown id, cycle, self-cycle, duplicate id. Plus a genuine multi-parent DAG
 //      (two parents into one child) evaluated end to end through the REAL sliced code.
 //  (G) payloadSlots, including the level-12 boundary and the real nextWave() -> game.cargoMax path;
-//      and TRAP 2's frozen difficulty, proven by spawning levels 1..12 and counting satellites.
-//  (H) GATE A Q1's three new defaults, live at their consumers; the registry after the 21 removals;
-//      and the TRAPs (GAME_VERSION, no call site rewired, docs untouched).
+//      and TRAP 2 INVERTED — the odometer's own junkCount prediction now matches what levels 1..12
+//      actually spawn, the FROZEN_* block and junkSpeedMul() are gone, and the six UFO helpers move
+//      with the level instead of sitting frozen at their level-1 answers.
+//  (H) GATE A Q1's surviving defaults (radius/force, still flat) and its retired one (delay, now the
+//      coalescePause lever's floor), live at their consumers; the registry after the 21 tier-knob
+//      removals AND the P5 lever-knob rebuild (32 entries, 8 headers); and the TRAPs (GAME_VERSION,
+//      leverState's 13 real call sites, docs untouched).
 //  (I) AudioSys.ctx === null smoke over a long real run.
 
 "use strict";
@@ -146,9 +158,9 @@ const RETURN = [
   "game", "startGame", "nextWave", "update", "draw", "settings",
   "LEVERS", "LEVER_ORDER", "buildLeverOrder", "leverState", "payloadSlots",
   "musicIntensity", "MUSIC_INTENSITY_WAVES", "MusicSys",
-  "junkSpeedMul", "ufoFlightSpeedPx", "ufoAppearInterval", "ufoZigInterval",
+  "ufoFlightSpeedPx", "ufoAppearInterval", "ufoZigInterval",
   "ufoFireMult", "ufoAccuracyRad", "ufoShotSpeedPx", "FREQ_JITTER",
-  "GARBAGE_COALESCE_DELAY", "GARBAGE_MAGNET_RANGE", "GARBAGE_MAGNET_PULL",
+  "GARBAGE_MAGNET_RANGE", "GARBAGE_MAGNET_PULL",
   "GARBAGE_MERGE_DIST", "coalesceGarbage", "Garbage", "DebrisSatellite",
   "CARGO_BASE", "CARGO_CAP_MAX", "DEBRIS_SPEEDS",
   "DiffLog", "DIFFLOG_FIELDS", "logDifficultySnapshot", "difficultyLogCSV",
@@ -211,9 +223,13 @@ if (!X) { console.error("ABORT: build failed"); process.exit(1); }
     assert(!new RegExp("\\b" + id + "\\b").test(execOnly), `A: tier knob ${id} is read nowhere in executable source`);
   }
   eq(tierIds, 21, "A: exactly 21 tier knobs were probed (7 levers x 3 tiers)");
-  // Their three section headers went with them — an empty header renders as a stray label.
-  for (const h of ["JUNK", "UFO MOVEMENT", "UFO WEAPONS"])
-    assert(!X.DEBUG_VARS.some(e => e.header === h), `A: the now-empty "${h}" section header is gone`);
+  // Their three section headers went empty and were pruned WITH the 21 tier knobs at P4 (an empty header
+  // renders as a stray label) — but CS024 P5 re-adds JUNK (and UFO, merging what used to be UFO MOVEMENT
+  // + UFO WEAPONS into one section) holding a knob PER LEVER, a different shape from the retired tier
+  // trios. UFO MOVEMENT/UFO WEAPONS specifically never come back — UFO absorbs both.
+  assert(X.DEBUG_VARS.some(e => e.header === "JUNK"), 'A: the JUNK header is BACK (P5) — this time holding one knob per lever, not three knobs per tier');
+  for (const h of ["UFO MOVEMENT", "UFO WEAPONS"])
+    assert(!X.DEBUG_VARS.some(e => e.header === h), `A: the retired "${h}" section header stays gone — P5's single "UFO" header supersedes both, it does not resurrect them`);
   // And the tombstones ARE present — the deletions are documented in place, not silent.
   for (const s of ["levelDef", "TIER_STEPS", "ramp()", "SAUCER_SMALL_CHANCE_FLOOR"])
     assert(commentsOnly.includes(s), `A: a comment tombstone still names ${s}`);
@@ -607,9 +623,9 @@ function evalSlice(literal) {
   eq(INV.leverState(50).d, 1, "F: ...and plateaus there");
 })();
 
-// ================= (G) payloadSlots, and TRAP 2's frozen difficulty =====================
+// ================= (G) payloadSlots, and TRAP 2 INVERTED (the difficulty is now wired) =====================
 (function sectionG() {
-  console.log("(G) the payloadSlots curve, the level-12 boundary, and the frozen shipped difficulty");
+  console.log("(G) the payloadSlots curve, the level-12 boundary, and the now-wired shipped difficulty");
   const want = { 1: 8, 2: 8, 3: 8, 4: 8, 5: 10, 6: 12, 7: 14, 8: 16, 9: 18, 10: 20, 11: 22, 12: 24, 13: 24, 14: 24, 63: 24, 64: 24, 200: 24, 5000: 24 };
   for (const k of Object.keys(want)) eq(X.payloadSlots(Number(k)), want[k], `G: payloadSlots(${k})`);
   eq(X.payloadSlots(11), 22, "G: level 11 is still 22 — one short of a Super Mega Delivery");
@@ -635,9 +651,11 @@ function evalSlice(literal) {
   for (let lv = 1; lv <= 14; lv++) { seen.push(Y.game.cargoMax); if (lv < 14) Y.nextWave(); }
   eq(seen.join(","), "8,8,8,8,10,12,14,16,18,20,22,24,24,24", "G: game.cargoMax follows the curve through 14 real nextWave() calls");
 
-  // TRAP 2, PROVEN POSITIVELY. leverState says the junk count climbs 3..12 over ten levels; the SHIPPED
-  // game does not, because nothing is wired yet. Spawn twelve real levels and count what actually
-  // arrives. This is the "difficulty is temporarily frozen at level 1" claim, measured.
+  // TRAP 2, INVERTED (CS024 P5 wires it). leverState says the junk count climbs 3..12 over ten levels,
+  // and the SHIPPED game now does exactly that: nextWave() reads leverState(game.wave).junkCount at its
+  // spawn site. Spawn twelve real levels and count what actually arrives, and require it to agree with
+  // the odometer's own prediction rather than assuming it — this is the "difficulty is now genuinely
+  // wired" claim, measured the same way the phase-4 "frozen" claim used to be.
   const Z = build();
   Z.startGame();
   const spawned = [], predicted = [];
@@ -647,68 +665,111 @@ function evalSlice(literal) {
     Z.game.debris.length = 0;
     Z.nextWave();
   }
-  eq(spawned.join(","), "3,3,3,3,3,3,3,3,3,3,3,3", "G: TRAP 2 — every level spawns 3 satellites, the FROZEN level-1 count");
-  eq(predicted.join(","), "3,4,5,6,7,8,9,10,11,12,3,4", "G: ...while the odometer, unwired, already says 3,4,5,...,12,3,4");
-  assert(spawned.join(",") !== predicted.join(","), "G: ...so the mechanism is provably built but provably NOT connected");
-  // The frozen block itself, and the six UFO helpers reading it.
-  eq(X.junkSpeedMul(), 58 / 70, "G: junkSpeedMul() returns the frozen level-1 ('low' tier) multiplier");
-  eq(X.ufoFlightSpeedPx(true), 120, "G: ufoFlightSpeedPx(small) is the frozen 120 px/s");
-  eq(X.ufoFlightSpeedPx(false), 120 * (100 / 150), "G: ...and big still derives at the shipped 100/150 ratio (P5 splits it)");
-  eq(X.ufoFireMult(), 1.8, "G: ufoFireMult() is the frozen 1.8x");
-  eq(X.ufoShotSpeedPx(), 300, "G: ufoShotSpeedPx() is the frozen 300 px/s");
-  eq(X.ufoAccuracyRad(), 30 * Math.PI / 180, "G: ufoAccuracyRad() is the frozen 30 deg, in radians");
-  // The frozen helpers ignore the level entirely — that IS the freeze.
+  eq(spawned.join(","), "3,4,5,6,7,8,9,10,11,12,3,4", "G: TRAP 2 INVERTED — every level spawns the odometer's junkCount, not a frozen 3");
+  eq(predicted.join(","), spawned.join(","), "G: ...and the odometer's own prediction agrees with the shipped spawn count EXACTLY, level by level");
+  // The comparison has teeth: a still-frozen build (all 3s) would fail the line above, not vacuously pass it.
+  assert(new Set(spawned).size > 1, "G: ...the spawned counts actually vary across the run (not stuck at a frozen 3)");
+
+  // THE FREEZE BLOCK ITSELF IS GONE. P5's own delete-me banner (P4's promise, now kept) and every
+  // FROZEN_* constant / junkSpeedMul() are absent from the build AND from executable source — a
+  // tombstone COMMENT naming one is fine (and expected, since P5 documents the deletion in place); a
+  // live binding is not.
+  assert(/CS024 P4's TEMPORARY FREEZE BLOCK IS GONE — P5 DELETED IT WHOLE/.test(commentsOnly),
+    "G: the retired block's own comment confirms P5 removed it, exactly as P4's banner promised");
+  eq(X.probe("junkSpeedMul"), "__ReferenceError__", "G: junkSpeedMul() is gone from the build — its shared-ratio derivation has no replacement, each size is now an independent lever");
+  assert(!/\bjunkSpeedMul\s*\(/.test(execOnly), "G: junkSpeedMul( is called nowhere in executable source");
+  for (const c of ["FROZEN_JUNK_COUNT", "FROZEN_JUNK_SPEED", "FROZEN_UFO_FLIGHT_SPEED", "FROZEN_UFO_APPEAR_FREQ",
+    "FROZEN_UFO_DIR_CHANGE", "FROZEN_UFO_FIRE_MULT", "FROZEN_UFO_ACCURACY_DEG", "FROZEN_UFO_SHOT_SPEED",
+    "FROZEN_SMALL_UFO_CHANCE"]) {
+    eq(X.probe(c), "__ReferenceError__", `G: ${c} is gone from the build`);
+    assert(!new RegExp("\\b" + c + "\\b").test(execOnly), `G: ${c} appears nowhere in executable source (a tombstone comment naming it is fine; a live binding is not)`);
+  }
+
+  // THE SIX UFO HELPERS ARE LIVE, NOT FROZEN. Each now reads leverState(game.wave) and, per §4.6, the
+  // four that used to derive "big" from "small" (or vice versa) by a fixed ratio now take two fully
+  // independent per-size levers. At level 1 every helper answers exactly its lever's floor.
+  const flt = id => X.LEVERS.find(l => l.id === id).floor;
+  eq(X.ufoFlightSpeedPx(true), flt("ufoFlightSpeedSmall"), "G: ufoFlightSpeedPx(small) at level 1 is ufoFlightSpeedSmall's floor");
+  eq(X.ufoFlightSpeedPx(false), flt("ufoFlightSpeedBig"), "G: ufoFlightSpeedPx(big) at level 1 is ufoFlightSpeedBig's floor (independent lever — the old shared 100/150 ratio is gone)");
+  eq(X.ufoFireMult(true), flt("ufoFireFreqSmall"), "G: ufoFireMult(small) at level 1 is ufoFireFreqSmall's floor");
+  eq(X.ufoFireMult(false), flt("ufoFireFreqBig"), "G: ufoFireMult(big) at level 1 is ufoFireFreqBig's floor");
+  eq(X.ufoShotSpeedPx(true), flt("ufoShotSpeedSmall"), "G: ufoShotSpeedPx(small) at level 1 is ufoShotSpeedSmall's floor");
+  eq(X.ufoShotSpeedPx(false), flt("ufoShotSpeedBig"), "G: ufoShotSpeedPx(big) at level 1 is ufoShotSpeedBig's floor");
+  eq(X.ufoAccuracyRad(), flt("ufoAccuracySmall") * Math.PI / 180, "G: ufoAccuracyRad() at level 1 is ufoAccuracySmall's floor, in radians");
+
+  // ...and, unlike the retired freeze, every one of them MOVES when game.wave does — the opposite of
+  // "the frozen helpers ignore the level entirely."
   X.game.wave = 61;
-  eq(X.junkSpeedMul(), 58 / 70, "G: junkSpeedMul() is the same at level 61 (nothing reads the level yet)");
-  eq(X.ufoShotSpeedPx(), 300, "G: ufoShotSpeedPx() is the same at level 61");
+  assert(X.ufoFlightSpeedPx(true) !== flt("ufoFlightSpeedSmall"), "G: ufoFlightSpeedPx(small) has moved off its level-1 floor by level 61");
+  assert(X.ufoFlightSpeedPx(false) !== flt("ufoFlightSpeedBig"), "G: ufoFlightSpeedPx(big) has moved off its level-1 floor by level 61");
+  assert(X.ufoFireMult(true) !== flt("ufoFireFreqSmall"), "G: ufoFireMult(small) has moved off its level-1 floor by level 61");
+  assert(X.ufoShotSpeedPx(false) !== flt("ufoShotSpeedBig"), "G: ufoShotSpeedPx(big) has moved off its level-1 floor by level 61");
+  assert(X.ufoAccuracyRad() !== flt("ufoAccuracySmall") * Math.PI / 180, "G: ufoAccuracyRad() has moved off its level-1 floor by level 61");
   X.game.wave = 0;
-  // The two jittered helpers still jitter around the frozen centres, unchanged in shape.
-  for (const [fn, c] of [[X.ufoAppearInterval, 25], [X.ufoZigInterval, 2.0]]) {
+
+  // The two jittered helpers still jitter, now around the LIVE per-size lever centres rather than one
+  // frozen constant. ufoAppearInterval stays sizeless (one appearance timer for both saucer sizes,
+  // resolved by spec); ufoZigInterval is genuinely split by size now (ufoDirChangeBig/Small are
+  // independent levers), so both variants are exercised instead of one arbitrarily shared centre.
+  for (const [label, fn, c] of [
+    ["ufoAppearInterval", () => X.ufoAppearInterval(), flt("ufoAppearFreq")],
+    ["ufoZigInterval(big)", () => X.ufoZigInterval(false), flt("ufoDirChangeBig")],
+    ["ufoZigInterval(small)", () => X.ufoZigInterval(true), flt("ufoDirChangeSmall")],
+  ]) {
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < 4000; i++) { const v = fn(); if (v < lo) lo = v; if (v > hi) hi = v; }
     assert(lo >= c * (1 - X.FREQ_JITTER) - 1e-9 && hi <= c * (1 + X.FREQ_JITTER) + 1e-9,
-      `G: the jittered interval around ${c} stays inside +/-${X.FREQ_JITTER * 100}% (got ${lo.toFixed(3)}..${hi.toFixed(3)})`);
+      `G: the jittered ${label} around ${c} stays inside +/-${X.FREQ_JITTER * 100}% (got ${lo.toFixed(3)}..${hi.toFixed(3)})`);
   }
-  // The frozen block is named as temporary, so P5 can find and delete it as one unit.
-  assert(/CS024 P4 \(TRAP 2\): THE TEMPORARY FREEZE — P5 DELETES THIS ENTIRE BLOCK/.test(commentsOnly),
-    "G: the frozen block carries its own delete-me banner for P5");
-  for (const c of ["FROZEN_JUNK_COUNT", "FROZEN_JUNK_SPEED", "FROZEN_UFO_FLIGHT_SPEED", "FROZEN_UFO_APPEAR_FREQ",
-    "FROZEN_UFO_DIR_CHANGE", "FROZEN_UFO_FIRE_MULT", "FROZEN_UFO_ACCURACY_DEG", "FROZEN_UFO_SHOT_SPEED",
-    "FROZEN_SMALL_UFO_CHANCE"])
-    assert(new RegExp("const " + c + "\\s").test(execOnly), `G: ${c} is declared`);
 })();
 
 // ================= (H) Gate A Q1's defaults, the registry, and the TRAPs =====================
 (function sectionH() {
-  console.log("(H) Gate A Q1's three retuned defaults, the registry after 21 removals, and the TRAPs");
-  // GATE A Q1. Paul played the gate, found hunters forming too fast, and reported the trio he landed
-  // on. These are the shipped constants now — and the registry defaults derive from them, so the panel
-  // cannot disagree with the code.
-  eq(X.GARBAGE_COALESCE_DELAY, 5.0, "H: GARBAGE_COALESCE_DELAY is 5.0 s (Gate A Q1: was 3.0)");
-  eq(X.GARBAGE_MAGNET_RANGE, 160, "H: GARBAGE_MAGNET_RANGE is 160 px (Gate A Q1: was 180)");
-  eq(X.GARBAGE_MAGNET_PULL, 30, "H: GARBAGE_MAGNET_PULL is 30 px/s² (Gate A Q1: was 40)");
+  console.log("(H) Gate A Q1's surviving/retired defaults, the P5-rebuilt registry, and the TRAPs");
+  // GATE A Q1. Paul played the gate, found hunters forming too fast, and reported a trio of retuned
+  // sliders. Two of the three SURVIVE P5 unchanged (radius/force stay flat, non-lever constants, spec
+  // §2.5); the third does NOT — GARBAGE_COALESCE_DELAY and its garbageAttractDelay knob are RETIRED
+  // outright, folded into the HUNTER chain's own driver lever, coalescePause, whose floor (5.0s) IS
+  // that same gate-validated number, now expressed as a lever endpoint instead of a standalone knob.
+  eq(X.GARBAGE_MAGNET_RANGE, 160, "H: GARBAGE_MAGNET_RANGE is 160 px (Gate A Q1: was 180) — still a flat constant, not a lever");
+  eq(X.GARBAGE_MAGNET_PULL, 30, "H: GARBAGE_MAGNET_PULL is 30 px/s² (Gate A Q1: was 40) — still a flat constant, not a lever");
+  eq(X.probe("GARBAGE_COALESCE_DELAY"), "__ReferenceError__", "H: GARBAGE_COALESCE_DELAY is GONE — retired in favor of the coalescePause lever's floor");
+  assert(!/\bGARBAGE_COALESCE_DELAY\b/.test(execOnly), "H: GARBAGE_COALESCE_DELAY appears nowhere in executable source (a tombstone comment naming it is fine)");
   const knob = id => X.DEBUG_VARS.find(e => e.id === id);
-  eq(knob("garbageAttractDelay").def, 5000, "H: the panel's delay default is 5000 ms, derived from the constant");
+  assert(knob("garbageAttractDelay") === undefined, "H: the garbageAttractDelay knob is GONE from the registry — coalescePause (under HUNTER) replaces it");
+  assert(!("garbageAttractDelay" in X.DEBUG), "H: garbageAttractDelay is GONE from the live DEBUG map too");
   eq(knob("garbageAttractRadius").def, 160, "H: the panel's radius default is 160 px, derived from the constant");
   eq(knob("garbageAttractForce").def, 30, "H: the panel's force default is 30 px/s², derived from the constant");
-  eq(X.DEBUG.garbageAttractDelay, 5.0, "H: the LIVE delay knob reads 5.0 s (toNative applied)");
   eq(X.DEBUG.garbageAttractRadius, 160, "H: the LIVE radius knob reads 160 px");
   eq(X.DEBUG.garbageAttractForce, 30, "H: the LIVE force knob reads 30 px/s²");
-  // All three land on their own slider's grid, so the panel can reproduce them exactly.
-  assert(5000 % knob("garbageAttractDelay").step === 0, "H: 5000 ms sits on the delay slider's 250 ms grid");
   assert(160 % knob("garbageAttractRadius").step === 0, "H: 160 px sits on the radius slider's 10 px grid");
   assert(30 % knob("garbageAttractForce").step === 0, "H: 30 px/s² sits on the force slider's 5 px/s² grid");
-  // The new delay is EXACTLY the coalescePause lever's floor, so P5's wiring keeps level 1 where the
-  // gate left it. This is the one number where the two systems have to agree.
-  eq(X.LEVERS.find(l => l.id === "coalescePause").floor, X.GARBAGE_COALESCE_DELAY,
-    "H: coalescePause's floor === the gate-validated GARBAGE_COALESCE_DELAY");
-  // The delay is LIVE at its consumer: a fresh piece captures it at construction.
+  // coalescePause's registry entry is a LEVER knob, built by leverKnob() straight off the LEVERS table
+  // (def: null — "no override yet, follow the odometer" — not a duplicated literal default).
+  const cpKnob = knob("coalescePause");
+  eq(cpKnob.def, null, "H: coalescePause's registry entry is def: null — no override yet, the odometer drives it");
+  eq(cpKnob.min, 1.5, "H: coalescePause's slider min is its ceil, 1.5s (min/max derive from Math.min/max(floor,ceil), never LEVERS' own order)");
+  eq(cpKnob.max, 5.0, "H: coalescePause's slider max is its floor, 5.0s");
+  eq(cpKnob.step, 0.5, "H: coalescePause's slider step is (5.0-1.5)/(8-1) = 0.5s, one odometer step");
+  eq(X.DEBUG.coalescePause, null, "H: the LIVE coalescePause knob is null by default (auto) — unlike the retired flat garbageAttractDelay, which was always a concrete number");
+  eq(X.LEVERS.find(l => l.id === "coalescePause").floor, 5.0,
+    "H: coalescePause's floor is 5.0s — the same number Gate A Q1 validated, now a lever endpoint instead of the retired GARBAGE_COALESCE_DELAY constant");
+  // The delay is LIVE at its consumer: a fresh piece captures leverState(game.wave).coalescePause at
+  // construction, and at level 1 that is still exactly the Gate A Q1 value.
   const Y = build();
   Y.startGame();
   const g = new Y.Garbage(100, 100, 0, 0);
-  eq(g.coalesceDelay, 5.0, "H: a fresh Garbage captures the 5.0 s inert window at construction");
-  // ...and the range/force are read live at the coalescence site, not captured. Two pieces 170 px
-  // apart (inside the old 180 range, outside the new 160) must NOT attract.
+  eq(g.coalesceDelay, 5.0, "H: a fresh Garbage captures the 5.0 s inert window at construction (level 1 === coalescePause's floor)");
+  // ...and, unlike the retired flat constant, it MOVES with the level: at level 8 (coalescePause's own
+  // top step, before it wraps) a fresh piece is armed with the much shorter 1.5s window instead.
+  const Y2 = build();
+  Y2.startGame();
+  Y2.game.wave = 8;
+  const gLate = new Y2.Garbage(100, 100, 0, 0);
+  eq(gLate.coalesceDelay, 1.5, "H: ...but a fresh Garbage at level 8 captures 1.5 s — coalescePause's ceil, proving the delay is wired, not frozen");
+  // ...and the range/force are read live at the coalescence site, not captured — unchanged behavior,
+  // since GARBAGE_MAGNET_RANGE/_PULL are still flat constants. Two pieces 170 px apart (inside the old
+  // 180 range, outside the new 160) must NOT attract.
   const A = new Y.Garbage(600, 600, 0, 0), B = new Y.Garbage(770, 600, 0, 0);
   A.coalesceDelay = 0; B.coalesceDelay = 0; A.vx = A.vy = B.vx = B.vy = 0;
   Y.game.garbage.length = 0; Y.game.garbage.push(A, B);
@@ -721,12 +782,15 @@ function evalSlice(literal) {
   assert(C.vx > 0 && D.vx < 0, "H: at 140 px apart they DO attract, toward each other");
   eq(Math.round(C.vx * 1e6) / 1e6, Math.round(30 / 60 * 1e6) / 1e6, "H: ...at exactly the new 30 px/s² force for one frame");
 
-  // THE REGISTRY after the 21 removals. 36 value entries before this phase, 21 gone, 15 left.
+  // THE REGISTRY after P5's full rebuild: 15 P4-era value entries minus garbageAttractDelay (retired)
+  // plus 18 new lever knobs (one per LEVERS entry: 4 JUNK + 3 HUNTER-chain levers + 10 UFO-chain levers
+  // + smallUfoChance, a flat non-lever knob living in the same reintroduced UFO section) = 32.
   const values = X.DEBUG_VARS.filter(e => e.id);
   const headers = X.DEBUG_VARS.filter(e => e.header).map(e => e.header);
-  eq(values.length, 15, "H: 15 value entries remain (36 - 21 tier knobs)");
-  eq(X.DEBUG_ENTRIES.length, 15, "H: DEBUG_ENTRIES agrees — headers are not values");
-  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,HUNTER,GLOBAL", "H: six section headers, none of them empty");
+  eq(values.length, 32, "H: 32 value entries remain — the 21-tier-knob prune plus P5's lever-knob rebuild");
+  eq(X.DEBUG_ENTRIES.length, 32, "H: DEBUG_ENTRIES agrees — headers are not values");
+  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,GLOBAL",
+    "H: eight section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier");
   for (const h of headers) {
     const i = X.DEBUG_VARS.findIndex(e => e.header === h);
     assert(X.DEBUG_VARS[i + 1] && X.DEBUG_VARS[i + 1].id, `H: the "${h}" header has at least one value entry under it`);
@@ -734,19 +798,55 @@ function evalSlice(literal) {
   for (const id of ["autoShieldRegenPause", "scoopHitsPerLevel", "garbageAttractRadius", "garbageAttractForce",
     "chainGuardIntercepts", "chainGuardMinTow", "chainGuardCooldown", "dockComboGrace",
     "sweepCoalescePause", "debrisBounceRestitution", "garbageSoftMax", "garbageHardMax", "lastStandSpeed"])
-    assert(values.some(e => e.id === id), `H: ${id} survives the prune (§5's Kept list)`);
+    assert(values.some(e => e.id === id), `H: ${id} survives the P5 rebuild unchanged (none of these are lever knobs)`);
+  // The new lever knobs P5 actually adds — one spot-check per chain, by section.
+  for (const id of ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"])
+    assert(values.some(e => e.id === id), `H: ${id} is a new JUNK-chain lever knob`);
+  for (const id of ["coalescePause", "hunterSpeedMedium", "hunterSpeedSmall"])
+    assert(values.some(e => e.id === id), `H: ${id} is a new HUNTER-chain lever knob`);
+  for (const id of ["ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoDirChangeBig",
+    "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall", "ufoShotSpeedBig", "ufoShotSpeedSmall", "ufoAccuracySmall"])
+    assert(values.some(e => e.id === id), `H: ${id} is a new UFO-chain lever knob`);
+  assert(values.some(e => e.id === "smallUfoChance"), "H: smallUfoChance is back too — a flat non-lever knob (which size spawns is not a lever)");
+  // Every lever knob shares the leverKnob() shape: def: null, and min/max derived from Math.min/max
+  // (floor, ceil) rather than the LEVERS table's own (possibly inverted) order.
+  for (const lev of X.LEVERS) {
+    const k = knob(lev.id);
+    assert(k, `H: lever ${lev.id} has a registry entry`);
+    eq(k.def, null, `H: lever knob ${lev.id} has def: null (no override yet, not a duplicated literal)`);
+    eq(k.min, Math.min(lev.floor, lev.ceil), `H: lever knob ${lev.id}'s min is Math.min(floor, ceil)`);
+    eq(k.max, Math.max(lev.floor, lev.ceil), `H: lever knob ${lev.id}'s max is Math.max(floor, ceil)`);
+  }
   // Nothing in the panel validates a sibling — the standing rule the inverted levers depend on.
   assert(!values.some(e => "validate" in e || "against" in e), "H: no registry entry validates against a sibling");
 
   // TRAP 1 — the version stays put. P7 owns the bump, straight to 1.0.0.24.
   eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is still 1.0.0.22");
-  // TRAP 2 — NO CALL SITE IS REWIRED. The sharpest form of the claim: leverState has exactly one
-  // occurrence in executable source, its own declaration. Zero callers.
+  // TRAP 2 IS NOW POSITIVELY WIRED (P5). leverState has MANY callers: its own declaration plus 13 real
+  // call sites, one per consumer named in spec §4.5/§4.6 — logDifficultySnapshot, menuDebug's live-
+  // override resolution, the six UFO derivation helpers, HunterSatellite's ctor, Garbage's ctor,
+  // nextWave's JUNK spawn block, destroyDebris's split-child speed, and the scoop-leftover-respill site.
   const leverCalls = (execOnly.match(/\bleverState\s*\(/g) || []).length;
-  eq(leverCalls, 1, "H: TRAP 2 — leverState appears ONCE in executable source (its declaration; zero callers)");
-  assert(/function leverState\(wave\) \{/.test(execOnly), "H: ...and that one occurrence is the declaration");
+  eq(leverCalls, 14, "H: TRAP 2 INVERTED — leverState appears 14 times in executable source: 1 declaration + 13 real call sites");
+  assert(/function leverState\(wave\) \{/.test(execOnly), "H: ...one of which is the declaration");
+  const CALL_SITES = [
+    [/function logDifficultySnapshot\(junkCount, junkSpeedLarge, prevLevelSecs\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "logDifficultySnapshot"],
+    [/const base = debugShown\[e\.id\] == null \? leverState\(game\.wave\)\[e\.id\] : debugShown\[e\.id\];/, "menuDebug's live-override resolution"],
+    [/function ufoFlightSpeedPx\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoFlightSpeedPx"],
+    [/function ufoAppearInterval\(\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoAppearInterval"],
+    [/function ufoZigInterval\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoZigInterval"],
+    [/function ufoFireMult\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoFireMult"],
+    [/function ufoAccuracyRad\(\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoAccuracyRad"],
+    [/function ufoShotSpeedPx\(small\) \{\s*\n\s*const lv = leverState\(game\.wave\);/, "ufoShotSpeedPx"],
+    [/const lv = leverState\(game\.wave\);\s*\n\s*this\.speed = size === 2 \? \(DEBUG\.hunterSpeedMedium/, "HunterSatellite's ctor"],
+    [/this\.coalesceDelay = DEBUG\.coalescePause \?\? leverState\(game\.wave\)\.coalescePause;/, "Garbage's ctor"],
+    [/const lv = leverState\(game\.wave\);\s*\n\s*const count = DEBUG\.junkCount \?\? lv\.junkCount;/, "nextWave's JUNK spawn block"],
+    [/const lv = leverState\(game\.wave\);\s*\n\s*const childId = a\.size - 1 === 2 \? "junkSpeedMedium" : "junkSpeedSmall";/, "destroyDebris's split-child speed"],
+    [/g\.coalesceDelay = DEBUG\.coalescePause \?\? leverState\(game\.wave\)\.coalescePause;/, "the scoop-leftover-respill site"],
+  ];
+  for (const [re, label] of CALL_SITES) assert(re.test(execOnly), `H: TRAP 2 INVERTED — ${label} is a real leverState(game.wave) call site`);
   const payloadCalls = (execOnly.match(/\bpayloadSlots\s*\(/g) || []).length;
-  eq(payloadCalls, 2, "H: payloadSlots has exactly one call site plus its declaration");
+  eq(payloadCalls, 2, "H: payloadSlots has exactly one call site plus its declaration — P5 did not touch it");
   assert(/game\.cargoMax = payloadSlots\(game\.wave\);/.test(execOnly), "H: ...and it is nextWave()'s cargoMax assignment");
   // TRAP 3 — docs untouched. STATUS.md is this session's to write; nothing else may move.
   try {
@@ -775,13 +875,29 @@ function evalSlice(literal) {
   assert(Q.DiffLog.rows.length >= 1, "I: the difficulty log recorded at least one row");
   const row = Q.DiffLog.rows[0];
   eq(row.level, 1, "I: ...whose level column reads game.wave directly now that levelDef is gone");
-  eq(row.phase, null, "I: ...phase logs null — the 21-level three-phase structure is DELETED, not renamed");
-  eq(row.rel, null, "I: ...and so does rel");
-  eq(row.junkSpeed, 58, "I: ...and the seven former tier-NAME columns now log the frozen NUMBER in play");
+  // phase/rel are DROPPED from DIFFLOG_FIELDS entirely (P5), not merely nulled — they named positions
+  // inside CS018's 21-level three-phase structure, which the odometer has no equivalent of, so a column
+  // that always logged an empty cell was retired rather than kept as a permanent null. Prove the columns
+  // are genuinely ABSENT from the row object, not present-but-null.
+  assert(!("phase" in row), "I: ...the phase column is GONE from the row entirely (not merely null) — DIFFLOG_FIELDS dropped it, P5");
+  assert(!("rel" in row), "I: ...and so is rel");
+  eq(row.junkSpeedLarge, 60, "I: ...and the single former junkSpeed column is split by size — junkSpeedLarge logs the live odometer number at level 1");
+  eq(row.junkSpeedMedium, 95, "I: ...junkSpeedMedium too");
+  eq(row.junkSpeedSmall, 140, "I: ...and junkSpeedSmall");
+  assert(!("junkSpeed" in row), "I: the old single junkSpeed column is GONE — replaced by junkSpeedLarge/Medium/Small");
   noThrow(() => { Q.difficultyLogCSV(); }, "I: the CSV export still builds with the repointed columns");
   const csv = Q.difficultyLogCSV();
-  eq(csv.split("\n")[0], Q.DIFFLOG_FIELDS.join(","), "I: DIFFLOG_FIELDS is unchanged — P5 owns the column LIST");
-  assert(/,,/.test(csv.split("\n")[1]), "I: a null column renders as an EMPTY cell, not the string 'null'");
+  // DIFFLOG_FIELDS itself CHANGED this phase (P5 repoints the column list, dropping phase/rel and
+  // splitting the tier-name columns by lever id) — what's invariant is that the CSV header always
+  // mirrors DIFFLOG_FIELDS exactly, whatever that list currently is.
+  eq(csv.split("\n")[0], Q.DIFFLOG_FIELDS.join(","), "I: the CSV header mirrors DIFFLOG_FIELDS exactly, whatever P5 repointed the list to");
+  eq(Q.DIFFLOG_FIELDS.length, 29, "I: DIFFLOG_FIELDS has 29 columns now (phase/rel dropped, junkSpeed/7 tier names split into 17 lever ids + non-lever context columns)");
+  assert(!("phase" in row) && !("rel" in row), "I: ...consistent with the row object itself");
+  // No column renders an empty cell any more — unlike the retired phase/rel-as-null era, EVERY remaining
+  // field is a real number (every lever column resolves through `DEBUG.<id> ?? lv.<id>`, which is never
+  // null since lv.<id> always is).
+  assert(!/,,/.test(csv.split("\n")[1]), "I: no column renders an EMPTY cell any more — phase/rel are DROPPED, not merely nulled, so nothing in the row is ever null");
+  assert(!/\bnull\b/.test(csv.split("\n")[1]), "I: ...and the literal string 'null' never appears in a data row either");
 })();
 
 console.log(`\n${passed} passed, ${failed} failed`);

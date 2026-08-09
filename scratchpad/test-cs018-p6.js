@@ -11,23 +11,31 @@
 //
 // Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) DEBUG_VARS registry: UFO MOVEMENT header + 9 entries (flight speed / appearance freq /
-//      direction-change freq, low/normal/high each) and a GLOBAL header + 2 entries (freqJitter,
-//      sweepCoalescePause), all with the specified unit/def/min/max/step; saucerGapPressure entry is
-//      gone; no low<=normal<=high validator exists anywhere in source.
-//  (C) UFO flight speed: real `new Saucer(small)` construction at low/normal/high-tier levels
-//      reproduces the tiered px/s exactly for small, and the shipped 100/150 ratio for big — no jitter.
-//  (D) UFO direction-change frequency: both zigTimer sites (ctor + update()) draw from the SAME
-//      jitteredInterval(tier centre); rand(0.8, 1.8) is gone from source; bounds hold at 25% jitter.
-//  (E) UFO appearance frequency: the real spawn-block site and startGame()'s initial timer both draw
-//      from ufoAppearInterval(); bounds hold; the retired ramp()/gapPressure derivation is gone.
+//  (B) DEBUG_VARS registry: REPOINTED (CS024 P5) — the UFO MOVEMENT tier header/9-entries shape (already
+//      dead as of P4) never came back; instead there is now a single UFO header holding 10 lever knobs
+//      (def: null, the "no override" sentinel) + smallUfoChance, and a GLOBAL header now holding 2
+//      entries (sweepCoalescePause, debrisBounceRestitution — freqJitter stays gone, CS024 P2), all with
+//      the specified unit/def/min/max/step; saucerGapPressure entry is gone; no low<=normal<=high
+//      validator exists anywhere in source (several LEVERS entries ship floor > ceil on purpose).
+//  (C) UFO flight speed: REPOINTED (CS024 P5 §4.6) — the shipped 100/150 big/small ratio derivation is
+//      GONE; ufoFlightSpeedBig and ufoFlightSpeedSmall are two fully independent levers. Real
+//      `new Saucer(small)` construction at several levels (including the level-9 first wrap) reproduces
+//      leverState(wave).ufoFlightSpeedBig/Small exactly — no jitter, no ratio between the two sizes.
+//  (D) UFO direction-change frequency: REPOINTED — ufoZigInterval() grew a `small` parameter and is now
+//      SPLIT into ufoDirChangeBig/Small; both zigTimer sites (ctor + update()) pass their own size and
+//      draw from the SAME jitteredInterval(lever centre); rand(0.8, 1.8) is gone from source; bounds
+//      hold at 25% jitter for both sizes across several levels.
+//  (E) UFO appearance frequency: unchanged in shape (one shared timer, sizeless) but REPOINTED onto the
+//      level-dependent, cyclical (INVERTED, sawtoothing every 8 levels) ufoAppearFreq lever instead of a
+//      frozen constant; the real spawn-block site and startGame()'s initial timer both draw from
+//      ufoAppearInterval(); bounds hold; the retired ramp()/gapPressure derivation is gone.
 //  (F) jitteredInterval(): exactly one implementation, percentage-based, reused verbatim by both
 //      consumers (no second jitter implementation).
 //  (G) Retirement: SAUCER_GAP_FLOOR_MIN/MAX and SAUCER_GAP_CEIL_MIN/MAX have zero non-definition
 //      readers; DEBUG.saucerGapPressure/DEBUG_VARS entry for it are gone.
-//  (H) Persistence: the 11 new fields round-trip through afd_settings_v1.debug across a reload.
+//  (H) Persistence: the surviving fields round-trip through afd_settings_v1.debug across a reload.
 //  (I) Regression: cargoMax/junk/hunters untouched; GAME_VERSION unchanged; DEBUG_VARS/DEBUG_ROWS
-//      counts reported.
+//      counts reported (32 value entries as of CS024 P5's registry rebuild).
 
 "use strict";
 const fs = require("fs");
@@ -67,14 +75,13 @@ function deepEq(a, b) {
 const canvasCtxNoop = new Proxy({}, { get: () => () => {} });
 const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => canvasCtxNoop };
 const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
-// CS024 P4: levelDef/stepAt DELETED with the level table, and all nine UFO MOVEMENT tier knobs (with the
-// twelve others) deleted from the registry. The three quantities are FROZEN at the retired table's
-// level-1 answers for one phase (TRAP 2) — P5 puts them on the ufoFlightSpeedBig/Small, ufoAppearFreq and
-// ufoDirChangeBig/Small levers. Every INTEGRATION claim in this file survives untouched; what inverts is
-// the per-tier bookkeeping, because there are no tiers.
+// CS024 P4 built the odometer but left nine quantities FROZEN at the retired level table's level-1
+// answers for one phase (TRAP 2), including FROZEN_UFO_FLIGHT_SPEED/_APPEAR_FREQ/_DIR_CHANGE and
+// FROZEN_JUNK_COUNT. CS024 P5 (uncommitted, on disk now) DELETED that whole freeze block outright and
+// wired all ten UFO-chain levers to their consumers via leverState(game.wave) at the point of use. Every
+// INTEGRATION claim in this file survives untouched; what inverts is the per-tier/frozen bookkeeping,
+// because both the tiers and the freeze are gone — everything is read live off leverState() now.
 const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "Saucer",
-                "FROZEN_UFO_FLIGHT_SPEED", "FROZEN_UFO_APPEAR_FREQ", "FROZEN_UFO_DIR_CHANGE",
-                "FROZEN_JUNK_COUNT",
                 "ufoFlightSpeedPx", "ufoAppearInterval", "ufoZigInterval", "jitteredInterval",
                 "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "applyDebug",
                 "saveSettings", "loadSettings", "STORAGE_KEY",
@@ -108,7 +115,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 
 // ================= (B) DEBUG_VARS registry =====================
 (function sectionB() {
-  console.log("(B) DEBUG_VARS: UFO MOVEMENT (9) entries, GLOBAL down to 1 (freqJitter removed, CS024 P2), saucerGapPressure gone");
+  console.log("(B) DEBUG_VARS: UFO section (10 lever knobs + smallUfoChance), GLOBAL now 2 (freqJitter still removed, debrisBounceRestitution joined CS024 P5), saucerGapPressure gone");
 
   // REPOINTED BY CS024 P4, INVERTED: the UFO MOVEMENT header and its nine tier entries are deleted with
   // the other twelve tier knobs. The grouping claim (a header immediately followed by its own entries and
@@ -127,9 +134,13 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // REPOINTED BY CS024 P2 (spec §1.8/§5): freqJitter is removed from the registry — jitteredInterval()
   // now reads a frozen FREQ_JITTER constant (0.25) instead of a live knob. GLOBAL is down to its one
   // surviving entry.
-  const globalIds = X.DEBUG_VARS.slice(gIdx + 1, gIdx + 2).map(v => v.id);
-  assert(deepEq(globalIds, ["sweepCoalescePause"]),
-    `B: GLOBAL header immediately followed by sweepCoalescePause only, freqJitter removed (got ${JSON.stringify(globalIds)})`);
+  // REPOINTED BY CS024 P5: GLOBAL is the last header in the registry, and now holds sweepCoalescePause
+  // PLUS debrisBounceRestitution — CS024 P5's rebuild gave the latter its proper GLOBAL-trailing home
+  // (it previously trailed the retired ORBIT block as a layout artefact, not a real scoping claim). The
+  // claim is the full membership, not just the first entry, so a silent addition still fails.
+  const globalIds = X.DEBUG_VARS.slice(gIdx + 1).map(v => v.id);
+  assert(deepEq(globalIds, ["sweepCoalescePause", "debrisBounceRestitution"]),
+    `B: GLOBAL header followed by sweepCoalescePause then debrisBounceRestitution, freqJitter still removed (got ${JSON.stringify(globalIds)})`);
   assert(!X.DEBUG_VARS.some(v => v.id === "freqJitter"), "B: freqJitter entry is gone from DEBUG_VARS (CS024 P2)");
   assert(!("freqJitter" in X.DEBUG), "B: DEBUG.freqJitter is gone (CS024 P2)");
 
@@ -144,10 +155,18 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
     assert(!(id in X.DEBUG), `B: ...and DEBUG.${id} with it`);
   }
   assert(!X.DEBUG_VARS.some(v => v.header === "UFO MOVEMENT"), "B: the now-empty UFO MOVEMENT header is gone too");
-  eq(X.FROZEN_UFO_FLIGHT_SPEED, 120, "B: the retired ufoFlightSpeedLow's 120 px/s survives as FROZEN_UFO_FLIGHT_SPEED");
-  eq(X.FROZEN_UFO_APPEAR_FREQ, 25, "B: ...ufoAppearFreqLow's 25 s as FROZEN_UFO_APPEAR_FREQ");
-  eq(X.FROZEN_UFO_DIR_CHANGE, 2.0, "B: ...and ufoDirChangeFreqLow's 2.0 s as FROZEN_UFO_DIR_CHANGE");
-  eq(X.leverState(1).ufoAppearFreq, 25, "B: ...and 25 s is the ufoAppearFreq lever's floor, so P5's wiring keeps level 1 where it is");
+  // REPOINTED BY CS024 P5: FROZEN_UFO_FLIGHT_SPEED/_APPEAR_FREQ/_DIR_CHANGE are deleted with the whole
+  // freeze block — P5 wires the UFO chain onto its ten real levers instead. What each frozen constant
+  // held is not lost: it is the matching lever's wave-1 FLOOR (checked directly against leverState(1)
+  // below), which is the hand-off this file's own preamble comment describes.
+  assert(X.probe("typeof FROZEN_UFO_FLIGHT_SPEED") === "undefined", "B: FROZEN_UFO_FLIGHT_SPEED is gone (CS024 P5)");
+  assert(X.probe("typeof FROZEN_UFO_APPEAR_FREQ") === "undefined", "B: FROZEN_UFO_APPEAR_FREQ is gone (CS024 P5)");
+  assert(X.probe("typeof FROZEN_UFO_DIR_CHANGE") === "undefined", "B: FROZEN_UFO_DIR_CHANGE is gone (CS024 P5)");
+  eq(X.leverState(1).ufoFlightSpeedBig, 100, "B: ufoFlightSpeedBig lever floor is 100 px/s — independent of small, no more 100/150 ratio (§4.6)");
+  eq(X.leverState(1).ufoFlightSpeedSmall, 150, "B: ufoFlightSpeedSmall lever floor is 150 px/s — an independent lever, not derived from big");
+  eq(X.leverState(1).ufoAppearFreq, 25, "B: ufoAppearFreq lever floor is 25 s, the same number the retired FROZEN_UFO_APPEAR_FREQ held");
+  eq(X.leverState(1).ufoDirChangeBig, 2.2, "B: ufoDirChangeBig lever floor is 2.2 s (split off the single retired FROZEN_UFO_DIR_CHANGE=2.0)");
+  eq(X.leverState(1).ufoDirChangeSmall, 1.8, "B: ufoDirChangeSmall lever floor is 1.8 s (the other half of the P5 split)");
   const specs = {
     sweepCoalescePause:     { unit: "s",    def: 10,  min: 0,  max: 60,  step: 1 },
   };
@@ -185,81 +204,103 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 
 // ================= (C) UFO flight speed =====================
 (function sectionC() {
-  console.log("(C) UFO flight speed: tiered, no jitter, 100/150 big/small ratio preserved");
-  // TIER_STEPS.ufoFlightSpeed = [[1,"low"],[17,"normal"],[38,"high"]]
-  // REPOINTED BY CS024 P4: the three tiers and their breakpoints (17/38) are deleted, so the SAME six
-  // probe levels now expect the SAME frozen value — which makes the "no jitter, exact reproduction
-  // through a real Saucer" claim an equality across the whole range rather than within a band.
-  const cases = [1, 16, 17, 37, 38, 100].map(level => ({ level, px: X.FROZEN_UFO_FLIGHT_SPEED }));
-  for (const c of cases) {
-    X.game.wave = c.level;
-    eq(X.ufoFlightSpeedPx(true), c.px, `C: level ${c.level} ufoFlightSpeedPx(small) === ${c.px}`);
-    close(X.ufoFlightSpeedPx(false), c.px * (100 / 150), `C: level ${c.level} ufoFlightSpeedPx(big) preserves the 100/150 ratio`);
+  console.log("(C) UFO flight speed: two independent levers (big/small), no jitter, no ratio between sizes (CS024 P5 §4.6)");
+  // REPOINTED BY CS024 P5: the shipped 100/150 big/small ratio derivation is GONE — ufoFlightSpeedBig and
+  // ufoFlightSpeedSmall are two fully independent levers, each read at its own point of use. Probe levels
+  // span ufoFlightSpeedBig/Small's own 4-step carry range (they only move on ufoAppearFreq's every-8-level
+  // wraps — level 9 is their first, level 25 the last before ufoFlightSpeedBig itself would wrap on its
+  // FOURTH bump), so the whole climb is exercised rather than just level 1's floor. Expected values come
+  // from the live leverState(), never a hand-copied constant.
+  const levels = [1, 8, 9, 16, 17, 24, 25, 33, 100];
+  for (const level of levels) {
+    X.game.wave = level;
+    const lv = X.leverState(level);
+    eq(X.ufoFlightSpeedPx(true), lv.ufoFlightSpeedSmall, `C: level ${level} ufoFlightSpeedPx(small) === leverState.ufoFlightSpeedSmall (${lv.ufoFlightSpeedSmall})`);
+    eq(X.ufoFlightSpeedPx(false), lv.ufoFlightSpeedBig, `C: level ${level} ufoFlightSpeedPx(big) === leverState.ufoFlightSpeedBig (${lv.ufoFlightSpeedBig}) — no 100/150 ratio`);
 
     // Integration: real Saucer construction at this level reproduces the same |vx| exactly (no jitter).
     for (const small of [true, false]) {
-      X.game.wave = c.level;
+      X.game.wave = level;
       const s = new X.Saucer(small);
-      const wantPx = small ? c.px : c.px * (100 / 150);
-      close(Math.abs(s.vx), wantPx, `C: level ${c.level} real Saucer(${small}).vx magnitude === ${wantPx.toFixed(2)}`);
+      const wantPx = small ? lv.ufoFlightSpeedSmall : lv.ufoFlightSpeedBig;
+      close(Math.abs(s.vx), wantPx, `C: level ${level} real Saucer(${small}).vx magnitude === ${wantPx.toFixed(2)}`);
     }
   }
-  console.log(`    low=${X.DEBUG.ufoFlightSpeedLow} normal=${X.DEBUG.ufoFlightSpeedNormal} high=${X.DEBUG.ufoFlightSpeedHigh} px/s (small); big derives at *100/150`);
+  // At wave 1 the floors (100 big / 150 small) happen to equal the LITERAL ratio numbers the old, now-
+  // deleted, `px * (100/150)` derivation used — that is a coincidence of the chosen floors, not a
+  // surviving ratio: the OLD actual value pair was (small=120 from FROZEN_UFO_FLIGHT_SPEED, big=80
+  // derived), which is a DIFFERENT pair from the new independent floors (150/100). Levels 9+ above prove
+  // the two sizes now diverge from any fixed ratio (e.g. level 9: small=170, big=116.67 — not 150:100).
+  eq(X.leverState(1).ufoFlightSpeedBig, 100, "C: wave-1 ufoFlightSpeedBig floor is 100 px/s");
+  eq(X.leverState(1).ufoFlightSpeedSmall, 150, "C: wave-1 ufoFlightSpeedSmall floor is 150 px/s");
+  const r1 = X.leverState(9).ufoFlightSpeedBig / X.leverState(9).ufoFlightSpeedSmall;
+  assert(Math.abs(r1 - 100 / 150) > 1e-6, `C: at level 9 big/small is no longer the old 100/150 ratio (got ${r1.toFixed(4)})`);
+  console.log(`    big: floor=${X.leverState(1).ufoFlightSpeedBig} @wave9=${X.leverState(9).ufoFlightSpeedBig}   small: floor=${X.leverState(1).ufoFlightSpeedSmall} @wave9=${X.leverState(9).ufoFlightSpeedSmall}, independent, no ratio`);
 })();
 
 // ================= (D) UFO direction-change frequency =====================
 (function sectionD() {
-  console.log("(D) UFO direction-change frequency: both zigTimer sites tiered + jittered; rand(0.8,1.8) gone");
+  console.log("(D) UFO direction-change frequency: size-specific lever (ufoDirChangeBig/Small), both zigTimer sites, jittered; rand(0.8,1.8) gone");
 
   // Distinguishes real assignment ("= rand(0.8, 1.8)", the old live idiom) from the new code's own
   // trailing comments documenting what it replaced ("...jittered, was rand(0.8, 1.8)", no "=" before it).
   const liveRand0818 = scriptSrc.split("\n").filter(l => /=\s*rand\(0\.8,\s*1\.8\)/.test(l));
   eq(liveRand0818.length, 0, `D: rand(0.8, 1.8) is gone as a live assignment (comments documenting the old value are fine) (found: ${JSON.stringify(liveRand0818)})`);
+
+  // REPOINTED BY CS024 P5: ufoZigInterval() grew a `small` parameter (§4.6) — the two live call sites now
+  // read ufoZigInterval(small) (ctor) / ufoZigInterval(this.small) (update()), not the old zero-arg form.
+  // Still exactly 2 live call sites (ctor + update()), excluding the definition line itself.
   const zigCallSites = scriptSrc.split("\n")
     .filter(l => !l.trim().startsWith("//"))
-    .filter(l => l.includes("ufoZigInterval()") && !l.trim().startsWith("function ufoZigInterval("));
-  eq(zigCallSites.length, 2, `D: ufoZigInterval() is called at exactly 2 live sites (ctor + update()) (found: ${JSON.stringify(zigCallSites.map(l => l.trim()))})`);
+    .filter(l => /ufoZigInterval\(/.test(l) && !l.trim().startsWith("function ufoZigInterval("));
+  eq(zigCallSites.length, 2, `D: ufoZigInterval(...) is called at exactly 2 live sites (ctor + update()) (found: ${JSON.stringify(zigCallSites.map(l => l.trim()))})`);
+  assert(zigCallSites.every(l => /ufoZigInterval\(\s*(small|this\.small)\s*\)/.test(l)),
+    `D: both live call sites pass a size argument, not the old zero-arg call (found: ${JSON.stringify(zigCallSites.map(l => l.trim()))})`);
 
   const j = 0.25; // shipped FREQ_JITTER
-  // REPOINTED BY CS024 P4: one frozen centre instead of three tier centres, probed at the SAME three
-  // levels the tier breakpoints used to sit at — so a level dependence sneaking back in would still fail.
-  const centers = { low: X.FROZEN_UFO_DIR_CHANGE, normal: X.FROZEN_UFO_DIR_CHANGE, high: X.FROZEN_UFO_DIR_CHANGE };
-  const levelForTier = { low: 1, normal: 30, high: 55 };
+  // REPOINTED BY CS024 P5: one frozen centre is gone; direction-change is now level-dependent AND split
+  // per size (ufoDirChangeBig/Small). Probe several levels — including level 9, the first ufoAppearFreq
+  // wrap that moves these levers at all — for BOTH sizes, sourcing the expected centre from the live
+  // leverState() rather than a hardcoded tier constant.
+  const levels = [1, 9, 30, 55, 129];
 
-  for (const tier of ["low", "normal", "high"]) {
-    X.game.wave = levelForTier[tier];
-    const center = centers[tier];
-    const lo = center * (1 - j), hi = center * (1 + j);
+  for (const small of [true, false]) {
+    for (const level of levels) {
+      X.game.wave = level;
+      const lv = X.leverState(level);
+      const center = small ? lv.ufoDirChangeSmall : lv.ufoDirChangeBig;
+      const lo = center * (1 - j), hi = center * (1 + j);
 
-    // Direct helper, many samples.
-    let sawAbove = false, sawBelow = false;
-    for (let i = 0; i < 500; i++) {
-      const v = X.ufoZigInterval();
-      assert(v >= lo - 1e-9 && v <= hi + 1e-9, `D: ufoZigInterval() at ${tier} tier within [${lo.toFixed(3)}, ${hi.toFixed(3)}] (got ${v.toFixed(4)})`);
-      if (v > center) sawAbove = true;
-      if (v < center) sawBelow = true;
-    }
-    assert(sawAbove && sawBelow, `D: ufoZigInterval() at ${tier} tier actually varies both above and below its centre across 500 samples`);
+      // Direct helper, many samples.
+      let sawAbove = false, sawBelow = false;
+      for (let i = 0; i < 300; i++) {
+        const v = X.ufoZigInterval(small);
+        assert(v >= lo - 1e-9 && v <= hi + 1e-9, `D: ufoZigInterval(${small}) at level ${level} within [${lo.toFixed(3)}, ${hi.toFixed(3)}] (got ${v.toFixed(4)})`);
+        if (v > center) sawAbove = true;
+        if (v < center) sawBelow = true;
+      }
+      assert(sawAbove && sawBelow, `D: ufoZigInterval(${small}) at level ${level} actually varies both above and below its centre across 300 samples`);
 
-    // Integration: the ctor site.
-    for (let i = 0; i < 20; i++) {
-      const s = new X.Saucer(true);
-      assert(s.zigTimer >= lo - 1e-9 && s.zigTimer <= hi + 1e-9, `D: Saucer ctor zigTimer at ${tier} tier within bounds (got ${s.zigTimer.toFixed(4)})`);
-    }
-    // Integration: the update() re-roll site.
-    for (let i = 0; i < 20; i++) {
-      const s = new X.Saucer(true);
-      s.zigTimer = -0.01; // force the re-roll branch this frame
-      s.update(1 / 60);
-      assert(s.zigTimer >= lo - 1e-9 && s.zigTimer <= hi + 1e-9, `D: Saucer.update() re-roll zigTimer at ${tier} tier within bounds (got ${s.zigTimer.toFixed(4)})`);
+      // Integration: the ctor site.
+      for (let i = 0; i < 20; i++) {
+        const s = new X.Saucer(small);
+        assert(s.zigTimer >= lo - 1e-9 && s.zigTimer <= hi + 1e-9, `D: Saucer(${small}) ctor zigTimer at level ${level} within bounds (got ${s.zigTimer.toFixed(4)})`);
+      }
+      // Integration: the update() re-roll site.
+      for (let i = 0; i < 20; i++) {
+        const s = new X.Saucer(small);
+        s.zigTimer = -0.01; // force the re-roll branch this frame
+        s.update(1 / 60);
+        assert(s.zigTimer >= lo - 1e-9 && s.zigTimer <= hi + 1e-9, `D: Saucer(${small}).update() re-roll zigTimer at level ${level} within bounds (got ${s.zigTimer.toFixed(4)})`);
+      }
     }
   }
-  console.log(`    dirChange centres: low=${centers.low} normal=${centers.normal} high=${centers.high}s, ±25% jitter`);
+  console.log(`    dirChange: wave-1 floors big=${X.leverState(1).ufoDirChangeBig}s small=${X.leverState(1).ufoDirChangeSmall}s, ±25% jitter, size-specific`);
 })();
 
 // ================= (E) UFO appearance frequency =====================
 (function sectionE() {
-  console.log("(E) UFO appearance frequency: spawn-block + startGame() init both tiered + jittered");
+  console.log("(E) UFO appearance frequency: one shared timer, level-dependent + jittered via the ufoAppearFreq lever");
 
   eq((scriptSrc.match(/function ufoAppearInterval\(/g) || []).length, 1, "E: exactly one ufoAppearInterval definition");
   const codeOnly = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//"));
@@ -267,50 +308,56 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   assert(!codeOnly.some(l => /ramp\(\s*SAUCER_GAP_FLOOR/.test(l)), "E: no live ramp(SAUCER_GAP_FLOOR...) call remains");
 
   const j = 0.25;
-  // REPOINTED BY CS024 P4, same as (D): one frozen centre, probed at the three former breakpoints.
-  const centers = { low: X.FROZEN_UFO_APPEAR_FREQ, normal: X.FROZEN_UFO_APPEAR_FREQ, high: X.FROZEN_UFO_APPEAR_FREQ };
-  const levelForTier = { low: 1, normal: 26, high: 47 };
+  // REPOINTED BY CS024 P5: no more three fixed tiers — ufoAppearFreq is now a continuous, CYCLICAL
+  // (INVERTED, sawtoothing back to its floor every 8 levels, since it is both the driver and its own
+  // "carries" value) lever. Probe levels span a full cycle (1 through the level-9 wrap and beyond), and
+  // the expected centre comes from the live leverState() rather than a hand-copied constant.
+  const levels = [1, 4, 8, 9, 12, 26, 47];
 
-  for (const tier of ["low", "normal", "high"]) {
-    X.game.wave = levelForTier[tier];
-    const center = centers[tier];
+  for (const level of levels) {
+    X.game.wave = level;
+    const center = X.leverState(level).ufoAppearFreq;
     const lo = center * (1 - j), hi = center * (1 + j);
     let sawAbove = false, sawBelow = false;
     for (let i = 0; i < 500; i++) {
       const v = X.ufoAppearInterval();
-      assert(v >= lo - 1e-9 && v <= hi + 1e-9, `E: ufoAppearInterval() at ${tier} tier within [${lo.toFixed(3)}, ${hi.toFixed(3)}] (got ${v.toFixed(4)})`);
+      assert(v >= lo - 1e-9 && v <= hi + 1e-9, `E: ufoAppearInterval() at level ${level} within [${lo.toFixed(3)}, ${hi.toFixed(3)}] (got ${v.toFixed(4)})`);
       if (v > center) sawAbove = true;
       if (v < center) sawBelow = true;
     }
-    assert(sawAbove && sawBelow, `E: ufoAppearInterval() at ${tier} tier actually varies both above and below its centre across 500 samples`);
+    assert(sawAbove && sawBelow, `E: ufoAppearInterval() at level ${level} actually varies both above and below its centre across 500 samples`);
   }
-  console.log(`    appear centres: low=${centers.low} normal=${centers.normal} high=${centers.high}s, ±25% jitter`);
+  // The sawtooth: level 9 (the first wrap) resets back down to the level-1 floor rather than continuing
+  // to descend — proof this is genuinely cyclical, not a monotonic tier.
+  eq(X.leverState(9).ufoAppearFreq, X.leverState(1).ufoAppearFreq, "E: ufoAppearFreq resets to its floor on the level-9 wrap (sawtooth, not monotonic)");
+  console.log(`    appear centres: wave1=${X.leverState(1).ufoAppearFreq}s wave9(wrap)=${X.leverState(9).ufoAppearFreq}s wave12=${X.leverState(12).ufoAppearFreq}s, ±25% jitter`);
 
   // Integration: the real spawn block (update()'s "--- Spawning ---" site) sets game.saucerTimer via
   // ufoAppearInterval() when a saucer spawns.
   const Y = build().exports;
   Y.startGame();
   Y.game.state = "playing"; Y.game.paused = false;
-  Y.game.wave = 26; // normal tier
+  Y.game.wave = 26;
   Y.game.debris = [{ x: 1e5, y: 1e5, vx: 0, vy: 0, size: 1, radius: 5, dead: false, update() {}, draw() {} }];
   Y.game.hunters = []; Y.game.saucers = []; Y.game.bullets = [];
   Y.game.healthTimer = 1e6; Y.game.hunterTimer = 1e6;
   Y.game.saucerTimer = 0; // force an immediate spawn this frame
   Y.game.ship.dead = false;
   Y.update(1 / 60);
-  const cN = centers.normal, loN = cN * (1 - j), hiN = cN * (1 + j);
+  const cN = Y.leverState(26).ufoAppearFreq, loN = cN * (1 - j), hiN = cN * (1 + j);
   assert(Y.game.saucers.length === 1, "E: (setup) the forced spawn actually fired");
   assert(Y.game.saucerTimer >= loN - 1e-6 && Y.game.saucerTimer <= hiN + 1e-6,
-    `E: real spawn-block saucerTimer at normal tier within [${loN.toFixed(3)}, ${hiN.toFixed(3)}] (got ${Y.game.saucerTimer.toFixed(4)})`);
+    `E: real spawn-block saucerTimer at level 26 within [${loN.toFixed(3)}, ${hiN.toFixed(3)}] (got ${Y.game.saucerTimer.toFixed(4)})`);
 
   // Integration: startGame()'s pre-nextWave() init (game.wave === 0; leverState(0) === leverState(1) by
-  // the same "first breakpoint" rule stepAt gave, so this reads the same centre as level 1).
-  const loL = centers.low * (1 - j), hiL = centers.low * (1 + j);
+  // the same "clamp below 1 to zero ticks" rule leverState documents, so this reads the same centre as
+  // level 1).
+  const c1 = X.leverState(1).ufoAppearFreq, loL = c1 * (1 - j), hiL = c1 * (1 + j);
   for (let i = 0; i < 20; i++) {
     const Z = build().exports;
     Z.startGame();
     assert(Z.game.saucerTimer >= loL - 1e-6 && Z.game.saucerTimer <= hiL + 1e-6,
-      `E: startGame() initial saucerTimer within the "low" tier's jittered bounds (got ${Z.game.saucerTimer.toFixed(4)})`);
+      `E: startGame() initial saucerTimer within level-1's jittered bounds (got ${Z.game.saucerTimer.toFixed(4)})`);
   }
 })();
 
@@ -357,8 +404,10 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
 
 // ================= (H) persistence round-trip =====================
 (function sectionH() {
-  // REPOINTED BY CS024 P2: freqJitter is gone (spec §1.8/§5), so this now round-trips 10 fields, not 11.
-  console.log("(H) the 10 surviving fields round-trip through afd_settings_v1.debug across a reload");
+  // REPOINTED BY CS024 P2: freqJitter is gone (spec §1.8/§5). REPOINTED AGAIN BY CS024 P4: nine of the
+  // ten P6 fields this section used to round-trip are deleted with the tier knobs, leaving just
+  // sweepCoalescePause — see the comment below for why that is a hand-off, not a hole.
+  console.log("(H) the surviving sweepCoalescePause field round-trips through afd_settings_v1.debug across a reload");
   const inst = build();
   const A = inst.exports;
   // REPOINTED BY CS024 P4: nine of the ten are deleted with the tier knobs, leaving sweepCoalescePause.
@@ -403,7 +452,10 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   const Y = build().exports;
   Y.startGame();
   eq(Y.game.cargoMax, 8, "I: cargoMax still starts at 8 (CS018 P5, untouched by P6)");
-  eq(Y.FROZEN_JUNK_COUNT, 3, "I: the junk count is untouched by P6 (frozen at 3 as of CS024 P4)");
+  // REPOINTED BY CS024 P5: FROZEN_JUNK_COUNT is deleted with the rest of the freeze block — junk count is
+  // now wired to the junkCount lever, whose wave-1 floor (3) is the same number the frozen constant held.
+  eq(Y.leverState(1).junkCount, 3, "I: junk count at wave 1 is still 3, now via the junkCount lever's floor");
+  assert(Y.probe("typeof FROZEN_JUNK_COUNT") === "undefined", "I: FROZEN_JUNK_COUNT is gone — P5 deleted the whole freeze block");
   // REPOINTED BY CS024 P4: the level table this pair inspected is deleted outright.
   eq(Y.probe("levelDef"), "__ReferenceError__", "I: there is no level table left to carry a hunter-cap column");
   // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
@@ -432,10 +484,14 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // deleted, per the standing convention: "none match" is the assertion that catches a knob creeping back.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
   // the FREQ_JITTER constant instead). Section B/F/G/H above carry the rest of this phase's own claims.
-  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 (the 21 tier knobs, this phase's nine among them).
-  eq(nEntries, 15, `I: DEBUG_ENTRIES count is 15 after CS024 P4 (got ${nEntries})`);
+  // REPOINTED AGAIN BY CS024 P4: 34 -> 15 (the 21 tier knobs deleted, frozen at level-1 answers for TRAP 2).
+  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the freeze block is deleted and the registry REBUILT with one
+  // knob per LEVER instead of three per tier (10 UFO levers + smallUfoChance under UFO; 4 JUNK; 4 HUNTER;
+  // 2 GLOBAL). Section-by-section: SHIP 2 + GARBAGE 4 + CHAIN GUARD 4 + DELIVERY 1 + JUNK 4 + HUNTER 4 +
+  // UFO 11 + GLOBAL 2 = 32. Same claim, same strength — an exact live-registry count.
+  eq(nEntries, 32, `I: DEBUG_ENTRIES count is 32 after CS024 P5's registry rebuild (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
-    "I: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
+    "I: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "I: ...and the entry CS019 P1 added is chainGuardCooldown");
   eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 0,

@@ -66,7 +66,11 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
   setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: k => { delete lsStore[k]; } };
 
 const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage", "menuPanel", "ctx",
-  "COLOR", "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE", "HUNTER_COALESCE_COUNT",
+  // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY is deleted outright (replaced by the coalescePause
+  // lever). Nothing in this file ever reads it directly — it was only ever RETURN-listed/destructured
+  // here, never compared — so its removal has no assertion-level consequence, unlike test-v31-coalesce.js
+  // and test-cs015-p5.js which do compare against it.
+  "COLOR", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE", "HUNTER_COALESCE_COUNT",
   "drawCanister"];
 
 const wrapped = new Function(
@@ -75,7 +79,7 @@ const wrapped = new Function(
 );
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, update, game, coalesceGarbage, Garbage, menuPanel, ctx, COLOR,
-  GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE, HUNTER_COALESCE_COUNT,
+  GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE, HUNTER_COALESCE_COUNT,
   drawCanister } = G;
 
 let passed = 0, failed = 0;

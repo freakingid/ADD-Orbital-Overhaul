@@ -141,12 +141,16 @@ const RETURN = [
   "coalesceGarbage", "cullGarbage", "betterCullVictim", "largeHunterCount", "noteLargeHunterSpawn",
   "destroyHunter", "destroyDebris", "shatterClump", "addScore",
   "GARBAGE_SOFT_MAX", "GARBAGE_HARD_MAX", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
-  "GARBAGE_COALESCE_DELAY", "GARBAGE_PICKUP", "HUNTER_COALESCE_COUNT", "LARGE_HUNTER_MAX",
+  "GARBAGE_PICKUP", "HUNTER_COALESCE_COUNT", "LARGE_HUNTER_MAX",
   "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN", "DEBRIS_GARBAGE",
   // REPOINTED BY CS024 P4: every symbol on this line is now DELETED (levelDef, stepAt, ramp, JUNK_CYCLE,
   // TIER_STEPS) or RENAMED (difficultyFactor -> musicIntensity, RAMP_WAVES -> MUSIC_INTENSITY_WAVES),
   // which is exactly what P3's TRAP 2 said P4 would do. §H below inverts to check the deletion.
-  "musicIntensity", "MUSIC_INTENSITY_WAVES", "leverState", "payloadSlots", "FROZEN_JUNK_COUNT",
+  // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY (this file's own §H used to read it as the frozen
+  // inert-delay figure) is now gone too — folded into the coalescePause lever's floor (5.0s, unchanged
+  // number) — and FROZEN_JUNK_COUNT (P4's one-phase freeze constant) is deleted outright now that P5
+  // wires leverState(w).junkCount at every consumer. Neither symbol is exported here any more.
+  "musicIntensity", "MUSIC_INTENSITY_WAVES", "leverState", "payloadSlots",
   "DiffLog", "DIFFLOG_FIELDS", "logDifficultySnapshot",
   "Achievements", "AudioSys", "COLOR", "WORLD_W", "WORLD_H",
   "DEBUG", "DEBUG_VARS", "DEBUG_ENTRIES", "applyDebug", "GAME_VERSION",
@@ -296,7 +300,9 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   }
   // REPOINTED BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names). This phase's
   // own three additions are pinned by name directly below; only the live total moves.
-  eq(X.DEBUG_ENTRIES.length, 15, "A: the registry holds 15 value entries after CS024 P4's 21-knob tier prune");
+  // REPOINTED BY CS024 P5: 15 was the P4 interim count (21-knob tier prune, before the odometer was
+  // wired). P5's registry rebuild adds 17 lever knobs + smallUfoChance, back to 32.
+  eq(X.DEBUG_ENTRIES.length, 32, "A: the registry holds 32 value entries after CS024 P5's registry rebuild");
 
   // Tombstones are checked POSITIVELY and separately, so a comment naming a dead symbol can never be
   // confused for a live one (the standing test-cs024-p1/p2 idiom).
@@ -861,7 +867,10 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     eq(typeof X.leverState, "function", "H: TRAP 2 (inverted) — leverState() is what replaced the level table");
     eq(typeof X.musicIntensity, "function", "H: TRAP 2 (inverted) — the music curve survives, renamed");
     eq(X.MUSIC_INTENSITY_WAVES, 8, "H: TRAP 2 (inverted) — its knob is unchanged at 8, renamed");
-    eq(X.FROZEN_JUNK_COUNT, 3, "H: TRAP 2 (inverted) — the junk count is frozen at 3 until P5 wires the lever");
+    // REPOINTED BY CS024 P5: FROZEN_JUNK_COUNT is deleted outright (not merely unread) now that every
+    // consumer reads leverState(game.wave).junkCount directly. leverState(1).junkCount is still 3 —
+    // level 1 reads every lever's floor — so the number this assertion protects is unchanged.
+    eq(X.leverState(1).junkCount, 3, "H: TRAP 2 (inverted) — leverState(1).junkCount is 3, same number the retired FROZEN_JUNK_COUNT held");
     eq(X.payloadSlots(12), 24, "H: TRAP 2 (inverted) — the payloadSlots curve outlived the table, unchanged");
     // THE ONE FORCED EXCEPTION, stated rather than hidden: maxLargeHunters had to go with
     // HUNTER_CAP_STEPS or levelDef would ReferenceError on the first nextWave(). That exception is moot

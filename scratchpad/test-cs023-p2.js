@@ -105,7 +105,9 @@ function makeCtxStub() {
 
 const RETURN = [
   // CS024 P4: levelDef dropped — the level table is deleted (replaced by the LEVERS odometer).
-  "game", "startGame", "update", "draw", "nextWave", "destroyDebris", "killShip", "FROZEN_JUNK_COUNT",
+  // REPOINTED BY CS024 P5: FROZEN_JUNK_COUNT is deleted outright — P5 wires the real junkCount lever,
+  // so leverState replaces it as this file's source of truth for the wave-21 spawn count.
+  "game", "startGame", "update", "draw", "nextWave", "destroyDebris", "killShip", "leverState",
   "DebrisSatellite", "HunterSatellite", "Garbage", "Dock",
   // the CS023 P2 surface
   "debrisBounce", "DEBRIS_MASS", "DEBRIS_BOUNCE_RESTITUTION", "DEBRIS_BOUNCE_MIN",
@@ -290,8 +292,18 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     const body = bodyOf(scriptSrc, "function destroyDebris(a, awardScore = true) {");
     assert(!/orbitTangent/.test(body),
       "A: REPOINTED BY CS024 P1 (inverted) — the split branch no longer calls orbitTangent");
-    assert(/for \(let i = 0; i < 3; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speedMul\)\);/.test(body),
-      "A: ...and the split is the plain three-child loop again, each taking its own constructor's velocity");
+    // REPOINTED BY CS024 P5: destroyDebris's split-child velocity is no longer a flat `speedMul` carried
+    // in from the caller — P5 wires it to the CHILD's OWN size-tier lever (a large->medium split reads
+    // junkSpeedMedium, a medium->small split reads junkSpeedSmall), read live at the point of use like
+    // every other lever. The claim this section carries is unchanged — still the plain three-child loop,
+    // still no rail handoff — only the argument it passes is now itself lever-derived rather than a
+    // literal passed in from the parent's own spawn.
+    assert(/const childId = a\.size - 1 === 2 \? "junkSpeedMedium" : "junkSpeedSmall";/.test(body),
+      "A: REPOINTED BY CS024 P5 — the split child's lever id is chosen by the CHILD's own size tier");
+    assert(/const speed = DEBUG\[childId\] \?\? lv\[childId\];/.test(body),
+      "A: ...read live via the DEBUG-override-else-lever idiom, exactly like every other lever consumer");
+    assert(/for \(let i = 0; i < 3; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speed\)\);/.test(body),
+      "A: ...and the split is still the plain three-child loop, each child taking that same derived speed");
   }
 
   // --- wrap-awareness, asserted at the SITE rather than trusted (CLAUDE.md's single commonest bug source)
@@ -393,7 +405,11 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead).
   // REPOINTED AGAIN BY CS024 P4: 36 -> 15 (the 21 tier knobs).
-  eq(X.DEBUG_ENTRIES.length, 15, "A: TRAP 4 REPOINTED BY CS024 P4 — the debug registry is 15 value entries");
+  // REPOINTED AGAIN BY CS024 P5: 15 -> 32. P5 rebuilt the registry outright to wire the levers: 17 new
+  // lever knobs (def: null, the "follow the live odometer" sentinel) join the survivors across SHIP,
+  // GARBAGE, CHAIN GUARD, DELIVERY, JUNK, HUNTER, UFO, GLOBAL — and garbageAttractDelay drops out with
+  // the constant it derived from (retired outright, replaced by the coalescePause lever).
+  eq(X.DEBUG_ENTRIES.length, 32, "A: TRAP 4 REPOINTED BY CS024 P5 — the debug registry is 32 value entries");
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
     "debrisBounceRestitution",
     "A: REPOINTED BY CS024 P1 — debrisBounceRestitution is the ONLY survivor of CS023 P4's two knobs; debrisDriftAccel is gone");
@@ -897,12 +913,15 @@ const COALESCE_HARVEST_CEILING = 500000;
              .replace(COAL_LOOP,   COAL_LOOP   + "\n      __PROBE.coalescePairs++;");
 
   // Prove BOTH counters are live before trusting either. Getting this wrong is how a probe reads zero
-  // and looks like a pass. A fresh garbage burst cannot coalesce for GARBAGE_COALESCE_DELAY seconds, so
+  // and looks like a pass. A fresh garbage burst cannot coalesce until its inert delay elapses, so
   // the control has to run well past that.
   {
-    // CS024 P4: GARBAGE_COALESCE_DELAY joins the export list so the control window below can DERIVE
-    // itself from the shipped constant instead of hard-coding a frame count that a retune invalidates.
-    const C = withRandom(seededRandom(0x9101), () => buildFrom(instrumented, { extra: ["__PROBE", "GARBAGE_COALESCE_DELAY"] }));
+    // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY is deleted outright, replaced by the coalescePause
+    // lever. leverState joins the export list (DEBUG is already in the base RETURN list) so the control
+    // window below can DERIVE itself from the LIVE lever — evaluated AFTER atWave(C, 4) sets game.wave,
+    // exactly the real `DEBUG.coalescePause ?? leverState(game.wave).coalescePause` wired idiom — instead
+    // of hard-coding a frame count or reaching for a constant that no longer exists.
+    const C = withRandom(seededRandom(0x9101), () => buildFrom(instrumented, { extra: ["__PROBE", "leverState"] }));
     withRandom(seededRandom(0x9101), () => { C.startGame(); atWave(C, 4); });
     C.game.state = "playing"; C.game.paused = false;
     for (const d of C.game.debris.filter(d => !d.dead).slice(0, 8)) C.destroyDebris(d, true);
@@ -912,7 +931,12 @@ const COALESCE_HARVEST_CEILING = 500000;
     // sampling the last instant before any piece became active and the coalesce counter read 0, which is
     // precisely the false pass these two assertions exist to prevent. The window is now DERIVED from the
     // constant (delay + 5 s of live coalescence), so the next retune carries it instead of stranding it.
-    const CONTROL_FRAMES = Math.ceil((C.GARBAGE_COALESCE_DELAY + 5) * 60);
+    // REPOINTED AGAIN BY CS024 P5: the constant itself is gone — replaced by the coalescePause lever, read
+    // live at the wave this control actually runs at (4, set by atWave just above). At wave 4 the lever
+    // reads 3.5 s (shorter than the old flat 5.0 s), so deriving live rather than restating a number is
+    // exactly what keeps this control honest across a wave change or a future lever retune.
+    const coalescePause = C.DEBUG.coalescePause ?? C.leverState(C.game.wave).coalescePause;
+    const CONTROL_FRAMES = Math.ceil((coalescePause + 5) * 60);
     for (let i = 0; i < CONTROL_FRAMES; i++) {
       C.__PROBE.debrisPairs = 0; C.__PROBE.coalescePairs = 0;
       C.game.ship.hp = C.SHIP_MAX_HP; C.update(1 / 60);
@@ -1017,14 +1041,20 @@ const COALESCE_HARVEST_CEILING = 500000;
   {
     const V = seededBuild(0x9500);
     V.startGame();
-    // REPOINTED AGAIN BY CS024 P4: the level table is gone and the junk count is FROZEN at 3 for one
-    // phase (P5 wires the junkCount lever, whose own ceiling is 12). Still DERIVED from the build rather
-    // than restated as a literal, so the next retune carries this probe instead of stranding it.
+    // REPOINTED BY CS024 P5: the level table is still gone, but the junk count is no longer frozen —
+    // nextWave() now reads the wired junkCount lever live (DEBUG.junkCount ?? leverState(game.wave)
+    // .junkCount), exactly like every other lever. junkCount is a DRIVER (floor 3, ceil 12, steps 10,
+    // everyNLevels 1) that wraps back to its own floor every 10 levels; level 21 is 20 ticks in — two
+    // full wraps, remainder 0 — so it lands exactly back on the floor, 3, the SAME number the retired
+    // FROZEN_JUNK_COUNT held for one phase. Still DERIVED from the live lever rather than restated as a
+    // literal, so a future retune of the junkCount table carries this probe instead of stranding it.
     //   THE CEILINGS BELOW ARE STILL DELIBERATELY NOT LOWERED TO MATCH — same reasoning as CS024 P1's
-    // note: a gate whose bound tracks the measurement downward stops being a gate. The headroom grew
-    // again this phase, and P5 is the phase that puts the count back up.
-    PEAK_SPAWN = V.FROZEN_JUNK_COUNT;
-    eq(PEAK_SPAWN, 3, "H: (validity) level 21's spawn is the frozen count of 3 (CS024 P4; P5's lever takes it back to 12)");
+    // note: a gate whose bound tracks the measurement downward stops being a gate. Level 21 happening to
+    // sit on a wrap boundary is a property of the odometer's arithmetic, not a choice made here — see the
+    // note at GATE 1/2's vacuity floor below, which P5 was flagged to revisit and which this coincidence
+    // means still applies.
+    PEAK_SPAWN = V.leverState(21).junkCount;
+    eq(PEAK_SPAWN, 3, "H: (validity) level 21's junkCount lever value is 3 — its own floor, since wave 21 lands exactly on a 10-level wrap boundary (CS024 P5)");
     eq(atWave(V, 21), PEAK_SPAWN, "H: (validity) ...and the real nextWave() spawns exactly that many");
     eq(V.game.debris.every(d => d.size === 3), true, "H: (validity) ...and every one of them is a size-3 large, so the cascade bound holds");
   }
@@ -1172,8 +1202,12 @@ const COALESCE_HARVEST_CEILING = 500000;
   // The GATE CEILINGS ABOVE ARE DELIBERATELY UNTOUCHED — lowering a bound to match a smaller measurement
   // is how a gate stops being a gate — so what moves is only the vacuity floor, and only far enough to
   // stay meaningful at 3 satellites.
-  //   ⛔ P5 SHOULD PUT THESE BACK. The moment nextWave() reads leverState(game.wave).junkCount, level 21
-  // is spawning a real board again and a floor of 100 is no longer doing its job.
+  //   ⛔ P5 landed (nextWave() now reads leverState(game.wave).junkCount live), but level 21 did NOT
+  // start spawning a bigger board: junkCount is a DRIVER that wraps back to its own floor (3) every 10
+  // levels, and wave 21 is 20 ticks in — exactly two full wraps, remainder 0 — so it lands right back on
+  // the same 3 that FROZEN_JUNK_COUNT held. The floor below is therefore STILL doing real work (measured
+  // harvest.worstD is 351, comfortably over 100) and is left exactly where P4 set it rather than raised
+  // on the strength of a prediction that didn't hold at this particular level.
   assert(harvest.worstD > 100,
     `H: (control) the harvest's worst debris frame really did substantial work (${harvest.worstD.toLocaleString("en-US")} checks ` +
     `over ${harvest.worstDBodies} bodies), so the ceiling is measuring something`);

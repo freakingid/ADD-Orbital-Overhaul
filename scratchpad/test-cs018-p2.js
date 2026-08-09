@@ -549,9 +549,22 @@ function onDebug(A, { playing = false } = {}) {
     .split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
   assert(!/\b(low|normal|high)\b/i.test(block), "H: no low/normal/high identifier appears in executable panel code");
   // The only comparisons in the block must be against the entry's OWN min/max (the clamp) or row indices —
-  // never against another entry's value. `debugShown[` appears only as the stepped row's own current value.
-  const shownReads = (block.match(/debugShown\[/g) || []).length;
-  assert(shownReads === 1, `H: debugShown is read at exactly one site (the ◄► step) — got ${shownReads}`);
+  // never against another entry's value. `debugShown[` appears only indexed by the stepped row's own
+  // entry, `e.id`.
+  //
+  // CS024 P5 legitimately added a SECOND `debugShown[e.id]` read in this same left/right handler: a lever
+  // knob's `debugShown[e.id]` can be `null` (the "auto, no override yet" sentinel — see leverKnob()), so
+  // the step now computes its base value as `debugShown[e.id] == null ? leverState(game.wave)[e.id] :
+  // debugShown[e.id]` before adding/subtracting the step. That takes the raw occurrence count from 1 to 2,
+  // which would re-break this TRAP every time the panel's wiring shifts without changing what it actually
+  // guards against. Assert the semantic property directly instead: every `debugShown[...]` read anywhere
+  // in the block is indexed by `e.id` — the row's OWN entry — never a literal id, a different variable, or
+  // a cross-registry lookup like `DEBUG_ENTRIES[...]`. That is what "no relational/cross-entry comparison"
+  // actually means, and it holds regardless of how many times the null-fallback branch reads it.
+  const shownIndexed = block.match(/debugShown\[[^\]]*\]/g) || [];
+  assert(shownIndexed.length >= 1, "H: debugShown is read at least once (the ◄► step)");
+  assert(shownIndexed.every(m => m === "debugShown[e.id]"),
+    `H: every debugShown[...] read is indexed by the row's own entry, e.id — never a different id (got ${JSON.stringify(shownIndexed)})`);
   assert(!/DEBUG_ENTRIES\s*\[|DEBUG_ENTRIES\.find|DEBUG_ENTRIES\.some/.test(block),
     "H: the panel never reaches across the registry to compare one entry against another");
 })();

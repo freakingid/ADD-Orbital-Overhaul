@@ -124,23 +124,33 @@ console.log("(B) saucer floor/ceiling interpolation, wave 1 vs wave 20");
 // end-to-end wiring against the tiered replacements (ufoAccuracyRad()/ufoFireMult()), and it is
 // untouched by this deletion.
 
-// -- small-saucer appearance chance: REPOINTED BY CS024 P4, and INVERTED --
+// -- small-saucer appearance chance: REPOINTED BY CS024 P4, THEN AGAIN BY CS024 P5 --
 // This was the last block in the file still calling ramp(), and the small-saucer chance was ramp()'s
 // last lever anywhere in the build. Both go together (spec §2.4/§4.6): which SIZE of saucer spawns
-// stops being an escalation at all and becomes a flat roll for the whole game — 20% via
-// DEBUG.smallUfoChance once P5 wires it, frozen at the retired level-1 value of 0.15 in between.
-// The small saucer's danger now scales through its OWN levers (accuracy, shot speed, fire frequency),
-// not through how often it turns up. So the claim inverts: there is no wave-driven chance left to
-// interpolate, and the three symbols that made one are gone from the build entirely.
-for (const sym of ["ramp", "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL"])
-  assert(probe(sym) === "__ReferenceError__", `B: ${sym} is gone from the build (CS024 P4)`);
+// stops being an escalation at all and becomes a flat roll for the whole game. P4 froze it at the
+// retired level-1 value (0.15, FROZEN_SMALL_UFO_CHANCE) for one phase; P5 deletes that FROZEN_* constant
+// outright and wires the real spawn site onto DEBUG.smallUfoChance (def 0.20) directly — a genuine debug
+// knob, deliberately NOT part of the lever odometer, so it takes no `?? leverState(...)` fallback at all.
+// The small saucer's danger scales through its OWN levers (accuracy, shot speed, fire frequency), not
+// through how often it turns up. So this is STILL "flat, no wave dependence" (wave 1 and wave 20 must
+// read the identical number) — but it is now a different KIND of flat: a live, tunable knob rather than
+// a frozen constant, and FROZEN_SMALL_UFO_CHANCE itself must be entirely gone.
+for (const sym of ["ramp", "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL", "FROZEN_SMALL_UFO_CHANCE"])
+  assert(probe(sym) === "__ReferenceError__", `B: ${sym} is gone from the build (CS024 P4/P5)`);
 // Executable source only — the deleted call survives as a tombstone COMMENT at the spawn site, which
 // is exactly what a tombstone is for and must not be mistaken for a live call.
 const f4CodeOnly = scriptSrc.split("\n").map(l => l.replace(/\s\/\/.*$/, ""))
   .filter(l => !l.trim().startsWith("//")).join("\n");
 assert(!/ramp\(SAUCER_SMALL_CHANCE/.test(f4CodeOnly), "B: the spawn site no longer ramps the small-saucer chance");
-assert(/const smallChance = FROZEN_SMALL_UFO_CHANCE;/.test(f4CodeOnly),
-  "B: ...it reads a flat frozen chance instead, which P5 replaces with DEBUG.smallUfoChance");
+assert(/Math\.random\(\) < DEBUG\.smallUfoChance/.test(f4CodeOnly),
+  "B: ...it reads DEBUG.smallUfoChance directly instead (CS024 P5, a flat knob, not a lever)");
+assert(near(DEBUG.smallUfoChance, 0.20), `B: DEBUG.smallUfoChance defaults to 0.20 (got ${DEBUG.smallUfoChance})`);
+// "Wave 1 vs wave 20" now means: the knob reads the SAME value regardless of game.wave, because it is
+// not fed by leverState() at all — a genuinely different kind of flat than the old frozen constant, but
+// still flat, and this is the assertion that would fail if a future change accidentally levered it.
+game.wave = 1;  const chanceAtWave1 = DEBUG.smallUfoChance;
+game.wave = 20; const chanceAtWave20 = DEBUG.smallUfoChance;
+assert(near(chanceAtWave1, chanceAtWave20), `B: DEBUG.smallUfoChance at wave 1 (${chanceAtWave1}) === at wave 20 (${chanceAtWave20}) — a flat knob, not a lever`);
 
 // =====================================================================
 // (C) end-to-end wiring through a real Saucer
@@ -190,11 +200,13 @@ game.wave = LATE_WAVE;
 const tierErrLate = ufoAccuracyRad();
 assert(near(firedErr1, tierErr1, 1e-6), `C: wave-1 fired bullet carries the "low"-tier aim error (got ${firedErr1.toFixed(4)}, exp ${tierErr1.toFixed(4)})`);
 assert(near(firedErrLate, tierErrLate, 1e-6), `C: wave-${LATE_WAVE} fired bullet carries the "high"-tier aim error (got ${firedErrLate.toFixed(4)}, exp ${tierErrLate.toFixed(4)})`);
-// REPOINTED BY CS024 P4: this asserted the late-game shot was meaningfully TIGHTER. With aim frozen
-// for one phase there is no level dependence left to measure, so the claim inverts to an exact
-// equality — a strictly sharper statement about the current build than an inequality would be, and the
-// one that will fail loudly if P5 forgets to reconnect the ufoAccuracySmall lever.
-assert(near(firedErr1, firedErrLate, 1e-12), `C: aim error is FROZEN — level 1 and level ${LATE_WAVE} fire identically this phase (${firedErr1} vs ${firedErrLate})`);
+// REPOINTED BY CS024 P5: aim error is no longer frozen — it lives on the ufoAccuracySmall lever
+// (floor 30deg -> ceil 8deg, INVERTED, §2.4/§4.6), so wave 1 (the floor) and wave 50 (well past the
+// lever's 4-step span, pinned at the ceiling) must genuinely differ, and the late-wave shot must be
+// the TIGHTER (smaller) one — this is the claim that would fail loudly if the lever were ever
+// reverted to a frozen constant.
+assert(!near(firedErr1, firedErrLate, 1e-9), `C: aim error is NOT frozen any more — level 1 (${firedErr1}) !== level ${LATE_WAVE} (${firedErrLate})`);
+assert(firedErrLate < firedErr1, `C: level ${LATE_WAVE} aim error (${firedErrLate}) < level 1 aim error (${firedErr1}) — INVERTED lever, higher level is tighter`);
 
 // (C2) reload: rollFireTimer() on a real Saucer, Math.random pinned to 0.5 (range midpoint).
 function measureReload(wave, range) {
@@ -209,15 +221,20 @@ const mid = (SAUCER_FIRE_SMALL[0] + SAUCER_FIRE_SMALL[1]) / 2;   // rand midpoin
 const reload1 = measureReload(1, SAUCER_FIRE_SMALL);
 const reloadLate = measureReload(LATE_WAVE, SAUCER_FIRE_SMALL);
 console.log(`     small reload (mid)  wave1=${reload1.toFixed(3)}s   wave${LATE_WAVE}=${reloadLate.toFixed(3)}s`);
+// REPOINTED BY CS024 P5 (§4.6): ufoFireMult now takes `small` and reads the size-specific
+// ufoFireFreqSmall lever (this Saucer is the small one, `measureReload`'s `new Saucer(true)`) — the
+// old no-arg call silently read the BIG lever instead, which is what made this fail post-wiring.
 game.wave = 1;
-const tierMult1 = ufoFireMult();
+const tierMult1 = ufoFireMult(true);
 game.wave = LATE_WAVE;
-const tierMultLate = ufoFireMult();
+const tierMultLate = ufoFireMult(true);
 assert(near(reload1, mid * tierMult1, 1e-9), `C: wave-1 reload = midpoint x "low"-tier mult (got ${reload1.toFixed(4)}, exp ${(mid*tierMult1).toFixed(4)})`);
 assert(near(reloadLate, mid * tierMultLate, 1e-9), `C: wave-${LATE_WAVE} reload = midpoint x "high"-tier mult (got ${reloadLate.toFixed(4)}, exp ${(mid*tierMultLate).toFixed(4)})`);
-// REPOINTED BY CS024 P4, same inversion and for the same reason: the fire multiplier is frozen until
-// P5 puts it on the ufoFireFreqSmall lever.
-assert(near(reload1, reloadLate, 1e-12), `C: reload is FROZEN — level 1 and level ${LATE_WAVE} reload identically this phase (${reload1.toFixed(4)}s)`);
+// REPOINTED BY CS024 P5: the fire multiplier is no longer frozen — it lives on the ufoFireFreqSmall
+// lever (floor 1.8 -> ceil 0.6, INVERTED), so wave 1 and wave 50 must genuinely differ, and the
+// late-wave reload must be the FASTER (smaller) one.
+assert(!near(reload1, reloadLate, 1e-9), `C: reload is NOT frozen any more — level 1 (${reload1.toFixed(4)}s) !== level ${LATE_WAVE} (${reloadLate.toFixed(4)}s)`);
+assert(reloadLate < reload1, `C: level ${LATE_WAVE} reload (${reloadLate.toFixed(4)}s) < level 1 reload (${reload1.toFixed(4)}s) — INVERTED lever, higher level reloads faster`);
 
 // ---- Summary ----
 console.log(`\n${passed} passed, ${failed} failed`);

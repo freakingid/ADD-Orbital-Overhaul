@@ -10,23 +10,31 @@
 //
 // Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) DEBUG_VARS registry: UFO WEAPONS header + 9 entries (fire freq / accuracy / shot speed,
-//      low/normal/high each), all with the specified unit/def/min/max/step; the SAUCER PRESSURE
-//      header and its two surviving knobs (saucerPressureSecs, saucerAimPressure) are gone; no
-//      low<=normal<=high validator exists anywhere in source.
-//  (C) UFO firing frequency: real Saucer construction/rollFireTimer() at low/normal/high-tier levels
-//      reproduces the tiered multiplier exactly on the SHIPPED per-size ranges — no jitter, not a
+//  (B) DEBUG_VARS registry: REPOINTED (CS024 P5) — the UFO WEAPONS tier header/9-entries shape (already
+//      dead as of P4) never came back; instead these three quantities share the single UFO header (10
+//      lever knobs, def: null + smallUfoChance) that also carries P6's flight-speed/dir-change/appear
+//      levers. The SAUCER PRESSURE header and its two surviving knobs (saucerPressureSecs,
+//      saucerAimPressure) are gone; no low<=normal<=high validator exists anywhere in source (several
+//      LEVERS entries ship floor > ceil on purpose).
+//  (C) UFO firing frequency: REPOINTED — ufoFireMult() grew a `small` parameter and is now SPLIT into
+//      ufoFireFreqBig/Small. Real Saucer construction/rollFireTimer() at several levels reproduces
+//      leverState(wave).ufoFireFreqBig/Small exactly on the SHIPPED per-size ranges — no jitter, not a
 //      second jitteredInterval() implementation.
-//  (D) UFO shot accuracy: the real fired-bullet aim error (extracted via angleTo, never recomputed)
-//      matches ufoAccuracyRad() exactly at each tier; the big saucer never aims (still rand(0,TAU)).
-//  (E) UFO shot speed: the real fired bullet's velocity magnitude matches the tiered px/s exactly, for
-//      BOTH saucer sizes, at each tier.
+//  (D) UFO shot accuracy: unchanged shape (ufoAccuracyRad(), small-only, no size param) but REPOINTED
+//      onto the live ufoAccuracySmall lever; the real fired-bullet aim error (extracted via angleTo,
+//      never recomputed) matches ufoAccuracyRad() exactly at each level; the big saucer never aims
+//      (still rand(0,TAU)).
+//  (E) UFO shot speed: REPOINTED — ufoShotSpeedPx() grew a `small` parameter and is now SPLIT into
+//      ufoShotSpeedBig/Small (floors 300/320, replacing the old shared, sizeless 300 constant). The real
+//      fired bullet's velocity magnitude matches leverState(wave).ufoShotSpeedBig/Small exactly, for
+//      BOTH saucer sizes, at each level.
 //  (F) Retirement: wavePressure() no longer exists; SAUCER_FIRE_MULT_FLOOR/CEIL, SAUCER_AIM_ERR_FLOOR/
-//      CEIL and SAUCER_ACCURACY_RAMP_SCALE have zero live (non-comment) readers though still defined;
-//      DEBUG.saucerAimPressure/saucerPressureSecs and their DEBUG_VARS entries + header are gone.
-//  (G) Persistence: the 9 new fields round-trip through afd_settings_v1.debug across a reload.
+//      CEIL and SAUCER_ACCURACY_RAMP_SCALE are deleted outright (CS024 P2 dead-constant sweep, not just
+//      unread); DEBUG.saucerAimPressure/saucerPressureSecs and their DEBUG_VARS entries + header are gone.
+//  (G) Persistence: a surviving registry field round-trips through afd_settings_v1.debug across a reload.
 //  (H) Regression: cargoMax/junk/hunters untouched; GAME_VERSION unchanged; DEBUG_VARS/DEBUG_ROWS
-//      counts; logDifficultySnapshot's saucerAimErr column follows the new tier-derived value.
+//      counts (32 value entries as of CS024 P5's registry rebuild); logDifficultySnapshot's saucerAimErr
+//      column follows the live lever-derived value.
 //  (I) AudioSys.ctx null: startGame()/update()/nextWave() smoke across many levels.
 
 "use strict";
@@ -60,14 +68,14 @@ function close(got, want, msg, eps = 1e-9) { assert(Math.abs(got - want) < eps, 
 const canvasCtxNoop = new Proxy({}, { get: () => () => {} });
 const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => canvasCtxNoop };
 const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
-// CS024 P4: levelDef DELETED with the level table, and all nine UFO WEAPONS tier knobs (with the twelve
-// others) deleted from the registry. The three quantities are FROZEN at the retired table's level-1
-// answers for one phase (TRAP 2) — P5 puts them on the ufoFireFreqBig/Small, ufoAccuracySmall and
-// ufoShotSpeedBig/Small levers. Every INTEGRATION claim below survives untouched; the per-tier
-// bookkeeping inverts, because there are no tiers.
+// CS024 P4 built the odometer but left these three quantities (and six siblings) FROZEN at the retired
+// level table's level-1 answers for one phase (TRAP 2), including FROZEN_UFO_FIRE_MULT/_ACCURACY_DEG/
+// _SHOT_SPEED and FROZEN_JUNK_COUNT. CS024 P5 (uncommitted, on disk now) DELETED that whole freeze block
+// outright and wired the UFO WEAPONS quantities onto the ufoFireFreqBig/Small, ufoAccuracySmall and
+// ufoShotSpeedBig/Small levers via leverState(game.wave) at the point of use. Every INTEGRATION claim
+// below survives untouched; what inverts is the per-tier/frozen bookkeeping, because both the tiers and
+// the freeze are gone — everything is read live off leverState() now.
 const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "Saucer", "angleTo",
-                "FROZEN_UFO_FIRE_MULT", "FROZEN_UFO_ACCURACY_DEG", "FROZEN_UFO_SHOT_SPEED",
-                "FROZEN_JUNK_COUNT",
                 "ufoFireMult", "ufoAccuracyRad", "ufoShotSpeedPx",
                 "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "applyDebug",
                 "saveSettings", "loadSettings", "STORAGE_KEY",
@@ -119,12 +127,13 @@ function fireOnce(small, wave) {
 
 // ================= (B) DEBUG_VARS registry =====================
 (function sectionB() {
-  console.log("(B) DEBUG_VARS: UFO WEAPONS (9) entries; SAUCER PRESSURE header + its 2 knobs gone");
+  console.log("(B) DEBUG_VARS: UFO WEAPONS quantities now live in the single UFO section (10 lever knobs); SAUCER PRESSURE header + its 2 knobs gone");
 
-  // REPOINTED BY CS024 P4, INVERTED: the UFO WEAPONS header and its nine tier entries are deleted with
-  // the other twelve tier knobs. What each trio's "low" value held is not lost — it is the frozen
-  // constant the build reads this phase, and the matching lever's FLOOR from P5 — so the deletion is
-  // checked as a hand-off rather than a hole.
+  // REPOINTED BY CS024 P4, INVERTED, still true after P5: the UFO WEAPONS header and its nine tier
+  // entries are deleted with the other twelve tier knobs and never came back — P5's rebuilt registry
+  // folds fire freq / accuracy / shot speed into the single UFO header alongside P6's flight-speed/
+  // dir-change/appear knobs (asserted by id in section B of test-cs018-p6.js). What each trio's "low"
+  // value held is not lost — it is the matching lever's FLOOR — so the deletion is a hand-off, not a hole.
   const hIdx = X.DEBUG_VARS.findIndex(v => v.header === "UFO WEAPONS");
   eq(hIdx, -1, "B: the UFO WEAPONS header is gone with its nine tier entries (CS024 P4)");
   for (const id of ["ufoFireFreqLow", "ufoFireFreqNormal", "ufoFireFreqHigh",
@@ -133,9 +142,12 @@ function fireOnce(small, wave) {
     assert(!X.DEBUG_VARS.some(v => v.id === id), `B: the ${id} tier knob is gone (CS024 P4)`);
     assert(!(id in X.DEBUG), `B: ...and DEBUG.${id} with it`);
   }
-  eq(X.FROZEN_UFO_FIRE_MULT, 1.8, "B: the retired ufoFireFreqLow's 1.8x survives as FROZEN_UFO_FIRE_MULT");
-  eq(X.FROZEN_UFO_ACCURACY_DEG, 30, "B: ...ufoAccuracyLow's 30 deg as FROZEN_UFO_ACCURACY_DEG");
-  eq(X.FROZEN_UFO_SHOT_SPEED, 300, "B: ...and ufoShotSpeedLow's 300 px/s as FROZEN_UFO_SHOT_SPEED");
+  // REPOINTED BY CS024 P5: FROZEN_UFO_FIRE_MULT/_ACCURACY_DEG/_SHOT_SPEED are deleted with the whole
+  // freeze block — P5 wires these three quantities onto their real levers instead. What each frozen
+  // constant held is not lost: it is the matching lever's wave-1 FLOOR, checked directly below.
+  assert(X.probe("typeof FROZEN_UFO_FIRE_MULT") === "undefined", "B: FROZEN_UFO_FIRE_MULT is gone (CS024 P5)");
+  assert(X.probe("typeof FROZEN_UFO_ACCURACY_DEG") === "undefined", "B: FROZEN_UFO_ACCURACY_DEG is gone (CS024 P5)");
+  assert(X.probe("typeof FROZEN_UFO_SHOT_SPEED") === "undefined", "B: FROZEN_UFO_SHOT_SPEED is gone (CS024 P5)");
   const ls1 = X.leverState(1);
   assert(ls1.ufoFireFreqBig === 1.8 && ls1.ufoAccuracySmall === 30 && ls1.ufoShotSpeedBig === 300,
     "B: ...and each is the matching lever's floor, so P5's wiring keeps level 1 where it is");
@@ -157,35 +169,44 @@ function fireOnce(small, wave) {
 
 // ================= (C) UFO firing frequency =====================
 (function sectionC() {
-  console.log("(C) UFO firing frequency: tiered multiplier on the shipped per-size ranges, no jitter");
-  // TIER_STEPS.ufoFireFreq = [[1,"low"],[21,"normal"],[42,"high"]]
-  // REPOINTED BY CS024 P4: the tiers and their breakpoints (21/42) are deleted, so the SAME six probe
-  // levels expect the SAME frozen multiplier — which turns the "no jitter, exact through a real Saucer"
-  // claim into an equality across the whole range rather than within a band.
-  const cases = [1, 20, 21, 41, 42, 100].map(level => ({ level, mult: X.FROZEN_UFO_FIRE_MULT }));
-  for (const c of cases) {
-    X.game.wave = c.level;
-    eq(X.ufoFireMult(), c.mult, `C: level ${c.level} ufoFireMult() === ${c.mult}`);
+  console.log("(C) UFO firing frequency: size-specific lever multiplier (ufoFireFreqBig/Small) on the shipped per-size ranges, no jitter");
+  // REPOINTED BY CS024 P5: ufoFireMult() grew a `small` parameter (§4.6) — the tiers are gone (as of P4)
+  // and the frozen single multiplier is gone too (P5); fire frequency is now SPLIT per size and read
+  // live off leverState(). Probe several levels for BOTH sizes; expected multiplier comes straight from
+  // leverState(), never a hand-copied constant.
+  const levels = [1, 8, 9, 33, 34, 100];
+  for (const small of [true, false]) {
+    for (const level of levels) {
+      X.game.wave = level;
+      const lv = X.leverState(level);
+      const mult = small ? lv.ufoFireFreqSmall : lv.ufoFireFreqBig;
+      eq(X.ufoFireMult(small), mult, `C: level ${level} ufoFireMult(${small}) === leverState value (${mult})`);
 
-    // Integration: rollFireTimer([1,1]) isolates the multiplier exactly (rand(1,1) === 1).
-    const s = new X.Saucer(false);
-    close(s.rollFireTimer([1, 1]), c.mult, `C: level ${c.level} real Saucer.rollFireTimer([1,1]) === ${c.mult}`);
+      // Integration: rollFireTimer([1,1]) isolates the multiplier exactly (rand(1,1) === 1).
+      const s = new X.Saucer(small);
+      close(s.rollFireTimer([1, 1]), mult, `C: level ${level} real Saucer(${small}).rollFireTimer([1,1]) === ${mult}`);
 
-    // No jitter: repeated calls at a fixed level are byte-identical.
-    for (let i = 0; i < 20; i++) {
-      const s2 = new X.Saucer(false);
-      eq(s2.rollFireTimer([1, 1]), c.mult, `C: level ${c.level} rollFireTimer is deterministic (no jitter) on repeat ${i}`);
+      // No jitter: repeated calls at a fixed level are byte-identical (rollFireTimer's own rand(1,1) is
+      // pinned; ufoFireMult() itself must not draw a second, independent random number).
+      for (let i = 0; i < 20; i++) {
+        const s2 = new X.Saucer(small);
+        eq(s2.rollFireTimer([1, 1]), mult, `C: level ${level} rollFireTimer(${small}) is deterministic (no jitter) on repeat ${i}`);
+      }
     }
   }
-  console.log(`    fire freq: FROZEN at ${X.FROZEN_UFO_FIRE_MULT}x at every level (CS024 P4 TRAP 2)`);
+  console.log(`    fire freq: wave-1 floors big=${X.leverState(1).ufoFireFreqBig}x small=${X.leverState(1).ufoFireFreqSmall}x, size-specific, no jitter`);
 })();
 
 // ================= (D) UFO shot accuracy =====================
 (function sectionD() {
-  console.log("(D) UFO shot accuracy: real fired-bullet aim error matches ufoAccuracyRad(); big saucer never aims");
-  // TIER_STEPS.ufoAccuracy = [[1,"low"],[13,"normal"],[34,"high"]]
-  // REPOINTED BY CS024 P4: same six probe levels, one frozen value (breakpoints 13/34 deleted).
-  const cases = [1, 12, 13, 33, 34, 100].map(level => ({ level, deg: X.FROZEN_UFO_ACCURACY_DEG }));
+  console.log("(D) UFO shot accuracy: real fired-bullet aim error matches ufoAccuracyRad(), level-dependent via the ufoAccuracySmall lever; big saucer never aims");
+  // REPOINTED BY CS024 P5: the three tier knobs (and the FROZEN_UFO_ACCURACY_DEG constant that stood in
+  // for one phase, P4's TRAP 2) are both gone — accuracy is now driven by the live, two-generation-carried
+  // ufoAccuracySmall lever (the deepest carry in the UFO chain, FLAG-CS024-d: it only moves once
+  // ufoFlightSpeedSmall itself wraps). Probe levels are chosen to actually cross that wrap (33, then 65,
+  // 100 as it approaches its ceiling); expected value comes straight from leverState(), never a
+  // hand-copied constant.
+  const cases = [1, 9, 25, 33, 65, 100].map(level => ({ level, deg: X.leverState(level).ufoAccuracySmall }));
   for (const c of cases) {
     X.game.wave = c.level;
     const expectedRad = c.deg * Math.PI / 180;
@@ -229,21 +250,27 @@ function fireOnce(small, wave) {
 
 // ================= (E) UFO shot speed =====================
 (function sectionE() {
-  console.log("(E) UFO shot speed: real fired bullet's velocity magnitude matches the tiered px/s, both sizes");
-  // TIER_STEPS.ufoShotSpeed = [[1,"low"],[51,"normal"],[63,"high"]]
-  // REPOINTED BY CS024 P4: same six probe levels, one frozen value (breakpoints 51/63 deleted).
-  const cases = [1, 50, 51, 62, 63, 200].map(level => ({ level, px: X.FROZEN_UFO_SHOT_SPEED }));
-  for (const c of cases) {
-    X.game.wave = c.level;
-    eq(X.ufoShotSpeedPx(), c.px, `E: level ${c.level} ufoShotSpeedPx() === ${c.px}`);
+  console.log("(E) UFO shot speed: real fired bullet's velocity magnitude matches the size-specific lever, both sizes");
+  // REPOINTED BY CS024 P5: ufoShotSpeedPx() grew a `small` parameter (§4.6) — shot speed is now SPLIT per
+  // size (floors 300 big / 320 small, replacing the old shared, sizeless 300 the frozen constant held for
+  // one phase) and read live off leverState(). Probe levels are chosen to actually cross the wraps that
+  // move ufoShotSpeedBig/Small (33, 65, 100); expected value comes straight from leverState(), never a
+  // hand-copied constant.
+  const levels = [1, 9, 25, 33, 65, 100];
+  for (const level of levels) {
+    X.game.wave = level;
+    const lv = X.leverState(level);
+    eq(X.ufoShotSpeedPx(true), lv.ufoShotSpeedSmall, `E: level ${level} ufoShotSpeedPx(true) === leverState.ufoShotSpeedSmall (${lv.ufoShotSpeedSmall})`);
+    eq(X.ufoShotSpeedPx(false), lv.ufoShotSpeedBig, `E: level ${level} ufoShotSpeedPx(false) === leverState.ufoShotSpeedBig (${lv.ufoShotSpeedBig})`);
 
     for (const small of [true, false]) {
       X.game.ship.x = 640 + 500; X.game.ship.y = 360; // far enough that aim error doesn't distort magnitude
-      const { b } = fireOnce(small, c.level);
-      close(Math.hypot(b.vx, b.vy), c.px, `E: level ${c.level} real fired bullet speed (small=${small}) === ${c.px} px/s`, 1e-6);
+      const px = small ? lv.ufoShotSpeedSmall : lv.ufoShotSpeedBig;
+      const { b } = fireOnce(small, level);
+      close(Math.hypot(b.vx, b.vy), px, `E: level ${level} real fired bullet speed (small=${small}) === ${px} px/s`, 1e-6);
     }
   }
-  console.log(`    shot speed: FROZEN at ${X.FROZEN_UFO_SHOT_SPEED} px/s at every level (CS024 P4 TRAP 2)`);
+  console.log(`    shot speed: wave-1 floors big=${X.leverState(1).ufoShotSpeedBig} small=${X.leverState(1).ufoShotSpeedSmall} px/s, size-specific`);
 })();
 
 // ================= (F) retirement =====================
@@ -311,7 +338,10 @@ function fireOnce(small, wave) {
   const Y = build().exports;
   Y.startGame();
   eq(Y.game.cargoMax, 8, "H: cargoMax still starts at 8 (CS018 P5, untouched by P7)");
-  eq(Y.FROZEN_JUNK_COUNT, 3, "H: the junk count is untouched by P7 (frozen at 3 as of CS024 P4)");
+  // REPOINTED BY CS024 P5: FROZEN_JUNK_COUNT is deleted with the rest of the freeze block — junk count is
+  // now wired to the junkCount lever, whose wave-1 floor (3) is the same number the frozen constant held.
+  eq(Y.leverState(1).junkCount, 3, "H: junk count at wave 1 is still 3, now via the junkCount lever's floor, untouched by P7");
+  assert(Y.probe("typeof FROZEN_JUNK_COUNT") === "undefined", "H: FROZEN_JUNK_COUNT is gone — P5 deleted the whole freeze block");
   // REPOINTED BY CS024 P4: the level table this pair inspected is deleted outright.
   eq(Y.probe("levelDef"), "__ReferenceError__", "H: there is no level table left to carry a hunter-cap column");
   eq(Y.leverState(1).ufoFlightSpeedSmall, 150, "H: the UFO MOVEMENT quantities (P6) are untouched by P7 — now their own levers");
@@ -336,9 +366,15 @@ function fireOnce(small, wave) {
   // /^orbit/i claim is INVERTED to its positive successor rather than dropped.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
   // the FREQ_JITTER constant instead).
-  eq(nEntries, 15, `H: DEBUG_ENTRIES count is 15 after CS024 P4 (got ${nEntries})`);  // CS024 P4: 34 - garbageLifetime + garbageSoftMax/garbageHardMax/lastStandSpeed
+  // REPOINTED AGAIN BY CS024 P4: 34 -> 15 (the 21 tier knobs deleted, frozen at level-1 answers for TRAP 2).
+  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the freeze block is deleted and the registry REBUILT with one
+  // knob per LEVER instead of three per tier (10 UFO levers + smallUfoChance under UFO; 4 JUNK; 4 HUNTER;
+  // 2 GLOBAL). Section-by-section: SHIP 2 + GARBAGE 4 + CHAIN GUARD 4 + DELIVERY 1 + JUNK 4 + HUNTER 4 +
+  // UFO 11 + GLOBAL 2 = 32. Same claim, same strength — an exact live-registry count. P7's own three UFO
+  // WEAPONS quantities are now folded into that single UFO section and pinned by id in section B above.
+  eq(nEntries, 32, `H: DEBUG_ENTRIES count is 32 after CS024 P5's registry rebuild (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
-    "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
+    "H: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
     "H: ...and the entry added since P7 is CS019 P1's chainGuardCooldown");
   eq(Y.DEBUG_ENTRIES.filter(e => /^orbit/i.test(e.id)).length, 0,
@@ -349,15 +385,18 @@ function fireOnce(small, wave) {
     "H: ...but CS023 P2's debrisBounceRestitution survives — archetype-independent (CS024 spec §0)");
   console.log(`    DEBUG_ENTRIES: ${nEntries}   DEBUG_ROWS (incl. headers/action/back): ${nRows}`);
 
-  // logDifficultySnapshot's saucerAimErr column follows the tier-derived value, not the retired ramp() mirror.
-  Y.game.wave = 34; // "high" accuracy tier
+  // logDifficultySnapshot's saucerAimErr column follows the live lever-derived value, not the retired
+  // ramp() mirror or the (now also gone) frozen constant.
+  Y.game.wave = 34; // past the ufoAccuracySmall lever's first wrap (level 33), so it has genuinely moved
   Y.DiffLog.rows.length = 0;
-  Y.logDifficultySnapshot(Y.FROZEN_JUNK_COUNT, 1, 0);
+  Y.logDifficultySnapshot(Y.leverState(34).junkCount, 1, 0);
   const row = Y.DiffLog.rows[0];
-  // REPOINTED BY CS024 P4: the column still MIRRORS THE LIVE CALL at the saucer aim site — which is the
-  // claim — but the value behind that call is the frozen one, so it is read off the helper rather than
-  // off a tier knob that no longer exists.
-  close(row.saucerAimErr, Y.FROZEN_UFO_ACCURACY_DEG * Math.PI / 180, "H: DiffLog row's saucerAimErr matches the live aim value", 1e-6);
+  // REPOINTED BY CS024 P5: the column still MIRRORS THE LIVE CALL at the saucer aim site — which is the
+  // claim — but the value behind that call is now the live ufoAccuracySmall lever, not a frozen constant.
+  // The ground truth here is read straight off leverState() — an independent path from ufoAccuracyRad()'s
+  // own internal DEBUG-override lookup — rather than a second call to the function under test.
+  const expectedDeg = Y.leverState(34).ufoAccuracySmall;
+  close(row.saucerAimErr, expectedDeg * Math.PI / 180, "H: DiffLog row's saucerAimErr matches the live aim value", 1e-6);
 })();
 
 // ================= (I) AudioSys.ctx null smoke =====================

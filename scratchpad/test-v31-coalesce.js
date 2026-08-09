@@ -75,7 +75,10 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
 
 const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "DebrisSatellite", "HunterSatellite", "destroyDebris", "destroyHunter", "shatterClump", "Bullet", "AudioSys", "Achievements",
-  "GARBAGE_COALESCE_DELAY", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
+  // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY is deleted outright, replaced by the coalescePause
+  // lever (read live as DEBUG.coalescePause ?? leverState(game.wave).coalescePause). leverState/DEBUG
+  // replace it as this file's source of truth for the inert-delay quantity.
+  "leverState", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
   "largeHunterCount", "LARGE_HUNTER_MAX",   // CS024 P3: largeHunterCap() deleted, ceiling now flat
                                             // CS024 P4: levelDef dropped — the level table is gone
@@ -91,7 +94,7 @@ const wrapped = new Function(
 );
 const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafStub, global.localStorage);
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
-  destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, GARBAGE_COALESCE_DELAY, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
+  destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, leverState, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
   largeHunterCount, LARGE_HUNTER_MAX,
   SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
@@ -102,6 +105,13 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
 // the constant so this file's economy-relationship assertions still had a number to reason about.
 // It is gone now too: with decay removed from the game outright there is no lifetime for the inert
 // window to be compared against, and §16/§21 below are repointed onto permanence instead.
+// REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY is deleted outright — the inert-delay quantity is now
+// the coalescePause lever, read live at the point of use exactly like every other lever. This file
+// only ever runs at CAP_OK_LEVEL (game.wave === 1, or the pre-startGame 0, for which leverState gives
+// the identical answer — "levels below 1 clamp to zero ticks"), so a single derivation-based helper
+// mirroring the real wired idiom (`DEBUG.coalescePause ?? leverState(game.wave).coalescePause`)
+// replaces every reference to the retired constant below.
+const coalescePause = () => DEBUG.coalescePause ?? leverState(game.wave).coalescePause;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -150,7 +160,9 @@ assert(typeof LARGE_HUNTER_MAX === "number", "0: the large-Hunter ceiling is a f
 // now that garbage is permanent, retuned the live slider and reported 5000 ms. This file measures the
 // coalescence MACHINERY, not this number, and every timing below derives from the constant rather than
 // assuming it, so the retune moves one literal here and nothing else.
-assert(GARBAGE_COALESCE_DELAY === 5.0, `0: GARBAGE_COALESCE_DELAY is 5.0 (CS024 P4 Gate A Q1 retune 3.0->5.0; got ${GARBAGE_COALESCE_DELAY})`);
+// REPOINTED AGAIN BY CS024 P5: the constant itself is gone, replaced outright by the coalescePause
+// lever — its floor carries the identical 5.0 forward, so this is still checking the same number.
+assert(coalescePause() === 5.0, `0: coalescePause() is 5.0 (CS024 P4 Gate A Q1 retune 3.0->5.0, CS024 P5 constant->lever; got ${coalescePause()})`);
 assert(GARBAGE_MERGE_DIST === 12, `0: GARBAGE_MERGE_DIST is 12 (got ${GARBAGE_MERGE_DIST})`);
 assert(HUNTER_COALESCE_COUNT === 12, `0: HUNTER_COALESCE_COUNT is 12 (got ${HUNTER_COALESCE_COUNT})`);
 assert(GARBAGE_MAGNET_RANGE === 160, `0: GARBAGE_MAGNET_RANGE is 160 (CS024 P4 Gate A Q1 retune 180->160; got ${GARBAGE_MAGNET_RANGE})`);
@@ -165,17 +177,17 @@ assert(new Garbage(0, 0).age === 0, "0: ...and starts its monotonic age clock at
 {
   const fresh = new Garbage(100, 100);
   assert(fresh.pieces === 1, "0: a new Garbage starts at pieces === 1");
-  assert(fresh.coalesceDelay === GARBAGE_COALESCE_DELAY, "0: a new Garbage starts inert (coalesceDelay == DELAY)");
+  assert(fresh.coalesceDelay === coalescePause(), "0: a new Garbage starts inert (coalesceDelay == the live coalescePause lever)");
   const node = { x: 50, y: 50, px: 50, py: 50, spin: 0, spinRate: 0, mass: 1.0 };
   const revived = Garbage.fromNode(node);
-  assert(revived.pieces === 1 && revived.coalesceDelay === GARBAGE_COALESCE_DELAY,
+  assert(revived.pieces === 1 && revived.coalesceDelay === coalescePause(),
     "0: Garbage.fromNode inherits the coalesce defaults too");
 }
 // Real emission site: destroyDebris pushes canisters that carry the defaults.
 {
   beginPlaying();
   destroyDebris(new DebrisSatellite(1000, 1000, 1, 1), false); // small tier -> emits garbage, no children
-  assert(game.garbage.length > 0 && game.garbage.every(g => g.pieces === 1 && g.coalesceDelay === GARBAGE_COALESCE_DELAY),
+  assert(game.garbage.length > 0 && game.garbage.every(g => g.pieces === 1 && g.coalesceDelay === coalescePause()),
     "0: destroyDebris-emitted canisters all inherit pieces=1 + full coalesceDelay");
 }
 
@@ -191,12 +203,12 @@ console.log("(1) a piece can't merge before the coalesce delay, can after — vi
   assert(!a.dead && !b.dead && a.pieces === 1, "1: fresh pieces do NOT merge (coalesceDelay > 0)");
 
   // advance half the delay (drive the real update countdown; velocity is 0 so they hold position) — still inert
-  a.update(GARBAGE_COALESCE_DELAY * 0.5); b.update(GARBAGE_COALESCE_DELAY * 0.5);
+  a.update(coalescePause() * 0.5); b.update(coalescePause() * 0.5);
   coalesceGarbage(1 / 60);
   assert(!a.dead && !b.dead && a.pieces === 1, "1: still inert at half the coalesce delay");
 
   // advance past the full delay -> active
-  a.update(GARBAGE_COALESCE_DELAY * 0.5 + 0.02); b.update(GARBAGE_COALESCE_DELAY * 0.5 + 0.02);
+  a.update(coalescePause() * 0.5 + 0.02); b.update(coalescePause() * 0.5 + 0.02);
   assert(a.coalesceDelay <= 0 && b.coalesceDelay <= 0, "1: both active past the full coalesce delay");
   coalesceGarbage(1 / 60);
   assert((a.dead || b.dead) && (a.pieces === 2 || b.pieces === 2), "1: active pieces in contact merge (pieces -> 2)");
@@ -419,7 +431,7 @@ console.log("(13) v3.2 P2: a player bullet shatters a pieces=7 clump into exactl
   assert(clump.dead, "13: the clump is destroyed");
   assert(game.garbage.length === 7, `13: exactly 7 fresh singles emitted (got ${game.garbage.length})`);
   assert(game.garbage.every(g => g.pieces === 1), "13: every emitted piece is pieces === 1");
-  assert(game.garbage.every(g => g.coalesceDelay === GARBAGE_COALESCE_DELAY),
+  assert(game.garbage.every(g => g.coalesceDelay === coalescePause()),
     "13: every emitted piece has a full, re-armed coalesceDelay");
   assert(game.garbage.every(g => Math.abs(g.mass - clumpMass / 7) < 1e-12),
     `13: every emitted piece's mass is clumpMass/7 = ${clumpMass / 7}`);
@@ -662,7 +674,7 @@ console.log("(23) v3.3 P4 (9c): scoop a 10-piece clump with only 3 slots -> 3 no
   assert(!clump.dead && clump.pieces === 7, `23: a live 7-piece leftover remains (got pieces ${clump.pieces}, dead=${clump.dead})`);
   assert(Math.abs(clump.mass - 7 * pMass) < 1e-12, `23: leftover mass re-derived to 7*pMass (got ${clump.mass})`);
   assert(Math.abs(clump.radius - 7 * Math.sqrt(7)) < 1e-12, "23: leftover radius re-derived to 7*sqrt(7)");
-  assert(clump.coalesceDelay === GARBAGE_COALESCE_DELAY, "23: leftover's coalesce delay is re-armed");
+  assert(clump.coalesceDelay === coalescePause(), "23: leftover's coalesce delay is re-armed");
   assert(!("hull" in clump), "23: no hull field on the re-derived leftover (v3.5 P2: no cached hull to regenerate)");
   assert(Math.hypot(clump.vx, clump.vy) > 0, "23: leftover gets an outward kick (floats off away from the ship)");
   // the leftover cannot be immediately re-scooped: the chain is full (no room)

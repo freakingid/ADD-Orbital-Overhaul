@@ -73,8 +73,8 @@ const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "coales
                 "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN", "HUNTER_COALESCE_COUNT",
                 "ACH_LINEAGE_FULL", "DEBUG", "DEBUG_VARS", "AudioSys", "MusicSys",
                 "DiffLog", "DIFFLOG_FIELDS", "logDifficultySnapshot", "difficultyLogCSV",
-                "musicIntensity", "MUSIC_INTENSITY_WAVES", "FROZEN_JUNK_COUNT", "FROZEN_JUNK_SPEED",
-                "FROZEN_UFO_APPEAR_FREQ", "GAME_VERSION",
+                "musicIntensity", "MUSIC_INTENSITY_WAVES", "LEVERS", "GAME_VERSION",
+                "ufoAccuracyRad", "FREQ_JITTER",
                 // Scope probe: asks "does this identifier exist at all?" without the factory's own return
                 // statement throwing a ReferenceError on a retired symbol. Direct eval keeps the script
                 // block's lexical scope, so it sees exactly what the game's own code would see.
@@ -120,68 +120,105 @@ function levelForCap(n) {
 
 // ================= (B) THE FREEZE (FLAG-a) =====================
 (function sectionB() {
-  console.log("(B) Hunter speed/turn frozen at _CEIL x HUNTER_FLOOR_FRAC, at every level");
+  console.log("(B) Hunter TURN stays frozen at every tier/level; large-core SPEED stays frozen; medium/small SPEED is now levered (CS024 P5)");
   const g = X.game;
 
-  // The spec's own numbers, pinned so a HUNTER_FLOOR_FRAC retune is a deliberate, visible change.
-  const WANT_SPEED = { 3: 40.6, 2: 69.6, 1: 101.5 };
-  const WANT_TURN  = { 3: 0, 2: 0.928, 1: 1.508 };
+  // The spec's own numbers, pinned so a HUNTER_FLOOR_FRAC retune is a deliberate, visible change. Turn
+  // rate is UNCONDITIONAL in the ctor — `this.turnRate = HUNTER_TURN_CEIL[size] * HUNTER_FLOOR_FRAC`
+  // runs for every size before the size===3 branch — so it stays frozen for all three tiers exactly as
+  // CS018 P4 shipped it (spec §2.4: "every hunter turn rate stays frozen too... do not lever them").
+  // Speed is where CS024 P5 diverges from P4: only the large core (size 3) keeps the frozen
+  // `HUNTER_SPEED_CEIL[3] * HUNTER_FLOOR_FRAC` derivation (it does not pursue and has no speed lever, by
+  // design). Medium/small speed is now the HUNTER chain's two carried levers, hunterSpeedMedium/Small,
+  // read via `leverState(game.wave)` at construction — the mirror image of the old "frozen at every
+  // level" claim for those two sizes.
+  const WANT_LARGE_SPEED = 40.6;
+  const WANT_TURN = { 3: 0, 2: 0.928, 1: 1.508 };
+  close(X.HUNTER_SPEED_CEIL[3] * X.HUNTER_FLOOR_FRAC, WANT_LARGE_SPEED, `B: the large core's frozen speed is ${WANT_LARGE_SPEED} px/s`, 1e-9);
   for (const size of [3, 2, 1]) {
-    close(X.HUNTER_SPEED_CEIL[size] * X.HUNTER_FLOOR_FRAC, WANT_SPEED[size], `B: size ${size} frozen speed is ${WANT_SPEED[size]} px/s`, 1e-9);
     close(X.HUNTER_TURN_CEIL[size] * X.HUNTER_FLOOR_FRAC, WANT_TURN[size], `B: size ${size} frozen turn is ${WANT_TURN[size]} rad/s`, 1e-9);
   }
 
-  // Every level, every tier: one value, equal to the derivation. Includes levels past LEVEL_MAX.
-  const seenSpeed = { 3: new Set(), 2: new Set(), 1: new Set() };
-  const seenTurn  = { 3: new Set(), 2: new Set(), 1: new Set() };
+  // Every level: the large core's speed and every tier's turn rate are each exactly ONE value; medium
+  // and small speed instead track leverState(wave).hunterSpeedMedium/Small (DEBUG untouched, so no
+  // override applies) and are proven to actually VARY across the probed levels.
+  const seenLargeSpeed = new Set();
+  const seenTurn = { 3: new Set(), 2: new Set(), 1: new Set() };
+  const seenMediumSpeed = new Set(), seenSmallSpeed = new Set();
   for (const lvl of [1, 2, 4, 5, 9, 17, 21, 22, 34, 43, 59, 63, 64, 200, 5000]) {
     g.wave = lvl;
+    const lv = X.leverState(lvl);
     for (const size of [3, 2, 1]) {
       const h = withRandom(0.5, () => new X.HunterSatellite(400, 400, size, 0));
-      close(h.speed, X.HUNTER_SPEED_CEIL[size] * X.HUNTER_FLOOR_FRAC, `B: level ${lvl} size ${size} speed is the frozen value`);
       close(h.turnRate, X.HUNTER_TURN_CEIL[size] * X.HUNTER_FLOOR_FRAC, `B: level ${lvl} size ${size} turn is the frozen value`);
-      // The velocity actually baked into the entity uses the frozen speed too, not just the field.
-      close(Math.hypot(h.vx, h.vy), h.speed, `B: level ${lvl} size ${size} velocity magnitude === the frozen speed`);
-      seenSpeed[size].add(h.speed); seenTurn[size].add(h.turnRate);
+      // The velocity actually baked into the entity uses this.speed exactly, no extra jitter (unlike
+      // DebrisSatellite's rand(0.7,1.3) spread) — so this holds for every size at every level.
+      close(Math.hypot(h.vx, h.vy), h.speed, `B: level ${lvl} size ${size} velocity magnitude === this.speed exactly`);
+      seenTurn[size].add(h.turnRate);
+      if (size === 3) {
+        close(h.speed, X.HUNTER_SPEED_CEIL[3] * X.HUNTER_FLOOR_FRAC, `B: level ${lvl} large-core speed is the frozen value`);
+        seenLargeSpeed.add(h.speed);
+      } else if (size === 2) {
+        close(h.speed, lv.hunterSpeedMedium, `B: level ${lvl} medium speed === leverState(${lvl}).hunterSpeedMedium`);
+        seenMediumSpeed.add(h.speed);
+      } else {
+        close(h.speed, lv.hunterSpeedSmall, `B: level ${lvl} small speed === leverState(${lvl}).hunterSpeedSmall`);
+        seenSmallSpeed.add(h.speed);
+      }
     }
   }
-  for (const size of [3, 2, 1]) {
-    eq(seenSpeed[size].size, 1, `B: size ${size} produced exactly ONE speed across every probed level`);
-    eq(seenTurn[size].size, 1, `B: size ${size} produced exactly ONE turn rate across every probed level`);
-  }
+  eq(seenLargeSpeed.size, 1, "B: the large core produced exactly ONE speed across every probed level (frozen)");
+  for (const size of [3, 2, 1]) eq(seenTurn[size].size, 1, `B: size ${size} produced exactly ONE turn rate across every probed level (frozen)`);
+  // MIRROR IMAGE of the retired "exactly one speed" claim: medium/small speed is a LEVER now, so it must
+  // vary across a level spread this wide (floor 60/90 at low levels, plateaued ceil 110/160 by level 34+).
+  assert(seenMediumSpeed.size > 1, `B: medium speed VARIES across levels now (${seenMediumSpeed.size} distinct values seen) — it is a lever, not frozen`);
+  assert(seenSmallSpeed.size > 1, `B: small speed VARIES across levels now (${seenSmallSpeed.size} distinct values seen) — it is a lever, not frozen`);
   eq(X.HUNTER_TURN_CEIL[3] * X.HUNTER_FLOOR_FRAC, 0, "B: the large core's frozen turn rate is exactly 0 (passive drift preserved)");
 
-  // CONTROL: the retired ramp really is gone. It coincides with the frozen value only at level 1, where
-  // difficultyFactor is 0; anywhere past that the two must disagree for every non-zero ceiling.
+  // CONTROL: the large core's speed still matches NEITHER the retired pre-CS018-P4 ramp NOR the
+  // medium/small lever formula — it is its own frozen constant, unconditionally, with no game-state
+  // read at all (spec §2.4: large hunters deliberately have no speed lever).
   g.wave = 30;
-  for (const size of [2, 1]) {
-    const frozen = X.HUNTER_SPEED_CEIL[size] * X.HUNTER_FLOOR_FRAC;
-    // REPOINTED BY CS024 P4: ramp() is deleted, so the control rebuilds it from its retired definition
-    // verbatim — floor + (ceil - floor) * musicIntensity(wave) — using the real surviving curve.
-    const ramped = frozen + (X.HUNTER_SPEED_CEIL[size] - frozen) * X.musicIntensity(30);
-    assert(ramped > frozen + 1, `B: (context) the retired ramp would give ${ramped.toFixed(1)} at level 30 for size ${size}`);
-    const h = withRandom(0.5, () => new X.HunterSatellite(400, 400, size, 0));
-    assert(Math.abs(h.speed - ramped) > 1e-6, `B: CONTROL — size ${size}'s frozen speed is not the level-30 ramp value`);
+  {
+    const frozen = X.HUNTER_SPEED_CEIL[3] * X.HUNTER_FLOOR_FRAC;
+    const ramped = frozen + (X.HUNTER_SPEED_CEIL[3] - frozen) * X.musicIntensity(30); // the retired ramp() formula, rebuilt verbatim
+    // musicIntensity(30) is well past 0, but HUNTER_TURN_CEIL[3]/HUNTER_SPEED_CEIL[3] - frozen product is
+    // 0 here only if HUNTER_SPEED_CEIL[3] === frozen, which it is not (70 vs 40.6) — the ramp value really
+    // does differ from frozen for the large core, same as it always did.
+    assert(Math.abs(ramped - frozen) > 1e-6, `B: (context) the retired ramp would give ${ramped.toFixed(1)} at level 30 for the large core, not the frozen ${frozen}`);
+    const h = withRandom(0.5, () => new X.HunterSatellite(400, 400, 3, 0));
+    assert(Math.abs(h.speed - ramped) > 1e-6, "B: CONTROL — the large core's frozen speed is not the level-30 ramp value");
   }
 
-  // The source-level claim: the ctor's two assignments read NO game state and NO ramp/clock helper.
-  const ctorSpeed = scriptSrc.split("\n").filter(l => /this\.speed\s*=\s*HUNTER_SPEED_CEIL/.test(l));
-  const ctorTurn  = scriptSrc.split("\n").filter(l => /this\.turnRate\s*=\s*HUNTER_TURN_CEIL/.test(l));
-  eq(ctorSpeed.length, 1, "B: exactly one frozen speed assignment in the ctor");
+  // The source-level claim: the large core's speed assignment and every turnRate assignment read NO
+  // game state and NO ramp/clock helper (leverState() is a pure function of its `wave` argument, not a
+  // clock read off `game.` — the regex below specifically excludes `game.` reads, and leverState(game.wave)
+  // is exactly the medium/small branch's own call, which this claim deliberately does not cover).
+  const ctorLargeSpeed = scriptSrc.split("\n").filter(l => /this\.speed\s*=\s*HUNTER_SPEED_CEIL/.test(l));
+  const ctorTurn = scriptSrc.split("\n").filter(l => /this\.turnRate\s*=\s*HUNTER_TURN_CEIL/.test(l));
+  eq(ctorLargeSpeed.length, 1, "B: exactly one frozen large-core speed assignment in the ctor");
   eq(ctorTurn.length, 1, "B: exactly one frozen turnRate assignment in the ctor");
-  for (const line of [ctorSpeed[0] || "", ctorTurn[0] || ""]) {
+  for (const line of [ctorLargeSpeed[0] || "", ctorTurn[0] || ""]) {
     assert(!/game\./.test(line), `B: the assignment reads no game state: ${line.trim()}`);
     assert(!/\bramp\(|cycleValue\(/.test(line), `B: the assignment calls no ramp/cycle helper: ${line.trim()}`);
   }
+  // ...and, separately, the medium/small branch DOES read leverState(game.wave) — the source-level
+  // mirror image of the claim above, proven on the same file.
+  const mediumSmallSpeed = scriptSrc.split("\n").filter(l => /DEBUG\.hunterSpeedMedium/.test(l));
+  assert(mediumSmallSpeed.length >= 1, "B: the medium/small speed branch reads DEBUG.hunterSpeedMedium ?? leverState(...).hunterSpeedMedium");
 
-  // The invariant an existing source comment asserts, now that the medium's speed no longer ranges.
-  const frozenMedium = X.HUNTER_SPEED_CEIL[2] * X.HUNTER_FLOOR_FRAC;
-  assert(X.HUNTER_LAST_STAND_SPEED < frozenMedium,
-    `B: HUNTER_LAST_STAND_SPEED (${X.HUNTER_LAST_STAND_SPEED}) stays below the frozen medium speed (${frozenMedium})`);
+  // The invariant an existing source comment asserts: HUNTER_LAST_STAND_SPEED stays below the medium
+  // homer's speed. That speed no longer has one frozen value to compare against — it ranges
+  // hunterSpeedMedium's floor..ceil (60..110) — so the invariant is checked against the FLOOR, the
+  // lowest the real speed can ever be (the lever has no carriesTo of its own, so it is a monotonic
+  // plateau from floor to ceil, never below floor).
+  const hunterSpeedMediumLever = X.LEVERS.find(l => l.id === "hunterSpeedMedium");
+  assert(X.HUNTER_LAST_STAND_SPEED < hunterSpeedMediumLever.floor,
+    `B: HUNTER_LAST_STAND_SPEED (${X.HUNTER_LAST_STAND_SPEED}) stays below the medium lever's floor (${hunterSpeedMediumLever.floor}) — the lowest the real speed ever gets`);
   assert(X.HUNTER_LAST_STAND_TURN < X.HUNTER_TURN_CEIL[2] * X.HUNTER_FLOOR_FRAC,
     `B: HUNTER_LAST_STAND_TURN (${X.HUNTER_LAST_STAND_TURN}) stays below the frozen medium turn rate`);
-  console.log(`    frozen speed 3/2/1: ${WANT_SPEED[3]} / ${WANT_SPEED[2]} / ${WANT_SPEED[1]} px/s   turn: ${WANT_TURN[3]} / ${WANT_TURN[2]} / ${WANT_TURN[1]} rad/s`);
-  console.log(`    HUNTER_LAST_STAND_SPEED ${X.HUNTER_LAST_STAND_SPEED} < frozen medium ${frozenMedium}  ✓`);
+  console.log(`    frozen large-core speed: ${WANT_LARGE_SPEED} px/s   turn 3/2/1: ${WANT_TURN[3]} / ${WANT_TURN[2]} / ${WANT_TURN[1]} rad/s`);
+  console.log(`    medium/small speed levers: floor ${hunterSpeedMediumLever.floor}/${X.LEVERS.find(l => l.id === "hunterSpeedSmall").floor} .. ceil ${hunterSpeedMediumLever.ceil}/${X.LEVERS.find(l => l.id === "hunterSpeedSmall").ceil} px/s`);
 })();
 
 // ================= (C) the cap counts SPAWN SLOTS: size 3, alive, only =====================
@@ -495,38 +532,84 @@ function levelForCap(n) {
   assert(dfCalls.some(l => /MusicSys\.setIntensity\(musicIntensity\(game\.wave\)\)/.test(l)),
     "H: MusicSys.setIntensity(musicIntensity(game.wave)) is the retained purpose");
 
-  // logDifficultySnapshot rewritten: the retired columns are gone, the table columns are present.
-  for (const gone of ["cycle", "cycleWave", "hunterSpeedFrac", "hunterTurnFrac"]) {
+  // logDifficultySnapshot rewritten: the retired columns are gone, the LEVERS-mirroring columns are
+  // present. REPOINTED BY CS024 P5 (spec §4.5): the field list ITSELF changes here — P4 deliberately left
+  // that decision open ("P5 owns the list"), and this is P5 exercising it. `phase`/`rel` are DROPPED
+  // ENTIRELY now (mirror image of the P4 claim: not merely nulled any more, removed from the array), the
+  // old single junkSpeed/ufoFlightSpeed/ufoDirChangeFreq/ufoFireFreq/ufoAccuracy/ufoShotSpeed columns are
+  // replaced by per-size pairs (or, for junkCount's siblings, per-size trio), and the whole list is a
+  // straight mirror of the 17 LEVERS ids plus a handful of non-lever context columns. Pinned as an exact
+  // ordered array read straight out of the live DIFFLOG_FIELDS, not a membership loop, so a reorder or a
+  // stray extra column is caught too.
+  const WANT_FIELDS = [
+    "t", "level", "score", "prevLevelSecs",
+    "junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall",
+    "maxLargeHunters", "hunterCount", "coalescePause", "hunterSpeedMedium", "hunterSpeedSmall",
+    "ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall",
+    "ufoDirChangeBig", "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
+    "ufoAccuracySmall", "ufoShotSpeedBig", "ufoShotSpeedSmall",
+    "saucerAimErr", "saucerGapMin", "saucerGapMax",
+    "chainLen", "cargoMax", "scoopLevel",
+  ];
+  assert(Y.DIFFLOG_FIELDS.length === WANT_FIELDS.length && Y.DIFFLOG_FIELDS.every((f, i) => f === WANT_FIELDS[i]),
+    `H: DIFFLOG_FIELDS is exactly the 17-lever mirror plus its context columns, in order (got ${JSON.stringify(Y.DIFFLOG_FIELDS)})`);
+  for (const gone of ["cycle", "cycleWave", "hunterSpeedFrac", "hunterTurnFrac", "phase", "rel",
+                      "junkSpeed", "ufoFlightSpeed", "ufoDirChangeFreq", "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
     assert(!Y.DIFFLOG_FIELDS.includes(gone), `H: DIFFLOG_FIELDS no longer carries "${gone}"`);
   }
-  // The column LIST is untouched by CS024 P4 — only the expressions feeding three groups of columns
-  // moved. P5 owns the list.
-  for (const want of ["level", "phase", "rel", "junkCount", "maxLargeHunters", "prevLevelSecs",
-                      "junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq",
-                      "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
-    assert(Y.DIFFLOG_FIELDS.includes(want), `H: DIFFLOG_FIELDS carries "${want}"`);
-  }
+
   const row = Y.DiffLog.rows[Y.DiffLog.rows.length - 1];
-  eq(row.level, Y.game.wave, "H: the logged level is game.wave");
-  // REPOINTED BY CS024 P4: `phase` and `rel` were positions inside the 21-level three-phase structure,
-  // which is DELETED rather than renamed — so they log null (an empty CSV cell) instead of a re-derived
-  // number describing something that no longer exists. The COLUMN LIST is deliberately unchanged; P5
-  // owns the repoint onto leverState and any list change that comes with it.
-  eq(row.phase, null, "H: the logged phase is null — the three-phase structure is deleted");
-  eq(row.rel, null, "H: ...and so is the logged relative level");
-  eq(row.junkCount, Y.FROZEN_JUNK_COUNT, "H: the logged junkCount is what actually spawned (frozen this phase)");
-  // REPOINTED BY CS024 P3: the column survives (a column follows its consumer) but its source moved off
-  // the deleted levelDef column onto the flat LARGE_HUNTER_MAX.
-  eq(row.maxLargeHunters, Y.LARGE_HUNTER_MAX, "H: the logged maxLargeHunters is LARGE_HUNTER_MAX");
-  // REPOINTED BY CS024 P4: the seven columns logged a TIER NAME; tiers are gone, so they log the NUMBER
-  // in play. That is the shape they keep — P5's leverState values are numbers too.
-  eq(row.junkSpeed, Y.FROZEN_JUNK_SPEED, "H: the logged junkSpeed is the live frozen number, not a tier name");
-  eq(row.ufoAppearFreq, Y.FROZEN_UFO_APPEAR_FREQ, "H: ...and so is the logged ufoAppearFreq");
-  for (const k of ["junkSpeed", "ufoAppearFreq", "ufoFlightSpeed", "ufoDirChangeFreq", "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
-    assert(typeof row[k] === "number" && Number.isFinite(row[k]), `H: the logged "${k}" is a finite number now`);
+  const rowWave = Y.game.wave;
+  eq(row.level, rowWave, "H: the logged level is game.wave");
+  // `phase`/`rel` are gone from the array itself (CS024 P5) — the row carries no such key at all, mirror
+  // image of the P4 pin ("logs null") which is now stale.
+  assert(!("phase" in row), "H: the logged row carries no `phase` key at all — dropped, not nulled");
+  assert(!("rel" in row), "H: ...nor `rel`");
+
+  // Every lever column mirrors leverState(row.level) through the SAME `DEBUG.<id> ?? lv.<id>` expression
+  // its own live consumer uses (spec §4.5) — proven via the real leverState(), never a re-derived
+  // formula. DEBUG is untouched (every lever knob's def is null) on this fresh build, so `lv.<id>` IS
+  // the resolved value at every column.
+  const lv = Y.leverState(rowWave);
+  // junkCount/junkSpeedLarge are logged VERBATIM from nextWave()'s own resolved `count`/`speed` locals —
+  // the exact values that wave's DebrisSatellites actually spawned with.
+  eq(row.junkCount, lv.junkCount, "H: the logged junkCount is what actually spawned this level (leverState, untouched build)");
+  eq(row.junkSpeedLarge, lv.junkSpeedLarge, "H: the logged junkSpeedLarge is what actually spawned this level");
+  eq(row.junkSpeedMedium, lv.junkSpeedMedium, "H: the logged junkSpeedMedium mirrors leverState");
+  eq(row.junkSpeedSmall, lv.junkSpeedSmall, "H: the logged junkSpeedSmall mirrors leverState");
+  // REPOINTED BY CS024 P3 (unchanged this phase): the column survives (a column follows its consumer)
+  // but its source is the flat LARGE_HUNTER_MAX, not a lever or a deleted levelDef column.
+  eq(row.maxLargeHunters, Y.LARGE_HUNTER_MAX, "H: the logged maxLargeHunters is the flat LARGE_HUNTER_MAX");
+  eq(row.coalescePause, lv.coalescePause, "H: the logged coalescePause mirrors leverState");
+  eq(row.hunterSpeedMedium, lv.hunterSpeedMedium, "H: the logged hunterSpeedMedium mirrors leverState");
+  eq(row.hunterSpeedSmall, lv.hunterSpeedSmall, "H: the logged hunterSpeedSmall mirrors leverState");
+  eq(row.ufoAppearFreq, lv.ufoAppearFreq, "H: the logged ufoAppearFreq is the unjittered CENTER — same value leverState gives");
+  eq(row.ufoFlightSpeedBig, lv.ufoFlightSpeedBig, "H: the logged ufoFlightSpeedBig mirrors leverState");
+  eq(row.ufoFlightSpeedSmall, lv.ufoFlightSpeedSmall, "H: the logged ufoFlightSpeedSmall mirrors leverState");
+  eq(row.ufoDirChangeBig, lv.ufoDirChangeBig, "H: the logged ufoDirChangeBig mirrors leverState");
+  eq(row.ufoDirChangeSmall, lv.ufoDirChangeSmall, "H: the logged ufoDirChangeSmall mirrors leverState");
+  eq(row.ufoFireFreqBig, lv.ufoFireFreqBig, "H: the logged ufoFireFreqBig mirrors leverState");
+  eq(row.ufoFireFreqSmall, lv.ufoFireFreqSmall, "H: the logged ufoFireFreqSmall mirrors leverState");
+  eq(row.ufoAccuracySmall, lv.ufoAccuracySmall, "H: the logged ufoAccuracySmall mirrors leverState");
+  eq(row.ufoShotSpeedBig, lv.ufoShotSpeedBig, "H: the logged ufoShotSpeedBig mirrors leverState");
+  eq(row.ufoShotSpeedSmall, lv.ufoShotSpeedSmall, "H: the logged ufoShotSpeedSmall mirrors leverState");
+  // saucerAimErr mirrors the exact ufoAccuracyRad() call the real saucer aim site uses (radians), and
+  // saucerGapMin/Max mirror the jittered-interval BOUNDS around the resolved appearance centre (not a
+  // second rand() draw — logDifficultySnapshot computes them as appearCenter*(1 -+ FREQ_JITTER), the same
+  // bounds jitteredInterval() would sample within, read here via the real exported constant). Y.game.wave
+  // already equals rowWave (row was just logged off this exact game state), so calling Y's own
+  // ufoAccuracyRad() directly reads the same game.wave the row was built from.
+  eq(Y.game.wave, rowWave, "H: (meta) Y.game.wave still equals the row's own level at this point");
+  close(row.saucerAimErr, Y.ufoAccuracyRad(), "H: saucerAimErr mirrors the live ufoAccuracyRad() function", 1e-9);
+  close(row.saucerGapMin, lv.ufoAppearFreq * (1 - Y.FREQ_JITTER), "H: saucerGapMin === appearCenter * (1 - FREQ_JITTER)", 1e-9);
+  close(row.saucerGapMax, lv.ufoAppearFreq * (1 + Y.FREQ_JITTER), "H: saucerGapMax === appearCenter * (1 + FREQ_JITTER)", 1e-9);
+
+  // Every declared column is present in a real row, holds a finite number, and the row carries nothing
+  // the list omits — the CSV shape follows the list exactly.
+  for (const f of Y.DIFFLOG_FIELDS) {
+    assert(f in row, `H: a real row carries the declared column "${f}"`);
+    assert(typeof row[f] === "number" && Number.isFinite(row[f]), `H: the logged "${f}" is a finite number`);
   }
-  // Every declared column is actually present in a real row, and the CSV shape follows the list.
-  for (const f of Y.DIFFLOG_FIELDS) assert(f in row, `H: a real row carries the declared column "${f}"`);
   eq(Object.keys(row).length, Y.DIFFLOG_FIELDS.length, "H: a real row carries no columns the list omits");
   eq(Y.difficultyLogCSV().split("\n")[0], Y.DIFFLOG_FIELDS.join(","), "H: the CSV header is the field list");
 
@@ -571,12 +654,62 @@ function levelForCap(n) {
   // a knob creeping back in.
   // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
   // via the FREQ_JITTER constant instead). AND AGAIN BY CS024 P3: 34 -> 36 — garbageLifetime out with
-  // the decay clock, garbageSoftMax/garbageHardMax/lastStandSpeed in.
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 15, "H: DEBUG_VARS holds 15 value entries as of CS024 P4");
-  assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"),
-    "H: ...and the entry that moved it from 33 to 34 is CS020 P1b's dockComboGrace");
+  // the decay clock, garbageSoftMax/garbageHardMax/lastStandSpeed in. AND AGAIN BY CS024 P4 (the freeze
+  // block): 36 -> 15 — the whole JUNK section, and every tier knob under the old SAUCER-derived UFO
+  // MOVEMENT/UFO WEAPONS headers, deleted outright and replaced by nothing (P4 built the odometer but
+  // did not expose it as knobs — TRAP 2 applied to the debug panel too).
+  //
+  // REPOINTED BY CS024 P5 (spec §2.4/§4.5/§5), and it is a REBUILD like CS024 P1's was, not a plain
+  // append: 15 -> 32. JUNK/HUNTER/UFO are rebuilt with ONE leverKnob() PER LEVER (def: null, the
+  // "no override, follow leverState" sentinel) rather than the old per-tier trios/generic singles —
+  // JUNK regains its header with 4 entries (junkCount + 3 sizes), HUNTER gains coalescePause +
+  // hunterSpeedMedium/Small (3 — replacing the retired garbageAttractDelay knob outright, not renaming
+  // it: coalescePause lives under HUNTER, not GARBAGE), and UFO gains all ten of its levers, split per
+  // size. Section headers are pinned by exact order too, since a header can silently gain/lose members
+  // without moving the total. No POWERUPS header yet (CS024 P6).
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 32, "H: DEBUG_VARS holds 32 value entries as of CS024 P5");
+  const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
+  const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "GLOBAL"];
+  assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),
+    `H: section headers are exactly ${WANT_HEADERS.join("/")}, in order (got ${headerOrder.join("/")})`);
+
+  // JUNK: back (P4 removed it whole), one leverKnob per lever, all with def: null.
+  for (const id of ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"]) {
+    const e = Y.DEBUG_VARS.find(v => v.id === id);
+    assert(e, `H: DEBUG_VARS has a ${id} lever knob (CS024 P5)`);
+    eq(e.def, null, `H: ${id}'s knob has def: null — the "follow leverState" sentinel`);
+  }
+  // HUNTER: coalescePause + the two pursuit-speed levers are new; lastStandSpeed survives as the flat
+  // (non-lever, non-null-default) knob it always was; garbageAttractDelay does not come back under
+  // GARBAGE — coalescePause replaces it outright, and it lives under HUNTER (spec §2.4/§2.5).
+  for (const id of ["coalescePause", "hunterSpeedMedium", "hunterSpeedSmall"]) {
+    const e = Y.DEBUG_VARS.find(v => v.id === id);
+    assert(e, `H: DEBUG_VARS has a ${id} lever knob (CS024 P5)`);
+    eq(e.def, null, `H: ${id}'s knob has def: null`);
+  }
+  assert(!Y.DEBUG_VARS.some(v => v.id === "garbageAttractDelay"),
+    "H: garbageAttractDelay does not return — coalescePause is the HUNTER-chain driver now, not a GARBAGE knob");
+  const lastStand = Y.DEBUG_VARS.find(v => v.id === "lastStandSpeed");
+  assert(lastStand && lastStand.def !== null, "H: lastStandSpeed stays a flat, non-null-default knob — it is NOT a lever (spec §2.5)");
+  // UFO: all ten levers present, one per size (ufoAppearFreq/ufoAccuracySmall deliberately NOT split —
+  // one shared appearance timer, small-only accuracy). The old CS018 P6/P7 generic ids
+  // (ufoFlightSpeed/ufoDirChangeFreq/ufoFireFreq/ufoAccuracy/ufoShotSpeed, unsplit) do not survive.
+  for (const id of ["ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoDirChangeBig",
+                    "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall", "ufoShotSpeedBig",
+                    "ufoShotSpeedSmall", "ufoAccuracySmall"]) {
+    const e = Y.DEBUG_VARS.find(v => v.id === id);
+    assert(e, `H: DEBUG_VARS has a ${id} lever knob (CS024 P5)`);
+    eq(e.def, null, `H: ${id}'s knob has def: null`);
+  }
+  for (const id of ["ufoFlightSpeed", "ufoDirChangeFreq", "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
+    assert(!Y.DEBUG_VARS.some(v => v.id === id),
+      `H: the old unsplit ${id} knob id does not survive — CS024 P5 splits every UFO quantity per size`);
+  }
+  assert(Y.DEBUG_VARS.some(v => v.id === "smallUfoChance"), "H: smallUfoChance (the flat, non-lever roll) survives under UFO");
+
+  assert(Y.DEBUG_VARS.some(v => v.id === "dockComboGrace"), "H: CS020 P1b's dockComboGrace survives under DELIVERY");
   eq(Y.DEBUG_VARS.filter(v => v.id === "chainGuardCooldown").length, 1,
-    "H: ...and the 33rd is CS019 P1's chainGuardCooldown, not some other silent addition");
+    "H: CS019 P1's chainGuardCooldown survives, not some other silent addition");
   eq(Y.DEBUG_VARS.filter(v => /^orbit/i.test(v.id)).length, 0,
     "H: REPOINTED BY CS024 P1 (inverted) — NO registry id matches /^orbit/i any more; all ten CS021 P3 knobs are gone");
   eq(Y.DEBUG_VARS.filter(v => v.id === "debrisDriftAccel").length, 0,

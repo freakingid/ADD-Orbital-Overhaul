@@ -137,9 +137,11 @@ function makeCtxStub() {
 
 const RETURN = [
   // CS024 P4: levelDef dropped from the export list — the level table is deleted outright, replaced by
-  // the LEVERS odometer. FROZEN_JUNK_COUNT is what nextWave() reads for one phase, until P5 wires it.
-  "game", "startGame", "nextWave", "update", "draw", "FROZEN_JUNK_COUNT", "spawnFieldSatellites",
-  "debrisBounce", "destroyDebris", "destroySaucer", "junkSpeedMul",
+  // the LEVERS odometer. CS024 P5 wired the levers: nextWave() now reads leverState(game.wave).junkCount
+  // directly (via the probe idiom below, same as the leverState existence check at (B)), and the
+  // FROZEN_JUNK_COUNT/junkSpeedMul stopgaps P4 left behind are gone outright.
+  "game", "startGame", "nextWave", "update", "draw", "spawnFieldSatellites",
+  "debrisBounce", "destroyDebris", "destroySaucer",
   "DebrisSatellite", "HunterSatellite", "Saucer", "Garbage", "Dock",
   "DEBRIS_MASS", "DEBRIS_BOUNCE_MIN", "DEBRIS_BOUNCE_RESTITUTION", "DEBRIS_RADII", "DEBRIS_SPEEDS",
   "worldDims", "worldSizeFor", "resizeWorld", "applyWorldSize",
@@ -322,7 +324,10 @@ function atWave(X, w) {
   // REPOINTED BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names). What THIS
   // phase's trap guards — that its own twelve orbit/drift removals happened and nothing crept back —
   // is asserted directly below and is untouched; only the live total moves.
-  eq(X.DEBUG_ENTRIES.length, 15, "B: the debug registry holds 15 value entries after CS024 P4's 21-knob tier prune");
+  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
+  // entries plus smallUfoChance. This phase's own trap (its twelve orbit/drift removals stayed removed)
+  // is unaffected; only the live total moves, same as every other repoint above.
+  eq(X.DEBUG_ENTRIES.length, 32, "B: the debug registry holds 32 value entries after CS024 P5 wires the levers");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,
@@ -373,8 +378,12 @@ function atWave(X, w) {
     eq((nw.match(/spawnFieldSatellites\(/g) || []).length, 1,
       "B: nextWave() has exactly ONE spawnFieldSatellites() call — the archetype branch is gone");
     assert(!/archetype/.test(nw), "B: ...and no archetype test remains in it");
-    assert(/spawnFieldSatellites\(count, speedMul\);/.test(nw),
-      "B: ...and it is called with the level table's own junkCount");
+    // REPOINTED BY CS024 P5: the call site's second argument is `speed` (the lever's own junkSpeedLarge,
+    // resolved through DEBUG.junkSpeedLarge ?? lv.junkSpeedLarge), not the old `speedMul` name — the
+    // claim itself (called with the odometer's own junkCount/junkSpeedLarge, not a re-derived value) is
+    // unchanged and is what this still checks.
+    assert(/spawnFieldSatellites\(count, speed\);/.test(nw),
+      "B: ...and it is called with the odometer's own junkCount/junkSpeedLarge");
   }
 })();
 
@@ -557,8 +566,15 @@ function atWave(X, w) {
   const X = withRandom(seededRandom(0xD00D), () => build());
   withRandom(seededRandom(0xD00D), () => X.startGame());
   X.game.state = "playing"; X.game.paused = false;
+  // CS024 P5: FROZEN_JUNK_COUNT is gone — the odometer is wired, so the expected count at level `w` is
+  // whatever leverState(w).junkCount says (the same expression nextWave() itself reads, DEBUG.junkCount
+  // being null/unset throughout this build so the `??` always falls through to the lever). Fetched via
+  // the standing probe idiom (B's leverState existence check), not re-exported, since this build's
+  // RETURN list never carried leverState directly.
+  const leverState = X.probe("leverState");
 
   const sizes = new Set();
+  const junkCounts = [];
   for (let w = 1; w <= 20; w++) {
     const spawned = withRandom(seededRandom(0xD100 + w), () => atWave(X, w));
 
@@ -572,10 +588,13 @@ function atWave(X, w) {
     sizes.add(`${lw}x${lh}`);
 
     // ONE SPAWN RULE, consumed at every level. REPOINTED BY CS024 P4: the source of the number moved
-    // from levelDef(w).junkCount to FROZEN_JUNK_COUNT (and, in P5, to leverState(w).junkCount). THE
+    // from levelDef(w).junkCount to FROZEN_JUNK_COUNT. REPOINTED AGAIN BY CS024 P5: FROZEN_JUNK_COUNT is
+    // deleted outright and the lever is wired — the expected count is leverState(w).junkCount itself. THE
     // CLAIM THIS PHASE MADE IS UNCHANGED and is what is still being checked — one unconditional spawn
     // path, consuming whatever the difficulty system says, on every level with no archetype branch.
-    eq(spawned, X.FROZEN_JUNK_COUNT, `D: level ${w} spawned exactly the one spawn rule's count (${X.FROZEN_JUNK_COUNT})`);
+    const expectedJunkCount = leverState(w).junkCount;
+    junkCounts.push(expectedJunkCount);
+    eq(spawned, expectedJunkCount, `D: level ${w} spawned exactly the one spawn rule's count (${expectedJunkCount})`);
     // NO RAIL STATE anywhere, and every piece a size-3 large from the scatter.
     for (const d of X.game.debris) {
       assert(d.orbitCenter === undefined && d.orbitRadius === undefined &&
@@ -600,7 +619,7 @@ function atWave(X, w) {
   });
   for (const d of X.game.debris)
     assert(d.orbitCenter === undefined, "D: 600 real frames later, still no rail state on any satellite");
-  console.log(`    levels 1-20: junk counts ${Array.from({ length: 20 }, () => X.FROZEN_JUNK_COUNT).join(",")} (CS024 P4: frozen until P5 wires the lever)`);
+  console.log(`    levels 1-20: junk counts ${junkCounts.join(",")} (CS024 P5: the wired odometer, no longer frozen)`);
 })();
 
 // ================= (E) resizeWorld AT SIZE 9 — THE KEPT 9x PATH =====================
