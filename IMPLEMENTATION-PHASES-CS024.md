@@ -22,14 +22,16 @@ session, one commit per phase, on `main`.** Claude Code commits; Paul pushes.
 | **P6c** | ⚠️ *corrective* — lever floor/ceil/steps knobs | **Opus** | high | **yes** |
 | **P6d** | ⚠️ *corrective* — `startLevel` debug knob (gate tooling) | Sonnet | medium | no |
 | **P6e** | ⚠️ *corrective* — debug reset / override toggle / score wipe | Sonnet | medium | no |
+| **P6f** | ⚠️ *corrective* — scaling Hunter cap + hold-at-12 overflow | **Opus** | high | **yes** |
 | ⛔ | **GATE B** — blocking playtest ← *Paul plays; answers go in `STATUS.md`* | — | — | — |
 | **P7** | Retune, version bump, full doc rewrite | **Opus** | high | no |
 
 **P6b, P6c and P6d are IN-ROUND CORRECTIVE PHASES**, opened in conversation
 after P4 and P5 landed, following the CS020 P1b / CS021 P1b / CS023 P4b
 precedent. They were not in this document's original plan. P6b and P6c each fix
-something the phase above them shipped; P6d and P6e are gate tooling. **All four
-must land before Gate B**, because Gate B's whole job is
+something the phase above them shipped; P6d and P6e are gate tooling; P6f is a
+**gameplay fix from Gate B's own playtest**. **All five must land before Gate B
+closes**, because Gate B's whole job is
 tuning a ramp — it cannot do that against a mechanism that regresses at level 33
 with sliders that flatten whatever they touch. **Order matters: P6b before P6c**,
 since P6c derives every slider's range from the `LEVERS` table and P6b changes
@@ -1100,7 +1102,163 @@ numbers**; that is far cheaper than P4 guessing.
 
 ---
 
-## ⛔ GATE B — BLOCKING PLAYTEST (after P6e)
+## P6f — ⚠️ CORRECTIVE: scaling Hunter cap + hold-at-12 overflow
+
+**Model: Opus · Effort: high · `ultrathink` baked in**
+
+> Changeset 024, Phase 6f — an **in-round corrective phase**, not in the original
+> plan. It comes straight out of Gate B's own playtest: **too many large Hunters
+> can exist at levels 1–3.** Slowing `coalescePause` does not fix it, because
+> that governs how fast any ONE clump forms while nothing limits how many form
+> *concurrently* — each satellite's garbage lineage marches toward 12 on its own
+> independent clock. This is a count problem and needs a count-shaped fix.
+>
+> **Grep every anchor by symbol first.** P6b–P6e have all landed since this was
+> written.
+>
+> ### 1. `LARGE_HUNTER_MAX` becomes a scaling cap
+>
+> `LARGE_HUNTER_MAX = 100` was authored as "a runaway backstop that play should
+> never reach" — its own comment says so. That was written on the assumption that
+> coalescence would be slow and rare. **Gate A already disproved that** (Q1 came
+> back "yes, and too fast"), and play has now disproved it again at the other end.
+>
+> Replace the flat constant with:
+>
+> ```
+> largeHunterCap(wave) = min( ceil(wave / DEBUG.hunterCapLevelsPerStep), DEBUG.hunterCapMax )
+> ```
+>
+> | Levels | 1–2 | 3–4 | 5–6 | 7–8 | 9–10 | 11+ |
+> |---|---|---|---|---|---|---|
+> | Cap | 1 | 2 | 3 | 4 | 5 | **6, plateau** |
+>
+> Two new knobs in the HUNTER section: **`hunterCapMax`** (default **6**, range
+> 1–24, step 1) and **`hunterCapLevelsPerStep`** (default **2**, range 1–8, step
+> 1). Integers both.
+>
+> **This is NOT a lever and must not become one.** No floor/ceil/steps triple, no
+> `▼`/`↳` glyph, no `carriesTo`, no place in any chain. A ceiling on concurrent
+> threats is a stability guarantee, not a difficulty axis — the player should
+> never be able to feel it move. It is a pure function of `game.wave` like
+> everything else, but it lives outside the odometer. Record it in
+> `PLANNED-FEATURES-CS024.md` §2.5's not-a-lever list.
+>
+> **It is deliberately NOT a breakpoint table.** CS024 P3 deleted
+> `HUNTER_CAP_STEPS` (11 breakpoints, 0→12) and this must not quietly restore
+> that shape. Two knobs and one `ceil`, nothing more.
+>
+> ### 2. The overflow rule reverses again: HOLD, don't destroy
+>
+> P3 made a saturated clump **destroy itself** when the cap was full, and its
+> comment gives the reason: with decay deleted, a held clump would occupy 12
+> pieces the pipeline could never reclaim, so the pipeline stalls. **That
+> reasoning is now wrong, and the comment must be rewritten rather than deleted.**
+> A held clump is still garbage, so **the player can scoop it (partially or
+> wholly) and can shatter it with a bullet.** Those are the reclamation paths the
+> stall argument assumed did not exist — and scooping a 12-piece clump for a
+> single large payload is the game's own thesis paying out. It is also, not
+> incidentally, the removed bonus canister's role arriving emergently instead of
+> by dice roll.
+>
+> **New behaviour at `a.pieces >= HUNTER_COALESCE_COUNT`:**
+>
+> - **Cap has room** → convert exactly as today. Unchanged path.
+> - **Cap is full, and fewer than `DEBUG.heldClumpMax` saturated clumps exist** →
+>   **HOLD.** Do not convert, do not destroy. No `hunterCoalesced`, no
+>   `noteLargeHunterSpawn()`, no `AudioSys.hunterborn()` — nothing was born.
+> - **Cap is full AND `heldClumpMax` saturated clumps already exist** → destroy,
+>   exactly as P3 does today, `boom()` in the garbage hue, `awardScore = false`
+>   semantics. This is the anti-stall backstop: `GARBAGE_SOFT_MAX` is 220 and a
+>   held clump is 12 pieces, so unbounded holding would let ~18 clumps consume the
+>   entire garbage budget and starve the field.
+>
+> New knob **`heldClumpMax`**, HUNTER section, default **4**, range 1–20, step 1.
+>
+> ### 3. ⛔ "HELD" IS A DERIVED CONDITION, NEVER A STORED FLAG
+>
+> **ultrathink this before writing it — it is where a plausible implementation
+> goes wrong.** Two existing paths change a clump's size after it saturates:
+>
+> - **Scooping is PARTIAL.** The intake does `const take = Math.min(room, g.pieces)`
+>   then `g.pieces -= take`. A held 12-clump with 5 free chain slots gives up 5 and
+>   survives at 7.
+> - **A bullet SHATTERS a clump** — `shatterClump(g)` on any `g.pieces > 1`.
+>
+> A stored `held` flag would survive both and leave a 7-piece clump still marked
+> as a pending Hunter. **Derive it every time from `pieces >= HUNTER_COALESCE_COUNT`.**
+> A clump that drops below 12 is simply an ordinary clump again, with no state to
+> clear and no way to desync.
+>
+> ### 4. A saturated clump stops absorbing
+>
+> While `pieces >= HUNTER_COALESCE_COUNT`, the clump neither attracts nor is
+> attracted: **skip the pair in `coalesceGarbage()`'s attraction branch if either
+> side is saturated.** Otherwise a held clump grows into a 40-piece blob that
+> still converts to exactly one Hunter and wastes 28 pieces. Accept the
+> consequence — loose singles near a held clump will sit there rather than
+> merging, and that is correct.
+>
+> ### 5. Draining the queue when a slot opens
+>
+> `coalesceGarbage()`'s pair loop only touches clumps that are near each other, so
+> a held clump sitting alone is never re-examined and would hold forever even
+> after a Hunter dies. **Add a separate end-of-frame pass:** while
+> `largeHunterCount() < largeHunterCap(game.wave)` and a saturated clump exists,
+> convert the **oldest by `age`** and repeat. Deterministic tie-break by array
+> index. It must be able to convert more than one in a frame — a Super Mega
+> Delivery's sweep can free several slots at once.
+>
+> Conversion through this pass is a **real** birth: `noteLargeHunterSpawn()`,
+> `game.stats.hunterCoalesced++`, `AudioSys.hunterborn()`, all of it.
+>
+> ### 6. Two smaller rules
+>
+> - **Held clumps are exempt from the `GARBAGE_SOFT_MAX` cull.** Culling a
+>   pending Hunter out from under the player would be invisible and arbitrary.
+>   The `heldClumpMax` ceiling is what bounds them instead.
+> - **Give the held state a visual tell.** It is a new persistent condition with
+>   no precedent — a clump that would previously have vanished or converted
+>   instantly now sits there indefinitely, and the player must be able to read it
+>   as *pending* rather than as ordinary salvage. Derive the tell from the same
+>   `pieces >= HUNTER_COALESCE_COUNT` condition, never from a flag.
+>
+> ### Tests — `scratchpad/test-cs024-p6f.js`
+>
+> Driving the real `startGame`/`nextWave`/`update(1/60)` path: the cap curve at
+> every level 1–30 and both knobs moving it; a clump holding rather than
+> converting at a full cap, with score, `hunterCoalesced` and
+> `noteLargeHunterSpawn()` all provably unmoved; the same clump converting the
+> instant a Hunter dies; the oldest held converting first with two or more queued;
+> several converting in one frame when a sweep frees several slots; **a partial
+> scoop dropping a held clump to 7 pieces and it behaving as an ordinary clump
+> immediately, with no residual state**; the same after `shatterClump`; a
+> saturated clump provably not attracting a neighbouring single; the
+> `heldClumpMax` backstop destroying with `awardScore = false` semantics; and held
+> clumps surviving a cull that fires at `GARBAGE_SOFT_MAX`.
+>
+> **TRAP 1:** `GAME_VERSION` stays `"1.0.0.22"`. P7 owns the bump.
+> **TRAP 2:** no lever, no `LEVERS` edit, no `leverState` change. The cap is not a
+> lever and must not gain floor/ceil/steps rows or a chain glyph.
+> **TRAP 3:** coalescence remains the ONLY Hunter producer. Do not reintroduce an
+> ambient spawn to compensate for a low early cap.
+> **TRAP 4:** `HUNTER_COALESCE_COUNT` stays 12 and stays a frozen constant.
+> **TRAP 5:** rewrite P3's overflow comment to explain the new rule and why the
+> stall argument no longer holds. **Do not delete it** — the reasoning is the
+> valuable part and a future session will otherwise re-derive P3's conclusion.
+> **TRAP 6:** docs untouched.
+>
+> **FINALLY — UPDATE THE GATE-OPEN BLOCK** in `STATUS.md`: the new cap curve and
+> its two knobs, `heldClumpMax`, that a held clump is scoopable and shatterable,
+> and a new gate question — **does the early game now read as survivable at
+> levels 1–3, and does a held clump read as pending rather than as ordinary
+> salvage?**
+
+**Commit:** `cs-24 p6f: scaling hunter cap, saturated clumps hold instead of vanishing`
+
+---
+
+## ⛔ GATE B — BLOCKING PLAYTEST (after P6f)
 
 **P7 must not run until questions 7–13 are answered in `STATUS.md`'s
 `## Playtest asks` section.** Questions 14–17 are **non-blocking** — see Step 3

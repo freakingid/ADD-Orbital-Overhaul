@@ -233,6 +233,19 @@ plan says so explicitly so nobody re-levers them on a cleanup pass:
   forever after**. Level 12 is therefore the first level at which a Super Mega
   Delivery is possible at all.
 - **`smallUfoChance`** — 20%, knob, not a lever.
+- **`largeHunterCap(wave)`** — `min(ceil(wave / hunterCapLevelsPerStep),
+  hunterCapMax)`, defaults 2 and 6, giving 1 Hunter at levels 1–2 rising to a
+  plateau of 6 at level 11. Added by the corrective phase **P6f** after Gate B's
+  playtest found levels 1–3 could accumulate too many large Hunters; the flat
+  `LARGE_HUNTER_MAX = 100` it replaces was authored as a runaway backstop and had
+  never been a real ceiling. **Deliberately not a lever** — a ceiling on
+  concurrent threats is a stability guarantee, not a difficulty axis, and the
+  player should never feel it move. Also deliberately **not** a breakpoint table:
+  two knobs and one `ceil`, so it does not quietly restore the
+  `HUNTER_CAP_STEPS` shape P3 deleted.
+- **`heldClumpMax`** — 4, knob, not a lever. At a full cap a saturated clump
+  **holds** at 12 pieces instead of vanishing; beyond this many held clumps the
+  P3 destroy behaviour returns as an anti-stall backstop.
 - **`startLevel`** — gate tooling, added by the corrective phase P6d. Seeds
   `game.wave` at `startGame()` so a deep level can be sampled without playing to
   it. **A run started above level 1 records nothing** — no high score, no
