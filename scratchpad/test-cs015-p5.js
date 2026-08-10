@@ -94,8 +94,11 @@ function beginPlaying(A) {
   assert(A.DEBUG_VARS.length >= 5, `B: DEBUG_VARS has at least 5 entries (1 from P4 + 4 new; got ${A.DEBUG_VARS.length})`);
   // CS018 P2: the registry also holds non-selectable section-header entries now, so index 0 is a header.
   // The append-only property is about the VALUE entries' order, which is what this pins.
+  // REPOINTED BY CS024 P6e: the registry is no longer strictly append-only — the debugOverride master
+  // toggle is deliberately inserted at the TOP (spec §3), pushing P4's entry to the second value slot.
   const values = A.DEBUG_VARS.filter(v => !v.header);
-  assert(values[0].id === "autoShieldRegenPause", "B: P4's entry is still the first VALUE entry (registry is append-only)");
+  assert(values[0].id === "debugOverride", "B: the override toggle is the FIRST value entry (CS024 P6e, spec §3)");
+  assert(values[1].id === "autoShieldRegenPause", "B: ...and P4's entry is now the second value entry");
 
   const byId = id => A.DEBUG_VARS.find(v => v.id === id);
 

@@ -313,7 +313,11 @@ function atWave(X, w) {
     "B: ...and every other shielded contact now reaches shieldDeflect, as every free hazard already did");
 
   // --- the `r` reroll keybind and the panel footer hint ---
-  assert(!/k === "r"/.test(codeOnly), "B: the `r` start-angle reroll keybind is gone from the keydown handler");
+  // REPOINTED BY CS024 P6e: "r" is legitimately bound again on the debug screen (spec §1) — but for an
+  // unrelated purpose, resetting the selected registry row, never an orbit reroll. The claim this pin
+  // makes is narrowed to what P1 actually removed: no reroll call hangs off any "r" handling.
+  assert(!/rerollOrbit|reroll.*[Ss]tart.*[Aa]ngle/.test(codeOnly),
+    "B: no orbit start-angle reroll logic is reachable from any \"r\" handling (CS024 P6e reuses \"r\" for an unrelated debug-panel reset)");
   // codeOnly, not scriptSrc: the tombstone comment at drawDebug's footer quotes the retired hint string
   // verbatim, so a raw-source scan would match the epitaph and never fail.
   assert(!/R reroll orbit start angles/.test(codeOnly), "B: ...and its debug-panel footer hint with it");
@@ -329,13 +333,15 @@ function atWave(X, w) {
   // is unaffected; only the live total moves, same as every other repoint above.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 68, "B: the debug registry holds 68 value entries after CS024 P6d (three knobs per lever + startLevel)");
+  // REPOINTED BY CS024 P6e: 68 -> 69 (the debugOverride master toggle, spec §3), and the trailing-row
+  // count 2 -> 4 (Reset all debug knobs to defaults + Reset high scores join Dump + Back, spec §2/§4).
+  eq(X.DEBUG_ENTRIES.length, 69, "B: the debug registry holds 69 value entries after CS024 P6e");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,
     "B: ...while CS023 P2's debrisBounceRestitution SURVIVES (archetype-independent, CS024 spec §0)");
   assert(!X.DEBUG_VARS.some(v => v.header === "ORBIT"), "B: the ORBIT section header is gone too");
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 2, "B: DEBUG_ROWS is still the registry plus Dump + Back");
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "B: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset High Scores + Back");
   eq(Object.keys(X.DEBUG).length, X.DEBUG_ENTRIES.length, "B: the native DEBUG map agrees with the registry");
   // The removed knobs' persisted values are ORPHANED, not migrated: a settings blob written by the
   // pre-edit build must load cleanly and simply ignore them (the standing known-value-else-default rule).

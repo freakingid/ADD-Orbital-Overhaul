@@ -329,10 +329,14 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
     "A: cooldown is the LAST entry in its group — appended, not inserted");
   assert(A.DEBUG_ENTRIES.length === A.DEBUG_VARS.filter(v => !v.header).length,
     "A: DEBUG_ENTRIES still derives from the registry (headers filtered)");
-  assert(A.DEBUG_ROWS.length === A.DEBUG_VARS.length + 2,
-    "A: DEBUG_ROWS still derives from the registry (+ the Dump and Back rows) — no hardcoded count");
-  assert(A.DEBUG_VARS.filter(v => !v.header)[0].id === "autoShieldRegenPause",
-    "A: the registry is still append-only (CS015 P4's entry is the first VALUE entry)");
+  // REPOINTED BY CS024 P6e: +2 -> +4 (Reset All + Reset High Scores joined Dump ahead of Back, spec §2/§4).
+  assert(A.DEBUG_ROWS.length === A.DEBUG_VARS.length + 4,
+    "A: DEBUG_ROWS still derives from the registry (+ the Dump/Reset All/Reset High Scores/Back rows) — no hardcoded count");
+  // REPOINTED BY CS024 P6e: the registry is no longer strictly append-only — the debugOverride master
+  // toggle is deliberately inserted at the TOP (spec §3), pushing CS015 P4's entry to second place.
+  const firstValueEntries = A.DEBUG_VARS.filter(v => !v.header);
+  assert(firstValueEntries[0].id === "debugOverride", "A: the override toggle is the FIRST value entry (CS024 P6e, spec §3)");
+  assert(firstValueEntries[1].id === "autoShieldRegenPause", "A: ...and CS015 P4's entry is now the second value entry");
 
   // TRAP 3: the other three chain-guard knobs are untouched this phase.
   const n = byId("chainGuardIntercepts"), mt = byId("chainGuardMinTow");

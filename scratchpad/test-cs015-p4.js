@@ -272,11 +272,12 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   // registry length — CS015 P5 grew it from 1 to 5 entries (see test-cs015-p5.js), and CS017 P2 inserted
   // a "Dump difficulty log" action row between the values and Back (see test-cs017-p2.js), so backRow is
   // DEBUG_VARS.length + 1, never a literal.
-  // CS018 P2: still DEBUG_VARS.length + 1, because that phase's section headers are registry ENTRIES (the
-  // rows array maps the registry 1:1 and appends Dump + Back). But up/down now SKIP header rows, so the
+  // CS018 P2: still DEBUG_VARS.length + N, because that phase's section headers are registry ENTRIES (the
+  // rows array maps the registry 1:1 and appends the trailer rows). But up/down now SKIP header rows, so the
   // cursor no longer starts at 0 and "N downs" no longer equals "N rows travelled" — step until we arrive
   // instead of counting, and take the first row from the registry rather than assuming index 0.
-  const backRow = A.DEBUG_VARS.length + 1;
+  // REPOINTED BY CS024 P6e: +1 -> +3 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
+  const backRow = A.DEBUG_VARS.length + 3;
   const firstVar = A.DEBUG_VARS.findIndex(v => !v.header);
   g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = firstVar;
   let threw = null;

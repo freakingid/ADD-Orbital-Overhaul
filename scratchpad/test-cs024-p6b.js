@@ -549,7 +549,8 @@ function evalSlice(literal) {
   // same order, and the only thing about them P6b touched is the derived slider step of the nine
   // restaged UFO knobs.
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 68, "G: TRAP 2 — 68 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel)");
+  // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 69, "G: TRAP 2 — 69 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -567,7 +568,9 @@ function evalSlice(literal) {
     };
     // CS024 P6d repoint: strip the trailing `startLevel` knob (P6d, GLOBAL, appended after this phase's
     // own registry footprint) before the comparison — the claim under test is P6b's, not P6d's.
-    const collapsedX = collapse(X.DEBUG_VARS).replace(/,startLevel$/, "");
+    // CS024 P6e repoint: also strip the LEADING `debugOverride` toggle (P6e, inserted at the top, spec
+    // §3) — same reasoning, it's P6e's row, not P6b's.
+    const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "").replace(/,startLevel$/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it

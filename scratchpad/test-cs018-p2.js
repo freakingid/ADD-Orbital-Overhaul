@@ -179,7 +179,8 @@ function onDebug(A, { playing = false } = {}) {
   assert(headers >= 4, `C: the registry declares at least P2's 4 section headers (got ${headers})`);
   assert(vars.every(v => !!v.header !== !!v.id), "C: every registry entry is either a header or a value entry, never both");
   assert(A.DEBUG_ENTRIES.length === vars.length - headers, "C: DEBUG_ENTRIES is the registry minus its headers");
-  assert(rows.length === vars.length + 2, `C: DEBUG_ROWS = registry + Dump + Back (${rows.length} = ${vars.length} + 2)`);
+  // REPOINTED BY CS024 P6e: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
+  assert(rows.length === vars.length + 4, `C: DEBUG_ROWS = registry + Dump + Reset All + Reset High Scores + Back (${rows.length} = ${vars.length} + 4)`);
 
   // Row order mirrors the registry exactly, then the two trailing action rows.
   let ok = true;
@@ -189,15 +190,24 @@ function onDebug(A, { playing = false } = {}) {
     else if (r.kind !== "var" || r.e !== v || r.label !== v.label) ok = false;
   });
   assert(ok, "C: every registry entry maps to its row in order (header rows carry the label, var rows the entry)");
-  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Dump difficulty log",
-    "C: the Dump action is the second-to-last row");
+  // REPOINTED BY CS024 P6e: Dump is now the 4th-from-last row — Reset All and Reset High Scores follow
+  // it, then Back (spec §2/§4).
+  assert(rows[rows.length - 4].kind === "action" && rows[rows.length - 4].label === "Dump difficulty log",
+    "C: the Dump action is the 4th-to-last row");
+  assert(rows[rows.length - 3].kind === "action" && rows[rows.length - 3].label === "Reset all debug knobs to defaults",
+    "C: Reset All is the 3rd-to-last row");
+  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Reset saved scores",
+    "C: Reset High Scores is the 2nd-to-last row");
   assert(rows[rows.length - 1].kind === "back" && rows[rows.length - 1].label === "Back",
     "C: Back is the last row");
   assert(rows.filter(r => r.kind === "var").length === A.DEBUG_ENTRIES.length,
     "C: exactly one var row per value entry");
   assert(rows.every(r => r.kind !== "var" || (r.e && typeof r.e.id === "string")),
     "C: every var row carries a real registry entry with an id");
-  assert(rows[0].kind === "header", "C: (the interesting case) row 0 is a HEADER, so index 0 is not a valid cursor");
+  // REPOINTED BY CS024 P6e: row 0 is no longer a header — the debugOverride master toggle (spec §3) is
+  // deliberately inserted ahead of every section, so index 0 IS now a valid, selectable cursor.
+  assert(rows[0].kind === "var" && rows[0].e.id === "debugOverride",
+    "C: (the interesting case, inverted by P6e) row 0 is the override toggle — a selectable VAR row, not a header");
 
   // Header entries must not have leaked into either persistence map.
   assert(!("undefined" in A.debugShown) && !(undefined in A.debugShown),
@@ -217,9 +227,11 @@ function onDebug(A, { playing = false } = {}) {
   const selectable = rows.map((r, i) => r.kind !== "header" ? i : -1).filter(i => i >= 0);
 
   assert(g.menu.screen === "debug", "D: enterDebug put us on the debug screen");
-  assert(g.menu.index === A.debugFirstRow(), "D: the cursor lands on the first SELECTABLE row, not row 0");
+  assert(g.menu.index === A.debugFirstRow(), "D: the cursor lands on the first SELECTABLE row");
   assert(rows[g.menu.index].kind !== "header", "D: ...which is not a header");
-  assert(g.menu.index === 1, `D: concretely, row 1 (row 0 is the SHIP header) — got ${g.menu.index}`);
+  // REPOINTED BY CS024 P6e: row 0 is now itself selectable (the debugOverride master toggle, spec §3),
+  // ahead of every section header — so the first selectable row IS row 0, not row 1.
+  assert(g.menu.index === 0, `D: concretely, row 0 — the override toggle, no leading header to skip — got ${g.menu.index}`);
 
   // A full lap down visits every selectable row exactly once, in order, and never a header.
   const seen = [g.menu.index];
@@ -232,12 +244,15 @@ function onDebug(A, { playing = false } = {}) {
     `D: one lap down visits every selectable row in order\n    got  ${seen}\n    want ${selectable}`);
   assert(g.menu.index === ROWS - 1, `D: the LAST row (Back, index ${ROWS - 1}) is reachable — got ${g.menu.index}`);
   assert(rows[g.menu.index].kind === "back", "D: ...and it is the Back row");
-  assert(rows[g.menu.index - 1].kind === "action", "D: the Dump row is reachable, one above Back");
+  // REPOINTED BY CS024 P6e: one above Back is now Reset High Scores, not Dump (spec §2/§4).
+  assert(rows[g.menu.index - 1].kind === "action" && rows[g.menu.index - 1].label === "Reset saved scores",
+    "D: the Reset High Scores row is reachable, one above Back");
 
-  // Wrap forward: last -> first selectable (never row 0, the header).
+  // Wrap forward: last -> first selectable (row 0, the override toggle — no leading header to skip
+  // over anymore, so the wrap lands ON row 0 rather than past it).
   A.menuDebug("down");
   assert(g.menu.index === A.debugFirstRow(), "D: down from the last row wraps to the first SELECTABLE row");
-  assert(g.menu.index !== 0, "D: the wrap skips the leading header rather than landing on it");
+  assert(g.menu.index === 0, "D: (repointed by P6e) the wrap lands on row 0 itself — it is selectable now");
 
   // Wrap backward: first selectable -> last row.
   A.menuDebug("up");
@@ -263,8 +278,13 @@ function onDebug(A, { playing = false } = {}) {
     if (rows[to].kind === "header") stepOk = false;
   }
   assert(stepOk, "D: debugStep returns a non-header row from every index in both directions");
-  assert(A.debugStep(0, 1) === 1, "D: debugStep(header, +1) advances to the row it labels");
-  assert(A.debugStep(0, -1) === ROWS - 1, "D: debugStep(header, -1) wraps to the last row");
+  // REPOINTED BY CS024 P6e: row 0 is no longer a header (it's the override toggle), so the "step off a
+  // header" case now has to target the actual first header — the SHIP section, one row further down.
+  const shipHeader = rows.findIndex(r => r.kind === "header");
+  assert(shipHeader > 0, "D: (setup) the SHIP header exists and sits after the override toggle");
+  assert(A.debugStep(shipHeader, 1) === shipHeader + 1, "D: debugStep(header, +1) advances to the row it labels");
+  assert(A.debugStep(shipHeader, -1) === shipHeader - 1,
+    "D: debugStep(header, -1) lands on the override toggle immediately above it — no wrap needed, it's selectable");
 })();
 
 // ================= (E) the scroll window always contains the selection ========================
@@ -664,7 +684,9 @@ function onDebug(A, { playing = false } = {}) {
   g.menu.index = A.DEBUG_ROWS.length - 1;          // Back
   keydown(ev("5"));
   assert(A.DebugPanel.entry === null, "I6: digits on the Back row do nothing");
-  g.menu.index = 0;                                // a header
+  // REPOINTED BY CS024 P6e: row 0 is no longer a header (it's the selectable override toggle) — find
+  // the actual first header row instead of assuming index 0.
+  g.menu.index = A.DEBUG_ROWS.findIndex(r => r.kind === "header");
   keydown(ev("5"));
   assert(A.DebugPanel.entry === null, "I6: digits on a header row do nothing");
 

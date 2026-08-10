@@ -377,7 +377,7 @@ function fireOnce(small, wave) {
   // Engine-as-fuel's two knobs (engineBurnSeconds, engineMassMult). Net -1 +2. Section-by-section:
   // SHIP 2 + GARBAGE 4 + CHAIN GUARD 3 + DELIVERY 1 + JUNK 4 + HUNTER 4 + UFO 11 + POWERUPS 2 +
   // GLOBAL 2 = 33.
-  eq(nEntries, 68, `H: DEBUG_ENTRIES count is 68 after CS024 P6c's three rows per lever + P6d's startLevel (got ${nEntries})`);
+  eq(nEntries, 69, `H: DEBUG_ENTRIES count is 69 after CS024 P6c/P6d/P6e (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "H: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

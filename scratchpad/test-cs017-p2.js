@@ -410,12 +410,14 @@ function build() {
   console.log("(G) menuDebug()/drawDebug(): the dump row is reachable; Back still works; indices derive from DEBUG_VARS.length");
   const { exports: A } = build();
   const g = A.game;
-  const N = A.DEBUG_VARS.length, dumpRow = N, backRow = N + 1; // derived, never a literal (CS015 P5 lesson)
+  // REPOINTED BY CS024 P6e: dumpRow is still N, but two more action rows (Reset All, Reset High Scores)
+  // now sit between it and Back (spec §2/§4), so Back moved from N+1 to N+3.
+  const N = A.DEBUG_VARS.length, dumpRow = N, resetAllRow = N + 1, resetScoresRow = N + 2, backRow = N + 3; // derived, never a literal (CS015 P5 lesson)
 
   // CS018 P2: the registry now interleaves non-selectable section-header entries, and up/down SKIP them, so
   // the cursor no longer starts at row 0 and "N downs" no longer equals "N rows travelled". dumpRow/backRow
-  // are still N and N+1 (headers are registry entries; DEBUG_ROWS maps the registry 1:1 and appends the two
-  // action rows) — step until we arrive instead of counting, and take the first row off the registry.
+  // are still N and N+3 (headers are registry entries; DEBUG_ROWS maps the registry 1:1 and appends the four
+  // trailer rows) — step until we arrive instead of counting, and take the first row off the registry.
   const firstVar = A.DEBUG_VARS.findIndex(v => !v.header);
   g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = firstVar;
   let threw = null;
@@ -423,6 +425,14 @@ function build() {
     A.drawDebug();
     for (let i = 0; i <= N && g.menu.index !== dumpRow; i++) A.menuDebug("down");
     assert(g.menu.index === dumpRow, `G: down reaches the dump row (index ${dumpRow}, got ${g.menu.index})`);
+    A.drawDebug();
+
+    A.menuDebug("down");
+    assert(g.menu.index === resetAllRow, `G: one more down lands on Reset All (index ${resetAllRow}, got ${g.menu.index})`);
+    A.drawDebug();
+
+    A.menuDebug("down");
+    assert(g.menu.index === resetScoresRow, `G: one more down lands on Reset High Scores (index ${resetScoresRow}, got ${g.menu.index})`);
     A.drawDebug();
 
     A.menuDebug("down");

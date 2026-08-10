@@ -284,8 +284,12 @@ const chainIdentical = (g, snap) =>
   assert(!byId("chainGuardTime"), "A: INVERTED BY CS024 P6 — chainGuardTime is gone from the registry");
   assert(!("chainGuardTime" in DEBUG), "A: ...and never reaches DEBUG either");
   // CS018 P2: header entries share the registry array now, so pin the first VALUE entry.
-  assert(DEBUG_VARS.filter(v => !v.header)[0].id === "autoShieldRegenPause",
-    "A: the registry is still append-only (P4's entry is the first VALUE entry)");
+  // REPOINTED BY CS024 P6e: the registry is no longer strictly append-only — the debugOverride master
+  // toggle is deliberately inserted at the TOP (spec §3), ahead of P4's autoShieldRegenPause, which is
+  // now the second value entry rather than the first.
+  const firstValueEntries = DEBUG_VARS.filter(v => !v.header);
+  assert(firstValueEntries[0].id === "debugOverride", "A: the override toggle is the FIRST value entry (CS024 P6e, spec §3)");
+  assert(firstValueEntries[1].id === "autoShieldRegenPause", "A: ...and P4's entry is now the second value entry, pushed down by exactly one");
 
   // All four per-type seed literals carry a guard key — in the game object AND after startGame().
   for (const phase of ["fresh", "after startGame()"]) {

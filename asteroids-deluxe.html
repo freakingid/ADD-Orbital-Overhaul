@@ -3079,7 +3079,19 @@ function leverKnob(id, label, unit) {
       clampShown: v => Math.round(v) },
   ];
 }
+// CS024 P6e (spec §3): the master A/B toggle — overrides applied (registry knobs live) vs. registry
+// defaults (every knob's `def`, ignoring debugShown). It is a normal DEBUG_ENTRIES row like any other
+// (min 0 / max 1 / step 1, ◄► steps it exactly like a boolean), with one carve-out in applyDebug()
+// below: writing THIS id triggers a full rebuildDebug() pass rather than the usual single-field write,
+// because flipping it changes what EVERY other row derives to at once. `boolLabels` is a display-only
+// hook (drawDebug), not a behavior branch — a future boolean knob can reuse it for free.
+// Default ON so an existing save file (no `debugOverride` key yet) behaves exactly as every build
+// before this phase — the known-value-else-default rule loadSettings already applies to every
+// DEBUG_ENTRIES id covers this with no code change there.
+const DEBUG_OVERRIDE_ID = "debugOverride";
 const DEBUG_VARS = [
+  { id: DEBUG_OVERRIDE_ID, label: "Overrides Applied", unit: "", def: 1, min: 0, max: 1, step: 1,
+    boolLabels: ["OFF (registry defaults)", "ON"] },
   { header: "SHIP" },
   { id: "autoShieldRegenPause", label: "Auto Shield Regen Pause", unit: "ms",
     def: AUTO_SHIELD_REGEN_PAUSE * 1000, min: 0, max: 5000, step: 100, toNative: v => v / 1000 },
@@ -3231,6 +3243,10 @@ const DEBUG_ENTRIES = DEBUG_VARS.filter(v => !v.header);
 const DEBUG_ROWS = [
   ...DEBUG_VARS.map(v => v.header ? { kind: "header", label: v.header } : { kind: "var", label: v.label, e: v }),
   { kind: "action", label: "Dump difficulty log" },
+  // CS024 P6e (spec §2/§4): two more action rows, same kind as Dump — no value, no chevrons, fired by
+  // the normal confirm input, dispatched by label in menuDebug's existing action branch.
+  { kind: "action", label: "Reset all debug knobs to defaults" },
+  { kind: "action", label: "Reset saved scores" },
   { kind: "back",   label: "Back" },
 ];
 // CS018 P2: the panel's transient VIEW state — the scroll window's top row and the pending numeric-entry
@@ -3250,13 +3266,41 @@ const debugShown = {};   // display-unit values — what the panel shows and wha
 // orbit levels in CS024 P1; its users now are CS024 P6c's 17 `<leverId>Steps` rows, which round a TYPED
 // entry to a whole number so the slider, the save file and the ramp the game actually derives can never
 // show three different step counts.
+// CS024 P6e: `overridesOn()` reads the toggle's OWN shown value — debugShown, not DEBUG, so it answers
+// correctly even mid-derivation. `debugNative(e, shown, on)` is the one ON/OFF rule: ON reads the
+// value handed in (debugShown[id], the edited request); OFF reads e.def (the registry default),
+// ignoring the edit WITHOUT discarding it — debugShown itself is never touched by the on/off state.
+function overridesOn() { return debugShown[DEBUG_OVERRIDE_ID] !== 0; }
+function debugNative(e, shown, on) {
+  const src = on ? shown : e.def;
+  return e.toNative ? e.toNative(src) : src;
+}
 function applyDebug(id, shown) {
   const e = DEBUG_ENTRIES.find(v => v.id === id);
   const clamped = e.clampShown ? e.clampShown(shown) : shown;
   debugShown[id] = clamped;
-  DEBUG[id] = e.toNative ? e.toNative(clamped) : clamped;
+  // CS024 P6e: writing the toggle itself re-derives EVERY row at once (rebuildDebug) rather than just
+  // its own DEBUG entry — the on/off state under all ~70 other rows just changed. No special-casing
+  // for what the toggle IS (still a plain DEBUG_ENTRIES row, still resettable by `r`/Reset All) — only
+  // for what writing it must trigger downstream.
+  if (id === DEBUG_OVERRIDE_ID) { rebuildDebug(); return; }
+  DEBUG[id] = debugNative(e, clamped, overridesOn());
 }
-for (const v of DEBUG_ENTRIES) applyDebug(v.id, v.def);   // seed both maps from the registry defaults
+// CS024 P6e: the full re-derivation, called ONLY when the toggle flips (applyDebug, above) — every other
+// edit (◄►, typed entry, `r`, Reset All) goes through applyDebug's single-field write, which applies the
+// identical on/off rule to just the one id it touched.
+function rebuildDebug() {
+  const on = overridesOn();
+  for (const e of DEBUG_ENTRIES)
+    DEBUG[e.id] = e.id === DEBUG_OVERRIDE_ID ? debugShown[e.id] : debugNative(e, debugShown[e.id], on);
+}
+// CS024 P6e: extracted from the module-level seed loop so "reset every row" has exactly one
+// implementation — the seed below and the panel's Reset All action row both call this, so they cannot
+// drift apart the way two copies of the same loop eventually do.
+function resetAllDebug() {
+  for (const v of DEBUG_ENTRIES) applyDebug(v.id, v.def);
+}
+resetAllDebug();   // seed both maps from the registry defaults
 
 // ---------- CS024 P6c: liveLevers() — the registry folded back into the odometer (spec §2.6) ----------
 // THE ONE IMPURE FACE OF THE ODOMETER, and the reason it sits HERE rather than up in the odometer
@@ -3565,6 +3609,13 @@ function handleMenuKey(k) {
   // Mapping it here keeps the one-action-vocabulary architecture: only menuTitle acts on "options";
   // every other screen handler is an if/else-if chain over known actions, so it's an inert no-op there.
   else if (k === "o") menuInput("options");
+  // CS024 P6e (spec §1): "r" resets the debug panel's selected row. Same shape as "o" above — mapped
+  // globally here, acted on only by menuDebug (every other screen's if/else-if chain has no "reset"
+  // branch and ignores it, same as "o" is inert everywhere but menuTitle). Confirmed free by the P6e
+  // phase prompt's own grep instruction: CS024 P1 removed the only other raw "r" capture on this screen
+  // (the orbit start-angle reroll), and the debug numeric-entry hook only ever claims DEBUG_ENTRY_CHARS
+  // ([-.0-9]) + Backspace, never a bare letter.
+  else if (k === "r") menuInput("reset");
 }
 
 // --- The dispatcher: one entry point, both input methods feed it ---
@@ -3870,6 +3921,9 @@ function menuDebug(a) {
     if (a === "confirm") { debugEntryCommit(); return; }
     if (a === "back" || a === "pause") { debugEntryCancel(); return; }
     if (a === "left" || a === "right") return;
+    // CS024 P6e (spec §1): `r` must not fight the entry buffer — inert while a numeric entry is pending,
+    // same treatment as left/right above (a stray reset must not silently discard mid-typed digits).
+    if (a === "reset") return;
     if (a === "up" || a === "down") debugEntryCancel();
   }
   if (a === "up" || a === "down") {
@@ -3892,11 +3946,40 @@ function menuDebug(a) {
   }
   else if (a === "confirm") {
     const r = DEBUG_ROWS[m.index];
-    if (r && r.kind === "action") dumpDifficultyLog();
+    // CS024 P6e: dispatched by label, same idiom as the sound/options screens' label-dispatch — one
+    // action row per branch, no index arithmetic. Both new rows go through openModal, same as Controls'
+    // "Reset all controls to defaults?" precedent, so a stray confirm cannot fire either irreversible
+    // action without a second deliberate press.
+    if (r && r.kind === "action") {
+      if (r.label === "Dump difficulty log") dumpDifficultyLog();
+      else if (r.label === "Reset all debug knobs to defaults")
+        openModal("Reset all debug knobs to defaults?", "RESET", () => { resetAllDebug(); saveSettings(); });
+      else if (r.label === "Reset saved scores")
+        openModal("Erase every saved score? This cannot be undone.", "ERASE", resetHighScores);
+    }
     else if (r && r.kind === "back") debugReturn();
   }
   else if (a === "back") debugReturn();
   else if (a === "pause") closePause();
+  // CS024 P6e (spec §1): reset the SELECTED row to its registry default — one uniform rule, `e.def`,
+  // no special-casing for a lever row, a toNative row or a clampShown row (applyDebug already applies
+  // clampShown/toNative identically regardless of how the value arrived). Inert while typing (a stray
+  // "r" mid-entry must not fight the entry buffer) and inert on a header/action/Back row (debugSelectedVar
+  // is null there, same guard left/right already uses).
+  else if (a === "reset") {
+    const e = debugSelectedVar();
+    if (e) { applyDebug(e.id, e.def); saveSettings(); AudioSys.ui(true); }
+  }
+}
+// CS024 P6e (spec §4): clears BOTH the in-memory table and the persisted key (through HighScores.save(),
+// the same guarded write path every other store uses — never a raw removeItem) so the browsable table and
+// qualifies() cannot answer from stale data before a reload. Scores ONLY — afd_achievements_v2 is a
+// separate key/store and this function never touches it. Also drops any stale gameover-table highlight,
+// since the id it points at no longer exists in entries.
+function resetHighScores() {
+  HighScores.entries = [];
+  HighScores.save();
+  game.lastScoreId = null;
 }
 function debugReturn() {
   if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options"));
@@ -7858,7 +7941,10 @@ function drawDifficulty() {
 // what keeps the last row reachable at any size. A position indicator below the band shows the cursor's place
 // in the whole list, with ▲/▼ when there is more above/below.
 function drawDebug() {
-  const { x, y } = menuPanel(DEBUG_PANEL_W, DEBUG_PANEL_H, "DEBUG OPTIONS");
+  // CS024 P6e (spec §3): the panel must show when overrides are OFF — a title marker (visible even
+  // scrolled away from the toggle row) plus, below, every non-toggle value row's readout dimmed.
+  const on = overridesOn();
+  const { x, y } = menuPanel(DEBUG_PANEL_W, DEBUG_PANEL_H, "DEBUG OPTIONS" + (on ? "" : "  —  OVERRIDES OFF"));
   const m = game.menu, total = DEBUG_ROWS.length;
   const top = debugScrollTop(), end = Math.min(total, top + DEBUG_ROWS_VISIBLE);
   let cy = y + DEBUG_ROWS_Y;
@@ -7873,8 +7959,14 @@ function drawDebug() {
       // it is unambiguous that nothing has been written yet — and the ◄► chevrons drop, because arrows don't
       // step while an entry is pending. CS024 P6c: P5's `== null ? "auto"` branch went with the null lever
       // sentinel — every row shows a real number now, because every row's default IS one.
-      const val = typing ? DebugPanel.entry + "_" : debugShown[e.id] + (e.unit ? " " + e.unit : "");
-      drawText(val, ox, cy + 6, 18, typing ? COLOR.garbageBonus : sel ? COLOR.text : COLOR.menuIdle, "left");
+      // CS024 P6e: `boolLabels` is a display-only hook (currently just the override toggle) — a var
+      // with it renders its shown value through the array instead of as a bare number + unit.
+      const val = typing ? DebugPanel.entry + "_"
+        : e.boolLabels ? e.boolLabels[debugShown[e.id]]
+        : debugShown[e.id] + (e.unit ? " " + e.unit : "");
+      // Every OTHER row dims its value when overrides are off — its edit is stored but not in effect.
+      const dimmed = !on && e.id !== DEBUG_OVERRIDE_ID;
+      drawText(val, ox, cy + 6, 18, typing ? COLOR.garbageBonus : dimmed ? COLOR.dim : sel ? COLOR.text : COLOR.menuIdle, "left");
       if (sel && !typing) { drawText("◄", ox - 24, cy + 7, 16, COLOR.text); drawText("►", ox + 120, cy + 7, 16, COLOR.text); }
     } else {   // the Dump action row and Back — centered, ▶ marker, no value, no chevrons
       drawText((sel ? "▶ " : "   ") + r.label, VIEW_W / 2, cy + 6,
