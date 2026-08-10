@@ -90,7 +90,9 @@ const RETURN = [
   // (ufoFlightSpeedPx/ufoFireMult/ufoShotSpeedPx) additionally took on a `small` boolean parameter to
   // split by saucer size, which the row-shape checks below must pass explicitly per column.
   "ufoFlightSpeedPx", "ufoFireMult", "ufoShotSpeedPx", "ufoAccuracyRad",
-  "LARGE_HUNTER_MAX",                                                 // CS024 P3 repoint (was largeHunterCap)
+  "largeHunterCap",                                                   // CS024 P6f repoint (P3 had made this
+                                                                      // the flat LARGE_HUNTER_MAX; the ceiling is a
+                                                                      // per-level closed form again)
   "DEBUG",                                                    // CS018 P6 (section B: tiered saucer gap)
   "AudioSys",
   // CS024 P1: the eight ORBIT_* constants and the three orbit functions (generateOrbitLayout,
@@ -216,8 +218,12 @@ function build() {
     assert(row.junkSpeedMedium === (A.DEBUG.junkSpeedMedium ?? lv.junkSpeedMedium), `B: wave ${w}: junkSpeedMedium matches leverState`);
     assert(row.junkSpeedSmall === (A.DEBUG.junkSpeedSmall ?? lv.junkSpeedSmall), `B: wave ${w}: junkSpeedSmall matches leverState`);
     // REPOINTED BY CS024 P3: the maxLargeHunters COLUMN survives (a column follows its consumer), but
-    // its source moved off the deleted levelDef column / largeHunterCap() onto the flat LARGE_HUNTER_MAX.
-    assert(row.maxLargeHunters === A.LARGE_HUNTER_MAX, `B: wave ${w}: the DiffLog column logs LARGE_HUNTER_MAX (${A.LARGE_HUNTER_MAX}), got ${row.maxLargeHunters}`);
+    // its source moved off the deleted levelDef column onto a flat constant.
+    // REPOINTED AGAIN BY CS024 P6f: that flat constant is deleted and the column is per-level once more,
+    // reading the same largeHunterCap(game.wave) the conversion branch and the queue drain read — so the
+    // claim this line has always made (the column mirrors its consumer, never a second derivation) is
+    // unchanged; only the consumer moved.
+    assert(row.maxLargeHunters === A.largeHunterCap(w), `B: wave ${w}: the DiffLog column logs largeHunterCap(${w}) (${A.largeHunterCap(w)}), got ${row.maxLargeHunters}`);
     // REPOINTED BY CS024 P5: the new HUNTER-chain columns — coalescePause is the driver, and the two
     // pursuit speeds are its carried levers.
     assert(row.coalescePause === (A.DEBUG.coalescePause ?? lv.coalescePause), `B: wave ${w}: coalescePause matches leverState`);

@@ -14,13 +14,20 @@
 //      HUNTER_LAST_STAND_SPEED < frozen-medium-speed invariant an existing source comment asserts holds.
 //  (C) THE CAP, counting rule: largeHunterCount() counts size-3 ALIVE only — mediums/smalls never counted,
 //      a dead-but-unfiltered large frees its slot the same frame, a split frees a slot. REPOINTED BY
-//      CS024 P3: the cap is the flat LARGE_HUNTER_MAX (100) at every level, not a per-level table.
+//      CS024 P3 (flat LARGE_HUNTER_MAX at every level), then AGAIN BY CS024 P6f: that constant is deleted
+//      and largeHunterCap(wave) is back — min(ceil(wave / hunterCapLevelsPerStep), hunterCapMax), a
+//      two-knob closed form, NOT a restoration of the HUNTER_CAP_STEPS table. The COUNTING RULE this
+//      section is actually about is untouched by either change.
 //  (D) REPOINTED BY CS024 P3 (INVERTED). This was producer 1, the ambient spawner. It is DELETED — this
 //      section now proves it is gone from every surface (the timer field, the factory, the update()
 //      block, the game.wave >= 2 gate) and that a real board with no garbage never grows a Hunter.
-//  (E) THE ONLY PRODUCER — coalescence: converts under the ceiling; AT the ceiling the 12-piece clump is
-//      DESTROYED (CS024 P3 §3.2 reverses the CS018 P4 hold), with no score and no achievement counters,
-//      and the pipeline keeps running rather than stalling on a held clump that can never age out.
+//  (E) THE ONLY PRODUCER — coalescence: converts under the ceiling; AT the ceiling the 12-piece clump
+//      HOLDS (CS024 P6f re-reverses CS024 P3's destroy, restoring CS018 P4's hold with an explicit
+//      heldClumpMax backstop above it), with no score and no achievement counters, and the pipeline does
+//      not stall because a held clump is scoopable and shatterable — the two reclamation paths P3's
+//      stall argument did not account for. The full three-arm rule is pinned in test-cs024-p6f.js; this
+//      section keeps only what it has always been about — that coalescence is the ONE producer and that
+//      the ceiling is never exceeded.
 //  (F) REPOINTED BY CS024 P3 (INVERTED): the cap-0 band over levels 1-4 is gone with the schedule, so a
 //      clump CONVERTS at level 1 — coalescence is level-independent now.
 //  (G) FLAG-i: hunterLineageKills resets on the 0 -> 1 transition only — not on every spawn. REPOINTED BY
@@ -67,7 +74,7 @@ function makeLocalStorage() {
 // CS024 P4: levelDef DELETED with the level table; ramp() DELETED; difficultyFactor RENAMED
 // musicIntensity (curve byte-identical), RAMP_WAVES -> MUSIC_INTENSITY_WAVES.
 const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "coalesceGarbage",
-                "largeHunterCount", "LARGE_HUNTER_MAX", "noteLargeHunterSpawn",   // CS024 P3: largeHunterCap() deleted
+                "largeHunterCount", "largeHunterCap", "noteLargeHunterSpawn",   // CS024 P6f: largeHunterCap is back
                 "HunterSatellite", "Garbage", "destroyHunter", "shatterClump",
                 "HUNTER_SPEED_CEIL", "HUNTER_TURN_CEIL", "HUNTER_FLOOR_FRAC",
                 "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN", "HUNTER_COALESCE_COUNT",
@@ -109,13 +116,14 @@ X.startGame();
 // The first level whose cap allows N large hunters, read off the shipped table (never hardcoded), so a
 // cap retune moves every test below with it.
 // REPOINTED BY CS024 P3: this searched the level table for the first level whose cap allowed n large
-// Hunters, because the cap used to climb 0 -> 12 across the game. The ceiling is now the flat
-// LARGE_HUNTER_MAX at EVERY level, so every level qualifies and the answer is always 1. Kept as a
-// function (rather than inlining 1 at ~20 call sites) so the sections below still read as "a level that
-// permits n larges" — and so it asserts, rather than silently lies, if the ceiling is ever lowered.
+// Hunters, because the cap used to climb 0 -> 12 across the game; P3's flat ceiling made every level
+// qualify and the answer always 1.
+// REPOINTED AGAIN BY CS024 P6f: the ceiling scales with the level once more, so this is a genuine search
+// again — but over the closed form largeHunterCap(wave), never over a table (there is no table). It
+// still asserts rather than silently lying if the ceiling can never reach n.
 function levelForCap(n) {
-  if (X.LARGE_HUNTER_MAX < n) throw new Error(`LARGE_HUNTER_MAX (${X.LARGE_HUNTER_MAX}) does not allow ${n} large Hunters`);
-  return 1;
+  for (let w = 1; w <= 200; w++) if (X.largeHunterCap(w) >= n) return w;
+  throw new Error(`largeHunterCap() never reaches ${n} large Hunters within 200 levels`);
 }
 
 // ================= (B) THE FREEZE (FLAG-a) =====================
@@ -264,9 +272,13 @@ function levelForCap(n) {
   // REPOINTED BY CS024 P3: this asserted largeHunterCap() reproduced the level table verbatim at every
   // level. Both the function and the column are deleted — the ceiling is one flat constant with no
   // clock — so the claim inverts to "the level makes no difference."
-  eq(X.probe("largeHunterCap"), "__ReferenceError__", "C: largeHunterCap() no longer exists");
-  eq(X.probe("HUNTER_CAP_STEPS"), "__ReferenceError__", "C: ...nor does the HUNTER_CAP_STEPS schedule");
-  eq(X.LARGE_HUNTER_MAX, 100, "C: the ceiling is the flat LARGE_HUNTER_MAX = 100");
+  // REPOINTED AGAIN BY CS024 P6f: largeHunterCap() exists again, so the claim narrows to the part that
+  // was ever load-bearing — the BREAKPOINT TABLE is gone, and the ceiling is derived, not looked up.
+  eq(typeof X.largeHunterCap, "function", "C: largeHunterCap(wave) is a live closed form again (CS024 P6f)");
+  eq(X.probe("HUNTER_CAP_STEPS"), "__ReferenceError__", "C: ...but the HUNTER_CAP_STEPS schedule is still deleted");
+  eq(X.probe("LARGE_HUNTER_MAX"), "__ReferenceError__", "C: ...and so is CS024 P3's flat constant");
+  eq(X.largeHunterCap(1), 1, "C: the ceiling is 1 at level 1");
+  eq(X.largeHunterCap(11), 6, "C: ...and plateaus at 6 from level 11");
   // REPOINTED BY CS024 P4: there is no level table left to carry a column, which says "the level makes
   // no difference" more completely than an absent column did.
   eq(X.probe("levelDef"), "__ReferenceError__", "C: ...and there is no level table left to hold a cap column at all");
@@ -289,8 +301,10 @@ function levelForCap(n) {
   assert(!("hunterTimer" in g), "D: game.hunterTimer does not exist after startGame()");
   eq(typeof X.HunterSatellite.spawnCore, "undefined", "D: HunterSatellite.spawnCore is not a function");
 
-  // 2. No live source line mentions any of them, gate included.
-  for (const pat of [/game\.hunterTimer/, /spawnCore/, /largeHunterCap/]) {
+  // 2. No live source line mentions any of them, gate included. REPOINTED BY CS024 P6f: largeHunterCap
+  // leaves this list — the identifier is live again, but for a two-knob closed form, not the per-level
+  // TABLE LOOKUP whose deletion this list records. HUNTER_CAP_STEPS below is what pins that half now.
+  for (const pat of [/game\.hunterTimer/, /spawnCore/, /HUNTER_CAP_STEPS/]) {
     const hits = codeOnly.filter(l => pat.test(l));
     eq(hits.length, 0, `D: zero live source references to ${pat} (found ${JSON.stringify(hits)})`);
   }
@@ -328,11 +342,12 @@ function levelForCap(n) {
     g.garbage.push(a, b);
     return { a, b };
   }
-  // Fill the ceiling with real large Hunters. LARGE_HUNTER_MAX is 100 now, not a single-digit table
-  // value, so this is a loop over the constant rather than over a per-level cap.
+  // Fill the ceiling with real large Hunters. REPOINTED BY CS024 P6f: a loop over largeHunterCap(wave)
+  // again, not over a constant — the ceiling is per-level once more, so the count depends on g.wave.
   function fillCeiling() {
-    for (let i = 0; i < X.LARGE_HUNTER_MAX; i++) g.hunters.push(new X.HunterSatellite(50 + (i % 40) * 30, 50 + Math.floor(i / 40) * 30, 3));
-    eq(X.largeHunterCount(), X.LARGE_HUNTER_MAX, "E: (setup) the board is at the ceiling");
+    const cap = X.largeHunterCap(g.wave);
+    for (let i = 0; i < cap; i++) g.hunters.push(new X.HunterSatellite(50 + (i % 40) * 30, 50 + Math.floor(i / 40) * 30, 3));
+    eq(X.largeHunterCount(), cap, "E: (setup) the board is at the ceiling");
   }
 
   // --- under the ceiling: converts, exactly as before ---
@@ -346,7 +361,10 @@ function levelForCap(n) {
     assert(g.stats.hunterCoalesced >= 1, "E: under the ceiling — hunterCoalesced counted the transform");
   }
 
-  // --- AT the ceiling: the clump is DESTROYED (CS024 P3 §3.2 reverses CS018 P4's hold) ---
+  // --- AT the ceiling: the clump HOLDS. REPOINTED BY CS024 P6f, which re-reverses CS024 P3's destroy.
+  //     What did NOT change, and is the part this section has always been about: NOTHING IS BORN and
+  //     nothing is counted. The three-arm rule (hold / destroy past heldClumpMax / convert) is pinned in
+  //     full by test-cs024-p6f.js; here we only re-check the ceiling is respected either way.
   {
     const { a, b } = stageClump(CAP_LVL);
     fillCeiling();
@@ -359,32 +377,41 @@ function levelForCap(n) {
     X.coalesceGarbage(1 / 60);
 
     assert(b.dead, "E: at the ceiling — the merge still happened (the single was absorbed)");
-    assert(a.dead, "E: at the ceiling — the clump is DESTROYED, not held (the CS018 P4 hold is reversed)");
+    assert(!a.dead, "E: at the ceiling — the clump HOLDS (CS024 P6f re-reverses P3's destroy)");
+    eq(a.pieces, X.HUNTER_COALESCE_COUNT, "E: at the ceiling — ...at exactly the threshold, not growing");
     eq(g.hunters.length, huntersBefore, "E: at the ceiling — no new Hunter was created");
-    // `awardScore = false` semantics: no score, no achievement counters.
+    // `awardScore = false` semantics: no score, no achievement counters. Unchanged by the reversal.
     eq(g.stats.hunterCoalesced, coalescedBefore, "E: at the ceiling — hunterCoalesced did not move");
     eq(g.score, scoreBefore, "E: at the ceiling — no score was awarded");
     eq(g.stats.hunterLineageKills, lineageBefore, "E: at the ceiling — noteLargeHunterSpawn was NOT called (the lineage counter is untouched)");
-    assert(g.particles.length > particlesBefore, "E: at the ceiling — a boom() fired in the garbage hue (the whole tell)");
+    eq(g.particles.length, particlesBefore, "E: at the ceiling — and no boom(), because nothing was destroyed");
   }
 
-  // --- the pipeline does NOT stall: with the ceiling full, further clumps keep being consumed ---
+  // --- the pipeline does NOT stall. REPOINTED BY CS024 P6f: what "no stall" MEANS has changed. P3
+  //     defined it as "the field is left empty" because a held clump was believed unreclaimable. It is
+  //     not: a held clump is scoopable and shatterable. So the claim becomes the one that actually
+  //     matters — the ceiling is never exceeded, held clumps never accumulate without bound, and a
+  //     shatter genuinely returns the salvage to the pipeline.
   {
     quiet(X);
     g.wave = CAP_LVL;
     fillCeiling();
-    // Twelve singles stacked on one another: they merge into a clump that crosses the threshold and is
-    // destroyed, and the field is left EMPTY rather than holding a permanent 12-piece squatter. This is
-    // the exact failure the hold would now produce, since a held clump can no longer age out (§1.4).
     for (let i = 0; i < X.HUNTER_COALESCE_COUNT; i++) {
       const p = new X.Garbage(1800 + i * 0.5, 1800, 0, 0, 1);
       p.coalesceDelay = 0;
       g.garbage.push(p);
     }
     for (let f = 0; f < 60; f++) X.update(1 / 60);
-    const alive = g.garbage.filter(x => !x.dead);
-    eq(alive.length, 0, `E: no-stall — the whole clump was consumed at the ceiling, leaving nothing behind (found ${alive.map(x => x.pieces).join(",")})`);
-    eq(X.largeHunterCount(), X.LARGE_HUNTER_MAX, "E: no-stall — and the ceiling still holds exactly");
+    const held = g.garbage.filter(x => !x.dead && x.pieces >= X.HUNTER_COALESCE_COUNT);
+    assert(held.length <= X.DEBUG.heldClumpMax, `E: no-stall — held clumps stay under heldClumpMax (found ${held.length})`);
+    eq(X.largeHunterCount(), X.largeHunterCap(g.wave), "E: no-stall — and the ceiling still holds exactly");
+    // THE RECLAMATION PATH P3's stall argument did not have: a bullet takes the held clump apart.
+    if (held.length) {
+      X.shatterClump(held[0]);
+      const singles = g.garbage.filter(x => !x.dead && x.pieces === 1);
+      assert(singles.length >= X.HUNTER_COALESCE_COUNT,
+        "E: no-stall — shattering a held clump returns all twelve pieces to the pipeline");
+    }
   }
 
   // --- under the ceiling, a clump reaching the threshold through the REAL update() path converts ---
@@ -398,7 +425,7 @@ function levelForCap(n) {
     }
     for (let f = 0; f < 60; f++) X.update(1 / 60);
     assert(X.largeHunterCount() >= 1, "E: through the real update(), a fed field converts at least one large Hunter");
-    assert(X.largeHunterCount() <= X.LARGE_HUNTER_MAX, "E: ...and never exceeds the ceiling");
+    assert(X.largeHunterCount() <= X.largeHunterCap(g.wave), "E: ...and never exceeds the ceiling");
     const alive = g.garbage.filter(x => !x.dead);
     for (const p of alive) assert(p.pieces <= X.HUNTER_COALESCE_COUNT,
       `E: through the real update(), no clump grew past ${X.HUNTER_COALESCE_COUNT} pieces (found ${p.pieces})`);
@@ -476,8 +503,12 @@ function levelForCap(n) {
   eq(resets.length, 1, `G: exactly one hunterLineageKills reset site in live code (found ${JSON.stringify(resets)})`);
   assert(/function noteLargeHunterSpawn/.test(scriptSrc), "G: the reset lives in noteLargeHunterSpawn()");
   // REPOINTED BY CS024 P3: two callers became ONE — coalescence — when the ambient spawner was deleted.
+  // REPOINTED BY CS024 P6f: TWO again, and they are the SAME producer at two moments — the immediate
+  // conversion in coalesceGarbage(), and drainHeldClumps() converting a clump whose slot arrived later.
+  // The claim this section makes is unchanged: the reset lives in ONE helper (asserted above) and every
+  // birth goes through it, so no birth can bypass the 0 -> 1 rule.
   const callers = codeOnly.filter(l => /noteLargeHunterSpawn\(\)/.test(l) && !/^function /.test(l.trim()));
-  eq(callers.length, 1, `G: exactly one caller — the coalescence conversion (found ${callers.length})`);
+  eq(callers.length, 2, `G: exactly two callers — the immediate conversion and the deferred drain (found ${callers.length})`);
 
   // Hunter's Bane still completes: ACH_LINEAGE_FULL kills in one lineage sets the flag.
   quiet(X);
@@ -580,9 +611,10 @@ function levelForCap(n) {
   eq(row.junkSpeedLarge, lv.junkSpeedLarge, "H: the logged junkSpeedLarge is what actually spawned this level");
   eq(row.junkSpeedMedium, lv.junkSpeedMedium, "H: the logged junkSpeedMedium mirrors leverState");
   eq(row.junkSpeedSmall, lv.junkSpeedSmall, "H: the logged junkSpeedSmall mirrors leverState");
-  // REPOINTED BY CS024 P3 (unchanged this phase): the column survives (a column follows its consumer)
-  // but its source is the flat LARGE_HUNTER_MAX, not a lever or a deleted levelDef column.
-  eq(row.maxLargeHunters, Y.LARGE_HUNTER_MAX, "H: the logged maxLargeHunters is the flat LARGE_HUNTER_MAX");
+  // REPOINTED BY CS024 P3, then AGAIN BY CS024 P6f: the column survives (a column follows its consumer)
+  // and its source is largeHunterCap(wave) — per-level again, still not a lever and still not a levelDef
+  // column. It mirrors the consumer's own expression rather than re-deriving the curve.
+  eq(row.maxLargeHunters, Y.largeHunterCap(rowWave), "H: the logged maxLargeHunters is largeHunterCap(wave)");
   eq(row.coalescePause, lv.coalescePause, "H: the logged coalescePause mirrors leverState");
   eq(row.hunterSpeedMedium, lv.hunterSpeedMedium, "H: the logged hunterSpeedMedium mirrors leverState");
   eq(row.hunterSpeedSmall, lv.hunterSpeedSmall, "H: the logged hunterSpeedSmall mirrors leverState");
@@ -679,7 +711,7 @@ function levelForCap(n) {
   // (<id>Floor / <id>Ceil / <id>Steps) instead of one flat row, so 17 become 51 and the 16 non-lever
   // knobs are untouched. The header list is unchanged — this is a reshape inside three sections.
   // CS024 P6e repoint: 68 -> 69 (+1 debugOverride master toggle, spec §3).
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 69, "H: DEBUG_VARS holds 69 value entries as of CS024 P6e");
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 72, "H: DEBUG_VARS holds 72 value entries as of CS024 P6f");
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
   const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),
@@ -752,8 +784,8 @@ function levelForCap(n) {
       }
       Z.game.debris.length = 0;   // CS024 P3: no hunterTimer to poke — coalescence is the only producer
       Z.nextWave();
-      assert(Z.largeHunterCount() <= Z.LARGE_HUNTER_MAX,
-        `I: level ${Z.game.wave}: the count never exceeds the ceiling (${Z.largeHunterCount()} <= ${Z.LARGE_HUNTER_MAX})`);
+      assert(Z.largeHunterCount() <= Z.largeHunterCap(Z.game.wave),
+        `I: level ${Z.game.wave}: the count never exceeds the ceiling (${Z.largeHunterCount()} <= ${Z.largeHunterCap(Z.game.wave)})`);
     }
     // and one level far past LEVEL_MAX — the ceiling is flat, so this is now just a large level number
     Z.game.wave = 900;

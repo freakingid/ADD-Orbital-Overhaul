@@ -550,7 +550,8 @@ function evalSlice(literal) {
   // restaged UFO knobs.
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
   // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 69, "G: TRAP 2 — 69 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride)");
+  // CS024 P6f repoint: +3 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — non-levers, HUNTER section).
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 72, "G: TRAP 2 — 72 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -570,7 +571,11 @@ function evalSlice(literal) {
     // own registry footprint) before the comparison — the claim under test is P6b's, not P6d's.
     // CS024 P6e repoint: also strip the LEADING `debugOverride` toggle (P6e, inserted at the top, spec
     // §3) — same reasoning, it's P6e's row, not P6b's.
-    const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "").replace(/,startLevel$/, "");
+    // CS024 P6f repoint: also strip P6f's three HUNTER-section knobs (hunterCapMax,
+    // hunterCapLevelsPerStep, heldClumpMax) — same reasoning again, they are P6f's rows, not P6b's, and
+    // the claim under test is that P6b left the pre-P6b ORDER alone.
+    const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "").replace(/,startLevel$/, "")
+      .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it

@@ -80,8 +80,10 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   // replace it as this file's source of truth for the inert-delay quantity.
   "leverState", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
   "GARBAGE_MAGNET_PULL", "HUNTER_COALESCE_COUNT", "GARBAGE_PICKUP", "GARBAGE_SHATTER_KICK",
-  "largeHunterCount", "LARGE_HUNTER_MAX",   // CS024 P3: largeHunterCap() deleted, ceiling now flat
+  "largeHunterCount", "largeHunterCap",     // CS024 P3: the per-level lookup was deleted, ceiling flat
                                             // CS024 P4: levelDef dropped — the level table is gone
+                                            // CS024 P6f: the flat LARGE_HUNTER_MAX is deleted in turn and
+                                            // largeHunterCap(wave) is back, now two knobs and one ceil
   "SCOOP_SPILL_KICK", "SCOOP_WIDTH", "SCOOP_DEPTH",     // CS024 P3: GARBAGE_FADE deleted with the blink-out
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
@@ -96,7 +98,7 @@ const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafS
 const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, HunterSatellite,
   destroyDebris, destroyHunter, shatterClump, Bullet, AudioSys, Achievements, leverState, GARBAGE_MERGE_DIST, GARBAGE_MAGNET_RANGE,
   GARBAGE_MAGNET_PULL, HUNTER_COALESCE_COUNT, GARBAGE_PICKUP, GARBAGE_SHATTER_KICK,
-  largeHunterCount, LARGE_HUNTER_MAX,
+  largeHunterCount, largeHunterCap,
   SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
   MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
@@ -150,12 +152,16 @@ const CAP_OK_LEVEL = 1;
 
 // =====================================================================
 console.log("(0) config + inheritance: constants sane; emission sites + fromNode inherit defaults");
-assert(LARGE_HUNTER_MAX >= 2,
-  `0: the flat large-Hunter ceiling (${LARGE_HUNTER_MAX}) permits a coalesced core, and permits a second`);
+// REPOINTED BY CS024 P6f: the flat constant is deleted and largeHunterCap(wave) is back — min(ceil(wave /
+// hunterCapLevelsPerStep), hunterCapMax), which is 1 at level 1. This file measures the coalescence
+// MACHINERY, so all it needs from the ceiling is that a coalesced core can exist at CAP_OK_LEVEL at all.
+assert(largeHunterCap(CAP_OK_LEVEL) >= 1,
+  `0: the large-Hunter ceiling at level ${CAP_OK_LEVEL} (${largeHunterCap(CAP_OK_LEVEL)}) permits a coalesced core`);
 // REPOINTED BY CS024 P4: the "no maxLargeHunters column" probe went with the LEVEL TABLE ITSELF —
-// levelDef() no longer exists to have a column. The claim it stood for is unchanged and is now made
-// the only way it can be: the ceiling is a flat constant and nothing per-level decides it.
-assert(typeof LARGE_HUNTER_MAX === "number", "0: the large-Hunter ceiling is a flat constant, not a per-level lookup (CS024 P3/P4)");
+// levelDef() no longer exists to have a column. The claim it stood for is unchanged, and CS024 P6f
+// restates it once more: the ceiling IS per-level again, but it is a two-knob closed form, NOT a lookup
+// into a table (HUNTER_CAP_STEPS stays deleted — scratchpad/test-cs024-p6f.js §B pins that).
+assert(typeof largeHunterCap === "function", "0: the large-Hunter ceiling is a closed form over wave, not a table lookup (CS024 P3/P4/P6f)");
 // REPOINTED BY CS024 P4 (Gate A Q1): 3.0 -> 5.0. Paul played Gate A, found hunters coalescing too fast
 // now that garbage is permanent, retuned the live slider and reported 5000 ms. This file measures the
 // coalescence MACHINERY, not this number, and every timing below derives from the constant rather than

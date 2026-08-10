@@ -211,9 +211,14 @@ if (!X) { console.error("ABORT: build failed"); process.exit(1); }
   // Every symbol §1.6 lists as removed, probed by eval inside the real script scope. A tombstone
   // COMMENT naming one of these is fine and expected; a live binding is not, so the two are checked
   // separately rather than with one grep over the whole file.
+  // NARROWED BY CS024 P6f, not dropped: `largeHunterCap` was on this list because CS024 P3 deleted the
+  // PER-LEVEL LOOKUP of that name (a table walk over HUNTER_CAP_STEPS' 11 breakpoints). P6f legitimately
+  // reuses the identifier for something structurally different — two debug knobs and one `ceil`, no
+  // table, no breakpoints — so the claim this list makes about it becomes the claim below: the
+  // BREAKPOINT TABLE is still gone. HUNTER_CAP_STEPS stays on the list and is what actually pins that.
   const DEAD = ["levelDef", "stepAt", "TIER_STEPS", "PHASE_LEN", "LEVEL_MAX", "JUNK_CYCLE", "ramp",
     "SAUCER_SMALL_CHANCE_FLOOR", "SAUCER_SMALL_CHANCE_CEIL", "RAMP_WAVES", "difficultyFactor",
-    "HUNTER_CAP_STEPS", "largeHunterCap", "bonusSpawnChance"];
+    "HUNTER_CAP_STEPS", "bonusSpawnChance"];
   for (const s of DEAD) eq(X.probe(s), "__ReferenceError__", `A: ${s} is gone from the build`);
   for (const s of DEAD) {
     if (s === "ramp") continue; // AudioSys.setLowHp has its own local `const ramp = (param, target) =>`
@@ -222,6 +227,12 @@ if (!X) { console.error("ABORT: build failed"); process.exit(1); }
   // ramp(): the GLOBAL three-argument interpolator is gone; the identically-named AudioParam helper
   // scoped inside AudioSys.setLowHp() is a different function and stays. Distinguish them by shape.
   assert(!/function ramp\(/.test(execOnly), "A: no top-level `function ramp(` declaration survives");
+  // The narrowed largeHunterCap claim, in full: the name is live again (CS024 P6f) but the SHAPE P4
+  // recorded as deleted is not — no breakpoint table, no per-level lookup, and no flat constant either.
+  assert(typeof X.probe("largeHunterCap") === "function",
+    "A: largeHunterCap is a live function again after CS024 P6f (the P3 deletion is narrowed, not dropped)");
+  assert(!/HUNTER_CAP_STEPS/.test(execOnly), "A: ...but its breakpoint-table shape is still gone from executable source");
+  assert(!/\bLARGE_HUNTER_MAX\b/.test(execOnly), "A: ...and so is CS024 P3's flat constant, deleted by P6f");
   assert(/const ramp = \(param, target\)/.test(execOnly), "A: AudioSys.setLowHp's local `ramp` AudioParam helper is untouched");
   // The 21 tier knobs, by id, in the registry AND in executable source.
   const TIERS = ["low", "normal", "high"].map(t => t[0].toUpperCase() + t.slice(1));
@@ -834,8 +845,8 @@ function evalSlice(literal) {
   // lever flat, never tune its ramp, so each lever now emits three rows — floor, ceiling, step count —
   // and 17 become 51. The claim is unchanged in kind and strength: an exact live count plus an exact
   // ordered header list.
-  eq(values.length, 69, "H: 69 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride");
-  eq(X.DEBUG_ENTRIES.length, 69, "H: DEBUG_ENTRIES agrees — headers are not values");
+  eq(values.length, 72, "H: 72 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs");
+  eq(X.DEBUG_ENTRIES.length, 72, "H: DEBUG_ENTRIES agrees — headers are not values");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "H: nine section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {

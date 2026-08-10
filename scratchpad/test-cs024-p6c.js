@@ -215,14 +215,16 @@ let X = null;
   // rows survive P6's registry unchanged, and 17 levers x 3 = 51 replace P5's 17 flat rows.
   // CS024 P6d repoint: registry 67 -> 68 (+1 non-lever `startLevel` GLOBAL knob, gate tooling, no lever).
   // CS024 P6e repoint: registry 68 -> 69 (+1 non-lever `debugOverride` master toggle, spec §3, no lever).
-  eq(X.DEBUG_ENTRIES.length, 69, "A: the registry holds exactly 69 value entries (18 non-lever + 51 lever)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 69, "A: ...and DEBUG_VARS agrees");
+  // CS024 P6f repoint: 69 -> 72 (+3 non-lever Hunter-cap knobs — hunterCapMax, hunterCapLevelsPerStep,
+  // heldClumpMax; §2.5's not-a-lever list, so the LEVER half of this count is untouched at 51).
+  eq(X.DEBUG_ENTRIES.length, 72, "A: the registry holds exactly 72 value entries (21 non-lever + 51 lever)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 72, "A: ...and DEBUG_VARS agrees");
   eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, 51,
     "A: ...51 of them are lever knobs");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset Scores + Back");
-  eq(Object.keys(X.DEBUG).length, 69, "A: the native DEBUG map agrees with the registry");
-  eq(Object.keys(X.debugShown).length, 69, "A: ...and so does the display map");
+  eq(Object.keys(X.DEBUG).length, 72, "A: the native DEBUG map agrees with the registry");
+  eq(Object.keys(X.debugShown).length, 72, "A: ...and so does the display map");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -591,7 +593,10 @@ let X = null;
   const nonLever = X.DEBUG_ENTRIES.filter(e => !leverRowIds.has(e.id));
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no chain, no lever markings).
   // CS024 P6e repoint: +1 more (debugOverride, the master toggle, spec §3 — no chain either).
-  eq(nonLever.length, 18, "G: 18 non-lever knobs survive P6/P6d/P6e's registry");
+  // CS024 P6f repoint: +3 more (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — the scaling
+  // large-Hunter ceiling and its held-clump backstop, §2.5's not-a-lever list). The per-row checks
+  // below are exactly what pins them as non-levers, so this count growing is the claim, not a bypass.
+  eq(nonLever.length, 21, "G: 21 non-lever knobs survive P6/P6d/P6e/P6f's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

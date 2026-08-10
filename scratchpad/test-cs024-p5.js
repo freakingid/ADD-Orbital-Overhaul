@@ -413,8 +413,8 @@ function atWave(A, w) {
   // the level number, not a value), and its single row could only PIN a lever flat. Each lever now
   // emits three rows, so 17 become 51 and the 16 non-lever knobs are untouched. The claim is unchanged
   // in kind and strength — an exact live count plus an exact ordered header list.
-  eq(values.length, 69, "G: DEBUG_VARS has exactly 69 value entries (CS024 P6e repoint: +1 debugOverride)");
-  eq(A.DEBUG_ENTRIES.length, 69, "G: DEBUG_ENTRIES agrees — headers are not values");
+  eq(values.length, 72, "G: DEBUG_VARS has exactly 72 value entries (CS024 P6f repoint: +3 Hunter-cap knobs)");
+  eq(A.DEBUG_ENTRIES.length, 72, "G: DEBUG_ENTRIES agrees — headers are not values");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "G: section headers, in the specced order, POWERUPS now present (CS024 P6's)");
   for (const h of headers) {

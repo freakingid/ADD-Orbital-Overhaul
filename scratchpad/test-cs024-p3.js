@@ -25,6 +25,16 @@
 //      HUNTER_COALESCE_COUNT is DESTROYED — not held (the retired behaviour, which now stalls the
 //      pipeline forever since a held clump can no longer age out) — with a boom() in the garbage hue
 //      and `awardScore = false` semantics: no score, no achievement counters.
+//      ⛔ REPOINTED THROUGHOUT BY CS024 P6f, WHICH REVERSES BOTH HALVES OF THIS ITEM. The flat constant
+//      is deleted and largeHunterCap(wave) is back (min(ceil(wave / hunterCapLevelsPerStep),
+//      hunterCapMax) — a two-knob closed form, NOT a restoration of the HUNTER_CAP_STEPS table, which
+//      stays deleted and is still pinned as such below). And the overflow rule reverses again: at the
+//      cap a clump HOLDS, because P3's stall argument assumed a held clump had no reclamation path and
+//      it has two — the player can SCOOP it (partially or wholly) and SHATTER it with a bullet. The
+//      destroy survives as an anti-stall BACKSTOP above DEBUG.heldClumpMax held clumps, with these exact
+//      awardScore = false semantics. Every claim about awardScore = false, about the boom() being the
+//      only tell, and about the ceiling never being exceeded is UNCHANGED and still checked here; only
+//      WHICH ARM fires first moved. scratchpad/test-cs024-p6f.js pins the full three-arm rule.
 //   6. LAST STAND is unchanged behaviourally; only HUNTER_LAST_STAND_SPEED's use site becomes the
 //      DEBUG.lastStandSpeed knob. `this.homing` is still never flipped, and the core still retains
 //      whatever vx/vy it held the instant debris reappears.
@@ -51,8 +61,9 @@
 //      the two tiers together actually bound.
 //  (E) COALESCENCE IS THE ONLY PRODUCER: a full 12-piece run through the real update() makes a Hunter
 //      end to end, and a garbage-free board makes none no matter how long it runs.
-//  (F) THE CAP OVERFLOW: at LARGE_HUNTER_MAX the clump is DESTROYED, with score and every achievement
-//      counter provably unmoved, and the pipeline provably not stalled.
+//  (F) THE CAP OVERFLOW: REPOINTED BY CS024 P6f. At the cap a clump HOLDS; past heldClumpMax it is
+//      DESTROYED, with score and every achievement counter provably unmoved. The pipeline is still
+//      provably not stalled — by the two reclamation paths, not by annihilation.
 //  (G) LAST STAND: the knob is live, homing is never flipped, and the core retains its vector the
 //      instant debris reappears.
 //  (H) THE FRAME-BUDGET GATE — deterministic, counter-based, never wall time, with the ceiling DERIVED
@@ -141,7 +152,8 @@ const RETURN = [
   "coalesceGarbage", "cullGarbage", "betterCullVictim", "largeHunterCount", "noteLargeHunterSpawn",
   "destroyHunter", "destroyDebris", "shatterClump", "addScore",
   "GARBAGE_SOFT_MAX", "GARBAGE_HARD_MAX", "GARBAGE_MERGE_DIST", "GARBAGE_MAGNET_RANGE",
-  "GARBAGE_PICKUP", "HUNTER_COALESCE_COUNT", "LARGE_HUNTER_MAX",
+  "GARBAGE_PICKUP", "HUNTER_COALESCE_COUNT", "largeHunterCap",   // CS024 P6f: the flat constant is gone
+  "heldClumpCount", "saturatedClump", "drainHeldClumps",        // ...and these are the rule that replaced it
   "HUNTER_LAST_STAND_SPEED", "HUNTER_LAST_STAND_TURN", "DEBRIS_GARBAGE",
   // REPOINTED BY CS024 P4: every symbol on this line is now DELETED (levelDef, stepAt, ramp, JUNK_CYCLE,
   // TIER_STEPS) or RENAMED (difficultyFactor -> musicIntensity, RAMP_WAVES -> MUSIC_INTENSITY_WAVES),
@@ -281,9 +293,12 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
 
   // --- 4/5. the cap ---
   eq(X.probe("HUNTER_CAP_STEPS"), "__ReferenceError__", "A: HUNTER_CAP_STEPS does not exist");
-  eq(X.probe("largeHunterCap"), "__ReferenceError__", "A: largeHunterCap() does not exist");
-  eq((codeOnly.match(/function largeHunterCap\s*\(/g) || []).length, 0, "A: ...and is not defined in source");
-  eq(X.LARGE_HUNTER_MAX, 100, "A: LARGE_HUNTER_MAX is 100");
+  // REPOINTED BY CS024 P6f: largeHunterCap() is a live identifier again, but for a two-knob CLOSED FORM.
+  // What P3 actually deleted — the breakpoint TABLE and any per-level LOOKUP — is still gone, and that
+  // is now the whole of the claim. P3's own flat constant went the same way in its turn.
+  eq(typeof X.largeHunterCap, "function", "A: largeHunterCap(wave) exists again as a closed form (CS024 P6f)");
+  eq(X.probe("LARGE_HUNTER_MAX"), "__ReferenceError__", "A: ...and CS024 P3's flat LARGE_HUNTER_MAX is deleted in turn");
+  assert(!/HUNTER_CAP_STEPS/.test(codeOnly), "A: ...with no breakpoint schedule anywhere in executable source");
   eq(X.GARBAGE_SOFT_MAX, 220, "A: GARBAGE_SOFT_MAX is 220");
   eq(X.GARBAGE_HARD_MAX, 300, "A: GARBAGE_HARD_MAX is 300");
   assert(X.GARBAGE_SOFT_MAX < X.GARBAGE_HARD_MAX, "A: (sanity) soft sits below hard");
@@ -304,7 +319,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // wired). P5's registry rebuild adds 17 lever knobs + smallUfoChance, back to 32.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 69, "A: the registry holds 69 value entries after CS024 P6e (P6c's three rows per lever + startLevel + debugOverride)");
+  eq(X.DEBUG_ENTRIES.length, 72, "A: the registry holds 72 value entries after CS024 P6f (P6c's three rows per lever + startLevel + debugOverride + the three Hunter-cap knobs)");
 
   // Tombstones are checked POSITIVELY and separately, so a comment naming a dead symbol can never be
   // confused for a live one (the standing test-cs024-p1/p2 idiom).
@@ -599,15 +614,29 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
 
 // ================= (F) THE CAP OVERFLOW =====================
 (function sectionF() {
-  console.log("(F) at LARGE_HUNTER_MAX a clump is DESTROYED — no convert, no hold, no score, no counters");
+  console.log("(F) at the cap a clump HOLDS; past heldClumpMax it is DESTROYED — no score, no counters");
   const X = build();
   X.startGame();
   const g = quiet(X);
 
+  // REPOINTED BY CS024 P6f: the ceiling is per-level again, so this fills largeHunterCap(game.wave)
+  // rather than a constant. quiet() does not touch game.wave, so it is level 1 (cap 1) throughout.
   function fillCeiling() {
-    for (let i = 0; i < X.LARGE_HUNTER_MAX; i++)
+    const cap = X.largeHunterCap(g.wave);
+    for (let i = 0; i < cap; i++)
       g.hunters.push(new X.HunterSatellite(60 + (i % 40) * 30, 60 + Math.floor(i / 40) * 30, 3));
-    eq(X.largeHunterCount(), X.LARGE_HUNTER_MAX, "F: (setup) the board sits exactly at the ceiling");
+    eq(X.largeHunterCount(), cap, "F: (setup) the board sits exactly at the ceiling");
+  }
+  // Fill the HELD-CLUMP queue to heldClumpMax, so the next saturating clump takes the DESTROY arm — the
+  // arm this section has always been about. Built directly at 12 pieces (a state the merge path reaches
+  // in one step) rather than through repeated merges, which would only re-test §F's own first block.
+  function fillHeldQueue() {
+    for (let i = 0; i < X.DEBUG.heldClumpMax; i++) {
+      const h = new X.Garbage(200 + i * 400, 1600, 0, 0, X.HUNTER_COALESCE_COUNT);
+      h.pieces = X.HUNTER_COALESCE_COUNT; h.radius = 7 * Math.sqrt(h.pieces); h.coalesceDelay = 0;
+      g.garbage.push(h);
+    }
+    eq(X.heldClumpCount(), X.DEBUG.heldClumpMax, "F: (setup) the held-clump queue is exactly full");
   }
 
   const a = new X.Garbage(1500, 900, 0, 0, X.HUNTER_COALESCE_COUNT - 1);
@@ -616,6 +645,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   b.pieces = 1; b.coalesceDelay = 0;
   g.garbage.push(a, b);
   fillCeiling();
+  fillHeldQueue();
 
   // Snapshot EVERY score and achievement counter the awardScore=false contract covers.
   const before = {
@@ -633,9 +663,12 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   X.coalesceGarbage(1 / 60);
 
   assert(b.dead, "F: the merge still happened — the single was absorbed");
-  assert(a.dead, "F: THE CLUMP IS DESTROYED — it does not hold at the final stage (CS018 P4's rule is reversed)");
+  // REPOINTED BY CS024 P6f: destruction is now the BACKSTOP arm, reached only past heldClumpMax — which
+  // fillHeldQueue() above has arranged. Everything asserted about it below is unchanged, because the
+  // arm's own semantics did not change; only its entry condition did.
+  assert(a.dead, "F: THE CLUMP IS DESTROYED — the anti-stall backstop past heldClumpMax held clumps");
   eq(g.hunters.length, before.hunters, "F: no Hunter was created");
-  eq(X.largeHunterCount(), X.LARGE_HUNTER_MAX, "F: the ceiling still holds exactly");
+  eq(X.largeHunterCount(), X.largeHunterCap(g.wave), "F: the ceiling still holds exactly");
   eq(g.score, before.score, "F: awardScore=false — NO score was awarded");
   eq(g.stats.hunterCoalesced, before.coalesced, "F: ...hunterCoalesced did not move");
   eq(g.stats.hunterLineageKills, before.lineage, "F: ...noteLargeHunterSpawn was NOT called (the lineage counter is untouched)");
@@ -645,8 +678,12 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   assert(g.particles.length > before.particles, "F: a boom() fired — the destruction is not invisible, unlike a cull");
   eq(g.floaters.length, before.floaters, "F: ...but no score floater, because nothing was scored");
 
-  // --- THE PIPELINE DOES NOT STALL. This is why the hold had to go: a held clump can no longer age out,
-  //     so it would sit at 12 pieces forever, occupying salvage nothing can ever convert or reclaim.
+  // --- THE PIPELINE DOES NOT STALL — and REPOINTED BY CS024 P6f, because what "no stall" MEANS moved.
+  //     P3 argued a held clump would squat forever "occupying salvage nothing can ever convert or
+  //     reclaim", and defined no-stall as the field being left EMPTY. That premise was wrong: a held
+  //     clump is reclaimable two ways, both the player's — a partial or whole SCOOP, and a bullet
+  //     SHATTER. So the claim becomes what it was always protecting: saturated clumps cannot accumulate
+  //     without bound, and the ceiling is never exceeded.
   {
     quiet(X);
     fillCeiling();
@@ -657,14 +694,24 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     }
     for (let f = 0; f < 600; f++) X.update(1 / 60);
     const stuck = g.garbage.filter(p => !p.dead && p.pieces >= X.HUNTER_COALESCE_COUNT);
-    eq(stuck.length, 0, `F: no saturated clump is left squatting on the board (found ${stuck.map(p => p.pieces).join(",")})`);
-    eq(X.largeHunterCount(), X.LARGE_HUNTER_MAX, "F: ...and the ceiling was never exceeded on the way");
+    assert(stuck.length <= X.DEBUG.heldClumpMax,
+      `F: saturated clumps stay bounded by heldClumpMax (found ${stuck.map(p => p.pieces).join(",")})`);
+    eq(X.largeHunterCount(), X.largeHunterCap(g.wave), "F: ...and the ceiling was never exceeded on the way");
+    // THE RECLAMATION PATH, exercised rather than argued: shattering a held clump returns all twelve
+    // pieces to the pipeline, which is precisely what P3's stall argument assumed was impossible.
+    if (stuck.length) {
+      const singlesBefore = g.garbage.filter(p => !p.dead && p.pieces === 1).length;
+      X.shatterClump(stuck[0]);
+      const singlesAfter = g.garbage.filter(p => !p.dead && p.pieces === 1).length;
+      eq(singlesAfter - singlesBefore, X.HUNTER_COALESCE_COUNT,
+        "F: ...and a bullet shatter returns every one of a held clump's twelve pieces to the field");
+    }
   }
 
   // --- and BELOW the ceiling the very same code path converts normally, so the branch is a ceiling
   //     check and not a silent kill switch.
   {
-    quiet(X);
+    quiet(X);   // clears hunters AND garbage, so both the cap and the held queue are empty again
     const c = new X.Garbage(1500, 900, 0, 0, X.HUNTER_COALESCE_COUNT - 1);
     c.pieces = X.HUNTER_COALESCE_COUNT - 1; c.radius = 7 * Math.sqrt(c.pieces); c.coalesceDelay = 0;
     const d = new X.Garbage(1502, 900, 0, 0, 1);
@@ -878,7 +925,8 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     // HUNTER_CAP_STEPS or levelDef would ReferenceError on the first nextWave(). That exception is moot
     // now — the whole table it reached into is gone — but the removal it forced is still checked here.
     eq(X.probe("HUNTER_CAP_STEPS"), "__ReferenceError__", "H: TRAP 2 (stated exception) — HUNTER_CAP_STEPS stayed gone");
-    eq(X.LARGE_HUNTER_MAX, 100, "H: ...and the flat ceiling that replaced it is still what the cap reads");
+    // REPOINTED BY CS024 P6f: the flat ceiling that replaced it is itself replaced, by a closed form.
+    eq(X.largeHunterCap(1), 1, "H: ...and the closed form that replaced THAT reads 1 at level 1");
   }
 
   // --- the DiffLog column was REPOINTED, not dropped ("a column follows its consumer").
@@ -890,7 +938,9 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     Y.game.debris.length = 0;
     Y.nextWave();
     eq(Y.DiffLog.rows.length, 1, "H: (setup) a real nextWave() logged one row");
-    eq(Y.DiffLog.rows[0].maxLargeHunters, Y.LARGE_HUNTER_MAX, "H: ...and it logs LARGE_HUNTER_MAX now, not a level lookup");
+    // REPOINTED BY CS024 P6f: still not a LEVEL-TABLE lookup — it is the same largeHunterCap(game.wave)
+    // expression its consumer uses, which is exactly what "a column follows its consumer" asks for.
+    eq(Y.DiffLog.rows[0].maxLargeHunters, Y.largeHunterCap(Y.game.wave), "H: ...and it logs largeHunterCap(wave), mirroring its consumer");
   }
 
   // --- TRAP 4: no design doc is touched by this phase. STATUS.md is excluded deliberately — CLAUDE.md
@@ -955,7 +1005,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
       Z.nextWave();
       assert(Z.game.garbage.filter(p => !p.dead).length <= Z.GARBAGE_HARD_MAX + 8,
         `I: level ${Z.game.wave}: the field stayed inside the ceiling (${Z.game.garbage.length})`);
-      assert(Z.largeHunterCount() <= Z.LARGE_HUNTER_MAX, `I: level ${Z.game.wave}: the Hunter ceiling held`);
+      assert(Z.largeHunterCount() <= Z.largeHunterCap(Z.game.wave), `I: level ${Z.game.wave}: the Hunter ceiling held`);
     }
   } catch (e) { threw = e; }
   assert(threw === null, "I: no throw across a 25-level run with the field driven hard" + (threw ? `: ${threw.stack}` : ""));
