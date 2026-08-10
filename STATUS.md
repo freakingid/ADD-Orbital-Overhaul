@@ -890,7 +890,12 @@ Paul says: this is fine, no need for timed mode
 
 Paul says: We should make a smaller "Mega Delivery" at Level 6, persisting through Level 11. The effects should be exactly half those effects at level 12. Then Super Mega Delivery begins at Level 12, as planned.
 
-**14. (ADDED BY CS024 P6f, out of this gate's own playtest.) Two parts, both worth a separate sentence.** **(a) Does the early game now read as SURVIVABLE at levels 1–3?** One large Hunter at levels 1–2, rising one per two levels to six at level 11 — if that is now too quiet rather than merely survivable, drag `Hunter cap levels per step` toward 1 and **report the number you land on**, not just "too easy." **(b) Does a held clump read as PENDING rather than as ordinary salvage?** It is the one wearing the pulsing teal ring, sitting at 12 pieces waiting for a Hunter slot. The question is whether that ring makes you treat it as a threat you can still defuse — scoop it, shoot it — or whether it just looks like another big canister you happen not to have collected yet. If it reads as ordinary salvage, the tell is a LOOK-CALL and can be changed freely.
+**14. (ADDED BY CS024 P6f, out of this gate's own playtest.) Two parts, both worth a separate sentence.** **(a) Does the early game now read as SURVIVABLE at levels 1–3?** 
+Paul says: yes, this is now fine. 
+
+One large Hunter at levels 1–2, rising one per two levels to six at level 11 — if that is now too quiet rather than merely survivable, drag `Hunter cap levels per step` toward 1 and **report the number you land on**, not just "too easy." **(b) Does a held clump read as PENDING rather than as ordinary salvage?** 
+Paul says: this reads fine, I like the special appearance of these. 
+It is the one wearing the pulsing teal ring, sitting at 12 pieces waiting for a Hunter slot. The question is whether that ring makes you treat it as a threat you can still defuse — scoop it, shoot it — or whether it just looks like another big canister you happen not to have collected yet. If it reads as ordinary salvage, the tell is a LOOK-CALL and can be changed freely.
 
 Paul says: 
 
