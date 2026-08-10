@@ -21,14 +21,15 @@ session, one commit per phase, on `main`.** Claude Code commits; Paul pushes.
 | **P6b** | ⚠️ *corrective* — drivers-only-wrap + UFO restage | **Opus** | high | **yes** |
 | **P6c** | ⚠️ *corrective* — lever floor/ceil/steps knobs | **Opus** | high | **yes** |
 | **P6d** | ⚠️ *corrective* — `startLevel` debug knob (gate tooling) | Sonnet | medium | no |
+| **P6e** | ⚠️ *corrective* — debug reset / override toggle / score wipe | Sonnet | medium | no |
 | ⛔ | **GATE B** — blocking playtest ← *Paul plays; answers go in `STATUS.md`* | — | — | — |
 | **P7** | Retune, version bump, full doc rewrite | **Opus** | high | no |
 
 **P6b, P6c and P6d are IN-ROUND CORRECTIVE PHASES**, opened in conversation
 after P4 and P5 landed, following the CS020 P1b / CS021 P1b / CS023 P4b
 precedent. They were not in this document's original plan. P6b and P6c each fix
-something the phase above them shipped; P6d is gate tooling. **All three must
-land before Gate B**, because Gate B's whole job is
+something the phase above them shipped; P6d and P6e are gate tooling. **All four
+must land before Gate B**, because Gate B's whole job is
 tuning a ramp — it cannot do that against a mechanism that regresses at level 33
 with sliders that flatten whatever they touch. **Order matters: P6b before P6c**,
 since P6c derives every slider's range from the `LEVERS` table and P6b changes
@@ -978,12 +979,133 @@ numbers**; that is far cheaper than P4 guessing.
 
 ---
 
-## ⛔ GATE B — BLOCKING PLAYTEST (after P6d)
+## P6e — ⚠️ CORRECTIVE: debug reset, override toggle, score wipe
+
+**Model: Sonnet · Effort: medium**
+
+> Changeset 024, Phase 6e — an **in-round corrective phase**, not in the original
+> plan. **Gate tooling, and it must land before Gate B**: after P6c the panel
+> carries 51 lever rows, and there is currently **no way to undo a debug edit at
+> all** — the build's only "Return to Defaults" is on the Controls screen and
+> resets key bindings. An evening of dragging sliders is presently unrecoverable
+> short of clearing `localStorage`.
+>
+> **Grep every anchor by symbol first.** P6, P6b, P6c and P6d have all landed
+> since this was written.
+>
+> Four additions, all confined to the debug screen and its apply path. **No
+> gameplay change, no new knob semantics, no registry reshaping.**
+>
+> ### 1. Reset one row — `r`
+>
+> On the debug screen, `r` resets the **selected** row to its registry default:
+> `applyDebug(e.id, e.def)`. One uniform rule — every knob's default is its own
+> `def`, so **no special-casing** for lever rows, `toNative` entries, or
+> `clampShown` entries. `r` is free: CS024 P1 removed the orbit start-angle
+> reroll that used to own it, and the numeric-entry capture takes only
+> `DEBUG_ENTRY_CHARS` and Backspace. **Confirm that with a grep before binding
+> it**, and make `r` inert while a numeric entry is pending rather than having it
+> fight the entry buffer.
+>
+> ### 2. Reset all — a visible action row, not a hidden key
+>
+> **Do not bind this to a key alone.** Add a navigable **action row** at the
+> **bottom** of the registry, labelled so it cannot be missed, reached by
+> scrolling like any other row and fired with the normal confirm input. Follow the
+> Controls screen's `defaultsRow` precedent exactly, including routing through
+> `openModal` — wording in the shape of its `"Reset all controls to defaults?"`.
+>
+> The action itself already exists in the build: the module-level seed loop
+> `for (const v of DEBUG_ENTRIES) applyDebug(v.id, v.def)`. **Extract it to a
+> named function and call it from both places** rather than writing the loop
+> twice — one of the two would drift.
+>
+> ### 3. Master override toggle
+>
+> A boolean row at the **top** of the registry: overrides applied, or registry
+> defaults used. **Default ON**, so existing save files behave exactly as today.
+>
+> **The structural change: `DEBUG` becomes DERIVED rather than co-written.**
+> `debugShown` stays the edited, persisted store; `DEBUG` is rebuilt from either
+> `debugShown[id]` (toggle on) or `e.def` (toggle off). Add `rebuildDebug()` and
+> call it when the toggle flips. **No consumer site changes** — all ~70 read
+> `DEBUG.x` and do not care where the value came from. Preserve `applyDebug`'s
+> `clampShown`-then-`toNative` order exactly; that ordering is CS021 P3's
+> guarantee that the slider, the save file and the spawned level can never show
+> three different numbers.
+>
+> **Toggling off must NOT discard edits.** `debugShown` is untouched, so flipping
+> back restores every slider. That is the whole point — this is an A/B, not a
+> destructive reset. Persist the toggle in `afd_settings_v1` as an additive field
+> under the standing known-value-else-default rule.
+>
+> **State the timing limit in a comment, and in the gate block.** Levers are read
+> at the **point of use** — next wave's spawn, next saucer's construction — and
+> some values are captured per-entity at construction (a `Garbage` grabs its
+> coalesce delay in its constructor). So flipping the toggle mid-wave will not
+> change entities already on screen. That is correct and consistent with every
+> knob in the panel, but it means **a clean A/B happens between waves**, and it
+> will read as a bug if nobody says so.
+>
+> **The panel must show when overrides are OFF** — dim the value column, or mark
+> the header. Without a tell, the panel is a screen of numbers that are not in
+> effect.
+>
+> ### 4. Reset high scores — a second action row
+>
+> A separate action row: clear `HighScores.entries` to `[]` and `save()`.
+>
+> - **Behind its own `openModal` confirm**, with wording that cannot be confused
+>   with reset-all-debug. It is irreversible.
+> - **Scores ONLY.** `afd_achievements_v2` is **not** touched — not lifetime
+>   tiers, not weekly, not unlocks. Do not add an achievements wipe; it was not
+>   asked for.
+> - Clear the **in-memory `entries` array as well as the stored key**, or the
+> browsable table and `qualifies()` keep answering from stale data until reload.
+> - Use `HighScores.save()` rather than removing the key, so the guarded
+>   storage-failure path is the same one every other write uses. `afd_scores_v1`
+>   stays **frozen** — emptying its contents is not a schema change.
+> - Clear `game.lastScoreId` if it is set, so the gameover table cannot try to
+>   highlight a record that no longer exists.
+>
+> ### Tests — `scratchpad/test-cs024-p6e.js`
+>
+> `r` restoring a single row across a lever row, a `toNative` row and a
+> `clampShown` row; reset-all restoring every entry and being the same function as
+> the module seed; the toggle flipping `DEBUG` between edited and default values
+> **without touching `debugShown`**, and back again; `clampShown`-before-`toNative`
+> order preserved through `rebuildDebug`; the toggle persisting and reloading;
+> **overrides-on with an untouched panel being byte-identical to `HEAD`**; the
+> score wipe emptying both the array and the key while leaving
+> `afd_achievements_v2` provably intact; and `qualifies()` answering correctly
+> immediately after a wipe.
+>
+> **TRAP 1:** `GAME_VERSION` stays `"1.0.0.22"`. P7 owns the bump.
+> **TRAP 2:** no gameplay change. No `LEVERS` edit, no `leverState` change, no new
+> or reshaped knob.
+> **TRAP 3:** the three frozen `localStorage` keys keep their names and shapes.
+> No schema bump. The toggle is an additive field; the score wipe is a content
+> change, not a schema change.
+> **TRAP 4:** achievements are not wiped, dimmed, or otherwise touched.
+> **TRAP 5:** P6c's `▼`/`↳`/`(inv)` label derivation still holds — the two action
+> rows and the toggle row are **not levers** and carry none of those glyphs.
+> **TRAP 6:** docs untouched.
+>
+> **FINALLY — UPDATE THE GATE-OPEN BLOCK** in `STATUS.md`: `r` resets the selected
+> row, the two action rows at the top and bottom of the panel and what each does,
+> the override toggle including the between-waves timing limit, and that the score
+> wipe is irreversible and does not touch achievements.
+
+**Commit:** `cs-24 p6e: debug reset row/all, override toggle, high-score wipe`
+
+---
+
+## ⛔ GATE B — BLOCKING PLAYTEST (after P6e)
 
 **P7 must not run until questions 7–13 are answered in `STATUS.md`'s
 `## Playtest asks` section.** Questions 14–17 are **non-blocking** — see Step 3
 below. P6 writes a first version of that block, **P6c rewrites it** and P6d adds
-`startLevel` to it; P6c/P6d's version is the one to read, since P6's describes
+`startLevel` to it; P6c/P6d/P6e's version is the one to read, since P6's describes
 sliders that no longer exist.
 
 **What to play — this is one evening, not a marathon.**
