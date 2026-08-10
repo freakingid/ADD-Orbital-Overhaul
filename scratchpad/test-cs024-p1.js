@@ -745,8 +745,10 @@ function atWave(X, w) {
   const X = build();
 
   // TRAP 1
-  eq(X.GAME_VERSION, "1.0.0.22", "F: TRAP 1 — GAME_VERSION stays 1.0.0.22 (CS024 P7 owns the bump)");
-
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P1 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "F: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // TRAP 2 — CS023 P3's mutual collision damage is NOT in scope and must be byte-unchanged against HEAD.
   //   The hazards-vs-ship block's UNSHIELDED arm is the mutual-damage code, and it is pinned verbatim.
   //   Its SHIELDED arm is deliberately NOT pinned: removing CS021 P1b's `else if (h.orbitCenter)
@@ -786,13 +788,15 @@ function atWave(X, w) {
   assert(/else if \(h\.orbitCenter\)/.test(hSrc),
     "F: ...and it really was there at HEAD, so that is a real change and not a no-op");
 
-  // TRAP 3 — the three design docs are untouched. PLANNED-FEATURES-* / IMPLEMENTATION-PHASES-* are
-  // deliberately NOT in this list: they are SPEC documents, authored outside the build session, and a
-  // phase's trap has no business freezing them (see the same narrowing in test-cs023-p2.js §A).
-  const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot })
-    .toString().trim().split("\n").filter(Boolean);
-  const docs = changed.filter(f => /ORBITAL-OVERHAUL-GDD|GDD-VERSION-HISTORY|DIFFICULTY-LEVERS/.test(f));
-  eq(docs.length, 0, `F: TRAP 3 — no shipped-behaviour doc is touched this phase (saw ${JSON.stringify(docs)})`);
+  // TRAP 3 — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for
+  // the identical reason.] The pin required that the shipped-behaviour doc set (GDD /
+  // GDD-VERSION-HISTORY / DIFFICULTY-LEVERS) had not moved since HEAD. True of CS024 P1's own session;
+  // impossible during CS024 P7, which IS the doc sweep and rewrites all three by instruction. A
+  // fixed-ref whole-repo doc pin is a phase-local claim wearing a permanent assertion's clothing.
+  // WHAT IT PROTECTED SURVIVES ELSEWHERE: P1's no-design-doc rule was TRAP 3 of its phase prompt, its
+  // diff is in the git history, and every later phase carries the equivalent trap against its own
+  // baseline. Do not re-add a fixed-ref doc pin here.
+  console.log("  (TRAP 3's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (G) AudioSys.ctx null smoke =====================

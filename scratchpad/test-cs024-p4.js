@@ -887,7 +887,10 @@ function evalSlice(literal) {
   assert(!values.some(e => "validate" in e || "against" in e), "H: no registry entry validates against a sibling");
 
   // TRAP 1 — the version stays put. P7 owns the bump, straight to 1.0.0.24.
-  eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is still 1.0.0.22");
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P4 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // TRAP 2 IS NOW POSITIVELY WIRED (P5), AND REPOINTED BY CS024 P6c: the odometer's consumer-facing
   // face is liveLevers(wave) — the same derivation over the table the debug panel may have overridden —
   // so the 12 call sites P5 wired now read THAT. leverState itself keeps exactly one appearance, its
@@ -916,14 +919,16 @@ function evalSlice(literal) {
   const payloadCalls = (execOnly.match(/\bpayloadSlots\s*\(/g) || []).length;
   eq(payloadCalls, 2, "H: payloadSlots has exactly one call site plus its declaration — P5 did not touch it");
   assert(/game\.cargoMax = payloadSlots\(game\.wave\);/.test(execOnly), "H: ...and it is nextWave()'s cargoMax assignment");
-  // TRAP 3 — docs untouched. STATUS.md is this session's to write; nothing else may move.
-  try {
-    const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString()
-      .split("\n").map(s => s.trim()).filter(Boolean);
-    const docs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
-    eq(docs.join(","), "", "H: TRAP 3 — no design doc is modified (GDD / PLANNED-FEATURES / IMPLEMENTATION-PHASES / DIFFICULTY-LEVERS)");
-    assert(!changed.includes("ORBITAL-OVERHAUL-GDD.md"), "H: ...the GDD specifically is untouched");
-  } catch (e) { console.log("  (skipped the git docs check — not a git checkout)"); }
+  // TRAP 3 — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for
+  // the identical reason.] The pin read `git diff --name-only HEAD` and required that NO .md but
+  // STATUS.md had moved. True of CS024 P4's own session; impossible during CS024 P7, which IS the doc
+  // sweep — it rewrites DIFFICULTY-LEVERS.md from scratch, rewrites the GDD's §2, appends to
+  // GDD-VERSION-HISTORY.md, edits CLAUDE.md, and archives the CS025 planning pair, all by instruction.
+  // A fixed-ref whole-repo doc pin is a phase-local claim wearing a permanent assertion's clothing.
+  // WHAT IT PROTECTED SURVIVES ELSEWHERE: P4's no-design-doc rule was TRAP 3 of its phase prompt and its
+  // diff is in the git history. Do not re-add a fixed-ref doc pin here; write it against the phase's own
+  // parent commit in that phase's own file, where it can be true.
+  console.log("  (TRAP 3's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (I) headless smoke =====================

@@ -1,394 +1,199 @@
 # DIFFICULTY LEVERS — living registry
 
-> **2026-08-09 — between changesets.** CS023 (P1–P4c) retuned orbit-archetype
-> levers but was interrupted before its doc-sweep phase (P5); CS024
-> (`PLANNED-FEATURES-CS024.md`) removes the orbit archetype and the whole
-> tier/ramp difficulty apparatus this file describes, replacing it with a lever
-> odometer. This file has not been updated for either change — treat it as
-> describing the CS022 build until CS024 P7's doc sweep lands.
+A **living document** — never archived, unlike the changeset-numbered planning
+docs. Update it in the same commit that adds, retunes or removes a lever.
 
-This is a **living document** — it is never archived, unlike the version-suffixed
-planning docs (`PLANNED-FEATURES-*.md` / `IMPLEMENTATION-PHASES-*.md`). Every
-difficulty lever, present and future, gets an entry here regardless of which
-changeset shipped it. Update this file in the same commit that adds, retunes, or
-enables/disables a lever.
+**Rewritten from scratch in CS024 P7.** The previous version described three
+coexisting mechanisms (`leverScale`, direct `ramp()`, CS018's level table), a
+frozen-constant wrinkle, and two clocks that had already been retired. CS024
+deleted all of it. **There is now exactly one mechanism — the odometer — and
+one clock, `game.wave`.** Nothing in that older text is patched forward; if you
+need it, it is in the git history and in `GDD-VERSION-HISTORY.md`.
 
-> **Rewritten in CS018 P10.** Before this rewrite the document described a
-> **two-clock model** (§2.5, "the deliberate asymmetry"): a *sawtooth* group
-> riding `game.cycleWave`/`game.cycle` through `cycleValue()`, reset every
-> `CYCLE_LENGTH` waves, alongside a *frozen* group riding absolute `game.wave`.
-> **CS018 P4 removed the sawtooth clock outright** — `cycleValue()`,
-> `CYCLE_LENGTH`, `CYCLE_GAIN`, `game.cycle` and `game.cycleWave` no longer
-> exist. **This reverses CS017 P3**, exactly the way P3's own header reversed
-> what came before it: that text is gone rather than patched. There is now
-> **one clock** for the game's core difficulty curve — the level table
-> (`levelDef(n)`, CS018 P1) — plus a small surviving set of levers that were
-> never on the cycle clock in the first place and still ride the original
-> per-wave `ramp()`/`difficultyFactor()` curve (§2.2) or the independent
-> `leverScale` mechanism (§2.1). Read §2 before adding anything.
+## 1. What a lever is
 
-## 1. Purpose
+A **lever** is a named, catalogued quantity that scales with the level number.
+Levers exist so difficulty tuning is discoverable in one place instead of
+scattered as ad hoc `if (game.wave > N)` checks at call sites, and so every
+number's shape is written down where it can be read next to its siblings.
 
-A **difficulty lever** is a small, named, catalogued knob that scales one
-gameplay quantity as the game's difficulty progresses. Levers exist so that:
-
-- Difficulty tuning is **discoverable in one place** instead of scattered as
-  ad hoc `if (game.wave > N)` checks at call sites.
-- A lever can be **built, wired, and tested while shipping inert** — landing
-  the plumbing and a phase's balance change (if any) as separate, reviewable
-  steps.
-- Every lever's shape is written down, so reading one teaches you how to read
-  the others *and* tells you which **mechanism** it uses — since CS018 there
-  are three (§2), not two clocks on one mechanism.
-
-## 2. The mechanisms
-
-There are three mechanisms, plus one further wrinkle (frozen constants with no
-lookup at all). A lever's entry in §3 must say which it uses.
-
-### 2.1 `leverScale` — ease-in objects (v3.4 P2)
+A lever is a plain record in the `LEVERS` table:
 
 ```js
-// A leverScale lever eases a quantity from `start` (wave 1) toward `floor` (full difficulty)
-// along the SHIPPED difficultyFactor() curve. When `enabled` is false the lever is INERT: the
-// quantity is pinned at `start`, so the lever is built, wired and testable but does not ramp.
-function leverScale(lever, wave) {
-  const s = lever.enabled ? ramp(lever.start, lever.floor, wave) : lever.start;
-  return Math.max(lever.floor, s);
-}
+{ id, floor, ceil, steps, everyNLevels?, carriesTo? }
 ```
 
-A plain object: `{ enabled, start, floor }`. **Untouched by CS018** — both
-shipped levers still ship `enabled: false` (§3, "leverScale levers").
+`steps` discrete positions: **step 0 IS `floor`, step `steps-1` IS `ceil`**
+(both returned verbatim, not interpolated to), everything between linearly
+interpolated. Values are read **at the point of use** — the next wave's spawn,
+the next saucer's construction — never per frame and never cached, so a debug
+override lands on the next relevant event rather than retroactively on what is
+already flying.
 
-- **`start`** — the value at wave 1 (and, while disabled, at every wave).
-- **`floor`** — the value the lever ramps *toward* as difficulty climbs; for the
-  two shipped levers this is the pre-lever shipped baseline.
-- **`enabled`** — when `false`, the lever is **inert**: `leverScale` always
-  returns `start`, at every wave.
-- **`Math.max(lever.floor, s)` is a clamp on THIS mechanism, not a law about
-  difficulty.** It bounds where a `leverScale` lever can travel; it says nothing
-  about the game's overall difficulty ceiling. See §2.5.
-- **Evaluated at entity construction, not per frame.** A `leverScale` lever's
-  effect is baked into an entity (a `Powerup`, a `Dock`, …) once, when it is
-  created. The per-frame `update()`/`draw()` paths never call `leverScale`.
+## 2. The odometer
 
-### 2.2 Direct `ramp()` levers — the original mechanism (v1.5), now down to one live lever
+**The driver.** A lever with `everyNLevels` is a **driver**: it advances one
+step every N levels off the level number. A lever without one never advances on
+the clock at all.
 
-```js
-function ramp(floor, ceil, wave) {
-  return floor + (ceil - floor) * difficultyFactor(wave);
-}
-```
+**The carry.** When a driver passes its top step it **resets to step 0** and
+bumps every lever in its `carriesTo` array up one step. That is the whole
+mechanism, and it is what makes this an odometer rather than a bundle of ramps:
+`junkCount` sawtooths 3 → 12 every ten levels, and each reset leaves the
+satellites permanently faster than they were before it.
 
-A `floor`/`ceil` constant pair passed through `ramp(floor, ceil, wave)` at the
-call site, riding absolute `game.wave` via the shipped `difficultyFactor()`
-curve. **Before CS018 this mechanism covered four "saucer" levers plus the two
-`leverScale` levers' curve; CS018 P6/P7 moved three of the four saucer levers
-onto the level table (§2.3) as graded tiers.** The one survivor:
+**`carriesTo` is an ARRAY, and that is load-bearing.** A single-successor
+odometer is multiplicatively deep — `junkCount → speedLarge → speedMedium →
+speedSmall` would not move small-satellite speed until roughly level 96. One
+wrap bumping all three at once lets them saturate at different levels while
+staying genuinely independent levers.
 
-- **Small-saucer chance** (`SAUCER_SMALL_CHANCE_FLOOR/CEIL`) — untouched by
-  CS018, still `ramp(0.15, 0.60, game.wave)` at the saucer-spawn call site.
-  It is now the **only** lever besides the two dormant `leverScale` levers
-  still riding `ramp()`/`difficultyFactor()` directly.
+**Only drivers may wrap** (CS024 P6b). A lever may declare `carriesTo` **only
+if** it also declares `everyNLevels`; the load-time guard in `buildLeverOrder()`
+throws otherwise. Every carried lever therefore **plateaus** — pinned at `ceil`
+forever — and the graph is exactly one driver deep. Consequences worth knowing:
+there is no `LEVEL_MAX` and the ceiling is emergent (levels past it are flat
+because every lever has run out of chain, not because a clamp caught them);
+nothing can get **easier** as levels rise except through a deliberately inverted
+floor/ceil pair; and the closed form collapses to two flat passes with no
+ordering requirement at all.
 
-### 2.3 [RETIRED CS018 P4] Sawtooth + spiral levers — the cycle clock (was CS017 P3)
+**Why the rule exists is recorded in `archive/PLANNED-FEATURES-CS025.md` §0**,
+and it is worth reading before relaxing it. The evidence came from **plotting
+the tables level by level, not from reading them**: the unrestricted semantics
+shipped a visible regression — `ufoFlightSpeedSmall` climbing 150 → 210 px/s
+across levels 1–25 and then **resetting to 150 at level 33**, a UFO genuinely
+slower at 33 than at 25 — plus a dead zone where four levers sat two carry
+generations deep, moved twice in 64 levels, and did not reach their ceilings
+until level 97. Neither was visible in the table. Plot before you trust.
 
-The four levers that used to sample `game.cycleWave` (reset every
-`CYCLE_LENGTH` waves) through `cycleValue(x, game.cycle) = x × (1 + cycle ×
-CYCLE_GAIN)` — junk (debris) count, junk speed, Hunter speed, Hunter turn —
-**no longer exist as a mechanism.** `cycleValue()`, `CYCLE_LENGTH`,
-`CYCLE_GAIN`, `game.cycle` and `game.cycleWave` are removed outright, not
-retired-in-place. Their four consumers moved as follows (§2.4, §3):
+**⛔ NOTHING MAY VALIDATE, CLAMP, REORDER OR ASSERT `floor <= ceil`** — not in
+the table, not in the debug panel, not at a call site, not in a future
+"tidy-up". **Seven levers are INVERTED** (`coalescePause`, `ufoAppearFreq`, both
+`ufoFireFreq*`, both `ufoDirChange*`, `ufoAccuracySmall`), because a shorter
+delay and a smaller aim error are *harder*. `floor > ceil` is normal and
+correct. An inverted lever's floor is its EASY end. This prohibition carries
+forward unbroken from the retired tier tables, where four of seven descended for
+exactly the same reason; the debug panel's three-knobs-per-lever rows are
+deliberately wide enough to drag either endpoint **past** the other, and that is
+a supported configuration.
 
-- Junk count and junk speed → the level table, as a direct field and a graded
-  tier respectively (CS018 P3).
-- Hunter speed and Hunter turn rate → **frozen constants, no clock at all**
-  (CS018 P4) — see the wrinkle below.
+**Purity.** `leverState(wave)` reads no game state — not `game.wave`, not
+`DEBUG` — so it is callable before `startGame()` and is the headless suite's
+primary test surface (sliced from its section banner and evaluated alone).
+`liveLevers(wave)` is the same derivation over a DEBUG-overridden copy of the
+table and is what every consumer actually calls; it lives **outside** the slice
+on purpose. `leverState` has no in-game caller and is not vestigial — it is what
+`liveLevers` is defined against.
 
-The full pre-CS018 model (concrete numbers, the two ceilings, the "monotonic
-background pressure under a cycling foreground" design intent) is history now;
-if you need it, read the CS017-era `GDD-VERSION-HISTORY.md` entries or the git
-log for `asteroids-deluxe.html` around the CS017 P3/CS018 P4 commits. Do not
-resurrect this mechanism for a new lever — use the level table instead.
+## 3. The shipped levers
 
-**The wrinkle: frozen constants.** Hunter speed and turn rate are not on any
-clock, table or ramp — `HunterSatellite`'s constructor samples
-`HUNTER_SPEED_CEIL[size] * HUNTER_FLOOR_FRAC` / `HUNTER_TURN_CEIL[size] *
-HUNTER_FLOOR_FRAC` once, and that value is identical at level 1 and level 63.
-`HUNTER_FLOOR_FRAC` (0.58) is kept as the frozen value's *derivation*, not a
-ramp target — the `_CEIL` constants no longer describe where a Hunter ramps
-*to*, only what its frozen speed/turn is computed *from*. Concrete frozen
-values: large 70×0.58=**40.6 px/s** (turn 0, never turns), medium
-120×0.58=**69.6 px/s** (turn 1.6×0.58=**0.928 rad/s**), small
-175×0.58=**101.5 px/s** (turn 2.6×0.58=**1.508 rad/s**). `HUNTER_LAST_STAND_SPEED`
-(50 px/s) stays below the frozen medium speed (69.6), preserving the invariant
-an existing in-code comment asserts.
+Seventeen levers, three chains. Every one carries three debug rows —
+`<id>Floor`, `<id>Ceil`, `<id>Steps` — so a ramp's start, end and length are all
+tunable live (CS024 P6c). **Setting Floor equal to Ceil pins a lever flat at
+every level.**
 
-### 2.4 The level table — the ONE clock (CS018 P1, wired P3–P9)
+| # | Lever | Floor → ceil | Steps | everyN | carriesTo |
+|---|---|---|---|---|---|
+| 1 | `junkCount` | 3 → 12 | 10 | 1 | **DRIVER** → `junkSpeedLarge`, `junkSpeedMedium`, `junkSpeedSmall` |
+| 2 | `junkSpeedLarge` | 60 → 110 px/s | 5 | — | — (plateaus L41) |
+| 3 | `junkSpeedMedium` | 95 → 165 px/s | 5 | — | — (plateaus L41) |
+| 4 | `junkSpeedSmall` | 140 → 240 px/s | 5 | — | — (plateaus L41) |
+| 5 | `coalescePause` **(inv)** | 5.0 → 1.5 s | 8 | 1 | **DRIVER** → `hunterSpeedMedium`, `hunterSpeedSmall` |
+| 6 | `hunterSpeedMedium` | 60 → 110 px/s | 5 | — | — (plateaus L33) |
+| 7 | `hunterSpeedSmall` | 90 → 160 px/s | 5 | — | — (plateaus L33) |
+| 8 | `ufoAppearFreq` **(inv)** | 25 → 12 s | 8 | 1 | **DRIVER** → all nine UFO levers below |
+| 9 | `ufoFlightSpeedBig` | 100 → 150 px/s | 5 | — | — (plateaus L33) |
+| 10 | `ufoFlightSpeedSmall` | 150 → 210 px/s | 5 | — | — (plateaus L33) |
+| 11 | `ufoFireFreqBig` **(inv)** | 1.8 → 0.7 × | 6 | — | — (plateaus L41) |
+| 12 | `ufoFireFreqSmall` **(inv)** | 1.8 → 0.6 × | 6 | — | — (plateaus L41) |
+| 13 | `ufoDirChangeBig` **(inv)** | 2.2 → 1.0 s | 7 | — | — (plateaus L49) |
+| 14 | `ufoDirChangeSmall` **(inv)** | 1.8 → 0.7 s | 7 | — | — (plateaus L49) |
+| 15 | `ufoShotSpeedBig` | 300 → 430 px/s | 8 | — | — (plateaus L57) |
+| 16 | `ufoShotSpeedSmall` | 320 → 470 px/s | 8 | — | — (plateaus L57) |
+| 17 | `ufoAccuracySmall` **(inv)** | 30 → 8 ° | 9 | — | — (plateaus L65) |
 
-```js
-function levelDef(n) {
-  const L     = Math.min(n, LEVEL_MAX);       // LEVEL_MAX = 63; levels 64+ reuse level 63 verbatim
-  const phase = Math.floor((L - 1) / PHASE_LEN) + 1;  // PHASE_LEN = 21; three phases, 1..3
-  const rel   = L - PHASE_LEN * (phase - 1);          // 1..21, position within the phase
-  // junkCount, payloadSlots, maxLargeHunters, and the seven graded tier names all derive from L/rel
-  // via stepAt() (a shared step-table reader) or the fixed JUNK_CYCLE = [3, 5, 9, 13].
-}
-```
+Three notes on that table, each of which will otherwise look like a mistake:
 
-One **pure** function (`levelDef`, reads no game state) plus one shared
-step-table reader (`stepAt(table, n)`: the value of the last breakpoint at or
-below `n`). Called with `game.wave` at every consuming site — junk spawn
-(`nextWave()`, `destroyDebris()`), the Hunter cap check, the payload-slot
-assignment (`nextWave()`), and the three saucer helper groups
-(`ufoFlightSpeedPx`/`ufoAppearInterval`/`ufoZigInterval`,
-`ufoFireMult`/`ufoAccuracyRad`/`ufoShotSpeedPx`) — so a table change takes
-effect at the next relevant event (next wave's junk count, next saucer spawn),
-same "baked at the point of use" discipline as `leverScale` and the old
-sawtooth levers before it.
+- **The nine UFO step counts are UNEVEN ON PURPOSE (CS024 P6b) — do not "tidy"
+  them into one number.** One driver wrap every 8 levels feeds all nine, so a
+  larger step count simply takes longer, staging them in a deliberate order:
+  speed (L33) → rate of fire (L41) → evasiveness (L49) → shot velocity (L57) →
+  **accuracy last (L65)**. The UFOs get faster before they get accurate.
+- **`ufoAppearFreq` cycles forever and never permanently tightens** — level 100
+  reads exactly as level 1. Deliberate: it is the driver, and a driver that
+  stopped cycling would freeze all nine levers under it. UFO *pressure*
+  escalates through those nine; UFO *rhythm* stays constant.
+- **`junkCount` is the one integer-valued lever, and it is rounded at the
+  consumer** — `nextWave()` spawns `Math.round(lv.junkCount)`. Round, not floor:
+  it is the nearest achievable count to the authored curve, it returns both
+  authored endpoints exactly when they are whole, and flooring would shave every
+  interior step of every retune downward while the difficulty log lied in the
+  same direction.
 
-Three kinds of field come out of `levelDef(n)`:
+## 4. What is deliberately NOT a lever
 
-- **A direct value** — `junkCount` (3/5/9/13 cycling every 4 levels within a
-  21-level phase; a phase's *last* level, `rel === 21`, holds 13 rather than
-  restarting the cycle) and `payloadSlots` (8 through level 4, +2/level to 24
-  at level 12, flat after — replaces the old delivery-earned `growCap` curve).
-- **A step count** — `maxLargeHunters`, via `stepAt(HUNTER_CAP_STEPS, L)`.
-- **A tier name** (`"low"`/`"normal"`/`"high"`) for each of **seven graded
-  levers**, via `stepAt(TIER_STEPS[k], L)` — never a number. The actual
-  low/normal/high value for each tier lives in a `DEBUG_VARS` playtest knob
-  (§3), so `levelDef` stays a pure schedule and the numbers stay tunable
-  without touching it.
+Recorded so nobody re-levers one on a cleanup pass. Each of these is a frozen
+constant, a fixed curve or a flat debug knob — a quantity that does not scale
+with the level, on purpose.
 
-**Four of the seven graded levers are INVERTED** — the number goes *down* as
-difficulty rises (a shorter delay, less aim error, is *harder*):
-`ufoAppearFreq` (25→18→13 s), `ufoDirChangeFreq` (2.0→1.3→0.8 s), `ufoFireFreq`
-(1.8→1.0→0.7×) and `ufoAccuracy` (30→20→10°). The other three climb:
-`junkSpeed` (58→70→90 px/s), `ufoFlightSpeed` (120→150→190 px/s),
-`ufoShotSpeed` (300→380→470 px/s). **This is a standing, load-bearing
-convention: nothing anywhere — not the debug panel, not a call site, not a
-future validator — may assert `low <= normal <= high`.** Tier order is by
-*difficulty*, never by magnitude. The debug panel (CS018 P2) was built before
-these knobs existed specifically so this convention would have nowhere to
-sneak in a numeric-order check.
+| Not a lever | What it is | Why not |
+|---|---|---|
+| `payloadSlots(n)` | Fixed curve: 8 at L1–4, +2/level, 24 at L12, flat forever | A capability grant on a schedule the player learns, not a difficulty dial — and an odometer sawtooth would **take slots back** at a wrap. |
+| `smallUfoChance` | Flat 20% knob | There is exactly ONE appearance timer; which size spawns is a constant coin, not a ramp. Retired `SAUCER_SMALL_CHANCE_FLOOR/CEIL` and with them `ramp()`. |
+| `FREQ_JITTER` | Frozen 0.25 (was a knob) | Cosmetic anti-metronome on the frequency-shaped levers via `jitteredInterval()`. `ufoFireFreq*` deliberately does not jitter — it multiplies ranges that already roll their own value. |
+| `HUNTER_COALESCE_COUNT` | Frozen 12 | The pipeline's defining number. Moving it per level would make the one Hunter producer illegible. |
+| `garbageAttractRadius` / `garbageAttractForce` | Flat knobs (160 px / 30 px/s²) | Gate A tuned both by feel and they shipped as answered; the *delay* is the levered quantity (`coalescePause`), not the geometry. |
+| `DEBRIS_GARBAGE` (4), `HUNTER_GARBAGE` (`{3:3, 2:2, 1:1}`) | Frozen constants | Resolved as frozen despite being the sole input to the only Hunter producer. |
+| `lastStandSpeed` | Flat knob (50 px/s) | A documented exception to "large Hunters do not pursue," not an axis. |
+| **All Hunter turn rates** | Frozen `HUNTER_TURN_CEIL[size] × HUNTER_FLOOR_FRAC` = 0 / 0.928 / 1.508 rad/s | Resolved, not an oversight. Large's ceiling is 0, so it never turns. |
+| **Large-Hunter speed** | Frozen `HUNTER_SPEED_CEIL[3] × HUNTER_FLOOR_FRAC` = 40.6 px/s | Large Hunters do not pursue, so there is nothing for a speed ramp to mean. Only medium and small are levered. |
+| `hunterCapMax` / `hunterCapLevelsPerStep` / `heldClumpMax` | Flat knobs (6 / 2 / 4) | See §5 — a **ceiling**, and a ceiling on concurrent threats is a stability guarantee, not a difficulty axis. The player should never feel it move. |
 
-Two frequency-shaped tiers (`ufoAppearFreq`, `ufoDirChangeFreq`) additionally
-pass through a shared jitter helper, `jitteredInterval(center)` =
-`rand(center × (1 − j), center × (1 + j))` with `j = DEBUG.freqJitter / 100`
-(a GLOBAL field, default 25%). **`ufoFireFreq` deliberately does NOT** — it is
-a multiplier on the shipped `SAUCER_FIRE_BIG`/`SAUCER_FIRE_SMALL` per-size
-ranges (FLAG-d), not a single jittered interval, so a second jitter pass would
-double up on entropy already in those ranges.
+## 5. Explicit ceilings
 
-## 2.5 Explicit bounds recorded by CS018
+**Standing rule: anything that can grow without bound gets its ceiling recorded
+here, in the same commit that can grow it.**
 
-Two more explicit ceilings joined the pre-existing `DEBRIS_SPEED_CAP` guard
-rail (§2.6):
+- **`largeHunterCap(wave) = min(ceil(wave / hunterCapLevelsPerStep),
+  hunterCapMax)`** — the maximum number of concurrent **large** Hunters. At the
+  shipped defaults (2 and 6): **1 at levels 1–2, one more every two levels,
+  plateauing at 6 from level 11.** CS024 P6f replaced the flat
+  `LARGE_HUNTER_MAX = 100` with this after Gate B's own playtest found levels
+  1–3 accumulating too many; that constant's own comment called it "a runaway
+  backstop that play should never reach," and play never did, which was
+  precisely the defect. It is a pure function of `game.wave` like everything
+  else but sits **outside** the odometer, and it is **not** a breakpoint table —
+  two knobs and one `ceil`, so it does not quietly restore the
+  `HUNTER_CAP_STEPS` shape CS024 P3 deleted.
+- **`heldClumpMax` (4)** — the anti-stall backstop on the cap's overflow rule. A
+  saturated 12-piece clump at a full cap **holds** rather than vanishing; past
+  this many held clumps the destroy behaviour returns. Sized against
+  `GARBAGE_SOFT_MAX`: unbounded holding would let ~18 clumps consume the whole
+  garbage budget and starve the field.
+- **`GARBAGE_SOFT_MAX` (220) / `GARBAGE_HARD_MAX` (300)** — the density ceiling
+  that makes permanent garbage tractable. Above the soft max one piece is culled
+  per frame (oldest, never a clump while a single exists, never a held clump);
+  above the hard max the field drains back to the soft max in one pass. Both
+  deterministic, both silent by design. The binding cost is
+  `coalesceGarbage()`'s O(n²) pair walk: 24,090 pair visits/frame at 220 and
+  44,850 at 300, measured with a deterministic counter. **Quadratic in the
+  ceiling** — ~99,900/frame at 450, ~500,000 at 1,000 — so raising to ~300–350
+  is affordable and beyond that wants a spatial grid, not a bigger number.
+- **`SWEEP_POWERUP_CAP` (48)** — the Super Mega Delivery's fixed spawn ceiling:
+  at most 48 powerups from one sweep, counting the guaranteed type set plus
+  every per-piece payout. Deliberately **not** a debug knob.
+- **`DEBRIS_SPEED_CAP`** = `2 × SHIP_MAX_SPEED` = **1040 px/s** — a guard rail on
+  the resulting per-entity junk speed. It does not bind at the shipped lever
+  values; it is insurance against a retune, and with junk speed now a live lever
+  with three knobs it is the thing that stops a slider producing an unplayable
+  field.
 
-- **`HUNTER_CAP_STEPS`'s hard ceiling is 12** (from level 59 on) — the
-  absolute maximum number of *large* (size 3) Hunters that may exist at once,
-  governing both producers (ambient `spawnCore()` and coalescence conversion).
-- **`SWEEP_POWERUP_CAP = 48`** — the Super Mega Delivery's (P9) fixed spawn
-  ceiling: at most 48 powerups may spawn from one sweep, counting the
-  guaranteed six-type set plus every per-piece payout. Deliberately **not** a
-  `DEBUG_VARS` knob (source doc: "Fixed value, not configurable") — hardcoded
-  in the powerup constants block, not tunable from the panel.
+## 6. Retune log
 
-`DEBRIS_COUNT_HARD_MAX` (24), the old sawtooth-era absolute debris ceiling, is
-now dead — `junkCount` tops out at 13 forever via the table, well under it,
-and nothing reads the constant any more (retired-in-place, CS018 P3).
-
-## 2.6 There is no baseline invariant — a lever CAN make the game harder
-
-**This still holds, post-CS018, on fresh examples.** The old pre-CS017-P3 rule
-— that a lever's `floor` was a hard clamp and could only ever return the game
-toward "today's difficulty" from an easier starting point — stays reversed.
-The level table is a counter-example on the same terms the CS017 spiral was:
-its tier values are chosen **by feel**, not back-fit to any pre-CS018
-baseline (PLANNED-FEATURES-CS018.md §1, "`high` tier calibration" — level 63
-sitting below the old CS017 endgame numbers is accepted, not a bug), and
-`maxLargeHunters` climbs to 12 concurrent large Hunters, well past anything
-the pre-CS017 game ever produced.
-
-What survives from the old rule is only this, and it is still a property of
-§2.1's mechanism alone: **a `leverScale` lever with `enabled: false` is pinned
-at `start` and observably does nothing but hold that constant.**
-
-Two explicit ceilings still bound difficulty rather than a structural
-guarantee (§2.5 adds two more): `DEBRIS_SPEED_CAP` (`2 × SHIP_MAX_SPEED` =
-1040 px/s, a guard rail on the resulting per-entity junk speed — it does not
-bind at the shipped tiers, insurance against a retune) and the two new CS018
-ceilings above.
-
-**If you add a lever that can grow without bound, add its ceiling in the same
-commit and record it here.**
-
-## 2.7 Which mechanism is a lever on? — no longer a two-way split
-
-Since CS018 P4 there is no sawtooth/frozen split to check. Instead, ask which
-of three mechanisms (§2.1–§2.4) a lever uses, plus whether it is one of the
-frozen constants (§2.3's wrinkle) that use none of them:
-
-- **Level table** (`levelDef`): junk count, junk speed, the large-Hunter cap,
-  payload slots, and all seven graded UFO/junk-speed tier levers. The large
-  majority of the game's difficulty curve now lives here.
-- **Frozen constant, no clock**: Hunter speed, Hunter turn rate.
-- **Direct `ramp()` on absolute `game.wave`**: small-saucer chance (the one
-  survivor — §2.2).
-- **`leverScale`, independent per-object curve**: powerup size, dock size
-  (both still disabled).
-- **Linear across the level table's junk-cycle position, not `ramp()`**: the
-  bonus-canister spawn chance (§2.8's documented exception, re-homed off the
-  retired cycle clock onto `levelDef(wave).rel` in CS018 P3).
-
-There is no longer a "which clock" design intent to preserve across groups —
-the level table IS the game's core difficulty curve now, and the handful of
-survivors outside it (small-saucer chance, the two `leverScale` levers) are
-outside it because nobody has moved them, not because of a deliberate
-foreground/background split. Read §5 before assuming that's permanent for
-small-saucer chance specifically.
-
-## 2.8 Levers ramp on the SHIPPED curve — never a private one
-
-Still true for every lever outside the level table: `leverScale` and
-small-saucer chance both interpolate with `difficultyFactor`/`ramp` (never a
-private curve), and `RAMP_WAVES` is still the one knob governing that curve's
-pacing. **Inside the level table, the equivalent rule is that all seven
-graded tier levers, the Hunter cap and the payload curve share the ONE
-`levelDef`/`stepAt` mechanism** — no per-lever lookup logic, no second
-step-table reader. Don't add either kind of private curve.
-
-**One documented exception, carried forward with an updated clock source: the
-bonus-canister spawn chance (CS017 P5, re-homed CS018 P3).**
-`bonusSpawnChance()` interpolates **linearly**, not through `ramp()`, across
-the level table's **junk-cycle position** — `(levelDef(game.wave).rel - 1) %
-JUNK_CYCLE.length`, a 0..3 position that resets every 4 levels the same way
-`game.cycleWave` used to reset every `CYCLE_LENGTH` waves. The reason is
-unchanged: `BONUS_SPAWN_CHANCE_EARLY`/`_LATE` are defined as the **cycle's
-exact endpoints**, and `difficultyFactor` is asymptotic, so a `ramp()` version
-would never actually reach `_LATE`'s stated value. **Do not take this as
-license for a second private curve** — a new lever that wants one should
-first be re-specified in terms of `ramp()`'s asymptotic endpoints, or in
-terms of the level table's own `stepAt` mechanism.
-
-## 2.9 One lever eases OFF (CS017 P5, unchanged in kind)
-
-The **bonus-canister spawn chance** is still the one inverted-by-intent lever
-in the registry that isn't a graded tier — highest right after a junk-cycle
-reset, lowest at the cycle's end, because it governs how often a *reward*
-appears, not a threat. Its intent (GDD §2.10.1) is unchanged: concentrate the
-temptation in the window where the player can afford to take it.
-
-## 3. Lever registry
-
-| Lever | Constant(s) | Scales | Mechanism | Clock/source | Shape / range | Enabled? | Shipped | Playtest status |
-|---|---|---|---|---|---|---|---|---|
-| Powerup size | `LEVER_POWERUP_SIZE` | `Powerup.radius` (baseline `POWERUP_RADIUS` = 15) | `leverScale` | absolute `game.wave` | start 2.0 → floor 1.0 | **false** | v3.4 P2 | Untouched by CS018 — still ships disabled, permanently 2×. |
-| Dock size | `LEVER_DOCK_SIZE` | `Dock.radius` (baseline `DOCK_RADIUS` = 44) | `leverScale` | absolute `game.wave` | start 2.0 → floor 1.0 | **false** | v3.4 P2 | Untouched by CS018 — still ships disabled, permanently 2×. |
-| Small-saucer chance | `SAUCER_SMALL_CHANCE_FLOOR/CEIL` | odds the spawned saucer is the aimed one | direct `ramp()` | absolute `game.wave` | 15% → 60% | n/a | v1.5 | **Untouched by CS018** — the one old "saucer" row CS018 left alone; now the only lever besides the two `leverScale` rows still on `ramp()`. |
-| Junk (debris) count | `levelDef(n).junkCount`; `JUNK_CYCLE` | debris spawned per wave, `nextWave()` | **level table** | `game.wave` via `levelDef` | `JUNK_CYCLE` [3,5,9,13] cycling per 4 levels within a 21-level phase; phase's last level (`rel===21`) holds 13 | n/a | CS018 P3 | **Replaced** the sawtooth+spiral mechanism. `DEBRIS_COUNT_MAX`/`_HARD_MAX` retired, no readers. |
-| Junk (debris) speed | `DEBUG.junkSpeedLow/Normal/High` (58/70/90 px/s); `junkSpeedMul()` | `DebrisSatellite` drift speed, **two** derivation sites | **level table** (graded tier) | `levelDef(wave).junkSpeed` → `DEBUG_VARS` knob | low 58 (L1) → normal 70 (L22) → high 90 (L43) | n/a | CS018 P3 | Scales sizes 2/1 by the shipped 70/110/160 ratio. `DEBRIS_SPEED_CAP` guard rail unchanged. |
-| Hunter speed | `HUNTER_SPEED_CEIL`, `HUNTER_FLOOR_FRAC` (0.58) | `HunterSatellite.speed`, sampled once at spawn | **FROZEN CONSTANT** | none — no clock | `HUNTER_SPEED_CEIL[size] × 0.58`: 40.6 / 69.6 / 101.5 px/s (large/medium/small) | n/a | v1.6; frozen CS018 P4 | Identical at level 1 and level 63. A carried Hunter keeps this value for life (unchanged from the sawtooth era's per-spawn sampling, just no longer varies by level at all). |
-| Hunter turn rate | `HUNTER_TURN_CEIL`, `HUNTER_FLOOR_FRAC` | `HunterSatellite.turnRate`, sampled once at spawn | **FROZEN CONSTANT** | none — no clock | 0 / 0.928 / 1.508 rad/s; large's ceiling is 0, so it never turns | n/a | v1.6; frozen CS018 P4 | Same as above. |
-| Large-hunter cap | `HUNTER_CAP_STEPS` | max concurrent LARGE (size 3) Hunters, from EITHER producer | **level table** (step function) | `levelDef(wave).maxLargeHunters` | 0 (L1–4) → 1 (L5) → 2 (L9) → 3 (L13) → 5 (L17, deliberate 3→5 skip) → 7 (L21) → 8 (L22) → 9 (L26) → 10 (L34) → 11 (L43) → **12 (L59, hard ceiling)** | n/a | CS018 P4 | New lever. Governs the ambient `spawnCore()` gate AND coalescence conversion; a clump at `HUNTER_COALESCE_COUNT` while the cap is full holds at its final stage rather than converting. Levels 2–4 have zero large Hunters — intended. |
-| Payload (tow-cap) curve | `levelDef(n).payloadSlots` | `game.cargoMax`, set every `nextWave()` | **level table** | `levelDef(wave).payloadSlots` | 8 (L1–4) → +2/level → 24 at L12 → flat to L63+ | n/a | CS018 P5 | **Replaces** the delivery-earned `growCap` curve (`CARGO_GROW_PER`, now retired/historical — see §5). Capacity is granted by LEVEL, not deliveries; level-1 dropped 12 → 8. |
-| UFO flight speed | `DEBUG.ufoFlightSpeedLow/Normal/High` (120/150/190 px/s) | `Saucer.vx` (small); big derives ×100/150 | **level table** (graded tier) | `levelDef(wave).ufoFlightSpeed` | low 120 (L1) → normal 150 (L17) → high 190 (L38) | n/a | CS018 P6 | **New lever** — pre-CS018 this was a hardcoded, non-scaling literal (150 small / 100 big), not a difficulty lever at all. |
-| UFO appearance frequency | `DEBUG.ufoAppearFreqLow/Normal/High` (25/18/13 s) | seconds between saucers, `ufoAppearInterval()` | **level table** (graded tier) + global jitter | `levelDef(wave).ufoAppearFreq` → `jitteredInterval()` | low 25 s (L1) → normal 18 s (L26) → high 13 s (L47) — **INVERTED** | n/a | CS018 P6 | Replaces `SAUCER_GAP_*`/`ramp()`; the retired time-in-level pressure axis's `DEBUG.saucerGapPressure` knob retired alongside it. |
-| UFO direction-change frequency | `DEBUG.ufoDirChangeFreqLow/Normal/High` (2.0/1.3/0.8 s) | `Saucer.zigTimer`, both sites (ctor + `update()`) | **level table** (graded tier) + global jitter | `levelDef(wave).ufoDirChangeFreq` → `jitteredInterval()` | low 2.0 s (L1) → normal 1.3 s (L30) → high 0.8 s (L55) — **INVERTED** | n/a | CS018 P6 | **New lever** — pre-CS018 this was a flat `rand(0.8,1.8)` roll, not wave-scaling at all. |
-| UFO firing frequency | `DEBUG.ufoFireFreqLow/Normal/High` (1.8/1.0/0.7×) | multiplier on `SAUCER_FIRE_BIG`/`_SMALL` ranges, `rollFireTimer()` | **level table** (graded tier) | `levelDef(wave).ufoFireFreq` | low 1.8× (L1) → normal 1.0× (L21) → high 0.7× (L42) — **INVERTED** | n/a | CS018 P7 | Replaces `SAUCER_FIRE_MULT_FLOOR/CEIL`. Deliberately does NOT go through `jitteredInterval()` (FLAG-d) — it's a multiplier on two fixed per-size ranges, not a single interval. |
-| UFO shot accuracy | `DEBUG.ufoAccuracyLow/Normal/High` (30/20/10°) | aimed-shot spread, small saucers ONLY | **level table** (graded tier) | `levelDef(wave).ufoAccuracy`, deg→rad at call site | low 30° (L1) → normal 20° (L13) → high 10° (L34) — **INVERTED** | n/a | CS018 P7 | Replaces `SAUCER_AIM_ERR_FLOOR/CEIL` + `SAUCER_ACCURACY_RAMP_SCALE` + the retired pressure term. Big saucers still fire `rand(0,TAU)`, unaimed, untouched. |
-| UFO shot speed | `DEBUG.ufoShotSpeedLow/Normal/High` (300/380/470 px/s) | `Bullet` velocity out of a saucer | **level table** (graded tier) | `levelDef(wave).ufoShotSpeed` | low 300 (L1) → normal 380 (L51) → high 470 (L63) | n/a | CS018 P7 | **New lever** — pre-CS018 this was a bare magic number (380), not scaling at all. |
-| Bonus-canister spawn chance | `BONUS_SPAWN_CHANCE_EARLY` (0.5), `BONUS_SPAWN_CHANCE_LATE` (0.1) | per-wave probability `nextWave()` spawns a bonus canister | **linear** across the level table's junk-cycle position (§2.8 exception) | `levelDef(wave).rel` → `(rel−1) % 4` | 50% → 10%, **EASES OFF** (0.50, 0.45, …, 0.10) | n/a | CS017 P5; re-homed CS018 P3 | Re-homed off the retired `game.cycleWave` onto the level table's junk-cycle position; same linear interpolation, same two endpoint constants, unchanged values. The only lever that decreases (§2.9). |
-| Orbit gap multiplier | `ORBIT_GAP_MULT` (2.5), `ORBIT_GAP_MULT_FLOOR` (1.8), `ORBIT_GAP_MULT_STEP` (0.1); `orbitGapMult()` | `minRequiredGap` fed into `generateOrbitLayout()` on an orbit level — the fairness floor between adjacent satellites | **occurrence-scaled formula** (new mechanism, CS021 P2) | `game.wave` → `occurrence = wave / ORBIT_LEVEL_EVERY` (every 3rd level is an occurrence) | 2.5× at occurrence 1 (level 3) → decays 0.1×/occurrence → hard floor 1.8× at occurrence 8 (level 24), held through level 63 | n/a | CS021 P2 | New lever, new mechanism (occurrence, not `game.wave` directly — one clock, but a coarser tick of it). ONE variable scales: `ORBIT_DENSITY` and both `ORBIT_ANG_VEL`/`ORBIT_FAST_MULT` stay fixed across occurrences. **The rationale is corrected as of CS022 (spec Correction C1): the arithmetic above is untouched, but the floor's job has always been "never a solid wall" — a guarantee no ring computes a negative or zero gap — not "always a passable lane for a skilled pilot," which was CS021's own framing and is retired as language, here and in the `ORBIT_GAP_MULT` constants-block comment and GDD §2.13.1.** Total orbit-level satellite counts (rings + field component together) now climb **27 → 40 → 65 → 76** across occurrences 1–4 and peak at **84** from occurrence 7 (level 21) on — see the GDD §2.13.1 table for the full breakdown; the CS021-era "40 → 45, rings only" figures are superseded by CS022 P3's ring ramp and halved ring-4 density, not by this row's own curve. **CS022's playtest gate (levels 3/6/9/12, plus 24) is the answer this row's status clause was waiting on — Paul played the full ramp and reported "fine" on every question that touches this lever (Q1 the ramp, Q5 the density curve's shape/lanes, Q7 ring contact/shield-bounce/spawn safety): no retune, arithmetic unchanged, rationale corrected.** No longer "unanswered in the hands." |
-| Orbit world size | `WORLD_SIZE_FIELD` (4), `WORLD_SIZE_ORBIT` (16); `worldSizeFor()` | `WORLD_W`/`WORLD_H` (the torus period), resized from `nextWave()` | **archetype-keyed binary** (new mechanism, CS022 P1) | `game.wave` → `levelDef(wave).archetype` | 2560×1440 (size 4) on every field level ↔ 5120×2880 (size 16) on every orbit level — binary, not ramped, at every depth | n/a | CS022 P1 | New lever. Still a pure function of `game.wave` (via `levelDef`), so the one-clock rule holds — no second clock, no stored schedule. Exists because the ring-ramp geometry below needs a 1,420 px wrap-clean budget that only the bigger size clears (GDD §2.11.1); field levels deliberately stay at the v3.1 P1 size (spec Correction C4). Playtest gate Q3 (is the world change itself perceptible; should anything announce it) and Q4/FLAG-CS022-k (carried junk after a transition) both came back "fine" — no retune. |
-| Orbit ring ramp | `ORBIT_RING_COUNT` (4); `activeRingsFor()` | which of `generateOrbitLayout()`'s rings actually spawn, via its `activeRings` filter | **occurrence-scaled selection** (new mechanism, CS022 P3) | `game.wave` → `occurrence = wave / ORBIT_LEVEL_EVERY` — the same coarse tick the gap-multiplier row above reads | 1 ring (outermost) at occurrence 1 (level 3) → +1 ring per occurrence → all 4 at occurrence 4 (level 12), held through 63 | n/a | CS022 P3 | **This changeset's main escalation curve.** New lever, new mechanism — a *selection*, not a re-space: radii never move, so ring 4 sits at 1288 px whether or not rings 1–3 exist yet (GDD §2.13.1). Composes with the `orbitCount` debug knob rather than ignoring it (FLAG-CS022-h) — counts down from the EFFECTIVE ring count, so a debug-reduced count of 3 completes the ramp at occurrence 3 instead of 4. No new knob was added for the ramp itself; the registry stays at 44 entries. Playtest gate Q1 ("does it read as the shell closing in, or four unrelated levels?") came back "fine" — no retune, ramp shape unchanged. |
-
-**On the two `leverScale` levers.** Both remain `enabled: false` — untouched
-by CS018, exactly as they were left after CS017 P3. **"Freeze" here means keep
-the 2×, not restore 1×:** while disabled, `start` is pinned, so the shipped,
-player-visible reality is that **powerups and the recycling dock are
-permanently 2× their pre-lever size**, and have been since v3.4 P2. Do not
-"restore" 1× as a cleanup.
-
-**Explicit bounds, recorded per §2.5:** large-hunter cap hard ceiling **12**
-(from level 59); Super Mega Delivery spawn ceiling **48**
-(`SWEEP_POWERUP_CAP`, fixed, not a `DEBUG_VARS` knob); `DEBRIS_SPEED_CAP`
-**1040 px/s** (pre-existing guard rail, still in force, still not binding at
-the shipped tiers).
-
-## 4. Assumptions & Decisions
-
-- **A lever's entry must name its MECHANISM.** Since CS018 there are three
-  (`leverScale`, direct `ramp()`, the level table) plus the frozen-constant
-  wrinkle — "which clock" alone no longer distinguishes a lever the way it did
-  under the pre-CS018 two-clock model (§2.7).
-- **No lever gets its own curve.** Outside the level table, every lever
-  interpolates through the shipped `difficultyFactor`/`ramp`; `RAMP_WAVES` is
-  the one pacing knob for that curve. Inside the level table, every graded
-  tier lever, the Hunter cap and the payload curve share the ONE
-  `levelDef`/`stepAt` mechanism — no per-lever lookup logic. A second,
-  independent curve of either kind would make the game's difficulty
-  progression illegible across systems.
-- **Table-driven levers are evaluated at the POINT OF USE, not per frame** —
-  same discipline the old sawtooth levers and `leverScale` already followed.
-  A `DEBUG_VARS` tier knob's new value takes effect at the next relevant
-  event (next wave's junk count/speed, next saucer spawn), not retroactively
-  on entities already on screen.
-- **`leverScale` levers are evaluated at ENTITY CONSTRUCTION, not per frame** —
-  unchanged from before CS018.
-- **A lever CAN raise difficulty past its historical baseline** (§2.6). Still
-  true post-CS018, now illustrated by the level table's by-feel tier values
-  and its uncapped-relative-to-history Hunter count, rather than by the
-  retired cycle spiral. Anything unbounded needs an explicit ceiling constant,
-  added in the same commit and recorded here (§2.5).
-- **Four of the seven graded tier levers DESCEND as difficulty rises**
-  (`ufoAppearFreq`, `ufoDirChangeFreq`, `ufoFireFreq`, `ufoAccuracy`) — a
-  standing, load-bearing prohibition on any `low <= normal <= high` validator,
-  anywhere (§2.4).
-- **Both `leverScale` levers still ship disabled** — tooling for a future
-  playtest round, not a balance change. Their observable effect remains the
-  permanent 2× size.
-
-## 5. Candidate levers not yet built
-
-A running list for future rounds — not yet implemented, not yet named
-constants (unless noted otherwise).
-
-- **`HUNTER_GARBAGE` counts** — the per-tier garbage-drop table `{3:3, 2:2, 1:1}`
-  (GDD §2.5/§2.5.1). A lever could ease the Hunter-side garbage amplifier in
-  earlier levels. *Constant still exists; candidate still valid; untouched by
-  CS018.*
-- ~~**`CARGO_GROW_PER`**~~ — **retired from this list (CS018 P5).** The
-  per-delivery tow-cap growth rate it named no longer exists as a mechanism:
-  CS018 P5 replaced the whole earned-growth model with the level table's
-  `payloadSlots` curve, and `CARGO_GROW_PER` itself is now historical
-  (defined, unread). A future payload-pacing lever would have to target the
-  table's own curve (`L <= 4 ? 8 : L >= 12 ? 24 : 8 + (L-4)*2`), not this
-  constant.
-- **`DEBUG.garbageLifetime`** — *replaces the old `GARBAGE_DECAY` entry, which
-  was stale.* `GARBAGE_DECAY` (22) survives in the source only as a commented
-  historical reference; since **CS015 P6** the live garbage-decay governor is
-  the `garbageLifetime` debug var (default 10 s, `DEBUG_VARS`), applied to
-  every piece rather than singles only. A lever would have to wrap the debug
-  var, not the dead constant — and would need to respect the
-  `garbageLifetime` ≫ `garbageAttractDelay` relationship or nothing clumps
-  (GDD §2.10.1). *Untouched by CS018.*
-- ~~**`POWERUP_DROP_CHANCE`**~~ — **removed from this list (FLAG-CS017-d).** The
-  constant no longer exists: **v3.6 P3** replaced the per-kill drop roll with
-  three deterministic, unconditional emitters, so there is no chance gate left
-  to ease. A powerup-economy lever would now have to target
-  `POWERUP_DROP_WEIGHTS` or the emitter cadence instead (GDD §2.14).
-- **Small-saucer chance onto the level table** — the live design option that
-  replaces the old "saucer levers onto the cycle clock" entry (struck below):
-  small-saucer chance is now the *only* graded UFO quantity still on the
-  original `ramp()` mechanism (§2.2) rather than a level-table tier, having
-  watched its three former `ramp()` siblings (spawn gap, fire rate, aim error)
-  all move in CS018 P6/P7. Moving it too — an eighth graded tier — is a live
-  option, not a bug fix; it would change nothing about *when* it varies
-  (still every wave), only *how* its low/normal/high anchors are chosen and
-  tuned. A conversational decision, not an implementation one.
-- ~~**Saucer levers onto the cycle clock**~~ — **moot (CS018 P4).** The cycle
-  clock this candidate proposed moving levers *onto* no longer exists; three
-  of the four levers it named (spawn gap, fire rate, aim error) moved to the
-  level table instead in CS018 P6/P7. Superseded by the entry above.
+- **CS024 P7 (Gate B).** Seven of the gate's eight questions came back "fine"
+  and moved nothing. **No lever moved** — no floor, no ceiling, no step count,
+  no chain composition. The single number the gate returned was **not a lever**:
+  `ENGINE_BURN_SECONDS` 5.0 → **10.0 s** of forward thrust (Q11), the value
+  FLAG-CS024-f had already flagged as a conversational example rather than a
+  design call. The `LEVERS` table ships exactly as CS024 P6b left it.

@@ -513,7 +513,10 @@ function atWave(A, w) {
 // ================= (H) TRAPs =====================
 (function sectionH() {
   console.log("(H) TRAPs: GAME_VERSION, powerMode/powerFx now DELETED (CS024 P6), no floor<=ceil validator, docs untouched");
-  eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is still 1.0.0.22");
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P5 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // INVERTED BY CS024 P6 (spec §1.7), the standing mirror-image convention rather than a deletion:
   // P5's TRAP 2 was "these two are NOT mine to touch — they are P6's job." P6 did that job and deleted
   // them outright, so the claim that still does work is their ABSENCE. Asserting it here keeps the trap
@@ -521,12 +524,13 @@ function atWave(A, w) {
   assert(!/function powerMode\(/.test(execOnly), "H: TRAP 2 INVERTED BY CS024 P6 — powerMode() is deleted, exactly as P5 said P6 would");
   assert(!/game\.powerFx/.test(execOnly), "H: TRAP 2 INVERTED BY CS024 P6 — game.powerFx is deleted with timed expiry");
   assert(!/floor\s*<=?\s*ceil|ceil\s*<=?\s*floor/.test(execOnly), "H: TRAP 3 — no floor<=ceil validator anywhere in executable source");
-  try {
-    const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString()
-      .split("\n").map(s => s.trim()).filter(Boolean);
-    const docs = changed.filter(f => f.endsWith(".md"));
-    eq(docs.filter(f => f !== "STATUS.md").join(","), "", "H: TRAP 4 — no design doc modified except STATUS.md (which this session owns)");
-  } catch (e) { console.log("  (skipped the git docs check — not a git checkout)"); }
+  // TRAP 4 — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for
+  // the identical reason.] The pin required that no .md but STATUS.md had moved since HEAD. True of
+  // CS024 P5's own session; impossible during CS024 P7, which IS the doc sweep and rewrites the GDD's
+  // §2, DIFFICULTY-LEVERS.md, GDD-VERSION-HISTORY.md and CLAUDE.md by instruction. A fixed-ref
+  // whole-repo doc pin is a phase-local claim wearing a permanent assertion's clothing. P5's rule was
+  // TRAP 4 of its phase prompt and its diff is in the git history; do not re-add a fixed-ref pin here.
+  console.log("  (TRAP 4's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (I) headless smoke =====================

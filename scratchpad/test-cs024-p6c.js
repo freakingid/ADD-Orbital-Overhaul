@@ -745,8 +745,10 @@ let X = null;
 // ================= (J) the TRAPs =====================
 (function sectionJ() {
   console.log("(J) TRAPs: version, byte-identical ramp vs HEAD, no validator, P6's rows, no schema bump, docs");
-  eq(X.GAME_VERSION, "1.0.0.22", "J: TRAP 1 — GAME_VERSION is still 1.0.0.22");
-
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P6c ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "J: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // TRAP 2 — AN UNTOUCHED PANEL LEAVES SHIPPED BEHAVIOUR BYTE-IDENTICAL. Two halves: liveLevers ===
   // leverState in this build, and leverState === the pre-P6c build's leverState.
   let sameLive = true;
@@ -788,20 +790,22 @@ let X = null;
   const ids = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
   const iP = ids.indexOf("#POWERUPS");
   eq(ids.slice(iP + 1, iP + 3).join(","), "engineBurnSeconds,engineMassMult", "J: TRAP 4 — P6's two POWERUPS rows are intact");
-  eq(X.DEBUG.engineBurnSeconds, 5.0, "J: ...and still seeded from ENGINE_BURN_SECONDS");
+  // REPOINTED BY CS024 P7 — Gate B Q11 retuned the tank 5.0 -> 10.0 s, the only number the gate moved.
+  // (Pinned as a literal rather than against X.ENGINE_BURN_SECONDS because this file's export list does
+  // not carry the constant, and widening it for one assertion is not worth the churn.)
+  eq(X.DEBUG.engineBurnSeconds, 10.0, "J: ...and still seeded from ENGINE_BURN_SECONDS");
   eq(X.POWERUP_DROP_TYPES.join(","), "rapid,triple,magnet,engine,guard", "J: TRAP 4 — POWERUP_DROP_TYPES is untouched");
   X.DEBUG_VARS.forEach((e, i) => {
     if (!e.header) return;
     assert(X.DEBUG_VARS[i + 1] && X.DEBUG_VARS[i + 1].id, `J: the "${e.header}" header still has a value entry under it`);
   });
 
-  // TRAP 6 — docs untouched (STATUS.md is this session's own).
-  try {
-    const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString()
-      .split("\n").map(s => s.trim()).filter(Boolean);
-    const docs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
-    eq(docs.join(","), "", "J: TRAP 6 — no design doc modified except STATUS.md");
-  } catch (e) { console.log("  (skipped the git docs check — not a git checkout)"); }
+  // TRAP 6 — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for
+  // the identical reason.] The pin required that no .md but STATUS.md had moved since HEAD. True of
+  // CS024 P6c's own session; impossible during CS024 P7, which IS the doc sweep. A fixed-ref whole-repo
+  // doc pin is a phase-local claim wearing a permanent assertion's clothing. P6c's rule was TRAP 6 of
+  // its phase prompt and its diff is in the git history; do not re-add a fixed-ref doc pin here.
+  console.log("  (TRAP 6's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (K) headless smoke with the knobs dragged somewhere hostile ====================

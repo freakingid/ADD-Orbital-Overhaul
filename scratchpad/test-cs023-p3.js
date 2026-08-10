@@ -595,7 +595,10 @@ function saucerAt(X, x, y, small) {
   }
 
   // --- TRAPs ---
-  eq(X.GAME_VERSION, "1.0.0.22", "A: TRAP 1 — GAME_VERSION unchanged");
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS023 P3 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "A: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // REPOINTED BY CS023 P4: 44 -> 46. REPOINTED AGAIN BY CS024 P1: 46 -> 35, the ten ORBIT knobs plus
   // debrisDriftAccel removed outright with the orbit archetype and the inward drift. P3's own claim —
   // that IT added no knob — is what this guarded and is asserted directly on the next line, unchanged;

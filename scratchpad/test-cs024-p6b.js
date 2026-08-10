@@ -538,8 +538,10 @@ function evalSlice(literal) {
 (function sectionG() {
   console.log("(G) the TRAPs — version, registry, powerup paths, purity, docs");
   // TRAP 1 — the version stays put. P7 owns the bump.
-  eq(X.GAME_VERSION, "1.0.0.22", "G: TRAP 1 — GAME_VERSION is still 1.0.0.22");
-
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P6b ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "G: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // TRAP 2 — the registry was P6c's, and P6c has since taken it: this phase's own claim was "P6b adds,
   // removes and reshapes NOTHING in the registry", which was pinned entry-by-entry against the pre-P6b
   // build. CS024 P6c then replaced every lever's single flat row with THREE (<id>Floor/<id>Ceil/
@@ -601,8 +603,14 @@ function evalSlice(literal) {
     const diff = execFileSync("git", ["diff", "-U0", PRE_P6B_REF, "--", "asteroids-deluxe.html"],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     assert(diff.length > 0, "G: TRAP 5 — the diff against the pre-P6b build is non-empty");
+    // REPOINTED BY CS024 P7 — `engineBurnSeconds` LEAVES this list, for the same reason the hunk-range
+    // pin above it was retired: a fixed-ref diff pin cannot outlive a later phase legitimately touching
+    // the lines it watches. Gate B question 11 came back with a number (5.0 -> 10.0 s of thrust), P7
+    // applied it at ENGINE_BURN_SECONDS, and that constant's line names the knob. The STRUCTURE of the
+    // powerup surface — the two tables, the drop path, the two predicates, the budget store — is what
+    // P6b actually promised not to disturb, and every one of those is still pinned below.
     for (const sym of ["POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "dropPowerup", "powerActive", "powerBudget",
-                       "engineBurnSeconds", "engineMassMult", "chainGuardMinTow"])
+                       "engineMassMult", "chainGuardMinTow"])
       assert(!new RegExp("^[-+].*\\b" + sym + "\\b", "m").test(diff), `G: TRAP 5 — no diff line touches ${sym}`);
   } catch (e) {
     if (/FAIL/.test(String(e && e.message))) throw e;
@@ -640,13 +648,20 @@ function evalSlice(literal) {
   eq(X.leverState(3).junkCount, 5, "G: ...and still ignores game.wave entirely");
   X.game.wave = 0;
 
-  // TRAP 6 — docs untouched. STATUS.md is this session's to write; nothing else may move.
-  try {
-    const changed = execFileSync("git", ["diff", "--name-only", PRE_P6B_REF], { cwd: repoRoot }).toString()
-      .split("\n").map(s => s.trim()).filter(Boolean);
-    const docs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
-    eq(docs.join(","), "", "G: TRAP 6 — no design doc is modified (GDD / PLANNED-FEATURES / IMPLEMENTATION-PHASES / DIFFICULTY-LEVERS)");
-  } catch (e) { console.log("  (skipped the git docs check — not a git checkout)"); }
+  // TRAP 6 — [RETIRED IN PLACE BY CS024 P7, exactly as the hunk-range pin in TRAP 5 above was retired,
+  // and for the identical reason.] The pin read `git diff --name-only 79222e5` and required that NO .md
+  // but STATUS.md had moved since the pre-P6b commit. That is a true statement about P6b's own session
+  // and an impossible one about any working tree after it: P6c/P6d/P6e all legitimately edited
+  // PLANNED-FEATURES-CS024.md (STATUS.md recorded the failure as pre-existing and out of scope three
+  // rounds running), and CS024 P7 IS THE DOC SWEEP — it rewrites DIFFICULTY-LEVERS.md from scratch,
+  // rewrites the GDD's §2, and appends to GDD-VERSION-HISTORY.md, by instruction. A fixed-ref
+  // whole-repo doc pin is therefore a phase-local claim wearing a permanent assertion's clothing, and
+  // keeping it would mean this file reports a failure forever while proving nothing about P6b.
+  // WHAT IT WAS PROTECTING SURVIVES ELSEWHERE: P6b's own no-design-doc rule was TRAP 6 of its phase
+  // prompt, its diff is in the git history, and every later phase carries its own equivalent trap
+  // against its own baseline. Do not re-add a fixed-ref doc pin here; write it against the phase's own
+  // parent commit in that phase's own file, where it can be true.
+  console.log("  (TRAP 6's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (H) headless smoke =====================

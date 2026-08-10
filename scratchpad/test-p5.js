@@ -357,7 +357,9 @@ assert(!("guard" in POWERUP_BUDGET) && !("engine" in POWERUP_BUDGET),
   "K: ...and the two LIVE-knob types are deliberately absent from that table");
 assert(powerBudgetAmount("guard") === DEBUG.chainGuardIntercepts, "K: guard's grant is the live DEBUG.chainGuardIntercepts");
 assert(powerBudgetAmount("engine") === DEBUG.engineBurnSeconds, "K: engine's grant is the live DEBUG.engineBurnSeconds");
-assert(ENGINE_BURN_SECONDS === 5.0 && DEBUG.engineBurnSeconds === 5.0, `K: ENGINE_BURN_SECONDS is 5.0 s and seeds the knob (got ${ENGINE_BURN_SECONDS})`);
+// REPOINTED BY CS024 P7 — Gate B Q11 retuned the tank 5.0 -> 10.0 s. The claim under test is unchanged:
+// the constant is the ONE source and it seeds the knob.
+assert(ENGINE_BURN_SECONDS === 10.0 && DEBUG.engineBurnSeconds === 10.0, `K: ENGINE_BURN_SECONDS is 10.0 s and seeds the knob (got ${ENGINE_BURN_SECONDS})`);
 // a retune of the live knob moves the grant on the NEXT pickup, without a reload
 DEBUG.engineBurnSeconds = 9;
 startGame(); isolate(); applyPowerup("engine");

@@ -1,7 +1,20 @@
 # PLANNED FEATURES — Changeset 025 (UFO CHAIN STAGGER)
 
-**Status:** design complete, FORK-CS025-A resolved. Companion:
-`IMPLEMENTATION-PHASES-CS025.md`.
+> **⛔ SUPERSEDED AND ARCHIVED BY CS024 P7 (2026-08-10) — NOTHING HERE IS LEFT
+> TO BUILD.** CS025 was absorbed wholesale into CS024. Its §1 semantics fix
+> (only drivers may wrap) shipped as **CS024 P4**; its §2 UFO step-count
+> stagger shipped as **CS024 P6b**; the three-knobs-per-lever panel that made
+> its gate answerable shipped as **CS024 P6c**; and its §4 gate was folded into
+> **Gate B**, whose "play levels 1 → 45" ask exists precisely to cover the
+> L25–L65 band this document asked for. There is no CS025 changeset and no
+> `"1.0.0.25"`. **This file is kept for ONE reason: §0 is the record of *why*
+> the drivers-only-wrap rule exists** — the evidence came from plotting the
+> lever tables level by level rather than from reading them, and
+> `DIFFICULTY-LEVERS.md` §2 cites this section by name. Read §0; treat every
+> phase, prompt, trap and version number below it as historical.
+
+**Status:** design complete, FORK-CS025-A resolved — then superseded before it
+ran (banner above). Companion: `IMPLEMENTATION-PHASES-CS025.md`.
 
 **Prerequisite:** CS024 complete and shipped (`GAME_VERSION` `"1.0.0.24"`),
 **including the drivers-only-wrap amendment folded into CS024 P4**. This

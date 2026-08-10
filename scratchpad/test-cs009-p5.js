@@ -146,7 +146,7 @@ function fresh() {
     assert(game.powerBankAmt[t] === val, `C: ${t}'s badge follows the LIVE DEBUG.${knob} (${val}) — got ${game.powerBankAmt[t]}`);
     assert(near(game.powerBudget[t], 2 * val), `C: ...and it banked two of them`);
   }
-  DEBUG.engineBurnSeconds = 5; DEBUG.chainGuardIntercepts = 3;
+  DEBUG.engineBurnSeconds = 10; DEBUG.chainGuardIntercepts = 3;  // REPOINTED BY CS024 P7 — shipped default is 10.0 s
 })();
 
 // ================= (D) powerBank decays to 0 within HUD_BANK_FLASH under update() =================

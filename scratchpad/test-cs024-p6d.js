@@ -284,8 +284,10 @@ let X = null, STORE = null, CALLS = null;
 // ================= (H) TRAPs =====================
 (function sectionH() {
   console.log("(H) TRAPs: GAME_VERSION unchanged; startLevel===1 byte-identical to HEAD; no lever/LEVERS edit");
-  eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION stays 1.0.0.22 (P7 owns the bump)");
-
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P6d ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   let OLD = null;
   try {
     const prev = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"],

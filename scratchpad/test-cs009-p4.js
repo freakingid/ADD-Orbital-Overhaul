@@ -213,7 +213,7 @@ const atRow = (arcs, y, r) => arcs.filter(a => near(a.x, 40) && near(a.y, y) && 
     assert(eArc && near(eArc.sweep, TAU * 0.5),
       `A: engine's arc tracks the LIVE DEBUG.engineBurnSeconds denominator (${tank} s) — got ${eArc && eArc.sweep}`);
   }
-  DEBUG.engineBurnSeconds = 5;
+  DEBUG.engineBurnSeconds = 10;   // REPOINTED BY CS024 P7 — restore the SHIPPED default (Gate B Q11: 5.0 -> 10.0)
 })();
 
 // ================= (B) TRAP 2 / FORK-3 A — double-banked -> main arc full + halo =================

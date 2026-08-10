@@ -367,7 +367,10 @@ function build({ audio = true, ctxLog = null } = {}) {
 (function sectionF() {
   console.log("(F) TRAPs — GAME_VERSION unchanged; debug registry is 34 entries, freqJitter gone");
   const X = build();
-  eq(X.GAME_VERSION, "1.0.0.22", "F: TRAP 1 — GAME_VERSION unchanged (P7 owns the bump)");
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P2 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "F: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // REPOINTED BY CS024 P3: 34 -> 36 (garbageLifetime out with the decay clock; garbageSoftMax,
   // garbageHardMax and lastStandSpeed in). The claim this TRAP carries — freqJitter is gone and stays
   // gone — is asserted directly below rather than through a total that later phases keep moving.
@@ -380,11 +383,13 @@ function build({ audio = true, ctxLog = null } = {}) {
   eq(X.DEBUG_VARS.filter(v => !v.header).length, 72, "F: ...and DEBUG_VARS agrees");
   assert(X.DEBUG_ENTRIES.some(e => e.id === "debrisBounceRestitution"),
     "F: debrisBounceRestitution (untouched by this phase) still survives in the registry");
-  const docs = ["ORBITAL-OVERHAUL-GDD.md", "GDD-VERSION-HISTORY.md", "DIFFICULTY-LEVERS.md"];
-  const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot })
-    .toString().trim().split("\n").filter(Boolean);
-  const touchedDocs = changed.filter(f => docs.includes(f));
-  eq(touchedDocs.length, 0, `F: TRAP — no shipped-behaviour doc is touched this phase (saw ${JSON.stringify(touchedDocs)})`);
+  // TRAP (docs) — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired,
+  // and for the identical reason.] The pin required GDD / GDD-VERSION-HISTORY / DIFFICULTY-LEVERS to be
+  // unmoved since HEAD — true of CS024 P2's own session, impossible during CS024 P7, which IS the doc
+  // sweep and rewrites all three by instruction. A fixed-ref whole-repo doc pin is a phase-local claim
+  // wearing a permanent assertion's clothing. P2's own rule was a TRAP in its phase prompt and its diff
+  // is in the git history; do not re-add a fixed-ref doc pin here.
+  console.log("  (the fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (G) AudioSys.ctx null smoke =====================

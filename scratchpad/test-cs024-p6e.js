@@ -350,14 +350,28 @@ let X = null, STORE = null;
     if (om) OLD = buildFrom(om[1], { exportNames: OLD_RETURN }).exports;
   } catch (e) { /* not a git checkout: skipped below */ }
 
+  // REPOINTED BY CS024 P7 — NARROWED, NOT DROPPED. This pin's real job is "the override toggle changed
+  // no shipped default by accident," and that claim is worth keeping forever. But it is written against
+  // a MOVING ref (HEAD), so any later phase that legitimately retunes a default or bumps the version
+  // fails it for the wrong reason. P7 does exactly two such things, and both are named here rather than
+  // silently tolerated: Gate B Q11 retuned engineBurnSeconds 5.0 -> 10.0 (the only number the gate
+  // moved), and P7 owns the version bump to "1.0.0.24". Everything else must still match HEAD exactly.
+  // A future phase adding to this list must have a gate answer or a phase prompt behind it.
+  const P7_INTENDED = new Set(["engineBurnSeconds"]);
   if (OLD) {
     const A = buildFrom(scriptSrc).exports;
-    for (const e of OLD.DEBUG_ENTRIES) // every id HEAD knew about still resolves to the same native value
+    for (const e of OLD.DEBUG_ENTRIES) { // every id HEAD knew about still resolves to the same native value
+      if (P7_INTENDED.has(e.id)) {
+        assert(A.DEBUG[e.id] !== OLD.DEBUG[e.id], `G: DEBUG.${e.id} is a DELIBERATE P7 retune, so it must differ from HEAD`);
+        continue;
+      }
       eq(A.DEBUG[e.id], OLD.DEBUG[e.id], `G: DEBUG.${e.id} is byte-identical to HEAD on an untouched panel`);
+    }
     for (const w of [1, 5, 33, 100])
       eq(JSON.stringify(A.leverState(w)), JSON.stringify(OLD.leverState(w)),
         `G: leverState(${w}) is byte-identical to HEAD`);
-    eq(A.GAME_VERSION, OLD.GAME_VERSION, "G: GAME_VERSION unchanged from HEAD (see TRAP 1 below too)");
+    // The version is the one field P7 is REQUIRED to move; the mirror image of the old pin.
+    assert(A.GAME_VERSION !== OLD.GAME_VERSION, "G: GAME_VERSION has moved off HEAD — P7 owns the bump (see TRAP 1 below too)");
   } else {
     console.log("  (skipped byte-identical pin — not a git checkout)");
   }
@@ -404,7 +418,10 @@ let X = null, STORE = null;
 // ================= (I) TRAPs =====================
 (function sectionI() {
   console.log("(I) TRAPs: GAME_VERSION unchanged; no LEVERS/leverState edit; frozen keys unchanged; achievements never mentioned by the wipe path");
-  eq(X.GAME_VERSION, "1.0.0.22", "I: TRAP 1 — GAME_VERSION stays 1.0.0.22 (P7 owns the bump)");
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P6e ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "I: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   eq(X.LEVERS.length, 17, "I: TRAP 2 — LEVERS is still 17 entries, this phase added no lever");
 
   assert(/STORAGE_KEY = "afd_settings_v1"/.test(scriptSrc), "I: TRAP 3 — afd_settings_v1 name unchanged");

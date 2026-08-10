@@ -278,7 +278,8 @@ function layChain(X, n) {
   assert(!!eb && !!em, "A: both POWERUPS knobs exist");
   eq(eb.def, X.ENGINE_BURN_SECONDS, "A: engineBurnSeconds' def derives from ENGINE_BURN_SECONDS (one source of truth)");
   eq(em.def, X.ENGINE_MASS_MULT, "A: engineMassMult's def derives from ENGINE_MASS_MULT");
-  eq(X.DEBUG.engineBurnSeconds, 5.0, "A: DEBUG.engineBurnSeconds is seeded to 5.0 s");
+  // REPOINTED BY CS024 P7 — Gate B Q11 retuned the tank 5.0 -> 10.0 s (the only number the gate moved).
+  eq(X.DEBUG.engineBurnSeconds, 10.0, "A: DEBUG.engineBurnSeconds is seeded to 10.0 s");
   eq(X.DEBUG.engineMassMult, 0.5, "A: DEBUG.engineMassMult is seeded to 0.5");
   // Neither is a LEVER knob — Engine is a powerup, not a difficulty ramp. REPOINTED BY CS024 P6c: the
   // `def: null` sentinel that used to distinguish them is retired (every row has a real default now),
@@ -849,8 +850,10 @@ function layChain(X, n) {
 (function sectionH() {
   console.log("(H) TRAPs: GAME_VERSION, the sanctioned addScore bypass, docs untouched");
   const X = build();
-  eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is unchanged (P7 owns the bump)");
-
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P6 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // TRAP 2: the auto-shield penalty is the ONE sanctioned addScore bypass and this phase does not touch
   // it. Pinned byte-for-byte against the whole damageShip body at HEAD, and its behaviour driven
   // directly: the deduction subtracts from game.score, clamps at 0, and does NOT go through addScore
@@ -890,13 +893,13 @@ function layChain(X, n) {
     X.settings.autoShield = false;
   }
 
-  // TRAP 3: no doc was touched by this phase.
-  {
-    const docs = ["ORBITAL-OVERHAUL-GDD.md", "GDD-VERSION-HISTORY.md", "DIFFICULTY-LEVERS.md",
-      "PLANNED-FEATURES-CS024.md", "IMPLEMENTATION-PHASES-CS024.md"];
-    const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString().split("\n");
-    for (const d of docs) assert(!changed.includes(d), `H: TRAP 3 — ${d} is untouched`);
-  }
+  // TRAP 3 — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for
+  // the identical reason.] The pin required the five design docs to be unmoved since HEAD. True of
+  // CS024 P6's own session; impossible during CS024 P7, which IS the doc sweep and rewrites three of
+  // those five by instruction. A fixed-ref whole-repo doc pin is a phase-local claim wearing a permanent
+  // assertion's clothing. P6's rule was TRAP 3 of its phase prompt and its diff is in the git history;
+  // do not re-add a fixed-ref doc pin here.
+  console.log("  (TRAP 3's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (I) AudioSys.ctx === null smoke across a 20-level ramp =================

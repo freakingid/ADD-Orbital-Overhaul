@@ -399,7 +399,10 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   }
 
   // --- TRAP 1 / TRAP 4
-  eq(X.GAME_VERSION, "1.0.0.22", "A: TRAP 1 — GAME_VERSION unchanged (P5 bumps it)");
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS023 P2 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "A: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // TRAP 4 — REPOINTED THREE TIMES NOW, and CS024 P1 is the first repoint that runs the other way.
   // CS023 P4 flipped these to their positive successors as the drift landed; P4B renamed them
   // (orbitGravityAccel -> debrisDriftAccel, ORBIT_GRAVITY_* -> DEBRIS_DRIFT_*). CS024 P1 REMOVES THE DRIFT
@@ -445,16 +448,22 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     "A: REPOINTED BY CS024 P1 (inverted) — the P4 seam marker is gone from debrisBounce");
 
   // --- the docs are untouched this phase (TRAP 1's second half)
-  const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString().trim().split("\n").filter(Boolean);
-  // REPOINTED BY CS024 P1, and this is a NARROWING with a reason rather than a convenience. The filter
-  // used to include PLANNED-FEATURES-* and IMPLEMENTATION-PHASES-*, which are SPEC documents authored by
-  // Paul and legitimately edited between build sessions — a phase-scoped "docs untouched" trap has no
-  // business freezing them, and it fired on exactly that during CS024 P1 (an edit to P4's own prompt,
-  // made outside the session and unrelated to any code change). What every phase's TRAP actually protects
-  // is the SHIPPED-BEHAVIOUR documentation set — the GDD, its version history, and DIFFICULTY-LEVERS —
-  // which is precisely the list CS024 P1's own TRAP 3 names. That list is what is checked now.
-  const docs = changed.filter(f => /GDD|DIFFICULTY-LEVERS|VERSION-HISTORY/.test(f));
-  eq(docs.length, 0, `A: TRAP 1 — no design doc is touched this phase (saw ${JSON.stringify(docs)})`);
+  // [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for the
+  // identical reason.] The pin read `git diff --name-only HEAD` and required that the shipped-behaviour
+  // doc set (GDD / GDD-VERSION-HISTORY / DIFFICULTY-LEVERS) had not moved. That is a true statement
+  // about CS023 P2's own session and an IMPOSSIBLE one about any working tree during a doc-sweep phase:
+  // CS024 P7 rewrites DIFFICULTY-LEVERS.md from scratch, rewrites the GDD's §2 and appends to
+  // GDD-VERSION-HISTORY.md — by instruction. A fixed-ref whole-repo doc pin is therefore a phase-local
+  // claim wearing a permanent assertion's clothing, and keeping it means this file reports a failure
+  // forever while proving nothing about CS023 P2.
+  //   (It had already been NARROWED once, by CS024 P1, to drop PLANNED-FEATURES-*/IMPLEMENTATION-PHASES-*
+  //   — spec documents authored outside the build session, which a phase trap has no business freezing.
+  //   That narrowing was right and bought it four more phases; it could not survive the sweep itself.)
+  // WHAT IT PROTECTED SURVIVES ELSEWHERE: CS023 P2's own no-design-doc rule was TRAP 1 of its phase
+  // prompt, its diff is in the git history, and every later phase carries its own equivalent trap
+  // against its own baseline. Do not re-add a fixed-ref doc pin here; write it against the phase's own
+  // parent commit in that phase's own file, where it can be true.
+  console.log("  (TRAP 1's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 })();
 
 // ================= (B) spec §6 item 9 — FREE vs FREE, AS PHYSICS =====================

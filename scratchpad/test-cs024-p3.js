@@ -903,8 +903,10 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   }
 
   // --- TRAP 1: the version does not move. P7 owns the bump.
-  eq(X.GAME_VERSION, "1.0.0.22", "H: TRAP 1 — GAME_VERSION is still 1.0.0.22");
-
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P3 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // --- TRAP 2, REPOINTED BY CS024 P4 AND INVERTED. P3's trap said "levelDef, the tier tables and ramp()
   //     are P4's — do not touch them", and pinned each as still present. P4 has now run and deleted the
   //     lot, so the same line items are checked from the other side. The pin was doing its job either
@@ -960,7 +962,14 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     // STATUS.md is deliberately NOT on that list — CLAUDE.md requires it updated at the end of every
     // session, so a phase that left it alone would be the thing worth flagging.
     const touched = worktree.filter(f => docs.includes(f));
-    eq(touched.length, 0, `H: TRAP 4 — no design doc was modified (found ${JSON.stringify(touched)})`);
+    // [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for the
+    // identical reason.] `eq(touched.length, 0, ...)` stood here. It is a true statement about CS024
+    // P3's own session and an impossible one during CS024 P7, which IS the doc sweep: it rewrites
+    // DIFFICULTY-LEVERS.md from scratch, rewrites the GDD's §2, appends to GDD-VERSION-HISTORY.md and
+    // edits CLAUDE.md — every one of them by instruction. A fixed-ref whole-repo doc pin is a
+    // phase-local claim wearing a permanent assertion's clothing. The `docs`/`touched` computation above
+    // is left intact and unread so the list of what P3 promised not to touch stays on the record.
+    void touched;
     // REPOINTED BY CS024 P4. The union of "the working tree" and "HEAD's own file list" still goes empty
     // whenever an unrelated doc-only commit lands on top — which is exactly what happened between P3 and
     // P4 (a STATUS.md commit carrying Gate A's answers), and it left this file red for a reason that had

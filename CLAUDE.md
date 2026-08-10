@@ -235,11 +235,13 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   STATUS.md so the next phase's prompt can account for it.
 - **Three frozen `localStorage` keys — never rename or merge them.**
   `afd_settings_v1` (options/bindings/difficulty modes/music track; CS011 P3
-  added `voiceStyle`/`captions` additively, CS012 P5 added `autoShield`, and
-  CS017 P6 added `chainGuardMode` (`"time"` | `"count"`, the chain-guard
-  expiry mode) — all the same way, and all under the same
-  known-value-else-default rule as every other field on this
-  key),
+  added `voiceStyle`/`captions` additively, CS012 P5 added `autoShield` — all
+  the same way, and all under the same known-value-else-default rule as every
+  other field on this key. **CS017 P6's `chainGuardMode` (`"time"` | `"count"`)
+  is GONE as of CS024 P6**, deleted with timed expiry along with
+  `shotPowerupMode` and `magnetMode`; a value saved under any of the three
+  orphans harmlessly, which is exactly the point of that rule and is why
+  removing a field needs **no key rename and no migration shim**),
   `afd_achievements_v2` (progress + unlocks), and `afd_scores_v1` (v3.6 P6 —
   the high-score table) are independent stores, each with its own guarded
   `storageOK()` try/catch load/save path. None of the three reads or writes
@@ -251,16 +253,25 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   pickup byte-identical to the pre-scoop build. Don't delete it on a
   "cleanup" pass; if it ever fires, `SCOOP_CONFIG`/`buildScoopSteps` broke the
   invariant, not the assertion (GDD §2.14.1).
-- **`POWERUP_DROP_TYPES` is the *timed-effect* list, not the drop table.**
-  It's what the HUD active-effect row / `powerActive()` / `powerMode()` /
-  `powerBudget` understand, and it deliberately excludes Health (instant) and
-  Scoop (persistent, not timed). The **drop table** — what can actually roll
+- **`POWERUP_DROP_TYPES` is the *budgeted-effect* list, not the drop table.**
+  (It was the "timed-effect" list until **CS024 P6 deleted timed expiry
+  outright** — `powerMode()`, `powerDuration()`, `game.powerFx`,
+  `POWERUP_DURATION`, `MAGNET_DURATION` and `DEBUG.chainGuardTime` are all
+  gone. The **structure is unchanged and the two-structures rule is
+  unchanged**; only the adjective moved, because every effect on this list now
+  expires on a *count* rather than a clock. Don't read the rename as a merge.)
+  It's what the HUD active-effect row / `powerActive()` / `powerBudget`
+  understand, and it deliberately excludes Health (instant) and Scoop
+  (persistent, not budgeted). The **drop table** — what can actually roll
   out of `dropPowerup()` — is the separate `POWERUP_DROP_WEIGHTS`. This
   distinction has already caused confusion across two changesets (v3.3 P3,
   v3.6 P3); don't conflate the two structures a third time (GDD §2.14).
   **CS017 P6 note:** `"guard"` (the chain guard) is now in **both** — it is a
-  real timed effect *and* a real drop — which does NOT merge the structures;
-  they still answer different questions, and Health/Scoop still prove it.
+  real budgeted effect *and* a real drop — which does NOT merge the
+  structures; they still answer different questions, and Health/Scoop still
+  prove it. **Ask "did an effect end?" through `powerActive(type)`** — as of
+  CS024 P6 that is the only way to ask at all, so the old "never read
+  `powerFx`" discipline is now structural rather than a convention.
   Two further rules came with it. (1) `POWERUP_DROP_TYPES` is **append-only**:
   its order fixes each type's HUD row index, so inserting rather than
   appending silently moves every existing row. (2) `POWERUP_DROP_WEIGHTS` now
@@ -281,8 +292,17 @@ updates less often than that one.
 asteroids-deluxe.html
   <style>            // fixed 1280×720 canvas, letterboxed via CSS scaling
   <script>
-    // Constants        SHIP_*, BULLET_*, SHIELD_*, AST_*, GARBAGE_*, CHAIN_*,
-    //                   CARGO_*, DOCK_*, scores — all tuning lives here first
+    // Constants        SHIP_*, BULLET_*, SHIELD_*, DEBRIS_*, GARBAGE_*,
+    //                   CHAIN_*, CARGO_*, DOCK_*, HUNTER_*, POWERUP_*, scores
+    //                   — all tuning lives here first. Level Progression is
+    //                   its own block: the LEVERS table (CS024 P4/P5, the
+    //                   game's ONE difficulty mechanism — see
+    //                   DIFFICULTY-LEVERS.md) with leverState/liveLevers/
+    //                   payloadSlots/largeHunterCap. GARBAGE_SOFT_MAX/
+    //                   HARD_MAX (CS024 P3) is the density ceiling that
+    //                   replaced garbage decay; ENGINE_BURN_SECONDS/
+    //                   ENGINE_MASS_MULT + the count budgets (RAPID_SHOTS
+    //                   etc.) are the whole of powerup expiry (CS024 P6)
     // Canvas/scaling    resize() — CSS scale only, game math never touches
     //                   window size
     // AudioSys          singleton; every sound is a method; init on first
@@ -307,8 +327,17 @@ asteroids-deluxe.html
     //                   contract, see "Entity lifecycle" above
     // game object       central mutable state: entity arrays, score/lives/
     //                   wave, spawn timers, chain/garbage/dock state
-    // Flow functions    startGame, nextWave, addScore, boom, destroyAsteroid,
-    //                   killShip, shieldDeflect
+    // Flow functions    startGame, spawnFieldSatellites (the ONLY spawn path
+    //                   as of CS024 P1 — no archetype branch), nextWave,
+    //                   addScore, boom, destroyDebris/destroyHunter/
+    //                   destroySaucer, shatterClump, damageShip, killShip,
+    //                   shieldDeflect/shieldBounce/debrisBounce,
+    //                   dropPowerup/applyPowerup/powerActive/
+    //                   powerBudgetAmount, superMegaDelivery. Garbage
+    //                   pipeline (CS024 P3/P6f): coalesceGarbage,
+    //                   saturatedClump/heldClumpCount/drainHeldClumps,
+    //                   cullGarbage/betterCullVictim (the density ceiling —
+    //                   there is no decay clock)
     // Chain physics     chainAnchor, wrapNode, updateChain, breakChain,
     //                   scatterChain, drawLink, drawChain — see GDD 3.4
     //                   before touching; verlet nodes, not entity-pattern

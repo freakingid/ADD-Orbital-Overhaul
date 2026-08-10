@@ -822,8 +822,10 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   const X = build();
 
   // TRAP 1 — the version bump is P7's.
-  eq(X.GAME_VERSION, "1.0.0.22", "L: TRAP 1 — GAME_VERSION untouched");
-
+  // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
+  // UNCHANGED while CS024 P6f ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
+  // stays correct forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.22", "L: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // TRAP 2 — no lever. The LEVERS table is byte-identical to HEAD's, and leverState is unchanged.
   {
     const headSrc = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"], { cwd: repoRoot, maxBuffer: 1 << 28 }).toString();
@@ -886,13 +888,14 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     assert(/heldClumpMax/.test(branch), "L: TRAP 5 — ...and states the new backstop");
   }
 
-  // TRAP 6 — no design doc touched by this phase.
-  {
-    const changed = execFileSync("git", ["diff", "--name-only", "HEAD"], { cwd: repoRoot }).toString()
-      .split("\n").map(s => s.trim()).filter(Boolean);
-    const docs = changed.filter(f => /\.md$/.test(f) && !/^STATUS\.md$/.test(f));
-    eq(docs.length, 0, `L: TRAP 6 — no design doc modified (found: ${docs.join(", ")})`);
-  }
+  // TRAP 6 — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired, and for
+  // the identical reason.] The pin required that no .md but STATUS.md had moved since HEAD. True of
+  // CS024 P6f's own session; impossible during CS024 P7, which IS the doc sweep and rewrites the GDD's
+  // §2, DIFFICULTY-LEVERS.md, GDD-VERSION-HISTORY.md and CLAUDE.md by instruction, and archives the
+  // CS025 planning pair. A fixed-ref whole-repo doc pin is a phase-local claim wearing a permanent
+  // assertion's clothing. P6f's rule was TRAP 6 of its phase prompt and its diff is in the git history;
+  // do not re-add a fixed-ref doc pin here.
+  console.log("  (TRAP 6's fixed-ref doc pin retired by CS024 P7 — see the comment above)");
 
   // The difficulty log follows the cap rather than a stale constant.
   {

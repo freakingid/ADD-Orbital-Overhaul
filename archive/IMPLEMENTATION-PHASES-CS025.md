@@ -1,5 +1,16 @@
 # IMPLEMENTATION PHASES — Changeset 025
 
+> **⛔ SUPERSEDED AND ARCHIVED BY CS024 P7 (2026-08-10) — NO PHASE BELOW WAS
+> EVER RUN AS WRITTEN, AND NONE REMAINS TO RUN.** CS025 was absorbed into
+> CS024: the UFO step-count stagger shipped as **CS024 P6b**, the panel work
+> its gate depended on as **CS024 P6c**, and its gate itself was folded into
+> **Gate B**. There is no `"1.0.0.25"`; CS024 shipped `"1.0.0.24"` and the next
+> changeset starts from there. Every phase prompt, TRAP and commit message
+> below is historical — **do not paste one into a session.** The one part of
+> this changeset still worth reading is `PLANNED-FEATURES-CS025.md` §0, cited
+> by `DIFFICULTY-LEVERS.md` §2 as the record of why the drivers-only-wrap rule
+> exists.
+
 Companion to `PLANNED-FEATURES-CS025.md`. **One phase per session, one commit
 per phase, on `main`.** Claude Code commits; Paul pushes.
 
