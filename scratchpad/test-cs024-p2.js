@@ -379,8 +379,8 @@ function build({ audio = true, ctxLog = null } = {}) {
   // smallUfoChance, registry rebuilt).
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 72, "F: TRAP — the debug registry is exactly 72 value entries after CS024 P6f");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 72, "F: ...and DEBUG_VARS agrees");
+  eq(X.DEBUG_ENTRIES.length, 73, "F: TRAP — the debug registry is exactly 73 value entries after CS025 P1");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 73, "F: ...and DEBUG_VARS agrees");
   assert(X.DEBUG_ENTRIES.some(e => e.id === "debrisBounceRestitution"),
     "F: debrisBounceRestitution (untouched by this phase) still survives in the registry");
   // TRAP (docs) — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired,

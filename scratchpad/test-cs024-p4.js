@@ -845,8 +845,8 @@ function evalSlice(literal) {
   // lever flat, never tune its ramp, so each lever now emits three rows — floor, ceiling, step count —
   // and 17 become 51. The claim is unchanged in kind and strength: an exact live count plus an exact
   // ordered header list.
-  eq(values.length, 72, "H: 72 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs");
-  eq(X.DEBUG_ENTRIES.length, 72, "H: DEBUG_ENTRIES agrees — headers are not values");
+  eq(values.length, 73, "H: 73 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs, CS025 P1's magnetResumeDelay");
+  eq(X.DEBUG_ENTRIES.length, 73, "H: DEBUG_ENTRIES agrees — headers are not values");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "H: nine section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {

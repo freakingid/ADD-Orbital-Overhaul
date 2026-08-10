@@ -263,8 +263,8 @@ function layChain(X, n) {
   // POWERUPS header that CS024 P5 deliberately left uncreated). REPOINTED BY CS024 P6c: 33 -> 67, three
   // rows per lever replacing P5's one flat row. This section's own subject — the POWERUPS pair — is
   // untouched by that, which is exactly what the by-name checks below still pin.
-  eq(X.DEBUG_ENTRIES.length, 72, "A: the registry holds 72 value entries after CS024 P6f");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 72, "A: ...and DEBUG_VARS agrees");
+  eq(X.DEBUG_ENTRIES.length, 73, "A: the registry holds 73 value entries after CS025 P1");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 73, "A: ...and DEBUG_VARS agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).map(v => v.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "A: nine section headers, POWERUPS between UFO and GLOBAL");

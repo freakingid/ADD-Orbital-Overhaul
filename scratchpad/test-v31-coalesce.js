@@ -876,8 +876,17 @@ console.log("(34) v3.6 P2a: a mass-1 single at 190 px reaches the ship measurabl
 {
   beginPlaying();
   game.powerBudget.magnet = MAGNET_PIECES;   // CS024 P6: budget, not a clock
-  game.cargoMax = 0;   // block the pickup gate (chain.length(0) < cargoMax(0) is false) so the piece
-                        // keeps traveling all the way in instead of hooking onto the chain mid-flight
+  // ⛔ CS025 P1 REPOINT — `game.cargoMax = 0;` STOOD HERE, and it can no longer be used as a staging
+  // trick. It blocked the pickup gate (chain.length(0) < cargoMax(0) is false) so the piece would keep
+  // travelling all the way in instead of hooking mid-flight. CS025 P1 adds the full-cargo magnet hold,
+  // whose condition is `chain.length >= cargoMax` — and at cargoMax 0 an empty chain is FULL, which is
+  // semantically right (no capacity means no room) and is unreachable in a real run (payloadSlots never
+  // returns less than 8). The staging trick therefore now suppresses the very attraction this test
+  // measures, and the piece never moves. Fixed by MEASURING FURTHER OUT instead: `arriveAt` moves 20 ->
+  // 40 px, comfortably outside the magnet-widened pickup radius (GARBAGE_PICKUP 18 x MAGNET_PICKUP_MULT
+  // 1.6 = 28.8), so the piece is never hooked before the measurement ends and the gate needs no blocking
+  // at all. BOTH builds are measured at the same 40 px, so the comparison this test exists to make —
+  // new arrival time vs old-build arrival time over the same 190 px — is unchanged.
   // CS018 P5 fallout: beginPlaying() clears game.debris, and the real wave-clear timer (2.5s on
   // debris.length===0) fires nextWave() mid-loop over this test's up-to-30s window — nextWave() now
   // ALSO resets game.cargoMax from levelDef(game.wave).payloadSlots (a real, nonzero level), silently
@@ -887,7 +896,9 @@ console.log("(34) v3.6 P2a: a mass-1 single at 190 px reaches the ship measurabl
   game.debris = [{ x: 1e5, y: 1e5, vx: 0, vy: 0, size: 1, radius: 5, dead: false, update() {}, draw() {} }];
   const g = new Garbage(game.ship.x + 190, game.ship.y, 0, 0);
   game.garbage = [g];
-  const arriveAt = 20;      // px — "arrived" proxy, well inside GARBAGE_PICKUP's ballpark
+  const arriveAt = 40;      // px — "arrived" proxy. CS025 P1: was 20, moved OUTSIDE the magnet-widened
+                            // pickup radius (18 x 1.6 = 28.8) so the piece is never hooked mid-measurement
+                            // and the cargoMax=0 gate block is no longer needed. See the note above.
   let frames = 0;
   const maxFrames = 30 * 60; // 30 s hard cap, matches oldArrivalTime's cap
   while (Math.hypot(g.x - game.ship.x, g.y - game.ship.y) > arriveAt && frames < maxFrames) {

@@ -553,7 +553,7 @@ function evalSlice(literal) {
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
   // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
   // CS024 P6f repoint: +3 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — non-levers, HUNTER section).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 72, "G: TRAP 2 — 72 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs)");
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 73, "G: TRAP 2 — 73 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -577,7 +577,10 @@ function evalSlice(literal) {
     // hunterCapLevelsPerStep, heldClumpMax) — same reasoning again, they are P6f's rows, not P6b's, and
     // the claim under test is that P6b left the pre-P6b ORDER alone.
     const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "").replace(/,startLevel$/, "")
-      .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "");
+      .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "")
+      // CS025 P1 repoint: also strip magnetResumeDelay (CS025 P1, POWERUPS, appended after
+      // engineMassMult) — same reasoning again, it is CS025 P1's row, not P6b's.
+      .replace(/,magnetResumeDelay/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
@@ -609,9 +612,19 @@ function evalSlice(literal) {
     // applied it at ENGINE_BURN_SECONDS, and that constant's line names the knob. The STRUCTURE of the
     // powerup surface — the two tables, the drop path, the two predicates, the budget store — is what
     // P6b actually promised not to disturb, and every one of those is still pinned below.
-    for (const sym of ["POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "dropPowerup", "powerActive", "powerBudget",
+    for (const sym of ["POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "dropPowerup", "powerBudget",
                        "engineMassMult", "chainGuardMinTow"])
       assert(!new RegExp("^[-+].*\\b" + sym + "\\b", "m").test(diff), `G: TRAP 5 — no diff line touches ${sym}`);
+    // REPOINTED BY CS025 P1 — `powerActive` LEAVES the "no line mentions it" list and gains a SHARPER
+    // pin of its own, for the same reason engineBurnSeconds left it: a fixed-ref diff pin measured
+    // against a MOVING working tree cannot outlive a later phase legitimately adding a READER. CS025 P1
+    // adds magnetPulling(), a new sibling predicate declared directly under powerActive() and defined as
+    // `powerActive("magnet") && game.magnetHoldT <= 0` — every one of those added lines mentions the
+    // symbol without disturbing it. What P6b actually promised is that the PREDICATE ITSELF was left
+    // alone, and that is what is checked now: no line was REMOVED (a body edit always produces one), and
+    // no second definition was added. A new caller is allowed; a redefinition is not.
+    assert(!/^-.*\bpowerActive\b/m.test(diff), "G: TRAP 5 — no diff line REMOVES or rewrites powerActive");
+    assert(!/^\+.*function powerActive/m.test(diff), "G: TRAP 5 — ...and no diff line redefines it");
   } catch (e) {
     if (/FAIL/.test(String(e && e.message))) throw e;
     console.log("  (skipped the git diff pin — not a git checkout)");

@@ -3249,6 +3249,22 @@ const DEBUG_VARS = [
     def: ENGINE_BURN_SECONDS, min: 0.5, max: 60, step: 0.5 },
   { id: "engineMassMult", label: "Engine towed-mass multiplier", unit: "x",
     def: ENGINE_MASS_MULT, min: 0, max: 1, step: 0.05 },
+  // CS025 P1 (spec §1.2/§5): how long the Magnet's ATTRACTION stays inactive after a cargo slot opens.
+  // Same `unit: "ms"` + `toNative: v => v / 1000` idiom as autoShieldRegenPause and dockComboGrace: the
+  // panel shows and persists milliseconds, the consumer (game.magnetHoldT's one writer, at the top of
+  // update()'s pickup block) reads seconds. NO SHIPPED CONSTANT BACKS THIS ONE — a resume delay has no
+  // meaning outside the knob, so this entry IS the source of truth for its default, the same reasoning
+  // as chainGuardIntercepts. NOT A LEVER (the Magnet is a powerup, not a difficulty ramp): no
+  // floor/ceil/steps triple, no ▼/↳ glyph, no indent, no LEVERS entry.
+  //   ⛔ 0 TURNS THE WHOLE FEATURE OFF, NOT JUST THE DELAY, and that is a consequence of the one-writer
+  // form (spec §1.3) rather than a second rule: the writer arms game.magnetHoldT to THIS value every
+  // full-cargo frame, so at 0 the hold is armed to 0 and magnetPulling() reads true even while full.
+  // That makes this knob the clean A/B for the whole suppression at the playtest gate — set 0 and the
+  // build behaves exactly as CS024 shipped — but it also means it is not "how long the hold outlives a
+  // freed slot" alone. Flagged rather than "fixed" with a floor: the spec prescribes this expression
+  // verbatim and gives min 0, and inventing a minimum here would be inventing design.
+  { id: "magnetResumeDelay", label: "Magnet resume delay", unit: "ms",
+    def: 250, min: 0, max: 3000, step: 50, toNative: v => v / 1000 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -5362,6 +5378,17 @@ const game = {
                                                         // pause remaining (0 = coalescence live). Set by
                                                         // superMegaDelivery(), ticked+consumed at the
                                                         // coalesceGarbage(dt) call site in update().
+  // CS025 P1 (spec §1.3): sec of MAGNET ATTRACTION hold remaining. Sibling of sweepPause above — both
+  // are "a system is suppressed for N more seconds" timers written at exactly one site and read
+  // nowhere else. This one is re-armed to DEBUG.magnetResumeDelay every frame the tow chain is FULL
+  // and counts down once a slot opens; magnetPulling() is the only reader. Its ONE writer is the top
+  // of update()'s pickup block — deliberately DERIVED from `game.chain.length >= game.cargoMax` per
+  // frame rather than hooked at the five sites that free a slot (chain.pop() at the dock,
+  // breakChain(), scatterChain(), startGame(), and nextWave()'s cargoMax GROWTH, which frees a slot
+  // with no delivery and no pickup at all and is the one that would have been missed). Ticks on `dt`,
+  // so it freezes with a pause like every other in-game timer. Declared in BOTH this literal and
+  // startGame()'s reset per the standing CS016 P3 rule.
+  magnetHoldT: 0,
   cargoMax: CARGO_BASE,                                // runtime tow cap; set from payloadSlots(game.wave) in nextWave() (CS018 P5) — this is only the pre-level-1 default
   cargoFlash: 0,                                       // CS009 P3: >0 for HUD_CAP_FLASH sec after a cap-up —
                                                         // a cap-up SHRINKS the CARGO ring's fraction (same chain,
@@ -5564,6 +5591,10 @@ function startGame() {
   game.powerBudget = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 }; // budgets reset with the run (P5; guard CS017 P6; engine CS024 P6)
   game.powerBank = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };    // bank-flash state resets with the run (P5)
   game.powerBankAmt = { rapid: 0, triple: 0, magnet: 0, engine: 0, guard: 0 };
+  game.magnetHoldT = 0;            // CS025 P1: no magnet-suppression hold carries into a fresh run. A fresh
+                                   // run starts with an EMPTY chain, so the first pickup-block frame reads
+                                   // not-full and would tick this down anyway — but the field must exist in
+                                   // both places (the CS016 P3 rule), and 0 is the honest starting value.
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.sweepPause = 0;             // CS018 P9: no sweep coalescence-pause carries into a fresh run
@@ -5888,6 +5919,25 @@ function powerBudgetAmount(type) {
 // a single answer, rather than the two-mode question the deleted powerMode() used to arbitrate.
 function powerActive(type) {
   return game.powerBudget[type] > 0;
+}
+// CS025 P1 (spec §1.2/§1.4) — IS THE MAGNET'S ATTRACTION CURRENTLY PULLING? A pure read: no dt, no
+// writes, no side effects. Answers a NARROWER question than powerActive("magnet"), and the gap between
+// the two is the whole feature: the powerup is still active (budget remains, the HUD row is lit, the
+// expire_magnet latch is unmoved) while the tow chain is full, but its ATTRACTION is off, and stays off
+// for DEBUG.magnetResumeDelay seconds after a cargo slot opens.
+//
+// ⛔ THIS IS NOT A DROP-IN REPLACEMENT FOR powerActive("magnet"), AND THE TWO MUST NOT BE TIDIED BACK
+// INTO ONE NAME. Exactly two consumers move to this predicate — the attraction force and the widened
+// MAGNET_PICKUP_MULT pickup circle, which come back together or not at all. The two BUDGET SPEND sites
+// keep reading powerActive("magnet") raw, because during the resume window the base GARBAGE_PICKUP
+// circle is still live: a piece drifting into it is genuinely hooked, and billing that hook against
+// this suppressed predicate would make it FREE — turning "the magnet is inactive while full" into "the
+// magnet gains free uses whenever you fill up". See the split at the pickup block in update().
+//
+// A FUNCTION, not a local const in update(), because Ship.draw() reads the same answer for the scoop
+// energy tell (CS025 P3) and runs in draw(), which cannot see a local in update().
+function magnetPulling() {
+  return powerActive("magnet") && game.magnetHoldT <= 0;
 }
 
 // The Scoop capture BOX (v3.3 P3, spec §8) — an oriented "mouth" on the ship's facing axis. Rotate the
@@ -7330,14 +7380,38 @@ function update(dt) {
   // updates now run straight into the pickup/chain pass.
 
   // --- Salvage pickup & chain physics ---
+  // CS025 P1 (spec §1.3): THE MAGNET'S FULL-CARGO HOLD — THE ONE WRITER OF game.magnetHoldT, and the
+  // only place the condition is evaluated. With the chain full the pickup gate below blocks every hook,
+  // so an unsuppressed Magnet just drags garbage onto the ship where it loiters and — coalescence being
+  // a SEPARATE system that keeps running — fuses into a Hunter at the player's own position.
+  //
+  // ⛔ DERIVED PER FRAME, NEVER HOOKED AT THE SITES THAT FREE A SLOT. There are five (chain.pop() at the
+  // dock, breakChain(), scatterChain(), startGame(), and nextWave()'s `cargoMax = payloadSlots(wave)`,
+  // where a level-up GROWS the cap so a full 8-load at L4 becomes a not-full 8-of-10 at L5 with no
+  // delivery and no pickup at all). Hooking five sites is five chances to miss one; this read covers all
+  // five with one writer and cannot miss one. Same derived-not-stored idiom as saturatedClump().
+  const cargoFull = game.chain.length >= game.cargoMax;
+  if (cargoFull) game.magnetHoldT = DEBUG.magnetResumeDelay;
+  else if (game.magnetHoldT > 0) game.magnetHoldT = Math.max(0, game.magnetHoldT - dt);
   // Magnet (F6): while active, pull free garbage within an extended radius toward the ship (a real
   // attraction force reads better than a bigger invisible circle) AND widen the pickup radius.
+  //
+  // ⛔ TWO NAMES, NOT ONE, AND THE SPLIT IS LOAD-BEARING (CS025 P1, spec §1.4). `magnet` is the RAW
+  // powerup predicate and is read by the two BUDGET SPEND sites below and by nothing else. `pulling` is
+  // the suppressible one and is read by the attraction force and by pickR — the widened circle comes
+  // back WITH the pull, not before it. Repointing either spend site at `pulling` would hand out FREE
+  // HOOKS: during the resume window the pull is off but the base GARBAGE_PICKUP circle is still live, so
+  // a piece drifting into it is genuinely hooked, and a spend gated on the suppressed flag would cost
+  // nothing. Do not collapse these back into one name. Both are captured ONCE, above the loop, exactly
+  // as the single `magnet` was: the loop itself spends magnet budget, so a per-piece re-read would let
+  // the pull switch off partway through the array and make the frame's behaviour depend on array order.
   const magnet = powerActive("magnet");
-  const pickR = magnet ? GARBAGE_PICKUP * MAGNET_PICKUP_MULT : GARBAGE_PICKUP;
+  const pulling = magnetPulling();
+  const pickR = pulling ? GARBAGE_PICKUP * MAGNET_PICKUP_MULT : GARBAGE_PICKUP;
   for (const g of game.garbage) {
     g.update(dt);
     if (g.dead || game.ship.dead) continue;
-    if (magnet) {   // v3.4 P4: pull ALL garbage — singles AND clumps. The old pieces===1 gate is dead: v3.3's
+    if (pulling) {  // v3.4 P4: pull ALL garbage — singles AND clumps. The old pieces===1 gate is dead: v3.3's
                     // 9c made clumps directly scoopable, so pulling one is no longer "just noise".
       if (dist2(g, game.ship) < MAGNET_RANGE * MAGNET_RANGE) {
         const [dx, dy] = shortDelta(g.x, g.y, game.ship.x, game.ship.y); // vector toward the ship (wrap-aware)
@@ -7392,6 +7466,8 @@ function update(dt) {
         // Count-based Magnet expiry (B-5): spend one budget per canister HOOKED — counted at the hook,
         // not the pull, so a magnet that draws-then-hooks a piece only spends once (FLAG B-5-a).
         // CS024 P6: the `settings.magnetMode === "pieces"` gate is gone; this is the only rule now.
+        // CS025 P1: `magnet`, NOT `pulling` — a hook inside the base circle during the full-cargo
+        // resume window is a real hook and bills like one. See the split above.
         if (magnet && game.powerBudget.magnet > 0) game.powerBudget.magnet--;
       } else {
         // v3.3 P4 (9c, reverses v3.2 P1's "a clump is un-hookable", FORK-6: UNCONDITIONAL, no scoopLevel
@@ -7413,7 +7489,8 @@ function update(dt) {
         AudioSys.pickup();
         // FLAG-7b (v3.4 P4): a clump scoop under an active Magnet spends `take` budget — else a
         // 6-piece clump would be free where 6 singles cost 6. Clamped at 0. (Singles spend 1 in the
-        // branch above.) CS024 P6: same mode-gate removal as the single-hook site.
+        // branch above.) CS024 P6: same mode-gate removal as the single-hook site. CS025 P1: `magnet`,
+        // NOT `pulling` — the same free-hook reasoning as the single-hook site, per `take`.
         if (magnet) game.powerBudget.magnet = Math.max(0, game.powerBudget.magnet - take);
         if (take === g.pieces) {
           g.dead = true;  // whole clump fit — total mass conserved onto the chain

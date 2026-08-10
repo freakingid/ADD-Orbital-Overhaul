@@ -321,8 +321,19 @@ const chainIdentical = (g, snap) =>
   A.applyDebug("chainGuardIntercepts", 3);
 
   // breakChain really is the single choke point: exactly two CALL sites in the shipped source.
-  const callSites = (scriptSrc.match(/(?<!function\s)\bbreakChain\(/g) || []).length
-    - (scriptSrc.match(/function breakChain\(/g) || []).length;
+  // REPOINTED BY CS025 P1 — NARROWED IN THE RIGHT DIRECTION, NOT WEAKENED. The count is now taken over
+  // EXECUTABLE lines only (comment lines stripped first), because a mention inside a `//` comment is not
+  // a call site and never was. test-cs019-p1.js §A already recorded that this arithmetic is "brittle by
+  // construction: any NEW comment containing the substring `breakChain(` inflates it (CS017 P7 tripped
+  // exactly this)" — CS025 P1's derived-not-hooked note names all five slot-freeing sites in prose and
+  // tripped it a second time. Stripping comments is the same line-based fix CS024 P6f used for its
+  // LARGE_HUNTER_MAX "no live declaration survives" pin. The CLAIM is unchanged: two real call sites.
+  //   THE `- definitions` SUBTRACTION GOES WITH THE COMMENTS, and understanding why is the point: the
+  // lookbehind ALREADY excluded `function breakChain(`, so the subtraction was never removing the
+  // definition — it was silently cancelling the one doc-comment mention, and the two errors happened to
+  // agree at 2. Strip the comments and the raw count IS the call-site count, with nothing to cancel.
+  const execSrc = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
+  const callSites = (execSrc.match(/(?<!function\s)\bbreakChain\(/g) || []).length;
   assert(callSites === 2, `A: breakChain has exactly TWO call sites in the shipped source (got ${callSites})`);
   assert((scriptSrc.match(/function breakChain\(/g) || []).length === 1, "A: ...and exactly one definition");
   // ...and the guard test sits at the TOP of it, before anything is severed.

@@ -319,7 +319,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // wired). P5's registry rebuild adds 17 lever knobs + smallUfoChance, back to 32.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 72, "A: the registry holds 72 value entries after CS024 P6f (P6c's three rows per lever + startLevel + debugOverride + the three Hunter-cap knobs)");
+  eq(X.DEBUG_ENTRIES.length, 73, "A: the registry holds 73 value entries after CS025 P1 (P6c's three rows per lever + startLevel + debugOverride + the three Hunter-cap knobs + magnetResumeDelay)");
 
   // Tombstones are checked POSITIVELY and separately, so a comment naming a dead symbol can never be
   // confused for a live one (the standing test-cs024-p1/p2 idiom).

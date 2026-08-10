@@ -262,8 +262,14 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // the definition count. The shipped source carries one doc comment containing `breakChain()`, so the
   // arithmetic is 3 - 1 = 2. It is brittle by construction: any NEW comment containing the substring
   // `breakChain(` inflates it (CS017 P7 tripped exactly this). Pinned here as well as there.
-  const callSites = (scriptSrc.match(/(?<!function\s)\bbreakChain\(/g) || []).length
-    - (scriptSrc.match(/function breakChain\(/g) || []).length;
+  // CS025 P1: THE PREDICTION IN THE LINE ABOVE CAME TRUE A SECOND TIME — the derived-not-hooked note at
+  // game.magnetHoldT names all five slot-freeing sites in prose, two of the mentions being `breakChain()`.
+  // Both files now strip `//` comment lines before counting, so the pin measures CALL SITES rather than
+  // occurrences of a substring. Kept mirrored with test-cs017-p6.js §A verbatim, which is this pin's job.
+  // The `- definitions` subtraction went with them: the lookbehind already excluded the definition, so
+  // that term was only ever cancelling the doc-comment mention, and the two errors agreed at 2 by luck.
+  const execSrc = scriptSrc.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
+  const callSites = (execSrc.match(/(?<!function\s)\bbreakChain\(/g) || []).length;
   assert(callSites === 2, `A: breakChain still has exactly TWO call sites under test-cs017-p6 §A's regex (got ${callSites})`);
   assert((scriptSrc.match(/function breakChain\(/g) || []).length === 1,
     "A: ...and exactly ONE definition");

@@ -33,7 +33,8 @@
 //
 // Sections:
 //  (A) node --check; registry shape — the toggle row (top, boolean, def 1), the two new action rows
-//      (bottom, before Back), untouched-panel byte-identity against HEAD.
+//      (bottom, before Back), untouched-panel byte-identity against P6e's own parent commit
+//      (CS025 P1 repointed this off HEAD — see the note above sectionG).
 //  (B) `r` restores a single row: a lever row, a toNative row, a clampShown row — and is inert while
 //      a numeric entry is pending.
 //  (C) Reset All restores every entry and is the same function as the module seed.
@@ -339,39 +340,50 @@ let X = null, STORE = null;
   eq(C.debugShown[C.DEBUG_OVERRIDE_ID], 1, "F: ...and back ON round-trips too");
 })();
 
-// ================= (G) overrides-on, untouched panel: byte-identical to HEAD =====================
+// ⛔ CS025 P1: THE REFERENCE MOVED FROM `HEAD` TO A FIXED SHA, AND THAT IS THE WHOLE REPAIR. This
+// section was written against HEAD, which made it a claim about the future rather than about P6e. It
+// went red the moment HEAD advanced past CS024 P7 (the CS025 P0 docs-only commit was enough): the two
+// exceptions below say engineBurnSeconds and GAME_VERSION must DIFFER from the reference, and once the
+// reference itself was a post-P7 build they no longer did. Confirmed pre-existing on a clean `git stash`
+// at CS025 P0 before being repaired here. The reference is now P6e's OWN PARENT COMMIT, which is what
+// the section was always really comparing against, and both exceptions are permanently true again:
+// engineBurnSeconds moved 5.0 -> 10.0 at P7, and the version moved 1.0.0.22 -> 1.0.0.24. This is the
+// standing lesson applied a sixth time — a pin written against a moving ref tests the future, not the
+// phase (STATUS.md, CS024 P7).
+const P6E_PARENT_REF = "7c4c6b3f69ab2764629996e1dd280e4896267ba4"; // "Docs for CS024 P6e debug option defaults"
+// ================= (G) overrides-on, untouched panel: byte-identical to P6e's parent ==============
 (function sectionG() {
-  console.log("(G) overrides ON + an untouched panel reproduces HEAD's DEBUG/leverState exactly");
+  console.log("(G) overrides ON + an untouched panel reproduces P6e's parent commit's DEBUG/leverState exactly");
   let OLD = null;
   try {
-    const prev = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"],
+    const prev = execFileSync("git", ["show", P6E_PARENT_REF + ":asteroids-deluxe.html"],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     const om = prev.match(/<script>([\s\S]*?)<\/script>/);
     if (om) OLD = buildFrom(om[1], { exportNames: OLD_RETURN }).exports;
   } catch (e) { /* not a git checkout: skipped below */ }
 
-  // REPOINTED BY CS024 P7 — NARROWED, NOT DROPPED. This pin's real job is "the override toggle changed
+  // REPOINTED BY CS024 P7, AND ITS REFERENCE REPOINTED AGAIN BY CS025 P1 (see above). This pin's real job is "the override toggle changed
   // no shipped default by accident," and that claim is worth keeping forever. But it is written against
-  // a MOVING ref (HEAD), so any later phase that legitimately retunes a default or bumps the version
+  // a fixed ref now, so any later phase that legitimately retunes a default or bumps the version
   // fails it for the wrong reason. P7 does exactly two such things, and both are named here rather than
   // silently tolerated: Gate B Q11 retuned engineBurnSeconds 5.0 -> 10.0 (the only number the gate
-  // moved), and P7 owns the version bump to "1.0.0.24". Everything else must still match HEAD exactly.
+  // moved), and P7 owns the version bump to "1.0.0.24". Everything else must still match the reference.
   // A future phase adding to this list must have a gate answer or a phase prompt behind it.
   const P7_INTENDED = new Set(["engineBurnSeconds"]);
   if (OLD) {
     const A = buildFrom(scriptSrc).exports;
     for (const e of OLD.DEBUG_ENTRIES) { // every id HEAD knew about still resolves to the same native value
       if (P7_INTENDED.has(e.id)) {
-        assert(A.DEBUG[e.id] !== OLD.DEBUG[e.id], `G: DEBUG.${e.id} is a DELIBERATE P7 retune, so it must differ from HEAD`);
+        assert(A.DEBUG[e.id] !== OLD.DEBUG[e.id], `G: DEBUG.${e.id} is a DELIBERATE P7 retune, so it must differ from P6e's parent`);
         continue;
       }
-      eq(A.DEBUG[e.id], OLD.DEBUG[e.id], `G: DEBUG.${e.id} is byte-identical to HEAD on an untouched panel`);
+      eq(A.DEBUG[e.id], OLD.DEBUG[e.id], `G: DEBUG.${e.id} is byte-identical to P6e's parent on an untouched panel`);
     }
     for (const w of [1, 5, 33, 100])
       eq(JSON.stringify(A.leverState(w)), JSON.stringify(OLD.leverState(w)),
-        `G: leverState(${w}) is byte-identical to HEAD`);
+        `G: leverState(${w}) is byte-identical to P6e's parent`);
     // The version is the one field P7 is REQUIRED to move; the mirror image of the old pin.
-    assert(A.GAME_VERSION !== OLD.GAME_VERSION, "G: GAME_VERSION has moved off HEAD — P7 owns the bump (see TRAP 1 below too)");
+    assert(A.GAME_VERSION !== OLD.GAME_VERSION, "G: GAME_VERSION has moved off P6e's parent — P7 owned the bump (see TRAP 1 below too)");
   } else {
     console.log("  (skipped byte-identical pin — not a git checkout)");
   }

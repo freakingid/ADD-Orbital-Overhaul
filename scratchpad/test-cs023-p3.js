@@ -610,7 +610,7 @@ function saucerAt(X, x, y, small) {
   // entries plus smallUfoChance.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 72, "A: TRAP 4 — the debug registry is exactly 72 value entries after CS024 P6f");
+  eq(X.DEBUG_ENTRIES.length, 73, "A: TRAP 4 — the debug registry is exactly 73 value entries after CS025 P1");
   assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
     "A: TRAP 4 — ...and P3 still contributed none of them");
   {
