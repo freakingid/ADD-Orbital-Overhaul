@@ -1055,6 +1055,12 @@ const SCOOP_HITS_PER_LEVEL = 5;              // non-lethal hits that cost one sc
                                               // once earned. That's the intent, not a bug to "fix."
 const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (mirrors the full-HP REPAIR_FULL_BONUS pattern; tunable)
 const SCOOP_SPILL_KICK = 85;                 // v3.3 P4 (9c): px/s outward kick on the leftover when a clump is PARTIALLY scooped ("the rest floats off and away"); playtest knob (~60-110)
+// CS025 P3: the magnet-pull scoop render. LOOK-CALLS, not debug knobs (registry stays at 75) — same
+// convention as HELD_CLUMP_RING_PAD / GUARD_CHAIN_WIDTH/_BLUR.
+const SCOOP_MAGNET_W = 2.6;                  // scoop stroke width while magnetPulling()
+const SCOOP_MAGNET_BLUR = 18;                // scoop glow blur while magnetPulling()
+const SCOOP_MAGNET_NOSE_W = 10;              // scoopLevel 0 nose-V full width while pulling
+const SCOOP_MAGNET_NOSE_D = 22;              // scoopLevel 0 nose-V depth while pulling
 
 // Controller / gamepad input (F7). The one tunable knob for controller *feel* — how far an analog
 // stick must travel before it counts as a directional press. Button/axis index enums and the binding
@@ -4432,7 +4438,9 @@ function glowStroke(color, width = 1.6, blur = 10) {
   ctx.shadowBlur = 0;
 }
 
-function drawPoly(points, x, y, angle, color, closed = true) {
+// width/blur: left undefined for existing callers so glowStroke's own defaults (1.6, 10) apply — the
+// ONE place those numbers live. Do not give them literal defaults here (CS025 P3).
+function drawPoly(points, x, y, angle, color, closed = true, width, blur) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
@@ -4440,7 +4448,7 @@ function drawPoly(points, x, y, angle, color, closed = true) {
   ctx.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
   if (closed) ctx.closePath();
-  glowStroke(color);
+  glowStroke(color, width, blur);
   ctx.restore();
 }
 
@@ -4632,9 +4640,15 @@ class Ship {
       // SCOOP_DEPTH[lvl]. This is a TELL for inScoopBox()'s capture region, not a literal outline of
       // it — the box's rear edge at forward=-SHIP_RADIUS isn't shown. Corners derived, never
       // hardcoded. No fill. Hidden at level 0.
+      const pulling = magnetPulling();
       if (game.scoopLevel > 0) {
         const lvl = game.scoopLevel, hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
-        drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, COLOR.dock, false);
+        const col = pulling ? POWERUP_COLOR.magnet : COLOR.dock;
+        if (pulling) drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, col, false, SCOOP_MAGNET_W, SCOOP_MAGNET_BLUR);
+        else drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, col, false);
+      } else if (pulling) {
+        const hw = SCOOP_MAGNET_NOSE_W / 2, d = SCOOP_MAGNET_NOSE_D;
+        drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, POWERUP_COLOR.magnet, false, SCOOP_MAGNET_W, SCOOP_MAGNET_BLUR);
       }
       const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
       drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);
