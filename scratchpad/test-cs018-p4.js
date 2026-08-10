@@ -711,7 +711,7 @@ function levelForCap(n) {
   // (<id>Floor / <id>Ceil / <id>Steps) instead of one flat row, so 17 become 51 and the 16 non-lever
   // knobs are untouched. The header list is unchanged — this is a reshape inside three sections.
   // CS024 P6e repoint: 68 -> 69 (+1 debugOverride master toggle, spec §3).
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 73, "H: DEBUG_VARS holds 73 value entries as of CS025 P1");
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 75, "H: DEBUG_VARS holds 75 value entries as of CS025 P2");
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
   const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),

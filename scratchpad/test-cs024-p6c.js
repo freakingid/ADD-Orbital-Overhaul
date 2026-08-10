@@ -217,14 +217,14 @@ let X = null;
   // CS024 P6e repoint: registry 68 -> 69 (+1 non-lever `debugOverride` master toggle, spec §3, no lever).
   // CS024 P6f repoint: 69 -> 72 (+3 non-lever Hunter-cap knobs — hunterCapMax, hunterCapLevelsPerStep,
   // heldClumpMax; §2.5's not-a-lever list, so the LEVER half of this count is untouched at 51).
-  eq(X.DEBUG_ENTRIES.length, 73, "A: the registry holds exactly 73 value entries (22 non-lever + 51 lever)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 73, "A: ...and DEBUG_VARS agrees");
+  eq(X.DEBUG_ENTRIES.length, 75, "A: the registry holds exactly 75 value entries (24 non-lever + 51 lever)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 75, "A: ...and DEBUG_VARS agrees");
   eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, 51,
     "A: ...51 of them are lever knobs");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset Scores + Back");
-  eq(Object.keys(X.DEBUG).length, 73, "A: the native DEBUG map agrees with the registry");
-  eq(Object.keys(X.debugShown).length, 73, "A: ...and so does the display map");
+  eq(Object.keys(X.DEBUG).length, 75, "A: the native DEBUG map agrees with the registry");
+  eq(Object.keys(X.debugShown).length, 75, "A: ...and so does the display map");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -599,7 +599,10 @@ let X = null;
   // CS025 P1 repoint: +1 more (magnetResumeDelay, POWERUPS, the Magnet's full-cargo resume delay —
   // a flat knob, no chain, spec §5's not-a-lever list). Same reasoning as every repoint above: the
   // per-row checks below are what pin it as a non-lever, so this count growing IS the claim.
-  eq(nonLever.length, 22, "G: 22 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1's registry");
+  // CS025 P2 repoint: +2 more (magnetPushKick, magnetPushSpread, POWERUPS — the full-cargo repulsion
+  // kick's speed and fan-out, spec §5's not-a-lever list). Same reasoning again, and the same shape:
+  // two flat knobs, no chain, no floor/ceil/steps triple, pinned as non-levers by the per-row checks.
+  eq(nonLever.length, 24, "G: 24 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

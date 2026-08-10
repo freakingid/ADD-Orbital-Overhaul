@@ -3265,6 +3265,24 @@ const DEBUG_VARS = [
   // verbatim and gives min 0, and inventing a minimum here would be inventing design.
   { id: "magnetResumeDelay", label: "Magnet resume delay", unit: "ms",
     def: 250, min: 0, max: 3000, step: 50, toNative: v => v / 1000 },
+  // CS025 P2 (spec §2.1/§5): the repulsion kick fired on the frame the tow chain becomes full under an
+  // active Magnet — see magnetPushBurst(). TWO KNOBS, NOT ONE (FLAG-18), and that is deliberate: speed
+  // and fan-out are independently wrong-feeling in different ways, a burst that is too fast and a burst
+  // that is too narrow both read as "that felt wrong", and the gate has to come back with two numbers.
+  // Native units throughout — no toNative on either (px/s and degrees are what the consumer wants).
+  //   · magnetPushKick at 0 DISABLES THE BURST OUTRIGHT (every piece takes a zero-length impulse) and is
+  //     the gate's clean A/B for the whole mechanic. The coalesceDelay re-arm still happens at 0, which
+  //     is correct: the re-arm is what actually solves the defect, the velocity is what makes it legible.
+  //   · magnetPushSpread is a per-piece HALF-ANGLE in degrees: 0 is a coherent radial shell, 180 is
+  //     fully random. It is NOT a whole-burst rotation — each piece draws its own offset.
+  // NEITHER IS A LEVER (the Magnet is a powerup, not a difficulty ramp): no floor/ceil/steps triple, no
+  // ▼/↳ glyph, no indent, no carriesTo, no LEVERS entry. No shipped constant backs either default — a
+  // full-cargo push has no meaning outside these knobs, so these entries ARE the source of truth for
+  // them, the same chainGuardIntercepts idiom magnetResumeDelay above follows.
+  { id: "magnetPushKick", label: "Magnet full-cargo push", unit: "px/s",
+    def: 120, min: 0, max: 600, step: 10 },
+  { id: "magnetPushSpread", label: "Magnet push spread", unit: "°",
+    def: 45, min: 0, max: 180, step: 5 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -5389,6 +5407,12 @@ const game = {
   // so it freezes with a pause like every other in-game timer. Declared in BOTH this literal and
   // startGame()'s reset per the standing CS016 P3 rule.
   magnetHoldT: 0,
+  // CS025 P2 (spec §2.3): was the tow chain full on the PREVIOUS pickup-block frame? The rising-edge
+  // detector for the repulsion kick, and NOTHING else reads it. A plain stored boolean, deliberately
+  // NOT inferred from magnetHoldT — see the ⛔ note at its one writer, at the top of update()'s pickup
+  // block, for why the tempting inference re-fires the burst at the playtest gate. Declared in BOTH
+  // this literal and startGame()'s reset per the standing CS016 P3 rule.
+  cargoWasFull: false,
   cargoMax: CARGO_BASE,                                // runtime tow cap; set from payloadSlots(game.wave) in nextWave() (CS018 P5) — this is only the pre-level-1 default
   cargoFlash: 0,                                       // CS009 P3: >0 for HUD_CAP_FLASH sec after a cap-up —
                                                         // a cap-up SHRINKS the CARGO ring's fraction (same chain,
@@ -5595,6 +5619,10 @@ function startGame() {
                                    // run starts with an EMPTY chain, so the first pickup-block frame reads
                                    // not-full and would tick this down anyway — but the field must exist in
                                    // both places (the CS016 P3 rule), and 0 is the honest starting value.
+  game.cargoWasFull = false;       // CS025 P2: the rising-edge detector starts DOWN. A fresh run starts with an
+                                   // EMPTY chain, so the first pickup-block frame would write false anyway — but
+                                   // the field must exist in both places (the CS016 P3 rule), and carrying a
+                                   // stale `true` out of a previous run would swallow the first fill's kick.
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
   game.sweepPause = 0;             // CS018 P9: no sweep coalescence-pause carries into a fresh run
@@ -7079,6 +7107,55 @@ function cullGarbage() {
   for (let k = 0; k < take; k++) gs[order[k]].dead = true;
 }
 
+// CS025 P2 (spec §2.1/§2.4) — THE REPULSION KICK. Fired ONCE, on the frame the tow chain becomes full
+// while the Magnet is active (the rising edge; see game.cargoWasFull at the one call site, in update()'s
+// pickup block). Every loose piece within MAGNET_RANGE takes an outward impulse on a randomly-fanned
+// vector AND has its coalesceDelay re-armed.
+//
+// A THIRD INSTANCE OF A SHIPPED IDIOM, NOT A NEW MECHANIC SHAPE: shatterClump() and the partial-scoop
+// leftover respill both already do exactly outward-kick-plus-re-armed-delay, and shatterClump's own
+// comment states the reason — "a full re-armed coalesceDelay (so the burst disperses before it can start
+// re-clumping)". THE RE-ARM IS WHAT ACTUALLY SOLVES THE DEFECT AND THE VELOCITY IS WHAT MAKES IT LEGIBLE:
+// conversion happens at exactly one place, the merge branch in coalesceGarbage(), which requires
+// `coalesceDelay <= 0` on BOTH sides — so a re-armed piece cannot merge at all, whichever way it drifts.
+// Kick alone would leave dispersal to momentum and to luck (which is why kick 0 still re-arms).
+//
+// EVERY LINE BELOW IS LOAD-BEARING, and each is a place a plausible-looking edit is subtly wrong:
+//   · shortDelta, NEVER subtraction — the world is toroidal and this 380 px reach crosses the seam
+//     constantly. The direction is SHIP -> PIECE, which is what makes the impulse OUTWARD; reversing the
+//     argument order produces a stronger IMPLOSION, i.e. the defect amplified rather than fixed.
+//   · `+=`, NEVER `=` — an impulse, not a teleport. Momentum survives (Pillar 2), mirroring the pull's
+//     own velocity-nudge form and the respill's `g.vx += ...` directly.
+//   · `/ Math.sqrt(g.mass)`, mirroring the pull, which divides its accel by the same sqrt. A mass-1
+//     single is unaffected (sqrt(1) = 1); a mass-11 clump is shoved at ~30%. Linear mass would break the
+//     "heavy clumps are slow anchors" identity in one direction while the pull preserved it in the other.
+//   · THE `d > 1e-4` GUARD IS NOT DEFENSIVE BOILERPLATE — IT IS THE DEFECT'S OWN CASE. A piece sitting
+//     exactly on the ship's centre is precisely what this feature exists to deal with, and atan2(0, 0)
+//     returns 0, which would push every such piece dead +x in lockstep. A random angle is the honest
+//     answer for a piece with no outward direction.
+//   · liveLevers, NEVER leverState — every consumer reads liveLevers so the panel's floor/ceil/steps rows
+//     are folded in. leverState deliberately has no in-game caller and must not gain one.
+//
+// SATURATED (HELD) CLUMPS ARE KICKED TOO, DELIBERATELY, AND NEED NO SPECIAL CASE (spec §2.6). Shoving a
+// PENDING HUNTER away from the ship is the most valuable thing this burst does. Re-arming a held clump's
+// coalesceDelay is INERT — coalesceGarbage()'s pair walk skips it on both sides via saturatedClump(), and
+// drainHeldClumps() reads no delay at all — and that is fine: the write is harmless, not a bug, and it
+// is recorded here so nobody "fixes" it with a branch.
+function magnetPushBurst() {
+  for (const g of game.garbage) {
+    if (g.dead) continue;
+    if (dist2(g, game.ship) >= MAGNET_RANGE * MAGNET_RANGE) continue;
+    const [dx, dy] = shortDelta(game.ship.x, game.ship.y, g.x, g.y); // ship -> piece = OUTWARD
+    const d = Math.hypot(dx, dy);
+    const base = d > 1e-4 ? Math.atan2(dy, dx) : rand(0, TAU);
+    const a = base + rand(-1, 1) * DEBUG.magnetPushSpread * Math.PI / 180;  // per-piece HALF-angle fan
+    const kick = DEBUG.magnetPushKick / Math.sqrt(g.mass);
+    g.vx += Math.cos(a) * kick;
+    g.vy += Math.sin(a) * kick;
+    g.coalesceDelay = liveLevers(game.wave).coalescePause;
+  }
+}
+
 function updateChain(dt) {
   const chain = game.chain;
   if (chain.length === 0 || game.ship.dead) return;
@@ -7391,8 +7468,27 @@ function update(dt) {
   // delivery and no pickup at all). Hooking five sites is five chances to miss one; this read covers all
   // five with one writer and cannot miss one. Same derived-not-stored idiom as saturatedClump().
   const cargoFull = game.chain.length >= game.cargoMax;
+  // CS025 P2 (spec §2.1/§2.3): THE REPULSION KICK, ON THE RISING EDGE OF `cargoFull` AND NOWHERE ELSE.
+  // Suppressing the pull stops the magnet ADDING to the cloud; it does nothing about the cloud already
+  // sitting on the ship at the moment the chain fills, which is the one that converts. This shoves it
+  // outward and re-arms its coalescence clock. Called HERE — inside this block and BEFORE the garbage
+  // loop below — so the kicked velocities integrate on this frame's own g.update(dt) and the re-armed
+  // delays are already in place when coalesceGarbage() runs later in the same frame.
+  //
+  // ⛔ THE EDGE IS A PLAIN STORED BOOLEAN AND MUST NOT BE INFERRED FROM game.magnetHoldT. The inference
+  // is tempting — the timer reads BELOW DEBUG.magnetResumeDelay only on the first full frame, since the
+  // line below pins it at the delay thereafter — and it is wrong: dragging the magnetResumeDelay slider
+  // UPWARD while parked at full instantly makes the stale hold read "below the delay" again and re-fires
+  // the burst, at the playtest gate, in the exact session where that knob is being tuned. The boolean
+  // cannot be fooled by a knob edit. It is written ONCE, at the end of this block.
+  //
+  // The gate is powerActive("magnet"), NOT magnetPulling(): at the rising edge the hold has not been set
+  // yet, so the two agree — and the raw predicate says plainly that this is a MAGNET mechanic, not a
+  // general cargo-full effect. With no Magnet running there is no gathered cloud to disperse.
+  if (cargoFull && !game.cargoWasFull && powerActive("magnet")) magnetPushBurst();
   if (cargoFull) game.magnetHoldT = DEBUG.magnetResumeDelay;
   else if (game.magnetHoldT > 0) game.magnetHoldT = Math.max(0, game.magnetHoldT - dt);
+  game.cargoWasFull = cargoFull;
   // Magnet (F6): while active, pull free garbage within an extended radius toward the ship (a real
   // attraction force reads better than a bigger invisible circle) AND widen the pickup radius.
   //

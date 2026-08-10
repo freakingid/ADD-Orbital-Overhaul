@@ -417,7 +417,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // the constant it derived from (retired outright, replaced by the coalescePause lever).
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 73, "A: TRAP 4 REPOINTED BY CS025 P1 — the debug registry is 73 value entries (three per lever + startLevel + debugOverride + P6f's three Hunter-cap knobs + magnetResumeDelay)");
+  eq(X.DEBUG_ENTRIES.length, 75, "A: TRAP 4 REPOINTED BY CS025 P2 — the debug registry is 75 value entries (three per lever + startLevel + debugOverride + P6f's three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs)");
   // The id filter below is deliberately LEFT WIDE (it still matches /gravity|drift/), because a
   // silently-restored drift knob is exactly what it exists to catch. CS024 P6's engineMassMult joins
   // the matched set only because /mass/i catches it — it is a POWERUP knob, nothing to do with the

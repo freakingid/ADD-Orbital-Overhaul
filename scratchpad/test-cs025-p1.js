@@ -747,13 +747,21 @@ function fullAndHolding(X, { level = 1 } = {}) {
     const at = ids.indexOf("magnetResumeDelay");
     assert(at > pw && at < gl, "G: it lives inside the POWERUPS section");
     eq(ids[at - 1], "engineMassMult", "G: ...immediately AFTER engineMassMult");
-    eq(ids[gl - 1], "magnetResumeDelay", "G: ...and is the last row of the section");
+    // NARROWED BY CS025 P2, NOT DROPPED. P1 shipped magnetResumeDelay as the LAST row of POWERUPS, and
+    // it was — but "last" is a claim about what came after it, which a later phase appending to the same
+    // section legitimately falsifies (P2 appended magnetPushKick/magnetPushSpread there). What P1's spec
+    // §5 actually promised is the PLACEMENT pinned on the line above: inside POWERUPS, immediately after
+    // engineMassMult. What survives here is the half that stays true — nothing was inserted BETWEEN
+    // engineMassMult and this row, so every POWERUPS row after it belongs to a later phase.
+    for (const id of ids.slice(at + 1, gl))
+      assert(id.startsWith("magnetPush"),
+        `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
-  // Registry 72 -> 73.
-  eq(X.DEBUG_ENTRIES.length, 73, "G: the registry holds 73 value entries (CS024 P6f's 72 + this one)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 73, "G: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 73, "G: ...and the native DEBUG map agrees");
+  // Registry 72 -> 73 (CS025 P2 repoint: -> 75, its two magnet-push knobs).
+  eq(X.DEBUG_ENTRIES.length, 75, "G: the registry holds 75 value entries (CS024 P6f's 72 + this one + CS025 P2's two)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 75, "G: ...and DEBUG_VARS agrees");
+  eq(Object.keys(X.DEBUG).length, 75, "G: ...and the native DEBUG map agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "G: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "G: DEBUG_ROWS is the registry plus its four trailer rows");
 
@@ -792,7 +800,15 @@ function fullAndHolding(X, { level = 1 } = {}) {
     eq(OLD.DEBUG_ENTRIES.length, 72, "G: (setup) the parent commit held 72 entries");
     const oldIds = new Set(OLD.DEBUG_ENTRIES.map(v => v.id));
     const added = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !oldIds.has(id));
-    eq(added.join(","), "magnetResumeDelay", "G: exactly ONE id was added");
+    // NARROWED BY CS025 P2 FOR THE SAME REASON AS THE PLACEMENT PIN ABOVE: this diff is taken against
+    // P1's PARENT, so it necessarily grows as later phases land, and "exactly one id was added" is a
+    // statement about the working tree rather than about P1. P1's own claim — that it added exactly one
+    // id, magnetResumeDelay — is what is checked here, together with the order pin below (which is the
+    // real append-only claim and is unweakened). Every other added id belongs to a later CS025 phase.
+    assert(added.includes("magnetResumeDelay"), "G: P1's one id, magnetResumeDelay, was added");
+    const notP1 = added.filter(id => id !== "magnetResumeDelay");
+    for (const id of notP1)
+      assert(id.startsWith("magnetPush"), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
     eq(removed.length, 0, "G: ...and none was removed");
     // Order is preserved for every pre-existing id (append-only within POWERUPS).
@@ -801,7 +817,10 @@ function fullAndHolding(X, { level = 1 } = {}) {
        "G: every pre-existing id keeps its relative order");
     for (const oe of OLD.DEBUG_ENTRIES)
       eq(X.DEBUG[oe.id], OLD.DEBUG[oe.id], `G: DEBUG.${oe.id} is byte-identical to the parent on an untouched panel`);
-    eq(X.DEBUG_ROWS.length, OLD.DEBUG_ROWS.length + 1, "G: exactly one row was added to the panel");
+    // Likewise re-stated as the permanent structural truth it was always testing: the panel grows by
+    // exactly one row per added registry entry, never by a hidden special case.
+    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length,
+      "G: the panel grew by exactly one row per added registry entry");
   } else {
     console.log("  (skipped the parent-commit registry pins — not a git checkout)");
   }

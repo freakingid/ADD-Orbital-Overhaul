@@ -845,8 +845,8 @@ function evalSlice(literal) {
   // lever flat, never tune its ramp, so each lever now emits three rows — floor, ceiling, step count —
   // and 17 become 51. The claim is unchanged in kind and strength: an exact live count plus an exact
   // ordered header list.
-  eq(values.length, 73, "H: 73 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs, CS025 P1's magnetResumeDelay");
-  eq(X.DEBUG_ENTRIES.length, 73, "H: DEBUG_ENTRIES agrees — headers are not values");
+  eq(values.length, 75, "H: 75 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs, CS025 P1's magnetResumeDelay, CS025 P2's two magnet-push knobs");
+  eq(X.DEBUG_ENTRIES.length, 75, "H: DEBUG_ENTRIES agrees — headers are not values");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "H: nine section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {
@@ -899,8 +899,14 @@ function evalSlice(literal) {
   eq((execOnly.match(/\bleverState\s*\(/g) || []).length, 1,
     "H: TRAP 2 REPOINTED — leverState appears exactly once in executable source: its own declaration");
   assert(/function leverState\(wave\) \{/.test(execOnly), "H: ...which is that declaration");
-  eq((execOnly.match(/\bliveLevers\s*\(/g) || []).length, 13,
-    "H: ...and liveLevers appears 13 times: 1 declaration + the 12 real consumer call sites");
+  // CS025 P2 repoint: 13 -> 14. magnetPushBurst() re-arms a kicked piece's coalesceDelay from
+  // liveLevers(game.wave).coalescePause — a THIRTEENTH real consumer, added by that phase and
+  // legitimately so (it is the same read the Garbage ctor and the scoop respill already make). The
+  // claim this pin exists to protect is UNCHANGED and is the half above: leverState still has exactly
+  // one appearance, its own declaration. A new liveLevers CONSUMER is allowed; a leverState caller is
+  // not. Re-point the count when a phase adds a consumer; never relax the leverState half.
+  eq((execOnly.match(/\bliveLevers\s*\(/g) || []).length, 14,
+    "H: ...and liveLevers appears 14 times: 1 declaration + the 13 real consumer call sites");
   const CALL_SITES = [
     [/function logDifficultySnapshot\(junkCount, junkSpeedLarge, prevLevelSecs\) \{\s*\n\s*const lv = liveLevers\(game\.wave\);/, "logDifficultySnapshot"],
     [/function ufoFlightSpeedPx\(small\) \{\s*\n\s*const lv = liveLevers\(game\.wave\);/, "ufoFlightSpeedPx"],

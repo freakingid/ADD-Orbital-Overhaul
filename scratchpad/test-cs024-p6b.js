@@ -553,7 +553,7 @@ function evalSlice(literal) {
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
   // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
   // CS024 P6f repoint: +3 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — non-levers, HUNTER section).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 73, "G: TRAP 2 — 73 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay)");
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 75, "G: TRAP 2 — 75 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -580,7 +580,10 @@ function evalSlice(literal) {
       .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "")
       // CS025 P1 repoint: also strip magnetResumeDelay (CS025 P1, POWERUPS, appended after
       // engineMassMult) — same reasoning again, it is CS025 P1's row, not P6b's.
-      .replace(/,magnetResumeDelay/, "");
+      .replace(/,magnetResumeDelay/, "")
+      // CS025 P2 repoint: and its two magnet-push siblings (magnetPushKick, magnetPushSpread, POWERUPS,
+      // appended after magnetResumeDelay) — CS025 P2's rows, not P6b's. Same reasoning a fourth time.
+      .replace(/,magnetPushKick,magnetPushSpread/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
