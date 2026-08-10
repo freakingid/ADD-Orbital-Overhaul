@@ -828,31 +828,31 @@ Carry-forwards from P1/P2, still standing:
 
 **7. Does the sawtooth read as *breathing*, or as the game repeatedly getting easier?** This is the changeset's central bet.
 
-Paul says:
+Paul says: this is fine
 
 **8. Is the carry legible?** When `junkCount` resets to 3 and the satellites are visibly faster, does that land as an escalation?
 
-Paul says:
+Paul says: this is fine
 
 **9. Three chains breathing on different periods** — `junkCount` every 10 levels, `coalescePause` every 8, `ufoAppearFreq` every 8. Rich, or arrhythmic?
 
-Paul says:
+Paul says: this is fine
 
 **10. Any lever whose floor or ceiling is wrong.** Slide it, land on a number, report the number.
 
-Paul says:
+Paul says: this is fine
 
 **11. Engine-as-fuel:** does 5 seconds of thrust feel like a powerup or a tease?
 
-Paul says:
+Paul says: this should be 10 seconds by default
 
 **12. Count-only powerups:** does losing timed mode make Magnet (40 hooks) or Rapid (40 shots) feel meaningfully different?
 
-Paul says:
+Paul says: this is fine, no need for timed mode 
 
 **13. Level 12 and the Super Mega Delivery** — now that 24 slots is the first moment an SMD is possible at all, does hitting it land as the payoff it should be?
 
-Paul says:
+Paul says: We should make a smaller "Mega Delivery" at Level 6, persisting through Level 11. The effects should be exactly half those effects at level 12. Then Super Mega Delivery begins at Level 12, as planned.
 
 **⛔ THE BRIEFING — WHAT CHANGED UNDER THIS GATE IN CS024 P6c, BECAUSE THE PANEL YOU WILL OPEN IS NOT THE ONE THIS GATE WAS WRITTEN FOR.** The previous version of this block described **one flat slider per lever**, showing `auto`, which pinned that lever to a constant the moment you touched it. **That is gone.** A lever is a floor, a ceiling and a step count, so it now has **three rows each — 51 in all** — and moving any one of them re-derives that lever's whole ramp immediately, at every level.
 
