@@ -2238,6 +2238,32 @@ function levelPhon(n) {
 const VOICE_COOLDOWN = 1.2;
 const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2, chain_broken: 2, chain_guard: 2 };
 
+// CS025 P4 — CRITICALITY, which is ORTHOGONAL TO PRIORITY and deliberately a SECOND table. Priority
+// answers "may this line INTERRUPT one that is playing?"; criticality answers "may this line WAIT?".
+// A critical line that would have been DROPPED by the gate is queued instead, and is exempt from the
+// post-line VOICE_COOLDOWN gap (an anti-chatter aesthetic these three lines are not subject to).
+// VOICE_PRIORITY IS NOT TOUCHED BY THIS: cargo_full stays priority 1 on purpose — promoting it to 3
+// to make it "critical" would also grant it the power to pre-empt the health tier, i.e. a truck-full
+// bark cutting off "hull integrity is critical", which is exactly backwards. Two questions, two tables.
+const VOICE_CRITICAL = { health_low: true, health_relief: true, cargo_full: true };
+const VOICE_QUEUE_MAX = 3;
+
+// CS025 P4 — re-validation at DRAIN time: each predicate is its own trigger's condition RESTATED, so a
+// queued line speaks only while the thing it describes is still true, and is otherwise discarded
+// SILENTLY rather than spoken late. This is what answers the old drop-not-queue rule's real concern
+// ("Dan narrating events that finished ten seconds ago") instead of merely overriding it.
+// health_low mirrors update()'s rising-edge test; cargo_full mirrors the pickup gate; health_relief
+// mirrors the falling edge INCLUDING ITS `!game.ship.dead` GUARD — GDD §2.12 calls that guard
+// load-bearing (without it the game plays a cheerful "you're okay now" at the instant the player dies),
+// and a QUEUE MAKES THAT FAILURE MORE REACHABLE, NOT LESS, because the line can now sit here across the
+// very frames in which the ship dies. Mirroring the guard is what keeps CS010 P3's FLAG-CS010-a
+// resolution true under the new mechanism. Evaluated lazily (game/LOW_HP_THRESHOLD are declared below).
+const VOICE_STILL_TRUE = {
+  health_low:    () => game.ship.hp <= LOW_HP_THRESHOLD && !game.ship.dead,
+  health_relief: () => game.ship.hp >  LOW_HP_THRESHOLD && !game.ship.dead,
+  cargo_full:    () => game.chain.length >= game.cargoMax,
+};
+
 // CS011 P2 — on-screen caption look/timing knobs (LOOK-CALL). The caption is Dan's VISIBLE echo, shown
 // whenever settings.captions is on — even with voice audio OFF — and gated by the SAME cooldown/priority
 // as the audio, so a dropped line is never captioned late. LINGER: seconds a fully-shown caption holds
@@ -2257,6 +2283,7 @@ const VoiceSys = {
                            // -Infinity = "nothing has ever played" so the FIRST line (and any line in the
                            // AudioContext's first VOICE_COOLDOWN seconds) isn't swallowed by a phantom gap.
   curPriority: -Infinity,  // priority of the line occupying the channel (for pre-emption)
+  queue: [],               // CS025 P4: {event,line,p} waiting criticals — FIFO, VOICE_QUEUE_MAX deep, deduped by event
 
   // Build the noise bed + radio chain once the audio graph exists (first user gesture). Idempotent;
   // no-ops until AudioSys.init() has created AudioSys.voice. Mirrors MusicSys.ensureGraph().
@@ -2348,7 +2375,12 @@ const VoiceSys = {
   },
 
   // Fresh run: silence Dan and clear the cooldown/priority so a new game never inherits a stale gate.
-  reset() { this._stop(); this.busyUntil = -Infinity; this.curPriority = -Infinity; },
+  // CS025 P4: also empties the critical queue. This is the ONLY teardown site the queue needs, and
+  // deliberately so — quitToTitle() and killShip() get NOTHING, because update()'s drain is called from
+  // the very end of the PLAYING body: it never runs while paused, during the "dying" spectacle, or on a
+  // menu, so a stranded entry cannot speak, and startGame() (which calls reset()) clears it before the
+  // next run can drain. Adding teardown to those sites would be dead code pretending to be a guard.
+  reset() { this._stop(); this.busyUntil = -Infinity; this.curPriority = -Infinity; this.queue.length = 0; },
 
   // Speak a random alternative for `event`, subject to §11e cooldown/priority. Returns the chosen line
   // (or null if dropped/unavailable). Selection is a plain random pick; the gate + caption + scheduling
@@ -2358,11 +2390,16 @@ const VoiceSys = {
     const lines = VOICE_LINES[event];
     if (!lines || !lines.length) return null;
     const line = lines[(Math.random() * lines.length) | 0];
-    return this._emit(line, VOICE_PRIORITY[event] || 1);
+    // CS025 P4: the event is passed through so _emit can consult VOICE_CRITICAL. The line is picked HERE,
+    // at TRIGGER time — a queued critical carries the alternative that was rolled when it happened, not
+    // one re-rolled at drain time. One less thing to be inconsistent about.
+    return this._emit(line, VOICE_PRIORITY[event] || 1, event);
   },
 
   // CS011 P4: announce the wave number. Speaks natural words via levelPhon(); the caption (shown
   // by _emit) shows the numeral ("Level 23") since it's built from `line.text`, not `line.phon`.
+  // CS025 P4: passes no `event` — the level announcement is not critical, so _emit's `event = null`
+  // default is the whole of the change needed here.
   sayLevel(n) {
     return this._emit({ text: "Level " + n, phon: levelPhon(n) }, VOICE_PRIORITY.level);
   },
@@ -2376,15 +2413,32 @@ const VoiceSys = {
   // utt.dur without building an audio graph), and busyUntil/curPriority advance whenever a line passes —
   // even in captions-only mode (voice OFF) — so the channel stays consistent. Returns the line, or null
   // if dropped / no ctx. NOTE: gates on the global voiceEnabled() helper (not a VoiceSys method).
-  _emit(line, p) {
+  // CS025 P4 narrows the drop-not-queue rule stated above: the ONE gate is unchanged in shape, but a
+  // VOICE_CRITICAL event that loses it is now PARKED (see _enqueue/update) instead of discarded. The
+  // captions/audio invariant is untouched by that — both outputs still hang off this single gate, so a
+  // queued line captions when it finally PASSES here (at drain), and a line discarded by
+  // VOICE_STILL_TRUE never reaches this function at all and so is never captioned late.
+  _emit(line, p, event = null) {
     if (!AudioSys.ctx) return null;
     this.ensure();
     const now = AudioSys.now();
+    const critical = !!(event && VOICE_CRITICAL[event]);   // CS025 P4 — see VOICE_CRITICAL
     if (now < this.busyUntil) {              // a line is on the channel right now
-      if (p <= this.curPriority) return null; // equal/lower → DROP (never queue)
-      // higher → fall through: _schedule() stops the current line and takes the channel
+      if (p <= this.curPriority) {
+        if (critical) this._enqueue(event, line, p);  // CS025 P4: a critical WAITS instead of dropping
+        return null;                          // equal/lower → not spoken now
+      }
+      // higher → fall through: _schedule() stops the current line and takes the channel.
+      // CS025 P4: PRE-EMPTION IS UNCHANGED, AND THAT IS DELIBERATE, NOT AN OVERSIGHT. health_low (3)
+      // still cuts off anything at priority <= 2 exactly as before — making criticals "always wait"
+      // would have made the single most urgent line in the game SLOWER than it is today. The queue is
+      // purely ADDITIVE: it catches lines that would have been dropped, and changes nothing that speaks.
     } else if (now < this.busyUntil + VOICE_COOLDOWN) {
-      return null;                            // inside the post-line cooldown gap
+      // inside the post-line cooldown gap. CS025 P4: this branch used to be PRIORITY-BLIND — it ate even
+      // health_low at priority 3, which is the second, easier-to-miss half of the defect this phase fixes.
+      // A critical falls through and speaks immediately, so a queued one fires the moment the blocking
+      // line ends with no 1.2 s tail; VOICE_COOLDOWN stays an anti-chatter rule for everything else.
+      if (!critical) return null;
     }
     const utt = buildUtterance(line.phon, VOICE_PARAMS);
     if (settings.captions) this.showCaption(line.text, utt.dur);
@@ -2392,6 +2446,36 @@ const VoiceSys = {
     this.curPriority = p;
     this.busyUntil = now + 0.10 + utt.dur;   // t0 = now + 0.10 (see _schedule); + utterance length
     return line;
+  },
+
+  // CS025 P4 — park a critical line that could not take the channel. FIFO, deduped by event (a second
+  // health_low while one already waits is the SAME crisis, not two), capped at VOICE_QUEUE_MAX. With
+  // three critical events and dedupe the cap is STRUCTURALLY UNREACHABLE today — it is not dead code but
+  // a guard for the day a fourth critical event is added without anyone thinking about queue depth.
+  _enqueue(event, line, p) {
+    if (this.queue.some(q => q.event === event)) return;
+    if (this.queue.length >= VOICE_QUEUE_MAX) return;
+    this.queue.push({ event, line, p });
+  },
+
+  // CS025 P4 — the drain. VoiceSys had no per-frame tick before this and needs one: nothing calls _emit
+  // when the channel is idle, so a queued line would otherwise never fire. Called from the very END of
+  // update()'s playing body, after every pass that can say().
+  //   * NO dt PARAMETER, and that is a CONSEQUENCE of choosing re-validation over a TTL, not an
+  //     oversight: a TTL would tick on the GAME clock while busyUntil lives on the AUDIO clock
+  //     (ctx.currentTime, which does not pause) — a mismatch that would expire queued lines during a long
+  //     pause. Re-validation removes the hazard instead of managing it. DO NOT ADD A TTL "as well".
+  //   * ONE drain per frame: the first line advances busyUntil past now, so a second is pointless.
+  //   * The `now < busyUntil` guard MAKES _emit's BUSY BRANCH UNREACHABLE FROM HERE, which is what
+  //     guarantees a drained line can never re-queue itself. This is the one shape here that could loop.
+  //   * A line whose condition has gone false is discarded SILENTLY — no audio, no caption, gate untouched.
+  update() {
+    if (!AudioSys.ctx || !this.queue.length) return;
+    if (AudioSys.now() < this.busyUntil) return;   // still speaking — wait
+    const q = this.queue.shift();
+    const still = VOICE_STILL_TRUE[q.event];
+    if (still && !still()) return;                 // stale — discard, never speak late
+    this._emit(q.line, q.p, q.event);
   },
 
   // Overwrite (never queue) the on-screen caption with `text`, timed to utterance length `dur`. life =
@@ -8073,6 +8157,14 @@ function update(dt) {
     game.beatHigh = !game.beatHigh;
     game.beatTimer = game.beatInterval;
   }
+
+  // --- Voice queue drain (CS025 P4) --- LAST, deliberately: after every pass that can call say(), so
+  // THIS frame's live events get first claim on an idle channel and the queue only fills the gaps they
+  // leave. Draining earlier would let a waiting cargo_full take the channel and then be pre-empted by a
+  // health_low raised later in the same frame — the same outcome, one wasted line. Living at the end of
+  // the PLAYING body (not in loop(), not in updateDeath()) is also what makes the queue's teardown story
+  // trivial — see VoiceSys.reset(). Takes no dt; it reads the audio clock.
+  VoiceSys.update();
 }
 
 // ---------- Draw ----------
