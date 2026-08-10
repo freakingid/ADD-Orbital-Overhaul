@@ -670,7 +670,7 @@ const MUSIC_INTENSITY_WAVES = 8; // THE knob: larger = slower heat-up. Feeds mus
 // satellite speed until roughly level 96. One junkCount wrap bumping all three at once lets them
 // saturate at different levels while staying genuinely independent levers.
 //
-// ONLY DRIVERS MAY WRAP (CS024 P6b — the FORK-CS025-A amendment, PLANNED-FEATURES-CS025 §1). A lever
+// ONLY DRIVERS MAY WRAP (CS024 P6b — the FORK-CS025-A amendment, archive/PLANNED-FEATURES-CS025-old.md §1). A lever
 // may declare `carriesTo` ONLY IF IT ALSO DECLARES `everyNLevels`. Every CARRIED lever therefore
 // plateaus at its ceiling, always, and THERE IS NO SECOND CARRY GENERATION: the graph is exactly one
 // driver deep. This is a restriction of the semantics above, not a redesign, and it exists because the

@@ -58,7 +58,7 @@ nothing can get **easier** as levels rise except through a deliberately inverted
 floor/ceil pair; and the closed form collapses to two flat passes with no
 ordering requirement at all.
 
-**Why the rule exists is recorded in `archive/PLANNED-FEATURES-CS025.md` §0**,
+**Why the rule exists is recorded in `archive/PLANNED-FEATURES-CS025-old.md` §0**,
 and it is worth reading before relaxing it. The evidence came from **plotting
 the tables level by level, not from reading them**: the unrestricted semantics
 shipped a visible regression — `ufoFlightSpeedSmall` climbing 150 → 210 px/s

@@ -3,7 +3,7 @@
 //   node scratchpad/test-cs024-p6b.js
 //
 // AN IN-ROUND CORRECTIVE PHASE, not in the original CS024 plan. It lands the FORK-CS025-A amendment
-// that P4 was supposed to carry and did not (PLANNED-FEATURES-CS025 §1), plus the UFO step-count
+// that P4 was supposed to carry and did not (archive/PLANNED-FEATURES-CS025-old.md §1), plus the UFO step-count
 // restage that depends on it (§2).
 //
 // WHAT WAS WRONG. leverState() shipped with unrestricted carry semantics: a carried lever that itself
@@ -380,7 +380,7 @@ function evalSlice(literal) {
   const byId = {};
   for (const lev of X.LEVERS) byId[lev.id] = lev;
   const driver = byId.ufoAppearFreq;
-  // PLANNED-FEATURES-CS025 §2's table, verbatim: id -> [floor, ceil, steps, level it reaches ceil].
+  // archive/PLANNED-FEATURES-CS025-old.md §2's table, verbatim: id -> [floor, ceil, steps, level it reaches ceil].
   const TABLE = {
     ufoFlightSpeedBig:   [100, 150, 5, 33],
     ufoFlightSpeedSmall: [150, 210, 5, 33],
