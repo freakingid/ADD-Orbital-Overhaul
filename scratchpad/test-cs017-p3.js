@@ -459,8 +459,14 @@ function pieceSpeed(piece) { return Math.hypot(piece.vx, piece.vy); }
     const before = A.game.debris.length;
     withPinnedRandom(PIN, () => A.destroyDebris(spawned, false));
     const kids = A.game.debris.filter(d => d.size === 2);
-    assert(A.game.debris.length === before + 3, `D: level ${w}: the real split appended exactly 3 children (${before} -> ${A.game.debris.length})`);
-    assert(kids.length >= 3, `D: level ${w}: split produced medium-tier children`);
+    // REPOINTED BY CS026 P2 — the child count is the `junkSplit` lever now (2 through level 10, 3 from
+    // level 11 on), read off the SAME leverState(w) this section already resolved for the speeds rather
+    // than replaced with a second literal. Ten sampled levels straddle the plateau, so this assertion
+    // now also proves the split MOVES with the level: 2 at w=1..10, 3 at w=21..63.
+    const nSplit = Math.round(lv.junkSplit);
+    assert(A.game.debris.length === before + nSplit, `D: level ${w}: the real split appended exactly ${nSplit} children (${before} -> ${A.game.debris.length})`);
+    assert(kids.length >= nSplit, `D: level ${w}: split produced medium-tier children`);
+    assert(nSplit === (w <= 10 ? 2 : 3), `D: level ${w}: ...and ${nSplit} is what junkSplit says it should be (2 through L10, 3 after)`);
     const medSpeed = pieceSpeed(kids[kids.length - 1]);
     assert(near(medSpeed, lv.junkSpeedMedium),
       `D: level ${w}: the large->medium split reads the CHILD's own lever, junkSpeedMedium (${lv.junkSpeedMedium}), got ${medSpeed}`);
@@ -518,7 +524,10 @@ function pieceSpeed(piece) { return Math.hypot(piece.vx, piece.vy); }
   const parent = withPinnedRandom(0, () => new A.DebrisSatellite(100, 100, 3, 1e6));
   A.game.debris.length = 0; A.game.debris.push(parent);
   withPinnedRandom(0, () => A.destroyDebris(parent, false));
-  assert(A.game.debris.filter(d => !d.dead).length === 3, "E: the forced parent split into 3 children");
+  // CS026 P2 repoint: the split count is the junkSplit lever, not a literal 3. §E is about the SPEED CAP
+  // applying to children, so it takes whatever count the lever gives at this build's current level.
+  const eSplit = Math.round(A.leverState(A.game.wave).junkSplit);
+  assert(A.game.debris.filter(d => !d.dead).length === eSplit, `E: the forced parent split into ${eSplit} children`);
   for (const d of A.game.debris) if (!d.dead)
     assert(Math.hypot(d.vx, d.vy) <= A.DEBRIS_SPEED_CAP + 1e-6,
       `E: a split child also respects the cap (size ${d.size}, ${Math.hypot(d.vx, d.vy).toFixed(2)})`);

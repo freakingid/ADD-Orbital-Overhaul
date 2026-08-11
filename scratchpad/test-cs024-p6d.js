@@ -283,23 +283,40 @@ let X = null, STORE = null, CALLS = null;
 
 // ================= (H) TRAPs =====================
 (function sectionH() {
-  console.log("(H) TRAPs: GAME_VERSION unchanged; startLevel===1 byte-identical to HEAD; no lever/LEVERS edit");
+  console.log("(H) TRAPs: GAME_VERSION unchanged; startLevel===1 byte-identical to P6d's own commit; no lever/LEVERS edit");
   // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
   // UNCHANGED while CS024 P6d ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
+  // ⛔ REPOINTED BY CS026 P2, FROM `HEAD` TO A LITERAL SHA. `HEAD` was correct only while P6d was the
+  // uncommitted phase: the moment it landed, this compared the live build against ITSELF and passed
+  // vacuously, and the first phase to legitimately touch the odometer (CS026 P2's junkSplit lever) made
+  // it fail for a change §H has no opinion about. PLANNED-FEATURES-CS026.md §4.1's rule: the reference
+  // is a HARDCODED LITERAL, and `c4f924c` is P6d's own commit — so the question is the one this section
+  // always meant to ask, "is the odometer still what P6d shipped?", against a reference that cannot move.
+  const P6D_REF = "c4f924c";   // cs-24 p6d: startLevel debug knob — this file's own commit
   let OLD = null;
   try {
-    const prev = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"],
+    const prev = execFileSync("git", ["show", `${P6D_REF}:asteroids-deluxe.html`],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     const om = prev.match(/<script>([\s\S]*?)<\/script>/);
     if (om) OLD = buildFrom(om[1]).exports;
   } catch (e) { /* not a git checkout: this half of H is skipped and says so */ }
 
+  // NARROWED BY CS026 P2 to the levers the reference build HAD. A later changeset ADDING a lever cannot
+  // falsify "P6d changed nothing about the odometer" — there was no junkSplit ramp for it to change —
+  // but a MOVED, RENAMED or DELETED one still fails, at every level, exactly as before.
+  const leversMatch = (a, b, label) => {
+    for (const k of Object.keys(a)) {
+      assert(k in b, `${label}: the lever "${k}" still exists`);
+      eq(b[k], a[k], `${label}: ${k}`);
+    }
+  };
+
   if (OLD) {
     for (const w of [1, 5, 33, 100]) {
-      eq(JSON.stringify(X.leverState(w)), JSON.stringify(OLD.leverState(w)),
-        `H: TRAP 2 — leverState(${w}) is byte-identical to HEAD (nothing about the odometer changed)`);
+      leversMatch(OLD.leverState(w), X.leverState(w),
+        `H: TRAP 2 — leverState(${w}) is byte-identical to ${P6D_REF} (nothing about the odometer changed)`);
     }
     // A startLevel===1 run is byte-identical to HEAD's own startGame() in every wave-derived respect:
     // same cargoMax, same world size, same lever table at every level 1..120.
@@ -311,13 +328,15 @@ let X = null, STORE = null, CALLS = null;
     eq(B.game.wave, O.game.wave, "H: TRAP 2 — startLevel===1's game.wave matches HEAD's");
     eq(B.game.cargoMax, O.game.cargoMax, "H: TRAP 2 — ...and cargoMax matches HEAD's");
     for (let w = 1; w <= 120; w++)
-      eq(JSON.stringify(B.leverState(w)), JSON.stringify(O.leverState(w)),
-        `H: TRAP 2 — leverState(${w}) at startLevel===1 matches HEAD (checked to 120)`);
+      leversMatch(O.leverState(w), B.leverState(w),
+        `H: TRAP 2 — leverState(${w}) at startLevel===1 matches ${P6D_REF} (checked to 120)`);
   } else {
     console.log("  (skipped byte-identical pin — not a git checkout)");
   }
 
-  eq(X.LEVERS.length, 17, "H: TRAP 3 — LEVERS is still 17 entries, startLevel added no lever");
+  // CS026 P2 repoint: 17 -> 18 (junkSplit). TRAP 3's claim — startLevel is a knob, not a lever — is
+  // unchanged, and the per-entry pins above are what actually carry it.
+  eq(X.LEVERS.length, 18, "H: TRAP 3 — LEVERS is 18 entries (CS026 P2's junkSplit); startLevel added none");
 })();
 
 console.log(`\n${passed} passed, ${failed} failed`);

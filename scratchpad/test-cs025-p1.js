@@ -762,10 +762,11 @@ function fullAndHolding(X, { level = 1 } = {}) {
         `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
-  // Registry 72 -> 73 (CS025 P2 repoint: -> 75, its two magnet-push knobs).
-  eq(X.DEBUG_ENTRIES.length, 75, "G: the registry holds 75 value entries (CS024 P6f's 72 + this one + CS025 P2's two)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 75, "G: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 75, "G: ...and the native DEBUG map agrees");
+  // Registry 72 -> 73 (CS025 P2 repoint: -> 75, its two magnet-push knobs; CS026 P2 repoint: -> 78, the
+  // junkSplit lever's three knobs).
+  eq(X.DEBUG_ENTRIES.length, 78, "G: the registry holds 78 value entries (CS024 P6f's 72 + this one + CS025 P2's two + CS026 P2's three)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 78, "G: ...and DEBUG_VARS agrees");
+  eq(Object.keys(X.DEBUG).length, 78, "G: ...and the native DEBUG map agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "G: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "G: DEBUG_ROWS is the registry plus its four trailer rows");
 
@@ -809,10 +810,15 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // statement about the working tree rather than about P1. P1's own claim — that it added exactly one
     // id, magnetResumeDelay — is what is checked here, together with the order pin below (which is the
     // real append-only claim and is unweakened). Every other added id belongs to a later CS025 phase.
+    // CS026 P2 widened the "later phase's" allowance a second time, on the same reasoning: its three
+    // junkSplit* rows are that phase's, not P1's. The list is explicit rather than a wildcard so a row
+    // arriving with no changeset behind it still fails.
     assert(added.includes("magnetResumeDelay"), "G: P1's one id, magnetResumeDelay, was added");
     const notP1 = added.filter(id => id !== "magnetResumeDelay");
+    const LATER = id => id.startsWith("magnetPush")            // CS025 P2
+      || /^junkSplit(Floor|Ceil|Steps)$/.test(id);            // CS026 P2
     for (const id of notP1)
-      assert(id.startsWith("magnetPush"), `G: ...and every other added id is a later phase's (found ${id})`);
+      assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
     eq(removed.length, 0, "G: ...and none was removed");
     // Order is preserved for every pre-existing id (append-only within POWERUPS).
@@ -842,13 +848,35 @@ function fullAndHolding(X, { level = 1 } = {}) {
   assert(X.GAME_VERSION !== "1.0.0.24", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24");
 
   // TRAP 3 — no LEVERS edit at all, proven against the parent commit rather than argued.
+  //
+  // ⛔ NARROWED BY CS026 P2, WHICH IS THE FIRST PHASE SINCE CS025 P1 TO TOUCH `LEVERS` LEGITIMATELY (it
+  // added the `junkSplit` lever, carried by junkCount). A whole-table byte pin says "nobody, ever, may
+  // add a lever", which was never TRAP 3's claim — its claim is that CS025 P1 added none and moved none,
+  // and that is still exactly provable: every lever the parent shipped is still present, in the parent's
+  // order, field for field, bar the one documented addition to junkCount's `carriesTo`. Same shape as
+  // the narrowing CS024 P6b/P6c/P6f took in the same changeset. An ADDED lever passes; a moved, renamed,
+  // deleted or reordered one still fails, and so does a changed floor, ceiling or step count.
   if (OLD) {
-    eq(JSON.stringify(X.LEVERS), JSON.stringify(OLD.LEVERS), "H: TRAP 3 — LEVERS is byte-identical to the parent commit");
-    for (let w = 1; w <= 200; w++)
-      if (JSON.stringify(X.leverState(w)) !== JSON.stringify(OLD.leverState(w))) {
-        failed++; console.error(`  FAIL: H: TRAP 3 — leverState(${w}) differs from the parent commit`);
+    const ADDED_CARRIES = { junkCount: ["junkSplit"] };   // CS026 P2
+    const oldIds = OLD.LEVERS.map(l => l.id);
+    const liveById = {};
+    for (const lev of X.LEVERS) liveById[lev.id] = lev;
+    eq(X.LEVERS.filter(l => oldIds.includes(l.id)).map(l => l.id).join(","), oldIds.join(","),
+      "H: TRAP 3 — every lever the parent commit shipped is still there, in the same order");
+    for (const lev of OLD.LEVERS) {
+      const add = ADDED_CARRIES[lev.id];
+      const expected = add ? { ...lev, carriesTo: [...lev.carriesTo, ...add] } : lev;
+      eq(JSON.stringify(liveById[lev.id]), JSON.stringify(expected),
+        `H: TRAP 3 — ${lev.id} is byte-identical to the parent commit${add ? ` (bar CS026 P2's appended carry to ${add.join(", ")})` : ""}`);
+    }
+    for (let w = 1; w <= 200; w++) {
+      const before = OLD.leverState(w), now = X.leverState(w);
+      const moved = Object.keys(before).find(k => !(k in now) || now[k] !== before[k]);
+      if (moved) {
+        failed++; console.error(`  FAIL: H: TRAP 3 — leverState(${w}).${moved} differs from the parent commit`);
         break;
       }
+    }
     passed++;   // the loop above reports its own failure; this counts the sweep
     // REPOINTED BY CS025 P5 — the MIRROR IMAGE again, and worth noting WHY a parent-SHA pin needed one
     // when the whole point of a parent-SHA reference is that it stays true. The reference is fine; the

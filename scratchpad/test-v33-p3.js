@@ -30,7 +30,8 @@
 //       inScoopBox's accept/reject boundary itself (probing just inside/outside each edge, including
 //       the rear -SHIP_RADIUS edge the V doesn't draw) is checked directly against the real function,
 //       independent of the render.
-//  (11) v3.6 P3: a full 13-kill Debris lineage drops zero powerups (the old small-tier roll is gone).
+//  (11) v3.6 P3: a full Debris lineage drops zero powerups (the old small-tier roll is gone). Its size
+//       is 1+N+N^2 off the junkSplit lever as of CS026 P2, not a fixed 13.
 //  (12) v3.6 P3: a full 13-kill Hunter lineage drops exactly one, from the large core (not the smalls).
 //  (13) v3.6 P3: destroySaucer — bullet AND shield-contact paths each drop exactly one powerup whose
 //       vx/vy equal the saucer's at death (no scaling), and both still award the same score/achievement
@@ -82,7 +83,8 @@ const returnList = ["startGame", "update", "game", "Garbage", "applyPowerup", "d
   "POWERUP_DROP_WEIGHTS", "POWERUP_DROP_TYPES", "POWERUP_DECAY",
   "SCOOP_MAX_LEVEL", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
   "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H",
-  "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W", "inScoopBox"];
+  "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W", "inScoopBox",
+  "liveLevers"];   // CS026 P2: the Debris split count is a lever now — see (11)
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
   scriptSrc + `\nreturn { ${returnList.join(", ")} };`);
@@ -92,7 +94,7 @@ const { startGame, update, game, Garbage, applyPowerup, damageShip,
   DebrisSatellite, HunterSatellite, Saucer, Achievements,
   POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, SCOOP_MAX_LEVEL,
   SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_HITS_PER_LEVEL, SCOOP_MAX_BONUS, GARBAGE_PICKUP, SHIP_RADIUS,
-  WORLD_W, WORLD_H, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox } = G;
+  WORLD_W, WORLD_H, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox, liveLevers } = G;
 const scriptHasPowerupDropChance = /const\s+POWERUP_DROP_CHANCE\b/.test(scriptSrc);
 
 let passed = 0, failed = 0;
@@ -344,7 +346,13 @@ console.log("(11) v3.6 P3: a full Debris lineage drops ZERO powerups (small-tier
   const core = new DebrisSatellite(1000, 1000, 3);
   game.debris.push(core);
   const kills = drainLineage(game.debris, destroyDebris);
-  assert(kills === 13, `11: a full Debris lineage is 13 kills (1 + 3 + 9) (got ${kills})`);
+  // ⛔ REPOINTED BY CS026 P2 — off the lever, not onto a new literal. The DEBRIS split count is the
+  // `junkSplit` lever now (2 through level 10, 3 from level 11 on), so a full lineage is 1 + N + N^2
+  // rather than a fixed 13. What (11) is actually about — that no powerup drops anywhere in a debris
+  // lineage — is untouched by that. (12) below is the HUNTER lineage and stays a hard 13; see the
+  // ACH_LINEAGE_FULL note at destroyHunter()'s split loop for why that one must never become a lever.
+  const N = Math.round(liveLevers(game.wave).junkSplit);
+  assert(kills === 1 + N + N * N, `11: a full Debris lineage is ${1 + N + N * N} kills (1 + ${N} + ${N * N}) (got ${kills})`);
   assert(game.powerups.length === 0, `11: zero powerups dropped across the whole lineage (got ${game.powerups.length})`);
 }
 

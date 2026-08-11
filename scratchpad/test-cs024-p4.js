@@ -449,7 +449,10 @@ function simulate(table, wave) {
   for (const lev of X.LEVERS) byId[lev.id] = lev;
   const terminal = X.LEVERS.filter(l => !l.carriesTo || !l.carriesTo.length);
   const carrying = X.LEVERS.filter(l => l.carriesTo && l.carriesTo.length);
-  eq(terminal.length + carrying.length, 17, "E: 17 levers, every one either terminal or carrying");
+  // CS026 P2 repoint: 17 -> 18 levers (junkSplit joined the JUNK chain, carried by junkCount). The
+  // claim — every lever is either terminal or carrying, nothing dangles — is unchanged and is the
+  // reason this counts rather than hardcodes the partition.
+  eq(terminal.length + carrying.length, 18, "E: 18 levers, every one either terminal or carrying");
   // CORRECTED BY CS024 P6b — was `eq(carrying.length, 5, "five levers carry (3 drivers + the two UFO
   // flight speeds, the 2nd generation)")`. Only DRIVERS may wrap now: a lever may declare carriesTo
   // only if it also declares everyNLevels, so the two UFO flight speeds no longer carry and the second
@@ -574,7 +577,7 @@ function evalSlice(literal) {
   // The shipped table passes, and passes IDEMPOTENTLY (the guard must not consume its own input).
   noThrow(() => { PURE.buildLeverOrder(PURE.LEVERS); }, "F: the shipped table passes the guard");
   noThrow(() => { PURE.buildLeverOrder(PURE.LEVERS); }, "F: ...and again — the guard does not mutate the table");
-  eq(PURE.buildLeverOrder(PURE.LEVERS).length, 17, "F: the topological order contains all 17 levers");
+  eq(PURE.buildLeverOrder(PURE.LEVERS).length, 18, "F: the topological order contains all 18 levers (CS026 P2: +junkSplit)");
   // Every parent precedes every child in the computed order — the property leverState depends on.
   const order = PURE.buildLeverOrder(PURE.LEVERS);
   const rank = {};
@@ -845,8 +848,8 @@ function evalSlice(literal) {
   // lever flat, never tune its ramp, so each lever now emits three rows — floor, ceiling, step count —
   // and 17 become 51. The claim is unchanged in kind and strength: an exact live count plus an exact
   // ordered header list.
-  eq(values.length, 75, "H: 75 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs, CS025 P1's magnetResumeDelay, CS025 P2's two magnet-push knobs");
-  eq(X.DEBUG_ENTRIES.length, 75, "H: DEBUG_ENTRIES agrees — headers are not values");
+  eq(values.length, 78, "H: 78 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs, CS025 P1's magnetResumeDelay, CS025 P2's two magnet-push knobs, CS026 P2's three junkSplit lever knobs");
+  eq(X.DEBUG_ENTRIES.length, 78, "H: DEBUG_ENTRIES agrees — headers are not values");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "H: nine section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {
@@ -970,7 +973,9 @@ function evalSlice(literal) {
   // splitting the tier-name columns by lever id) — what's invariant is that the CSV header always
   // mirrors DIFFLOG_FIELDS exactly, whatever that list currently is.
   eq(csv.split("\n")[0], Q.DIFFLOG_FIELDS.join(","), "I: the CSV header mirrors DIFFLOG_FIELDS exactly, whatever P5 repointed the list to");
-  eq(Q.DIFFLOG_FIELDS.length, 29, "I: DIFFLOG_FIELDS has 29 columns now (phase/rel dropped, junkSpeed/7 tier names split into 17 lever ids + non-lever context columns)");
+  // CS026 P2 repoint: 29 -> 30. DIFFLOG_FIELDS is a straight mirror of LEVERS plus the non-lever context
+  // columns, so a new lever necessarily brings a new column with it — junkSplit's, here.
+  eq(Q.DIFFLOG_FIELDS.length, 30, "I: DIFFLOG_FIELDS has 30 columns now (phase/rel dropped, junkSpeed/7 tier names split into 18 lever ids + non-lever context columns)");
   assert(!("phase" in row) && !("rel" in row), "I: ...consistent with the row object itself");
   // No column renders an empty cell any more — unlike the retired phase/rel-as-null era, EVERY remaining
   // field is a real number (every lever column resolves through `DEBUG.<id> ?? lv.<id>`, which is never

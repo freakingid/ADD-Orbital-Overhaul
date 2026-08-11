@@ -226,11 +226,21 @@ const DEBRIS_GARBAGE = 4;       // canisters emitted at EVERY tier's destruction
                                  // 3->4 in v3.4 P1, compensating field supply for the Hunter-side garbage cut (FORK-1(b)).
 // CS023 P2 (spec §4.8, FORK-CS023-D) — SATELLITE-vs-SATELLITE COLLISION. Three numbers, all of them
 // read by debrisBounce() and by nothing else in the file.
-// MASS IS CONSERVED THROUGH THE 3-WAY SPLIT THE GAME ALREADY PERFORMS, which is where 9/3/1 comes from
-// rather than from a fit: a large is 9 and becomes three mediums of 3; a medium is 3 and becomes three
-// smalls of 1. Shattering a body therefore leaves the total mass on the board unchanged, and the 9:1
-// ratio is what makes a small RICOCHET off a large instead of shoving it. Keyed by `size` on the same
-// 3/2/1 tier convention as DEBRIS_RADII / DEBRIS_SCORE / DEBRIS_DAMAGE.
+// 9/3/1 IS A FITTED RATIO, CHOSEN SO A SMALL RICOCHETS OFF A LARGE INSTEAD OF SHOVING IT. That 9:1 gap
+// between the extreme tiers is the whole of what these numbers are for; debrisBounce() only ever reads
+// the RATIO between the two bodies actually in contact, never a total, so the absolute values carry no
+// other meaning. Keyed by `size` on the same 3/2/1 tier convention as DEBRIS_RADII / DEBRIS_SCORE /
+// DEBRIS_DAMAGE.
+// ⛔ CONSERVATION IS A RETIRED PROPERTY (retired by CS026 P2, FORK-CS026-B -> (a)). CS023 P2 derived
+// these three numbers from mass being conserved through the 3-way split the game performed at the time:
+// a large of 9 became three mediums of 3, a medium of 3 became three smalls of 1, so shattering left the
+// board's total mass unchanged. CS026 P2 made the split count a lever (junkSplit — 2 through level 10),
+// and under a 2-way split a large of 9 becomes 12, then 4. THE NUMBERS DELIBERATELY DID NOT MOVE:
+// nothing in the game reads a total mass, so conservation bought nothing, while retuning to a
+// conserving 4/2/1 would have reopened every satellite-vs-satellite bounce — a CS023 mechanic that came
+// through its own playtest gate clean — and flattened the ricochet ratio from 9:1 to 4:1. So the
+// derivation was retired and the table kept. DO NOT "RESTORE" CONSERVATION by editing these values, and
+// do not edit the split to protect them; neither is a bug.
 const DEBRIS_MASS = { 3: 9, 2: 3, 1: 1 };
 // Restitution of a satellite-vs-satellite bounce. 1.0 mirrors SHIELD_BOUNCE_RESTITUTION and means the
 // same thing — the pair gets back exactly the closing speed it brought, so kinetic energy is conserved
@@ -703,10 +713,26 @@ const LEVERS = [
   // is still recognisable; the three sizes no longer derive from one shared ratio (FORK resolved) —
   // each is a fully independent lever with its own floor, ceiling and step count.
   { id: "junkCount",           floor: 3,   ceil: 12,  steps: 10, everyNLevels: 1,
-    carriesTo: ["junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall"] },
+    carriesTo: ["junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall", "junkSplit"] },
   { id: "junkSpeedLarge",      floor: 60,  ceil: 110, steps: 5 },
   { id: "junkSpeedMedium",     floor: 95,  ceil: 165, steps: 5 },
   { id: "junkSpeedSmall",      floor: 140, ceil: 240, steps: 5 },
+  // CS026 P2 (PLANNED-FEATURES-CS026.md §1, FORK-CS026-A -> (b)): the BRANCHING FACTOR of the debris
+  // tree — how many children destroyDebris() pushes — is a lever, carried by junkCount like the three
+  // speeds beside it. At floor 2 / ceil 3 / steps 2 it reads 2 for levels 1-10 and 3 from level 11
+  // FOREVER, because junkCount wraps every ten levels and a carried lever plateaus at its top step.
+  // That halves the early tree (level 1: 39 bodies -> 21) without hollowing out the deep levels: the
+  // driver sawtooths 3..12, so a 2-way level 10 is 84 bodies, still busier than a 3-way level 1.
+  //
+  // ⛔ IT IS CARRIED, NOT A DRIVER, AND THE RULE IS ENFORCED AT LOAD TIME by the drivers-only-may-wrap
+  // guard below (CS024 P6b). Giving it an everyNLevels of its own would make it WRAP, and a wrapping
+  // split count TAKES CHILDREN BACK at every wrap — the same "an odometer must not revoke capability"
+  // objection that keeps payloadSlots outside the odometer entirely. Carried means it plateaus, and
+  // the plateau is the shape wanted here, not a side effect tolerated.
+  //
+  // The consumer rounds (destroyDebris()) for junkCount's own reason — a count is an integer and a
+  // Steps retune interpolates fractions. Math.round, never floor; see nextWave()'s note.
+  { id: "junkSplit",           floor: 2,   ceil: 3,   steps: 2 },
   // HUNTER chain, INVERTED driver. coalescePause is the seconds a fresh canister stays inert before it
   // attracts or merges (CS024 P5: replaces the retired GARBAGE_COALESCE_DELAY constant / garbageAttractDelay
   // knob outright — this lever IS the inert delay now), so a SHORTER pause means hunters arrive sooner.
@@ -3190,7 +3216,8 @@ const settings = {
 // on the seven INVERTED levers meant a ceiling could never be raised above where it already sat.
 //
 // So each lever now emits THREE registry entries — `<leverId>Floor`, `<leverId>Ceil`, `<leverId>Steps`
-// (51 rows over 17 levers) — and leverKnob() returns them as an ARRAY, spread into DEBUG_VARS below.
+// (54 rows over 18 levers as of CS026 P2's junkSplit; 51 over 17 when P6c wrote this) — and leverKnob()
+// returns them as an ARRAY, spread into DEBUG_VARS below.
 // Moving any of the three re-derives that lever's WHOLE ramp immediately, at every level, because
 // liveLevers() folds all three straight back into the table leverValues() walks. THE FLAT PIN IS
 // SUBSUMED, NOT LOST: setting Floor equal to Ceil pins the lever to a constant at every level, which is
@@ -3326,6 +3353,11 @@ const DEBUG_VARS = [
   ...leverKnob("junkSpeedLarge", "Junk speed lg", "px/s"),
   ...leverKnob("junkSpeedMedium", "Junk speed md", "px/s"),
   ...leverKnob("junkSpeedSmall", "Junk speed sm", "px/s"),
+  // CS026 P2 (spec §1): the split count's own triple, last in the JUNK chain so the panel reads in the
+  // same order the table does. Min/max/step are DERIVED by leverKnob() off the LEVERS row (floor 2,
+  // ceil 3, steps 2 -> a 1..4 range at step 1), never hand-typed — a retune of the row moves the knob
+  // with it. It wears "↳" like the three speeds above: carried by junkCount, never a driver.
+  ...leverKnob("junkSplit", "Junk split", ""),
   // CS024 P5 (spec §2.4/§4.5): the HUNTER chain. coalescePause is the driver (INVERTED — shorter is
   // harder) and replaces the retired garbageAttractDelay knob outright; it carries to the two pursuit
   // speeds. Large Hunters have NO speed lever (frozen drift, spec §2.4) — only medium/small pursuit
@@ -3537,13 +3569,13 @@ resetAllDebug();   // seed both maps from the registry defaults
 // registry's current values. Nothing else is overridable: `id`, `everyNLevels` and `carriesTo` are
 // STRUCTURE, validated once at load by buildLeverOrder(), and no slider may reshape the graph — which
 // is also why the copy needs no re-validation. `?? lev.floor` is a belt-and-braces fallback, not a
-// sentinel: every one of the 51 rows seeds from LEVERS at load, so the ?? only ever fires if a knob is
+// sentinel: every one of the 54 rows seeds from LEVERS at load, so the ?? only ever fires if a knob is
 // missing entirely, and when it does the shipped table wins.
 //
 // WHY THE WHOLE TABLE AND NOT A PER-VALUE OVERRIDE (the P5 shape this replaces): a Steps override
 // changes a DRIVER'S WRAP PERIOD, and a driver's wrap period is how many carries every dependent under
 // it receives. That is a change to the derivation's INPUT, so it cannot be applied to its OUTPUT after
-// the fact. Rebuilding the table is the only place it fits — and it is cheap (17 small objects), which
+// the fact. Rebuilding the table is the only place it fits — and it is cheap (18 small objects), which
 // is why there is deliberately no cache here to go stale behind a slider.
 function leverTable() {
   return LEVERS.map(lev => ({
@@ -3581,7 +3613,7 @@ const DIFFLOG_MAX = 2000; // cap so a long dev session can't grow the buffer wit
 const DiffLog = { rows: [] };
 const DIFFLOG_FIELDS = [
   "t", "level", "score", "prevLevelSecs",
-  "junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall",
+  "junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall", "junkSplit",
   "maxLargeHunters", "hunterCount", "coalescePause", "hunterSpeedMedium", "hunterSpeedSmall",
   "ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall",
   "ufoDirChangeBig", "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
@@ -3623,6 +3655,11 @@ function logDifficultySnapshot(junkCount, junkSpeedLarge, prevLevelSecs) {
     junkSpeedLarge,
     junkSpeedMedium: lv.junkSpeedMedium,
     junkSpeedSmall: lv.junkSpeedSmall,
+    // CS026 P2: the split count, re-applying the identical liveLevers(...).junkSplit expression
+    // destroyDebris() reads. Logged UNROUNDED, like every other lever column — the log records the
+    // odometer's value, and the consumer's Math.round is the consumer's business (junkCount is the one
+    // exception, and only because nextWave() hands its already-rounded local in verbatim).
+    junkSplit: lv.junkSplit,
     maxLargeHunters: largeHunterCap(game.wave), // CS024 P6f: per-level again (P3's flat constant is gone)
     hunterCount: game.hunters.length, // FLAG-CS017-g: seeds the future music-intensity changeset
     coalescePause: lv.coalescePause,
@@ -5986,7 +6023,8 @@ function destroyDebris(a, awardScore = true) {
       a.vx * 0.25 + Math.cos(spread) * kick,
       a.vy * 0.25 + Math.sin(spread) * kick));
   }
-  // Large -> 3 mediums, medium -> 3 smalls, small -> destroyed (F3: 3-way splits)
+  // Large -> N mediums, medium -> N smalls, small -> destroyed. N is the junkSplit lever (CS026 P2):
+  // 2 through level 10, 3 from level 11 on, forever. (F3 shipped this as a hardcoded 3-way split.)
   if (a.size > 1) {
     // CS024 P5 (spec §4.5): the SECOND debris-speed site — a split child must move like a freshly-spawned
     // piece of THIS wave, at the CHILD'S OWN size lever (a large splitting to medium reads junkSpeedMedium,
@@ -5999,7 +6037,15 @@ function destroyDebris(a, awardScore = true) {
     // field-level parent, so that conditional never fired off an orbit level; removing it leaves the
     // shipped scatter path exactly as it has always been, and every child now simply takes the fresh
     // random velocity its own constructor rolls.
-    for (let i = 0; i < 3; i++) {
+    // CS026 P2 (spec §1, FORK-CS026-A -> (b)): the child count is the junkSplit lever, read off the SAME
+    // liveLevers(game.wave) call the speed above already resolved — one call, at the point of use, so a
+    // panel override moves the split on the very next kill exactly as it moves the speed. liveLevers,
+    // NEVER leverState: the panel must be able to move it.
+    // ⛔ Math.round, NOT Math.floor, for junkCount's reason at nextWave(): it returns both authored
+    // endpoints exactly, it is the nearest achievable count to the authored curve, and flooring would
+    // shave every interior step of every future retune downward.
+    const children = Math.round(lv.junkSplit);
+    for (let i = 0; i < children; i++) {
       game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speed));
     }
   }
@@ -6046,6 +6092,13 @@ function destroyHunter(h, awardScore = true) {
         h.vx * 0.25 + Math.cos(spread) * kick,
         h.vy * 0.25 + Math.sin(spread) * kick));
     }
+    // ⛔ THREE, HARDCODED, AND IT STAYS THAT WAY — DO NOT "FINISH THE JOB" STARTED IN destroyDebris().
+    // CS026 P2 made the DEBRIS split a lever (junkSplit: 2 through level 10, 3 after). This loop reads
+    // almost identically and sits forty lines below it, which is exactly why this note is here. A Hunter
+    // lineage is 1 + 3 + 9 = 13 bodies, and ACH_LINEAGE_FULL is that 13: Hunter's Bane requires killing a
+    // whole line from one spawn. A 2-way Hunter split makes a lineage SEVEN bodies and the achievement
+    // STRUCTURALLY UNREACHABLE — an unwinnable achievement, not a difficulty tweak. If a future changeset
+    // genuinely wants a Hunter split lever, ACH_LINEAGE_FULL has to be derived from it in the same edit.
     for (let i = 0; i < 3; i++) {
       const scatterAngle = (i / 3) * TAU + rand(-0.3, 0.3);
       game.hunters.push(new HunterSatellite(h.x, h.y, h.size - 1, scatterAngle));

@@ -80,11 +80,18 @@ const execOnly = scriptSrc
   .split("\n").map(l => l.replace(/\s\/\/.*$/, ""))
   .filter(l => !l.trim().startsWith("//")).join("\n");
 
-// The pre-P6c build is HEAD — this phase is uncommitted while it runs, and §J's claim is precisely
-// "the shipped ramp did not move." Unlike test-cs024-p6b's fixed SHA (which pins a build the phase
-// deliberately CHANGED, and so must not follow HEAD), this one pins a build the phase must NOT change,
-// so HEAD is the correct reference and stays correct after the commit lands.
-const PRE_P6C_REF = "HEAD";
+// ⛔ REPOINTED BY CS026 P2, FROM `HEAD` TO A LITERAL SHA, AND THE ORIGINAL REASONING (kept below) IS
+// WHY IT HAD TO BE. P6c wrote: "this phase is uncommitted while it runs and §J's claim is precisely
+// 'the shipped ramp did not move', so HEAD is the correct reference and stays correct after the commit
+// lands." That is true of the phase it was written in and false of every phase after it, in BOTH
+// directions: once P6c committed, `HEAD` began following whatever landed most recently, so the pin
+// compared the live build against ITSELF and passed vacuously — and the first phase to legitimately
+// move the ramp (CS026 P2, adding the junkSplit lever) made it fail for a change §J has no opinion
+// about. This is the moving-reference defect PLANNED-FEATURES-CS026.md §4.1 is about, and the fix is
+// the one that section prescribes: A HARDCODED LITERAL SHA. `273dbb2` IS P6c's own commit — so §J now
+// asks the question it always meant to ask, "is the shipped ramp still what P6c shipped?", and asks it
+// of a reference that cannot move again.
+const PRE_P6C_REF = "273dbb2";   // cs-24 p6c: lever floor/ceil/steps knobs — this file's own commit
 
 let passed = 0, failed = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
@@ -191,7 +198,10 @@ try {
   if (om) OLD = buildFrom(om[1], { exportList: OLD_RETURN }).exports;
 } catch (e) { /* not a git checkout: §J's pin is skipped and says so */ }
 
-const LEVER_IDS = ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall",
+// CS026 P2: junkSplit joined the JUNK chain (the debris split count, carried by junkCount). This list is
+// what tells §A/§G a knob is a LEVER knob rather than a flat one, so a new lever has to land here or its
+// three rows read as non-levers and trip the "no chain glyph" checks.
+const LEVER_IDS = ["junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall", "junkSplit",
   "coalescePause", "hunterSpeedMedium", "hunterSpeedSmall",
   "ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall",
   "ufoDirChangeBig", "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
@@ -210,21 +220,26 @@ let X = null;
   noThrow(() => { X = build(); }, "A: the build evaluates");
   if (!X) { console.error("ABORT: build failed"); process.exit(1); }
 
-  eq(X.LEVERS.length, 17, "A: still 17 levers — P6c adds knobs, not levers");
+  // CS026 P2 repoint: 17 -> 18 (junkSplit). P6c's claim is that IT added knobs and not levers; a later
+  // phase legitimately adding one moves the count without touching that claim, which §J still pins.
+  eq(X.LEVERS.length, 18, "A: 18 levers — P6c adds knobs, not levers; CS026 P2 added junkSplit");
   // THE COUNT, MEASURED AND THEN PINNED (the spec deliberately does not predict it): 16 non-lever
   // rows survive P6's registry unchanged, and 17 levers x 3 = 51 replace P5's 17 flat rows.
   // CS024 P6d repoint: registry 67 -> 68 (+1 non-lever `startLevel` GLOBAL knob, gate tooling, no lever).
   // CS024 P6e repoint: registry 68 -> 69 (+1 non-lever `debugOverride` master toggle, spec §3, no lever).
   // CS024 P6f repoint: 69 -> 72 (+3 non-lever Hunter-cap knobs — hunterCapMax, hunterCapLevelsPerStep,
   // heldClumpMax; §2.5's not-a-lever list, so the LEVER half of this count is untouched at 51).
-  eq(X.DEBUG_ENTRIES.length, 75, "A: the registry holds exactly 75 value entries (24 non-lever + 51 lever)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 75, "A: ...and DEBUG_VARS agrees");
-  eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, 51,
-    "A: ...51 of them are lever knobs");
+  // CS026 P2 repoint: 75 -> 78, and the LEVER half 51 -> 54 — the first repoint here to move the lever
+  // half rather than the non-lever one, because junkSplit is a LEVER and its three rows come from
+  // leverKnob() like every other triple.
+  eq(X.DEBUG_ENTRIES.length, 78, "A: the registry holds exactly 78 value entries (24 non-lever + 54 lever)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 78, "A: ...and DEBUG_VARS agrees");
+  eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, 54,
+    "A: ...54 of them are lever knobs");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset Scores + Back");
-  eq(Object.keys(X.DEBUG).length, 75, "A: the native DEBUG map agrees with the registry");
-  eq(Object.keys(X.debugShown).length, 75, "A: ...and so does the display map");
+  eq(Object.keys(X.DEBUG).length, 78, "A: the native DEBUG map agrees with the registry");
+  eq(Object.keys(X.debugShown).length, 78, "A: ...and so does the display map");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -569,9 +584,17 @@ let X = null;
                                  execOnly.indexOf("function nextWave"));
   assert(!/Math\.(round|floor|ceil|trunc)/.test(spawnFn),
     "F: spawnFieldSatellites does not round — one rounding site, at the consumer that also logs it");
-  // junkCount is the ONLY integer-valued lever; nothing else is rounded anywhere.
-  eq((execOnly.match(/Math\.round\(lv\.\w+\)/g) || []).join(","), "Math.round(lv.junkCount)",
-    "F: exactly one lever is rounded at a consumer, and it is junkCount");
+  // ⛔ REPOINTED BY CS026 P2 — TWO integer-valued levers now, not one. P6c wrote this when junkCount was
+  // the only lever counting whole objects; CS026 P2's `junkSplit` counts split CHILDREN, so it is the
+  // second, and it is rounded at ITS consumer (destroyDebris) for the identical reason and by the
+  // identical rule: Math.round, never Math.floor. The claim this line carries is unchanged and is the
+  // one worth keeping — every rounding of a lever happens at a CONSUMER, at the point of use, and the
+  // set of rounded levers is exactly the set of levers that count whole things. A third entry appearing
+  // here without a reason is still the failure this catches.
+  eq((execOnly.match(/Math\.round\(lv\.\w+\)/g) || []).join(","), "Math.round(lv.junkCount),Math.round(lv.junkSplit)",
+    "F: exactly two levers are rounded at a consumer — junkCount (a count of satellites) and junkSplit (a count of children)");
+  assert(!/Math\.floor\(lv\.\w+\)/.test(execOnly),
+    "F: ...and neither is FLOORED anywhere — flooring would shave every interior step of a retune downward");
 })();
 
 // ================= (G) the hierarchy, DERIVED from LEVERS =====================
@@ -651,7 +674,7 @@ let X = null;
   // The markers are nowhere in the label ARGUMENTS — they cannot have been typed in.
   const registryBlock = scriptSrc.slice(scriptSrc.indexOf("const DEBUG_VARS = ["), scriptSrc.indexOf("const DEBUG_ENTRIES"));
   const knobCalls = registryBlock.split("\n").filter(l => l.trim().startsWith("...leverKnob("));
-  eq(knobCalls.length, 17, "G: all 17 lever knobs are SPREAD into the registry from leverKnob()");
+  eq(knobCalls.length, 18, "G: all 18 lever knobs are SPREAD into the registry from leverKnob() (CS026 P2: +junkSplit)");
   eq(registryBlock.split("\n").filter(l => /(^|[^.])\bleverKnob\(/.test(l.replace(/\s*\/\/.*$/, "").trim())).length, 0,
     "G: ...and none is called without the spread (which would seed a nested array as one row)");
   assert(!knobCalls.some(l => /▼|↳|\(inv\)|· floor|· ceil|· steps/.test(l)),
@@ -707,7 +730,7 @@ let X = null;
   eq(X.leverValues(alt, 1).junkCount, 1, "H: leverValues answers from the table it is given");
   eq(X.leverState(1).junkCount, 3, "H: ...and the shipped table is untouched by that call");
   // liveLevers is the ONLY DEBUG reader in the odometer's consumer chain.
-  eq(X.leverTable().length, 17, "H: leverTable() returns all 17 levers");
+  eq(X.leverTable().length, 18, "H: leverTable() returns all 18 levers (CS026 P2: +junkSplit)");
   assert(X.leverTable()[0] !== X.LEVERS[0], "H: ...as COPIES — a slider can never write back into LEVERS");
   eq(JSON.stringify(X.leverTable()), JSON.stringify(X.LEVERS), "H: ...byte-identical to LEVERS while untouched");
 })();
@@ -764,14 +787,37 @@ let X = null;
   }
   assert(sameLive, "J: TRAP 2 — an untouched registry makes liveLevers === leverState at every level 1..200");
   if (OLD) {
-    let sameOld = true, checked = 0;
+    // ⛔ NARROWED BY CS026 P2 TO THE LEVERS THAT EXISTED AT `PRE_P6C_REF`, WHICH IS THE CLAIM §J ALWAYS
+    // MADE. A later changeset ADDING a lever cannot falsify "P6c did not move the shipped ramp" — there
+    // was no junkSplit ramp to move — so the sweep walks OLD's keys and asserts every one of them is
+    // still identical, and asserts separately that the live table is OLD's table plus known additions.
+    // An added lever is therefore allowed; a MOVED one, a RENAMED one or a DELETED one still fails.
+    let sameOld = true, checked = 0, missing = [];
     for (let w = 1; w <= 200; w++) {
       const a = OLD.leverState(w), b = X.leverState(w);
-      eq(Object.keys(a).length, Object.keys(b).length, `J: (level ${w}) the same lever ids as ${PRE_P6C_REF}`);
-      for (const k of Object.keys(a)) { checked++; if (a[k] !== b[k]) sameOld = false; }
+      for (const k of Object.keys(a)) {
+        if (!(k in b)) { missing.push(k); continue; }
+        checked++;
+        if (a[k] !== b[k]) sameOld = false;
+      }
     }
-    assert(sameOld, `J: TRAP 2 — leverState is byte-identical to ${PRE_P6C_REF} at every level 1..200 (${checked} values)`);
-    eq(JSON.stringify(X.LEVERS), JSON.stringify(OLD.LEVERS), "J: ...because the LEVERS table itself did not move");
+    eq(missing.length, 0, `J: every lever that existed at ${PRE_P6C_REF} still exists (missing: ${[...new Set(missing)].join(", ") || "none"})`);
+    assert(sameOld, `J: TRAP 2 — leverState is byte-identical to ${PRE_P6C_REF} at every level 1..200, for every lever that build had (${checked} values)`);
+    // The table itself: OLD's entries, in OLD's order, field for field — with the ONE documented
+    // exception CS026 P2 introduced (junkSplit appended to junkCount's carriesTo). Anything else moving
+    // in a pre-existing entry still fails here, and so does a reordering of the ones that existed.
+    const ADDED_CARRIES = { junkCount: ["junkSplit"] };   // CS026 P2
+    const oldIds = OLD.LEVERS.map(l => l.id);
+    const liveById = {};
+    for (const lev of X.LEVERS) liveById[lev.id] = lev;
+    eq(X.LEVERS.filter(l => oldIds.includes(l.id)).map(l => l.id).join(","), oldIds.join(","),
+      `J: ...the levers ${PRE_P6C_REF} shipped are all still there, in the same order`);
+    for (const lev of OLD.LEVERS) {
+      const added = ADDED_CARRIES[lev.id];
+      const expected = added ? { ...lev, carriesTo: [...lev.carriesTo, ...added] } : lev;
+      eq(JSON.stringify(liveById[lev.id]), JSON.stringify(expected),
+        `J: ...and ${lev.id}'s entry is unmoved${added ? ` (bar CS026 P2's appended carry to ${added.join(", ")})` : ""}`);
+    }
   } else {
     console.log(`  (skipped the ${PRE_P6C_REF} pin — not a git checkout)`);
   }

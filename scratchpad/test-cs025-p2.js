@@ -1080,14 +1080,18 @@ function stepProbe(X, p, dt = 1 / 60) {
     eq(ids[gl - 1], "magnetPushSpread", "K: ...closing the section");
   }
 
-  // Registry 73 -> 75.
-  eq(X.DEBUG_ENTRIES.length, 75, "K: the registry holds 75 value entries (CS025 P1's 73 + these two)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 75, "K: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 75, "K: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 75, "K: ...and the display map agrees");
+  // Registry 73 -> 75 (CS026 P2 repoint: -> 78, the junkSplit lever's three knobs).
+  eq(X.DEBUG_ENTRIES.length, 78, "K: the registry holds 78 value entries (CS025 P1's 73 + these two + CS026 P2's three)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 78, "K: ...and DEBUG_VARS agrees");
+  eq(Object.keys(X.DEBUG).length, 78, "K: ...and the native DEBUG map agrees");
+  eq(Object.keys(X.debugShown).length, 78, "K: ...and the display map agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "K: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "K: DEBUG_ROWS is the registry plus its four trailer rows");
-  eq(X.LEVERS.length, 17, "K: the LEVERS table is still 17 levers — neither knob joined it");
+  // CS026 P2 repoint: 17 -> 18 (junkSplit). K's claim — that NEITHER of P2's two magnet knobs is a
+  // lever — is what the two per-id checks below carry; the count simply follows the table.
+  eq(X.LEVERS.length, 18, "K: the LEVERS table is 18 levers (CS026 P2's junkSplit) — neither magnet knob joined it");
+  for (const id of ["magnetPushKick", "magnetPushSpread"])
+    assert(!X.LEVERS.some(l => l.id === id), `K: ...${id} specifically is not in it`);
 
   // Persistence: ordinary DEBUG_ENTRIES rows through the existing generic path. No schema bump.
   {
@@ -1128,7 +1132,16 @@ function stepProbe(X, p, dt = 1 / 60) {
     eq(OLD.DEBUG_ENTRIES.length, 73, "K: (setup) the parent commit held 73 entries");
     const oldIds = new Set(OLD.DEBUG_ENTRIES.map(v => v.id));
     const added = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !oldIds.has(id));
-    eq(added.join(","), "magnetPushKick,magnetPushSpread", "K: exactly TWO ids were added, in that order");
+    // NARROWED BY CS026 P2, on the same reasoning CS025 P2 itself applied to test-cs025-p1.js §G: this
+    // diff is taken against P2's PARENT, so it necessarily grows as later phases land, and "exactly two
+    // ids were added" is a statement about the working tree rather than about P2. P2's own claim — that
+    // it added exactly magnetPushKick and magnetPushSpread, in that order — is what is checked here; the
+    // order pin below (the real append-only claim) is untouched. Later phases are named, not wildcarded.
+    const LATER = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id);   // CS026 P2
+    eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
+      "K: exactly TWO ids were added by THIS phase, in that order");
+    for (const id of added.filter(LATER))
+      assert(true, `K: ...and ${id} is a later phase's (CS026 P2's junkSplit lever knobs)`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
     eq(removed.length, 0, "K: ...and none was removed");
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldIds.has(id)).join(","),
@@ -1160,11 +1173,28 @@ function stepProbe(X, p, dt = 1 / 60) {
     for (const fn of ["coalesceGarbage", "drainHeldClumps", "cullGarbage", "saturatedClump",
                       "shatterClump", "heldClumpCount", "betterCullVictim", "magnetPulling", "powerActive"])
       eq(X[fn].toString(), OLD[fn].toString(), `L: TRAP 3 — ${fn}() is byte-identical to the parent commit`);
-    eq(JSON.stringify(X.LEVERS), JSON.stringify(OLD.LEVERS), "L: LEVERS is byte-identical to the parent commit");
+    // ⛔ NARROWED BY CS026 P2 — the twin of test-cs025-p1.js §H's narrowing, same phase, same reason.
+    // A whole-table byte pin says "nobody may ever add a lever", which was never this TRAP's claim: it
+    // claims CS025 P2 added none and moved none, and that stays exactly provable per lever. CS026 P2
+    // added `junkSplit` and appended it to junkCount's `carriesTo`; everything else must still match.
+    const ADDED_CARRIES = { junkCount: ["junkSplit"] };   // CS026 P2
+    const oldLeverIds = OLD.LEVERS.map(l => l.id);
+    const liveById = {};
+    for (const lev of X.LEVERS) liveById[lev.id] = lev;
+    eq(X.LEVERS.filter(l => oldLeverIds.includes(l.id)).map(l => l.id).join(","), oldLeverIds.join(","),
+      "L: every lever the parent commit shipped is still there, in the same order");
+    for (const lev of OLD.LEVERS) {
+      const add = ADDED_CARRIES[lev.id];
+      const expected = add ? { ...lev, carriesTo: [...lev.carriesTo, ...add] } : lev;
+      eq(JSON.stringify(liveById[lev.id]), JSON.stringify(expected),
+        `L: ${lev.id} is byte-identical to the parent commit${add ? ` (bar CS026 P2's appended carry to ${add.join(", ")})` : ""}`);
+    }
     let leverDiff = 0;
-    for (let w = 1; w <= 200; w++)
-      if (JSON.stringify(X.leverState(w)) !== JSON.stringify(OLD.leverState(w))) { leverDiff = w; break; }
-    eq(leverDiff, 0, "L: ...and leverState is identical at every level 1..200");
+    for (let w = 1; w <= 200; w++) {
+      const before = OLD.leverState(w), now = X.leverState(w);
+      if (Object.keys(before).some(k => !(k in now) || now[k] !== before[k])) { leverDiff = w; break; }
+    }
+    eq(leverDiff, 0, "L: ...and leverState is identical at every level 1..200, for every lever the parent had");
     // REPOINTED BY CS025 P5 — the MIRROR IMAGE, for the same reason as test-cs025-p1.js §H's twin: the
     // parent-SHA reference is sound, but its SUBJECT here is the one thing the closing phase is required
     // to change. Every sibling claim in this block (LEVERS, leverState 1..200, the nine function bodies)

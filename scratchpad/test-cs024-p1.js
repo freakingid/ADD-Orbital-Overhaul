@@ -335,7 +335,7 @@ function atWave(X, w) {
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
   // REPOINTED BY CS024 P6e: 68 -> 69 (the debugOverride master toggle, spec §3), and the trailing-row
   // count 2 -> 4 (Reset all debug knobs to defaults + Reset high scores join Dump + Back, spec §2/§4).
-  eq(X.DEBUG_ENTRIES.length, 75, "B: the debug registry holds 75 value entries after CS025 P2");
+  eq(X.DEBUG_ENTRIES.length, 78, "B: the debug registry holds 78 value entries after CS026 P2");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,

@@ -32,7 +32,9 @@
 //  (D) drawLevelBanner() self-gates (playing + not paused + life > 0) and is a SIBLING of drawHUD().
 //  (E) `level` is critical: it queues instead of dropping, and re-validates against the CURRENT wave.
 //  (F) the clean gate: the three magnet knobs still hold their shipped defaults.
-//  (G) TRAPs: registry stays at 75, LEVERS/leverState byte-identical to the parent at every level 1..200.
+//  (G) TRAPs: the registry and LEVERS/leverState pinned against the parent at every level 1..200
+//      (narrowed by CS026 P2 to "the parent's rows and levers are all still there, unmoved" — a later
+//      phase adding a lever is allowed, moving one is not).
 //
 // Follows the standing rule (CLAUDE.md): stub window/document/rAF/navigator/localStorage, eval the
 // REAL <script> block, and drive the ACTUAL startGame/nextWave/update/VoiceSys paths.
@@ -476,24 +478,51 @@ function quiet(X) {
 
 // ============ (G) TRAPs ============
 (function sectionG() {
-  console.log("(G) TRAPs: registry stays at 75; LEVERS + leverState byte-identical to the parent, 1..200");
+  console.log("(G) TRAPs: the registry (78 rows since CS026 P2); LEVERS + leverState vs the parent, 1..200");
   const X = build();
-  eq(X.DEBUG_ENTRIES.length, 75, "G: ⛔ TRAP 2 — the registry does NOT move; still 75 rows");
+  // CS026 P2 repoint: 75 -> 78. TRAP 2's claim is that CS025 P5 added no row, and the parent-commit
+  // comparison below is what carries it — this line is the live count, which a later phase legitimately
+  // moves (CS026 P2 added the junkSplit lever's three knobs).
+  eq(X.DEBUG_ENTRIES.length, 78, "G: ⛔ TRAP 2 — the registry holds 78 rows (CS026 P2's three junkSplit knobs joined CS025 P5's 75)");
 
   const ps = parentSrc();
   if (!ps) skip("§G's parent-commit (cs-25 p4) pins: LEVERS/registry/leverState byte-identity + the version bump");
   if (ps) {
     const OLD = buildFrom(ps, { names: RETURN_BOTH });
-    eq(JSON.stringify(X.LEVERS), JSON.stringify(OLD.LEVERS),
-      "G: ⛔ TRAP 2 — LEVERS is byte-identical to the parent commit (no lever added, no ceiling changed)");
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length,
-      "G: the registry row count matches the parent");
+    // ⛔ NARROWED BY CS026 P2, the same narrowing its siblings in test-cs025-p1/p2 took, for the same
+    // reason: a whole-table byte pin says "no phase may ever add a lever", and CS026 P2 legitimately
+    // added `junkSplit`. TRAP 2's claim is CS025 P5's — that IT added no lever and moved no ceiling —
+    // and that stays exactly provable per lever against the same parent commit. Likewise the registry:
+    // the count comparison becomes "the parent's rows are all still there", with later phases' rows
+    // named. An ADDED lever/row passes; a moved, renamed or deleted one still fails.
+    const ADDED_CARRIES = { junkCount: ["junkSplit"] };            // CS026 P2
+    const LATER_ROWS = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id);   // CS026 P2
+    const oldLeverIds = OLD.LEVERS.map(l => l.id);
+    const liveById = {};
+    for (const lev of X.LEVERS) liveById[lev.id] = lev;
+    eq(X.LEVERS.filter(l => oldLeverIds.includes(l.id)).map(l => l.id).join(","), oldLeverIds.join(","),
+      "G: ⛔ TRAP 2 — every lever the parent commit shipped is still there, in the same order");
+    for (const lev of OLD.LEVERS) {
+      const add = ADDED_CARRIES[lev.id];
+      const expected = add ? { ...lev, carriesTo: [...lev.carriesTo, ...add] } : lev;
+      eq(JSON.stringify(liveById[lev.id]), JSON.stringify(expected),
+        `G: ⛔ TRAP 2 — ${lev.id} is byte-identical to the parent commit${add ? ` (bar CS026 P2's appended carry to ${add.join(", ")})` : ""}`);
+    }
+    const oldRowIds = OLD.DEBUG_ENTRIES.map(v => v.id);
+    eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRowIds.includes(id)).join(","), oldRowIds.join(","),
+      "G: the parent's registry rows are all still present, in the parent's order");
+    const addedRows = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !oldRowIds.includes(id));
+    eq(addedRows.filter(id => !LATER_ROWS(id)).join(","), "",
+      `G: ...and every row added since belongs to a named later phase (found: ${addedRows.join(", ") || "none"})`);
 
-    // The item-(5) requirement, checked rather than asserted: leverState is identical at EVERY level.
+    // The item-(5) requirement, checked rather than asserted: leverState is identical at EVERY level,
+    // for every lever the parent had.
     let firstDiff = 0;
-    for (let w = 1; w <= 200; w++)
-      if (JSON.stringify(X.leverState(w)) !== JSON.stringify(OLD.leverState(w))) { firstDiff = w; break; }
-    eq(firstDiff, 0, "G: ⛔ leverState is byte-identical to the parent at EVERY level 1..200, every lever");
+    for (let w = 1; w <= 200; w++) {
+      const before = OLD.leverState(w), now = X.leverState(w);
+      if (Object.keys(before).some(k => !(k in now) || now[k] !== before[k])) { firstDiff = w; break; }
+    }
+    eq(firstDiff, 0, "G: ⛔ leverState is byte-identical to the parent at EVERY level 1..200, every lever it had");
 
     // Non-vacuous: the sweep really did compare something with content.
     const sample = X.leverState(50);

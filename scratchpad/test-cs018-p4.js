@@ -584,12 +584,16 @@ function levelForCap(n) {
   // ENTIRELY now (mirror image of the P4 claim: not merely nulled any more, removed from the array), the
   // old single junkSpeed/ufoFlightSpeed/ufoDirChangeFreq/ufoFireFreq/ufoAccuracy/ufoShotSpeed columns are
   // replaced by per-size pairs (or, for junkCount's siblings, per-size trio), and the whole list is a
-  // straight mirror of the 17 LEVERS ids plus a handful of non-lever context columns. Pinned as an exact
+  // straight mirror of the LEVERS ids plus a handful of non-lever context columns. Pinned as an exact
   // ordered array read straight out of the live DIFFLOG_FIELDS, not a membership loop, so a reorder or a
   // stray extra column is caught too.
+  // REPOINTED BY CS026 P2: 17 lever ids -> 18. `junkSplit` (the debris split count, carried by junkCount)
+  // joined LEVERS, and because this list is a straight mirror of that table a new lever necessarily
+  // brings its column with it — a lever without a column would make the difficulty log lie by omission.
+  // Its POSITION is part of the pin: beside the other JUNK-chain entries, in table order.
   const WANT_FIELDS = [
     "t", "level", "score", "prevLevelSecs",
-    "junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall",
+    "junkCount", "junkSpeedLarge", "junkSpeedMedium", "junkSpeedSmall", "junkSplit",
     "maxLargeHunters", "hunterCount", "coalescePause", "hunterSpeedMedium", "hunterSpeedSmall",
     "ufoAppearFreq", "ufoFlightSpeedBig", "ufoFlightSpeedSmall",
     "ufoDirChangeBig", "ufoDirChangeSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
@@ -598,7 +602,7 @@ function levelForCap(n) {
     "chainLen", "cargoMax", "scoopLevel",
   ];
   assert(Y.DIFFLOG_FIELDS.length === WANT_FIELDS.length && Y.DIFFLOG_FIELDS.every((f, i) => f === WANT_FIELDS[i]),
-    `H: DIFFLOG_FIELDS is exactly the 17-lever mirror plus its context columns, in order (got ${JSON.stringify(Y.DIFFLOG_FIELDS)})`);
+    `H: DIFFLOG_FIELDS is exactly the 18-lever mirror plus its context columns, in order (got ${JSON.stringify(Y.DIFFLOG_FIELDS)})`);
   for (const gone of ["cycle", "cycleWave", "hunterSpeedFrac", "hunterTurnFrac", "phase", "rel",
                       "junkSpeed", "ufoFlightSpeed", "ufoDirChangeFreq", "ufoFireFreq", "ufoAccuracy", "ufoShotSpeed"]) {
     assert(!Y.DIFFLOG_FIELDS.includes(gone), `H: DIFFLOG_FIELDS no longer carries "${gone}"`);
@@ -723,7 +727,7 @@ function levelForCap(n) {
   // (<id>Floor / <id>Ceil / <id>Steps) instead of one flat row, so 17 become 51 and the 16 non-lever
   // knobs are untouched. The header list is unchanged — this is a reshape inside three sections.
   // CS024 P6e repoint: 68 -> 69 (+1 debugOverride master toggle, spec §3).
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 75, "H: DEBUG_VARS holds 75 value entries as of CS025 P2");
+  eq(Y.DEBUG_VARS.filter(v => v.id).length, 78, "H: DEBUG_VARS holds 78 value entries as of CS026 P2 (+3 junkSplit lever knobs)");
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
   const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),

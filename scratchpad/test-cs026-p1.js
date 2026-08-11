@@ -34,7 +34,8 @@
 // TRAP 3: NO GAME-CODE CHANGE. asteroids-deluxe.html is byte-identical to this phase's parent, and it is
 //         pinned BY DIFF rather than by eye — twice over, in §H: absent from the commit's file list, and
 //         its <script> block compared byte-for-byte against the parent's.
-// TRAP 4: the registry stays at 75 rows — no knob this phase.
+// TRAP 4: the registry stays at 75 rows — no knob this phase. (Measured at P1's OWN COMMIT since CS026
+//         P2, which legitimately took the registry to 78 — see §H.)
 // TRAP 5: every "nothing else moved" claim below is written against THIS PHASE'S OWN PARENT SHA
 //         (0927743e549b7cb248b03d3305d3bb05f4d3e353 — CS026 P0), never HEAD, and it is written USING THE
 //         HELPER THIS PHASE JUST BUILT. This file is the helper's first consumer and its first proof.
@@ -463,24 +464,48 @@ const FIVE = [
   console.log("(H) TRAPs: no game-code change, no design doc, version and registry unmoved");
   const X = invoke(liveFactory);
 
-  // TRAP 1 + TRAP 4 — stated against the live build.
+  // TRAP 1 — the version. Still live, because P6 owns the next bump and nothing between here and there
+  // may move it.
   eq(X.GAME_VERSION, "1.0.0.25", "H: ⛔ TRAP 1 — GAME_VERSION is unmoved; CS026 P6 owns the next bump");
-  eq(X.DEBUG_ENTRIES.length, 75, "H: ⛔ TRAP 4 — the registry does NOT move; still 75 rows");
+
+  // ⛔ TRAPs 3 AND 4 ARE MEASURED AT THIS PHASE'S OWN COMMIT AS OF CS026 P2, NOT ON THE LIVE BUILD, AND
+  // THE CORRECTION IS THIS FILE'S OWN DOCTRINE APPLIED TO ITSELF. Both traps are claims about what P1
+  // did — "P1 changed no game code" and "P1 added no knob" — and a claim about one phase, measured
+  // against whatever is in the working tree, becomes a claim about every phase that follows it. CS026 P2
+  // legitimately changed both (the junkSplit lever, its three registry rows and its consumer), which is
+  // precisely the moving-reference defect §4.1 exists to stop, showing up in the file that introduced
+  // the fix. Both references are now FIXED SHAs: the parent literal already at the top of this file, and
+  // P1's own commit resolved by subject inside PARENT_SHA..HEAD — exactly the decomposition §4.1
+  // prescribes, using the helper this phase built. Before P1 commits (its own session), `own` is null
+  // and both pins fall back to the live build, which IS P1's build then; after it commits they are
+  // permanent.
+  const ownSha = ownCommit(PARENT_SHA, PHASE_SUBJECT);
+  const ownSrc = ownSha ? parentSource(ownSha) : null;
+  const ps = parentSource(PARENT_SHA);
+
+  // TRAP 4 — the registry, at P1's own commit.
+  if (ownSha && !ownSrc) {
+    skip("§H's TRAP 4 registry pin (the phase's own commit is unreadable)");
+  } else {
+    const P1 = ownSrc ? invoke(factoryFor(ownSrc)) : X;
+    eq(P1.DEBUG_ENTRIES.length, 75, "H: ⛔ TRAP 4 — the registry does NOT move; P1 shipped 75 rows");
+  }
 
   // TRAP 3 — NO GAME-CODE CHANGE, PINNED BY DIFF RATHER THAN BY EYE, in its strongest form: the parent's
-  // <script> block byte-for-byte against the live one.
-  const ps = parentSource(PARENT_SHA);
+  // <script> block byte-for-byte against the one P1 itself committed.
+  const mine = ownSrc || scriptSrc;
   if (!ps) {
     skip("§H's parent-commit byte-identity pin for asteroids-deluxe.html");
   } else {
-    eq(ps.length, scriptSrc.length, "H: ⛔ TRAP 3 — the live <script> block is the same LENGTH as the parent's");
-    assert(ps === scriptSrc, "H: ⛔ TRAP 3 — ...and BYTE-IDENTICAL to it. No game code changed this phase.");
+    if (!ownSrc) console.log("  (TRAP 3 measured against the WORKING TREE — this phase is not committed yet)");
+    eq(ps.length, mine.length, "H: ⛔ TRAP 3 — P1's <script> block is the same LENGTH as the parent's");
+    assert(ps === mine, "H: ⛔ TRAP 3 — ...and BYTE-IDENTICAL to it. No game code changed in P1.");
   }
 
   // TRAP 2 + TRAP 5 — the "nothing else moved" claim, written against THIS PHASE'S OWN PARENT SHA and
   // resolved with the helper this phase just built. Once the phase is committed this reads the commit
   // range; before that it falls back to the working tree and says so.
-  const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);
+  const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);   // (same resolution ownCommit() above performed)
   let changed = null, provisional = false;
   if (shas === null) {
     /* no git history: skipped below */

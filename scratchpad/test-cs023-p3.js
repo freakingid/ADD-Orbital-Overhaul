@@ -116,7 +116,8 @@ const RETURN = [
   "SHIP_MAX_HP", "HIT_STUN_DURATION", "LOW_HP_THRESHOLD", "AUTO_SHIELD_SCORE_PENALTY", "SHIELD_HIT_COST",
   "KNOCKBACK_SPEED", "SHIELD_RADIUS", "SHIP_RADIUS",
   "settings", "Achievements", "AudioSys", "GAME_VERSION", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG",
-  "WORLD_W", "WORLD_H", "TAU"
+  "WORLD_W", "WORLD_H", "TAU",
+  "liveLevers"   // CS026 P2: the debris split count is a lever now, so §B/§E/§F/§H read it rather than 3
 ];
 // The pre-CS023 reference module lacks debrisBounce/DEBRIS_MASS entirely (P2's addition) and never had
 // destroySaucer's second parameter — this list is deliberately the subset that exists at PRE_CS023_REF.
@@ -241,7 +242,11 @@ function saucerAt(X, x, y, small) {
     X.update(1 / 60);
     eq(X.game.ship.hp, X.SHIP_MAX_HP - X.DEBRIS_DAMAGE[3], "B: large debris ram — ship lost exactly DEBRIS_DAMAGE[3]");
     assert(a.dead, "B: the rammed large debris is destroyed");
-    eq(X.game.debris.filter(d => d.size === 2).length, 3, "B: ...and split into 3 mediums (F3)");
+    // CS026 P2 repoint: F3's hardcoded 3-way split is the `junkSplit` lever now (2 through level 10, 3
+    // from level 11 on), so the expected child count is read off the lever, not written as a literal.
+    // What §B is about — that a RAM destroys the hazard and moves no score or stats — is untouched.
+    const nSplit = Math.round(X.liveLevers(X.game.wave).junkSplit);
+    eq(X.game.debris.filter(d => d.size === 2).length, nSplit, `B: ...and split into ${nSplit} mediums (the junkSplit lever)`);
     eq(X.game.garbage.length, X.DEBRIS_GARBAGE, "B: ...and emitted DEBRIS_GARBAGE canisters");
     eq(X.game.score, scoreBefore, "B: FORK-E — game.score UNCHANGED by the ram");
     eq(X.game.stats.debrisKills, killsBefore, "B: FORK-E — debrisKills UNCHANGED");
@@ -370,7 +375,9 @@ function saucerAt(X, x, y, small) {
   assert(pieces.every(p => p.dead), "E: all three overlapping hazards are destroyed");
   eq(X.game.ship.hp, X.SHIP_MAX_HP - X.DEBRIS_DAMAGE[3], "E: the ship lost exactly ONE hit's worth of damage, not three");
   eq(X.game.stats.dmgThisWave, dmgBefore + 1, "E: dmgThisWave incremented exactly ONCE");
-  eq(X.game.debris.filter(d => d.size === 2).length, 9, "E: all three still split (3 destroyed x 3 children)");
+  // CS026 P2 repoint: N children per split, off the junkSplit lever (see §B).
+  const nSplitE = Math.round(X.liveLevers(X.game.wave).junkSplit);
+  eq(X.game.debris.filter(d => d.size === 2).length, 3 * nSplitE, `E: all three still split (3 destroyed x ${nSplitE} children)`);
   eq(X.game.debris.filter(d => d.size === 3).length, 0, "E: ...and no large survivors");
   assert(X.game.ship.invuln > 0 && X.game.ship.invuln <= X.HIT_STUN_DURATION,
     "E: exactly one HIT_STUN_DURATION worth of i-frame, not stacked");
@@ -393,7 +400,9 @@ function saucerAt(X, x, y, small) {
   eq(X.game.score, 1000 - X.AUTO_SHIELD_SCORE_PENALTY, "F: the usual auto-shield score penalty still applied");
   assert(X.game.ship.shieldOn, "F: the auto-shield raised the shield");
   assert(a.dead, "F: FLAG-CS023-k — the hazard is destroyed anyway; the collision physically happened");
-  eq(X.game.debris.filter(d => d.size === 2).length, 3, "F: ...and it still split");
+  // CS026 P2 repoint: N children per split, off the junkSplit lever (see §B).
+  eq(X.game.debris.filter(d => d.size === 2).length, Math.round(X.liveLevers(X.game.wave).junkSplit),
+    "F: ...and it still split");
   eq(X.game.garbage.length, X.DEBRIS_GARBAGE, "F: ...and it still dropped garbage");
 })();
 
@@ -485,8 +494,19 @@ function saucerAt(X, x, y, small) {
   eq(Y.game.score, scoreBeforeY, "H: ...no score in the PRE-CS023 build either (the regression control)");
   eq(X.game.score, Y.game.score, "H: ...and both are the same (0)");
   eq(X.game.stats.debrisKills, Y.game.stats.debrisKills, "H: debrisKills unchanged identically in both");
-  eq(X.game.debris.filter(d => d.size === 2).length, Y.game.debris.filter(d => d.size === 2).length,
-    "H: the split count is identical in both builds");
+  // ⛔ REPOINTED BY CS026 P2, AND NARROWED RATHER THAN DELETED. This pin compared the LIVE build's child
+  // count against a build pinned at PRE_CS023_REF, which was only ever going to hold while nothing later
+  // changed the split — and CS026 P2 legitimately did, making it the `junkSplit` lever (2 through level
+  // 10, 3 from level 11 on). §H's actual claim is that CS023 P3 did not change UFO-shot-vs-satellite
+  // behaviour, and that claim survives intact: the same body dies, sheds the same garbage and moves the
+  // same (zero) score in both builds. The child count is now asserted against its own source on each
+  // side — the lever live, the hardcoded 3 in the reference — so the one legitimate difference is
+  // STATED rather than silently absorbed.
+  const liveSplit = Math.round(X.liveLevers(X.game.wave).junkSplit);
+  eq(X.game.debris.filter(d => d.size === 2).length, liveSplit,
+    "H: the live build splits by the junkSplit lever");
+  eq(Y.game.debris.filter(d => d.size === 2).length, 3,
+    "H: ...and the pre-CS023 reference build still splits 3-way, as it always did");
   eq(X.game.garbage.length, Y.game.garbage.length, "H: the garbage count is identical in both builds");
 })();
 
@@ -610,7 +630,7 @@ function saucerAt(X, x, y, small) {
   // entries plus smallUfoChance.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 75, "A: TRAP 4 — the debug registry is exactly 75 value entries after CS025 P2");
+  eq(X.DEBUG_ENTRIES.length, 78, "A: TRAP 4 — the debug registry is exactly 78 value entries (repointed CS026 P2: +3 junkSplit lever knobs)");
   assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
     "A: TRAP 4 — ...and P3 still contributed none of them");
   {

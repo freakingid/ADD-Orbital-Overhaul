@@ -205,16 +205,29 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // ...and 1.0 is not a coincidence: it is SHIELD_BOUNCE_RESTITUTION's value, which is what "mirrors" means.
   eq(X.DEBRIS_BOUNCE_RESTITUTION, X.SHIELD_BOUNCE_RESTITUTION, "A: ...and it equals SHIELD_BOUNCE_RESTITUTION (§4.8 'mirrors')");
   assert(X.DEBRIS_BOUNCE_MIN < X.SHIELD_BOUNCE_MIN, "A: the satellite floor is BELOW the ship's (40 vs 120) — satellites are slower");
-  // MASS IS CONSERVED THROUGH THE SPLIT, asserted as arithmetic rather than restated as prose. The game
-  // splits one body into THREE of the next size down, at every tier.
-  eq(X.DEBRIS_MASS[3], 3 * X.DEBRIS_MASS[2], "A: FORK-D — a large's mass IS its three mediums'");
-  eq(X.DEBRIS_MASS[2], 3 * X.DEBRIS_MASS[1], "A: FORK-D — a medium's mass IS its three smalls'");
+  // ⛔ CONSERVATION IS A RETIRED PROPERTY AS OF CS026 P2 (FORK-CS026-B -> (a)), AND THESE TWO PINS ARE
+  // REPOINTED RATHER THAN DELETED. CS023 P2 derived 9/3/1 from mass being conserved through the 3-way
+  // split the game performed at the time (a large of 9 became three mediums of 3, and so on), and these
+  // two lines asserted that derivation as arithmetic. CS026 P2 made the split count the `junkSplit`
+  // lever — 2 through level 10 — so a large of 9 now becomes 12 and then 4, and conservation is simply
+  // no longer a property of the game. THE TABLE DID NOT MOVE, deliberately: nothing anywhere reads a
+  // total mass (debrisBounce only ever reads the RATIO between the two bodies in contact), so retuning
+  // to a conserving 4/2/1 would have bought nothing and cost every satellite-vs-satellite bounce.
+  // What survives, and is what these two lines now say, is the FITTED 9:3:1 ratio itself — the thing
+  // debrisBounce actually reads, and the thing that makes a small ricochet off a large.
+  eq(X.DEBRIS_MASS[3] / X.DEBRIS_MASS[2], 3, "A: FORK-D — the large:medium mass ratio is 3:1");
+  eq(X.DEBRIS_MASS[2] / X.DEBRIS_MASS[1], 3, "A: FORK-D — and so is medium:small, making the extremes 9:1");
   {
-    // ...and the split really is 3-way, read out of destroyDebris's own body rather than assumed.
+    // ...and the split count is the LEVER, read out of destroyDebris's own body rather than assumed.
+    // (CS023 P2 pinned the literal `i < 3` here; CS026 P2 replaced it with the rounded lever.)
     const i0 = codeOnly.indexOf("function destroyDebris(a, awardScore = true) {");
     const dd = codeOnly.slice(i0, codeOnly.indexOf("\n}\n", i0));
-    eq((dd.match(/for \(let i = 0; i < 3; i\+\+\) \{/g) || []).length, 1,
-      "A: ...and destroyDebris really splits 3-way, at exactly one site inside its own body");
+    eq((dd.match(/const children = Math\.round\(lv\.junkSplit\);/g) || []).length, 1,
+      "A: ...and destroyDebris takes its child count from the junkSplit lever, at exactly one site inside its own body");
+    eq((dd.match(/for \(let i = 0; i < children; i\+\+\) \{/g) || []).length, 1,
+      "A: ...and that is what the split loop counts to");
+    assert(!/for \(let i = 0; i < 3; i\+\+\) \{/.test(dd),
+      "A: ⛔ ...and the hardcoded 3-way loop is GONE from destroyDebris (destroyHunter's own copy is a different function and stays)");
   }
   // Grouped with the other DEBRIS_* tuning constants, by source ORDER — not floated to the bottom of the block.
   const iGarbage = codeOnly.indexOf("const DEBRIS_GARBAGE");
@@ -285,7 +298,10 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // byte-identical to the pre-CS023-P2 build, and the split branch is asserted positively to be the plain
   // three-child loop it was BEFORE CS021 P1 ever added the handoff.
   {
-    const cut = t => t.slice(0, t.indexOf("  if (a.size > 1) {"));
+    // CS026 P2 moved the cut UP one comment, to the "Large -> ..." line that introduces the split branch:
+    // that comment describes the split (it named the 3-way split before, it names the lever now), so it
+    // belongs to the branch, not to the prefix this pin freezes. Both builds carry the marker verbatim.
+    const cut = t => t.slice(0, t.indexOf("  // Large -> "));
     eq(cut(bodyOf(scriptSrc, "function destroyDebris(a, awardScore = true) {")),
        cut(bodyOf(preSrc, "function destroyDebris(a, awardScore = true) {")),
       "A: destroyDebris is BYTE-UNCHANGED up to its split branch — this phase creates and destroys nothing");
@@ -305,8 +321,12 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
       "A: REPOINTED BY CS024 P6c — the split branch reads liveLevers(game.wave) at the point of use");
     assert(/const speed = a\.size - 1 === 2 \? lv\.junkSpeedMedium : lv\.junkSpeedSmall;/.test(body),
       "A: ...and the child's lever is chosen by the CHILD's own size tier");
-    assert(/for \(let i = 0; i < 3; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speed\)\);/.test(body),
-      "A: ...and the split is still the plain three-child loop, each child taking that same derived speed");
+    // REPOINTED AGAIN BY CS026 P2: the loop is no longer a THREE-child loop, it is an N-child loop over
+    // the junkSplit lever. The part of the claim that mattered is untouched and still asserted here —
+    // it is still a PLAIN loop pushing bare DebrisSatellites at that same derived speed, with no rail
+    // handoff and no per-child special-casing; only its bound became a lever.
+    assert(/const children = Math\.round\(lv\.junkSplit\);\n\s+for \(let i = 0; i < children; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speed\)\);/.test(body),
+      "A: ...and the split is still a plain N-child loop over the lever, each child taking that same derived speed");
   }
 
   // --- wrap-awareness, asserted at the SITE rather than trusted (CLAUDE.md's single commonest bug source)
@@ -417,7 +437,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // the constant it derived from (retired outright, replaced by the coalescePause lever).
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 75, "A: TRAP 4 REPOINTED BY CS025 P2 — the debug registry is 75 value entries (three per lever + startLevel + debugOverride + P6f's three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs)");
+  eq(X.DEBUG_ENTRIES.length, 78, "A: TRAP 4 REPOINTED BY CS026 P2 — the debug registry is 78 value entries (three per lever + startLevel + debugOverride + P6f's three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs + the three junkSplit lever knobs)");
   // The id filter below is deliberately LEFT WIDE (it still matches /gravity|drift/), because a
   // silently-restored drift knob is exactly what it exists to catch. CS024 P6's engineMassMult joins
   // the matched set only because /mass/i catches it — it is a POWERUP knob, nothing to do with the

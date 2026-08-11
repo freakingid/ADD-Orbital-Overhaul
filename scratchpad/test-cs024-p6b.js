@@ -192,7 +192,10 @@ let X = null;
   if (!X) { console.error("ABORT: build failed"); process.exit(1); }
   assert(OLD !== null, `A: the pre-P6b build was recovered from git at ${PRE_P6B_REF} (the §B/§D/§G reference)`);
 
-  eq(X.LEVERS.length, 17, "A: 17 levers, unchanged — P6b restages step counts, it does not add or remove a lever");
+  // CS026 P2 repoint: 17 -> 18. P6b's own claim ("this phase restages step counts, it neither adds nor
+  // removes a lever") is still what §A is about; CS026 P2 legitimately added junkSplit, so the count
+  // moves with the table while §D below keeps proving P6b touched none of the JUNK/HUNTER entries.
+  eq(X.LEVERS.length, 18, "A: 18 levers (CS026 P2 added junkSplit) — P6b restages step counts, it adds and removes none");
   // THE RULE, as a property of the shipped table: every carrier is a driver.
   const carriers = X.LEVERS.filter(l => l.carriesTo && l.carriesTo.length);
   const drivers = X.LEVERS.filter(l => l.everyNLevels);
@@ -302,7 +305,7 @@ function evalSlice(literal) {
   noThrow(() => X.buildLeverOrder(CONTROL), "C: CONTROL — a driver carrying into a terminal lever passes the guard");
   noThrow(() => X.buildLeverOrder(CONTROL), "C: ...and again — the guard does not mutate the table");
   noThrow(() => X.buildLeverOrder(X.LEVERS), "C: the shipped table passes it too");
-  eq(X.buildLeverOrder(X.LEVERS).length, 17, "C: ...and it hands back all 17 levers as leverState's walk order");
+  eq(X.buildLeverOrder(X.LEVERS).length, 18, "C: ...and it hands back all 18 levers as leverState's walk order (CS026 P2: +junkSplit)");
 
   // GUARD 1 — THE RULE. carriesTo without everyNLevels.
   throwsWith(() => X.buildLeverOrder([L("a", { everyNLevels: 1, carriesTo: ["b"] }), L("b", { carriesTo: ["c"] }), L("c")]),
@@ -353,8 +356,23 @@ function evalSlice(literal) {
   const oldById = {}, newById = {};
   for (const lev of OLD.LEVERS) oldById[lev.id] = lev;
   for (const lev of X.LEVERS) newById[lev.id] = lev;
-  for (const id of CHAINS)
-    eq(JSON.stringify(newById[id]), JSON.stringify(oldById[id]), `D: ${id}'s table entry is byte-identical to ${PRE_P6B_REF}`);
+  // ⛔ REPOINTED BY CS026 P2, AND ONLY FOR junkCount. That phase appended "junkSplit" to junkCount's
+  // `carriesTo` array — the one legitimate diff on any of these seven entries since P6b — so a raw byte
+  // comparison would fail on an addition this file has no opinion about. The pin is narrowed EXACTLY:
+  // junkCount is compared against the old entry with that one element appended, so every other field
+  // (floor, ceil, steps, everyNLevels, and the three speed ids it already carried, in order) is still
+  // pinned byte-for-byte, and a second appended carry or a reordered array still fails. The other six
+  // entries stay whole-object identical.
+  const CARRY_ADDED = { junkCount: ["junkSplit"] };   // CS026 P2
+  for (const id of CHAINS) {
+    const want = oldById[id];
+    const added = CARRY_ADDED[id];
+    const expected = added
+      ? { ...want, carriesTo: [...want.carriesTo, ...added] }
+      : want;
+    eq(JSON.stringify(newById[id]), JSON.stringify(expected),
+      `D: ${id}'s table entry is byte-identical to ${PRE_P6B_REF}${added ? ` (plus CS026 P2's appended carry to ${added.join(", ")})` : ""}`);
+  }
   // ...and so is every value they emit, at every level, through both builds' REAL leverState.
   let diffs = 0, checks = 0;
   for (let w = 1; w <= 400; w++) {
@@ -553,7 +571,7 @@ function evalSlice(literal) {
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
   // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
   // CS024 P6f repoint: +3 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — non-levers, HUNTER section).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 75, "G: TRAP 2 — 75 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs)");
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 78, "G: TRAP 2 — 78 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs, +3 CS026 P2 junkSplit lever knobs)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -583,7 +601,10 @@ function evalSlice(literal) {
       .replace(/,magnetResumeDelay/, "")
       // CS025 P2 repoint: and its two magnet-push siblings (magnetPushKick, magnetPushSpread, POWERUPS,
       // appended after magnetResumeDelay) — CS025 P2's rows, not P6b's. Same reasoning a fourth time.
-      .replace(/,magnetPushKick,magnetPushSpread/, "");
+      .replace(/,magnetPushKick,magnetPushSpread/, "")
+      // CS026 P2 repoint: and the junkSplit lever's collapsed key (JUNK section, appended after
+      // junkSpeedSmall) — CS026 P2's lever, not P6b's. Same reasoning a fifth time.
+      .replace(/,junkSplit/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
@@ -593,6 +614,11 @@ function evalSlice(literal) {
       const lev = X.LEVERS.find(l => l.id === id);
       close(a.step, Math.round(Math.abs(lev.ceil - lev.floor) / (lev.steps - 1) * 100) / 100,
         `G: ${id}'s derived slider step is exactly one odometer step of its curve`);
+      // CS026 P2: a lever that did not EXIST at PRE_P6B_REF has no pre-P6b step to have moved off, so the
+      // before/after half of the claim is meaningless for it — the derived-step assertion above still
+      // covers it in full. `b` is undefined for exactly those, and reading `b.step` would crash rather
+      // than fail, which is why this is a guard and not an `eq`.
+      if (!b) { assert(!RESTAGED.has(id), `G: ...${id} post-dates ${PRE_P6B_REF} entirely, so it is not one of the nine restaged`); continue; }
       if (RESTAGED.has(id)) assert(a.step !== b.step, `G: ...and ${id} is one of the nine RESTAGED, so it moved off ${PRE_P6B_REF}`);
       else eq(a.step, b.step, `G: ...while ${id} was not restaged, so it did not move`);
     }

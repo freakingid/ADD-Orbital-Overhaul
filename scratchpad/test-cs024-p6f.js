@@ -270,7 +270,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   }
 
   // Registry count: 69 (CS024 P6e) + 3.
-  eq(X.DEBUG_ENTRIES.length, 75, "A: the registry is 75 value entries (P6e's 69 + this phase's 3 + CS025 P1's magnetResumeDelay + CS025 P2's two magnet-push knobs)");
+  eq(X.DEBUG_ENTRIES.length, 78, "A: the registry is 78 value entries (P6e's 69 + this phase's 3 + CS025 P1's magnetResumeDelay + CS025 P2's two magnet-push knobs + CS026 P2's three junkSplit lever knobs)");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "A: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is the registry plus the four trailer rows");
 
@@ -826,16 +826,30 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // UNCHANGED while CS024 P6f ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "L: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
-  // TRAP 2 — no lever. The LEVERS table is byte-identical to HEAD's, and leverState is unchanged.
+  // TRAP 2 — no lever. The LEVERS table and leverState are unchanged from what P6f shipped.
+  //
+  // ⛔ REPOINTED BY CS026 P2, FROM `HEAD` TO A LITERAL SHA, for the third time in this suite and for the
+  // same reason (PLANNED-FEATURES-CS026.md §4.1). `HEAD` was right only while P6f was uncommitted; after
+  // it landed the pin compared the live build against itself and passed vacuously, and the first phase
+  // to legitimately touch LEVERS — CS026 P2, which added the `junkSplit` lever — failed it for a change
+  // TRAP 2 has no opinion about. `82eae5a` is P6f's own commit, so the question is the one this TRAP
+  // always meant to ask, against a reference that cannot move again.
+  //
+  // AND THE TABLE PIN IS NARROWED FROM A WHOLE-TEXT COMPARE TO A PER-LEVER ONE. A whole-text pin can
+  // only survive until the next phase legitimately edits the table, which is exactly what happened; what
+  // TRAP 2 actually claims is that P6F ADDED NO LEVER AND MOVED NONE, and that is still provable — every
+  // lever P6f shipped is still present, in order, with identical fields, bar the one documented
+  // exception CS026 P2 introduced (junkSplit appended to junkCount's carriesTo). An added lever passes;
+  // a moved, renamed, deleted or reordered one still fails.
   {
-    const headSrc = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"], { cwd: repoRoot, maxBuffer: 1 << 28 }).toString();
+    const P6F_REF = "82eae5a";   // cs-24 p6f: scaling hunter cap — this file's own commit
+    const headSrc = execFileSync("git", ["show", `${P6F_REF}:asteroids-deluxe.html`], { cwd: repoRoot, maxBuffer: 1 << 28 }).toString();
     const grab = (src, re) => { const mm = src.match(re); return mm ? mm[0] : null; };
     const leversRe = /const LEVERS = \[[\s\S]*?\n\];/;
     const a = grab(scriptSrc, leversRe), b = grab(headSrc, leversRe);
     assert(!!a && !!b, "L: (setup) both builds' LEVERS tables were located");
-    eq(a, b, "L: TRAP 2 — the LEVERS table is byte-identical to HEAD");
     const lsRe = /function leverValues\(table, wave\) \{[\s\S]*?\n\}/;
-    eq(grab(scriptSrc, lsRe), grab(headSrc, lsRe), "L: TRAP 2 — leverValues() is byte-identical to HEAD");
+    eq(grab(scriptSrc, lsRe), grab(headSrc, lsRe), `L: TRAP 2 — leverValues() is byte-identical to ${P6F_REF}`);
     // ...and the odometer's output is unchanged at every level, which is the claim that matters.
     const HEAD = (() => {
       const mm = headSrc.match(/<script>([\s\S]*?)<\/script>/);
@@ -849,12 +863,27 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
         { now: () => 100000 }, () => 0, { getGamepads: () => [] },
         { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } });
     })();
+    // The table, per lever: every entry P6f shipped, in P6f's order, field for field.
+    const ADDED_CARRIES = { junkCount: ["junkSplit"] };   // CS026 P2
+    const refIds = HEAD.LEVERS.map(l => l.id);
+    const liveById = {};
+    for (const lev of X.LEVERS) liveById[lev.id] = lev;
+    eq(X.LEVERS.filter(l => refIds.includes(l.id)).map(l => l.id).join(","), refIds.join(","),
+      `L: TRAP 2 — every lever ${P6F_REF} shipped is still present, in the same order`);
+    for (const lev of HEAD.LEVERS) {
+      const added = ADDED_CARRIES[lev.id];
+      const expected = added ? { ...lev, carriesTo: [...lev.carriesTo, ...added] } : lev;
+      eq(JSON.stringify(liveById[lev.id]), JSON.stringify(expected),
+        `L: TRAP 2 — ${lev.id}'s entry is unmoved${added ? ` (bar CS026 P2's appended carry to ${added.join(", ")})` : ""}`);
+    }
+    // ...and the odometer's output is unchanged at every level, for every lever that build HAD, which is
+    // the claim that matters.
     let diffs = 0;
     for (let w = 1; w <= 200; w++) {
       const mine = X.leverState(w), theirs = HEAD.leverState(w);
-      for (const l of X.LEVERS) if (mine[l.id] !== theirs[l.id]) diffs++;
+      for (const l of HEAD.LEVERS) if (mine[l.id] !== theirs[l.id]) diffs++;
     }
-    eq(diffs, 0, "L: TRAP 2 — leverState() is identical to HEAD at every level 1..200, every lever");
+    eq(diffs, 0, `L: TRAP 2 — leverState() is identical to ${P6F_REF} at every level 1..200, every lever it had`);
   }
 
   // TRAP 3 — coalescence (and its deferred drain) remains the ONLY Hunter producer.

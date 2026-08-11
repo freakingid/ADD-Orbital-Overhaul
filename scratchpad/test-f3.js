@@ -5,10 +5,12 @@
 //   node scratchpad/test-f3.js
 //
 // Confirms:
-//  (A) destroying a full lineage (1 large -> 3 mediums -> 9 smalls) = 13 kills and
-//      EXACTLY 39 garbage canisters (guaranteed 3 per tier, incl. the small tier);
-//  (B) per-tier split/emit counts in isolation (3-way split at large/medium, small
-//      destroyed; every tier drops exactly 3 canisters);
+//  (A) destroying a full lineage (1 large -> N mediums -> N^2 smalls) = 1+N+N^2 kills
+//      and exactly that many x DEBRIS_GARBAGE canisters (every tier sheds, incl. the
+//      small tier). ⛔ N IS THE `junkSplit` LEVER as of CS026 P2 — 2 through level 10,
+//      3 from level 11 on — read here off liveLevers(), never hardcoded;
+//  (B) per-tier split/emit counts in isolation (N-way split at large/medium, small
+//      destroyed; every tier drops exactly DEBRIS_GARBAGE canisters);
 //  (C) the F5 `mass` field: default 1.0, carried by Garbage.fromNode(), copied onto
 //      the chain node at pickup, and preserved through a chain sever;
 //  (D) chain tow physics now scale off the chain's MASS SUM, not its node count:
@@ -43,6 +45,7 @@ const returnList = [
   "startGame", "update", "game", "keys",
   "DebrisSatellite", "Garbage",
   "destroyDebris", "updateChain", "scatterChain", "chainMass",
+  "liveLevers",                       // CS026 P2: the split count is a lever now — see (A)/(B) below
   "DEBRIS_GARBAGE", "DEBRIS_SCORE",
   "GARBAGE_PICKUP", "DEBUG",
   "CHAIN_LINK", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
@@ -57,7 +60,7 @@ const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorS
 const {
   startGame, update, game, keys,
   DebrisSatellite, Garbage,
-  destroyDebris, updateChain, scatterChain, chainMass,
+  destroyDebris, updateChain, scatterChain, chainMass, liveLevers,
   DEBRIS_GARBAGE,
   GARBAGE_PICKUP, DEBUG,
   CHAIN_LINK, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
@@ -99,9 +102,19 @@ game.state = "playing"; game.paused = false;
 console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (garbage decays on DEBUG.garbageLifetime=${DEBUG.garbageLifetime}, CS015 P6; the frozen pre-P6 GARBAGE_DECAY=22 single-only const was deleted as dead in CS024 P2)`);
 
 // =====================================================================
-// (A) full lineage: 1 large -> 3 mediums -> 9 smalls = 13 kills, 13*DEBRIS_GARBAGE canisters
+// (A) full lineage: 1 large -> N mediums -> N^2 smalls, (1+N+N^2)*DEBRIS_GARBAGE canisters
 // =====================================================================
-console.log("(A) full lineage kill/garbage counts");
+// ⛔ REPOINTED BY CS026 P2, AND OFF THE LEVER RATHER than onto a new literal. F3 shipped a hardcoded
+// 3-way split, so this section pinned 13 kills and 52 canisters. CS026 P2 made the branching factor the
+// `junkSplit` lever — 2 through level 10, 3 from level 11 on — so a literal here would only be right for
+// the levels it happened to be written at. N is read from the SAME liveLevers(game.wave).junkSplit
+// expression destroyDebris() reads, rounded the same way, so a future retune of the lever moves this
+// test with it instead of breaking it. Everything else about the section is unchanged: the tree is still
+// exactly one large -> N mediums -> N^2 smalls, and every tier still sheds DEBRIS_GARBAGE canisters.
+const SPLIT = Math.round(liveLevers(game.wave).junkSplit);
+const LINEAGE = 1 + SPLIT + SPLIT * SPLIT;
+console.log(`(A) full lineage kill/garbage counts (junkSplit=${SPLIT} at level ${game.wave} -> ${LINEAGE} bodies)`);
+assert(SPLIT >= 2, `A: (setup) the split count read off the lever is at least 2 (got ${SPLIT})`);
 clearField();
 game.debris = [new DebrisSatellite(cx, cy, 3, 1)];
 game.garbage.length = 0;
@@ -115,11 +128,11 @@ while (game.debris.length) {
 const largeK = sizesKilled.filter(s => s === 3).length;
 const medK   = sizesKilled.filter(s => s === 2).length;
 const smallK = sizesKilled.filter(s => s === 1).length;
-assert(kills === 13, `A: lineage produced 13 kills (got ${kills})`);
-assert(largeK === 1 && medK === 3 && smallK === 9,
-  `A: tier kill breakdown 1 large / 3 medium / 9 small (got ${largeK}/${medK}/${smallK})`);
-assert(game.garbage.length === 13 * DEBRIS_GARBAGE,
-  `A: exactly ${13 * DEBRIS_GARBAGE} canisters from a fully-cleared large lineage (got ${game.garbage.length})`);
+assert(kills === LINEAGE, `A: lineage produced ${LINEAGE} kills (got ${kills})`);
+assert(largeK === 1 && medK === SPLIT && smallK === SPLIT * SPLIT,
+  `A: tier kill breakdown 1 large / ${SPLIT} medium / ${SPLIT * SPLIT} small (got ${largeK}/${medK}/${smallK})`);
+assert(game.garbage.length === LINEAGE * DEBRIS_GARBAGE,
+  `A: exactly ${LINEAGE * DEBRIS_GARBAGE} canisters from a fully-cleared large lineage (got ${game.garbage.length})`);
 assert(game.garbage.every(g => g.mass === 1.0),
   "A: every Debris-sourced canister is mass 1.0");
 
@@ -130,12 +143,13 @@ console.log("(B) per-tier splits + guaranteed 3-canister drops");
 clearField();
 destroyDebris(new DebrisSatellite(cx, cy, 3, 1));
 assert(game.garbage.length === DEBRIS_GARBAGE, `B: large drops exactly ${DEBRIS_GARBAGE} canisters (got ${game.garbage.length})`);
-assert(game.debris.length === 3 && game.debris.every(d => d.size === 2), "B: large -> 3 mediums");
+// CS026 P2 repoint, same reason as (A): the child count is the junkSplit lever, not a literal 3.
+assert(game.debris.length === SPLIT && game.debris.every(d => d.size === 2), `B: large -> ${SPLIT} mediums`);
 
 clearField();
 destroyDebris(new DebrisSatellite(cx, cy, 2, 1));
 assert(game.garbage.length === DEBRIS_GARBAGE, `B: medium drops exactly ${DEBRIS_GARBAGE} canisters (got ${game.garbage.length})`);
-assert(game.debris.length === 3 && game.debris.every(d => d.size === 1), "B: medium -> 3 smalls");
+assert(game.debris.length === SPLIT && game.debris.every(d => d.size === 1), `B: medium -> ${SPLIT} smalls`);
 
 clearField();
 destroyDebris(new DebrisSatellite(cx, cy, 1, 1));
