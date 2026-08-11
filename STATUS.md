@@ -769,27 +769,27 @@ The 12-frame first stint delivers exactly 3 canisters (the offload timer needs 4
 
 **Q1 — the resume delay.** Fill cargo with the Magnet up, deliver one canister, and feel the moment the pull returns. Is **250 ms** right — long enough that the field does not snap back onto you mid-offload, short enough that it never feels broken? Slider: `Magnet resume delay` (POWERUPS). **Report the number.**
 
-Paul says:
+Paul says: Yes, 250 ms seems good as a default. I still want a debug knob for this setting, if I don't already have one.
 
 **Q2 — the push, two numbers.** `Magnet push kick` (default **120 px/s**) and `Magnet push spread` (default **45°**). Set the kick to **0** for the clean A/B — that disables the burst entirely and leaves only §1's suppression, which is the honest way to judge whether the push is earning its place. Then: does the cloud read as being *shoved off* you, or as quietly switching off? Is the fan wide enough to look like scattering rather than a shell expanding? **Report both numbers.**
 
-Paul says:
+Paul says: 120 px/s seems good for magnet push kick, and 45 degrees for magnet push spread, but give me debug knobs if I don't already have them.
 
 **Q3 — does the Hunter-on-top-of-you problem actually go away?** This is the changeset's central bet and the only question that can invalidate it. Park in a dense field with a Magnet, fill cargo, and stay there. Does a Hunter still coalesce on top of the ship? A Hunter forming *nearby* after the pieces have drifted apart is the system working; one forming *on you* is not.
 
-Paul says:
+Paul says: Yes, this problem seems to have mostly gone away.
 
 **Q4 — the scoop energy tell.** Two parts. **(a)** Does the magnet-blue (`POWERUP_COLOR.magnet`, `#8ab6ff`) read as *charged*, or does it just read as the hull? It sits close to `COLOR.ship` (`#9fd8ff`), and that is the specific risk. **(b)** Does the tell *inform* — do you notice the scoop go dark when cargo fills, and does that teach you the magnet has stopped? All four constants (`SCOOP_MAGNET_W` 2.6, `_BLUR` 18, `_NOSE_W` 10, `_NOSE_D` 22) are look-calls and can be changed freely; the hue itself is a real decision, so say if it should move. Play at **scoopLevel 0** for at least a stretch — the nose V is a different tell and is the one nobody has seen.
 
-Paul says:
+Paul says: The scoop energy tell is not working. It is impossible to tell the difference between charged or not. I would like to just get rid of this function altogether. So this is backing out of a change I originally asked for in cs025. We just don't need another visual thing on the player ship.
 
 **Q5 — the defensive fill loop.** §2.2 accepts that filling cargo now resets nearby coalescence clocks, making it a usable defensive move. Does that read as a smart play the game is rewarding, or as an exploit you feel obliged to spam? If it is the latter, the lever to reach for is `magnetPushKick` toward 0, not a new rule.
 
-Paul says:
+Paul says: This seems fine. 
 
 **Q6 — the critical voice lines, and one specific failure to watch for.** Do `health_low`, `health_relief` and `cargo_full` now reliably speak? And the thing re-validation is supposed to prevent: does a `cargo_full` ever arrive so late that it is confusing — after you have already started offloading? It should be discarded rather than spoken in that case (§4.4d). **If you hear a stale one, that is a bug, not a tuning question** — say so plainly and P5 inherits a fix it does not currently carry.
 
-Paul says:
+Paul says: This is working well. However, we need to add the announcement of the next level as a critical line. So when we go to "Level 2" for example, that line is definitely spoken and we definitely see a "Level 2" on the screen. Minimum is to have that "Level 2" show as a caption for speach. Ideally a "Level 2" would appear briefly in the middle of the screen, large, easy to read, with some effect of fading in or out.
 
 **⛔ CS025 P1 ADDS AN A/B SWITCH TO THE DEBUG PANEL THAT THE GATE WILL WANT: `Magnet resume delay`, POWERUPS section, default 250 ms.** Setting it to **0 turns the whole full-cargo suppression off** and the build behaves exactly as CS024 shipped, so the feature can be compared on and off without a rebuild. **The gate questions this phase raises, for §7's list:** does the Magnet going quiet at full cargo read as *the game working* or as *the powerup breaking*? (There is deliberately **no HUD change** — the player's intended tell is P3's scoop glow going dark, which does not exist yet, so a P1-only playtest has **no tell at all**.) And is 250 ms the right resume delay — does the pull snapping straight back the instant a canister is delivered feel abrupt at 0, or sluggish at 1000?
 
