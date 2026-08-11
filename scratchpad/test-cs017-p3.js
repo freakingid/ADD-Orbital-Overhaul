@@ -58,6 +58,14 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+// CS026 P1: §F builds a REFERENCE commit's source, which is the same git-dependency class FORK-CS026-H
+// settled for test-cs025-p1/p2/p5. Routed through the shared helper so it SKIPS LOUDLY instead of
+// throwing. ⛔ DISCOVERED BY MEASUREMENT, NOT BY THE PROMPT: this file crashed outright on a
+// `git clone --depth 1` (`fatal: invalid object name '683de82'`), and it was CS026 P1's own §F — which
+// runs each pinned file as a subprocess — that surfaced it. Ten more suite files share the defect and are
+// deliberately NOT touched here (one phase, one scope); they are inventoried in STATUS.md for the closing
+// phase, which owes FORK-H's zero-skips assertion and therefore needs the real list.
+const { parentSource, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
@@ -66,7 +74,7 @@ const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
 const scriptSrc = m[1];
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -144,6 +152,17 @@ const RETURN_HEAD = [
   "SAUCER_GAP_FLOOR_MIN", "SAUCER_GAP_CEIL_MIN", "SAUCER_GAP_FLOOR_MAX", "SAUCER_GAP_CEIL_MAX",
   "AudioSys"
 ];
+
+// ⛔ CS026 P1 (spec §5.2/§5.3): the assertion COUNT of this file used to vary run to run — 1569 or
+// 1570, ~3 in 20 — while always passing. A varying count means some assertion is inside a loop whose
+// length is decided by `Math.random`, which makes "N passed" useless as a regression signal. The seed
+// is installed UNSCOPED and BEFORE the first build(): part of the randomness is decided at module load
+// inside `new Function(...)(...)` (the §5.2 correction), and part inside the update() runs this file
+// drives afterwards. This file's own withPinnedRandom() sites are UNTOUCHED and still work — they save
+// and restore whatever Math.random was, so they nest inside the seeded stream and restore to it.
+const { installSeed } = require("./_seeded-random.js");
+const SEED = 1;
+installSeed(SEED);   // ⛔ must precede every build() below — this ordering is the requirement
 
 function build(src = scriptSrc, returnList = RETURN) {
   const canvasStub = { width: 1280, height: 720, style: {} };
@@ -534,9 +553,15 @@ function pieceSpeed(piece) { return Math.hypot(piece.vx, piece.vy); }
   // The pre-P3 build is commit 683de82 (CS017 P2), the commit immediately before the sawtooth landed.
   // A fixed SHA, deliberately — see this file's header for why `HEAD` was the wrong reference.
   const PRE_P3_REF = "683de82";
-  const headHtml = execSync(`git show ${PRE_P3_REF}:asteroids-deluxe.html`, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
-  const hm = headHtml.match(/<script>([\s\S]*?)<\/script>/);
-  assert(!!hm, `F: extracted the <script> block from the pre-P3 build at ${PRE_P3_REF}`);
+  const preSrc = parentSource(PRE_P3_REF);
+  if (!preSrc) {
+    // FORK-CS026-H (spec §4.2, answer (c)): skip, but LOUDLY and counted — never a crash, never silent.
+    skipped++;
+    console.log(`  ${SKIP_TAG}: §F's whole pre-P3 divergence sweep (reference build ${PRE_P3_REF} unreachable)`);
+    return;
+  }
+  const hm = [null, preSrc];
+  assert(!!hm[1], `F: extracted the <script> block from the pre-P3 build at ${PRE_P3_REF}`);
   const H = build(hm[1], RETURN_HEAD);
   const W = build();
   H.startGame(); W.startGame();
@@ -730,5 +755,5 @@ function pieceSpeed(piece) { return Math.hypot(piece.vx, piece.vy); }
   for (const d of A.game.debris) assert(Number.isFinite(d.vx) && Number.isFinite(d.vy), "H: every debris velocity stayed finite");
 })();
 
-console.log(`\n${passed} passed, ${failed} failed`);
+console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);

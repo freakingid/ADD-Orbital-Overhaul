@@ -86,6 +86,18 @@ const RETURN = ["game", "startGame", "update", "nextWave", "leverState", "coales
                 // statement throwing a ReferenceError on a retired symbol. Direct eval keeps the script
                 // block's lexical scope, so it sees exactly what the game's own code would see.
                 'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'];
+// ⛔ CS026 P1 (spec §5.2/§5.3): the assertion COUNT of this file used to vary run to run — 535 or 541,
+// ~1 in 3 — while always passing. DIAGNOSED, not guessed: §I asserts twice per surviving Hunter after a
+// 30-level driven run, so the count is decided by how many Hunters coalescence happens to leave alive.
+// That randomness is inside `update()`, LONG AFTER the build — which is why the seed is installed
+// UNSCOPED here rather than wrapped around the factory alone. (The factory invocation matters too, per
+// §5.2, and an install placed before the first build() covers both.) This file's own withRandom() sites
+// are UNTOUCHED and still work — they save and restore whatever Math.random was, so they nest inside
+// the seeded stream and restore to it.
+const { installSeed } = require("./_seeded-random.js");
+const SEED = 1;
+installSeed(SEED);   // ⛔ must precede every build() below — this ordering is the requirement
+
 function build(src = scriptSrc, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});
   const factory = new Function(

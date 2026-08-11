@@ -100,6 +100,24 @@ const RETURN = [
   'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }'
 ];
 
+// ⛔ CS026 P1 (spec §5.2/§5.3). THE CHARACTERISED FAILURE, and it is a real one rather than a count
+// wobble: `F: level N: forcing the spawn timer produced exactly one saucer` fails roughly 1 run in 400
+// (reproduced at run 101 of 400 on the parent build, at level 10). THE MECHANISM IS ALREADY ON RECORD —
+// test-cs017-p3.js:576 characterised the same class for its own probe. §F pins Math.random to 0 while
+// calling update(0), which fixes the freshly-spawned saucer's ENTRY POSITION to one constant point;
+// CS023 P3's UFO<->debris collision pass runs inside that same update() call, so if a satellite that
+// nextWave() scattered at RANDOM happens to sit on that fixed point, the saucer is destroyed and
+// filtered out of game.saucers before the assertion reads it. test-cs017-p3 defused it by clearing
+// debris/hunters in its probe; §F cannot — it is asserting on the junk count nextWave() just spawned.
+// So the fix here is to pin the scatter instead: the seed is installed UNSCOPED and before the first
+// build(), covering both the module-load randomness (§5.2) and nextWave()'s placement afterwards.
+// Under SEED = 1 no satellite lands on the pinned entry point at any of levels 1..12 — VERIFIED by
+// running the file, not assumed. §F's own `Math.random = () => 0` block is untouched and still nests
+// correctly: it saves and restores whatever Math.random was, which is now the seeded stream.
+const { installSeed } = require("./_seeded-random.js");
+const SEED = 1;
+installSeed(SEED);   // ⛔ must precede every build() below — this ordering is the requirement
+
 function build() {
   const canvasStub = { width: 1280, height: 720, style: {} };
   canvasStub.getContext = () => makeCtx(canvasStub);

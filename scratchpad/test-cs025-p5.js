@@ -40,7 +40,14 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+// CS026 P1 (spec §4.1): the inline git plumbing is gone; `parentSource()` is the one place it lives.
+// ⛔ AND THE PARENT IS NOW A HARDCODED LITERAL SHA, which is the correction §4.1 makes. This file used
+// to resolve its parent by SUBJECT SEARCH (`git log --grep="cs-25 p4: ..."`), i.e. it searched all of
+// history for a moving target; the right shape is the opposite — the parent is FIXED and known at write
+// time (it is HEAD before the phase commits), and it is the phase's OWN COMMIT that is searched for,
+// inside the bounded PARENT_SHA..HEAD range. Same commit resolved on a full checkout; the difference is
+// that a literal cannot drift onto some future commit that happens to share the subject.
+const { parentSource, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
@@ -57,17 +64,18 @@ const execOnly = scriptSrc
 // written against THIS PHASE'S OWN PARENT — never HEAD. (CS024 P7 retired nine pins that used HEAD, and
 // CS025 P3's was a tenth; the lesson is in CLAUDE.md's implementation practices and in every CS025 test
 // header. A trap written against a moving reference tests the future, not the phase.)
-function parentSrc() {
-  const sha = execSync('git log --format=%H --grep="cs-25 p4: critical voice lines queue" -1',
-    { cwd: repoRoot }).toString().trim();
-  if (!sha) return null;
-  const old = execSync(`git show ${sha}:asteroids-deluxe.html`, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
-  const mm = old.match(/<script>([\s\S]*?)<\/script>/);
-  return mm ? mm[1] : null;
-}
+const PARENT_SHA = "fa9a543fc15422584172e2cd8ef51b8b28a3b8fe";   // cs-25 p4, this phase's own parent
+function parentSrc() { return parentSource(PARENT_SHA); }
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
+// ⛔ FORK-CS026-H (spec §4.2, Paul's answer (c)) — AND THIS FILE IS THE ONE THE FORK WAS RAISED ABOUT.
+// §G used to HARD-FAIL on a shallow clone (`git clone --depth 1` -> `89 passed, 1 failed`, reproduced
+// before the change) while test-cs025-p1/p2 skipped the same class of pin silently and passed. Settled
+// uniformly across all three: SKIP, but LOUDLY and COUNTED, so a vacuous run is visible instead of
+// silent. The closing phase asserts the suite runs with ZERO skips, which is what keeps the skip from
+// becoming a permanent free pass.
+function skip(what) { skipped++; console.log(`  ${SKIP_TAG}: ${what}`); }
 function eq(got, want, msg) { assert(got === want, `${msg} (got ${JSON.stringify(got)}, want ${JSON.stringify(want)})`); }
 function near(got, want, tol, msg) { assert(Math.abs(got - want) <= tol, `${msg} (got ${got}, want ~${want})`); }
 
@@ -473,7 +481,7 @@ function quiet(X) {
   eq(X.DEBUG_ENTRIES.length, 75, "G: ⛔ TRAP 2 — the registry does NOT move; still 75 rows");
 
   const ps = parentSrc();
-  assert(ps, "G: the parent commit (cs-25 p4) resolved");
+  if (!ps) skip("§G's parent-commit (cs-25 p4) pins: LEVERS/registry/leverState byte-identity + the version bump");
   if (ps) {
     const OLD = buildFrom(ps, { names: RETURN_BOTH });
     eq(JSON.stringify(X.LEVERS), JSON.stringify(OLD.LEVERS),
@@ -556,5 +564,5 @@ function quiet(X) {
   // still protects — that no live reference points at a path that doesn't exist — is unaffected.
 })();
 
-console.log(`\n${passed} passed, ${failed} failed`);
+console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);

@@ -50,6 +50,10 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+// CS026 P1: the git plumbing this file used to inline now lives in one place (spec §4.1). The
+// DECOMPOSITION is unchanged and is the point — PARENT_SHA stays a hardcoded literal below, and it is
+// this phase's OWN COMMIT that gets resolved dynamically, by subject, within PARENT_SHA..HEAD.
+const { parentSource, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
@@ -64,8 +68,13 @@ const scriptSrc = m[1];
 const PARENT_SHA = "2cd73e870b860151a578816eacc1fca5a34933e5";
 const PHASE_SUBJECT = "cs-25 p1:";
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
+// ⛔ FORK-CS026-H (spec §4.2, Paul's answer (c)): a git-dependent pin SKIPS when history is
+// unavailable — but LOUDLY and COUNTED, so a vacuous run is visible instead of silent. This file
+// already skipped these pins; what CS026 P1 changed is that the skips are now reported. The closing
+// phase asserts the suite runs with ZERO skips, which is what stops a pin passing vacuously forever.
+function skip(what) { skipped++; console.log(`  ${SKIP_TAG}: ${what}`); }
 function eq(got, want, msg) { assert(got === want, `${msg} (got ${JSON.stringify(got)}, want ${JSON.stringify(want)})`); }
 function near(got, want, tol, msg) { assert(Math.abs(got - want) <= tol, `${msg} (got ${got}, want ~${want} +/- ${tol})`); }
 
@@ -158,14 +167,9 @@ function buildFrom(src, { audio = true, store = {}, exportNames = RETURN, ctxLog
 }
 const build = opts => buildFrom(scriptSrc, opts).exports;
 
-// The parent commit's build, or null outside a git checkout.
-let OLD = null;
-try {
-  const prev = execFileSync("git", ["show", PARENT_SHA + ":asteroids-deluxe.html"],
-    { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
-  const om = prev.match(/<script>([\s\S]*?)<\/script>/);
-  if (om) OLD = buildFrom(om[1], { exportNames: OLD_RETURN }).exports;
-} catch (e) { /* not a git checkout, or the parent is unreachable: every OLD-gated pin is skipped */ }
+// The parent commit's build, or null outside a git checkout (CS026 P1: via parentSource()).
+const PARENT_SRC = parentSource(PARENT_SHA);
+const OLD = PARENT_SRC ? buildFrom(PARENT_SRC, { exportNames: OLD_RETURN }).exports : null;
 
 // ---- Staging helpers ----
 // Put the board in a state where update() has nothing to do but the system under test (the CS024 P3 /
@@ -692,7 +696,7 @@ function fullAndHolding(X, { level = 1 } = {}) {
                      "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "GARBAGE_PICKUP"])
       eq(X[k], OLD[k], `F: ${k} is byte-identical to the parent commit`);
   } else {
-    console.log("  (skipped the MAGNET_* parent-commit pin — not a git checkout)");
+    skip("the MAGNET_* parent-commit pin");
   }
 })();
 
@@ -822,7 +826,7 @@ function fullAndHolding(X, { level = 1 } = {}) {
     eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length,
       "G: the panel grew by exactly one row per added registry entry");
   } else {
-    console.log("  (skipped the parent-commit registry pins — not a git checkout)");
+    skip("the parent-commit registry pins");
   }
 })();
 
@@ -855,7 +859,7 @@ function fullAndHolding(X, { level = 1 } = {}) {
     assert(X.GAME_VERSION !== OLD.GAME_VERSION,
       `H: TRAP 1 — the version has moved off the parent commit's (CS025 P5's bump); got ${X.GAME_VERSION} vs parent ${OLD.GAME_VERSION}`);
   } else {
-    console.log("  (skipped the parent-commit lever pins — not a git checkout)");
+    skip("the parent-commit lever pins");
   }
 
   // TRAP 2 — no design doc touched. ⛔ WRITTEN AGAINST THIS PHASE'S OWN PARENT COMMIT AND, ONCE THE
@@ -864,33 +868,27 @@ function fullAndHolding(X, { level = 1 } = {}) {
   // instruction: a `parent..thisCommit` diff is a fixed statement about history, whereas
   // `parent..worktree` would start failing the moment any later phase legitimately edits a doc.
   {
-    let shas = [];
-    try {
-      shas = execFileSync("git", ["log", "--format=%H", "--grep", "^" + PHASE_SUBJECT, PARENT_SHA + "..HEAD"],
-        { cwd: repoRoot }).toString().trim().split("\n").filter(Boolean);
-    } catch (e) { /* not a git checkout */ }
+    // CS026 P1: ownCommits() returns null for "could not ask" and an ARRAY for a real answer, so the
+    // three cases below stay distinguishable — 1 is the normal reading, 0 is a pre-commit run, and
+    // >1 is AMBIGUOUS and remains a FAILURE rather than a skip.
+    const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);
 
     let changed = null, provisional = false;
-    if (shas.length === 1) {
-      changed = execFileSync("git", ["diff", "--name-only", PARENT_SHA, shas[0]], { cwd: repoRoot })
-        .toString().trim().split("\n").filter(Boolean);
+    if (shas === null) {
+      /* no git history: reported as a skip below */
+    } else if (shas.length === 1) {
+      changed = changedFiles(PARENT_SHA, shas[0]);
     } else if (shas.length === 0) {
       // Pre-commit run (this is how the phase's own session sees it): fall back to the working tree,
       // untracked files included — this very test file is untracked until the commit lands.
-      try {
-        const tracked = execFileSync("git", ["diff", "--name-only", PARENT_SHA], { cwd: repoRoot })
-          .toString().trim().split("\n").filter(Boolean);
-        const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: repoRoot })
-          .toString().trim().split("\n").filter(Boolean);
-        changed = [...new Set([...tracked, ...untracked])];
-        provisional = true;
-      } catch (e) { /* not a git checkout */ }
+      changed = changedFiles(PARENT_SHA, null);   // toSha == null means the WORKING TREE, untracked included
+      provisional = changed !== null;
     } else {
       failed++; console.error(`  FAIL: H: TRAP 2 — ${shas.length} commits match "${PHASE_SUBJECT}"; the pin is ambiguous`);
     }
 
     if (!changed) {
-      console.log("  (skipped TRAP 2's doc pin — not a git checkout)");
+      skip("TRAP 2's doc pin");
     } else {
       if (provisional) console.log("  (TRAP 2 measured against the WORKING TREE — this phase is not committed yet)");
       // STATUS.md is the build-reality doc and is updated by every session by standing instruction; it
@@ -963,5 +961,5 @@ function fullAndHolding(X, { level = 1 } = {}) {
   }
 })();
 
-console.log(`\n${passed} passed, ${failed} failed`);
+console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);

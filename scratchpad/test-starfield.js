@@ -19,6 +19,18 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+// ⛔ CS026 P1 (spec §5.2/§5.3): THIS FILE CONTAINS ZERO `Math.random` CALLS OF ITS OWN. Its
+// nondeterminism is the GAME's, in TWO places, and the seed has to cover BOTH:
+//   1. MODULE LOAD, inside the factory — `starsNear.push({ x: Math.random() * STAR_NEAR_TILE_W, ... })`.
+//      A star's position is fixed the instant `new Function(...)(...)` is invoked, so a seed installed
+//      after that fixes nothing at all. This is §D's ~1-in-15 intermittent, and the §5.2 correction.
+//   2. THE DRIVEN RUN — §E advances update() 120 frames with the ship crossing the world, and what
+//      spawns during those frames is unseeded too. MEASURED, not assumed: with the seed scoped to the
+//      factory alone, 200 runs still produced one failure (`E: ship moving/wrapping did not change hull
+//      hp` / `...spawned/destroyed nothing`) — the ship met something that had spawned at random.
+// So the install is UNSCOPED and happens at the top of the file, before every build. That ordering is
+// the requirement, not a style choice.
+const { installSeed } = require("./_seeded-random.js");
 
 const htmlPath = path.join(__dirname, "..", "asteroids-deluxe.html");
 const html = fs.readFileSync(htmlPath, "utf8");
@@ -59,6 +71,11 @@ global.localStorage = { getItem: k => (k in lsStore ? lsStore[k] : null),
 const returnList = ["startGame", "update", "draw", "game", "drawStarfield", "stars", "starsActive", "starsNear",
   "STAR_DENSITY", "STAR_PARALLAX_FACTOR", "STAR_BRIGHT_MIN", "STAR_BRIGHT_MAX",
   "STAR_NEAR_BRIGHT_MIN", "STAR_NEAR_BRIGHT_MAX", "VIEW_W", "VIEW_H", "WORLD_W", "WORLD_H"];
+// ⛔ SEEDING IS NOT THE SAME AS FIXING, AND §D BELOW IS THE CASE WHERE THE DIFFERENCE HAS TEETH —
+// see the long note at (D) before changing this number. Under SEED = 1, `starsNear[0].x` is 796.60,
+// which is what makes §D's parallax assertion MEANINGFUL rather than merely passing.
+const SEED = 1;
+installSeed(SEED);   // ⛔ must precede the factory invocation below — see the note at the top of the file
 const factory = new Function("window", "document", "performance", "requestAnimationFrame", "navigator",
   scriptSrc + "\n;return { " + returnList.join(", ") + " };");
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub);
@@ -112,6 +129,7 @@ const nearStar = starsNear[0];
 // Choose camx so that (camx * STAR_PARALLAX_FACTOR) mod tileW == nearStar.x, i.e. the star's
 // tile-local x lands exactly under the camera's near-layer offset (screen x = nearStar.x - px = 0
 // for the primary tile; test against whichever tile placement actually renders it on-screen).
+const camA0 = 1000;
 function expectedNearScreenX(camx) {
   const tileW = VIEW_W; // STAR_NEAR_TILE_W === VIEW_W in the real code
   const px = ((camx * STAR_PARALLAX_FACTOR) % tileW + tileW) % tileW;
@@ -123,7 +141,32 @@ function expectedNearScreenX(camx) {
   }
   return null;
 }
-const camA = 1000, tileW = VIEW_W / STAR_PARALLAX_FACTOR;
+// ⛔⛔ THE MEASURABILITY GUARD (CS026 P1, spec §5.3). `expectedNearScreenX()` returns null when NO tile
+// offset puts starsNear[0] on screen, and the assertions below then compare against null and fail —
+// which is exactly the ~1-in-15 intermittent this phase pinned. But a seed that merely lands the star
+// somewhere convenient would make these pass WITHOUT the assertion having become meaningful, so the
+// seed choice is checked here rather than assumed.
+//
+// THE ARITHMETIC, stated so a reseed cannot silently re-break it. STAR_NEAR_TILE_W === VIEW_W === 1280
+// and STAR_PARALLAX_FACTOR === 0.5, so at camA = 1000 the near-layer offset px is 500, and at
+// camA + 37 it is 518.5. The 3x3 stamp is searched tx = -1, 0, 1 and the first offset landing the star
+// in [-4, VIEW_W + 4] wins. expA and expC therefore pick DIFFERENT tiles — and the parallax assertion
+// fails by a whole tile width — for exactly the band starsNear[0].x in [496, 514.5), which is 18.5 of
+// 1280, i.e. ~1 in 69 unseeded builds. (The empirically observed rate was 1 in 63 and 1 in 50.)
+//
+// Under SEED = 1 the star sits at x = 796.60: 282 px clear of that band, rendering at screen x = 296.60
+// under camA — genuinely inside the viewport and genuinely in the same tile at both camera positions,
+// which is what makes the parallax claim a real measurement. The guard below FAILS LOUDLY if a later
+// reseed moves it, instead of letting the assertions go quietly vacuous.
+{
+  const px = ((camA0 * STAR_PARALLAX_FACTOR) % VIEW_W + VIEW_W) % VIEW_W;
+  const sxA = starsNear[0].x - px, sxC = starsNear[0].x - (px + 37 * STAR_PARALLAX_FACTOR);
+  assert(sxA >= 0 && sxA <= VIEW_W,
+    `D: (measurability) under SEED=${SEED} starsNear[0] renders ON SCREEN at camA — screen x ${sxA.toFixed(2)}, star x ${starsNear[0].x.toFixed(2)}`);
+  assert(sxC >= -4,
+    `D: (measurability) ...and the +37 camera shift keeps it in the SAME tile, so the parallax assertion below measures a shift and not a tile jump (shifted screen x ${sxC.toFixed(2)})`);
+}
+const camA = camA0, tileW = VIEW_W / STAR_PARALLAX_FACTOR;
 const expA = expectedNearScreenX(camA);
 const expB = expectedNearScreenX(camA + tileW);
 assert(expA !== null && expB !== null && Math.abs(expA - expB) < 1e-6,

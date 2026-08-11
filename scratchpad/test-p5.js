@@ -37,6 +37,19 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+// ⛔ CS026 P1 (spec §5.2/§5.3): THIS FILE CONTAINS ZERO `Math.random` CALLS OF ITS OWN — its
+// nondeterminism is the GAME's, and §C's ~1-in-30 intermittent is the reason this file is on the
+// pin list. The seed is installed UNSCOPED, at the top, before the factory invocation below, because
+// the randomness that matters here is on both sides of the build: the module-load starfield/entity
+// generation inside `new Function(...)(...)`, and `startGame()`/`nextWave()`/`update()` afterwards.
+// (§C's original flake was the latter — nextWave() places the dock at a RANDOM offset and this file's
+// isolate() teleports the ship to a fixed point; the unlucky rolls landed the ship inside the dock and
+// the offload pass emptied the chain. isolate()'s `game.dock = null` already defuses that specific
+// case and is deliberately left in place: the seed pins the roll, the null keeps the test honest if
+// the roll is ever reseeded.)
+const { installSeed } = require("./_seeded-random.js");
+const SEED = 1;
+installSeed(SEED);   // ⛔ must precede the factory invocation below — this ordering is the requirement
 
 const htmlPath = path.join(__dirname, "..", "asteroids-deluxe.html");
 const html = fs.readFileSync(htmlPath, "utf8");
