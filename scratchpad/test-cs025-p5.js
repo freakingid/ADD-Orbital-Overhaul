@@ -544,10 +544,16 @@ function quiet(X) {
   for (const f of ["archive/PLANNED-FEATURES-CS025-old.md", "archive/IMPLEMENTATION-PHASES-CS025-old.md"]) {
     assert(fs.existsSync(path.join(repoRoot, f)), `G: ${f} still exists`);
   }
-  // …and the archived pair was not edited this changeset.
-  const touched = execSync('git diff --name-only 2cd73e8 -- archive/ || true',
-    { cwd: repoRoot }).toString().trim();
-  eq(touched, "", "G: ⛔ TRAP 3 — nothing under archive/ was modified since CS025 P0");
+  // ⛔ RETIRED BY CS026 P0 — the "nothing under archive/ moved since CS025 P0" pin that stood here.
+  // It was a TRUE statement about THIS phase's own scope (CS025 P5 does not touch archive/) and an
+  // IMPOSSIBLE one the moment a later changeset legitimately archives its own superseded planning pair —
+  // which is exactly what CS026 P0 does to PLANNED-FEATURES-CS025.md/IMPLEMENTATION-PHASES-CS025.md,
+  // following the same git-mv precedent CS023 P0/CS024 P0/CS025 P0 all used. The moving-reference lesson,
+  // same shape as every other "nothing else moved against HEAD" retirement in this repo's history
+  // (test-cs024-p6b.js §G, the nine CS024 P7 doc pins, test-cs025-p3.js §G): a phase-local claim written
+  // against a fixed parent SHA is permanently true about ITS OWN phase and permanently false as a
+  // standing invariant for every phase after it. What TRAP 3 above (the LIVE/CS025-old resolution sweep)
+  // still protects — that no live reference points at a path that doesn't exist — is unaffected.
 })();
 
 console.log(`\n${passed} passed, ${failed} failed`);

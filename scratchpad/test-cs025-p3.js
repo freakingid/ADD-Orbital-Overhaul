@@ -4,7 +4,7 @@
 //
 // ⛔ THIS FILE WAS REWRITTEN BY CS025 P5 AND NOW PINS THE ABSENCE OF WHAT P3 BUILT.
 //
-// WHAT P3 SHIPPED (PLANNED-FEATURES-CS025.md §3), and what this file used to assert: while
+// WHAT P3 SHIPPED (archive/PLANNED-FEATURES-CS025.md §3), and what this file used to assert: while
 // magnetPulling() was true, the scoop mouth stroked in POWERUP_COLOR.magnet at SCOOP_MAGNET_W/_BLUR,
 // and at scoopLevel 0 a small fixed nose-V (SCOOP_MAGNET_NOSE_W/_D) carried the same tell instead of
 // nothing. drawPoly() grew two trailing width/blur params to serve it.
@@ -381,7 +381,7 @@ const MAGNET_STATES = [
   assert(X.GAME_VERSION !== "1.0.0.24", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24");
 
   // ⛔ RETIRED BY CS025 P5 — the "no design doc was touched this phase" pin that stood here.
-  // It ran `git diff --name-only HEAD` and required PLANNED-FEATURES-CS025.md and the GDD to be
+  // It ran `git diff --name-only HEAD` and required archive/PLANNED-FEATURES-CS025.md and the GDD to be
   // unmoved. That is a TRUE statement about P3's own session and an IMPOSSIBLE one about any working
   // tree afterwards: P5 rewrites the GDD, CLAUDE.md, DIFFICULTY-LEVERS.md and GDD-VERSION-HISTORY.md
   // BY INSTRUCTION. It is a phase-local claim wearing a permanent assertion's clothing.

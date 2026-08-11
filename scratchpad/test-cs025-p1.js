@@ -3,7 +3,7 @@
 //
 //   node scratchpad/test-cs025-p1.js
 //
-// THE DEFECT (PLANNED-FEATURES-CS025.md §1.1): with the Magnet active and the chain at game.cargoMax the
+// THE DEFECT (archive/PLANNED-FEATURES-CS025.md §1.1): with the Magnet active and the chain at game.cargoMax the
 // pickup gate blocks every hook, so pulled garbage has nowhere to go. It loiters on top of the ship, and
 // because garbage-to-garbage coalescence is a SEPARATE system that keeps running, the loitering cloud
 // reaches HUNTER_COALESCE_COUNT and converts into a Hunter at the player's own position.
@@ -26,7 +26,7 @@
 // Section C is the assertion that fails if someone later tidies the two names back into one.
 //
 // TRAP 1: GAME_VERSION stays "1.0.0.24" (CS025 P5 owns the next bump).
-// TRAP 2: no design doc touched — PLANNED-FEATURES-CS025.md §1 already carried this phase's spec.
+// TRAP 2: no design doc touched — archive/PLANNED-FEATURES-CS025.md §1 already carried this phase's spec.
 // TRAP 3: no LEVERS edit, no lever added — magnetResumeDelay is a flat knob.
 // TRAP 4: every "nothing else moved" claim is written against this phase's OWN PARENT COMMIT
 //         (2cd73e870b860151a578816eacc1fca5a34933e5), never against the moving HEAD ref. The lesson cost

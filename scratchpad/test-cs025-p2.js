@@ -4,7 +4,7 @@
 //
 //   node scratchpad/test-cs025-p2.js
 //
-// WHY (PLANNED-FEATURES-CS025.md §2). P1 stopped the Magnet ADDING to the cloud at full cargo. It does
+// WHY (archive/PLANNED-FEATURES-CS025.md §2). P1 stopped the Magnet ADDING to the cloud at full cargo. It does
 // nothing about the cloud already sitting on the ship at the instant the chain fills — and that cloud is
 // the one that converts into a Hunter at the player's own position. This phase shoves it outward and
 // re-arms its coalescence clock. THE RE-ARM IS WHAT SOLVES THE DEFECT AND THE VELOCITY IS WHAT MAKES IT
@@ -20,7 +20,7 @@
 //   3. Two POWERUPS knobs — magnetPushKick (px/s) and magnetPushSpread (° half-angle). Registry 73 -> 75.
 //
 // TRAP 1: GAME_VERSION stays "1.0.0.24" (CS025 P5 owns the next bump).
-// TRAP 2: no design doc touched — PLANNED-FEATURES-CS025.md §2/§5 already carried this phase's spec.
+// TRAP 2: no design doc touched — archive/PLANNED-FEATURES-CS025.md §2/§5 already carried this phase's spec.
 // TRAP 3: coalesceGarbage(), drainHeldClumps(), cullGarbage(), saturatedClump() and shatterClump() are
 //         all UNMODIFIED. This phase adds a PRODUCER of coalesceDelay writes, not a change to any
 //         consumer — pinned as function-source byte-identity against the parent, not argued.
