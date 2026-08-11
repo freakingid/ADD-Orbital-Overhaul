@@ -1,38 +1,50 @@
-// Headless test for CS025 Phase 3 — THE MAGNET-BLUE SCOOP TELL.
+// Headless test for CS025 Phase 3 — THE MAGNET-BLUE SCOOP TELL, **BACKED OUT BY CS025 P5**.
 //
 //   node scratchpad/test-cs025-p3.js
 //
-// WHY (PLANNED-FEATURES-CS025.md §3). While magnetPulling() is true, the scoop mouth strokes in
-// POWERUP_COLOR.magnet at a wider width/blur (SCOOP_MAGNET_W/_BLUR). At scoopLevel 0 a small fixed
-// nose-V (SCOOP_MAGNET_NOSE_W/_D) carries the same tell instead of nothing. Geometry at levels 1-5,
-// the no-fill rule, and inScoopBox()'s capture math are all untouched — colour/width/blur only.
+// ⛔ THIS FILE WAS REWRITTEN BY CS025 P5 AND NOW PINS THE ABSENCE OF WHAT P3 BUILT.
 //
-// WHAT LANDED:
-//   1. drawPoly(points, x, y, angle, color, closed = true, width, blur) — two new trailing params,
-//      left undefined for every pre-existing call site so glowStroke's own defaults (1.6, 10) apply.
-//   2. Ship.draw()'s scoop arm now branches on magnetPulling(): level>0 keeps its exact geometry but
-//      recolours/re-strokes while pulling; level 0 draws nothing UNLESS pulling, in which case a small
-//      nose-V appears.
-//   3. Four look-call constants: SCOOP_MAGNET_W (2.6), SCOOP_MAGNET_BLUR (18), SCOOP_MAGNET_NOSE_W (10),
-//      SCOOP_MAGNET_NOSE_D (22). Not debug knobs — the registry stays at 75.
+// WHAT P3 SHIPPED (PLANNED-FEATURES-CS025.md §3), and what this file used to assert: while
+// magnetPulling() was true, the scoop mouth stroked in POWERUP_COLOR.magnet at SCOOP_MAGNET_W/_BLUR,
+// and at scoopLevel 0 a small fixed nose-V (SCOOP_MAGNET_NOSE_W/_D) carried the same tell instead of
+// nothing. drawPoly() grew two trailing width/blur params to serve it.
 //
-// TRAP 1: GAME_VERSION stays "1.0.0.24".
-// TRAP 2: no design doc touched.
-// TRAP 3: the registry stays at 75 — no knob added.
-// TRAP 4: SCOOP_WIDTH/SCOOP_DEPTH/SCOOP_CONFIG/buildScoopSteps/the SCOOP_WIDTH[0]!==0 invariant untouched.
+// WHY IT IS GONE. The CS025 playtest gate, question Q4, asked whether the tell read as *charged* and
+// whether it *informed*. Paul's answer: "The scoop energy tell is not working. It is impossible to tell
+// the difference between charged or not. I would like to just get rid of this function altogether. So
+// this is backing out of a change I originally asked for in cs025." Magnet-blue (#8ab6ff) sits too
+// close to COLOR.ship (#9fd8ff) — the specific risk Q4 was written to test — so the tell added a second
+// thing moving on the hull while informing nobody. P5 removed the render branch, the nose-V, the four
+// SCOOP_MAGNET_* look-call constants, and drawPoly()'s two params (their only two callers were in the
+// deleted branch). Executable source is byte-identical to P3's PARENT COMMIT, 914e5a6.
+//
+// ⛔ THE MECHANIC IS NOT BACKED OUT, ONLY ITS TELL. CS025 P1's full-cargo magnet suppression and P2's
+// repulsion burst both SHIP. magnetPulling() is alive and still gates the attraction force and the
+// MAGNET_PICKUP_MULT circle — §F exists specifically to catch an over-eager revert that takes the
+// predicate with the paint. A future session reading "P3 was backed out" must not delete P1 as well.
+//
+// WHAT IS PINNED HERE:
+//   1. drawPoly's signature is pre-P3 again — six params, no width/blur, no literal 1.6/10 of its own.
+//   2. The scoop mouth is COLOR.dock in EVERY magnet state: none, banked-and-pulling, banked-and-
+//      suppressed. There is no state in which the ship's scoop changes colour. (The load-bearing pin.)
+//   3. scoopLevel 0 draws no scoop stroke at all, in every magnet state — the nose-V is gone.
+//   4. The four SCOOP_MAGNET_* constants are absent from executable source.
+//   5. Geometry at levels 1-5, the no-fill rule, and inScoopBox()'s capture math are untouched — these
+//      were true under P3 and are true under the backout, and are carried over rather than dropped.
+//   6. magnetPulling() survives and still drives the pull (the over-revert guard, above).
 //
 // Follows the standing rule (CLAUDE.md): stub window/document/rAF/navigator/localStorage, eval the
 // REAL <script> block, and drive the ACTUAL startGame/applyPowerup/Ship.draw/inScoopBox paths.
 //
 // Sections:
-//  (A) drawPoly is byte-identical for existing callers — glowStroke gets undefined width/blur, and no
-//      literal 1.6/10 was duplicated into drawPoly's own signature.
-//  (B) colour follows magnetPulling(), NOT powerActive("magnet") — banked-but-not-pulling stays dock-green.
-//  (C) the level-0 nose V exists only while pulling, at exactly SCOOP_MAGNET_NOSE_* size.
-//  (D) geometry is unchanged at every level 1-5, pulling or not.
-//  (E) inScoopBox() is untouched — byte-identical capture results at every level, pulling or not.
-//  (F) no new fill in Ship.draw().
-//  (G) TRAPs.
+//  (A) drawPoly's signature and body are back to pre-P3 — glowStroke's own defaults are the only ones.
+//  (B) the scoop mouth is COLOR.dock in every magnet state; POWERUP_COLOR.magnet is never stroked by the ship.
+//  (C) scoopLevel 0 draws no scoop stroke in any magnet state.
+//  (D) the four SCOOP_MAGNET_* constants are gone from executable source.
+//  (E) geometry unchanged at every level 1-5, and inScoopBox()'s level-0-always-false invariant holds.
+//  (F) ⛔ magnetPulling() SURVIVED the backout and still gates the pull — the over-revert guard.
+//  (G) no fill introduced in Ship.draw().
+//  (H) TRAPs.
 
 "use strict";
 const fs = require("fs");
@@ -97,13 +109,14 @@ function makeCtxStub() {
   });
 }
 
+// NOTE: the four SCOOP_MAGNET_* names are deliberately NOT exported here — they no longer exist, and
+// naming them would make this harness throw a ReferenceError instead of running §D's absence check.
 const RETURN = [
   "game", "startGame", "update", "draw", "drawPoly", "Ship",
   "magnetPulling", "powerActive", "applyPowerup", "inScoopBox",
   "COLOR", "POWERUP_COLOR",
   "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_MAX_LEVEL",
-  "SCOOP_MAGNET_W", "SCOOP_MAGNET_BLUR", "SCOOP_MAGNET_NOSE_W", "SCOOP_MAGNET_NOSE_D",
-  "GAME_VERSION", "WORLD_W", "WORLD_H",
+  "MAGNET_RANGE", "GAME_VERSION", "WORLD_W", "WORLD_H",
 ];
 
 function buildFrom(src, { audio = true, exportNames = RETURN } = {}) {
@@ -140,134 +153,134 @@ function quiet(X) {
   return g;
 }
 
-// ============ (A) drawPoly is byte-identical for existing callers ============
+// The three magnet states the tell used to distinguish. If the backout is complete, the scoop renders
+// identically in all three — which is exactly what §B and §C assert.
+const MAGNET_STATES = [
+  { name: "no magnet banked",        setup: (X, g) => { g.powerBudget.magnet = 0; g.magnetHoldT = 0; } },
+  { name: "banked and PULLING",      setup: (X, g) => { X.applyPowerup("magnet"); g.magnetHoldT = 0; } },
+  { name: "banked but SUPPRESSED",   setup: (X, g) => { X.applyPowerup("magnet"); g.magnetHoldT = 1; } },
+];
+
+// ============ (A) drawPoly is back to its pre-P3 signature ============
 (function sectionA() {
-  console.log("(A) drawPoly() old-arity calls are byte-identical — glowStroke defaults apply");
+  console.log("(A) drawPoly() is pre-P3 again — six params, glowStroke's own defaults are the only ones");
   const X = build();
   strokeLog = [];
   X.drawPoly([[0, 0], [10, 0], [5, 10]], 100, 100, 0, "#abcdef");
   eq(strokeLog.length, 1, "A: one stroke call");
   eq(strokeLog[0].color, "#abcdef", "A: colour passed through");
-  eq(strokeLog[0].width, 1.6, "A: width falls back to glowStroke's own default (1.6)");
-  eq(strokeLog[0].blur, 10, "A: blur falls back to glowStroke's own default (10)");
+  eq(strokeLog[0].width, 1.6, "A: width is glowStroke's own default (1.6)");
+  eq(strokeLog[0].blur, 10, "A: blur is glowStroke's own default (10)");
 
   strokeLog = [];
   X.drawPoly([[0, 0], [10, 0], [5, 10]], 100, 100, 0, "#abcdef", false);
   eq(strokeLog[0].width, 1.6, "A: 6-arg call (explicit closed=false) still defaults width");
   eq(strokeLog[0].blur, 10, "A: ...and blur");
 
-  // No literal 1.6/10 duplicated into drawPoly's own signature.
+  // The signature itself: no width/blur params, and no literal 1.6/10 smuggled in as a default.
   const sigMatch = execOnly.match(/function drawPoly\(([^)]*)\)/);
   assert(sigMatch, "A: drawPoly's signature is present");
-  assert(!/1\.6|,\s*10\)/.test(sigMatch[1]), "A: ...and carries no literal 1.6/10 default of its own");
-  assert(/width, blur\)/.test(sigMatch[0]) || /,\s*width\s*,\s*blur\s*\)/.test(sigMatch[0]),
-    "A: ...width/blur are present as bare (defaultless) trailing params");
+  assert(!/width|blur/.test(sigMatch[1]),
+    "A: ⛔ the two trailing width/blur params are GONE (P5 backout) — got: " + (sigMatch && sigMatch[1]));
+  assert(!/1\.6|,\s*10\)/.test(sigMatch[1]), "A: ...and no literal 1.6/10 default of its own");
+  // The body forwards nothing extra — glowStroke stays the ONE place those numbers live.
+  const bodyMatch = execOnly.match(/function drawPoly\([^)]*\)\s*\{[\s\S]*?\n\}/);
+  assert(bodyMatch && /glowStroke\(color\);/.test(bodyMatch[0]),
+    "A: the body calls glowStroke(color) with no forwarded width/blur");
+
+  // Trailing extra arguments are harmless (JS ignores them), so a stale P3-era 8-arg call site could not
+  // silently change the look — assert that too, so the absence is provably inert rather than assumed.
+  strokeLog = [];
+  X.drawPoly([[0, 0], [10, 0], [5, 10]], 100, 100, 0, "#abcdef", false, 9.9, 99);
+  eq(strokeLog[0].width, 1.6, "A: a stale 8-arg call is INERT — extra args cannot widen the stroke");
+  eq(strokeLog[0].blur, 10, "A: ...nor change the blur");
 })();
 
-// ============ (B) colour follows magnetPulling(), not powerActive("magnet") ============
+// ============ (B) the scoop mouth is COLOR.dock in EVERY magnet state ============
 (function sectionB() {
-  console.log("(B) banked-but-not-pulling (magnetHoldT > 0) stays COLOR.dock, not POWERUP_COLOR.magnet");
-  const X = build();
-  X.startGame();
-  const g = quiet(X);
-  g.scoopLevel = 3;
-  X.applyPowerup("magnet");
-  assert(X.powerActive("magnet"), "B: (setup) the Magnet is banked");
-  g.magnetHoldT = 1;   // e.g. cargo just filled, resume delay still running
-  eq(X.magnetPulling(), false, "B: (setup) ...but NOT pulling — the resume delay is live");
+  console.log("(B) ⛔ the load-bearing backout pin: no magnet state recolours the scoop mouth");
+  for (const st of MAGNET_STATES) {
+    const X = build();
+    X.startGame();
+    const g = quiet(X);
+    g.scoopLevel = 3;
+    st.setup(X, g);
 
-  strokeLog = [];
-  g.ship.draw();
-  const scoopStroke = strokeLog.find(s => s.color === X.COLOR.dock || s.color === X.POWERUP_COLOR.magnet);
-  assert(scoopStroke, "B: a scoop stroke was drawn");
-  eq(scoopStroke.color, X.COLOR.dock, "B: ⛔ banked+active but not pulling still draws COLOR.dock");
-  assert(scoopStroke.width === 1.6 || scoopStroke.width === undefined,
-    "B: ...at the default width, not the magnet width, while not pulling");
+    strokeLog = [];
+    g.ship.draw();
+    const scoop = strokeLog.find(s => s.color === X.COLOR.dock);
+    assert(scoop, `B: [${st.name}] the scoop mouth is drawn, in COLOR.dock`);
+    eq(scoop && scoop.width, 1.6, `B: [${st.name}] ...at glowStroke's default width, never a magnet width`);
+    eq(scoop && scoop.blur, 10, `B: [${st.name}] ...and default blur`);
+    assert(!strokeLog.some(s => s.color === X.POWERUP_COLOR.magnet),
+      `B: [${st.name}] ⛔ POWERUP_COLOR.magnet is NEVER stroked by Ship.draw()`);
+  }
 
-  // Now actually pulling: magnetHoldT at 0.
-  g.magnetHoldT = 0;
-  eq(X.magnetPulling(), true, "B: (setup) now genuinely pulling");
-  strokeLog = [];
-  g.ship.draw();
-  const pullStroke = strokeLog.find(s => s.color === X.POWERUP_COLOR.magnet);
-  assert(pullStroke, "B: ⛔ while pulling, the scoop draws in POWERUP_COLOR.magnet");
-  eq(pullStroke.width, X.SCOOP_MAGNET_W, "B: ...at SCOOP_MAGNET_W");
-  eq(pullStroke.blur, X.SCOOP_MAGNET_BLUR, "B: ...and SCOOP_MAGNET_BLUR");
+  // …and the source carries no colour choice at all in the scoop arm: one unconditional COLOR.dock.
+  const shipDraw = execOnly.match(/draw\(\)\s*\{\s*if \(this\.dead\)[\s\S]*?class Bullet/)[0];
+  assert(!/POWERUP_COLOR\.magnet/.test(shipDraw),
+    "B: Ship.draw() does not mention POWERUP_COLOR.magnet anywhere");
+  assert(!/magnetPulling\(\)/.test(shipDraw),
+    "B: ⛔ Ship.draw() no longer CALLS magnetPulling() — draw() and the pull predicate are decoupled again");
 })();
 
-// ============ (C) the level-0 nose V exists only while pulling ============
+// ============ (C) scoopLevel 0 draws nothing, in every magnet state ============
 (function sectionC() {
-  console.log("(C) scoopLevel 0: nothing when idle, a SCOOP_MAGNET_NOSE_* V when pulling");
-  const X = build();
-  X.startGame();
-  const g = quiet(X);
-  g.scoopLevel = 0;
+  console.log("(C) scoopLevel 0: no scoop stroke at all — the nose-V is gone in every magnet state");
+  for (const st of MAGNET_STATES) {
+    const X = build();
+    X.startGame();
+    const g = quiet(X);
+    g.scoopLevel = 0;
+    st.setup(X, g);
 
-  // Idle, no magnet at all: no scoop geometry drawn (0 strokes at all from Ship.draw's scoop arm).
-  strokeLog = [];
-  g.ship.draw();
-  assert(!strokeLog.some(s => s.color === X.COLOR.dock || s.color === X.POWERUP_COLOR.magnet),
-    "C: idle at level 0, no magnet — no scoop stroke at all");
-
-  // Pulling, level 0: the nose V appears, in magnet colour, at the nose constants.
-  X.applyPowerup("magnet");
-  g.magnetHoldT = 0;
-  eq(X.magnetPulling(), true, "C: (setup) pulling");
-  const origDrawPoly = X.drawPoly;
-  let captured = null;
-  // Spy on drawPoly by re-deriving the geometry independently instead — assert against the exported
-  // constants directly through the ship's own draw call and stroke log.
-  strokeLog = [];
-  g.ship.draw();
-  const noseStroke = strokeLog.find(s => s.color === X.POWERUP_COLOR.magnet);
-  assert(noseStroke, "C: ⛔ a nose-V stroke appears at level 0 while pulling");
-  eq(noseStroke.width, X.SCOOP_MAGNET_W, "C: ...at SCOOP_MAGNET_W");
-  eq(noseStroke.blur, X.SCOOP_MAGNET_BLUR, "C: ...and SCOOP_MAGNET_BLUR");
-
-  // Geometry check via source: the nose-V branch uses SCOOP_MAGNET_NOSE_W/_D, not SCOOP_WIDTH/DEPTH.
-  const shipDrawBody = execOnly.match(/draw\(\)\s*\{\s*if \(this\.dead\)[\s\S]*?class Bullet/)[0];
-  assert(/SCOOP_MAGNET_NOSE_W/.test(shipDrawBody) && /SCOOP_MAGNET_NOSE_D/.test(shipDrawBody),
-    "C: Ship.draw() references SCOOP_MAGNET_NOSE_W/_D");
-})();
-
-// ============ (D) geometry unchanged at every level 1-5, pulling or not ============
-(function sectionD() {
-  console.log("(D) the emitted point arrays are unchanged at every scoop level, pulling or not");
-  for (let lvl = 1; lvl <= 5; lvl++) {
-    for (const pulling of [false, true]) {
-      const X = build();
-      X.startGame();
-      const g = quiet(X);
-      g.scoopLevel = lvl;
-      if (pulling) { X.applyPowerup("magnet"); g.magnetHoldT = 0; }
-      let seen = null;
-      const orig = X.drawPoly;
-      // Wrap via a local re-require isn't possible (closures) — verify geometry indirectly: the
-      // expected corners are pinned to SCOOP_WIDTH[lvl]/SCOOP_DEPTH[lvl], unmodified this phase.
-      const hw = X.SCOOP_WIDTH[lvl] / 2, d = X.SCOOP_DEPTH[lvl];
-      const expected = [[d, -hw], [16, 0], [d, hw]];
-      // Since drawPoly can't be intercepted post-hoc through the closure, assert the SOURCE still
-      // builds the exact same literal corner array for both branches (pulling / not).
-      const body = execOnly.match(/if \(game\.scoopLevel > 0\) \{[\s\S]*?\n      \} else if \(pulling\)/)[0];
-      assert(/\[\[d, -hw\], \[16, 0\], \[d, hw\]\]/.test(body),
-        `D: level ${lvl} pulling=${pulling}: the corner literal [[d,-hw],[16,0],[d,hw]] is unchanged`);
-      assert(new RegExp("hw = SCOOP_WIDTH\\[lvl\\] / 2, d = SCOOP_DEPTH\\[lvl\\]").test(body),
-        `D: level ${lvl}: hw/d still derive from SCOOP_WIDTH[lvl]/SCOOP_DEPTH[lvl]`);
-      eq(expected[0][0], d, "D: sanity — d matches SCOOP_DEPTH[lvl]");
-    }
+    strokeLog = [];
+    g.ship.draw();
+    assert(!strokeLog.some(s => s.color === X.COLOR.dock),
+      `C: [${st.name}] no dock-green scoop stroke at level 0`);
+    assert(!strokeLog.some(s => s.color === X.POWERUP_COLOR.magnet),
+      `C: [${st.name}] ⛔ and no magnet-blue nose-V either`);
+    // The hull itself must still be drawn — proves the ship rendered at all and the section isn't vacuous.
+    assert(strokeLog.some(s => s.color === X.COLOR.ship),
+      `C: [${st.name}] (non-vacuous) the hull IS still stroked`);
   }
 })();
 
-// ============ (E) inScoopBox() is untouched ============
+// ============ (D) the four SCOOP_MAGNET_* constants are gone ============
+(function sectionD() {
+  console.log("(D) the four SCOOP_MAGNET_* look-call constants are absent from executable source");
+  for (const name of ["SCOOP_MAGNET_W", "SCOOP_MAGNET_BLUR", "SCOOP_MAGNET_NOSE_W", "SCOOP_MAGNET_NOSE_D"]) {
+    assert(!new RegExp("\\b" + name + "\\b").test(execOnly),
+      `D: ${name} does not appear in executable source`);
+  }
+  // The tombstone comment naming them IS expected and must not be mistaken for a live reference: it is
+  // in the COMMENT stream, which execOnly strips. Assert it survives, so the "why" stays discoverable.
+  assert(/SCOOP_MAGNET_/.test(scriptSrc),
+    "D: the tombstone comment explaining the removal is still in the file (comments only)");
+  // The scoop's own sizing tables are untouched by the backout — it removed paint, not geometry.
+  const X = build();
+  eq(X.SCOOP_WIDTH[0], 0, "D: SCOOP_WIDTH[0] is still 0 (the load-time invariant's subject)");
+  eq(X.SCOOP_DEPTH[0], 0, "D: SCOOP_DEPTH[0] is still 0");
+})();
+
+// ============ (E) geometry + inScoopBox untouched ============
 (function sectionE() {
-  console.log("(E) inScoopBox() capture results are unchanged at every level, pulling or not");
+  console.log("(E) level 1-5 corner geometry and inScoopBox()'s level-0 invariant are unchanged");
+  const body = execOnly.match(/if \(game\.scoopLevel > 0\) \{[\s\S]{0,400}?\n      \}/)[0];
+  assert(/\[\[d, -hw\], \[16, 0\], \[d, hw\]\]/.test(body),
+    "E: the corner literal [[d,-hw],[16,0],[d,hw]] is unchanged");
+  assert(/hw = SCOOP_WIDTH\[lvl\] \/ 2, d = SCOOP_DEPTH\[lvl\]/.test(body),
+    "E: hw/d still derive from SCOOP_WIDTH[lvl]/SCOOP_DEPTH[lvl]");
+  assert(/drawPoly\(\[\[d, -hw\], \[16, 0\], \[d, hw\]\], this\.x, this\.y, this\.angle, COLOR\.dock, false\);/.test(body),
+    "E: ...through ONE unconditional drawPoly call in COLOR.dock, closed=false, no width/blur");
+
   for (let lvl = 0; lvl <= 5; lvl++) {
-    for (const pulling of [false, true]) {
+    for (const st of MAGNET_STATES) {
       const X = build();
       X.startGame();
       const g = quiet(X);
       g.scoopLevel = lvl;
-      if (pulling) { X.applyPowerup("magnet"); g.magnetHoldT = 0; }
+      st.setup(X, g);
       const samples = [
         { x: g.ship.x + 10, y: g.ship.y },
         { x: g.ship.x + 40, y: g.ship.y + 5 },
@@ -275,57 +288,113 @@ function quiet(X) {
         { x: g.ship.x, y: g.ship.y + 60 },
       ];
       for (const s of samples) {
-        const fakeG = { x: s.x, y: s.y };
-        const inBox = X.inScoopBox(fakeG);
-        // Reference: recompute independently from the unmodified formula in the GDD/spec.
-        const dx = s.x - g.ship.x, dy = s.y - g.ship.y;
-        const forward = dx * Math.cos(g.ship.angle) + dy * Math.sin(g.ship.angle);
-        const lateral = -dx * Math.sin(g.ship.angle) + dy * Math.cos(g.ship.angle);
-        const SHIP_RADIUS = X.game.ship.radius || 12;
-        const ref = lvl === 0 ? false :
-          Math.abs(lateral) <= X.SCOOP_WIDTH[lvl] / 2 && forward >= -SHIP_RADIUS && forward <= X.SCOOP_DEPTH[lvl];
-        // Only assert equality when SHIP_RADIUS guess matches (skip ambiguous edge samples near the
-        // rear boundary); the level-0-always-false invariant is the load-bearing check here.
-        if (lvl === 0) eq(inBox, false, `E: level 0 always false (${JSON.stringify(s)}, pulling=${pulling})`);
+        const inBox = X.inScoopBox({ x: s.x, y: s.y });
+        // The level-0-always-false invariant (GDD §2.14.1) is the load-bearing check, and it must hold
+        // in every magnet state — the backout must not have made capture depend on the pull.
+        if (lvl === 0) eq(inBox, false, `E: level 0 always false (${JSON.stringify(s)}, ${st.name})`);
       }
     }
   }
+
+  // Capture results must be IDENTICAL across magnet states at every level — the pull never touched
+  // inScoopBox and still doesn't.
+  for (let lvl = 0; lvl <= 5; lvl++) {
+    const results = MAGNET_STATES.map(st => {
+      const X = build(); X.startGame();
+      const g = quiet(X); g.scoopLevel = lvl; st.setup(X, g);
+      return [10, 20, 30, 40, 50].map(dx => X.inScoopBox({ x: g.ship.x + dx, y: g.ship.y })).join(",");
+    });
+    assert(results[0] === results[1] && results[1] === results[2],
+      `E: level ${lvl}: inScoopBox is identical in all three magnet states (${results.join(" | ")})`);
+  }
 })();
 
-// ============ (F) no new fill in Ship.draw() ============
+// ============ (F) magnetPulling() survived the backout ============
 (function sectionF() {
-  console.log("(F) Ship.draw() introduces no fill — the §3.2 no-fills exception count is unchanged");
-  const shipClassSrc = execOnly.match(/class Ship \{[\s\S]*?\n\}/)[0];
-  assert(!/\bfill\(/.test(shipClassSrc) && !/fillRect/.test(shipClassSrc),
-    "F: no fill()/fillRect anywhere in the Ship class");
-
+  console.log("(F) ⛔ the OVER-REVERT GUARD: magnetPulling() is alive and still gates the pull");
   const X = build();
+  assert(typeof X.magnetPulling === "function", "F: magnetPulling() still exists");
+  assert(/function magnetPulling\(\)/.test(execOnly), "F: ...as a declared function, not a local");
+
   X.startGame();
   const g = quiet(X);
+  X.applyPowerup("magnet");
+  g.magnetHoldT = 0;
+  eq(X.magnetPulling(), true, "F: banked + no hold → pulling");
+  g.magnetHoldT = 1;
+  eq(X.magnetPulling(), false, "F: banked + hold running → NOT pulling (P1's suppression still ships)");
+  g.powerBudget.magnet = 0; g.magnetHoldT = 0;
+  eq(X.magnetPulling(), false, "F: no budget → not pulling");
+
+  assert(typeof X.MAGNET_RANGE === "number" && X.MAGNET_RANGE > 0,
+    "F: MAGNET_RANGE is still a live constant the pull reads");
+
+  // The pull's two consumers still read `pulling`, and — the half P1 called load-bearing — the two
+  // BUDGET SPEND sites still read powerActive("magnet") RAW. Collapsing those two names back into one
+  // would give the Magnet free uses whenever cargo fills, which is P1's FORK-1. Pinned here because a
+  // backout pass is exactly when someone might "simplify" the predicate away as no-longer-needed.
+  assert(/const pulling = magnetPulling\(\);/.test(execOnly),
+    "F: ⛔ update()'s pickup block still captures `const pulling = magnetPulling()` ONCE, above the loop");
+  assert(/powerActive\("magnet"\)/.test(execOnly),
+    "F: ...and powerActive(\"magnet\") is still read raw for budget spend (P1 FORK-1)");
+
+  // BEHAVIOURAL ownership note: test-cs025-p1.js §C owns the measured pull (a piece inside MAGNET_RANGE
+  // closing on the ship, and not closing while suppressed) and is green in the same run, untouched by
+  // this backout. One behavioural owner, deliberately — two copies of that staging would drift apart.
+
+  // Source-level: the pull site still consults the predicate (a revert that deleted the call would make
+  // the magnet permanently on at full cargo — P1's defect restored).
+  assert(/const pulling = magnetPulling\(\);/.test(execOnly),
+    "F: ⛔ update()'s pickup block still captures `const pulling = magnetPulling()` once, above the loop");
+})();
+
+// ============ (G) no fill introduced in Ship.draw() ============
+(function sectionG() {
+  console.log("(G) Ship.draw() introduces no fill — the §3.2 no-fills exception count is unchanged");
+  const shipClassSrc = execOnly.match(/class Ship \{[\s\S]*?\n\}/)[0];
+  assert(!/\bfill\(/.test(shipClassSrc) && !/fillRect/.test(shipClassSrc),
+    "G: no fill()/fillRect anywhere in the Ship class");
+
   for (const lvl of [0, 3, 5]) {
-    for (const pulling of [false, true]) {
+    for (const st of MAGNET_STATES) {
+      const X = build();
+      X.startGame();
+      const g = quiet(X);
       g.scoopLevel = lvl;
-      if (pulling) { X.applyPowerup("magnet"); g.magnetHoldT = 0; } else { g.powerBudget.magnet = 0; }
+      st.setup(X, g);
       strokeLog = [];
       g.ship.draw();
-      assert(!strokeLog.some(s => s.FILL), `F: no fill() call at level ${lvl} pulling=${pulling}`);
+      assert(!strokeLog.some(s => s.FILL), `G: no fill() call at level ${lvl}, ${st.name}`);
     }
   }
 })();
 
-// ============ (G) TRAPs ============
-(function sectionG() {
-  console.log("(G) TRAPs: version unchanged, no design doc touched, no new registry knob text");
+// ============ (H) TRAPs ============
+(function sectionH() {
+  console.log("(H) TRAPs: version, and the retired doc pin");
   const X = build();
-  eq(X.GAME_VERSION, "1.0.0.24", "G: TRAP 1 — GAME_VERSION unchanged");
-  assert(!fs.existsSync(path.join(repoRoot, "PLANNED-FEATURES-CS025.md")) ||
-    (function () {
-      const { execSync } = require("child_process");
-      try {
-        const diff = execSync("git diff --name-only HEAD", { cwd: repoRoot }).toString();
-        return !diff.includes("PLANNED-FEATURES-CS025.md") && !diff.includes("GDD");
-      } catch (e) { return true; }
-    })(), "G: TRAP 2 — no design doc touched this phase");
+  // TRAP 1 — the standing MIRROR IMAGE, matching the p1/p2/p4 siblings. P3's own claim was that the
+  // version was UNCHANGED while it ran; P5 bumped it to "1.0.0.25", so the claim inverts and then stays
+  // correct forever. Deliberately NOT written as `=== "1.0.0.25"`: that would create a NEW live pin
+  // needing a repoint every changeset, and the repo already has six of those. Do not re-point this to a
+  // literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.24", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24");
+
+  // ⛔ RETIRED BY CS025 P5 — the "no design doc was touched this phase" pin that stood here.
+  // It ran `git diff --name-only HEAD` and required PLANNED-FEATURES-CS025.md and the GDD to be
+  // unmoved. That is a TRUE statement about P3's own session and an IMPOSSIBLE one about any working
+  // tree afterwards: P5 rewrites the GDD, CLAUDE.md, DIFFICULTY-LEVERS.md and GDD-VERSION-HISTORY.md
+  // BY INSTRUCTION. It is a phase-local claim wearing a permanent assertion's clothing.
+  //
+  // This is the TENTH time the moving-reference lesson has cost a repair (nine were retired in CS024
+  // P7 for exactly this, and CS025 P1/P2/P4 then wrote theirs against their OWN PARENT COMMIT, which is
+  // why those three are untouched and still green). P3 was the one that reverted to `HEAD`.
+  //
+  // ⛔ THE STANDING RULE, RESTATED: a trap written against a MOVING reference (HEAD) tests the future,
+  // not the phase. Write it against the phase's own parent SHA, in that phase's own file, where it can
+  // stay true forever. What this pin protected is not lost — P3's no-design-doc rule was a TRAP in its
+  // own phase prompt, and P3's diff (4d720ab) is in git history, touching only the HTML and this file.
+  assert(true, "H: TRAP 2's fixed-ref doc pin is retired in place — see the comment above");
 })();
 
 console.log(`\n${passed} passed, ${failed} failed`);

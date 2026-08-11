@@ -832,7 +832,10 @@ function fullAndHolding(X, { level = 1 } = {}) {
   const X = build();
 
   // TRAP 1 — the version does not move here.
-  eq(X.GAME_VERSION, "1.0.0.24", "H: TRAP 1 — GAME_VERSION stays 1.0.0.24 (CS025 P5 owns the next bump)");
+  // REPOINTED BY CS025 P5 — the standing MIRROR IMAGE. This pin asserted the version was UNCHANGED
+  // while CS025 P1 ran; P5 bumped it to "1.0.0.25", so the claim inverts and then stays correct
+  // forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.24", "H: TRAP 1 — GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24");
 
   // TRAP 3 — no LEVERS edit at all, proven against the parent commit rather than argued.
   if (OLD) {
@@ -843,7 +846,14 @@ function fullAndHolding(X, { level = 1 } = {}) {
         break;
       }
     passed++;   // the loop above reports its own failure; this counts the sweep
-    eq(X.GAME_VERSION, OLD.GAME_VERSION, "H: TRAP 1 — ...and it matches the parent commit exactly");
+    // REPOINTED BY CS025 P5 — the MIRROR IMAGE again, and worth noting WHY a parent-SHA pin needed one
+    // when the whole point of a parent-SHA reference is that it stays true. The reference is fine; the
+    // SUBJECT is the problem. Every other claim in this block ("leverState is identical to the parent")
+    // is about something P1 promised not to touch and nothing later would. The VERSION is different: P5
+    // bumps it BY INSTRUCTION, so "same as the parent" was always going to invert at the closing phase.
+    // Now permanently true, like CS024 P6e's two named exceptions. Do not re-point to a literal.
+    assert(X.GAME_VERSION !== OLD.GAME_VERSION,
+      `H: TRAP 1 — the version has moved off the parent commit's (CS025 P5's bump); got ${X.GAME_VERSION} vs parent ${OLD.GAME_VERSION}`);
   } else {
     console.log("  (skipped the parent-commit lever pins — not a git checkout)");
   }

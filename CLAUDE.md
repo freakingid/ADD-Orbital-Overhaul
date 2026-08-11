@@ -203,8 +203,39 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   every consumer reads it live; `"off"` never reassigns it. Don't re-tune a
   style value in the build.** **(2) Route "did an effect end?"
   through `powerActive(type)`, never `powerFx`** — the latter silently misses
-  the count modes (shots/pieces). **(3) Superseded lines DROP, never queue** —
-  a queue has Dan narrating events that finished ten seconds ago. Every entry
+  the count modes (shots/pieces). **(3) Superseded lines DROP — except the four
+  `VOICE_CRITICAL` events, which PARK and are RE-VALIDATED (CS025 P4/P5).**
+  The old blanket rule ("superseded lines DROP, never queue — a queue has Dan
+  narrating events that finished ten seconds ago") was **OVER-BROAD, NOT
+  WRONG**, and the distinction matters if you touch this: its concern is real,
+  and what answers it is **re-validation**, not overriding it. What it got
+  wrong was applying that concern uniformly to a channel where a priority-1
+  line (`cargo_full`) could not win a contest against *anything* — and where,
+  the half nobody would guess had ever been broken, the post-line
+  `VOICE_COOLDOWN` branch was **PRIORITY-BLIND** and silently ate even
+  `health_low` at priority 3. No priority in the system survived it. The rule
+  now reads: **four named lines may wait, and only while they are still true.**
+  `VOICE_CRITICAL` = `health_low`, `health_relief`, `cargo_full` (CS025 P4) and
+  `level` (CS025 P5, out of the playtest gate). A critical line that loses the
+  gate is parked on a FIFO queue (`VOICE_QUEUE_MAX`, deduped by event — a newer
+  line for a parked event **replaces** it in place, keeping its slot) and is
+  exempt from the cooldown gap; at drain time `VOICE_STILL_TRUE[event](entry)`
+  restates that trigger's own condition, and a line whose condition has gone
+  false is discarded **silently** — never spoken late. **⛔ Criticality is
+  ORTHOGONAL to priority — two questions, two tables, don't merge them.**
+  Priority answers *may this line INTERRUPT?*; criticality answers *may this
+  line WAIT?* `VOICE_PRIORITY` is untouched by all of it: `cargo_full` stays 1
+  and `level` stays 2, because promoting either to "make it critical" would
+  also let it pre-empt the health tier — a truck-full bark cutting off "hull
+  integrity is critical", which is exactly backwards. **Pre-emption is
+  unchanged and the queue is purely ADDITIVE**: it catches lines that would
+  have been dropped and changes nothing about lines that already speak. **⛔ No
+  TTL** — the drain takes no `dt`, because a TTL would tick on the GAME clock
+  while `busyUntil` lives on the AUDIO clock (`ctx.currentTime`, which doesn't
+  pause). **⛔ Adding a critical event means raising `VOICE_QUEUE_MAX` with
+  it**, so the cap stays a structural guard rather than live logic that
+  silently eats a real line (`test-cs025-p4.js` §F pins that relationship
+  rather than either literal). Every entry
   point is `if (!AudioSys.ctx) return;`-guarded (headless-safe). The low-health
   voice has its OWN latch (`game.lowHpVoiced`) that menus do NOT tear down —
   distinct from the siren latch — so Dan doesn't re-announce on every unpause.
@@ -214,11 +245,24 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   `_schedule(utt)` (the former `_render` scheduler, now taking a pre-built
   utterance — `buildUtterance` moved up into `_emit`). Keep the gate arithmetic
   byte-identical if you touch it: captions and audio must stay driven by the
-  SAME `_emit` gate, so a caption obeys drop-not-queue exactly like the audio —
-  but captions are INDEPENDENT of voice volume and of the Off style (voice Off
-  still captions). `drawCaption()` is a SIBLING of `drawHUD()` (not inside it —
-  captions survive the `H` capture toggle) and self-gates on
+  SAME `_emit` gate, so a caption obeys the drop / pre-empt / **park** rules
+  exactly like the audio — but captions are INDEPENDENT of voice volume and of
+  the Off style (voice Off still captions). **CS025 P4's narrowing of rule (3)
+  needed no change here, and that is the invariant working:** a parked critical
+  re-enters through the SAME `_emit`, so it captions when it finally PASSES the
+  gate at drain time, and a line discarded by `VOICE_STILL_TRUE` never reaches
+  `_emit` at all and so is never captioned late either. **"A caption is never
+  shown late" is still exactly true** — what changed is *which* lines eventually
+  pass, not whether caption and audio agree. Splitting the two outputs is what
+  would let them disagree; don't. `drawCaption()` is a SIBLING of `drawHUD()`
+  (not inside it — captions survive the `H` capture toggle) and self-gates on
   `game.state === "playing" && !game.paused && game.caption.life > 0`.
+  **`drawLevelBanner()` (CS025 P5) is a second such sibling** — the large
+  centre-screen "Level N" — but it is NOT a caption: it is set unconditionally
+  in `nextWave()`, is independent of `AudioSys.ctx`, `settings.captions` and
+  `voiceEnabled()`, and never touches the voice gate. That independence is the
+  point (Paul's gate answer set the bar at "we definitely SEE it"), so don't
+  "tidy" it into the caption path.
 - **New enemies follow the established extension points** documented in the
   GDD's Architecture Map (3.3): wire into `startGame` reset, `update()`
   entity update + collision passes + cleanup filter, `draw()` z-order, and
@@ -315,7 +359,14 @@ asteroids-deluxe.html
     //                   LEVEL_PHON/NUM_PHON/DIGIT_WORD (CS011 P4, level
     //                   announcement phon, ported verbatim from
     //                   tools/voice-robot-lab.html) + numberToWords(n)/
-    //                   levelPhon(n) (pure helpers) + VoiceSys.sayLevel(n)
+    //                   levelPhon(n) (pure helpers) + VoiceSys.sayLevel(n).
+    //                   Channel: say → _emit (the ONE cooldown/priority gate,
+    //                   two outputs) → _schedule (the ported scheduler);
+    //                   plus _enqueue + update (CS025 P4/P5 — park a
+    //                   VOICE_CRITICAL line that lost the gate, then drain it
+    //                   at most once a frame, re-validated by
+    //                   VOICE_STILL_TRUE. update() takes NO dt and is called
+    //                   from the very END of update()'s playing body)
     // Input             keys{} map + input.* predicates; call sites never
     //                   read keys{} directly
     // Helpers           rand, wrap, dist2, angleTo, shortDelta (wrap-aware),
@@ -333,11 +384,17 @@ asteroids-deluxe.html
     //                   destroySaucer, shatterClump, damageShip, killShip,
     //                   shieldDeflect/shieldBounce/debrisBounce,
     //                   dropPowerup/applyPowerup/powerActive/
-    //                   powerBudgetAmount, superMegaDelivery. Garbage
+    //                   powerBudgetAmount, magnetPulling (CS025 P1 — a
+    //                   FUNCTION, not a local: powerActive("magnet") &&
+    //                   magnetHoldT <= 0, the full-cargo suppression
+    //                   predicate), superMegaDelivery. Garbage
     //                   pipeline (CS024 P3/P6f): coalesceGarbage,
     //                   saturatedClump/heldClumpCount/drainHeldClumps,
     //                   cullGarbage/betterCullVictim (the density ceiling —
-    //                   there is no decay clock)
+    //                   there is no decay clock), magnetPushBurst (CS025 P2,
+    //                   at the END of the cluster — the full-cargo repulsion
+    //                   kick + coalesceDelay re-arm; a PRODUCER of
+    //                   coalesceDelay writes, not a consumer change)
     // Chain physics     chainAnchor, wrapNode, updateChain, breakChain,
     //                   scatterChain, drawLink, drawChain — see GDD 3.4
     //                   before touching; verlet nodes, not entity-pattern

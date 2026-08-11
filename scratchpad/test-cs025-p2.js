@@ -1145,7 +1145,10 @@ function stepProbe(X, p, dt = 1 / 60) {
   const X = build();
 
   // TRAP 1 — the version does not move here.
-  eq(X.GAME_VERSION, "1.0.0.24", "L: TRAP 1 — GAME_VERSION stays 1.0.0.24 (CS025 P5 owns the next bump)");
+  // REPOINTED BY CS025 P5 — the standing MIRROR IMAGE. This pin asserted the version was UNCHANGED
+  // while CS025 P2 ran; P5 bumped it to "1.0.0.25", so the claim inverts and then stays correct
+  // forever. Do not re-point it to a literal version again.
+  assert(X.GAME_VERSION !== "1.0.0.24", "L: TRAP 1 — GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24");
 
   // ⛔ TRAP 3 — THIS PHASE ADDS A PRODUCER OF coalesceDelay WRITES, NOT A CHANGE TO ANY CONSUMER.
   // Pinned as function-source byte-identity against the parent commit rather than argued in prose.
@@ -1158,7 +1161,13 @@ function stepProbe(X, p, dt = 1 / 60) {
     for (let w = 1; w <= 200; w++)
       if (JSON.stringify(X.leverState(w)) !== JSON.stringify(OLD.leverState(w))) { leverDiff = w; break; }
     eq(leverDiff, 0, "L: ...and leverState is identical at every level 1..200");
-    eq(X.GAME_VERSION, OLD.GAME_VERSION, "L: TRAP 1 — ...and the version matches the parent exactly");
+    // REPOINTED BY CS025 P5 — the MIRROR IMAGE, for the same reason as test-cs025-p1.js §H's twin: the
+    // parent-SHA reference is sound, but its SUBJECT here is the one thing the closing phase is required
+    // to change. Every sibling claim in this block (LEVERS, leverState 1..200, the nine function bodies)
+    // is about something P2 promised not to touch, and all of them still hold against the same parent.
+    // Do not re-point this to a literal version.
+    assert(X.GAME_VERSION !== OLD.GAME_VERSION,
+      `L: TRAP 1 — the version has moved off the parent commit's (CS025 P5's bump); got ${X.GAME_VERSION} vs parent ${OLD.GAME_VERSION}`);
     eq(X.MAGNET_RANGE, OLD.MAGNET_RANGE, "L: MAGNET_RANGE is unmoved — the burst reuses the pull's own reach");
     eq(X.HUNTER_COALESCE_COUNT, OLD.HUNTER_COALESCE_COUNT, "L: ...and the coalescence threshold is unmoved");
   } else {

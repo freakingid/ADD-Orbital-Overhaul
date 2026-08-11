@@ -149,6 +149,7 @@ with the level, on purpose.
 | **All Hunter turn rates** | Frozen `HUNTER_TURN_CEIL[size] × HUNTER_FLOOR_FRAC` = 0 / 0.928 / 1.508 rad/s | Resolved, not an oversight. Large's ceiling is 0, so it never turns. |
 | **Large-Hunter speed** | Frozen `HUNTER_SPEED_CEIL[3] × HUNTER_FLOOR_FRAC` = 40.6 px/s | Large Hunters do not pursue, so there is nothing for a speed ramp to mean. Only medium and small are levered. |
 | `hunterCapMax` / `hunterCapLevelsPerStep` / `heldClumpMax` | Flat knobs (6 / 2 / 4) | See §5 — a **ceiling**, and a ceiling on concurrent threats is a stability guarantee, not a difficulty axis. The player should never feel it move. |
+| `magnetResumeDelay` / `magnetPushKick` / `magnetPushSpread` | Flat knobs (250 ms / 120 px/s / 45°), CS025 P1/P2, **POWERUPS** section | **Knobs on a POWERUP'S BEHAVIOUR, not difficulty axes.** They tune how the Magnet behaves when the tow chain is full — how long the pull stays suppressed after a slot opens, and how hard/wide the full-cargo repulsion burst throws the gathered cloud. None of them describes a quantity that should get harder as the player gets deeper: the Magnet is the player's own tool, and scaling its recovery by level would make a powerup **worse the further you get**, which is backwards. All three are flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and none has a shipped constant behind its default (a resume delay has no meaning outside the knob), so the registry entry *is* the source of truth, the `chainGuardIntercepts` idiom. |
 
 ## 5. Explicit ceilings
 
@@ -190,6 +191,23 @@ here, in the same commit that can grow it.**
   field.
 
 ## 6. Retune log
+
+- **CS025 P5 (the CS025 gate).** **A completely clean gate — not one number
+  moved, and no lever moved.** All three of CS025's new knobs came back
+  confirmed at their shipped defaults: `magnetResumeDelay` **250 ms** (Q1,
+  *"seems good as a default"*), `magnetPushKick` **120 px/s** and
+  `magnetPushSpread` **45°** (Q2, *"seems good... but give me debug knobs"* —
+  all three already existed as POWERUPS rows, so nothing was added either). Q3,
+  the changeset's central bet, reported the Hunter-on-top-of-you problem *"has
+  mostly gone away"*; Q5 reported the defensive fill loop reads fine. The
+  `LEVERS` table ships exactly as CS024 P6b left it, and `leverState` is pinned
+  **byte-identical at every level 1..200, every lever**, against CS025's own
+  phase parents (`test-cs025-p1.js` §H, `-p2.js` §L, `-p5.js` §G).
+  **This is the fourth clean-gate closing phase on record** (CS020 P2, CS022
+  P4, CS024 P7, CS025 P5). The two changes the gate *did* return were not
+  numbers and not difficulty: **Q4 backed out the CS025 P3 scoop tell**
+  outright, and **Q6 asked for the level announcement to be made critical and
+  given a centre-screen banner**. Neither touches this document's subject.
 
 - **CS024 P7 (Gate B).** Seven of the gate's eight questions came back "fine"
   and moved nothing. **No lever moved** — no floor, no ceiling, no step count,

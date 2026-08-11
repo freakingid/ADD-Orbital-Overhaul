@@ -290,12 +290,22 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
     assert(T.game.caption !== capRefT, `${c.ev}: a spoken line captions at drain time`);
   }
 
-  // the predicates are the trigger conditions restated — assert the table's shape directly too
+  // the predicates are the trigger conditions restated — assert the table's shape directly too.
+  // ⛔ REPOINTED BY CS025 P5. These two lines used to pin each table's key set as EXACTLY the three
+  // events P4 named. That was a true statement about P4 and an impossible one about any later build:
+  // P5 added `level` as a fourth critical on Paul's own gate answer (Q6). The moving-reference lesson
+  // again — "exactly N" is a phase-local claim wearing a permanent assertion's clothing. What P4
+  // actually promised is that ITS three events are critical and each carries a predicate, plus the
+  // STRUCTURAL invariant that the two tables stay in lockstep. Both survive verbatim below, and the
+  // structural form is strictly stronger than the old literal: it fails for any future event added to
+  // one table and not the other. Do NOT re-point this to a literal list of four.
   const S = buildInstance();
-  assert(Object.keys(S.VOICE_STILL_TRUE).sort().join(",") === "cargo_full,health_low,health_relief",
-    "VOICE_STILL_TRUE covers exactly the three critical events");
-  assert(Object.keys(S.VOICE_CRITICAL).sort().join(",") === "cargo_full,health_low,health_relief",
-    "VOICE_CRITICAL is exactly the three named events");
+  for (const ev of ["health_low", "health_relief", "cargo_full"]) {
+    assert(S.VOICE_CRITICAL[ev] === true, `${ev} (a CS025 P4 event) is still critical`);
+    assert(typeof S.VOICE_STILL_TRUE[ev] === "function", `${ev} still carries a re-validation predicate`);
+  }
+  assert(Object.keys(S.VOICE_CRITICAL).sort().join(",") === Object.keys(S.VOICE_STILL_TRUE).sort().join(","),
+    "VOICE_CRITICAL and VOICE_STILL_TRUE cover the SAME key set — every critical event is re-validated");
   assert(/!\s*game\.ship\.dead/.test(S.VOICE_STILL_TRUE.health_relief.toString()),
     "health_relief's predicate carries the load-bearing !game.ship.dead guard (GDD §2.12)");
 })();
@@ -322,14 +332,41 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
 
   // structurally unreachable under the shipped set: every further trigger is deduped away
   for (const ev of ["health_low", "health_relief", "cargo_full", "health_low"]) A.VoiceSys.say(ev);
-  assert(A.VoiceSys.queue.length === 3, "with three critical events + dedupe the cap can never be exceeded");
-  assert(Object.keys(A.VOICE_CRITICAL).length <= A.VOICE_QUEUE_MAX,
-    `#critical events (${Object.keys(A.VOICE_CRITICAL).length}) <= VOICE_QUEUE_MAX (${A.VOICE_QUEUE_MAX}) — the cap is a guard for a FOURTH event, not live logic`);
+  assert(A.VoiceSys.queue.length === 3, "re-triggering the same three criticals never grows the queue past 3");
 
-  // …and the guard does work when a fourth arrives
-  A.VoiceSys._enqueue("synthetic_fourth", { text: "x", phon: "AH1 ." }, 1);
-  assert(A.VoiceSys.queue.length === 3, "a synthetic FOURTH critical is rejected at VOICE_QUEUE_MAX");
-  assert(!A.VoiceSys.queue.some(q => q.event === "synthetic_fourth"), "…and never lands on the queue");
+  // ⛔ REPOINTED BY CS025 P5, and this is the SAME lesson as §E's. The claim here is a RELATIONSHIP —
+  // "the cap is a structural guard for one-more-event-than-exists, never live logic that eats a real
+  // line" — and P4 wrote it as the literals 3 and 3. P5 added a fourth critical (`level`) and raised
+  // VOICE_QUEUE_MAX to 4 with it, exactly as the relationship requires. Stated against the LIVE tables
+  // the assertion never needs re-pointing again, and it now also fails the opposite way: adding a
+  // critical event WITHOUT raising the cap trips it. Do not re-point this to literals.
+  const nCritical = Object.keys(A.VOICE_CRITICAL).length;
+  assert(nCritical <= A.VOICE_QUEUE_MAX,
+    `#critical events (${nCritical}) <= VOICE_QUEUE_MAX (${A.VOICE_QUEUE_MAX}) — the cap is a guard for one MORE event than ships, not live logic`);
+
+  // …and the guard does work when one more than the critical set arrives. Fill to the live cap first,
+  // so this measures the cap rather than the size of whatever the shipped set happens to be.
+  for (let i = A.VoiceSys.queue.length; i < A.VOICE_QUEUE_MAX; i++)
+    A.VoiceSys._enqueue("synthetic_filler_" + i, { text: "f", phon: "AH1 ." }, 1);
+  assert(A.VoiceSys.queue.length === A.VOICE_QUEUE_MAX, "the queue can be filled to VOICE_QUEUE_MAX");
+  A.VoiceSys._enqueue("synthetic_overflow", { text: "x", phon: "AH1 ." }, 1);
+  assert(A.VoiceSys.queue.length === A.VOICE_QUEUE_MAX, "one PAST the cap is rejected at VOICE_QUEUE_MAX");
+  assert(!A.VoiceSys.queue.some(q => q.event === "synthetic_overflow"), "…and never lands on the queue");
+
+  // CS025 P5 — the dedupe REPLACES in place rather than ignoring the newcomer, and keeps its FIFO slot.
+  // This is a correctness fix for `level` (a parked "Level 4" must not swallow the "Level 5" trigger and
+  // then discard itself as stale, announcing neither); pinned here because the old ignore-the-newcomer
+  // behaviour is the intuitive thing to "restore" on a tidy-up pass.
+  const B = buildInstance();
+  B.AudioSys.init(); B.AudioSys.ctx.currentTime = 0;
+  prepPlaying(B, 10); fillChain(B); occupy(B, 3, 1e9);
+  B.VoiceSys._enqueue("health_low",  { text: "first",  phon: "AH1 ." }, 3);
+  B.VoiceSys._enqueue("cargo_full",  { text: "other",  phon: "AH1 ." }, 1);
+  B.VoiceSys._enqueue("health_low",  { text: "second", phon: "AH1 ." }, 3);
+  assert(B.VoiceSys.queue.length === 2, "a replacing duplicate does not grow the queue");
+  assert(B.VoiceSys.queue[0].event === "health_low" && B.VoiceSys.queue[1].event === "cargo_full",
+    "the replaced entry keeps its FIFO slot rather than moving to the back");
+  assert(B.VoiceSys.queue[0].line.text === "second", "the NEWEST line for an event wins");
 })();
 
 // ================= (G) no re-queue loop =====================
@@ -344,9 +381,25 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
   A.VoiceSys.queue.push({ event: "health_low", line: { text: "a", phon: "AH1 ." }, p: 3 });
   A.VoiceSys.queue.push({ event: "cargo_full", line: { text: "b", phon: "AH1 ." }, p: 1 });
 
+  // ⛔ INSTRUMENTATION SHARPENED BY CS025 P5 — the CLAIM is unchanged and still the whole point of this
+  // section; what changed is that it is now MEASURED instead of inferred. P4 counted EVERY _enqueue call
+  // across the 600 frames and asserted zero, which was a valid proxy only while nothing else in a frame
+  // could enqueue. P5 made `level` critical, and 600 frames on an empty field clear a wave — so
+  // nextWave()'s level announcement now parks legitimately at TRIGGER time and the old counter read 1.
+  // That is the proxy breaking, not the guard: a drain-time re-queue is still impossible, because
+  // update()'s `now < busyUntil` early-return makes _emit's busy branch unreachable from there. So count
+  // only the enqueues that happen INSIDE VoiceSys.update(), which is what the assertion always said.
   const realEnqueue = A.VoiceSys._enqueue.bind(A.VoiceSys);
-  let enqueued = 0;
-  A.VoiceSys._enqueue = function (ev, line, p) { enqueued++; return realEnqueue(ev, line, p); };
+  const realDrain   = A.VoiceSys.update.bind(A.VoiceSys);
+  let enqueuedInDrain = 0, enqueuedTotal = 0, inDrain = false;
+  A.VoiceSys._enqueue = function (ev, line, p) {
+    enqueuedTotal++; if (inDrain) enqueuedInDrain++;
+    return realEnqueue(ev, line, p);
+  };
+  A.VoiceSys.update = function () {
+    inDrain = true;
+    try { return realDrain(); } finally { inDrain = false; }
+  };
 
   let maxDepth = 0, threw = null;
   try {
@@ -354,8 +407,15 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
   } catch (e) { threw = e && e.message; }
   assert(threw === null, "600 real frames with a full queue and a busy channel throw nothing; " + threw);
   assert(maxDepth <= A.VOICE_QUEUE_MAX, `queue depth never exceeds VOICE_QUEUE_MAX; peaked at ${maxDepth}`);
-  assert(enqueued === 0, `_enqueue is NEVER reached from the drain (the now>=busyUntil guard makes _emit's busy branch unreachable there); got ${enqueued}`);
-  assert(A.VoiceSys.queue.length === 2, "the entries are still parked, not spun through");
+  assert(enqueuedInDrain === 0, `_enqueue is NEVER reached FROM THE DRAIN (the now>=busyUntil guard makes _emit's busy branch unreachable there); got ${enqueuedInDrain}`);
+  // The wrapper is non-vacuous only if the drain actually ran, and the section is only meaningful if
+  // SOMETHING was enqueued over the 600 frames — otherwise a broken wrapper would pass silently.
+  assert(enqueuedTotal > 0,
+    `the counter is live: trigger-time enqueues DID occur over the 600 frames (got ${enqueuedTotal}) — so 0-in-drain is a measurement, not an empty run`);
+  // The two STAGED entries are what must not be spun through; a third parked by a real in-frame trigger
+  // (the level announcement) is the system working and is not this section's subject.
+  assert(A.VoiceSys.queue.some(q => q.event === "health_low") && A.VoiceSys.queue.some(q => q.event === "cargo_full"),
+    "the two staged entries are still parked, not spun through");
 })();
 
 // ================= (H) captions follow the audio, still =====================
@@ -457,7 +517,10 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
 (function () {
   console.log("(K) traps: version / VOICE_LINES / VOICE_PRIORITY / registry / ported-verbatim engine untouched");
   const A = buildInstance();
-  assert(A.GAME_VERSION === "1.0.0.24", `TRAP 1: GAME_VERSION stays "1.0.0.24"; got ${A.GAME_VERSION}`);
+  // REPOINTED BY CS025 P5 — the standing MIRROR IMAGE. This pin asserted the version was UNCHANGED
+  // while CS025 P4 ran; P5 bumped it to "1.0.0.25", so the claim inverts and then stays correct
+  // forever. Do not re-point it to a literal version again.
+  assert(A.GAME_VERSION !== "1.0.0.24", `TRAP 1: GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24; got ${A.GAME_VERSION}`);
   assert(A.DEBUG_ENTRIES.length === 75, `TRAP 4: the registry does not move — still 75 rows; got ${A.DEBUG_ENTRIES.length}`);
 
   const H = build(headSrc, RETURN_BOTH);

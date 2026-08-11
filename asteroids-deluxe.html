@@ -394,7 +394,8 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // CS024 P7: "1.0.0.22" -> "1.0.0.24". ".23" IS SKIPPED DELIBERATELY AND MUST NOT BE BACK-FILLED —
 // CS023 landed P1-P4c, was interrupted before its doc-sweep/bump phase (P5), and CS024 deleted most of
 // what it built. A version it never carried is not invented for it retroactively (spec §0).
-const GAME_VERSION = "1.0.0.24";
+// CS025 P5: "1.0.0.24" -> "1.0.0.25". Back on the changeset number, no skip this time.
+const GAME_VERSION = "1.0.0.25";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -1055,12 +1056,11 @@ const SCOOP_HITS_PER_LEVEL = 5;              // non-lethal hits that cost one sc
                                               // once earned. That's the intent, not a bug to "fix."
 const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (mirrors the full-HP REPAIR_FULL_BONUS pattern; tunable)
 const SCOOP_SPILL_KICK = 85;                 // v3.3 P4 (9c): px/s outward kick on the leftover when a clump is PARTIALLY scooped ("the rest floats off and away"); playtest knob (~60-110)
-// CS025 P3: the magnet-pull scoop render. LOOK-CALLS, not debug knobs (registry stays at 75) — same
-// convention as HELD_CLUMP_RING_PAD / GUARD_CHAIN_WIDTH/_BLUR.
-const SCOOP_MAGNET_W = 2.6;                  // scoop stroke width while magnetPulling()
-const SCOOP_MAGNET_BLUR = 18;                // scoop glow blur while magnetPulling()
-const SCOOP_MAGNET_NOSE_W = 10;              // scoopLevel 0 nose-V full width while pulling
-const SCOOP_MAGNET_NOSE_D = 22;              // scoopLevel 0 nose-V depth while pulling
+// CS025 P3 added four SCOOP_MAGNET_* look-call constants here (stroke width / blur / nose-V width /
+// nose-V depth) for the magnet-pull scoop tell. CS025 P5 DELETED them with the tell itself — the
+// playtest gate (Q4) found magnet-blue indistinguishable from the hull, so the whole render branch
+// was backed out. Do not reinstate the constants without reinstating the feature, which is Paul's
+// call and currently a NO. See Ship.draw()'s scoop-mouth comment and GDD §2.14.1.
 
 // Controller / gamepad input (F7). The one tunable knob for controller *feel* — how far an analog
 // stick must travel before it counts as a directional press. Button/axis index enums and the binding
@@ -2245,8 +2245,19 @@ const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level:
 // VOICE_PRIORITY IS NOT TOUCHED BY THIS: cargo_full stays priority 1 on purpose — promoting it to 3
 // to make it "critical" would also grant it the power to pre-empt the health tier, i.e. a truck-full
 // bark cutting off "hull integrity is critical", which is exactly backwards. Two questions, two tables.
-const VOICE_CRITICAL = { health_low: true, health_relief: true, cargo_full: true };
-const VOICE_QUEUE_MAX = 3;
+// CS025 P5 adds a FOURTH out of the gate (Q6): `level`. Paul asked that a level change be unmissable —
+// "that line is definitely spoken and we definitely see a 'Level 2' on the screen". The announcement
+// fires from nextWave(), which is a busy instant (wave-clear lines, a dock delivery, a powerup pickup can
+// all be on the channel), so at priority 2 it was routinely losing the gate and saying nothing at all.
+// Criticality is the right table for it: the level call should WAIT for the channel, and it must NOT gain
+// the power to pre-empt health_low (3) — which is exactly the split this pair of tables exists to
+// express, and is why `level` stays at its existing VOICE_PRIORITY 2 and that table is again untouched.
+const VOICE_CRITICAL = { health_low: true, health_relief: true, cargo_full: true, level: true };
+// Sized to the critical set (4 events, deduped by event), so the cap stays a STRUCTURAL GUARD for the day
+// a fifth is added without anyone thinking about depth — never live logic that silently eats a real line.
+// CS025 P4 shipped this at 3 for the same reason, when the set was three. ⛔ IF YOU ADD A CRITICAL EVENT,
+// RAISE THIS WITH IT: test-cs025-p4.js §F pins the relationship rather than either literal, so it fails.
+const VOICE_QUEUE_MAX = 4;
 
 // CS025 P4 — re-validation at DRAIN time: each predicate is its own trigger's condition RESTATED, so a
 // queued line speaks only while the thing it describes is still true, and is otherwise discarded
@@ -2258,10 +2269,22 @@ const VOICE_QUEUE_MAX = 3;
 // and a QUEUE MAKES THAT FAILURE MORE REACHABLE, NOT LESS, because the line can now sit here across the
 // very frames in which the ship dies. Mirroring the guard is what keeps CS010 P3's FLAG-CS010-a
 // resolution true under the new mechanism. Evaluated lazily (game/LOW_HP_THRESHOLD are declared below).
+// CS025 P5: each predicate is passed its own QUEUE ENTRY `q` ({event, line, p}). The three CS025 P4
+// predicates above ignore it and are behaviourally unchanged — the parameter exists for `level`, whose
+// condition is not a property of the world alone but of WHICH level the parked line names. Reading it
+// off `q.line.text` keeps the queue entry the single source of truth for what was announced, with no
+// parallel "wave at trigger time" field to fall out of sync with the line it belongs to.
 const VOICE_STILL_TRUE = {
   health_low:    () => game.ship.hp <= LOW_HP_THRESHOLD && !game.ship.dead,
   health_relief: () => game.ship.hp >  LOW_HP_THRESHOLD && !game.ship.dead,
   cargo_full:    () => game.chain.length >= game.cargoMax,
+  // Still true only while we are STILL ON the level it names — a "Level 4" that could not get the channel
+  // before the player cleared into level 5 is exactly the "narrating an event that finished" case the old
+  // drop-not-queue rule was written against, and is discarded here rather than spoken late. The text is
+  // built by sayLevel() as "Level " + n, so this comparison is against that one format; it is the same
+  // string the banner shows. Note the predicate does NOT read game.levelBanner: the banner is a 2.2 s
+  // look-call and the voice channel must not inherit a visual timing knob as a deadline.
+  level:         (q) => q.line.text === "Level " + game.wave,
 };
 
 // CS011 P2 — on-screen caption look/timing knobs (LOOK-CALL). The caption is Dan's VISIBLE echo, shown
@@ -2270,6 +2293,21 @@ const VOICE_STILL_TRUE = {
 // after the utterance ends. FADE: seconds of linear alpha fade-out at the end of its life. Y: px up from
 // the viewport bottom. SIZE: font px. All four are pure presentation, tuned by eye, no gameplay effect.
 const CAPTION_LINGER = 1.5, CAPTION_FADE = 0.4, CAPTION_Y = 64, CAPTION_SIZE = 20;
+
+// CS025 P5 — the LEVEL BANNER look/timing knobs (LOOK-CALL, same convention as the CAPTION_* four above:
+// pure presentation, tuned by eye, no gameplay effect, no debug-registry entry). Out of the CS025
+// playtest gate (Q6): Paul asked that a level change be unmissable — "definitely spoken and we definitely
+// see a 'Level 2' on the screen". The banner is the VISUAL half of that; VOICE_CRITICAL.level is the
+// audible half, and the two are INDEPENDENT on purpose — the banner shows with voice off, with captions
+// off, and even if the voice channel discards the announcement as stale, so the minimum bar Paul set
+// ("minimum is to have that Level 2 show") cannot be missed by any audio-side decision.
+//   TIME:  total seconds on screen, fade-in and fade-out INCLUSIVE.
+//   FADE:  seconds of linear alpha ramp at EACH end (in and out) — 2*FADE must stay < TIME or the
+//          banner never reaches full opacity. At 0.5/2.2 it holds solid for 1.2 s.
+//   SIZE:  font px. Large enough to read at a glance mid-fight without covering the play area.
+//   Y:     px DOWN from the vertical centre for the text BASELINE — a positive offset that optically
+//          centres the glyph box, since drawText positions by baseline, not by box centre.
+const LEVEL_BANNER_TIME = 2.2, LEVEL_BANNER_FADE = 0.5, LEVEL_BANNER_SIZE = 72, LEVEL_BANNER_Y = 24;
 
 // VoiceSys — Dan's speech. A SEPARATE module alongside AudioSys/MusicSys (NOT folded into AudioSys, a
 // flat bag of one-shots): it owns a small sequencer + a radio-processing chain that feeds AudioSys.voice
@@ -2398,10 +2436,15 @@ const VoiceSys = {
 
   // CS011 P4: announce the wave number. Speaks natural words via levelPhon(); the caption (shown
   // by _emit) shows the numeral ("Level 23") since it's built from `line.text`, not `line.phon`.
-  // CS025 P4: passes no `event` — the level announcement is not critical, so _emit's `event = null`
-  // default is the whole of the change needed here.
+  // CS025 P5 (gate Q6): now passes the "level" event, which is what makes it CRITICAL — nextWave() is a
+  // crowded instant and this line was routinely losing the gate outright. Passing the event is the whole
+  // of the change: _emit consults VOICE_CRITICAL by event, so the queue and the VOICE_STILL_TRUE.level
+  // re-validation both come along for free. (CS025 P4 deliberately passed nothing here; that is reversed.)
+  // ⛔ The `text` FORMAT is load-bearing in two places outside this function — VOICE_STILL_TRUE.level
+  // compares against "Level " + game.wave, and the banner in nextWave() shows the same string. Change the
+  // format here and both follow, or the predicate silently discards every queued level call.
   sayLevel(n) {
-    return this._emit({ text: "Level " + n, phon: levelPhon(n) }, VOICE_PRIORITY.level);
+    return this._emit({ text: "Level " + n, phon: levelPhon(n) }, VOICE_PRIORITY.level, "level");
   },
 
   // The voice CHANNEL (CS011 P2): run the §11e cooldown/priority gate for one already-chosen `line` at
@@ -2452,8 +2495,18 @@ const VoiceSys = {
   // health_low while one already waits is the SAME crisis, not two), capped at VOICE_QUEUE_MAX. With
   // three critical events and dedupe the cap is STRUCTURALLY UNREACHABLE today — it is not dead code but
   // a guard for the day a fourth critical event is added without anyone thinking about queue depth.
+  // CS025 P5 narrows the dedupe from IGNORE-the-newcomer to REPLACE-in-place, keeping FIFO position.
+  // ⛔ THIS IS A CORRECTNESS FIX FOR `level`, NOT A TIDY-UP. Ignoring the newcomer is harmless for the
+  // three CS025 P4 events (a second health_low IS the same crisis, and the two entries differ only in
+  // which random alternative was rolled), but it is wrong the moment an event's line carries DATA: a
+  // parked "Level 4" that is still waiting when the player clears into level 5 would swallow the "Level 5"
+  // trigger as a duplicate, and would then fail its own VOICE_STILL_TRUE re-validation and be discarded —
+  // so NEITHER level would be announced. Replacing means the queue always holds the CURRENT truth for an
+  // event. Depth behaviour is unchanged (a duplicate still never grows the queue), which is what keeps
+  // the cap a structural guard.
   _enqueue(event, line, p) {
-    if (this.queue.some(q => q.event === event)) return;
+    const at = this.queue.findIndex(q => q.event === event);
+    if (at >= 0) { this.queue[at] = { event, line, p }; return; }   // newest wins; FIFO slot kept
     if (this.queue.length >= VOICE_QUEUE_MAX) return;
     this.queue.push({ event, line, p });
   },
@@ -2474,7 +2527,9 @@ const VoiceSys = {
     if (AudioSys.now() < this.busyUntil) return;   // still speaking — wait
     const q = this.queue.shift();
     const still = VOICE_STILL_TRUE[q.event];
-    if (still && !still()) return;                 // stale — discard, never speak late
+    // CS025 P5: the entry is passed to the predicate. The three CS025 P4 predicates take no parameter and
+    // ignore it, so this is a no-op for them; VOICE_STILL_TRUE.level needs it (see that table).
+    if (still && !still(q)) return;                // stale — discard, never speak late
     this._emit(q.line, q.p, q.event);
   },
 
@@ -4522,9 +4577,12 @@ function glowStroke(color, width = 1.6, blur = 10) {
   ctx.shadowBlur = 0;
 }
 
-// width/blur: left undefined for existing callers so glowStroke's own defaults (1.6, 10) apply — the
-// ONE place those numbers live. Do not give them literal defaults here (CS025 P3).
-function drawPoly(points, x, y, angle, color, closed = true, width, blur) {
+// CS025 P3 gave this two trailing width/blur params, forwarded to glowStroke, for the magnet-pull
+// scoop tell. CS025 P5 backed that tell out (gate Q4) and the params went with it — they had exactly
+// two callers, both in the deleted branch, and an unused optional param on the shared render
+// primitive is cruft that invites a literal default. Signature is byte-identical to pre-P3 again:
+// every caller takes glowStroke's own defaults (1.6, 10), which stays the ONE place those live.
+function drawPoly(points, x, y, angle, color, closed = true) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
@@ -4532,7 +4590,7 @@ function drawPoly(points, x, y, angle, color, closed = true, width, blur) {
   ctx.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
   if (closed) ctx.closePath();
-  glowStroke(color, width, blur);
+  glowStroke(color);
   ctx.restore();
 }
 
@@ -4724,15 +4782,16 @@ class Ship {
       // SCOOP_DEPTH[lvl]. This is a TELL for inScoopBox()'s capture region, not a literal outline of
       // it — the box's rear edge at forward=-SHIP_RADIUS isn't shown. Corners derived, never
       // hardcoded. No fill. Hidden at level 0.
-      const pulling = magnetPulling();
+      // ⛔ CS025 P5 — DO NOT RE-ADD A MAGNET-PULL RECOLOUR HERE. CS025 P3 made this stroke go
+      // POWERUP_COLOR.magnet at SCOOP_MAGNET_W/_BLUR while magnetPulling(), plus a fixed nose-V at
+      // scoopLevel 0, as the player-facing tell for §1's full-cargo suppression. The CS025 playtest
+      // gate (Q4) BACKED IT OUT: magnet-blue #8ab6ff sits too close to COLOR.ship #9fd8ff to read as
+      // "charged" at all, so the tell informed nobody while adding a second thing moving on the hull.
+      // Paul's call, on the record — the ship does not need another visual channel. The suppression
+      // itself SHIPS and is unaffected; it simply has no on-ship tell. See GDD §2.14.1.
       if (game.scoopLevel > 0) {
         const lvl = game.scoopLevel, hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
-        const col = pulling ? POWERUP_COLOR.magnet : COLOR.dock;
-        if (pulling) drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, col, false, SCOOP_MAGNET_W, SCOOP_MAGNET_BLUR);
-        else drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, col, false);
-      } else if (pulling) {
-        const hw = SCOOP_MAGNET_NOSE_W / 2, d = SCOOP_MAGNET_NOSE_D;
-        drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, POWERUP_COLOR.magnet, false, SCOOP_MAGNET_W, SCOOP_MAGNET_BLUR);
+        drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, COLOR.dock, false);
       }
       const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
       drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);
@@ -5576,7 +5635,17 @@ const game = {
   // line text; dur = its utterance length (from buildUtterance); life = seconds left to display, set to
   // 0.10 + dur + CAPTION_LINGER by showCaption() and decayed in update()'s playing body. drawCaption()
   // renders it while life > 0 (fading over the last CAPTION_FADE s). Overwritten wholesale per line.
-  caption: { text: "", life: 0, dur: 0 }
+  caption: { text: "", life: 0, dur: 0 },
+  // CS025 P5 (gate Q6) — the level banner: the large centre-screen "Level N" shown for LEVEL_BANNER_TIME
+  // seconds at every wave change. text = the same "Level N" string sayLevel() speaks; life = seconds left,
+  // set by nextWave() and decayed in update()'s playing body beside caption.life. drawLevelBanner() renders
+  // it while life > 0. Reassigned wholesale per level, exactly like game.caption.
+  // ⛔ INDEPENDENT OF THE VOICE CHANNEL BY DESIGN. It is not a caption: it is not gated by
+  // settings.captions, not gated by voiceEnabled(), and never consults VoiceSys's cooldown/priority gate.
+  // Paul's gate answer set the minimum bar at "we definitely see a Level 2 on the screen", and routing the
+  // visual through the audio gate would put that bar at the mercy of whatever else Dan happened to be
+  // saying — the exact failure Q6 was raised about. The two announcements share a string, nothing else.
+  levelBanner: { text: "", life: 0 }
 };
 
 // ---------- CS022 P1: per-archetype world size (PLANNED-FEATURES-CS022 §4.1/§4.2/§4.3) ----------
@@ -5749,6 +5818,10 @@ function startGame() {
   game.hpFullVoice = true;
   game.powerVoiced = { rapid: false, triple: false, magnet: false, engine: false, guard: false };
   game.caption = { text: "", life: 0, dur: 0 }; // CS011 P2: no stale caption carries into a fresh run
+  // CS025 P5: same for the level banner. ⛔ ORDER IS LOAD-BEARING — this clear must stay ABOVE the
+  // nextWave() call below, which is what SETS the level-1 banner. Moving it after would blank the banner
+  // of the level the player is about to start, and the bug would only show on level 1.
+  game.levelBanner = { text: "", life: 0 };
   VoiceSys.reset();
   nextWave();
 }
@@ -5800,6 +5873,11 @@ function nextWave() {
   const prevLevelSecs = game.waveTime;
   game.waveTime  = 0;
   VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
+  // CS025 P5 (gate Q6) — the VISUAL half of the level announcement, and the half that cannot be lost.
+  // Same string sayLevel() speaks, but set unconditionally: no AudioSys.ctx guard (this is a render field,
+  // and gating it on audio would hide the banner for a player who has not yet produced a user gesture),
+  // no captions setting, no voice gate. Level 1 gets one too, for the same reason sayLevel() does.
+  game.levelBanner = { text: "Level " + game.wave, life: LEVEL_BANNER_TIME };
   // v3.4 P7: intensity recomputed ONLY on wave change, never per-frame — keeps updateMusic()'s
   // per-frame path clean. Runs at wave 1 too (startGame calls nextWave()), so a fresh run starts
   // pinned to musicIntensity(1) === 0 (foundation layer only) before any track has even loaded.
@@ -7548,6 +7626,10 @@ function update(dt) {
   game.particles.forEach(p => p.update(dt));
   game.floaters.forEach(f => f.update(dt));
   game.caption.life -= dt; // CS011 P2: age Dan's on-screen caption (drawCaption gates on life > 0)
+  // CS025 P5: age the level banner alongside it. In the PLAYING body, so it holds through a pause and
+  // resumes rather than expiring behind the menu — the same treatment the caption gets, for the same
+  // reason. drawLevelBanner() gates on life > 0. Allowed to run negative; nothing reads it below zero.
+  game.levelBanner.life -= dt;
   if (game.dock) game.dock.update(dt);
 
   // CS024 P1: CS023 P4's single `updateDebrisDrift(dt)` call STOOD HERE — after every entity's update(dt)
@@ -8193,6 +8275,25 @@ function drawCaption() {
     const a = game.caption.life < CAPTION_FADE ? game.caption.life / CAPTION_FADE : 1;
     ctx.globalAlpha = a;
     drawText(game.caption.text, VIEW_W/2, VIEW_H - CAPTION_Y, CAPTION_SIZE, COLOR.text, "center");
+    ctx.globalAlpha = 1;
+  }
+}
+
+// CS025 P5 (gate Q6) — the large centre-screen "Level N", shown for LEVEL_BANNER_TIME at every wave
+// change. A SIBLING of drawHUD() in draw(), not inside it, and NOT gated by Capture's H toggle: it is a
+// transient announcement, which is the same category as the achievement toast and the game-over text, and
+// CLAUDE.md's Capture note already places those outside the H toggle. (It is deliberately not treated as
+// a HUD readout — there is no persistent element here for H to hide.)
+// Alpha ramps symmetrically: in over the first LEVEL_BANNER_FADE seconds, out over the last, full opacity
+// between. Taking the MIN of elapsed and remaining gives both ends from one expression and degenerates
+// gracefully if 2*FADE ever exceeds TIME (the banner just peaks below 1 instead of glitching). Uses
+// ctx.globalAlpha, which drawText leaves alone — the same mechanism as the caption's fade-out.
+function drawLevelBanner() {
+  if (game.state === "playing" && !game.paused && game.levelBanner.life > 0) {
+    const elapsed = LEVEL_BANNER_TIME - game.levelBanner.life;
+    const a = Math.min(1, Math.max(0, Math.min(elapsed, game.levelBanner.life)) / LEVEL_BANNER_FADE);
+    ctx.globalAlpha = a;
+    drawText(game.levelBanner.text, VIEW_W/2, VIEW_H/2 + LEVEL_BANNER_Y, LEVEL_BANNER_SIZE, COLOR.text, "center");
     ctx.globalAlpha = 1;
   }
 }
@@ -8938,6 +9039,7 @@ function draw() {
   // of this call only; the game keeps simulating/updating regardless of hudVisible.
   if (Capture.hudVisible) drawHUD();
   drawCaption(); // CS011 P2: sibling of drawHUD (NOT inside it) — captions show regardless of the H toggle
+  drawLevelBanner(); // CS025 P5: likewise a sibling — the transient "Level N", drawn over the HUD, self-gated
 
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);

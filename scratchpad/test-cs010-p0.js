@@ -6,8 +6,8 @@
 //   node scratchpad/test-cs010-p0.js
 //
 // Checks:
-//  (A) GAME_VERSION === "1.0.0.24" (unprefixed).
-//  (B) a fresh HighScores.add() stamps build === "1.0.0.24".
+//  (A) GAME_VERSION === "1.0.0.25" (unprefixed).
+//  (B) a fresh HighScores.add() stamps build === "1.0.0.25".
 //  (C) an existing record carrying build "3.6" survives an afd_scores_v1 load/save round-trip
 //      unchanged (no migration of old records).
 
@@ -73,16 +73,16 @@ AudioSys.init();
 
 // ================= (A) GAME_VERSION is the new unprefixed scheme =====================
 (function sectionA() {
-  console.log("(A) GAME_VERSION === \"1.0.0.24\"");
-  assert(GAME_VERSION === "1.0.0.24", "A: GAME_VERSION is exactly \"1.0.0.24\" (unprefixed)");
+  console.log("(A) GAME_VERSION === \"1.0.0.25\"");
+  assert(GAME_VERSION === "1.0.0.25", "A: GAME_VERSION is exactly \"1.0.0.25\" (unprefixed)");
 })();
 
 // ================= (B) a fresh HighScores.add() stamps the new build ==================
 (function sectionB() {
-  console.log("(B) fresh HighScores.add() stamps build === \"1.0.0.24\"");
+  console.log("(B) fresh HighScores.add() stamps build === \"1.0.0.25\"");
   HighScores.entries = [];
   const rec = HighScores.add({ initials: "AAA", score: 100, wave: 1, delivered: 1 });
-  assert(rec.build === "1.0.0.24", "B: new record's build field is \"1.0.0.24\"");
+  assert(rec.build === "1.0.0.25", "B: new record's build field is \"1.0.0.25\"");
 })();
 
 // ================= (C) an old "3.6" record survives a load/save round-trip unchanged ==
