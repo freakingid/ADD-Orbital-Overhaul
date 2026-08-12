@@ -3548,6 +3548,23 @@ const DEBUG_VARS = [
   // save) so a debug jump can never pollute real progress — see startGame() and Achievements.save().
   { id: "startLevel", label: "Start level", unit: "",
     def: 1, min: 1, max: 99, step: 1 },
+  // CS026 P5 (spec §6): the level banner's four look-call constants, promoted to knobs so the
+  // playtest gate (CS026 §10 Q7) has numbers to report against instead of a source edit. Each
+  // constant stays in place as the row's def — the standing "retune the const, never the def"
+  // convention. NOT LEVERS: no floor/ceil/steps triple, no ▼/↳ glyph, no carriesTo, no LEVERS
+  // entry — a banner's size and duration are look-calls, not pressure axes (DIFFICULTY-LEVERS.md §4).
+  //   ⛔ nextWave() and drawLevelBanner() BOTH read DEBUG.levelBannerTime — never the constant on one
+  // side and the knob on the other. drawLevelBanner() derives `elapsed` by subtracting
+  // game.levelBanner.life from the SAME value nextWave() seeded it with; a mismatch would make a
+  // mid-level slider drag send elapsed negative or jump, and the banner would flicker or vanish.
+  { id: "levelBannerTime", label: "Level banner hold", unit: "s",
+    def: LEVEL_BANNER_TIME, min: 0, max: 8, step: 0.1 },
+  { id: "levelBannerFade", label: "Level banner fade", unit: "s",
+    def: LEVEL_BANNER_FADE, min: 0, max: 3, step: 0.1 },
+  { id: "levelBannerSize", label: "Level banner size", unit: "px",
+    def: LEVEL_BANNER_SIZE, min: 16, max: 160, step: 4 },
+  { id: "levelBannerY", label: "Level banner y offset", unit: "px",
+    def: LEVEL_BANNER_Y, min: -200, max: 200, step: 4 },
 ];
 // CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
@@ -5980,7 +5997,9 @@ function nextWave() {
   // Same string sayLevel() speaks, but set unconditionally: no AudioSys.ctx guard (this is a render field,
   // and gating it on audio would hide the banner for a player who has not yet produced a user gesture),
   // no captions setting, no voice gate. Level 1 gets one too, for the same reason sayLevel() does.
-  game.levelBanner = { text: "Level " + game.wave, life: LEVEL_BANNER_TIME };
+  // CS026 P5: reads DEBUG.levelBannerTime, not the constant — drawLevelBanner() derives elapsed by
+  // subtracting from this SAME value, so both sites must read the same source (see the registry comment).
+  game.levelBanner = { text: "Level " + game.wave, life: DEBUG.levelBannerTime };
   // v3.4 P7: intensity recomputed ONLY on wave change, never per-frame — keeps updateMusic()'s
   // per-frame path clean. Runs at wave 1 too (startGame calls nextWave()), so a fresh run starts
   // pinned to musicIntensity(1) === 0 (foundation layer only) before any track has even loaded.
@@ -8415,12 +8434,15 @@ function drawCaption() {
 // between. Taking the MIN of elapsed and remaining gives both ends from one expression and degenerates
 // gracefully if 2*FADE ever exceeds TIME (the banner just peaks below 1 instead of glitching). Uses
 // ctx.globalAlpha, which drawText leaves alone — the same mechanism as the caption's fade-out.
+// CS026 P5: all four reads are DEBUG.* — levelBannerTime MUST match the value nextWave() seeded
+// game.levelBanner.life with, or elapsed goes negative/jumps on a mid-level slider drag (registry comment).
+// The Math.max(0, ...) guard is what makes that degrade gracefully rather than glitch.
 function drawLevelBanner() {
   if (game.state === "playing" && !game.paused && game.levelBanner.life > 0) {
-    const elapsed = LEVEL_BANNER_TIME - game.levelBanner.life;
-    const a = Math.min(1, Math.max(0, Math.min(elapsed, game.levelBanner.life)) / LEVEL_BANNER_FADE);
+    const elapsed = DEBUG.levelBannerTime - game.levelBanner.life;
+    const a = Math.min(1, Math.max(0, Math.min(elapsed, game.levelBanner.life)) / DEBUG.levelBannerFade);
     ctx.globalAlpha = a;
-    drawText(game.levelBanner.text, VIEW_W/2, VIEW_H/2 + LEVEL_BANNER_Y, LEVEL_BANNER_SIZE, COLOR.text, "center");
+    drawText(game.levelBanner.text, VIEW_W/2, VIEW_H/2 + DEBUG.levelBannerY, DEBUG.levelBannerSize, COLOR.text, "center");
     ctx.globalAlpha = 1;
   }
 }

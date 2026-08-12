@@ -232,14 +232,14 @@ let X = null;
   // CS026 P2 repoint: 75 -> 78, and the LEVER half 51 -> 54 — the first repoint here to move the lever
   // half rather than the non-lever one, because junkSplit is a LEVER and its three rows come from
   // leverKnob() like every other triple.
-  eq(X.DEBUG_ENTRIES.length, 81, "A: the registry holds exactly 81 value entries (25 non-lever + 54 lever) [CS026 P4 -> 81]");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 81, "A: ...and DEBUG_VARS agrees");
+  eq(X.DEBUG_ENTRIES.length, 85, "A: the registry holds exactly 85 value entries (31 non-lever + 54 lever) [CS026 P4 -> 81, CS026 P5 -> 85]");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "A: ...and DEBUG_VARS agrees");
   eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, 54,
     "A: ...54 of them are lever knobs");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset Scores + Back");
-  eq(Object.keys(X.DEBUG).length, 81, "A: the native DEBUG map agrees with the registry");
-  eq(Object.keys(X.debugShown).length, 81, "A: ...and so does the display map");
+  eq(Object.keys(X.DEBUG).length, 85, "A: the native DEBUG map agrees with the registry");
+  eq(Object.keys(X.debugShown).length, 85, "A: ...and so does the display map");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -631,7 +631,9 @@ let X = null;
   // reasoning as every repoint above — the per-row checks below are what pin it as a non-lever.
   // CS026 P4 repoint: +2 more (deliveryFloatRise, deliveryFloatLife, DELIVERY — the delivery floaters'
   // own rise/life). Not a lever either: legibility tuning, no chain, no floor/ceil/steps triple.
-  eq(nonLever.length, 27, "G: 27 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4's registry");
+  // CS026 P5 repoint: +4 more (levelBannerTime/Fade/Size/Y, GLOBAL — the level banner's look-call
+  // knobs). Not a lever: a banner's size/duration is not a pressure axis, spec §6/DIFFICULTY-LEVERS.md §4.
+  eq(nonLever.length, 31, "G: 31 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

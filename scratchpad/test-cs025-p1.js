@@ -764,9 +764,9 @@ function fullAndHolding(X, { level = 1 } = {}) {
 
   // Registry 72 -> 73 (CS025 P2 repoint: -> 75, its two magnet-push knobs; CS026 P2 repoint: -> 78, the
   // junkSplit lever's three knobs).
-  eq(X.DEBUG_ENTRIES.length, 81, "G: the registry holds 81 value entries (CS024 P6f's 72 + this one + CS025 P2's two + CS026 P2's three + CS026 P3's earlyWorldLevels) [CS026 P4 -> 81]");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 81, "G: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 81, "G: ...and the native DEBUG map agrees");
+  eq(X.DEBUG_ENTRIES.length, 85, "G: the registry holds 85 value entries (CS024 P6f's 72 + this one + CS025 P2's two + CS026 P2's three + CS026 P3's earlyWorldLevels) [CS026 P4 -> 81, CS026 P5 -> 85]");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "G: ...and DEBUG_VARS agrees");
+  eq(Object.keys(X.DEBUG).length, 85, "G: ...and the native DEBUG map agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "G: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "G: DEBUG_ROWS is the registry plus its four trailer rows");
 
@@ -811,14 +811,16 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // id, magnetResumeDelay — is what is checked here, together with the order pin below (which is the
     // real append-only claim and is unweakened). Every other added id belongs to a later CS025 phase.
     // CS026 P2 widened the "later phase's" allowance a second time, on the same reasoning: its three
-    // junkSplit* rows are that phase's, not P1's. CS026 P4 widens it again with its own two: the list
-    // stays explicit rather than a wildcard so a row arriving with no changeset behind it still fails.
+    // junkSplit* rows are that phase's, not P1's. CS026 P4 widens it again with its own two, and CS026 P5
+    // widens it a fifth time with its own four: the list stays explicit rather than a wildcard so a row
+    // arriving with no changeset behind it still fails.
     assert(added.includes("magnetResumeDelay"), "G: P1's one id, magnetResumeDelay, was added");
     const notP1 = added.filter(id => id !== "magnetResumeDelay");
     const LATER = id => id.startsWith("magnetPush")            // CS025 P2
       || /^junkSplit(Floor|Ceil|Steps)$/.test(id)             // CS026 P2
       || id === "earlyWorldLevels"                            // CS026 P3
-      || id === "deliveryFloatRise" || id === "deliveryFloatLife"; // CS026 P4
+      || id === "deliveryFloatRise" || id === "deliveryFloatLife" // CS026 P4
+      || id.startsWith("levelBanner");                        // CS026 P5
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

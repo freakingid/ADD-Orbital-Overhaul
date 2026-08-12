@@ -483,7 +483,7 @@ function quiet(X) {
   // CS026 P2 repoint: 75 -> 78. TRAP 2's claim is that CS025 P5 added no row, and the parent-commit
   // comparison below is what carries it — this line is the live count, which a later phase legitimately
   // moves (CS026 P2 added the junkSplit lever's three knobs).
-  eq(X.DEBUG_ENTRIES.length, 81, "G: ⛔ TRAP 2 — the registry holds 81 rows (CS026 P2's three junkSplit knobs and CS026 P3's earlyWorldLevels joined CS025 P5's 75) [CS026 P4 -> 81]");
+  eq(X.DEBUG_ENTRIES.length, 85, "G: ⛔ TRAP 2 — the registry holds 85 rows (CS026 P2's three junkSplit knobs and CS026 P3's earlyWorldLevels joined CS025 P5's 75) [CS026 P4 -> 81, CS026 P5 -> 85]");
 
   const ps = parentSrc();
   if (!ps) skip("§G's parent-commit (cs-25 p4) pins: LEVERS/registry/leverState byte-identity + the version bump");
@@ -498,7 +498,8 @@ function quiet(X) {
     const ADDED_CARRIES = { junkCount: ["junkSplit"] };            // CS026 P2
     const LATER_ROWS = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id)    // CS026 P2
       || id === "earlyWorldLevels"                                       // CS026 P3
-      || id === "deliveryFloatRise" || id === "deliveryFloatLife";       // CS026 P4
+      || id === "deliveryFloatRise" || id === "deliveryFloatLife"        // CS026 P4
+      || id.startsWith("levelBanner");                                   // CS026 P5
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

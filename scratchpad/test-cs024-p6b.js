@@ -571,7 +571,7 @@ function evalSlice(literal) {
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
   // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
   // CS024 P6f repoint: +3 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — non-levers, HUNTER section).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 81, "G: TRAP 2 — 81 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs, +3 CS026 P2 junkSplit lever knobs, +1 CS026 P3 earlyWorldLevels)");
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 85, "G: TRAP 2 — 85 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs, +3 CS026 P2 junkSplit lever knobs, +1 CS026 P3 earlyWorldLevels, +4 CS026 P5 level banner knobs)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -594,7 +594,12 @@ function evalSlice(literal) {
     // CS024 P6f repoint: also strip P6f's three HUNTER-section knobs (hunterCapMax,
     // hunterCapLevelsPerStep, heldClumpMax) — same reasoning again, they are P6f's rows, not P6b's, and
     // the claim under test is that P6b left the pre-P6b ORDER alone.
-    const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "").replace(/,startLevel$/, "")
+    // CS026 P5 repoint: strip the FOUR level banner knobs (levelBannerTime/Fade/Size/Y, GLOBAL, appended
+    // after startLevel) FIRST — they are now the true tail, which is why this strip runs before the
+    // `,startLevel$` one below rather than being appended to that regex's own alternation.
+    const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "")
+      .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
+      .replace(/,startLevel$/, "")
       .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "")
       // CS025 P1 repoint: also strip magnetResumeDelay (CS025 P1, POWERUPS, appended after
       // engineMassMult) — same reasoning again, it is CS025 P1's row, not P6b's.

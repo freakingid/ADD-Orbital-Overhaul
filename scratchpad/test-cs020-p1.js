@@ -459,7 +459,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // AND AGAIN BY CS024 P6c: 33 -> 67 — every lever's single flat row becomes THREE (floor, ceiling,
   // step count), so the 17 lever rows become 51 and the 16 non-lever knobs stay exactly as they were.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 81, "A: TRAP 3 — DEBUG_VARS holds exactly 81 value entries after CS026 P3 [CS026 P4 -> 81]");
+  eq(valueEntries, 85, "A: TRAP 3 — DEBUG_VARS holds exactly 85 value entries after CS026 P3 [CS026 P4 -> 81, CS026 P5 -> 85]");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

@@ -409,11 +409,12 @@ let X = null;
   const gIdx = X.DEBUG_VARS.findIndex(v => v.header === "GLOBAL");
   assert(gIdx >= 0, "D: (setup) there is a GLOBAL section");
   const globalIds = X.DEBUG_VARS.slice(gIdx + 1).map(v => v.id);
-  eq(globalIds.join(","), "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel",
-    "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel");
-  eq(X.DEBUG_ENTRIES.length, 81, "D: the registry holds 81 value entries (CS026 P2's 78 + this one) [CS026 P4 -> 81]");
-  eq(Object.keys(X.DEBUG).length, 81, "D: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 81, "D: ...and the display map agrees");
+  eq(globalIds.join(","),
+    "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY",
+    "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel (CS026 P5's four level banner knobs trail startLevel)");
+  eq(X.DEBUG_ENTRIES.length, 85, "D: the registry holds 85 value entries (CS026 P2's 78 + this one) [CS026 P4 -> 81, CS026 P5 -> 85]");
+  eq(Object.keys(X.DEBUG).length, 85, "D: ...and the native DEBUG map agrees");
+  eq(Object.keys(X.debugShown).length, 85, "D: ...and the display map agrees");
   eq(X.DEBUG.earlyWorldLevels, 5, "D: the live value seeds from the def");
 
   // It is READ LIVE at the wave boundary, never cached — a panel change takes effect on the next level.

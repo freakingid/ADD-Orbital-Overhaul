@@ -192,9 +192,9 @@ let X = null;
   eq(life.step, 0.05, "B: deliveryFloatLife step 0.05");
   assert(!life.toNative, "B: no toNative hook — shown value is native");
 
-  eq(X.DEBUG_ENTRIES.length, 81, "B: the registry holds 81 value entries (CS026 P3's 79 + this phase's 2)");
-  eq(Object.keys(X.DEBUG).length, 81, "B: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 81, "B: ...and the display map agrees");
+  eq(X.DEBUG_ENTRIES.length, 85, "B: the registry holds 85 value entries (CS026 P3's 79 + this phase's 2 + CS026 P5's four level banner knobs)");
+  eq(Object.keys(X.DEBUG).length, 85, "B: ...and the native DEBUG map agrees");
+  eq(Object.keys(X.debugShown).length, 85, "B: ...and the display map agrees");
   eq(X.DEBUG.deliveryFloatRise, 300, "B: the live value seeds from def (rise)");
   eq(X.DEBUG.deliveryFloatLife, 0.55, "B: ...and (life)");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4,

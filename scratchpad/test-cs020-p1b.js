@@ -430,8 +430,8 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // REPOINTED AGAIN BY CS024 P6c: 33 -> 67 — three knobs per lever (floor/ceiling/step count) replace
   // P5's one flat row, so 17 lever rows become 51; the 16 non-lever knobs are untouched.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 81, "A: DEBUG_VARS holds 81 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33; CS024 P6c -> 67; CS024 P6d -> 68; CS024 P6e -> 69; CS024 P6f -> 72; CS025 P1 -> 73; CS025 P2 -> 75; CS026 P2 -> 78; CS026 P3 -> 79; CS026 P4 -> 81)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 81, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 85, "A: DEBUG_VARS holds 85 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33; CS024 P6c -> 67; CS024 P6d -> 68; CS024 P6e -> 69; CS024 P6f -> 72; CS025 P1 -> 73; CS025 P2 -> 75; CS026 P2 -> 78; CS026 P3 -> 79; CS026 P4 -> 81; CS026 P5 -> 85)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 85, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");

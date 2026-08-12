@@ -143,8 +143,9 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // gate-tooling knob reading as the registry's trailing dev tool rather than stranding it mid-section.
   // It is a non-lever flat knob, so it takes one row, not a floor/ceil/steps triple.
   const globalIds = X.DEBUG_VARS.slice(gIdx + 1).map(v => v.id);
-  assert(deepEq(globalIds, ["sweepCoalescePause", "debrisBounceRestitution", "earlyWorldLevels", "startLevel"]),
-    `B: GLOBAL header followed by sweepCoalescePause, debrisBounceRestitution, CS026 P3's earlyWorldLevels, then P6d's startLevel, freqJitter still removed (got ${JSON.stringify(globalIds)})`);
+  assert(deepEq(globalIds, ["sweepCoalescePause", "debrisBounceRestitution", "earlyWorldLevels", "startLevel",
+    "levelBannerTime", "levelBannerFade", "levelBannerSize", "levelBannerY"]),
+    `B: GLOBAL header followed by sweepCoalescePause, debrisBounceRestitution, CS026 P3's earlyWorldLevels, P6d's startLevel, then CS026 P5's four level banner knobs, freqJitter still removed (got ${JSON.stringify(globalIds)})`);
   assert(!X.DEBUG_VARS.some(v => v.id === "freqJitter"), "B: freqJitter entry is gone from DEBUG_VARS (CS024 P2)");
   assert(!("freqJitter" in X.DEBUG), "B: DEBUG.freqJitter is gone (CS024 P2)");
 
@@ -498,7 +499,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // Engine-as-fuel's two knobs (engineBurnSeconds, engineMassMult). Net -1 +2. Section-by-section:
   // SHIP 2 + GARBAGE 4 + CHAIN GUARD 3 + DELIVERY 1 + JUNK 4 + HUNTER 4 + UFO 11 + POWERUPS 2 +
   // GLOBAL 2 = 33. CS024 P6f: HUNTER 4 -> 7 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax).
-  eq(nEntries, 81, `I: DEBUG_ENTRIES count is 81 after CS024 P6c/P6d/P6e/P6f + CS025 P1/P2 + CS026 P2/P3/P4 (got ${nEntries})`);
+  eq(nEntries, 85, `I: DEBUG_ENTRIES count is 85 after CS024 P6c/P6d/P6e/P6f + CS025 P1/P2 + CS026 P2/P3/P4/P5 (got ${nEntries})`);
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,
