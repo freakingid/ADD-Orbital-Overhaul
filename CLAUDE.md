@@ -322,8 +322,8 @@ have been conflated twice already; don't do it a third time (GDD §2.14).
 `DIFFICULTY-LEVERS.md`.
 ⛔ **Drivers-only wrapping: a carried (`↳`) lever may never declare `carriesTo`.**
 Found via a difficulty regression at level 33.
-⚠ **SETTLED:** `destroyHunter()` is **not** levered and stays 3-way —
-`ACH_LINEAGE_FULL = 13` depends on it.
+⛔ **`destroyHunter()` is not levered and stays 3-way** — `ACH_LINEAGE_FULL = 13`
+depends on it. Levering the split moves a shipped achievement threshold.
 
 ### New enemies
 

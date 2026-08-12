@@ -599,6 +599,13 @@ answer different questions about the same objects.
 
 ## `#levers` — why `destroyHunter()` stays 3-way
 
+**Marker note (CS027 P5, Paul's call):** this shipped as `⚠ SETTLED` and was
+flipped to `⛔ INVARIANT` the same phase. It reads as both — it *looks* like an
+oversight that one kill path isn't levered, which is the `⚠` case — but the
+reason it is pinned is that changing it breaks a shipped achievement's
+arithmetic, which is the `⛔` definition exactly. `⚠ SETTLED` invites "raise it
+with Paul"; this one isn't open for discussion, so it takes the stronger marker.
+
 Relocated from the old code map:
 
 > ⛔ destroyHunter() is NOT levered and stays 3-way
