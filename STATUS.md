@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.29 · Changeset: CS030 · Phase: P1 · Registry: 85 · Levers: 18
+Version: 1.0.0.29 · Changeset: CS030 · Phase: P2 · Registry: 85 · Levers: 18
 
 ## Phase ledger — CS030
 
@@ -8,9 +8,25 @@ Version: 1.0.0.29 · Changeset: CS030 · Phase: P1 · Registry: 85 · Levers: 18
   builds). Fed from `onUnlock()`, the single unlock choke point — not gated on `game.debugRun`,
   not filtered by `game.wave` (PLANNED-FEATURES-CS030.md §0.3/§0.4). Data only; no UI/draw/input.
 
+- P2 — `tools/emblem-lab.html`, the eight-emblem authoring lab. Six tier rungs are ONE family:
+  the same delta mark inside the SAME r=0.66 circle, and the ladder is how much of that circle
+  exists (120° cradle / 240° / 300° / closed / +4 points / points bound in an outer facet ring).
+  Two off-family pool marks — an hourglass (weekly) and a stamped plate (untiered lifetime),
+  both rectilinear, no ring, no delta. Live blocks for shipping size, the ladder, pool-vs-tier
+  and 2x, plus a measured stats table and an `ACH_EMBLEM` copy-out. **P3 pastes that export in
+  verbatim** — the lab ships first and stays the source of truth (contrast `SAT_ART`, §2.3).
+  Lab only; `orbital-overhaul.html` untouched, no test added.
+
 ## Working / verified
 
 - Full suite on a full clone: **114 files, 114 passed, 0 failed, 0 skipped, 0 timed out.**
+- **Emblem legibility measured at r=32, not assumed** (CS028 P1 precedent). All eight clear:
+  worst unit norm **0.962** (bar 1.000), tightest gap between two features meant to read apart
+  **5.1px** (bar 4px; welded pairs like a spike foot on its ring counted separately, not flagged).
+  Measurement changed two designs: Platinum/Diamond's points were straight rays at the diagonals
+  and read as an **X cancelling the ring out** — now chevrons with feet welded to the 12-gon's
+  edge; and the weekly hourglass's cap bars sat 1.9px off the body — body pulled in to clear at
+  5.1px. Both recorded in the lab's own header so a later pass can't undo them blind.
 - Registry confirmed at **85**, `LEVERS` at **18** — P1 added no knob and moved no lever.
 - `test-cs026-p3.js`'s TRAP 5 byte-identity pin (startGame()'s executable source vs. its CS026 P3
   parent) narrowed a second time, to also exclude P1's two new reset lines
@@ -18,6 +34,12 @@ Version: 1.0.0.29 · Changeset: CS030 · Phase: P1 · Registry: 85 · Levers: 18
   `game.deliveryTicker = null`.
 
 ## Known issues
+
+- **FLAG-CS030-a (new, P2) — `COLOR.ach` (`#ffcf5a`) is byte-identical to `TIER_COLOR[2]`
+  (Gold).** The two pool emblems and the Gold tier emblem therefore ship in the *same colour*,
+  so shape carries the entire "this is not a tier rung" distinction. Answered in the lab's
+  pool-vs-tier block (all three drawn in `#ffcf5a` side by side) and it reads — but it is a
+  one-channel tell, so it belongs in the P6 gate's look-call, not just in a measurement.
 
 - **(carried) `test-registry.js`'s FLAG-CS027-d — twelve suite files grep a comment-stripped copy
   of the source that's missing the same 80 lines `execSource()` fixed.** Latent, not live:
@@ -62,9 +84,11 @@ None.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   (see `## Known issues`) could migrate to `execSource()` whenever one of them is next open for
   other reasons.
-- CS030 in flight (the achievement celebration panel). P1 (this session) built the collector only.
-  Remaining phases per `IMPLEMENTATION-PHASES-CS030.md`: the emblem table/lab (§4.2), the panel
-  itself (draw/state/scroll/input, §4.3), and the game-over + level-end integration points (§4.4).
+- CS030 in flight (the achievement celebration panel). P1 built the collector, P2 (this session)
+  the emblem lab. **P3 is a paste-and-wire phase**: take `tools/emblem-lab.html`'s copy-out
+  verbatim into `ACH_EMBLEM` near `TIER_NAMES`/`TIER_COLOR`, add `drawEmblem()`, and add the two
+  `DEBUG_VARS` rows. Remaining after that, per `IMPLEMENTATION-PHASES-CS030.md`: the panel itself
+  (draw/state/scroll/input, §4.3) and the game-over + level-end integration points (§4.4).
 
 ## Playtest asks (open only — answered ones move to the log)
 
