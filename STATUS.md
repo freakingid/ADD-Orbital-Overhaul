@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.28 · Changeset: CS029 · Phase: P3 · Registry: 85 · Levers: 18
+Version: 1.0.0.28 · Changeset: CS029 · Phase: P4 · Registry: 85 · Levers: 18
 
 ## Phase ledger — CS029
 
@@ -7,6 +7,8 @@ Version: 1.0.0.28 · Changeset: CS029 · Phase: P3 · Registry: 85 · Levers: 18
 - P2 — ESC now opens the pause menu at game over; the game-over footer collapsed from two lines
   (a blinking 22px "play again" + a dim 14px "MENU: O" hint) to one `drawMenuHint` line.
 - P3 — `tools/dock-float-lab.html`: the delivery-floater column lab, models A/B/C. Build untouched.
+- P4 — model C shipped: delivery floaters move to a static dock anchor; the towed branch collapses
+  to one per-visit accumulating ticker.
 
 ## Working / verified
 
@@ -41,38 +43,43 @@ Version: 1.0.0.28 · Changeset: CS029 · Phase: P3 · Registry: 85 · Levers: 18
   (0.02s/40px included), C keeps one `+` floater alive and ticks `+50`…`+8100`. Build untouched;
   suite 112/112, 0 failed, 0 skipped.
 
+- **P4 — the gate applied: G1=C, G2=0.50, G3 unchanged (160px/s, 1.20s), G4=n/a, G5 unchanged
+  (0.05).** `DELIVERY_FLOAT_DY` (a fixed nudge above the *ship* — CS026 P6's own misreading, §0.3)
+  is retired; both delivery branches now share one computed anchor, `dock.y - DOCK_RADIUS *
+  DELIVERY_FLOAT_ANCHOR_FRAC` — the dock is static for a whole visit, the fixed point Paul asked
+  for. The towed branch no longer pushes a floater per canister: one ticker (`FloatText` gains an
+  optional `pinned` field, default false, every pre-existing call site untouched) lives for the
+  visit, text rewritten per canister, released at the last one. A visit can also end WITHOUT a last
+  canister — a hostile break, ship death, the comboGrace timeout, or a fresh haul starting before the
+  old one finished — so `releaseDeliveryTicker()` runs at all five sites that zero
+  `game.deliveryCount`, or an abandoned ticker would sit pinned at the dock forever. The incidental
+  branch is unchanged apart from the shared origin — still its own floater, never folded into the
+  ticker. Registry HOLDS at 85 — model C adds no knob. Comment debt at both named sites (§6.5)
+  rewritten, not deleted. Seven pre-existing suite files pinned the retired per-canister/ship-relative
+  shape and were updated to match; their other claims (payment, latches, byte-identity) are
+  untouched. New `test-cs029-p4.js` drives the real offload/breakChain/scatterChain paths. Full
+  suite: 113/113 passed, 0 failed, 0 skipped.
+
 ## Known issues
 
-- 🚩 **FLAG-CS029-c (BLOCKING for P4) — §6.2's model-B rule does not have the property §4.3 claims
-  for it.** "Born at the anchor unless the *previous* delivery floater is within `minGap`, else at
-  `prevFloater.y - minGap`" places the new floater *above* the previous one, so the last-spawned is
-  no longer the lowest; two spawns later the anchor test passes against that high floater and the
-  column resets to the anchor with an older floater still inside it. Measured at the defaults, the
-  column runs 13.3 / 33.3 / 34.7 / 54.7 px above the anchor — a **1.4px gap, worse than model A**.
-  One reference cannot see it. The lab implements the smallest rule that does deliver the advertised
-  property (`slotY()`: start at the anchor, walk the live column bottom-up, rise `minGap` above
-  anything you would land inside) — still derived, no stored column-height counter, and it collapses
-  to "born at the anchor" at a slow cadence, which is what the "UNLESS" clause exists for.
-  **If Paul picks B, P4 implements `slotY()`, not §6.2's sentence.**
+- ~~**FLAG-CS029-c — §6.2's model-B rule does not have the property §4.3 claims for it.**~~
+  **Moot, closed at P4.** Paul picked model C at the gate (G1=C), not B — `slotY()`'s fix was
+  never needed. Left here so a future "why does the archived model-B spec text look wrong" question
+  finds the answer rather than re-deriving it.
 
-- 🚩 **FLAG-CS029-d — the recorded "160 × 0.05 = 8 px" is the ideal, not the shipped number.**
-  `game.offloadTimer` is reset to a flat `DOCK_OFFLOAD_INTERVAL` and decremented by whole frames
-  with no remainder carried, so the realised cadence is `ceil`-ed to frames — and 0.05 costs **four**
-  frames at 60Hz, not three (`0.05 - 3/60` is +2.8e-18, not ≤ 0). True spacing in **world space** is
-  160 × 4/60 = **10.67px**, not 8. ⚠ Do not read this as the balance note's "~10.7px on screen"
-  below — that is 8px × the CSS letterbox scale, a different quantity that lands on the same number
-  by coincidence. Both are true, and they compose: on-screen separation is 10.67 × the CSS scale.
-  Under the 16px glyph either way, so the diagnosis is unchanged, but the arithmetic in the
-  `DEBUG.deliveryFloatRise` ⛔ block (~L3399) is a frame short and P4 is rewriting that block
-  anyway (§6.5).
+- ~~**FLAG-CS029-d — the recorded "160 × 0.05 = 8 px" is the ideal, not the shipped number.**~~
+  **Superseded at P4.** That finding was about per-canister cadence spacing under models A/B; model
+  C collapses the towed branch to one ticker per visit, so there is no consecutive-floater cadence
+  left to be idealized about. The frame-quantisation finding itself (0.05s costs 4 frames at 60Hz,
+  not 3) stays true and is recorded in `log/CS026.md` against the model it actually describes.
 
-- 🚩 **FLAG-CS029-e — the milestone floaters cross the dock anchor, and only `anchorFrac` fixes it.**
-  `SALVAGE BONUS` / `MAX HAUL` are born at `dock.y - 22` with `FloatText`'s defaults, so they climb
-  30 × 1.1 = 33px and top out at `dock.y - 55` — straight up through any anchor below that, in every
-  model. Measured all-floaters minimum at `anchorFrac` 0.50 / 0.625 / 0.70 / 0.75 / 0.80: A 0.2 /
-  3.2 / 9.8 / 10.7 / 10.7, B 0.3 / 5.2 / 11.8 / 16.2 / 20.0, C 0.0 / 1.0 / 7.6 / 12.0 / 16.4.
-  Crossing stops above 0.625 (55/88); a clear glyph of air needs ~0.81 ((55+16)/88). **G2 is doing
-  more work than the gate doc assumes** — it is not just taste, it is this collision.
+- **(carried, applied not resolved) FLAG-CS029-e — the milestone floaters can still touch the dock
+  anchor at the picked G2.** `SALVAGE BONUS` / `MAX HAUL` climb from `dock.y - 22` on `FloatText`'s
+  defaults (30px/s, 1.1s) and top out at `dock.y - 55`. At the gate's G2 = 0.50, the lab measured
+  model C's own all-floaters minimum separation at **0.0px** — zero clearance, not a crossing, but no
+  air either. Paul picked 0.50 anyway (it was the stated "halfway between centre and rim" target, not
+  re-litigated at the gate). Recorded so a future "SALVAGE BONUS looks like it's touching the ticker"
+  report is recognised as this, not a new regression.
 
 - **(carried) `test-registry.js`'s FLAG-CS027-d — twelve suite files grep a comment-stripped copy of the source that's missing the same 80 lines `execSource()` fixed.** Latent, not live: audited, no assertion any of them makes currently falls in the deleted region. Becomes live the moment one does. One-line-per-file fix (`execSource()`); not urgent, bundle with an opportunistic migration.
 - ~~**(carried) `tools/sat-art-lab.html` (FLAG-CS028-a) is not in the repo.**~~ **Stale — closed at P3.** It IS in the repo, added in two un-phased commits (`5457e57` / `be3af24`, both ancestors of HEAD). `SAT_ART`/`SAT_SCRAP` have an authoring instrument after all; nothing else about the CS028 note changes.
@@ -89,7 +96,9 @@ None.
 
 - **FLAG-CS027-c (opportunistic, non-blocking) — 8 test files hardcode world dimensions** (`2560`/`1440`/`1920`/`1080`) instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies** (see `## Known issues`) could migrate to `execSource()` whenever one of them is next open for other reasons.
-- **THE GATE (blocking P4) — G1 model, G2 `anchorFrac`, G3 `rise`/`life`, G4 `minGap`, G5 `DOCK_OFFLOAD_INTERVAL`, G6 `GAMEOVER_HINT_SIZE`.** Play `tools/dock-float-lab.html`; its footer emits the answers in constant form. Read FLAG-CS029-c/d/e first — c changes what P4 builds under B, e changes what G2 is *for*.
+- **P5 — the closing phase (PLANNED-FEATURES-CS029.md §7): name settling, doc sweep, version bump to
+  1.0.0.29.** GDD §2/§3 and this file's own doc-map need the delivery-floater section swept for
+  model C; `STATUS.md` moves to `log/CS029.md` per the standing rule.
 
 ## Playtest asks (open only — answered ones move to the log)
 
@@ -97,6 +106,6 @@ None open.
 
 ## Balance notes
 - **(carried from CS026) `COMBO n/N`'s denominator is still unrepresented** since CS026 P4 dropped the HUD row (FORK-CS026-F, accepted risk). Recorded so a future "the cargo cap is invisible" report is recognised as this, not a new bug.
-- **(carried from CS026, now being acted on in CS029) The delivery floater column is tighter than before, by Paul's own choice.** Nominal 8px separation, ~10.7px on screen — but see FLAG-CS029-d: the world-space figure is itself 10.67px, so this note's on-screen number is a frame low. It did smear; P3 built the lab and P4 fixes it. The "`DOCK_OFFLOAD_INTERVAL` is the lever" instruction is superseded under models B and C, which dissolve the trade entirely.
+- ~~**(carried from CS026) The delivery floater column is tighter than before, by Paul's own choice.**~~ **Resolved at CS029 P4.** Model C (the gate's pick) removes the per-canister column entirely — a single accumulating ticker replaces it, so there is no cadence-vs-separation trade left to tune.
 - **(carried from CS024/CS025) The UFO difficulty chain goes fully flat past level 65** (FLAG-CS025-b) — junk saturates at L41, hunters at L33, so past 65 all three UFO sub-chains are pure sawtooth on their drivers with nothing escalating underneath. Fix if wanted is a step-count increase, no mechanism change.
 - **(carried from CS023) `DEBRIS_BOUNCE_RESTITUTION` (1.0) and `DEBRIS_BOUNCE_MIN` (40 px/s) are both first-pass and browser-unverified**, same status as `SHIELD_BOUNCE_RESTITUTION`/`MIN` at CS021 P1b. Measured consequence: a rail satellite sweeping into a parked free one throws it up to 511.5 px/s off the outer fast ring — nearly double the 255.7 px/s cap CS023 P4's drift derives from.

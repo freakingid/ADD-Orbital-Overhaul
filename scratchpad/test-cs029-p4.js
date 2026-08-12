@@ -1,0 +1,323 @@
+// Headless test for CS029 Phase 4 — DELIVERY FLOATERS MOVE TO THE DOCK ANCHOR (model C, the gate).
+//
+//   node scratchpad/test-cs029-p4.js
+//
+// WHY. §0.3/§6 (PLANNED-FEATURES-CS029.md). The gate (STATUS.md) picked G1=C, G2=0.50 (anchorFrac),
+// G3=160px/s/1.20s (unchanged), G4=n/a (no minGap — that's model B), G5=0.05 (unchanged). DELIVERY_FLOAT_DY
+// (a fixed nudge above the SHIP, CS026 P6's own misreading — §0.3) is retired in favour of
+// DELIVERY_FLOAT_ANCHOR_FRAC, a fraction of DOCK_RADIUS above the STATIC dock centre, shared by both
+// delivery branches through one computed pair (`deliveryAnchorX`/`deliveryAnchorY`). The towed branch
+// no longer pushes a floater per canister: one ticker object lives for the whole visit, pinned at the
+// anchor, its `.text` rewritten to the running total as each canister lands, released (un-pinned) at
+// the visit's last canister. A visit that ends WITHOUT reaching its last canister — a hostile break, a
+// ship death, the one-effort grace window expiring, or a fresh haul starting before the old one
+// finished — also releases the ticker (releaseDeliveryTicker(), called at all five deliveryCount=0
+// sites), or it would sit pinned at the dock forever and the NEXT visit would silently resume its
+// stale total instead of starting fresh.
+//
+// Follows the standing rule (CLAUDE.md): scratchpad/_harness.js's buildGame() evals the REAL <script>
+// block (no export list needed — it harvests every top-level name), and every section drives the ACTUAL
+// startGame/update/dock-offload/breakChain/scatterChain paths. Nothing under test is reimplemented.
+//
+// Sections:
+//  (A) node --check; source pins — DELIVERY_FLOAT_DY is gone, DELIVERY_FLOAT_ANCHOR_FRAC exists and is
+//      positive, FloatText gained `pinned` (optional, default false, every pre-existing call site
+//      untouched), releaseDeliveryTicker() exists, both delivery push sites share ONE computed anchor.
+//  (B) the registry: DEBUG_ENTRIES.length is UNCHANGED at 85 — G1=C carries no new knob (unlike a G1=B
+//      pick, which would have added minGap). DOCK_OFFLOAD_INTERVAL is unmoved at 0.05 (G5).
+//  (C) ⛔ a real dock visit, driven for real, with the ship offset from the dock centre (not merely
+//      "near" it) so ship != dock is non-vacuous: both branches spawn at the DOCK anchor, never at ship
+//      coordinates: exactly ONE towed push per visit (the ticker), its text is rewritten in place as
+//      each canister lands, it is released (un-pinned, reference cleared) exactly at the last canister,
+//      and never more than one pinned floater lives at once.
+//  (D) the four abnormal-termination release sites: breakChain, scatterChain, the comboGrace timeout,
+//      and a fresh haul starting before the old one finished — each releases an orphaned ticker rather
+//      than leaving it pinned at the dock forever.
+//  (E) the incidental branch: unchanged size/colour/text, shares the dock anchor, never touches or is
+//      folded into the ticker, and multiple incidentals in one visit each get their own ordinary floater.
+//  (F) TRAPs: GAME_VERSION unmoved (P5 owns the bump); LEVERS/leverState byte-identical to the parent;
+//      scope pin against this phase's own parent (P3's commit), loudly skipped if git is unavailable.
+
+"use strict";
+const { buildGame, mkAssert, scriptSource } = require("./_harness.js");
+const { ownCommits, changedFiles, outsideScope, parentSource, SKIP_TAG } = require("./_phase-ref.js");
+
+// ⛔ THIS PHASE'S OWN PARENT, PINNED AS A LITERAL — cs-29 p3 (the float lab), v1.0.0.28.
+const PARENT_SHA = "59dd0f0b054669c3997f2f3e892afcd5a5cb1c64";
+const PHASE_SUBJECT = "cs-29 p4:";
+
+const A = mkAssert();
+const { assert, eq, close, skip } = A;
+
+const src = scriptSource();
+
+// ================= (A) node --check + source pins =====================
+(function sectionA() {
+  console.log("(A) node --check; DELIVERY_FLOAT_DY retired, DELIVERY_FLOAT_ANCHOR_FRAC in, pinned/release wired");
+  const { execFileSync } = require("child_process");
+  const fs = require("fs"), path = require("path");
+  const tmp = path.join(__dirname, "_cs029p4_extracted.js");
+  fs.writeFileSync(tmp, src);
+  try { execFileSync(process.execPath, ["--check", tmp], { stdio: "pipe" }); A.passed++; }
+  catch (e) { A.failed++; console.error("  FAIL: node --check: " + e.stderr.toString()); }
+  finally { fs.unlinkSync(tmp); }
+
+  assert(!/\bDELIVERY_FLOAT_DY\b/.test(src.replace(/\/\/[^\n]*/g, "")),
+    "A: ⛔ DELIVERY_FLOAT_DY does not appear anywhere in executable source (comments may still name it historically)");
+  assert(/const DELIVERY_FLOAT_ANCHOR_FRAC = 0\.50?;/.test(src),
+    "A: DELIVERY_FLOAT_ANCHOR_FRAC is declared as a plain constant, 0.5 (gate G2) — not a registry knob");
+
+  // FloatText's `pinned` field: optional, defaults false, every pre-existing call site untouched.
+  const ftBody = src.slice(src.indexOf("class FloatText {"), src.indexOf("class Dock {"));
+  assert(/this\.pinned = false;/.test(ftBody), "A: FloatText's constructor sets this.pinned = false by default");
+  assert(/if \(this\.pinned\) return;/.test(ftBody), "A: update() returns early when pinned — position/life frozen");
+
+  assert(/function releaseDeliveryTicker\(\) \{/.test(src), "A: releaseDeliveryTicker() exists");
+  eq((src.match(/releaseDeliveryTicker\(\);/g) || []).length, 5,
+    "A: ⛔ releaseDeliveryTicker() is called at exactly 5 sites — the last-canister release plus the four abnormal-termination resets");
+
+  // Both delivery branches share ONE computed anchor pair — the §6.1 "one origin expression" rule.
+  assert(/const deliveryAnchorX = game\.dock\.x, deliveryAnchorY = game\.dock\.y - DOCK_RADIUS \* DELIVERY_FLOAT_ANCHOR_FRAC;/.test(src),
+    "A: the shared anchor is computed once, in the dock-offload block, before the towed/incidental split");
+  eq((src.match(/deliveryAnchorX, deliveryAnchorY/g) || []).length, 2,
+    "A: ...and read by name at exactly two FloatText call sites (towed ticker birth, incidental push)");
+})();
+
+// ================= (B) the registry =====================
+(function sectionB() {
+  console.log("(B) registry HOLDS at 85 — model C adds no knob; DOCK_OFFLOAD_INTERVAL unmoved (G5)");
+  const X = buildGame();
+  eq(X.DEBUG_ENTRIES.length, 85, "B: ⛔ DEBUG_ENTRIES.length is unchanged — G1=C carries no new registry row");
+  assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
+  assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
+    "B: no minGap knob either — that belongs to model B, which was not picked");
+  close(X.DOCK_OFFLOAD_INTERVAL, 0.05, "B: DOCK_OFFLOAD_INTERVAL is unmoved at 0.05 (gate G5)");
+  eq(X.DEBUG.deliveryFloatRise, 160, "B: deliveryFloatRise's live value is still 160 (gate G3)");
+  eq(X.DEBUG.deliveryFloatLife, 1.2, "B: deliveryFloatLife's live value is still 1.2 (gate G3)");
+})();
+
+// ---- shared staging: a real dock visit, ship OFFSET from the dock centre (non-vacuous) ----
+function stageVisit(X, canisterCount) {
+  X.startGame();
+  const g = X.game;
+  g.state = "playing"; g.paused = false;
+  g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
+  g.garbage.length = 0; g.powerups.length = 0; g.floaters.length = 0;
+  g.debris.length = 1;
+  g.debris[0] = { x: 1e5, y: 1e5, vx: 0, vy: 0, size: 1, radius: 5, dead: false, update() {}, draw() {} };
+  g.saucerTimer = 1e6; g.healthTimer = 1e6; g.hunterTimer = 1e6;
+  g.ship.dead = false; g.ship.vx = 0; g.ship.vy = 0;
+  // OFFSET, not centred: inside the offload radius (dock.radius+10) and the grace ring (dock.radius+40),
+  // but far enough from dock.x/y that "born at the dock" and "born at the ship" are distinguishable.
+  g.ship.x = g.dock.x + 30; g.ship.y = g.dock.y - 15;
+  g.comboGrace = X.DEBUG.dockComboGrace;
+  g.cargoMax = X.CARGO_CAP_MAX;
+  g.deliveryCount = 0; g.offloadTimer = 0;
+  g.chain.length = 0;
+  for (let i = 0; i < canisterCount; i++) {
+    const nx = g.ship.x - (i + 1) * X.CHAIN_LINK, ny = g.ship.y;
+    g.chain.push({ x: nx, y: ny, px: nx, py: ny, spin: 0, spinRate: 0, mass: 1, towed: true });
+  }
+  return g;
+}
+
+// ================= (C) a real dock visit: dock-anchored, one ticker, released at the end =====================
+(function sectionC() {
+  console.log("(C) a real 24-canister visit: dock-anchored (not ship), one ticker, released at canister 24");
+  const X = buildGame();
+  const g = stageVisit(X, X.CARGO_CAP_MAX);
+  const wantX = g.dock.x, wantY = g.dock.y - X.DOCK_RADIUS * X.DELIVERY_FLOAT_ANCHOR_FRAC;
+  assert(Math.abs(g.ship.x - wantX) > 5 && Math.abs(g.ship.y - wantY) > 5,
+    "C: (non-vacuity) the staged ship position is clearly NOT the dock anchor");
+
+  const pushes = [];
+  let curFrame = -1;
+  // `text0` is a SNAPSHOT at push time — `obj` is a live reference, and the ticker's `.text` is
+  // rewritten in place for the rest of the visit, so reading `obj.text` after the drive loop gives
+  // the FINAL total, not the birth text (the same trap CS026 P6 §C already documents for `.y`).
+  const interceptor = function (...items) {
+    for (const it of items) pushes.push({ frame: curFrame, obj: it, text0: it.text });
+    return Array.prototype.push.apply(this, items);
+  };
+  // Sampled once per frame: how many currently-live floaters are pinned. Model C's whole claim is
+  // "at most one ticker alive at a time" — sampling every frame is what makes that claim real rather
+  // than inferred from the push log.
+  let maxPinnedAtOnce = 0;
+  for (let frame = 0; frame < 600 && g.chain.length > 0; frame++) {
+    curFrame = frame;
+    g.floaters.push = interceptor;
+    X.update(1 / 60);
+    const pinnedNow = g.floaters.filter(f => f.pinned).length;
+    if (pinnedNow > maxPinnedAtOnce) maxPinnedAtOnce = pinnedNow;
+  }
+  eq(g.chain.length, 0, "C: (setup) the whole 24-canister chain was offloaded");
+  eq(g.deliveryCount, X.CARGO_CAP_MAX, "C: (setup) all 24 counted as towed deliveries");
+  assert(maxPinnedAtOnce <= 1, `C: ⛔ never more than one PINNED floater is alive at once (max observed ${maxPinnedAtOnce})`);
+
+  const towed = pushes.filter(p => p.obj.color === X.COLOR.dock && p.obj.size === 16 && /^\+\d+$/.test(p.obj.text));
+  eq(towed.length, 1, "C: ⛔ exactly ONE towed push for the whole visit — the ticker, born on canister 1");
+  const ticker = towed[0].obj;
+  close(ticker.x, wantX, "C: ⛔ the ticker is born at the dock's x, not the ship's");
+  close(ticker.y, wantY, "C: ⛔ ...and at dock.y - DOCK_RADIUS x DELIVERY_FLOAT_ANCHOR_FRAC, not any ship-relative y");
+  eq(towed[0].text0, "+" + X.DOCK_BASE_SCORE, "C: the ticker's BIRTH text is canister 1's own points (DOCK_BASE_SCORE)");
+
+  let expectedTotal = 0;
+  for (let n = 1; n <= X.CARGO_CAP_MAX; n++) expectedTotal += X.DOCK_BASE_SCORE + X.DOCK_BONUS_STEP * (n - 1);
+  eq(ticker.text, "+" + expectedTotal, "C: ⛔ the ticker's FINAL text is the whole visit's running total");
+  eq(ticker.pinned, false, "C: ⛔ the ticker is released (un-pinned) once the last canister lands");
+  eq(g.deliveryTicker, null, "C: ...and the live reference is cleared — nothing left pinned for the next visit to find");
+  eq(ticker.rise, X.DEBUG.deliveryFloatRise, "C: the released ticker still reads the live rise knob");
+  eq(ticker.life0, X.DEBUG.deliveryFloatLife, "C: ...and the live life knob");
+
+  // A SECOND visit, immediately after: the ticker must be a FRESH object starting from ITS OWN first
+  // canister, not a resumed/stale total left over from the first visit. deliveryCount/offloadTimer are
+  // reset by hand here (this test seeds chain nodes directly, the standing plain-object exception) to
+  // stand in for the real towed-hook reset a fresh pickup outside the ring would fire.
+  // ⛔ The FIRST visit's released ticker is still a LIVE, un-expired floater at this point (life 1.2s,
+  // far more than the few frames since release) — searching `g.floaters` by shape would find it before
+  // the new one. A fresh interceptor, scoped to just this second drive, is what actually isolates
+  // "the object THIS visit created" rather than "the first dock-coloured +N floater still on screen".
+  g.chain.length = 0;
+  const nx = g.ship.x - X.CHAIN_LINK, ny = g.ship.y;
+  g.chain.push({ x: nx, y: ny, px: nx, py: ny, spin: 0, spinRate: 0, mass: 1, towed: true });
+  g.deliveryCount = 0; g.offloadTimer = 0;
+  const pushes2 = [];
+  const interceptor2 = function (...items) {
+    for (const it of items) pushes2.push(it);
+    return Array.prototype.push.apply(this, items);
+  };
+  for (let f = 0; f < 60 && g.chain.length > 0; f++) { g.floaters.push = interceptor2; X.update(1 / 60); }
+  eq(g.chain.length, 0, "C: (setup) the second, one-canister visit was delivered");
+  const secondTicker = pushes2.find(f => f.color === X.COLOR.dock && f.size === 16 && /^\+\d+$/.test(f.text));
+  assert(!!secondTicker && secondTicker !== ticker, "C: (setup) a NEW ticker object exists, distinct from the first visit's");
+  eq(secondTicker.text, "+" + X.DOCK_BASE_SCORE,
+    "C: ⛔ the second visit's ticker starts at ITS OWN first canister's points — no stale total carried over");
+})();
+
+// ================= (D) abnormal-termination release: the four other deliveryCount=0 sites =====================
+(function sectionD() {
+  console.log("(D) breakChain / scatterChain / comboGrace timeout / fresh-haul-outside-ring all release the ticker");
+
+  // -- breakChain: a hostile hit mid-offload --
+  {
+    const X = buildGame();
+    const g = stageVisit(X, 10);
+    for (let f = 0; f < 20 && g.chain.length > 7; f++) X.update(1 / 60);
+    assert(g.deliveryTicker !== null && g.deliveryTicker.pinned === true, "D: (setup) mid-visit, a ticker is live and pinned");
+    X.breakChain(0);
+    eq(g.deliveryTicker, null, "D: ⛔ breakChain() releases the reference");
+  }
+
+  // -- scatterChain: ship destroyed mid-offload --
+  {
+    const X = buildGame();
+    const g = stageVisit(X, 10);
+    for (let f = 0; f < 20 && g.chain.length > 7; f++) X.update(1 / 60);
+    const tickerRef = g.deliveryTicker;
+    assert(tickerRef !== null && tickerRef.pinned === true, "D: (setup) mid-visit, a ticker is live and pinned");
+    X.scatterChain();
+    eq(g.deliveryTicker, null, "D: ⛔ scatterChain() releases the reference");
+    eq(tickerRef.pinned, false, "D: ...and the orphaned object itself is un-pinned, so it ages out instead of sitting forever");
+  }
+
+  // -- the comboGrace window expiring: ship parked away from the dock too long mid-visit --
+  {
+    const X = buildGame();
+    const g = stageVisit(X, 10);
+    for (let f = 0; f < 20 && g.chain.length > 7; f++) X.update(1 / 60);
+    assert(g.deliveryTicker !== null, "D: (setup) mid-visit, a ticker is live");
+    // Push the ship well outside dock.radius + DOCK_NEIGHBORHOOD_PAD and let the grace window run out.
+    g.ship.x = g.dock.x + (g.dock.radius + X.DOCK_NEIGHBORHOOD_PAD) * 3;
+    g.ship.y = g.dock.y;
+    for (let f = 0; f < 600 && g.deliveryCount > 0; f++) X.update(1 / 60);
+    eq(g.deliveryCount, 0, "D: (setup) the grace window really did expire and zero the combo");
+    eq(g.deliveryTicker, null, "D: ⛔ the grace-window timeout releases the ticker too — not just the counter");
+  }
+
+  // -- a fresh haul starting outside the ring before the old visit finished --
+  {
+    const X = buildGame();
+    const g = stageVisit(X, 10);
+    for (let f = 0; f < 20 && g.chain.length > 7; f++) X.update(1 / 60);
+    const staleTicker = g.deliveryTicker;
+    const chainBefore = g.chain.length;
+    assert(staleTicker !== null, "D: (setup) mid-visit, a ticker is live, still short of the last canister");
+    // Leave the dock without finishing, then hook something new far outside the neighborhood — placed
+    // exactly at the ship so the pickup gate's distance test is trivially satisfied on the first frame.
+    g.ship.x = g.dock.x + (g.dock.radius + X.DOCK_NEIGHBORHOOD_PAD) * 3;
+    g.ship.y = g.dock.y;
+    g.garbage.push(new X.Garbage(g.ship.x, g.ship.y, 0, 0, 1));
+    for (let f = 0; f < 10 && g.chain.length === chainBefore; f++) X.update(1 / 60);
+    eq(g.chain.length, chainBefore + 1, "D: (setup) the new piece was hooked, tagged onto the old (unfinished) chain");
+    eq(g.deliveryCount, 0, "D: ⛔ the fresh hook outside the ring reset the combo — a new effort started");
+    eq(g.deliveryTicker, null, "D: ⛔ ...and released the OLD visit's stale ticker, so the next canister starts a fresh one");
+    assert(staleTicker.pinned === false, "D: ...the orphaned object itself is released, not left pinned forever");
+  }
+})();
+
+// ================= (E) the incidental branch: unchanged, never folded into the ticker =====================
+(function sectionE() {
+  console.log("(E) incidentals: own size/colour/text, dock-anchored, never touch or join the ticker");
+  const X = buildGame();
+  const g = stageVisit(X, 0);
+  // Two incidentals: hooked while already parked, so towed = false on both.
+  g.chain.push({ x: g.ship.x + 5, y: g.ship.y, px: g.ship.x, py: g.ship.y, spin: 0, spinRate: 0, mass: 1, towed: false });
+  g.chain.push({ x: g.ship.x + 10, y: g.ship.y, px: g.ship.x, py: g.ship.y, spin: 0, spinRate: 0, mass: 1, towed: false });
+
+  for (let f = 0; f < 30 && g.chain.length > 0; f++) X.update(1 / 60);
+  eq(g.chain.length, 0, "E: (setup) both incidentals offloaded");
+  eq(g.deliveryCount, 0, "E: incidentals never touch the tally");
+  eq(g.deliveryTicker, null, "E: ...and never create a ticker at all");
+
+  const incidentals = g.floaters.filter(f => f.color === X.COLOR.dim);
+  eq(incidentals.length, 2, "E: ⛔ each incidental gets its OWN ordinary floater — not folded into any ticker");
+  for (const f of incidentals) {
+    eq(f.text, "+" + X.DOCK_BASE_SCORE, "E: an incidental's text is the flat DOCK_BASE_SCORE, never accumulated");
+    eq(f.size, 12, "E: an incidental floater is size 12");
+    eq(f.pinned, false, "E: an incidental floater is never pinned");
+    close(f.x, g.dock.x, "E: an incidental is born at the dock anchor, same as the towed branch");
+  }
+})();
+
+// ================= (F) TRAPs =====================
+(function sectionF() {
+  console.log("(F) TRAPs: GAME_VERSION unmoved (P5 owns the bump), LEVERS untouched, scope pin");
+  const X = buildGame();
+  eq(X.GAME_VERSION, "1.0.0.28", "F: GAME_VERSION is unmoved — this phase does not own the version bump (P5 does)");
+
+  const ps = parentSource(PARENT_SHA);
+  if (ps === null) {
+    skip("F: LEVERS/leverState byte-identity against the parent (no git history)");
+  } else {
+    const OLD = buildGame({ source: ps });
+    eq(X.LEVERS.length, OLD.LEVERS.length, "F: ⛔ the lever count is unchanged — nothing in this phase is a lever");
+    eq(X.LEVERS.map(l => l.id).join(","), OLD.LEVERS.map(l => l.id).join(","), "F: ⛔ the same levers, in the same order");
+    let moved = 0;
+    for (let w = 1; w <= 200; w++) {
+      const before = OLD.leverState(w), now = X.leverState(w);
+      for (const k of Object.keys(before)) if (before[k] !== now[k]) moved++;
+      for (const k of Object.keys(now)) if (!(k in before)) moved++;
+    }
+    eq(moved, 0, "F: ⛔ leverState is identical to the parent at every level 1..200");
+  }
+
+  const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);
+  if (shas === null) { skip("F: scope pin (no git history)"); return; }
+  if (shas.length > 1) {
+    A.failed++;
+    console.error(`  FAIL: F: ${shas.length} commits share the subject "${PHASE_SUBJECT}" — the pin no longer names one commit`);
+    return;
+  }
+  const provisional = shas.length === 0;
+  const changed = changedFiles(PARENT_SHA, provisional ? null : shas[0]);
+  if (changed === null) { skip("F: scope pin (changedFiles unavailable)"); return; }
+  if (provisional) console.log("  (F measured against the WORKING TREE — this phase is not committed yet)");
+
+  const designDocs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
+  eq(designDocs.join(","), "", `F: ⛔ no design doc was touched (found: ${designDocs.join(", ") || "none"})`);
+  const outside = outsideScope(changed, []);
+  eq(outside.join(","), "", `F: nothing outside the game file, scratchpad/ and STATUS.md (found: ${outside.join(", ") || "none"})`);
+  assert(changed.includes("orbital-overhaul.html"), "F: (setup) the game file is in this phase's diff");
+})();
+
+A.report();

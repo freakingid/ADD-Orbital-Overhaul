@@ -747,8 +747,13 @@ let X = null;
       "G: ⛔ TRAP 5 — resizeWorld() is BYTE-IDENTICAL to the parent, comments and all: this phase gave it a CALLER, not an edit");
     eq(bodyOf(scriptSrc, "function applyWorldSize(size) {"), bodyOf(ps, "function applyWorldSize(size) {"),
       "G: ⛔ TRAP 5 — applyWorldSize() likewise");
-    eq(strip(bodyOf(scriptSrc, "function startGame()")), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — startGame()'s EXECUTABLE source is byte-identical to the parent — it needed no change");
+    // NARROWED BY CS029 P4 — startGame() picks up exactly one new reset line, `game.deliveryTicker =
+    // null;` (§6.3, the CS016 P3 both-places rule already applied to `game.deliveryCount`/
+    // `game.offloadTimer` right above it). Filtered out here rather than weakening the comparison, so
+    // any OTHER change to startGame() still fails this trap.
+    const dropDeliveryTickerLine = t => t.split("\n").filter(l => l.trim() !== "game.deliveryTicker = null;").join("\n");
+    eq(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function startGame()"))), strip(bodyOf(ps, "function startGame()")),
+      "G: ⛔ TRAP 5 — startGame()'s EXECUTABLE source is unchanged apart from CS029 P4's new game.deliveryTicker reset");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

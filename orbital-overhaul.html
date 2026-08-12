@@ -643,12 +643,19 @@ const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare litera
                                      // canisters peeling off at the dock.
 const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of the hub's per-visit
                                      // powerup drop, random direction from the dock's own position.
-// CS026 P6 (gate Q5): how far ABOVE the ship a delivery "+pts" floater is born. The floaters used to
-// spawn at the popped chain node, which is the chain's TAIL — on a full haul the canister ~24 links
-// BEHIND the ship, i.e. exactly where the player is not looking. Paul's answer was "it needs to be
-// closer to the ship", so both delivery branches now share ONE origin at the ship. Not a knob: it is
-// a fixed nudge clear of the hull, the same role SALVAGE BONUS/MAX HAUL's own -22 plays at the dock.
-const DELIVERY_FLOAT_DY = 22;
+// CS026 P6 (gate Q5) moved the delivery "+pts" floaters' origin to the ship — "closer to the ship"
+// was Paul's stated answer at that gate, read against DELIVERY_FLOAT_DY, a fixed nudge above the
+// hull. CS029 §0.3: that was a misreading. The ship moves every frame, so a ship-relative origin
+// smears the delivery column as the ship drifts DURING a visit — a second, unrelated source of
+// overlap on top of DOCK_OFFLOAD_INTERVAL's cadence (FLAG-CS029-e/d). Paul's actual intent was a
+// STATIC anchor at the dock, which is fixed for the whole visit (`Dock.update()` only advances
+// `spin`). DELIVERY_FLOAT_DY is retired; both delivery branches now share ONE origin,
+// `dock.y - DOCK_RADIUS * DELIVERY_FLOAT_ANCHOR_FRAC`, gated via tools/dock-float-lab.html (CS029
+// P3/P4, gate G2). 0.5 sits the anchor halfway between the dock's centre and its rim — high enough
+// that SALVAGE BONUS/MAX HAUL's own dock.y-22 climb (they use FloatText's un-passed 30px/s·1.1s
+// defaults) doesn't cross it. Not a knob: like DELIVERY_FLOAT_DY before it, this is a fixed
+// placement decision, not a playtest dial.
+const DELIVERY_FLOAT_ANCHOR_FRAC = 0.50;
 
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
@@ -3401,14 +3408,16 @@ const DEBUG_VARS = [
   // First-guess numbers — the gate is what settles them, which is why they are knobs, not constants.
   // CS026 P6 (gate Q5): settled. "They need to travel upwards more slowly" -> rise 300 -> 160; "the
   // score numbers need to fade more slowly" -> life 0.55 -> 1.2. Both stay inside their P4 ranges.
-  // ⛔ THE ACCEPTED CONSEQUENCE, RECORDED SO IT IS NOT REDISCOVERED AS A BUG: the floaters now share
-  // ONE origin (DELIVERY_FLOAT_DY above the ship) instead of spreading along the chain, so consecutive
-  // floaters separate by rise x DOCK_OFFLOAD_INTERVAL and nothing else — 160 x 0.05 = 8 px, where P4
-  // measured 15 px (300 x 0.05). Paul was shown that arithmetic and chose to hold the offload cadence
-  // at 0.05 rather than pay for the separation with a slower dock visit (the alternative on the table
-  // was 0.10, which restores 16 px but doubles a 24-canister visit to 2.4 s). If a later gate wants
-  // the column opened back up, DOCK_OFFLOAD_INTERVAL is the lever — NOT a bigger rise, which is the
-  // one thing Q5 explicitly asked to reduce.
+  // CS029 P4 supersedes the note that used to sit here. The CS026 P6 arithmetic (rise x
+  // DOCK_OFFLOAD_INTERVAL as the only source of separation, DOCK_OFFLOAD_INTERVAL as "the lever, NOT
+  // a bigger rise") assumed model A — a single timing-spaced stream sharing one moving-then-static
+  // origin. CS029's dock-float-lab gate (§4.3/§5) picked model C, the accumulating ticker: one pinned
+  // floater per visit, text rewritten per canister, released as an ordinary floater only at the last
+  // canister. There is no delivery COLUMN under C, so there is nothing for DOCK_OFFLOAD_INTERVAL or a
+  // bigger rise to space apart — the instruction above is obsolete, not wrong for what it described.
+  // rise/life now govern exactly two things: how the released ticker (and every incidental floater)
+  // rises and fades after that release. DOCK_OFFLOAD_INTERVAL stayed at 0.05 (gate G5) because C
+  // dissolves the trade it used to control, not because the trade was re-won.
   { id: "deliveryFloatRise", label: "Delivery floater rise", unit: "px/s",
     def: 160, min: 30, max: 600, step: 10 },
   { id: "deliveryFloatLife", label: "Delivery floater life", unit: "s",
@@ -5895,11 +5904,17 @@ class FloatText {
   // 30/1.1 values — every pre-CS026 call site omits them and stays byte-identical (the CS012 P3
   // `size` precedent). `life0` is the constructed life, which draw()'s alpha divides by instead of
   // the literal 1.1 — a short-lived floater must still reach full opacity.
+  // CS029 P4: `pinned` is optional and defaults false — every pre-existing call site never sets it,
+  // so update() falls straight through to the original two lines, byte-identical. It exists for the
+  // model-C delivery ticker (tools/dock-float-lab.html, gate G1): a pinned floater holds its position
+  // and life at birth, unaffected by time, until something un-pins it (releaseDeliveryTicker()).
   constructor(text, x, y, color, size = 16, rise = 30, life = 1.1) {
     this.text = text; this.x = x; this.y = y; this.color = color; this.size = size;
     this.rise = rise; this.life = life; this.life0 = life; this.dead = false;
+    this.pinned = false;
   }
   update(dt) {
+    if (this.pinned) return;
     this.y -= this.rise * dt;
     this.life -= dt;
     if (this.life <= 0) this.dead = true;
@@ -5909,6 +5924,21 @@ class FloatText {
     drawText(this.text, this.x, this.y, this.size, this.color);
     ctx.globalAlpha = 1;
   }
+}
+
+// CS029 P4 (model C, §6.3): un-pins game.deliveryTicker so it ages out and fades like any other
+// floater, then drops the reference. The spec names one release trigger — the visit's last canister,
+// called at the dock-offload block below — but a ticker can also be orphaned by a visit that never
+// reaches one: the chain gets severed mid-offload (breakChain), the ship dies mid-offload
+// (scatterChain), the run's one-effort grace window expires (DOCK_COMBO_GRACE), or a fresh haul
+// starts before the old one finished (the towed-hook reset). Each of those already zeroes
+// game.deliveryCount for the same reason — the effort is over — so each calls this too. Without it a
+// ticker abandoned mid-visit would sit pinned at the dock anchor forever, and the NEXT visit's `if
+// (!game.deliveryTicker)` check would find it, silently resuming a stale total instead of starting
+// fresh (§4.3: "the next visit starts a new ticker").
+function releaseDeliveryTicker() {
+  if (game.deliveryTicker) game.deliveryTicker.pinned = false;
+  game.deliveryTicker = null;
 }
 
 class Dock {
@@ -6053,6 +6083,9 @@ const game = {
                                                         // bigger denominator), so without this flash it reads as
                                                         // a bug instead of a promotion. Decayed in update().
   deliveryCount: 0, offloadTimer: 0,
+  deliveryTicker: null,                                 // CS029 P4 (model C): the live per-visit
+                                                          // accumulating floater, or null between visits.
+                                                          // See releaseDeliveryTicker().
   comboGrace: 0,                                       // CS020 P1b: sec of one-effort grace left while the ship is
                                                         // OUTSIDE the dock's neighborhood. Re-armed to
                                                         // DEBUG.dockComboGrace every frame the ship is inside it;
@@ -6273,6 +6306,7 @@ function startGame() {
   game.cargoMax = CARGO_BASE;      // pre-level-1 default; nextWave() below immediately overwrites it via payloadSlots(game.wave) (8 at level 1) — CS018 P5
   game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
   game.deliveryCount = 0; game.offloadTimer = 0;
+  game.deliveryTicker = null;      // CS029 P4: no ticker carries into a fresh run
   game.comboGrace = 0;             // CS020 P1b: no one-effort grace carries into a fresh run
   // CS022 P1: a fresh run always starts in the FIELD-sized world, and this line MUST precede
   // `new Ship()` below — Ship.reset() reads WORLD_W/2 and WORLD_H/2 directly, so a run started after
@@ -7923,6 +7957,7 @@ function breakChain(i, src = null) { // node i destroyed; everything aft breaks 
   }
   chain.length = i;
   game.deliveryCount = 0;
+  releaseDeliveryTicker(); // CS029 P4: a hostile break mid-offload ends the visit too
   VoiceSys.say("chain_broken"); // CS011 P5: choke point only — scatterChain() (ship death) stays silent
 }
 
@@ -7930,6 +7965,7 @@ function scatterChain() { // ship destroyed: whole load breaks loose
   for (const n of game.chain) game.garbage.push(Garbage.fromNode(n));
   game.chain.length = 0;
   game.deliveryCount = 0;
+  releaseDeliveryTicker(); // CS029 P4: ship death mid-offload ends the visit too
 }
 
 // CS017 P6: `guarded` lights the link up — full alpha instead of 0.7, a wider stroke, a much bigger glow
@@ -8234,7 +8270,11 @@ function update(dt) {
       // makes Maxed Out (=== CARGO_CAP_MAX) a level-12+ achievement BY CONSTRUCTION, and what kills
       // the farmable annulus a grace window alone would open (hover just outside the ring with a
       // 380px magnet, fill, dip in, offload, repeat — every hook out there now resets).
-      if (!inRing) game.deliveryCount = 0;
+      // CS029 P4: a fresh haul starting mid-offload (chain left the dock non-empty, then hooked
+      // something new outside the ring) ends the OLD visit — release its ticker, if any, same as the
+      // reset above. A no-op the common way this fires: deliveryCount is already 0 while a chain is
+      // still being gathered, so releaseDeliveryTicker() finds nothing to release.
+      if (!inRing) { game.deliveryCount = 0; releaseDeliveryTicker(); }
       if (g.pieces === 1) {
         // A single hooks onto the chain as one node (unchanged behavior).
         g.dead = true;
@@ -8356,7 +8396,9 @@ function update(dt) {
     const npad = game.dock.radius + DOCK_NEIGHBORHOOD_PAD;
     if (!game.ship.dead && dist2(game.ship, game.dock) > npad * npad) {
       game.comboGrace -= dt;
-      if (game.comboGrace <= 0) game.deliveryCount = 0;
+      // CS029 P4: the grace window running out ends the visit, same as every other deliveryCount=0
+      // site — release any pinned ticker rather than leave it stranded at the dock.
+      if (game.comboGrace <= 0) { game.deliveryCount = 0; releaseDeliveryTicker(); }
     } else {
       game.comboGrace = DEBUG.dockComboGrace;   // inside the ring: the run is safe, window re-armed
     }
@@ -8371,6 +8413,10 @@ function update(dt) {
         // `towed` field at all — which is every chain node any older test seeds by hand — defaults to
         // TOWED, so absence never silently demotes a delivery. Only an explicit false demotes.
         const towed = node.towed !== false;   // absent => towed
+        // CS029 P4 (§6.1): the ONE shared origin expression for both delivery branches below — the
+        // dock is static for the whole visit (Dock.update() only advances `spin`), which is the fixed
+        // point the gate asked for. Computed once here so the two branches can't drift apart.
+        const deliveryAnchorX = game.dock.x, deliveryAnchorY = game.dock.y - DOCK_RADIUS * DELIVERY_FLOAT_ANCHOR_FRAC;
         if (towed) {
           game.deliveryCount++;
           const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
@@ -8426,22 +8472,31 @@ function update(dt) {
           if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
           Achievements.lifetime.delivered++;
           Achievements.lifetime.deliveryScore += pts;
-          // CS026 P4 (spec §3.3a/§3.4): rise/life read from the DELIVERY registry knobs so consecutive
-          // floaters at DOCK_OFFLOAD_INTERVAL's fast cadence separate instead of stacking. Text, colour
-          // and every downstream count are untouched — this changes how the delivery LOOKS only.
-          // CS026 P6 (gate Q5): the ORIGIN moves too — was `node.x, node.y`, the popped node, which is
-          // the chain's TAIL and therefore the canister FARTHEST from the ship (up to ~24 links back on
-          // a full haul). Now the ship, which is where the player is already looking. The milestone
-          // floaters (SALVAGE BONUS / MAX HAUL) deliberately do NOT move — see spec §3.6: they belong
-          // to the dock, and keeping them there is what keeps the two readouts from colliding.
-          game.floaters.push(new FloatText("+" + pts, game.ship.x, game.ship.y - DELIVERY_FLOAT_DY,
-            COLOR.dock, 16, DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
+          // CS026 P4 (spec §3.3a/§3.4): rise/life read from the DELIVERY registry knobs. CS029 P4
+          // (model C, gate G1/§6.3): the towed branch no longer spawns a new floater per canister — one
+          // ticker lives for the whole visit, pinned at the dock anchor, its text rewritten to the
+          // running visit total as each canister lands. It is released (unpinned, becomes an ordinary
+          // rising/fading floater) at the visit's last canister, below. The running total is carried on
+          // the ticker itself — there is nowhere else that needs it.
+          if (!game.deliveryTicker) {
+            game.deliveryTicker = new FloatText("+" + pts, deliveryAnchorX, deliveryAnchorY,
+              COLOR.dock, 16, DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife);
+            game.deliveryTicker.pinned = true;
+            game.deliveryTicker.total = pts;
+            game.floaters.push(game.deliveryTicker);
+          } else {
+            game.deliveryTicker.total += pts;
+            game.deliveryTicker.text = "+" + game.deliveryTicker.total;
+          }
           AudioSys.deliver(game.deliveryCount);
           // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
           // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
           // THE LATCH, no flag needed) and deliveryCount is intact at this instant. 1–4 pieces says nothing.
           // breakChain()/scatterChain() also zero deliveryCount but never reach here, so they stay silent.
-          if (game.chain.length === 0) VoiceSys.dockDelivery(game.deliveryCount);
+          if (game.chain.length === 0) {
+            VoiceSys.dockDelivery(game.deliveryCount);
+            releaseDeliveryTicker(); // §6.3: released as an ordinary floater at the last canister
+          }
         } else {
           // CS020: an incidental. It recycles and it PAYS — a canister is a canister — but it is not part
           // of the haul, so it earns no combo and touches nothing else: not game.deliveryCount, not the
@@ -8452,11 +8507,14 @@ function update(dt) {
           // CS026 P4 (spec §3.5/FORK-CS026-G): QUIETED, not folded in — same text, but COLOR.dim + size
           // 12 so it never reads as, or shares a tally with, the towed branch's floater. Same rise/life
           // knobs so a Magnet-parked run of incidentals separates too, not just towed hauls.
-          // CS026 P6 (gate Q5): born at the ship, like the towed branch — ONE origin for both, so a
-          // Magnet-fed run of incidentals reads in the same place as a real haul. The quieting is
-          // untouched: it was never the position that distinguished them, it is the colour and size.
+          // CS026 P6 (gate Q5) / CS029 P4 (§6.1): born at the dock anchor, like the towed branch — ONE
+          // shared origin for both, so a Magnet-fed run of incidentals reads in the same place as a real
+          // haul. §6.3: this branch stays an ORDINARY floater and must never be folded into the model-C
+          // ticker — CS020 separated the two on purpose so an incidental never shares a tally with a
+          // towed canister. The quieting is untouched: it was never the position that distinguished
+          // them, it is the colour and size.
           addScore(DOCK_BASE_SCORE);
-          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, game.ship.x, game.ship.y - DELIVERY_FLOAT_DY,
+          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,
             COLOR.dim, 12, DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
           AudioSys.deliver(1);
         }

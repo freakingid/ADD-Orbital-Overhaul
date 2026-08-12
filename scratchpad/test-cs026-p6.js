@@ -137,7 +137,7 @@ const RETURN = [
   "ACH_LEADER_MIN", "ACH_LEADER_MAX",
   "Achievements", "HighScores", "COLOR", "TIER_COLOR", "FloatText",
   "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "applyDebug", "DEBUG_OVERRIDE_ID",
-  "DOCK_OFFLOAD_INTERVAL", "DELIVERY_FLOAT_DY", "DOCK_BASE_SCORE", "DOCK_BONUS_STEP",
+  "DOCK_OFFLOAD_INTERVAL", "DELIVERY_FLOAT_ANCHOR_FRAC", "DOCK_BASE_SCORE", "DOCK_BONUS_STEP",
   "DOCK_RADIUS", "CARGO_CAP_MAX", "CHAIN_LINK", "SHIP_MAX_HP", "LEVERS", "leverState", "GAME_VERSION", "AudioSys",
 ];
 function buildFrom(src, { exportList = RETURN, measure = null } = {}) {
@@ -240,15 +240,28 @@ let X = null;
     assert(!("floor" in byId[id]) && !("ceil" in byId[id]) && !("steps" in byId[id]), `B: ...${id} carries no lever triple`);
   }
 
-  // -- DELIVERY_FLOAT_DY: a fixed nudge clear of the hull, deliberately NOT a knob (TRAP 2) --
-  assert(typeof X.DELIVERY_FLOAT_DY === "number" && X.DELIVERY_FLOAT_DY > 0,
-    "B: DELIVERY_FLOAT_DY is a positive constant");
-  assert(!("deliveryFloatDy" in X.DEBUG), "B: ⛔ ...and it did NOT become a registry row either");
+  // -- REPOINTED BY CS029 P4 (§0.3): DELIVERY_FLOAT_DY (a fixed nudge above the ship) is retired.
+  //    CS026 P6's own gate reading — "closer to the ship" — was a misinterpretation; Paul's actual
+  //    intent was a static dock anchor. DELIVERY_FLOAT_ANCHOR_FRAC replaces it, same role (a fixed
+  //    placement constant, deliberately NOT a knob) — TRAP 2 still holds, just on the new name. --
+  assert(typeof X.DELIVERY_FLOAT_ANCHOR_FRAC === "number" && X.DELIVERY_FLOAT_ANCHOR_FRAC > 0,
+    "B: DELIVERY_FLOAT_ANCHOR_FRAC is a positive constant");
+  assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: ⛔ ...and it did NOT become a registry row either");
 })();
 
 // ================= (C) the Q5 retune, DRIVEN through a real dock visit =====================
+// ⛔ REPOINTED BY CS029 P4 (§0.3/§6.1, model C — gate G1). This section's ORIGINAL claim was that P6's
+// gate answer moved every delivery floater's origin to the SHIP, and that a single moving-then-static
+// origin made separation a pure function of rise x cadence. Both halves are now false BY DESIGN: §0.3
+// records that the "closer to the ship" reading was a misinterpretation, P4's own gate put the anchor
+// back at the STATIC DOCK, and model C additionally collapses the whole per-canister floater stream
+// into one ticker object, so there is no "consecutive floater" to measure a cadence between any more.
+// What survives from P6's actual claim — one shared, non-drifting origin, not fanned out along the
+// chain — is retested below against the new anchor. The retired cadence measurement (the frame
+// quantisation finding, the 8px/10.67px trade) is CS026 P6's own historical record and stays exactly as
+// written in the log; it does not need to keep passing against a build that has since moved past it.
 (function sectionC() {
-  console.log("(C) a real full-cargo dock visit: floaters born at the SHIP, separated by rise x interval");
+  console.log("(C) a real full-cargo dock visit: the ticker is born at the DOCK ANCHOR, not the ship");
   const X2 = build();
   X2.startGame();
   const g = X2.game;
@@ -274,8 +287,6 @@ let X = null;
   // back into the SHIP: the first draft staged the nodes 200–500 px out, the chain yanked the ship off
   // the dock, `nearDock` went false, the offload stopped after 13 of 24 pops and comboGrace then
   // zeroed deliveryCount. Rest-length staging is what keeps the ship parked for the whole visit.
-  // Each node still sits (i+1) x CHAIN_LINK away in x and DELIVERY_FLOAT_DY away in y from where the
-  // floater is claimed to be born, so both halves of the claim stay non-vacuous — asserted below.
   g.chain.length = 0;
   for (let i = 0; i < X2.CARGO_CAP_MAX; i++) {
     const nx = g.ship.x - (i + 1) * X2.CHAIN_LINK, ny = g.ship.y;
@@ -283,24 +294,20 @@ let X = null;
   }
   const nodeOffsets = g.chain.map(n => ({ dx: n.x - g.ship.x, dy: n.y - g.ship.y }));
   assert(nodeOffsets.every(o => Math.abs(o.dx) >= X2.CHAIN_LINK),
-    "C: (non-vacuity) every staged node is at least one link away from the ship in x");
-  assert(X2.DELIVERY_FLOAT_DY !== 0,
-    "C: (non-vacuity) ...and the floater's y offset from the ship is non-zero, so the y claim bites too");
+    "C: (non-vacuity) every staged node is at least one link away from the ship — a real haul, not a stub");
+  assert(X2.DELIVERY_FLOAT_ANCHOR_FRAC !== 0,
+    "C: (non-vacuity) the anchor fraction is non-zero, so the dock-anchor claim below is non-vacuous too");
 
   // ⛔ update()'s end-of-frame cleanup REASSIGNS game.floaters to a fresh filtered array every frame,
-  // so an own-property push override survives exactly one frame and a length diff misses births once
-  // expiry starts interleaving with them. Reinstall the interceptor before every update(), the P4 §E way.
-  // The interceptor also snapshots the SHIP's position at the instant of the push, so the "born at the
-  // ship" claim is exact rather than tolerant of drift — it does not assume the ship never moves.
+  // so an own-property push override survives exactly one frame. Reinstall the interceptor before
+  // every update(), the P4 §E way. Snapshots the DOCK's own position at the instant of the push (the
+  // dock does not move, but the ship does — this is what proves the claim is "at the dock", not merely
+  // "wherever the ship happened to be that frame").
   const dt = 1 / 60;
   const born = [];
   let curFrame = -1;
-  // ⛔ bx/by ARE SNAPSHOTS, NOT `f.x`/`f.y` READ LATER. FloatText.update() decrements `y` every frame,
-  // so reading the captured object's y after the drive gives its position at the END of the run, not at
-  // birth — which is how the first draft of this section "found" 23 of 24 floaters in the wrong place.
-  // `x` is never mutated and would have hidden the mistake on its own.
   const interceptor = function (...items) {
-    for (const it of items) born.push({ frame: curFrame, f: it, bx: it.x, by: it.y, sx: g.ship.x, sy: g.ship.y });
+    for (const it of items) born.push({ frame: curFrame, f: it, bx: it.x, by: it.y, dx: g.dock.x, dy: g.dock.y });
     return Array.prototype.push.apply(this, items);
   };
   for (let frame = 0; frame < 600 && g.chain.length > 0; frame++) {
@@ -311,66 +318,15 @@ let X = null;
   eq(g.chain.length, 0, "C: (setup) the whole chain offloaded");
   eq(g.deliveryCount, X2.CARGO_CAP_MAX, "C: (setup) all 24 counted as towed deliveries");
 
-  // -- the towed "+pts" floaters: born AT THE SHIP, not at the popped node --
+  // -- the towed ticker: born AT THE DOCK ANCHOR, not the ship, not the popped node --
+  // Model C pushes exactly ONE towed floater per visit (the ticker, on canister 1) — the detailed
+  // create/rewrite/release shape is test-cs029-p4.js's job; this section only re-proves P6's surviving
+  // claim (one shared, non-drifting origin) against the new anchor.
   const towed = born.filter(b => /^\+\d+$/.test(b.f.text) && b.f.color === X2.COLOR.dock);
-  assert(towed.length >= 20, `C: (setup) the towed +pts floaters were captured (${towed.length})`);
-  // The interceptor captures each floater AT THE PUSH, before update() has advanced it, so x/y are
-  // still the birth position — compared against the ship's position at that same instant.
-  let atShipX = 0, atShipY = 0;
-  for (const b of towed) {
-    if (Math.abs(b.bx - b.sx) < 1e-9) atShipX++;
-    if (Math.abs(b.by - (b.sy - X2.DELIVERY_FLOAT_DY)) < 1e-9) atShipY++;
-  }
-  eq(atShipX, towed.length, "C: ⛔ EVERY towed delivery floater is born at the ship's x, not the popped node's");
-  eq(atShipY, towed.length, "C: ⛔ ...and at ship.y - DELIVERY_FLOAT_DY, on BOTH axes");
-
-  // -- separation: measured off REAL birth frames and the REAL FloatText.update(), not computed --
-  const gapFrames = towed[1].frame - towed[0].frame;
-  assert(gapFrames > 0, "C: (setup) consecutive floaters are born on different frames");
-  for (let i = 2; i < Math.min(towed.length, 12); i++) {
-    eq(towed[i].frame - towed[i - 1].frame, gapFrames, `C: the offload cadence is even (floater ${i})`);
-  }
-  // ⛔ THE CADENCE IS FRAME-QUANTISED, AND THE TOLERANCE IS NOT SLOP — IT IS THE FINDING. game.offloadTimer
-  // is re-armed to DOCK_OFFLOAD_INTERVAL (0.05 s) and decremented by dt, so at 60 fps a pop lands every
-  // FOURTH frame (0.0667 s), not every third: 0.05 / (1/60) = 3 exactly in decimal, but 0.05 is not
-  // representable in binary and the third subtraction leaves a hair above zero. Every "separation"
-  // figure this changeset quotes — P4's 15 px, this phase's 8 px — is the NOMINAL rise x interval; the
-  // number actually on screen is the quantised one, a third larger. Both are pinned below.
-  close(gapFrames * dt, X2.DOCK_OFFLOAD_INTERVAL, "C: ...and that cadence IS DOCK_OFFLOAD_INTERVAL, to within one frame", 1.5 * dt);
-  eq(gapFrames, 4, "C: ⛔ ...which at 60 fps quantises to 4 frames, not the 3 the arithmetic suggests");
-  // ⛔ ALL 24 SHARE ONE ORIGIN TO WITHIN THE SHIP'S OWN DRIFT — which is what makes the separation a
-  // pure function of rise x interval now, and is the fact the retune had to be built around. The ship
-  // is not nailed down (the chain still tugs it), so this is a BOUND, not an equality: a few px of
-  // wander across a 2.4 s visit is orders of magnitude below the 16 px the rise puts between floaters.
-  const xs = towed.map(b => b.bx), ys = towed.map(b => b.by);
-  const drift = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-  assert(drift < 5, `C: ⛔ every floater in the haul is born within ${drift.toFixed(3)} px of the same point`);
-  // Two floaters born at that point, `gapFrames` apart, stepped through the real FloatText.update().
-  const originX = towed[0].bx, originY = towed[0].by;
-  const a = new X2.FloatText("+50", originX, originY, X2.COLOR.dock, 16,
-    X2.DEBUG.deliveryFloatRise, X2.DEBUG.deliveryFloatLife);
-  const b2 = new X2.FloatText("+75", originX, originY, X2.COLOR.dock, 16,
-    X2.DEBUG.deliveryFloatRise, X2.DEBUG.deliveryFloatLife);
-  for (let i = 0; i < gapFrames; i++) a.update(dt);       // a is born `gapFrames` earlier than b2
-  close(b2.y - a.y, X2.DEBUG.deliveryFloatRise * gapFrames * dt,
-    "C: ⛔ consecutive floaters separate by rise x interval, through the real FloatText.update()", 1e-6);
-  // ⛔ THE TRADE, MEASURED AND PINNED AT ITS REAL VALUE — NOT AT A THRESHOLD THE BUILD DOES NOT MEET.
-  // With ONE origin the chain's own spread is gone, so separation is exactly rise x cadence: 160 x
-  // 0.05 = 8 px, against the 15 px P4 measured at rise 300. Paul was shown both this number and the
-  // 0.10-cadence alternative that restores 16 px for a 2.4 s dock visit, and chose to hold the
-  // cadence. Pinning the ACTUAL 8 px is what makes a later drift — in either direction — visible;
-  // asserting >= 15 here would encode the option that was not chosen and fail the shipped build.
-  close(X2.DEBUG.deliveryFloatRise * X2.DOCK_OFFLOAD_INTERVAL, 8,
-    "C: ⛔ the NOMINAL shipped separation is 8 px (rise 160 x cadence 0.05)", 1e-9);
-  close(b2.y - a.y, 160 * 4 / 60,
-    "C: ⛔ ...and the MEASURED on-screen separation at 60 fps is 10.67 px, frame-quantised up from it", 1e-6);
-  assert(b2.y - a.y > 0, "C: ...and it is strictly positive — the floaters do form a column, not a stack");
-  close(X2.DEBUG.deliveryFloatRise * 0.10, 16,
-    "C: (the trade, recorded) the declined 0.10 cadence would have given a 16 px nominal and a 2.4 s visit");
-  // The one thing that must NOT have happened: buying separation back with a bigger rise, which is
-  // the exact thing Q5 asked to reduce.
-  assert(X2.DEBUG.deliveryFloatRise < 300,
-    "C: ⛔ the rise was REDUCED, not raised to compensate — \"travel upwards more slowly\"");
+  eq(towed.length, 1, "C: ⛔ exactly ONE towed floater is pushed per visit — the model-C ticker, not one per canister");
+  const wantAnchorY = g.dock.y - X2.DOCK_RADIUS * X2.DELIVERY_FLOAT_ANCHOR_FRAC;
+  close(towed[0].bx, towed[0].dx, "C: ⛔ the ticker is born at the DOCK's x, not the ship's or the popped node's");
+  close(towed[0].by, wantAnchorY, "C: ⛔ ...and at dock.y - DOCK_RADIUS x DELIVERY_FLOAT_ANCHOR_FRAC, not ship.y - DELIVERY_FLOAT_DY");
 
   // -- the milestone floaters stay at the DOCK on the OLD defaults (spec §3.6 deconfliction) --
   const salvage = born.find(b => b.f.text === "SALVAGE BONUS");
@@ -390,7 +346,7 @@ let X = null;
   assert(g.stats.fullChainVisit, "C: Heavy Hauler's 12-in-one-visit latch still fires");
   assert(g.stats.maxChainVisit, "C: Maxed Out's CARGO_CAP_MAX latch still fires");
 
-  // -- the incidental branch moved with it (same origin, different colour/size) --
+  // -- the incidental branch shares the SAME anchor (same origin, different colour/size) --
   const X3 = build();
   X3.startGame();
   const h = X3.game;
@@ -402,7 +358,7 @@ let X = null;
   for (let i = 0; i < 60 && h.chain.length > 0; i++) X3.update(dt);
   const inc = h.floaters.find(f => f.color === X3.COLOR.dim);
   assert(!!inc, "C: (setup) the incidental floater fired");
-  close(inc.x, h.ship.x, "C: the incidental floater is born at the ship too — one origin, both branches");
+  close(inc.x, h.dock.x, "C: the incidental floater is born at the DOCK anchor too — one shared origin, both branches");
   eq(inc.size, 12, "C: ...still size 12 (FORK-G's quieting is untouched)");
   eq(h.deliveryCount, 0, "C: ...and an incidental still touches no tally");
 })();

@@ -153,14 +153,16 @@ let X = null;
   // -- the two delivery push sites read the new DEBUG knobs --
   eq((codeSrc.match(/DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife/g) || []).length, 2,
     "A: exactly TWO push sites read DEBUG.deliveryFloatRise/deliveryFloatLife — the towed and incidental branches");
-  // ⛔ REPOINTED BY CS026 P6 (gate Q5): both branches' ORIGIN moved from `node.x, node.y` — the popped
-  // node, which is the chain's TAIL — to the ship. P4's own claims (the towed branch keeps COLOR.dock
-  // at 16, the incidental is quieted to COLOR.dim at 12, both read the two knobs) are UNCHANGED and are
-  // still exactly what these two lines assert; only the coordinates under them moved.
-  assert(/new FloatText\("\+" \+ pts, game\.ship\.x, game\.ship\.y - DELIVERY_FLOAT_DY,\s*\n\s*COLOR\.dock, 16, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
-    "A: the TOWED branch keeps COLOR.dock, size 16 (unchanged), reads the two live knobs, and is born at the ship");
-  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, game\.ship\.x, game\.ship\.y - DELIVERY_FLOAT_DY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
-    "A: ⛔ the INCIDENTAL branch is QUIETED (COLOR.dim, size 12), not folded into the towed tally/colour — same ship origin");
+  // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS029 P4 (§0.3/§6.1/§6.3, model C). The origin
+  // moved from `node.x, node.y` (the popped node) to the ship (P6), then to a static dock anchor
+  // (P4) shared as `deliveryAnchorX`/`deliveryAnchorY`. The incidental branch's own claims here
+  // (COLOR.dim, size 12, reads the two live knobs, stays a plain non-ticker push) are UNCHANGED. The
+  // towed branch's push site itself changed shape — it now creates the model-C ticker on the FIRST
+  // towed canister of a visit; that shape is asserted in test-cs029-p4.js, not here.
+  assert(/game\.deliveryTicker = new FloatText\("\+" \+ pts, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, 16, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\);/.test(scriptSrc),
+    "A: the TOWED branch's ticker keeps COLOR.dock, size 16 (unchanged), reads the two live knobs, and is born at the dock anchor");
+  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
+    "A: ⛔ the INCIDENTAL branch is QUIETED (COLOR.dim, size 12), not folded into the towed tally/colour — same dock anchor origin");
 
   // -- every other FloatText call site is untouched: total call sites vs. sites naming the new knobs --
   const totalSites = (codeSrc.match(/new FloatText\(/g) || []).length;
@@ -338,9 +340,17 @@ let X = null;
   eq(g.score - score0, expectedGain, "E: ⛔ the score gain matches the UNCHANGED pts formula for 24 towed + 1 incidental");
 
   // -- the floaters --
+  // ⛔ RESHAPED BY CS029 P4 (model C, gate G1/§6.3). P4/P6's claim here was about a per-canister
+  // floater stream — 24 individual pushes, measured apart by rise x cadence. That stream no longer
+  // exists: the towed branch now creates ONE ticker object on the first canister and mutates its
+  // `.text` in place for the other 23, so exactly one push() call happens for the whole towed visit.
+  // Detailed model-C shape (birth text, running total, release-at-last-canister, un-pin) is verified
+  // in test-cs029-p4.js against the real offload block, the same way this section already does for
+  // score/stats/latches. What survives here is what P4/P6 actually claimed about IDENTITY: colour,
+  // size and the live rise/life knobs, on whatever gets pushed.
   const towedFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === 16 && p.obj.text.startsWith("+"));
   const incidentalFloaters = pushes.filter(p => p.obj.color === A.COLOR.dim && p.obj.size === 12);
-  eq(towedFloaters.length, 24, "E: 24 towed delivery floaters were pushed");
+  eq(towedFloaters.length, 1, "E: ⛔ the towed visit pushes exactly ONE floater — the ticker, born on canister 1 — not one per canister");
   eq(incidentalFloaters.length, 1, "E: exactly 1 incidental floater was pushed");
   eq(incidentalFloaters[0].obj.text, "+" + A.DOCK_BASE_SCORE, "E: the incidental floater's text is unchanged (+DOCK_BASE_SCORE)");
   assert(incidentalFloaters[0].obj.color !== towedFloaters[0].obj.color,
@@ -352,38 +362,14 @@ let X = null;
     eq(p.obj.life0, A.DEBUG.deliveryFloatLife, "E: ...and every one's life0 is the live knob");
   }
 
-  // -- the measured spacing between two consecutive delivery floaters, at the shipped knobs --
-  // The birth gap itself is MEASURED off the real driven visit (both floaters' actual push frames, from
-  // a real 24-canister run through the real offload block).
-  const t0 = towedFloaters[0], t1 = towedFloaters[1];
-  const birthGapFrames = t1.frame - t0.frame;
-  close(birthGapFrames / 60, A.DOCK_OFFLOAD_INTERVAL, "E: consecutive towed floaters are born DOCK_OFFLOAD_INTERVAL apart", 1 / 60 + 1e-9);
-  // ⛔ Reading the LIVE y off t0/t1 themselves would be measuring the wrong thing this far into the run:
-  // both floaters share the same life (DEBUG.deliveryFloatLife) and rise, so BOTH have already travelled
-  // the identical rise*life distance and died at the identical final y — the gap between two EXPIRED
-  // floaters is always 0, which would make this pin vacuously pass a mutant that broke rise entirely.
-  // The real, checkable claim is about the gap WHILE BOTH ARE ALIVE, which is what a player actually sees.
-  // Driven with the REAL FloatText.update() (the class under test, not a reimplementation), starting two
-  // fresh instances of the exact colour/size/rise/life this run actually produced, offset by the
-  // MEASURED birth gap above — i.e. "what the two real objects looked like `birthGapFrames` apart",
-  // without needing to catch them mid-flight inside the 400-frame drive loop.
-  const probe0 = new A.FloatText(t0.obj.text, 0, 0, t0.obj.color, t0.obj.size, t0.obj.rise, t0.obj.life0);
-  const probe1 = new A.FloatText(t1.obj.text, 0, 0, t1.obj.color, t1.obj.size, t1.obj.rise, t1.obj.life0);
-  for (let i = 0; i < birthGapFrames; i++) probe0.update(1 / 60);   // probe0 is "birthGapFrames older" than probe1
-  assert(!probe0.dead && !probe1.dead, "E: (setup) both probes are still alive at the measurement point");
-  const gap = probe0.y - probe1.y;
-  const wantGap = -(A.DEBUG.deliveryFloatRise * (birthGapFrames / 60));
-  close(gap, wantGap, "E: ⛔ the REAL FloatText.update(), run for the MEASURED birth gap, separates them by rise * gap", 1e-9);
-  // ⛔ REPOINTED BY CS026 P6 (gate Q5) — AND THE SEPARATION NUMBER WENT **DOWN**, DELIBERATELY.
-  // P4's 15 px assumed rise 300 AND an origin that carried the chain's own spread. The gate cut the
-  // rise to 160 and collapsed every floater onto ONE origin at the ship, so separation is now purely
-  // rise x cadence: 160 x 0.05 = 8 px. Paul was shown that arithmetic, and the alternative that buys
-  // it back (cadence 0.05 -> 0.10, restoring 16 px but doubling a 24-canister visit to 2.4 s), and
-  // chose to hold delivery pacing. The travel distance went the other way: 160 x 1.2 = 192 px.
-  close(A.DEBUG.deliveryFloatRise * A.DOCK_OFFLOAD_INTERVAL, 8,
-    "E: ⛔ at the shipped knobs, consecutive floaters separate by 8px nominal (P4 measured 15 at rise 300)");
-  close(A.DEBUG.deliveryFloatRise * A.DEBUG.deliveryFloatLife, 192,
-    "E: ⛔ ...and each travels 192px before expiring (P4: 165; the ambient default was 33)");
+  // -- the ticker's own lifecycle: born at the first canister's own points, ends up holding the FULL
+  //    visit total, and is released (un-pinned) once the visit is over. --
+  const ticker = towedFloaters[0].obj;
+  let expectedTotal = 0;
+  for (let n = 1; n <= 24; n++) expectedTotal += A.DOCK_BASE_SCORE + A.DOCK_BONUS_STEP * (n - 1);
+  eq(ticker.text, "+" + expectedTotal, "E: ⛔ the ticker's FINAL text is the visit's full running total (50+75+...+625 = 8100 at these knobs)");
+  eq(ticker.pinned, false, "E: ⛔ the ticker is released (un-pinned) once the visit's last canister lands");
+  eq(g.deliveryTicker, null, "E: and the live reference is cleared — the next visit starts a fresh ticker");
 
   // -- deconfliction (spec §3.6): SALVAGE BONUS / MAX HAUL are UNTOUCHED — still default rise/life,
   //    still at dock.y - 22, never moved and never given the new knobs. --

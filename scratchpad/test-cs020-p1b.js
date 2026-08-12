@@ -351,7 +351,9 @@ const dockBlockCode = stripComments(dockBlockSrc);
     "A: the old distance-based combo reset is GONE from the dock block");
   eq((dockBlockCode.match(/game\.deliveryCount = 0;/g) || []).length, 1,
     "A: exactly ONE `game.deliveryCount = 0` survives in the dock block — the grace-window expiry");
-  assert(/if \(game\.comboGrace <= 0\) game\.deliveryCount = 0;/.test(dockBlockSrc),
+  // CS029 P4: the same gate now also releases a pinned model-C ticker (§6.3) — same one reset,
+  // one extra statement alongside it.
+  assert(/if \(game\.comboGrace <= 0\) \{ game\.deliveryCount = 0; releaseDeliveryTicker\(\); \}/.test(dockBlockSrc),
     "A: and that one reset is gated on the grace window running out, not on distance");
   // The offload block's else branch is now nothing but the timer disarm.
   assert(/\} else \{\s*\n\s*game\.offloadTimer = 0;\s*\n\s*\}/.test(dockBlockSrc),
@@ -390,12 +392,13 @@ const dockBlockCode = stripComments(dockBlockSrc);
     "A: the +10 offload radius still appears exactly twice in CODE (the squared distance test), unchanged");
 
   // -- RULE 1, at the pickup gate, sharing P1's `inRing` --
-  assert(/if \(!inRing\) game\.deliveryCount = 0;/.test(codeSrc),
-    "A: RULE 1 — the towed-hook reset is `if (!inRing) game.deliveryCount = 0;`");
+  // CS029 P4: also releases a pinned model-C ticker (§6.3) — same one reset, same site.
+  assert(/if \(!inRing\) \{ game\.deliveryCount = 0; releaseDeliveryTicker\(\); \}/.test(codeSrc),
+    "A: RULE 1 — the towed-hook reset is `if (!inRing) { game.deliveryCount = 0; releaseDeliveryTicker(); }`");
   eq((codeSrc.match(/const inRing =/g) || []).length, 1,
     "A: it reuses the SAME single `inRing` const P1 added — no second radius is computed");
   const inRingIdx = codeSrc.indexOf("const inRing =");
-  const resetIdx = codeSrc.indexOf("if (!inRing) game.deliveryCount = 0;");
+  const resetIdx = codeSrc.indexOf("if (!inRing) { game.deliveryCount = 0; releaseDeliveryTicker(); }");
   const branchIdx = codeSrc.indexOf("if (g.pieces === 1) {");
   assert(inRingIdx > 0 && resetIdx > inRingIdx && branchIdx > resetIdx,
     "A: the reset sits between the inRing derivation and the single/clump branch — one site covers both push paths");

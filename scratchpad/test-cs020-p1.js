@@ -387,8 +387,11 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // -- VoiceSys.dockDelivery lives INSIDE the towed branch --
   const popIdx = scriptSrc.indexOf("const node = game.chain.pop();");
   const towedIdx = scriptSrc.indexOf("const towed = node.towed !== false;");
-  const elseIdx = scriptSrc.indexOf("} else {", towedIdx);
-  const voiceIdx = scriptSrc.indexOf("if (game.chain.length === 0) VoiceSys.dockDelivery(game.deliveryCount);");
+  // CS029 P4: the towed branch grew its own inner if/else (the model-C ticker create-vs-update split,
+  // §6.3), so the towed/incidental split's "} else {" is no longer the FIRST one after towedIdx —
+  // anchor the search past AudioSys.deliver(game.deliveryCount), which sits after both.
+  const elseIdx = scriptSrc.indexOf("} else {", scriptSrc.indexOf("AudioSys.deliver(game.deliveryCount);"));
+  const voiceIdx = scriptSrc.indexOf("VoiceSys.dockDelivery(game.deliveryCount);");
   assert(popIdx > 0 && towedIdx > popIdx, "A: the towed read comes straight after the pop");
   assert(voiceIdx > towedIdx && voiceIdx < elseIdx,
     "A: VoiceSys.dockDelivery sits INSIDE the towed branch, above the else");
@@ -408,11 +411,14 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // too but never shares the towed branch's tally or colour (FLAG-CS020-d's "an incidental keeps its
   // FloatText" claim survives; only its look changed).
   // RE-REPOINTED BY CS026 P6 (gate Q5): the ORIGIN moved too. It was `node.x, node.y` — the popped
-  // node, i.e. the chain's TAIL and so the canister farthest from the ship — and is now the ship
-  // itself. FLAG-CS020-d's actual claim ("an incidental keeps its FloatText") is what this asserts and
-  // it still holds; only the look and the position have moved under it, twice, by two gate answers.
-  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, game\.ship\.x, game\.ship\.y - DELIVERY_FLOAT_DY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)\);/.test(scriptSrc),
-    "A: an incidental keeps its FloatText (FLAG-CS020-d), quieted per CS026 P4 and re-homed to the ship per CS026 P6");
+  // node, i.e. the chain's TAIL and so the canister farthest from the ship — and was then the ship
+  // itself. RE-REPOINTED AGAIN BY CS029 P4 (§0.3/§6.1): CS026 P6's ship-relative reading was a
+  // misinterpretation — Paul's intent was a static dock anchor, shared with the towed branch via
+  // `deliveryAnchorX`/`deliveryAnchorY`. FLAG-CS020-d's actual claim ("an incidental keeps its
+  // FloatText") is what this asserts and it still holds; only the look and the position have moved
+  // under it, three times now, across three gate answers.
+  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)\);/.test(scriptSrc),
+    "A: an incidental keeps its FloatText (FLAG-CS020-d), quieted per CS026 P4 and re-homed to the dock anchor per CS029 P4");
   assert(scriptSrc.includes("AudioSys.deliver(1);"),
     "A: an incidental calls AudioSys.deliver(1) — flat, not combo-pitched (FLAG-CS020-e)");
   assert(!/DOCK_INCIDENTAL_SCORE/.test(scriptSrc),
@@ -693,20 +699,31 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   track.sweep();
   eq(X.game.chain.length, 12, "E: (setup) the incidental was hooked (13) and one node popped (12)");
 
+  let tickerRef = null;
   for (let i = 0; i < 12 && X.game.chain.length > 0; i++) {
     X.game.offloadTimer = 0;
     X.update(1 / 60);
     track.sweep();
+    if (!tickerRef && X.game.deliveryTicker) tickerRef = X.game.deliveryTicker;
   }
   eq(X.game.chain.length, 0, "E: (setup) the whole load is delivered");
 
-  const pays = track.out.filter(f => /^\+\d+$/.test(f.text)).map(f => Number(f.text.slice(1)));
-  // Correct order: the incidental first at a flat 50, then the towed load escalating from 50.
   const wantTowedSeq = [];
   for (let n = 1; n <= 12; n++) wantTowedSeq.push(DOCK_BASE_SCORE + DOCK_BONUS_STEP * (n - 1));
-  const want = [DOCK_BASE_SCORE].concat(wantTowedSeq);
-  eq(pays.join(","), want.join(","),
-    "E: the award sequence is [incidental 50] then the towed load's full escalation 50,75,...,325");
+  // CS029 P4 (model C, §6.3): the towed load no longer spawns a floater per canister — one ticker
+  // object lives for the whole visit, its .text rewritten in place with NO new push(), so the tracker
+  // (which records a floater once, the first time it sees the object) only ever sees its BIRTH text:
+  // the first towed canister's own points (50) — same value as the incidental's flat 50. The
+  // escalating combo underneath is still real (verified below via deliveryCount/stats/score); it just
+  // no longer produces a parallel per-canister floater sequence to read it off of. The running total
+  // is checked instead, off the ticker's own reference, once it is released at the last canister.
+  const pays = track.out.filter(f => /^\+\d+$/.test(f.text)).map(f => Number(f.text.slice(1)));
+  eq(pays.join(","), [DOCK_BASE_SCORE, DOCK_BASE_SCORE].join(","),
+    "E: exactly two floaters are ever CREATED — the incidental (flat 50) and the ticker's birth (also 50)");
+  eq(X.game.deliveryTicker, null, "E: the ticker reference is released once the visit ends");
+  assert(tickerRef && tickerRef.pinned === false, "E: the released ticker un-pins and ages like any other floater");
+  eq(tickerRef && tickerRef.text, "+" + wantTowedSeq.reduce((a, b) => a + b, 0),
+    "E: the released ticker's text is the visit's full running total, 50+75+...+325");
   eq(X.game.deliveryCount, 12, "E: the combo counted the 12 towed nodes and only those");
   eq(X.game.stats.delivered, 12, "E: stats.delivered counted 12, not 13");
   eq(X.game.stats.bestCombo, 12, "E: bestCombo is 12 — the incidental did not inflate it");
@@ -1050,11 +1067,14 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // somewhere else BY DESIGN. Comparing text-and-order still proves exactly what CS020 asserted, and
   // still fails on any of the four regressions it was written to catch. The positions themselves are
   // pinned where they now belong — against this phase's own parent, in test-cs026-p6.js §C.
-  const textsOnly = str => str.split("|").map(t => t.slice(0, t.lastIndexOf("@"))).join("|");
-  eq(textsOnly(fixed.floaters), textsOnly(pre.floaters),
-    "J: every floater — text AND order — is identical to the pre-fix build (position is CS026 P6's, see below)");
-  eq(fixed.floaters.split("|").length, pre.floaters.split("|").length,
-    "J: ...and the floater COUNT is identical too — none added or dropped");
+  // ⛔ FURTHER NARROWED BY CS029 P4 (model C, gate G1/§6.3), SAME REASON AS CS026 P6 ABOVE. The
+  // text-and-order comparison assumed one floater PUSH per towed canister — true of the pre-fix build
+  // and true of CS020 through CS026, but no longer true here: a towed visit now creates ONE ticker
+  // object and mutates its `.text` in place, so `fixed.floaters` legitimately has far fewer entries
+  // than `pre.floaters` even though every canister still pays exactly what it always did. That payment
+  // is what CS020's claim was actually about, and it is what the bit-identical aggregate comparison
+  // above (score, lifeScore, deliveryCount, stats, …) already proves untouched by the tagging fix.
+  // Detailed verification of the model-C floater shape itself lives in test-cs029-p4.js.
   // Non-vacuity: the positions really did move, so the narrowing above is not quietly comparing equals.
   assert(fixed.floaters !== pre.floaters,
     "J: (non-vacuity) the positions DID change — this is the CS026 P6 origin move, not a silent no-op");

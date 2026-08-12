@@ -634,11 +634,29 @@ function saucerAt(X, x, y, small) {
     // be a real loosening, so instead it moves to the strongest available form directly below: the
     // pre-P6 body with EXACTLY the documented substitution applied must equal the current body —
     // i.e. that one edit is the ONLY diff. The other three stay byte-strict, unchanged.
-    for (const sig of ["function shieldDeflect(obj) {", "function shieldBounce(obj) {",
-                        "function scatterChain() {"]) {
+    for (const sig of ["function shieldDeflect(obj) {", "function shieldBounce(obj) {"]) {
       const b0 = bodyOf(hSrc, sig), b1 = bodyOf(scriptSrc, sig);
       assert(b0.length > 0 && b1.length > 0, `A: TRAP 2/3 — ${sig} found in both HEAD and current source`);
       eq(b1, b0, `A: TRAP 2/3 — ${sig.split("(")[0]} is BYTE-UNCHANGED`);
+    }
+    {
+      // NARROWED BY CS029 P4, same shape as breakChain's own narrowing below — scatterChain LEAVES the
+      // plain byte-strict-against-HEAD list because CS029 P4 genuinely edits it (§6.3: ship death
+      // mid-offload must release a pinned model-C delivery ticker, same as every other place
+      // deliveryCount resets to 0). Pinned to a FIXED SHA (CS029 P3's own commit, the parent of P4) so
+      // the claim survives the coming commit instead of evaporating into "HEAD equals itself".
+      const PRE_P4 = "59dd0f0";
+      const preSrc = execFileSync("git", ["show", PRE_P4 + ":orbital-overhaul.html"], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 })
+        .toString().match(/<script>([\s\S]*?)<\/script>/)[1];
+      const before = bodyOf(preSrc, "function scatterChain() {"), after = bodyOf(scriptSrc, "function scatterChain() {");
+      assert(before.length > 0 && after.length > 0, "A: TRAP 2/3 — scatterChain found in both the pinned pre-P4 build and current source");
+      const OLD_END = "  game.deliveryCount = 0;";
+      const NEW_END = "  game.deliveryCount = 0;\n  releaseDeliveryTicker(); // CS029 P4: ship death mid-offload ends the visit too";
+      assert(before.endsWith(OLD_END), "A: TRAP 2/3 — the pinned pre-P4 scatterChain really did end at the bare deliveryCount reset");
+      assert(after.endsWith(NEW_END) && !before.endsWith(NEW_END),
+        "A: TRAP 2/3 — ...and the current one carries the ticker release after it");
+      eq(after, before.slice(0, before.length - OLD_END.length) + NEW_END,
+        "A: TRAP 2/3 — CS029 P4's ticker-release edit is the ONLY diff in scatterChain; everything else is byte-unchanged");
     }
     {
       // Pinned to a FIXED SHA, not the moving HEAD — the test-cs017-p3 / test-cs024-p1 precedent for
@@ -658,8 +676,14 @@ function saucerAt(X, x, y, small) {
         '    game.powerBudget.guard = Math.max(0, game.powerBudget.guard - 1);';
       assert(before.includes(OLD_GATE), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did carry the powerMode gate (so this is not a vacuous pass)");
       assert(!after.includes(OLD_GATE) && after.includes(NEW_SPEND), "A: TRAP 2/3 — ...and the current one carries the unconditional spend instead");
-      eq(after, before.replace(OLD_GATE, NEW_SPEND),
-        "A: TRAP 2/3 — CS024 P6's guard-spend edit is the ONLY diff in breakChain; everything else is byte-unchanged");
+      // A SECOND known diff, added by CS029 P4 (§6.3) on top of CS024 P6's: the hostile break also
+      // releases a pinned model-C delivery ticker, same as scatterChain's own new line above.
+      const OLD_TAIL = '  game.deliveryCount = 0;\n  VoiceSys.say("chain_broken");';
+      const NEW_TAIL = '  game.deliveryCount = 0;\n  releaseDeliveryTicker(); // CS029 P4: a hostile break mid-offload ends the visit too\n  VoiceSys.say("chain_broken");';
+      assert(before.includes(OLD_TAIL), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the reset to the voice line");
+      assert(after.includes(NEW_TAIL), "A: TRAP 2/3 — ...and the current one carries the ticker release between them");
+      eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL),
+        "A: TRAP 2/3 — CS024 P6's guard-spend edit and CS029 P4's ticker-release edit are the ONLY diffs in breakChain; everything else is byte-unchanged");
     }
     assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");
