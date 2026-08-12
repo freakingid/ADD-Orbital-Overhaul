@@ -736,8 +736,11 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
   assert(/deliveryFloatRise/.test(levers) && /levelBanner/.test(levers),
     "G: ...and §4's not-a-lever rows cover this gate's retuned knobs and P5's banner four");
   assert(/CS026/.test(levers), "G: ...and §6 records this gate's outcome");
-  const hist = fs.readFileSync(path.join(repoRoot, "GDD-VERSION-HISTORY.md"), "utf8");
-  assert(/CS026 \(P0–P6\)|CS026 \(P0-P6\)/.test(hist), "G: GDD-VERSION-HISTORY.md carries one consolidated CS026 (P0–P6) entry");
+  // Repointed by CS027 P4: the changelog folded from one file into per-changeset
+  // log/CS0##.md files, so this now reads CS026's own log rather than the retired
+  // single GDD-VERSION-HISTORY.md.
+  const hist = fs.readFileSync(path.join(repoRoot, "log", "CS026.md"), "utf8");
+  assert(/CS026 \(P0–P6\)|CS026 \(P0-P6\)/.test(hist), "G: log/CS026.md carries one consolidated CS026 (P0–P6) entry");
   const claude = fs.readFileSync(path.join(repoRoot, "CLAUDE.md"), "utf8");
   assert(/_phase-ref\.js/.test(claude) && /never `?HEAD`?/i.test(claude),
     "G: ⛔ CLAUDE.md carries the standing rule P1 exists to enforce — a phase-local pin uses _phase-ref.js, never HEAD");

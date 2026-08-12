@@ -8,7 +8,7 @@ coexisting mechanisms (`leverScale`, direct `ramp()`, CS018's level table), a
 frozen-constant wrinkle, and two clocks that had already been retired. CS024
 deleted all of it. **There is now exactly one mechanism — the odometer — and
 one clock, `game.wave`.** Nothing in that older text is patched forward; if you
-need it, it is in the git history and in `GDD-VERSION-HISTORY.md`.
+need it, it is in the git history and in `log/CS024.md`.
 
 ## 1. What a lever is
 

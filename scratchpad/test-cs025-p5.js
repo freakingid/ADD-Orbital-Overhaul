@@ -554,8 +554,10 @@ function quiet(X) {
   // protects is that no LIVE document or piece of code points at a path that does not exist — so the
   // check is scoped to the living doc set + code, and it resolves each hit against the filesystem
   // rather than pattern-matching a spelling.
+  // GDD-VERSION-HISTORY.md dropped by CS027 P4 (folded into per-changeset log/CS0##.md,
+  // which — like archive/ — is historical record, not live links, and is out of scope here).
   const LIVE = ["asteroids-deluxe.html", "CLAUDE.md", "ORBITAL-OVERHAUL-GDD.md",
-    "DIFFICULTY-LEVERS.md", "GDD-VERSION-HISTORY.md", "EXTERNAL-FILES.md"];
+    "DIFFICULTY-LEVERS.md", "EXTERNAL-FILES.md"];
   // This file is excluded from its own scan: the comment above quotes the pre-rename spelling in order
   // to EXPLAIN it, which is precisely the "prose about the path, not a link to it" case the scan is
   // scoped to ignore. Excluding the scanner from the scan, and saying so, beats contorting the comment.
