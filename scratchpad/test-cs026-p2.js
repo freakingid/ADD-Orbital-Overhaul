@@ -504,10 +504,10 @@ let X = null;
 // ================= (H) the registry =====================
 (function sectionH() {
   console.log("(H) registry 75 -> 78: three junkSplit rows in JUNK, after junkSpeedSmall, ranges DERIVED");
-  eq(X.DEBUG_ENTRIES.length, 79, "H: the registry holds 79 value entries (75 + junkSplit's three + CS026 P3's earlyWorldLevels)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 79, "H: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 79, "H: ...and the native DEBUG map");
-  eq(Object.keys(X.debugShown).length, 79, "H: ...and the display map");
+  eq(X.DEBUG_ENTRIES.length, 81, "H: the registry holds 81 value entries (75 + junkSplit's three + CS026 P3's earlyWorldLevels) [CS026 P4 -> 81]");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 81, "H: ...and DEBUG_VARS agrees");
+  eq(Object.keys(X.DEBUG).length, 81, "H: ...and the native DEBUG map");
+  eq(Object.keys(X.debugShown).length, 81, "H: ...and the display map");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "H: still nine section headers — no new section");
 
   const ids = X.DEBUG_VARS.map(v => (v.header ? `#${v.header}` : v.id));
@@ -649,7 +649,8 @@ let X = null;
     // were added" is a statement about the working tree rather than about P2. P2's own claim — its three
     // junkSplit rows, in that order — is what is checked; later phases are NAMED, never wildcarded, so a
     // row arriving with no changeset behind it still fails.
-    const LATER_ROWS = id => id === "earlyWorldLevels";   // CS026 P3
+    const LATER_ROWS = id => id === "earlyWorldLevels"     // CS026 P3
+      || id === "deliveryFloatRise" || id === "deliveryFloatLife";   // CS026 P4
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",
       `J: exactly THREE rows were added by THIS phase, in that order (all added since: ${added.join(", ")})`);
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRows.includes(id)).join(","), oldRows.join(","),

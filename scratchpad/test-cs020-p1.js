@@ -402,8 +402,12 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
 
   // -- the incidental branch, in full --
   assert(scriptSrc.includes("addScore(DOCK_BASE_SCORE);"), "A: an incidental pays a flat DOCK_BASE_SCORE");
-  assert(scriptSrc.includes('game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, node.x, node.y, COLOR.dock));'),
-    "A: an incidental keeps its FloatText (FLAG-CS020-d)");
+  // REPOINTED BY CS026 P4 (spec §3.5/§3.6): the incidental floater is QUIETED, not removed — COLOR.dim +
+  // size 12 (was COLOR.dock, default size) plus the new deliveryFloatRise/Life knobs, so it separates
+  // too but never shares the towed branch's tally or colour (FLAG-CS020-d's "an incidental keeps its
+  // FloatText" claim survives; only its look changed).
+  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, node\.x, node\.y, COLOR\.dim, 12,\s*\n\s*DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)\);/.test(scriptSrc),
+    "A: an incidental keeps its FloatText (FLAG-CS020-d), now quieted per CS026 P4");
   assert(scriptSrc.includes("AudioSys.deliver(1);"),
     "A: an incidental calls AudioSys.deliver(1) — flat, not combo-pitched (FLAG-CS020-e)");
   assert(!/DOCK_INCIDENTAL_SCORE/.test(scriptSrc),
@@ -455,7 +459,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // AND AGAIN BY CS024 P6c: 33 -> 67 — every lever's single flat row becomes THREE (floor, ceiling,
   // step count), so the 17 lever rows become 51 and the 16 non-lever knobs stay exactly as they were.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 79, "A: TRAP 3 — DEBUG_VARS holds exactly 79 value entries after CS026 P3");
+  eq(valueEntries, 81, "A: TRAP 3 — DEBUG_VARS holds exactly 81 value entries after CS026 P3 [CS026 P4 -> 81]");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

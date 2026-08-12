@@ -411,9 +411,9 @@ let X = null;
   const globalIds = X.DEBUG_VARS.slice(gIdx + 1).map(v => v.id);
   eq(globalIds.join(","), "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel",
     "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel");
-  eq(X.DEBUG_ENTRIES.length, 79, "D: the registry holds 79 value entries (CS026 P2's 78 + this one)");
-  eq(Object.keys(X.DEBUG).length, 79, "D: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 79, "D: ...and the display map agrees");
+  eq(X.DEBUG_ENTRIES.length, 81, "D: the registry holds 81 value entries (CS026 P2's 78 + this one) [CS026 P4 -> 81]");
+  eq(Object.keys(X.DEBUG).length, 81, "D: ...and the native DEBUG map agrees");
+  eq(Object.keys(X.debugShown).length, 81, "D: ...and the display map agrees");
   eq(X.DEBUG.earlyWorldLevels, 5, "D: the live value seeds from the def");
 
   // It is READ LIVE at the wave boundary, never cached — a panel change takes effect on the next level.

@@ -479,12 +479,8 @@ const HUD_FX_GLYPH_R = 9;       // radius of the glyph drawn inside a powerup ro
 // expiry went, its gate (`active && !counted && ...`) became structurally always-false — the same
 // class of dead guard CS024 P2 deleted rather than left standing. The row's low-pulse went with it;
 // no budgeted row state-colors, exactly as count mode never did.
-// CS021 P4: delivery-combo readout (closes FLAG-CS020-i). Left column, under Score/Level — those two
-// use bare literals (30,46)/(30,62) predating the CS009 HUD naming convention, but this is a new
-// mechanic, so it gets named knobs per CLAUDE.md rather than joining them as a third bare literal.
-const HUD_COMBO_X = 30;         // same left margin as Score/Level
-const HUD_COMBO_Y = 84;         // baseline y, beneath "LEVEL n" (62); PLAYTEST KNOB, first-pass spacing
-const HUD_COMBO_SIZE = 18;      // smaller than LEVEL (22) so a 3rd line doesn't compete with it
+// CS021 P4's delivery-combo readout (HUD_COMBO_X/Y/SIZE, closed FLAG-CS020-i) is REMOVED as of CS026 P4
+// (spec §3.4) — see the comment at its former drawHUD() call site for the bet and the recorded risk.
 const HUD_PULSE_HZ = 1.2;       // CS010 P3: the FLAT pulse rate for NON-HP alarms ONLY — the cargo-gold
                                  // ring and the powerup low-timer row. Anything keyed on LOW_HP_THRESHOLD
                                  // (the critical-hull ring, the corner glow, the audio siren) instead
@@ -3387,6 +3383,13 @@ const DEBUG_VARS = [
   { header: "DELIVERY" },
   { id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
     def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
+  // CS026 P4 (spec §3, PLANNED-FEATURES-CS026.md §3.3a/§3.4): the delivery floaters' own rise/life,
+  // separating what DOCK_OFFLOAD_INTERVAL's 20/sec cadence used to stack into an unreadable smear.
+  // First-guess numbers — the gate is what settles them, which is why they are knobs, not constants.
+  { id: "deliveryFloatRise", label: "Delivery floater rise", unit: "px/s",
+    def: 300, min: 30, max: 600, step: 10 },
+  { id: "deliveryFloatLife", label: "Delivery floater life", unit: "s",
+    def: 0.55, min: 0.2, max: 2.0, step: 0.05 },
   // CS024 P5/P6c (spec §2.4/§2.6/§4.5/§5): the JUNK chain, THREE knobs per lever (floor, ceil, steps) —
   // see leverKnob() above, which also derives the ▼ / ↳ / (inv) markers straight off LEVERS. junkCount
   // is the driver (sawtooths every 10 levels, so it wears ▼); the three sizes are fully independent (no
@@ -5514,17 +5517,21 @@ class Powerup {
 }
 
 class FloatText {
-  constructor(text, x, y, color, size = 16) {
+  // CS026 P4 (spec §3.3a): `rise`/`life` are trailing and optional, defaulted to the pre-existing
+  // 30/1.1 values — every pre-CS026 call site omits them and stays byte-identical (the CS012 P3
+  // `size` precedent). `life0` is the constructed life, which draw()'s alpha divides by instead of
+  // the literal 1.1 — a short-lived floater must still reach full opacity.
+  constructor(text, x, y, color, size = 16, rise = 30, life = 1.1) {
     this.text = text; this.x = x; this.y = y; this.color = color; this.size = size;
-    this.life = 1.1; this.dead = false;
+    this.rise = rise; this.life = life; this.life0 = life; this.dead = false;
   }
   update(dt) {
-    this.y -= 30 * dt;
+    this.y -= this.rise * dt;
     this.life -= dt;
     if (this.life <= 0) this.dead = true;
   }
   draw() {
-    ctx.globalAlpha = Math.max(0, this.life / 1.1);
+    ctx.globalAlpha = Math.max(0, this.life / this.life0);
     drawText(this.text, this.x, this.y, this.size, this.color);
     ctx.globalAlpha = 1;
   }
@@ -8033,7 +8040,11 @@ function update(dt) {
           if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
           Achievements.lifetime.delivered++;
           Achievements.lifetime.deliveryScore += pts;
-          game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock));
+          // CS026 P4 (spec §3.3a/§3.4): rise/life read from the DELIVERY registry knobs so consecutive
+          // floaters at DOCK_OFFLOAD_INTERVAL's fast cadence separate instead of stacking. Text, position,
+          // colour and every downstream count are untouched — this changes how the delivery LOOKS only.
+          game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock, 16,
+            DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
           AudioSys.deliver(game.deliveryCount);
           // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
           // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
@@ -8047,8 +8058,12 @@ function update(dt) {
           // latches downstream (the 8/12/16/20 reward tiers, Heavy Hauler, Maxed Out, the Super Mega
           // Delivery). Fixing it AT THE COUNTER is what keeps those correct without a second guard.
           // AudioSys.deliver(1) deliberately, not the combo pitch: audible, but flat.
+          // CS026 P4 (spec §3.5/FORK-CS026-G): QUIETED, not folded in — same text/position, but COLOR.dim
+          // + size 12 so it never reads as, or shares a tally with, the towed branch's floater. Same new
+          // rise/life knobs so a Magnet-parked run of incidentals separates too, not just towed hauls.
           addScore(DOCK_BASE_SCORE);
-          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, node.x, node.y, COLOR.dock));
+          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, node.x, node.y, COLOR.dim, 12,
+            DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
           AudioSys.deliver(1);
         }
         game.offloadTimer = DOCK_OFFLOAD_INTERVAL;
@@ -9222,17 +9237,12 @@ function drawHUD() {
   // a display label only ("level" is player-facing vocabulary, "wave" stays the code term).
   drawText("LEVEL " + game.wave, 30, 62, 22, COLOR.text, "left");
 
-  // CS021 P4: delivery-combo readout, closes FLAG-CS020-i. DISPLAY ONLY — reads game.deliveryCount and
-  // game.cargoMax exactly as the dock-offload block (update(), above) already tracks them; nothing here
-  // writes either field or keeps a second copy of the counter. Shown whenever an effort is live and gone
-  // the instant it isn't: the dock block already zeroes game.deliveryCount on all three routes an effort
-  // can end — a towed hook outside the ring (a fresh gather resets the old one), the DOCK_COMBO_GRACE
-  // window expiring, and scatterChain on ship death — so `> 0` alone tracks every one of them without
-  // this readout duplicating any route logic. Ships PLAIN per spec §10 — no grace-window countdown.
-  if (game.deliveryCount > 0) {
-    drawText("COMBO " + game.deliveryCount + "/" + game.cargoMax,
-      HUD_COMBO_X, HUD_COMBO_Y, HUD_COMBO_SIZE, COLOR.dock, "left");
-  }
+  // CS026 P4 (spec §3.4, closes FLAG-CS020-i's readout — NOT the flag's underlying claim): the
+  // CS021 P4 `COMBO n/24` row is REMOVED, on the bet that the now-legible dock floaters (above) carry
+  // delivery feedback better than a HUD line duplicating the same number. Risk, recorded rather than
+  // left to be rediscovered: this readout was the only thing showing the DENOMINATOR (/cargoMax) — the
+  // dock floaters show none. If a playtest gate finds the cargo ceiling illegible, this is the first
+  // thing to reconsider. Display-only; nothing downstream read this block, so nothing else changes.
 
   // CS009 P2: the hull + shield fill bars are gone from the left column — they are now the HULL ring in
   // the top-right corner (drawn below). Left column top-to-bottom is now Score, Level, Cargo, Powerups.

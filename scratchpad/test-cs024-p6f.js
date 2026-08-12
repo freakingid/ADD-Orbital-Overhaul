@@ -270,7 +270,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   }
 
   // Registry count: 69 (CS024 P6e) + 3.
-  eq(X.DEBUG_ENTRIES.length, 79, "A: the registry is 79 value entries (P6e's 69 + this phase's 3 + CS025 P1's magnetResumeDelay + CS025 P2's two magnet-push knobs + CS026 P2's three junkSplit lever knobs + CS026 P3's earlyWorldLevels)");
+  eq(X.DEBUG_ENTRIES.length, 81, "A: the registry is 81 value entries (P6e's 69 + this phase's 3 + CS025 P1's magnetResumeDelay + CS025 P2's two magnet-push knobs + CS026 P2's three junkSplit lever knobs + CS026 P3's earlyWorldLevels) [CS026 P4 -> 81]");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "A: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is the registry plus the four trailer rows");
 

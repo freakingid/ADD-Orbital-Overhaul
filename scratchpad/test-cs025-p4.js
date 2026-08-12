@@ -521,7 +521,7 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
   // while CS025 P4 ran; P5 bumped it to "1.0.0.25", so the claim inverts and then stays correct
   // forever. Do not re-point it to a literal version again.
   assert(A.GAME_VERSION !== "1.0.0.24", `TRAP 1: GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24; got ${A.GAME_VERSION}`);
-  assert(A.DEBUG_ENTRIES.length === 79, `TRAP 4 (repointed CS026 P3, which added earlyWorldLevels on top of P2's three junkSplit lever knobs): the registry is 79 rows; got ${A.DEBUG_ENTRIES.length}`);
+  assert(A.DEBUG_ENTRIES.length === 81, `TRAP 4 (repointed CS026 P3, which added earlyWorldLevels on top of P2's three junkSplit lever knobs): the registry is 81 rows; got ${A.DEBUG_ENTRIES.length}`);
 
   const H = build(headSrc, RETURN_BOTH);
   const C = build(currentSrc, RETURN_BOTH);
