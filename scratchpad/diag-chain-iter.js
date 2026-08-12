@@ -5,7 +5,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const html = fs.readFileSync(path.join(__dirname, "..", "asteroids-deluxe.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "orbital-overhaul.html"), "utf8");
 const scriptSrc0 = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 const noopCtx = new Proxy({}, { get: () => () => {} });

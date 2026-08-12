@@ -1,9 +1,20 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.28 · Changeset: CS028 (closed) · Phase: — · Registry: 85 · Levers: 18
+Version: 1.0.0.28 · Changeset: CS029 · Phase: P1 · Registry: 85 · Levers: 18
 
-## Phase ledger — CS028
+## Phase ledger — CS029
+
+- P1 — renamed `asteroids-deluxe.html` -> `orbital-overhaul.html` (`git mv`); no behaviour change.
 
 ## Working / verified
+
+- **P1's rename swept further than the plan's "22 git-history sites" estimate** — ~100 scratchpad
+  test files also hardcode the *live* build path (`path.join(repoRoot, "asteroids-deluxe.html")`),
+  which breaks the instant the file moves. All renamed; the 16 historical-SHA reads kept the legacy
+  name and are SETTLED-marked; `_phase-ref.js`'s `SCOPE_BASE` now carries both names permanently
+  (already-closed phases' own scope pins diff pre-rename ranges that legitimately list the old
+  name). FLAG-CS029-a (the `test-cs024-p6b.js` pathspec spanning the rename) was run, not assumed —
+  git's rename detection held, `-U0` hunk structure intact, 315/315 in that file. Full suite:
+  111/111 passed, 0 failed, 0 skipped post-commit.
 
 ## Known issues
 

@@ -686,7 +686,7 @@ Relocated from the old "Design instruments (`tools/`)":
 
 > Standalone HTML files, **not shipped code** — disposable-by-design instruments
 > used to pick numbers or compose data before porting the result into
-> `asteroids-deluxe.html`. Same no-bundler/no-imports rule as the main file;
+> `orbital-overhaul.html`. Same no-bundler/no-imports rule as the main file;
 > each carries whatever small slice of game logic it needs duplicated in place
 > (drift here can only ever produce a bad *preview*, never a bad *build*).
 >
@@ -723,7 +723,7 @@ Relocated from the old "Design instruments (`tools/`)":
 
 The "disposable by design" framing is what makes duplicated logic acceptable
 here and nowhere else: **drift in a tool can only ever produce a bad preview,
-never a bad build.** That licence does not extend to `asteroids-deluxe.html`.
+never a bad build.** That licence does not extend to `orbital-overhaul.html`.
 
 `tools/orbit-lab.html` (orbit geometry) predates this list and was never written
 up in `CLAUDE.md`; it is listed in the current file for completeness.

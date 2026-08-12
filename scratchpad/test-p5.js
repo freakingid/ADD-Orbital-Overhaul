@@ -51,7 +51,7 @@ const { installSeed } = require("./_seeded-random.js");
 const SEED = 1;
 installSeed(SEED);   // ⛔ must precede the factory invocation below — this ordering is the requirement
 
-const htmlPath = path.join(__dirname, "..", "asteroids-deluxe.html");
+const htmlPath = path.join(__dirname, "..", "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }

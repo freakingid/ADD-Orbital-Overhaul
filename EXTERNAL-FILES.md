@@ -2,7 +2,7 @@
 
 **Living doc — never archived** (same convention as `DIFFICULTY-LEVERS.md`). This
 is the authoritative registry of every file the *shipped game*
-(`asteroids-deluxe.html`) loads at runtime in addition to itself.
+(`orbital-overhaul.html`) loads at runtime in addition to itself.
 
 Until CS011 the game was a single self-contained HTML file. CS011 lifted that
 constraint (FORK-CS011-file-protocol, resolved option (a)) so that enhancements
@@ -11,7 +11,7 @@ constraint was replaced with a contract, not removed.
 
 ## The contract
 
-1. **Game logic stays in one `<script>` block** in `asteroids-deluxe.html`. No
+1. **Game logic stays in one `<script>` block** in `orbital-overhaul.html`. No
    bundler, no build step, no ES modules, no npm runtime deps. External files
    carry *data/assets*, never game logic.
 
@@ -41,7 +41,7 @@ constraint was replaced with a contract, not removed.
 `tools/` (design instruments like `voice-robot-lab.html`, `scoop-lab.html`,
 `music-lab.html`), `scratchpad/` (headless tests), and all `.md` docs are **not**
 runtime files — they are never loaded by the shipped game and are never logged
-here. Only files `asteroids-deluxe.html` itself pulls in at runtime belong in the
+here. Only files `orbital-overhaul.html` itself pulls in at runtime belong in the
 registry.
 
 ## Registry

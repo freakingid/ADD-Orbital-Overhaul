@@ -6,7 +6,7 @@
 //   node scratchpad/test-cs018-p9.js
 //
 // Follows the standing rule (GDD 5.4 / CLAUDE.md): never reimplement the logic under test — every
-// value comes out of the REAL asteroids-deluxe.html source, driven through the REAL startGame() /
+// value comes out of the REAL orbital-overhaul.html source, driven through the REAL startGame() /
 // superMegaDelivery() / update(), using the same build()-a-headless-instance harness as
 // scratchpad/test-cs018-p1.js..p8.js.
 //
@@ -44,7 +44,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = process.env.CS018_HTML || path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = process.env.CS018_HTML || path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }

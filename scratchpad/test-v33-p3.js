@@ -53,7 +53,7 @@ installSeed(20260813);
 const fs = require("fs");
 const path = require("path");
 
-const html = fs.readFileSync(path.join(__dirname, "..", "asteroids-deluxe.html"), "utf8");
+const html = fs.readFileSync(path.join(__dirname, "..", "orbital-overhaul.html"), "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
 const scriptSrc = m[1];

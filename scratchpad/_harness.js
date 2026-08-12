@@ -18,11 +18,11 @@
 //      .split("\n").map(l => l.replace(/\s\/\/.*$/, ""))
 //      .filter(l => !l.trim().startsWith("//")).join("\n")
 //
-// Run over today's asteroids-deluxe.html that output DOES NOT PARSE. The block-comment regex
+// Run over today's orbital-overhaul.html that output DOES NOT PARSE. The block-comment regex
 // runs FIRST, over text that still contains line comments, and one line comment contains the
 // characters `/*`:
 //
-//   // ... The four *Events/*Games are          <- asteroids-deluxe.html:6556
+//   // ... The four *Events/*Games are          <- orbital-overhaul.html:6556
 //
 // `/*Games` opens a comment the author never wrote. It closes 141 lines later on the next real
 // `*/`, deleting Achievements.weekKeyFor() and everything around it; the build then dies with
@@ -49,7 +49,7 @@ const fs = require("fs");
 const path = require("path");
 const { SKIP_TAG, repoRoot } = require("./_phase-ref.js");
 
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 
 // ------------------------------------------------------------------------------------------
 // scriptSource() -> the raw <script> block text of the live build. Cached.

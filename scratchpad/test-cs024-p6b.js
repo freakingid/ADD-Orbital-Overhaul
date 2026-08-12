@@ -60,7 +60,7 @@ const vm = require("vm");
 const { execFileSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -172,6 +172,7 @@ function withRandom(fn, cb) {
 // ---- The pre-P6b build, out of git at the fixed SHA ----
 let OLD = null, oldSrc = null;
 try {
+  // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
   const prev = execFileSync("git", ["show", `${PRE_P6B_REF}:asteroids-deluxe.html`],
     { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
   const om = prev.match(/<script>([\s\S]*?)<\/script>/);
@@ -632,7 +633,11 @@ function evalSlice(literal) {
   // so what remains is the part that can and does: the powerup surface itself, named symbol by symbol
   // rather than implied by geometry. (P6c's own file re-pins the registry.)
   try {
-    const diff = execFileSync("git", ["diff", "-U0", PRE_P6B_REF, "--", "asteroids-deluxe.html"],
+    // ⛔ FLAG-CS029-a: this range now SPANS the CS029 rename, so both the pre-rename and post-rename
+    // paths are passed as pathspecs — git's default rename detection is relied on to keep the -U0 hunk
+    // structure intact across the mv. Verified after the CS029 P1 rename; see the phase's commit.
+    const diff = execFileSync("git", ["diff", "-U0", PRE_P6B_REF, "--",
+      "asteroids-deluxe.html", "orbital-overhaul.html"],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     assert(diff.length > 0, "G: TRAP 5 — the diff against the pre-P6b build is non-empty");
     // REPOINTED BY CS024 P7 — `engineBurnSeconds` LEAVES this list, for the same reason the hunk-range

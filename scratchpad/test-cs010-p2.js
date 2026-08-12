@@ -25,7 +25,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const extractScript = html => {
   const m = html.match(/<script>([\s\S]*?)<\/script>/);
   if (!m) throw new Error("Could not find <script> block");
@@ -34,7 +34,7 @@ const extractScript = html => {
 
 const currentSrc = extractScript(fs.readFileSync(htmlPath, "utf8"));
 let headSrc = null;
-try { headSrc = extractScript(execSync("git show HEAD:asteroids-deluxe.html", { cwd: repoRoot, encoding: "utf8" })); }
+try { headSrc = extractScript(execSync("git show HEAD:orbital-overhaul.html", { cwd: repoRoot, encoding: "utf8" })); }
 catch (e) { console.warn("  (note: no HEAD build; the HEAD-vs-worktree stress comparison will be skipped)"); }
 
 // ---- stubs (mirrors test-cs010-p1.js) ----

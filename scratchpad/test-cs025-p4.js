@@ -40,14 +40,14 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const extractScript = html => {
   const m = html.match(/<script>([\s\S]*?)<\/script>/);
   if (!m) throw new Error("Could not find <script> block");
   return m[1];
 };
 const currentSrc = extractScript(fs.readFileSync(htmlPath, "utf8"));
-const headSrc = extractScript(execSync("git show HEAD:asteroids-deluxe.html", { cwd: repoRoot }).toString());
+const headSrc = extractScript(execSync("git show HEAD:orbital-overhaul.html", { cwd: repoRoot }).toString());
 
 // ---- Web Audio mock (the test-cs010-p9.js §D idiom): nodes are Proxies that no-op methods but expose
 // AudioParams; FakeAudioContext.currentTime is a plain ASSIGNABLE field so Dan's clock can be advanced

@@ -52,7 +52,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -356,6 +356,7 @@ const P6E_PARENT_REF = "7c4c6b3f69ab2764629996e1dd280e4896267ba4"; // "Docs for 
   console.log("(G) overrides ON + an untouched panel reproduces P6e's parent commit's DEBUG/leverState exactly");
   let OLD = null;
   try {
+    // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
     const prev = execFileSync("git", ["show", P6E_PARENT_REF + ":asteroids-deluxe.html"],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     const om = prev.match(/<script>([\s\S]*?)<\/script>/);

@@ -6,7 +6,7 @@
 // CS027 P2 added outsideScope() — see the section above module.exports.
 //
 // Node CommonJS, like everything else in scratchpad/. Not a no-modules violation — that rule binds
-// `asteroids-deluxe.html`, which never loads this.
+// `orbital-overhaul.html`, which never loads this.
 //
 // ============================================================================================
 // ⛔ THE DECOMPOSITION IS THE OPPOSITE OF THE OBVIOUS ONE (§4.1)
@@ -66,6 +66,33 @@ function git(args, opts) {
 }
 
 // ------------------------------------------------------------------------------------------
+// gameFileAt(ref) -> which path the game file lives at in `ref`: GAME_FILE, GAME_FILE_LEGACY,
+// or null if git history is unavailable (or neither path exists at that ref).
+// ------------------------------------------------------------------------------------------
+// CS029 P1. Asks git directly rather than comparing against the rename commit's SHA, so it needs
+// no hardcoded rename-commit literal and cannot go stale as history grows. This is the ONE place
+// in the suite that genuinely cannot know which name applies — every other site is pinned to
+// either HEAD (always the new name) or a pre-rename PRE_*_REF literal (always the legacy name),
+// and stays that way. Do not refactor those sites onto this helper (§2.4/FORK-CS029-B).
+const GAME_FILE        = "orbital-overhaul.html";
+const GAME_FILE_LEGACY = "asteroids-deluxe.html";   // pre-CS029 history only
+
+function gameFileAt(ref) {
+  if (!ref) return null;
+  try {
+    git(["cat-file", "-e", ref + ":" + GAME_FILE]);
+    return GAME_FILE;
+  } catch (e) {
+    try {
+      git(["cat-file", "-e", ref + ":" + GAME_FILE_LEGACY]);
+      return GAME_FILE_LEGACY;
+    } catch (e2) {
+      return null;   // not a git checkout, ref unreachable, or neither path exists there
+    }
+  }
+}
+
+// ------------------------------------------------------------------------------------------
 // parentSource(sha) -> the parent build's <script> text, or null if git history is unavailable.
 // ------------------------------------------------------------------------------------------
 // Lifted from test-cs025-p2.js:174. `sha` is the phase's own hardcoded PARENT_SHA literal. The
@@ -75,10 +102,15 @@ function git(args, opts) {
 //
 // The `git()` wrapper above swallows git's own stderr, so a shallow clone's `fatal: bad revision`
 // never reaches the run's output — SKIP_TAG is the report.
+//
+// Routed through gameFileAt() (CS029 P1) since this is the one helper handed both pre- and
+// post-rename SHAs — existing pins pass pre-rename SHAs, every future changeset passes post-rename.
 function parentSource(sha) {
   if (!sha) return null;
+  const file = gameFileAt(sha);
+  if (!file) return null;
   try {
-    const prev = git(["show", sha + ":asteroids-deluxe.html"],
+    const prev = git(["show", sha + ":" + file],
       { maxBuffer: 64 * 1024 * 1024 });
     const m = prev.match(/<script>([\s\S]*?)<\/script>/);
     return m ? m[1] : null;
@@ -158,7 +190,7 @@ function changedFiles(fromSha, toSha) {
 // Added by CS027 P2. The "nothing else moved" allowlist was written out longhand at every pin:
 //
 //   const outside = changed.filter(f =>
-//     !f.startsWith("scratchpad/") && f !== "STATUS.md" && f !== "asteroids-deluxe.html");
+//     !f.startsWith("scratchpad/") && f !== "STATUS.md" && f !== "orbital-overhaul.html");
 //
 // Six files carried a copy, in five slightly different shapes. The BASE allowlist is the set
 // every phase may touch by standing instruction — the game file, its own tests, the build-reality
@@ -172,8 +204,16 @@ function changedFiles(fromSha, toSha) {
 // An entry ending in "/" is a directory prefix; anything else is an exact path. `changed` is
 // `changedFiles()`'s output, so a null (git unavailable) must be handled by the CALLER with a
 // loud SKIP — passing null here throws rather than quietly returning "nothing outside scope".
+//
+// ⛔ CS029 P1 — BOTH game-file names are in the base, permanently. `outsideScope()` is called by
+// already-landed phases' own scope pins, which diff PARENT_SHA..ownCommit ranges that predate the
+// rename and correctly list `asteroids-deluxe.html` as changed. Swapping the entry to the new name
+// outright (the obvious fix for the SCOPE_BASE landmine, §2.2) makes every one of those historical
+// pins report the game file as out-of-scope. Both names identify the one game file across time; an
+// allowlist that only recognizes today's spelling breaks yesterday's diffs.
 const SCOPE_BASE = [
-  "asteroids-deluxe.html",
+  "orbital-overhaul.html",
+  "asteroids-deluxe.html",   // pre-CS029 diffs name the game file this way — see GAME_FILE_LEGACY
   "STATUS.md",
   "scratchpad/",
   "log/",            // CS027 P4 onward: the per-changeset narrative log
@@ -190,4 +230,5 @@ function outsideScope(changed, extra) {
 module.exports = {
   parentSource, ownCommit, ownCommits, changedFiles, outsideScope,
   SKIP_TAG, SCOPE_BASE, repoRoot,
+  GAME_FILE, GAME_FILE_LEGACY, gameFileAt,
 };

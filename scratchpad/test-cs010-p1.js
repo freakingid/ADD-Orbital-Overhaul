@@ -16,7 +16,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 
 function extractScript(html) {
   const m = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -29,9 +29,9 @@ const currentSrc = extractScript(currentHtml);
 
 let headHtml;
 try {
-  headHtml = execSync("git show HEAD:asteroids-deluxe.html", { cwd: repoRoot, encoding: "utf8" });
+  headHtml = execSync("git show HEAD:orbital-overhaul.html", { cwd: repoRoot, encoding: "utf8" });
 } catch (e) {
-  console.error("Could not read HEAD version of asteroids-deluxe.html:", e.message);
+  console.error("Could not read HEAD version of orbital-overhaul.html:", e.message);
   process.exit(1);
 }
 const headSrc = extractScript(headHtml);

@@ -3,7 +3,7 @@
   tools/voice-lab.html — Orbital Overhaul, Changeset 10 design instrument (CS010 P8).
 
   THE PORTING SOURCE for Dan's synthesized voice (PLANNED-FEATURES-CS010.md §11a). Nothing here
-  is in the game build; NOTHING enters asteroids-deluxe.html until Paul has heard this lab and
+  is in the game build; NOTHING enters orbital-overhaul.html until Paul has heard this lab and
   signed off (FLAG-11a). Same house rules as scoop-lab/music-lab: standalone file, no bundler,
   no imports, carries its own slice of logic.
 
@@ -865,7 +865,7 @@ function tlTick() {
 function refreshDump() {
   const byEv = {};
   for (const Ln of LINES) (byEv[Ln.ev] = byEv[Ln.ev] || []).push(Ln);
-  let s = "// tools/voice-lab.html dump — CS010 P8. Port into asteroids-deluxe.html in P9,\n" +
+  let s = "// tools/voice-lab.html dump — CS010 P8. Port into orbital-overhaul.html in P9,\n" +
           "// ONLY after Paul's sign-off (FLAG-11a). Engine = PORT-ME BLOCK A, verbatim.\n";
   s += "const VOICE_PARAMS = " +
        JSON.stringify(P, null, 2).replace(/"([A-Za-z_$][\w$]*)":/g, "$1:") + ";\n\n";

@@ -30,7 +30,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -60,7 +60,7 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 // ---- Recording 2D context — logs arc/stroke/fillText/fill/closePath calls, plus the style state
 // (strokeStyle/lineWidth/shadowBlur/globalAlpha) active at each stroke. shadowBlur > 0 at a stroke
 // call is how a glowStroke() call is told apart from a plain dim-track stroke (glowStroke sets it,
-// draws, then resets to 0 — see asteroids-deluxe.html's glowStroke()). ----
+// draws, then resets to 0 — see orbital-overhaul.html's glowStroke()). ----
 const recLog = [];
 function makeRecordingCtx() {
   const state = { shadowBlur: 0 };

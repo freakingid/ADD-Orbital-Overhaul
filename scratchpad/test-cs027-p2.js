@@ -241,7 +241,7 @@ function compareBuilds(L, R, tag) {
   const bodyLines = s => new Set(s.split("\n").map(l => l.trim()).filter(Boolean));
   const good = bodyLines(ex), bad = bodyLines(naive(scriptSrc));
   const lost = [...good].filter(l => !bad.has(l));
-  console.log(`  (the two-regex idiom loses ${lost.length} live lines of asteroids-deluxe.html`
+  console.log(`  (the two-regex idiom loses ${lost.length} live lines of orbital-overhaul.html`
     + ` — including ${lost.some(l => /^weekKeyFor/.test(l)) ? "Achievements.weekKeyFor()" : "unnamed rows"})`);
   assert(lost.length > 0,
     "C: ⛔ the two-regex idiom is measurably lossy on the shipped build — do not put it in a build path");
@@ -442,7 +442,7 @@ function compareBuilds(L, R, tag) {
 // ================= (H) outsideScope =====================
 (function sectionH() {
   console.log("(H) outsideScope(changed, extra)");
-  const base = ["asteroids-deluxe.html", "STATUS.md", "scratchpad/test-x.js", "scratchpad/_harness.js", "log/CS027.md"];
+  const base = ["orbital-overhaul.html", "STATUS.md", "scratchpad/test-x.js", "scratchpad/_harness.js", "log/CS027.md"];
   eq(outsideScope(base).join(","), "", "H: the base allowlist covers the game file, STATUS.md, scratchpad/ and log/");
   eq(outsideScope([...base, "ORBITAL-OVERHAUL-GDD.md"]).join(","), "ORBITAL-OVERHAUL-GDD.md",
     "H: ...and an unlisted file is returned");

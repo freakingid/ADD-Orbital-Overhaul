@@ -86,7 +86,7 @@ const vm = require("vm");
 const { execFileSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -398,6 +398,7 @@ function simulate(table, wave) {
   const PRE_P4_REF = "887a44c";
   let RETIRED = null;
   try {
+    // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
     const prev = execFileSync("git", ["show", `${PRE_P4_REF}:asteroids-deluxe.html`], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     const fn = prev.match(/function difficultyFactor\(wave\) \{[\s\S]*?\n\}/);
     const knob = prev.match(/^const RAMP_WAVES = \d+;/m);

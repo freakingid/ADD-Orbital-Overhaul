@@ -48,7 +48,7 @@ installSeed(20260813);
 const fs = require("fs");
 const path = require("path");
 
-const htmlPath = path.join(__dirname, "..", "asteroids-deluxe.html");
+const htmlPath = path.join(__dirname, "..", "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -372,7 +372,7 @@ console.log("(G) recycle hub emits one powerup per 8/12/16/20 threshold crossed 
 // The ship parks just inside the "nearDock" cutoff (DOCK_RADIUS+10, live-computed off the current
 // DOCK_RADIUS rather than a stale literal) but well outside the powerup pickup radius (POWERUP_RADIUS
 // is permanently 30 as of CS024 P2, baking in the old leverScale mechanism's shipped-disabled 2x —
-// see asteroids-deluxe.html's POWERUP_RADIUS declaration), so a hub powerup launched FROM
+// see orbital-overhaul.html's POWERUP_RADIUS declaration), so a hub powerup launched FROM
 // the dock's center isn't standing inside the ship's own pickup radius the instant it spawns (that
 // would auto-collect it before this test could observe the emission at all — an artifact of a
 // stationary test ship, not a game bug). The ship is moved to its resting spot BEFORE fillChain

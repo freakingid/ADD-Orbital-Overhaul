@@ -52,7 +52,7 @@ const path = require("path");
 const { parentSource, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -556,7 +556,7 @@ function quiet(X) {
   // rather than pattern-matching a spelling.
   // GDD-VERSION-HISTORY.md dropped by CS027 P4 (folded into per-changeset log/CS0##.md,
   // which — like archive/ — is historical record, not live links, and is out of scope here).
-  const LIVE = ["asteroids-deluxe.html", "CLAUDE.md", "ORBITAL-OVERHAUL-GDD.md",
+  const LIVE = ["orbital-overhaul.html", "CLAUDE.md", "ORBITAL-OVERHAUL-GDD.md",
     "DIFFICULTY-LEVERS.md", "EXTERNAL-FILES.md"];
   // This file is excluded from its own scan: the comment above quotes the pre-rename spelling in order
   // to EXPLAIN it, which is precisely the "prose about the path, not a link to it" case the scan is

@@ -51,7 +51,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -559,6 +559,7 @@ const chainIdentical = (g, snap) =>
 (function sectionF() {
   console.log("(F) drop gate: below the tow threshold guard never rolls and the distribution is byte-identical to pre-P6");
 
+  // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
   const preHtml = execSync(`git show ${PRE_P6_REF}:asteroids-deluxe.html`, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
   const pm = preHtml.match(/<script>([\s\S]*?)<\/script>/);
   assert(!!pm, `F: extracted the <script> block from the pre-P6 build at ${PRE_P6_REF}`);
@@ -731,6 +732,7 @@ const chainIdentical = (g, snap) =>
 (function sectionH() {
   console.log("(H) HUD: six fixed rows, guard topmost, no existing row moved, still zero ctx.fill()");
 
+  // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
   const preHtml = execSync(`git show ${PRE_P6_REF}:asteroids-deluxe.html`, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
   const P = build({ src: preHtml.match(/<script>([\s\S]*?)<\/script>/)[1],
     ret: ["POWERUP_DROP_TYPES", "HUD_FX_BASE_Y", "HUD_FX_ROW_H"] });

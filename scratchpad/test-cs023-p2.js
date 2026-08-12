@@ -42,7 +42,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -254,6 +254,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // pins stopped meaning anything the moment CS024 P2 was committed. Pinned to the last commit before
   // CS023 P2 itself landed, which is what every claim in this section was always written against.
   const PRE_CS023_P2_REF = "300ac27";
+  // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
   const preSrc = execFileSync("git", ["show", `${PRE_CS023_P2_REF}:asteroids-deluxe.html`], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 })
     .toString().match(/<script>([\s\S]*?)<\/script>/)[1];
   const bodyOf = (src, sig) => { const i = src.indexOf(sig); return src.slice(i, src.indexOf("\n}\n", i)); };

@@ -4,7 +4,7 @@
 //   const { withSeed, installSeed, mulberry32 } = require("./_seeded-random.js");
 //
 // Node CommonJS, like everything else in scratchpad/. ⛔ THIS IS NOT A NO-MODULES VIOLATION: the
-// one-file/no-modules rule binds `asteroids-deluxe.html`, which never loads this. scratchpad/ has
+// one-file/no-modules rule binds `orbital-overhaul.html`, which never loads this. scratchpad/ has
 // been Node CommonJS with `require` since the first headless test.
 //
 // ============================================================================================
@@ -16,7 +16,7 @@
 // GAME's, and it is fixed at MODULE LOAD, inside the factory:
 //
 //     for (let i = 0; i < STAR_NEAR_COUNT; i++)
-//       starsNear.push({ x: Math.random() * STAR_NEAR_TILE_W, ... });   // asteroids-deluxe.html:8896
+//       starsNear.push({ x: Math.random() * STAR_NEAR_TILE_W, ... });   // orbital-overhaul.html:8896
 //
 // A star's position is decided the instant `new Function(...)(...)` is invoked. A seed installed
 // AFTER that — around a test-local call site — fixes nothing at all. So the seed must be live

@@ -4,7 +4,7 @@
 **Changelog:** per-changeset, in `log/CS0##.md` (see `CLAUDE.md`'s document map).
 **This document describes what is SHIPPED (§2), not what is planned.**
 
-**File:** `asteroids-deluxe.html` — all game logic in one `<script>` block; runs by opening the file directly. As of CS011 the game may load optional external enhancement files (catalogued in `EXTERNAL-FILES.md`); each is non-essential and the game stays fully playable without it (best-effort load, non-fatal on failure).
+**File:** `orbital-overhaul.html` — all game logic in one `<script>` block; runs by opening the file directly. As of CS011 the game may load optional external enhancement files (catalogued in `EXTERNAL-FILES.md`); each is non-essential and the game stays fully playable without it (best-effort load, non-fatal on failure).
 **Stack:** Vanilla JavaScript, HTML5 Canvas 2D, Web Audio API. No build step, no npm runtime deps, no ES modules.
 **Logical resolution:** 1280×720 viewport (`VIEW_W×VIEW_H`), scaled to fit window with letterboxing (CSS scaling, canvas stays 1280×720 internally). As of v1.2 the simulation runs in a larger toroidal world (`WORLD_W×WORLD_H`, **2560×1440** as of v3.1 P1) that the viewport scrolls across, keeping the ship centered — see §2.11.
 
@@ -651,7 +651,7 @@ Nothing is "attached" any more — the working directory is live, and a session 
 4. **For an in-flight changeset:** the planning pair at the repo root — `PLANNED-FEATURES-CS0##.md` + `IMPLEMENTATION-PHASES-CS0##.md`, changeset-numbered, zero-padded to three digits. Shipped changesets' pairs move to `archive/`.
 5. **Everything else is pulled on demand, and the session says it did.** This GDD (§1–§3 before writing code), `DIFFICULTY-LEVERS.md`, `EXTERNAL-FILES.md`, `RATIONALE.md`, and the per-changeset history in `log/CS0##.md` — see `CLAUDE.md`'s document map for which is which. `log/` and `archive/` are **never** session context by default.
 
-The build itself (`asteroids-deluxe.html`) is edited in place with surgical `str_replace` edits, never delivered as a file.
+The build itself (`orbital-overhaul.html`) is edited in place with surgical `str_replace` edits, never delivered as a file.
 
 ### 5.2 Kickoff prompt template
 

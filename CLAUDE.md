@@ -115,7 +115,7 @@ Registry size, lever count, section-header count, `POWERUP_DROP_TYPES` length.
 Adding a knob updates one file. Never re-introduce a duplicate count assertion.
 
 ⛔ **New tests use `scratchpad/_harness.js`.** It owns loading
-`asteroids-deluxe.html`, extracting the `<script>` block, stubbing `window` /
+`orbital-overhaul.html`, extracting the `<script>` block, stubbing `window` /
 `document` / `performance` / `requestAnimationFrame` / `navigator` /
 `localStorage`, and the `assert` / `eq` / `close` / `skip` counters. Do not
 hand-roll a sandbox. Do not hand-roll world dimensions — read them from the
@@ -171,7 +171,7 @@ This rule has been paid for at least ten times. See `RATIONALE.md#pins`.
 
 ### Shape of the build
 
-⛔ **All game logic lives in one `<script>` block in `asteroids-deluxe.html`.**
+⛔ **All game logic lives in one `<script>` block in `orbital-overhaul.html`.**
 No ES modules, no bundler, no npm runtime deps. The file must open and play from
 `file://` by double-click. (`scratchpad/` and `tools/` are unconstrained — tests
 are Node CommonJS.)
@@ -338,7 +338,7 @@ explicitly whether the new hazard can damage the tow chain.**
 Read-order skeleton. GDD §3 is authoritative for what actually exists.
 
 ```
-asteroids-deluxe.html
+orbital-overhaul.html
   <style>          fixed 1280x720 canvas, letterboxed via CSS scaling
   <script>
     Constants      SHIP_/BULLET_/SHIELD_/DEBRIS_/GARBAGE_/CHAIN_/CARGO_/

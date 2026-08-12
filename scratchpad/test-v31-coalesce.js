@@ -50,7 +50,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const htmlPath = path.join(__dirname, "..", "asteroids-deluxe.html");
+const htmlPath = path.join(__dirname, "..", "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -735,14 +735,14 @@ console.log("(25) v3.3 P4 (9b): 'Waste Not' still keys on hunterCoalesced and st
 // =====================================================================
 // v3.4 P4 — the Magnet BUFF: screen-wide range, falloff, mass-scaled pull, clump budget.
 // v3.6 P2a retuned the falloff to linear (MAGNET_FALLOFF_POW 2->1), raised MAGNET_PULL_MIN 60->150,
-// and weakened MAGNET_DAMP 0.06->0.35 (the actual "underpowered" culprit — see asteroids-deluxe.html).
+// and weakened MAGNET_DAMP 0.06->0.35 (the actual "underpowered" culprit — see orbital-overhaul.html).
 // These drive the REAL update() pickup loop (magnet active) — no reimplementation of the pull.
 // A lone single/clump placed at ship.x + d (d > 0) has shortDelta(garbage->ship) = (-d, 0), so the
 // per-frame pull sets g.vx = -accel * dt exactly (starting from rest, damping term is 0). Thus the
 // observed acceleration is -g.vx * 60, comparable against the code's exact formula.
 // =====================================================================
 const DT = 1 / 60;
-// Mirror of the shipped pull formula (asteroids-deluxe.html update() magnet block).
+// Mirror of the shipped pull formula (orbital-overhaul.html update() magnet block).
 function expAccel(distance, mass) {
   const t = 1 - distance / MAGNET_RANGE;
   const a = MAGNET_PULL_MIN + (MAGNET_PULL - MAGNET_PULL_MIN) * Math.pow(t, MAGNET_FALLOFF_POW);

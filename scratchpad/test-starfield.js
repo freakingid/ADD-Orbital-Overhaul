@@ -32,7 +32,7 @@ const path = require("path");
 // the requirement, not a style choice.
 const { installSeed } = require("./_seeded-random.js");
 
-const htmlPath = path.join(__dirname, "..", "asteroids-deluxe.html");
+const htmlPath = path.join(__dirname, "..", "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }

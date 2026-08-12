@@ -51,7 +51,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -77,6 +77,7 @@ const PRE_P2_REF = "37bfcd1";
 let headSrcCache = null;
 function headSrc() {
   if (headSrcCache === null) {
+    // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
     headSrcCache = execFileSync("git", ["show", `${PRE_P2_REF}:asteroids-deluxe.html`],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString().match(/<script>([\s\S]*?)<\/script>/)[1];
   }

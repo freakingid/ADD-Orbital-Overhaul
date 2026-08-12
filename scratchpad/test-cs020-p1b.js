@@ -62,7 +62,7 @@ const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
 // CS020_HTML lets the mutation sweep point this file at a deliberately-broken build without editing it.
-const htmlPath = process.env.CS020_HTML || path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = process.env.CS020_HTML || path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -188,6 +188,7 @@ function build({ audio = true, src = scriptSrc, extra = FIXED_EXTRA, store = {} 
 let preFixSrcCache = null;
 function preFixSrc() {
   if (preFixSrcCache === null) {
+    // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
     const preHtml = execSync(`git show ${PRE_FIX_REF}:asteroids-deluxe.html`, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     const pm = preHtml.match(/<script>([\s\S]*?)<\/script>/);
     if (!pm) throw new Error(`could not extract <script> from ${PRE_FIX_REF}`);

@@ -66,7 +66,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -854,6 +854,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // a moved, renamed, deleted or reordered one still fails.
   {
     const P6F_REF = "82eae5a";   // cs-24 p6f: scaling hunter cap — this file's own commit
+    // ⛔ SETTLED: legacy path is CORRECT here — this ref predates the CS029 rename. Do not "fix".
     const headSrc = execFileSync("git", ["show", `${P6F_REF}:asteroids-deluxe.html`], { cwd: repoRoot, maxBuffer: 1 << 28 }).toString();
     const grab = (src, re) => { const mm = src.match(re); return mm ? mm[0] : null; };
     const leversRe = /const LEVERS = \[[\s\S]*?\n\];/;

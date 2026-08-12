@@ -48,7 +48,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 const m = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!m) { console.error("Could not find <script> block"); process.exit(1); }
@@ -852,7 +852,7 @@ function layChain(X, n) {
   // it. Pinned byte-for-byte against the whole damageShip body at HEAD, and its behaviour driven
   // directly: the deduction subtracts from game.score, clamps at 0, and does NOT go through addScore
   // (routing it there would let a score DROP trip the nextRepair milestone).
-  const headSrc = execFileSync("git", ["show", "HEAD:asteroids-deluxe.html"], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 })
+  const headSrc = execFileSync("git", ["show", "HEAD:orbital-overhaul.html"], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 })
     .toString().match(/<script>([\s\S]*?)<\/script>/)[1];
   const bodyOf = (src, sig) => { const i = src.indexOf(sig); return i < 0 ? "" : src.slice(i, src.indexOf("\n}\n", i)); };
   const sig = "function damageShip(";

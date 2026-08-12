@@ -22,7 +22,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const repoRoot = path.join(__dirname, "..");
-const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
+const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
 const extractScript = html => {
   const m = html.match(/<script>([\s\S]*?)<\/script>/);
   if (!m) throw new Error("Could not find <script> block");
