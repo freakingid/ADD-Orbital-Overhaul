@@ -6020,6 +6020,8 @@ const game = {
   lastScoreId: null,// v3.6 P6: id of the just-committed HighScores record, for the table highlight
   stats: resetGameStats(), // per-game achievement counters/flags (F9)
   toasts: [],       // active achievement-unlock toasts { name, life } (F9)
+  pendingAch: [],   // CS030 P1: unlocks banked since the last celebration-panel flush
+  celebration: null, // CS030 P1: the live celebration panel { items, scroll }, or null
   // Pause-menu state machine (F8): screen = null | "root" | "options" | "controls";
   // index = cursor for root/options; row/col = cursor for the controls grid;
   // rebinding = { action, device } while capturing a new binding, else null.
@@ -6269,6 +6271,8 @@ function startGame() {
   DiffLog.rows = []; // CS017 P2: dev log is per-run, never carries into a fresh game
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
+  game.pendingAch = [];           // CS030 P1: clear any lingering unflushed unlocks
+  game.celebration = null;        // CS030 P1: no panel carries into a fresh game
   game.score = 0;
   // CS024 P6d: the startLevel debug knob seeds the wave counter — game.wave = 0 lands nextWave() on
   // level 1 exactly as before (startLevel's def is 1). Any value above 1 sets the STICKY debugRun flag
@@ -7050,6 +7054,7 @@ const Achievements = {
   onUnlock(ach, tierIdx) {
     const label = (tierIdx === undefined) ? ach.name : ach.name + " — " + TIER_NAMES[tierIdx];
     game.toasts.push({ name: label, life: ACH_TOAST_TIME });
+    game.pendingAch.push({ id: ach.id, name: ach.name, desc: ach.desc, tierIdx, pool: ach.pool });
     AudioSys.achievement();
     this.save(); // persist the moment something is earned, so an unlock is never lost
   },

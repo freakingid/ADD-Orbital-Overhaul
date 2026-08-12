@@ -751,9 +751,17 @@ let X = null;
     // null;` (§6.3, the CS016 P3 both-places rule already applied to `game.deliveryCount`/
     // `game.offloadTimer` right above it). Filtered out here rather than weakening the comparison, so
     // any OTHER change to startGame() still fails this trap.
-    const dropDeliveryTickerLine = t => t.split("\n").filter(l => l.trim() !== "game.deliveryTicker = null;").join("\n");
+    // NARROWED AGAIN BY CS030 P1 — the achievement unlock collector adds two more CS016-P3-rule reset
+    // lines, `game.pendingAch = [];` and `game.celebration = null;`. Same treatment: filtered out by
+    // name, not a weakened comparison.
+    const DROPPED_LINES = new Set([
+      "game.deliveryTicker = null;",
+      "game.pendingAch = [];",
+      "game.celebration = null;",
+    ]);
+    const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     eq(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function startGame()"))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — startGame()'s EXECUTABLE source is unchanged apart from CS029 P4's new game.deliveryTicker reset");
+      "G: ⛔ TRAP 5 — startGame()'s EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset and CS030 P1's pendingAch/celebration resets");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

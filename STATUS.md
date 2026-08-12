@@ -1,23 +1,21 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.29 · Changeset: CS029 (closed) · Phase: — · Registry: 85 · Levers: 18
+Version: 1.0.0.29 · Changeset: CS030 · Phase: P1 · Registry: 85 · Levers: 18
 
-## Phase ledger — CS029
+## Phase ledger — CS030
 
-- P1 — renamed `asteroids-deluxe.html` -> `orbital-overhaul.html` (`git mv`); no behaviour change.
-- P2 — ESC now opens the pause menu at game over; the game-over footer collapsed to one
-  `drawMenuHint` line at `GAMEOVER_HINT_SIZE` (20, gate G6).
-- P3 — `tools/dock-float-lab.html`: the delivery-floater column lab, models A/B/C.
-- P4 — model C shipped: delivery floaters move to a static dock anchor; the towed branch
-  collapses to one per-visit accumulating ticker.
-- P5 — closing phase: canonical name "Orbital Overhaul" settled across every live doc, version
-  bumped to 1.0.0.29, GDD §2.10 rewritten for model C, both planning docs archived. See
-  `log/CS029.md` for the full narrative, including the CS026-P6-misinterpretation story.
+- P1 — the achievement unlock collector: `game.pendingAch` (flushed bucket, `{ id, name, desc,
+  tierIdx, pool }` per unlock) + `game.celebration` (`null`, reserved for the panel a later phase
+  builds). Fed from `onUnlock()`, the single unlock choke point — not gated on `game.debugRun`,
+  not filtered by `game.wave` (PLANNED-FEATURES-CS030.md §0.3/§0.4). Data only; no UI/draw/input.
 
 ## Working / verified
 
-- Full suite on a full clone: **113 files, 113 passed, 0 failed, 0 skipped, 0 timed out.**
-- Registry confirmed at **85**, `LEVERS` at **18** — CS029 added no knob and moved no lever.
-- CS029 closed. See `log/CS029.md` for phase-by-phase detail.
+- Full suite on a full clone: **114 files, 114 passed, 0 failed, 0 skipped, 0 timed out.**
+- Registry confirmed at **85**, `LEVERS` at **18** — P1 added no knob and moved no lever.
+- `test-cs026-p3.js`'s TRAP 5 byte-identity pin (startGame()'s executable source vs. its CS026 P3
+  parent) narrowed a second time, to also exclude P1's two new reset lines
+  (`game.pendingAch = []`, `game.celebration = null`) — same treatment CS029 P4 already used for
+  `game.deliveryTicker = null`.
 
 ## Known issues
 
@@ -64,9 +62,9 @@ None.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   (see `## Known issues`) could migrate to `execSource()` whenever one of them is next open for
   other reasons.
-- No changeset currently in flight. Next session picks up wherever Paul points it — profiles,
-  save/load, online leaderboards, and the achievement celebration panel (CS030–033) are previewed
-  in `archive/PLANNED-FEATURES-CS029.md` §10 but not yet scoped as their own changeset.
+- CS030 in flight (the achievement celebration panel). P1 (this session) built the collector only.
+  Remaining phases per `IMPLEMENTATION-PHASES-CS030.md`: the emblem table/lab (§4.2), the panel
+  itself (draw/state/scroll/input, §4.3), and the game-over + level-end integration points (§4.4).
 
 ## Playtest asks (open only — answered ones move to the log)
 
