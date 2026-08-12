@@ -115,11 +115,19 @@ Registry size, lever count, section-header count, `POWERUP_DROP_TYPES` length.
 Adding a knob updates one file. Never re-introduce a duplicate count assertion.
 
 ⛔ **New tests use `scratchpad/_harness.js`.** It owns loading
-`asteroids-deluxe.html`, extracting and comment-stripping the `<script>` block,
-stubbing `window` / `document` / `performance` / `requestAnimationFrame` /
-`navigator` / `localStorage`, and the `assert` / `eq` / `close` / `skip`
-counters. Do not hand-roll a sandbox. Do not hand-roll world dimensions — read
-them from the build via the harness.
+`asteroids-deluxe.html`, extracting the `<script>` block, stubbing `window` /
+`document` / `performance` / `requestAnimationFrame` / `navigator` /
+`localStorage`, and the `assert` / `eq` / `close` / `skip` counters. Do not
+hand-roll a sandbox. Do not hand-roll world dimensions — read them from the
+build via the harness.
+
+⚠ **SETTLED (CS027 P2, measured): `buildGame()` evaluates the RAW script. The
+comment strip is not in the build path and must not be put in one.** The suite's
+two-regex idiom deletes 80 live lines of the current build *and still parses* —
+one line comment contains `/*`, and the block-comment regex runs first. Comment
+stripping is a **text-analysis** job (so a tombstone can't be read as live code)
+and belongs to `execSource()`, a character scanner. No ordering of those two
+regexes is safe. See `_harness.js`'s header.
 
 - **Drive the real code.** Real `startGame` / `nextWave` / `update(1/60)` /
   `draw` / `resizeWorld`. **Never inline a copy of the logic under test.**

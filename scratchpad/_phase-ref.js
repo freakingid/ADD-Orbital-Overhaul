@@ -1,7 +1,9 @@
 // scratchpad/_phase-ref.js — the phase-reference helper for the headless suite.
 // Built by CS026 P1 per archive/PLANNED-FEATURES-CS026.md §4.
 //
-//   const { parentSource, ownCommit, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+//   const { parentSource, ownCommit, ownCommits, changedFiles, outsideScope, SKIP_TAG } = require("./_phase-ref.js");
+//
+// CS027 P2 added outsideScope() — see the section above module.exports.
 //
 // Node CommonJS, like everything else in scratchpad/. Not a no-modules violation — that rule binds
 // `asteroids-deluxe.html`, which never loads this.
@@ -150,4 +152,42 @@ function changedFiles(fromSha, toSha) {
   }
 }
 
-module.exports = { parentSource, ownCommit, ownCommits, changedFiles, SKIP_TAG, repoRoot };
+// ------------------------------------------------------------------------------------------
+// outsideScope(changed, extra) -> the changed files a phase is NOT allowed to have touched.
+// ------------------------------------------------------------------------------------------
+// Added by CS027 P2. The "nothing else moved" allowlist was written out longhand at every pin:
+//
+//   const outside = changed.filter(f =>
+//     !f.startsWith("scratchpad/") && f !== "STATUS.md" && f !== "asteroids-deluxe.html");
+//
+// Six files carried a copy, in five slightly different shapes. The BASE allowlist is the set
+// every phase may touch by standing instruction — the game file, its own tests, the build-reality
+// doc, and (from CS027 P4) the per-changeset log a closing phase writes. Anything else is the
+// phase's own business and comes in through `extra`.
+//
+// ⛔ PASS EXTRAS, DO NOT EDIT THE BASE. A closing phase's doc sweep is `outsideScope(changed,
+// ["ORBITAL-OVERHAUL-GDD.md", "DIFFICULTY-LEVERS.md", "CLAUDE.md"])`, not a wider base — the
+// base is what makes an unlisted file in an ordinary phase's diff visible.
+//
+// An entry ending in "/" is a directory prefix; anything else is an exact path. `changed` is
+// `changedFiles()`'s output, so a null (git unavailable) must be handled by the CALLER with a
+// loud SKIP — passing null here throws rather than quietly returning "nothing outside scope".
+const SCOPE_BASE = [
+  "asteroids-deluxe.html",
+  "STATUS.md",
+  "scratchpad/",
+  "log/",            // CS027 P4 onward: the per-changeset narrative log
+];
+function outsideScope(changed, extra) {
+  if (!Array.isArray(changed)) {
+    throw new TypeError("outsideScope: `changed` must be an array — a null from changedFiles() is a SKIP, not a pass");
+  }
+  const allow = SCOPE_BASE.concat(extra || []);
+  return changed.filter(f =>
+    !allow.some(a => (a.endsWith("/") ? f.startsWith(a) : f === a)));
+}
+
+module.exports = {
+  parentSource, ownCommit, ownCommits, changedFiles, outsideScope,
+  SKIP_TAG, SCOPE_BASE, repoRoot,
+};
