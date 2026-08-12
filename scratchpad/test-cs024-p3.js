@@ -194,8 +194,27 @@ function build({ audio = true, ctxLog = null } = {}) {
     "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
     scriptSrc + "\n;return { " + RETURN.join(", ") + " };"
   );
-  return factory(windowStub, documentStub, { now: () => 100000 }, () => 0,
+  const X = factory(windowStub, documentStub, { now: () => 100000 }, () => 0,
     { getGamepads: () => [] }, localStorageStub);
+  // ⛔ REPOINTED BY CS026 P3 — THIS FILE RUNS THE SMALL-WORLD FEATURE **OFF**, ON PURPOSE, AND THE REASON
+  // IS THAT EVERY BOARD IT STAGES IS LAID OUT WITH THE LOAD-TIME `WORLD_W`/`WORLD_H` SNAPSHOT.
+  // CS026 P3 puts levels 1..DEBUG.earlyWorldLevels in a 1920x1080 world, and this file's helpers —
+  // quiet() (sentinel debris at WORLD_W-40, ship at WORLD_W/2), layInertGarbage() and section (H)'s
+  // countPairs() grid — all measure in the 2560x1440 field world those constants name. Run at the new
+  // default, the boards fold over the smaller period and stop being the boards the sections describe:
+  // (H)'s "spread far apart so nothing merges" 300-piece grid merged and reported 32,802 pair visits
+  // instead of the derived C(300,2) = 44,850, and (I)'s inert 400-piece death-spectacle field came back
+  // at 404 rather than 400, which would read as "the cull ran during death" when it is really the
+  // staging wrapping onto itself.
+  //   The subject of this file is the garbage DENSITY CEILING — GARBAGE_SOFT_MAX / GARBAGE_HARD_MAX are
+  // plain counts that do not scale with the world period, so nothing about the claim depends on which
+  // size it is measured in. 0 is the feature's own documented off switch (no level satisfies
+  // `level <= 0`), and it restores exactly the world every one of these boards was written for.
+  // Re-laying every board off the live period was the alternative and was rejected: it would rewrite the
+  // staging of a file whose sections are pinned to exact counts, to test the same claim in a world the
+  // claim does not depend on. The ceiling under a genuinely small world is test-cs026-p3.js's business.
+  X.DEBUG.earlyWorldLevels = 0;
+  return X;
 }
 
 // Put the board in a state where update() has nothing to do but the system under test: no hazards, no
@@ -319,7 +338,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // wired). P5's registry rebuild adds 17 lever knobs + smallUfoChance, back to 32.
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 78, "A: the registry holds 78 value entries after CS026 P2 (P6c's three rows per lever + startLevel + debugOverride + the three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs + the three junkSplit lever knobs)");
+  eq(X.DEBUG_ENTRIES.length, 79, "A: the registry holds 79 value entries after CS026 P3 (P6c's three rows per lever + startLevel + debugOverride + the three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs + the three junkSplit lever knobs + earlyWorldLevels)");
 
   // Tombstones are checked POSITIVELY and separately, so a comment naming a dead symbol can never be
   // confused for a live one (the standing test-cs024-p1/p2 idiom).

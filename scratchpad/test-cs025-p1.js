@@ -764,9 +764,9 @@ function fullAndHolding(X, { level = 1 } = {}) {
 
   // Registry 72 -> 73 (CS025 P2 repoint: -> 75, its two magnet-push knobs; CS026 P2 repoint: -> 78, the
   // junkSplit lever's three knobs).
-  eq(X.DEBUG_ENTRIES.length, 78, "G: the registry holds 78 value entries (CS024 P6f's 72 + this one + CS025 P2's two + CS026 P2's three)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 78, "G: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 78, "G: ...and the native DEBUG map agrees");
+  eq(X.DEBUG_ENTRIES.length, 79, "G: the registry holds 79 value entries (CS024 P6f's 72 + this one + CS025 P2's two + CS026 P2's three + CS026 P3's earlyWorldLevels)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 79, "G: ...and DEBUG_VARS agrees");
+  eq(Object.keys(X.DEBUG).length, 79, "G: ...and the native DEBUG map agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "G: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "G: DEBUG_ROWS is the registry plus its four trailer rows");
 
@@ -816,7 +816,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
     assert(added.includes("magnetResumeDelay"), "G: P1's one id, magnetResumeDelay, was added");
     const notP1 = added.filter(id => id !== "magnetResumeDelay");
     const LATER = id => id.startsWith("magnetPush")            // CS025 P2
-      || /^junkSplit(Floor|Ceil|Steps)$/.test(id);            // CS026 P2
+      || /^junkSplit(Floor|Ceil|Steps)$/.test(id)             // CS026 P2
+      || id === "earlyWorldLevels";                           // CS026 P3
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

@@ -437,7 +437,7 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // the constant it derived from (retired outright, replaced by the coalescePause lever).
   // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 78, "A: TRAP 4 REPOINTED BY CS026 P2 — the debug registry is 78 value entries (three per lever + startLevel + debugOverride + P6f's three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs + the three junkSplit lever knobs)");
+  eq(X.DEBUG_ENTRIES.length, 79, "A: TRAP 4 REPOINTED BY CS026 P3 — the debug registry is 79 value entries (three per lever + startLevel + debugOverride + P6f's three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs + the three junkSplit lever knobs + earlyWorldLevels)");
   // The id filter below is deliberately LEFT WIDE (it still matches /gravity|drift/), because a
   // silently-restored drift knob is exactly what it exists to catch. CS024 P6's engineMassMult joins
   // the matched set only because /mass/i catches it — it is a POWERUP knob, nothing to do with the
@@ -722,7 +722,10 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // REPOINTED BY CS024 P1: every level runs at WORLD_SIZE_FIELD now (2560x1440), so the seam this section
   // exercises is the field world's seam. The claim — that wrap-aware measurement is load-bearing and a
   // naive one is wrong by a full world period — is unchanged and is proven against THIS world instead.
-  eq(W, 2560, "F: (setup) the level is running in the field-sized world, the only size left");
+  // REPOINTED AGAIN BY CS026 P3: "the only size left" is no longer true — levels 1..5 run at 1920x1080
+  // now. RING_LEVEL is 12, comfortably past that band, so this section still exercises the FIELD world's
+  // seam and the assertion is unchanged; only the parenthetical claim about there being one size is.
+  eq(W, 2560, "F: (setup) the level is running in the field-sized world (RING_LEVEL 12 is past CS026 P3's small-world band)");
 
   let worstNaiveErr = 0, cases = 0;
   // A GENUINE STRADDLE, built rather than hoped for: `a` sits a couple of px inside a corner and `b` a
@@ -1138,6 +1141,15 @@ const COALESCE_HARVEST_CEILING = 500000;
   // real breach on screen.
   {
     const S = withRandom(seededRandom(0x9F00), () => buildFrom(instrumented, { extra: ["__PROBE"] }));
+    // ⛔ REPOINTED BY CS026 P3 — THE SANDBOX RUNS THE SMALL-WORLD FEATURE **OFF**, and that is a claim
+    // about the instrument, not a dodge. Level 4 is inside CS026 P3's small-world band, so with the
+    // feature on this board would be laid over 1920x1080 instead of 2560x1440: at that density the 720
+    // bodies overlap on the very first frame, the pass destroys some of them, and the outer loop
+    // `continue`s past every dead body — so the counter reads 258,355 rather than C(720,2) = 258,840 and
+    // the section stops measuring what it claims to. The subject here is that the counter is QUADRATIC
+    // AND EXACT, which needs a board where all 720 survive the frame. 0 is the feature's own documented
+    // off switch, and it keeps this sandbox byte-identical to the one CS023 P2 shipped.
+    S.DEBUG.earlyWorldLevels = 0;
     withRandom(seededRandom(0x9F00), () => { S.startGame(); atWave(S, 4); });
     S.game.state = "playing"; S.game.paused = false;
     S.game.debris.length = 0;

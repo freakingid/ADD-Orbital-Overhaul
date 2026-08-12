@@ -67,10 +67,14 @@ const localStorageStub = {
   removeItem: k => { delete lsStore[k]; }
 };
 
+// REPOINTED BY CS026 P3: `worldDims` joins the list. WORLD_W/WORLD_H below are a MODULE-LOAD SNAPSHOT
+// (the 2560x1440 field world the game boots in), and levels 1-5 now run at 1920x1080 — so every place
+// this file needs the period the sim is actually running at goes through liveDims() instead. That is the
+// CS022 P1 idiom test-v31-world.js already uses; nothing about this file's subject changed.
 const RETURN = [
   "startGame", "update", "nextWave", "game", "dist2", "inScoopBox",
   "HunterSatellite", "Garbage", "Powerup",
-  "SHIP_RADIUS", "SCOOP_WIDTH", "SCOOP_DEPTH", "WORLD_W", "WORLD_H"
+  "SHIP_RADIUS", "SCOOP_WIDTH", "SCOOP_DEPTH", "WORLD_W", "WORLD_H", "worldDims"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -80,8 +84,11 @@ const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorS
 const {
   startGame, update, nextWave, game, dist2, inScoopBox,
   HunterSatellite, Garbage, Powerup,
-  SHIP_RADIUS, SCOOP_WIDTH, SCOOP_DEPTH, WORLD_W, WORLD_H
+  SHIP_RADIUS, SCOOP_WIDTH, SCOOP_DEPTH, WORLD_W, WORLD_H, worldDims
 } = A;
+
+// CS026 P3: the LIVE torus period, read off the game's own state rather than the load-time snapshot.
+const liveDims = () => worldDims(game.worldSize);
 
 // ================= (B) wave clears on debris-empty; Hunters/garbage carry over =================
 (function sectionB() {
@@ -95,13 +102,24 @@ const {
   // Wrap-toroidal antipode of the ship's spawn point — the maximum possible separation on this
   // world, so neither the Hunter's slow "last stand" drift nor the ship can reach the other within
   // the few seconds this test drives.
-  const oppX = (ship.x + WORLD_W / 2) % WORLD_W;
-  const oppY = (ship.y + WORLD_H / 2) % WORLD_H;
+  // REPOINTED BY CS026 P3: off the LIVE period, not the load-time snapshot. This is a level-1 field, so
+  // it is the small 1920x1080 world — computing the antipode with the 2560x1440 numbers would have put
+  // the Hunter at an arbitrary point rather than the far side.
+  const [liveW, liveH] = liveDims();
+  const oppX = (ship.x + liveW / 2) % liveW;
+  const oppY = (ship.y + liveH / 2) % liveH;
 
   const hunter = new HunterSatellite(oppX, oppY, 3);
   game.hunters = [hunter];
   const garbage = new Garbage(oppX, oppY, 0, 0);
   game.garbage = [garbage];
+  // CS026 P3: the antipode IS the maximum separation on this torus — half the diagonal, which is 1,101 px
+  // in the small early world (down from 1,469 px at 2560x1440). The 1,000 px bar still clears it by 100 px,
+  // and the ~2.6 s window is nowhere near enough for a last-stand drift to cross that, so the claim holds
+  // unweakened at the new size. Stated as a derived margin rather than a bare literal so a further shrink
+  // fails here loudly instead of quietly running the section against a reachable Hunter.
+  const antipode = Math.hypot(liveW / 2, liveH / 2);
+  assert(antipode > 1000, `B: sanity — the antipode of this world is ${antipode.toFixed(0)} px, still well outside reach`);
   assert(dist2(hunter, ship) > 1000 * 1000, "B: sanity — the test Hunter starts far outside any collision range of the ship");
   assert(!hunter.dead && !garbage.dead, "B: sanity — the test Hunter and garbage start alive");
 
@@ -122,7 +140,11 @@ const {
   console.log("(C) Scoop mouth also captures powerups: miss outside r at level 0, hit inside the mouth (outside r) at level >=1");
   startGame(); // fresh, deterministic ship: world center, angle -PI/2 (facing -y => forward axis is -dy, lateral is +dx)
   const ship = game.ship;
-  assert(ship.x === WORLD_W / 2 && ship.y === WORLD_H / 2 && ship.angle === -Math.PI / 2,
+  // REPOINTED BY CS026 P3: the centre of the LIVE world. A fresh run is level 1, which is now 1920x1080,
+  // so the deterministic spawn point is (960, 540) rather than (1280, 720) — the claim ("world centre,
+  // facing up") is unchanged, only the arithmetic that names the centre.
+  const [cW, cH] = liveDims();
+  assert(ship.x === cW / 2 && ship.y === cH / 2 && ship.angle === -Math.PI / 2,
     "C: sanity — fresh ship at world center facing up");
 
   // ---- sub-test 1: scoopLevel 0 — a powerup just outside the base pickup circle is NOT collected ----

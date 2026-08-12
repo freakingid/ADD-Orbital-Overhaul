@@ -131,7 +131,9 @@ const returnList = [
   "damageShip", "killShip", "quitToTitle", "openPause", "closePause",
   "applyPowerup", "AudioSys", "Powerup",
   "angleTo", "dist2", "shortDelta", "wrapPos",
-  "LOW_HP_THRESHOLD", "COLOR", "VIEW_W", "VIEW_H", "WORLD_W", "WORLD_H",
+  // CS026 P3: `worldDims` joins the list — WORLD_W/WORLD_H are a MODULE-LOAD SNAPSHOT of the 2560x1440
+  // field world, and a fresh run is level 1, which now runs at 1920x1080.
+  "LOW_HP_THRESHOLD", "COLOR", "VIEW_W", "VIEW_H", "WORLD_W", "WORLD_H", "worldDims",
   "POWERUP_HEALTH_AMOUNT", "SHIP_MAX_HP", "DMG_SMALL",
   "LOWHP_PULSE_RATE_MIN", "LOWHP_PULSE_RATE_MAX", "LOWHP_GAIN_MIN", "LOWHP_GAIN_MAX",
   "LOWHP_HARMONIC_GAIN_FRAC", "LOWHP_PARAM_RAMP"
@@ -146,7 +148,7 @@ const {
   damageShip, killShip, quitToTitle, openPause, closePause,
   applyPowerup, AudioSys, Powerup,
   angleTo, dist2, shortDelta, wrapPos,
-  LOW_HP_THRESHOLD, COLOR, VIEW_W, VIEW_H, WORLD_W, WORLD_H,
+  LOW_HP_THRESHOLD, COLOR, VIEW_W, VIEW_H, WORLD_W, WORLD_H, worldDims,
   POWERUP_HEALTH_AMOUNT, SHIP_MAX_HP, DMG_SMALL,
   LOWHP_PULSE_RATE_MIN, LOWHP_PULSE_RATE_MAX, LOWHP_GAIN_MIN, LOWHP_GAIN_MAX,
   LOWHP_HARMONIC_GAIN_FRAC, LOWHP_PARAM_RAMP
@@ -291,7 +293,10 @@ startGame(); isolate();
 game.state = "playing"; game.paused = false;
 game.ship.hp = LOW_HP_THRESHOLD;
 game.ship.x = 5; game.ship.y = 700;
-const hp2 = new Powerup(WORLD_W - 5, 700, "health"); // 10px away the wrap-aware way, ~WORLD_W-10 the naive way
+// CS026 P3: the LIVE period. The 10 px wrap-aware separation is world-size independent (ship 5 px inside
+// the left seam, powerup 5 px inside the right one); only the naive figure it is contrasted with moves.
+const liveW = () => worldDims(game.worldSize)[0];
+const hp2 = new Powerup(liveW() - 5, 700, "health"); // 10px away the wrap-aware way, a whole period the naive way
 game.powerups = [hp2];
 recCtx.log.length = 0;
 draw();
@@ -332,7 +337,12 @@ assert(findLowhpChevron().length === 0, "G: hidden (no chevron drawn) when no he
 
 game.powerups = [new Powerup(game.ship.x + 100, game.ship.y, "health")];
 game.chain = [{ x: game.ship.x, y: game.ship.y, px: game.ship.x, py: game.ship.y, spin: 0, spinRate: 0, mass: 1 }];
-game.dock = { x: game.ship.x + 300, y: game.ship.y + 300, radius: 60 };
+// CS026 P3: the stub gains a no-op draw(). draw() routes the dock through drawEntity(), which only
+// calls e.draw() for a body that needs a WRAPPED image — in the 2560x1440 world this stub never did,
+// so the missing method went unnoticed; 300 px past the ship in the 1920x1080 small world it does, and
+// the section died with a TypeError instead of asserting. The stub stays a stub; it just answers the
+// entity contract now.
+game.dock = { x: game.ship.x + 300, y: game.ship.y + 300, radius: 60, draw() {} };
 recCtx.log.length = 0;
 draw();
 assert(findLowhpChevron().length === 1, "G: chevron drawn (one health powerup) alongside the dock chevron, no throw");

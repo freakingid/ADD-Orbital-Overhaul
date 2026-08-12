@@ -145,7 +145,7 @@ const RETURN = [
   "DebrisSatellite", "HunterSatellite", "Saucer", "Garbage", "Dock",
   "DEBRIS_MASS", "DEBRIS_BOUNCE_MIN", "DEBRIS_BOUNCE_RESTITUTION", "DEBRIS_RADII", "DEBRIS_SPEEDS",
   "worldDims", "worldSizeFor", "resizeWorld", "applyWorldSize",
-  "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT", "WORLD_SIZE_MAX", "STAR_COUNT", "STAR_DENSITY",
+  "WORLD_SIZE_FIELD", "WORLD_SIZE_EARLY", "WORLD_SIZE_ORBIT", "WORLD_SIZE_MAX", "STAR_COUNT", "STAR_DENSITY",
   "SPAWN_MIN_DIST", "SPAWN_MAX_DIST", "SHIP_RADIUS", "SHIP_MAX_HP", "VIEW_W", "VIEW_H",
   "dist2", "angleTo", "shortDelta", "wrap", "wrapPos", "TAU",
   "AudioSys", "GAME_VERSION", "DEBUG", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS",
@@ -335,7 +335,7 @@ function atWave(X, w) {
   // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
   // REPOINTED BY CS024 P6e: 68 -> 69 (the debugOverride master toggle, spec §3), and the trailing-row
   // count 2 -> 4 (Reset all debug knobs to defaults + Reset high scores join Dump + Back, spec §2/§4).
-  eq(X.DEBUG_ENTRIES.length, 78, "B: the debug registry holds 78 value entries after CS026 P2");
+  eq(X.DEBUG_ENTRIES.length, 79, "B: the debug registry holds 79 value entries after CS026 P3");
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,
@@ -586,13 +586,25 @@ function atWave(X, w) {
   for (let w = 1; w <= 20; w++) {
     const spawned = withRandom(seededRandom(0xD100 + w), () => atWave(X, w));
 
-    // ONE WORLD SIZE. This is the phase's §3.6 claim, checked at every level rather than at a sample —
-    // levels 3, 6, 9, 12, 15 and 18 were all orbit levels and all ran at 3840x2160 before this phase.
-    eq(X.game.worldSize, X.WORLD_SIZE_FIELD, `D: level ${w} runs at WORLD_SIZE_FIELD`);
-    eq(X.worldSizeFor(w), X.WORLD_SIZE_FIELD, `D: ...and worldSizeFor(${w}) asks for it`);
+    // ⛔ REPOINTED BY CS026 P3 — THE MIRROR IMAGE, AT THE SAME STRENGTH. This section's claim was "ONE
+    // world size", checked at every level rather than at a sample, because levels 3, 6, 9, 12, 15 and 18
+    // were all ORBIT levels running at 3840x2160 before CS024 P1 deleted the archetype. CS026 P3 gives
+    // the size a schedule again — levels 1..DEBUG.earlyWorldLevels (default 5) at 1920x1080, level 6 on
+    // at 2560x1440 — so "one size" is simply false now and is restated as the TWO-BAND rule, still
+    // checked at every level 1..20 rather than at a sample.
+    //   WHAT CS024 P1 ACTUALLY CLAIMED SURVIVES UNWEAKENED, and it is worth being precise about which
+    // half is which: the archetype KEY is gone (the size is a function of the level NUMBER, not of a
+    // level's type), no level runs at WORLD_SIZE_ORBIT, and the spawn path below has no branch. A
+    // level-number band is not an archetype revival — levels 3, 6, 9 and 12 no longer differ from their
+    // neighbours by TYPE, and the ORBIT size is asserted absent below exactly as before.
+    const band = w <= X.DEBUG.earlyWorldLevels ? X.WORLD_SIZE_EARLY : X.WORLD_SIZE_FIELD;
+    const [bw, bh] = X.worldDims(band);
+    eq(X.game.worldSize, band, `D: level ${w} runs at the size its band asks for (${w <= X.DEBUG.earlyWorldLevels ? "EARLY" : "FIELD"})`);
+    eq(X.worldSizeFor(w), band, `D: ...and worldSizeFor(${w}) asks for it`);
+    assert(X.game.worldSize !== X.WORLD_SIZE_ORBIT, `D: level ${w}: ...and it is NOT the orbit size — CS024 P1's claim, untouched`);
     const [lw, lh] = X.liveDims();
-    eq(lw, 2560, `D: level ${w}: the live torus period is 2560 wide`);
-    eq(lh, 1440, `D: level ${w}: ...and 1440 tall`);
+    eq(lw, bw, `D: level ${w}: the live torus period is ${bw} wide`);
+    eq(lh, bh, `D: level ${w}: ...and ${bh} tall`);
     sizes.add(`${lw}x${lh}`);
 
     // ONE SPAWN RULE, consumed at every level. REPOINTED BY CS024 P4: the source of the number moved
@@ -615,7 +627,12 @@ function atWave(X, w) {
         `D: level ${w}: ...spawned inside the ship-relative ring [${X.SPAWN_MIN_DIST}, ${X.SPAWN_MAX_DIST}] (got ${dist.toFixed(1)})`);
     }
   }
-  eq([...sizes].join(","), "2560x1440", "D: EVERY level 1-20 ran at exactly one world size — no resize fired");
+  // REPOINTED BY CS026 P3: two sizes across 1-20, not one, and BOTH are named. The set is sorted so the
+  // assertion is about membership rather than about which level happened to be visited first. At the
+  // shipped default of 5 exactly one resize fires in this sweep, at the 5 -> 6 boundary.
+  eq([...sizes].sort().join(","), "1920x1080,2560x1440",
+    "D: EVERY level 1-20 ran at one of CS026 P3's TWO sizes — the small early world and the field world, and nothing else");
+  eq(X.DEBUG.earlyWorldLevels, 5, "D: (setup) ...at the knob's shipped default of 5, which is what puts the band boundary at 5 -> 6");
 
   // ...and a real frame loop over those levels never throws and never grows rail state.
   X.game.ship.hp = X.SHIP_MAX_HP;

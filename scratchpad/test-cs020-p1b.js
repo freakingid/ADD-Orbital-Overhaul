@@ -173,6 +173,15 @@ function build({ audio = true, src = scriptSrc, extra = FIXED_EXTRA, store = {} 
   const X = factory(windowStub, documentStub, { now: () => 100000 }, () => 0,
     { getGamepads: () => [] }, localStorageStub);
   X.__store = store;
+  // ⛔ REPOINTED BY CS026 P3 — THIS FILE RUNS THE SMALL-WORLD FEATURE **OFF**, ON PURPOSE. Same reasoning
+  // as its sibling test-cs020-p1.js, and the same one line: this file is a CROSS-BUILD comparison against
+  // the PRE_FIX_REF build at 09d443f, which predates the world-size seam entirely, and quiet() below
+  // parks the dock at the LOAD-TIME (1280, 720) snapshot precisely so both builds agree on the point.
+  // With the feature on, the live build would run level 1 at 1920x1080, where (1280, 720) is 360 px from
+  // the seam — which quiet()'s own CS022 P1 guard correctly refuses. 0 is the feature's documented off
+  // switch and restores exactly the build this file was written against. Guarded by an `in` check because
+  // the pre-fix build's DEBUG has no such key.
+  if (X.DEBUG && "earlyWorldLevels" in X.DEBUG) X.DEBUG.earlyWorldLevels = 0;
   return X;
 }
 
@@ -421,8 +430,8 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // REPOINTED AGAIN BY CS024 P6c: 33 -> 67 — three knobs per lever (floor/ceiling/step count) replace
   // P5's one flat row, so 17 lever rows become 51; the 16 non-lever knobs are untouched.
   const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 78, "A: DEBUG_VARS holds 78 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33; CS024 P6c -> 67; CS024 P6d -> 68; CS024 P6e -> 69; CS024 P6f -> 72; CS025 P1 -> 73; CS025 P2 -> 75; CS026 P2 -> 78)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 78, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  eq(valueEntries, 79, "A: DEBUG_VARS holds 79 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33; CS024 P6c -> 67; CS024 P6d -> 68; CS024 P6e -> 69; CS024 P6f -> 72; CS025 P1 -> 73; CS025 P2 -> 75; CS026 P2 -> 78; CS026 P3 -> 79)");
+  eq(DEBUG_VARS.filter(e => !e.header).length, 79, "A: ...and DEBUG_ENTRIES agrees with the registry");
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");

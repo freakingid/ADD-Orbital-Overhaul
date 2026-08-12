@@ -88,7 +88,10 @@ const returnList = ["startGame", "update", "game", "coalesceGarbage", "Garbage",
   "HUNTER_GARBAGE", "HUNTER_SMALL_MASS", "HUNTER_SCORE",
   "MAGNET_RANGE", "MAGNET_PULL", "MAGNET_PULL_MIN", "MAGNET_FALLOFF_POW", "MAGNET_DAMP", "MAGNET_PIECES", "POWERUP_BUDGET",
   "settings", "DEBUG",
-  "WORLD_W", "WORLD_H", "CARGO_BASE"];
+  // CS026 P3: `worldDims` joins the list. WORLD_W/WORLD_H are a MODULE-LOAD SNAPSHOT of the 2560x1440
+  // field world, and levels 1-5 now run at 1920x1080 — the two seam sections below (4 and 27) have to
+  // stage against the period the sim is ACTUALLY in, or they place bodies outside the world entirely.
+  "WORLD_W", "WORLD_H", "worldDims", "CARGO_BASE"];
 
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
@@ -102,7 +105,10 @@ const { startGame, update, game, coalesceGarbage, Garbage, DebrisSatellite, Hunt
   SCOOP_SPILL_KICK, SCOOP_WIDTH, SCOOP_DEPTH,
   HUNTER_GARBAGE, HUNTER_SMALL_MASS, HUNTER_SCORE,
   MAGNET_RANGE, MAGNET_PULL, MAGNET_PULL_MIN, MAGNET_FALLOFF_POW, MAGNET_DAMP, MAGNET_PIECES, POWERUP_BUDGET, settings, DEBUG,
-  WORLD_W, WORLD_H, CARGO_BASE } = G;
+  WORLD_W, WORLD_H, worldDims, CARGO_BASE } = G;
+// CS026 P3: the LIVE torus period, read off the game's own state rather than the load-time snapshot.
+const liveW = () => worldDims(game.worldSize)[0];
+const liveH = () => worldDims(game.worldSize)[1];
 // CS024 P3: the local historical `GARBAGE_DECAY = 22` literal STOOD HERE, kept after CS024 P2 deleted
 // the constant so this file's economy-relationship assertions still had a number to reason about.
 // It is gone now too: with decay removed from the game outright there is no lifetime for the inert
@@ -264,7 +270,9 @@ console.log("(4) a merge across the world seam works (wrap-aware)");
 {
   beginPlaying();
   const a = new Garbage(5, 700, 2, 0);
-  const b = new Garbage(WORLD_W - 3, 700, 1, 0); // wrap-distance to a is 8 px (< MERGE_DIST), naive dist is huge
+  // CS026 P3: off the LIVE period. The 8 px wrap-distance is independent of the world size (a at x=5,
+  // b 3 px inside the far edge), so the claim is unchanged — only the edge it is measured from moved.
+  const b = new Garbage(liveW() - 3, 700, 1, 0); // wrap-distance to a is 8 px (< MERGE_DIST), naive dist is huge
   a.coalesceDelay = 0; b.coalesceDelay = 0;
   const momVx = (a.mass * a.vx + b.mass * b.vx) / (a.mass + b.mass);
   game.garbage = [a, b];
@@ -785,8 +793,12 @@ console.log("(27) v3.4 P4 RANGE across a WORLD WRAP seam — the pull must use s
 {
   beginPlaying();
   game.powerBudget.magnet = MAGNET_PIECES;   // CS024 P6: budget, not a clock
-  game.ship.x = WORLD_W - 20; game.ship.y = 1000;   // ship hard against the right seam
-  // garbage at x=330: naive |2540-330| = 2210 px (WAY out of range); wrap distance = 2560-2210 = 350 px (in range).
+  // CS026 P3: off the LIVE period. The 350 px wrap-distance is world-size independent (the ship sits
+  // 20 px inside the right seam and the piece 330 px inside the left one, so the short way is always
+  // 350 px); only the naive figure it is contrasted with moves with the period.
+  game.ship.x = liveW() - 20; game.ship.y = 1000;   // ship hard against the right seam
+  // garbage at x=330: naive |ship.x-330| is most of a world period (WAY out of range); the wrap
+  // distance is 350 px (in range) at every world size.
   const g = new Garbage(330, game.ship.y, 0, 0);
   game.garbage = [g];
   update(DT);

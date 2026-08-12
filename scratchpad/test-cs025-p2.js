@@ -139,7 +139,11 @@ const RETURN = [
   "LEVERS", "leverState", "liveLevers", "GAME_VERSION",
   "GARBAGE_PICKUP", "GARBAGE_MERGE_DIST", "GARBAGE_SOFT_MAX", "GARBAGE_HARD_MAX",
   "MAGNET_RANGE", "MAGNET_PICKUP_MULT", "MAGNET_PIECES", "HUNTER_COALESCE_COUNT",
-  "SCOOP_SPILL_KICK", "DOCK_OFFLOAD_INTERVAL", "WORLD_W", "WORLD_H", "TAU",
+  // CS026 P3: `worldDims` joins the list. WORLD_W/WORLD_H are a MODULE-LOAD SNAPSHOT of the 2560x1440
+  // field world the game boots in, and levels 1-5 now run at 1920x1080 — so every site in this file that
+  // is really asking "where is the seam?" goes through liveW()/liveH() below instead. That is the
+  // CS022 P1 idiom test-v31-world.js already uses.
+  "SCOOP_SPILL_KICK", "DOCK_OFFLOAD_INTERVAL", "WORLD_W", "WORLD_H", "worldDims", "TAU",
   'probe: (n) => { try { return eval(n); } catch (e) { return "__ReferenceError__"; } }',
 ];
 
@@ -206,6 +210,13 @@ function angDiff(a, b) {
 }
 
 // ---- Staging helpers ----
+// CS026 P3: the LIVE torus period, read off the game's own state rather than the load-time snapshot.
+// Levels 1-5 run at 1920x1080 now, and every staging site below that names a seam, a world centre or a
+// scatter modulus has to mean the world the sim is ACTUALLY in — otherwise "20 px inside the right edge"
+// lands 620 px outside the world and the section stops measuring the seam it says it measures.
+const liveW = X => X.worldDims(X.game.worldSize)[0];
+const liveH = X => X.worldDims(X.game.worldSize)[1];
+
 // Put the board in a state where update() has nothing to do but the system under test (the CS024 P3 /
 // P6f / CS025 P1 idiom). One parked debris is kept deliberately — an EMPTY debris array starts the
 // wave-clear timer, which would fire nextWave() mid-measurement and move cargoMax out from under the
@@ -220,7 +231,7 @@ function quiet(X) {
   g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
   g.garbage.length = 0; g.powerups.length = 0; g.particles.length = 0; g.floaters.length = 0;
   g.saucerTimer = 1e6; g.healthTimer = 1e6; g.sweepPause = 0;
-  g.ship.x = X.WORLD_W / 2; g.ship.y = X.WORLD_H / 2;
+  g.ship.x = liveW(X) / 2; g.ship.y = liveH(X) / 2;
   g.ship.vx = 0; g.ship.vy = 0; g.ship.dead = false; g.ship.hp = 250; g.ship.angle = 0;
   g.camera = { x: g.ship.x, y: g.ship.y };
   if (g.dock) { g.dock.x = 200; g.dock.y = 200; }
@@ -498,11 +509,17 @@ function stepProbe(X, p, dt = 1 / 60) {
   const g = quiet(X);
   X.applyDebug("magnetPushSpread", 0);     // a coherent radial shell, so the direction is exact
   X.applyPowerup("magnet");
-  eq(X.WORLD_W, 2560, "D: (setup) the field world is 2560 wide");
+  // REPOINTED BY CS026 P3: the setup pinned the load-time snapshot (2560) and then staged the seam off
+  // it. A fresh run is level 1, which now runs at 1920x1080, so the snapshot is no longer the live
+  // period and `WORLD_W - 20` would have put the ship 620 px OUTSIDE the world. The claim under test is
+  // about wrap-awareness at THE seam, whichever seam that is, so it is now stated against the live one —
+  // and the setup asserts which world it is in rather than which literal it expects.
+  const W = liveW(X), H = liveH(X);
+  eq(W, 1920, "D: (setup) level 1 runs in CS026 P3's small world, 1920 wide — this is the seam under test");
 
   // The ship 20 px inside the right edge; the piece 30 px past the LEFT edge — 50 px apart across the
-  // seam, and 2510 px apart if you subtract naively.
-  g.ship.x = X.WORLD_W - 20; g.ship.y = X.WORLD_H / 2;
+  // seam, and a whole world period apart if you subtract naively.
+  g.ship.x = W - 20; g.ship.y = H / 2;
   g.camera = { x: g.ship.x, y: g.ship.y };
   fillChainFrame(X);
 
@@ -510,7 +527,7 @@ function stepProbe(X, p, dt = 1 / 60) {
   p.x = 30; p.y = g.ship.y;                 // placed AFTER the fill, so the gate can never hook it
   p.vx = 0; p.vy = 0;
   const naiveDx = p.x - g.ship.x;
-  eq(Math.sign(naiveDx), -1, "D: (control) naive subtraction gives dx = -2510 — a NEGATIVE x direction");
+  eq(Math.sign(naiveDx), -1, `D: (control) naive subtraction gives dx = ${naiveDx} — a NEGATIVE x direction`);
   assert(Math.abs(naiveDx) > X.MAGNET_RANGE, "D: (control) ...and a distance far beyond MAGNET_RANGE");
 
   X.update(1 / 60);                          // the rising edge
@@ -558,11 +575,12 @@ function stepProbe(X, p, dt = 1 / 60) {
     const gy = quiet(Y);
     Y.applyDebug("magnetPushSpread", 0);
     Y.applyPowerup("magnet");
-    gy.ship.x = Y.WORLD_W / 2; gy.ship.y = 15;
+    // CS026 P3: the live period again — the vertical seam of the world this level is actually in.
+    gy.ship.x = liveW(Y) / 2; gy.ship.y = 15;
     gy.camera = { x: gy.ship.x, y: gy.ship.y };
     fillChainFrame(Y);
     const q = piece(Y, 0, 0);
-    q.x = gy.ship.x; q.y = Y.WORLD_H - 45;    // 60 px BELOW the ship, across the top seam
+    q.x = gy.ship.x; q.y = liveH(Y) - 45;     // 60 px BELOW the ship, across the top seam
     q.vx = 0; q.vy = 0;
     const naiveDy = q.y - gy.ship.y;
     eq(Math.sign(naiveDy), 1, "D: (control) naive dy is POSITIVE across the vertical seam");
@@ -949,8 +967,12 @@ function stepProbe(X, p, dt = 1 / 60) {
   function countVisits(X, n) {
     const g = X.game;
     for (let i = 0; i < n; i++) {
+      // CS026 P3: scattered over the LIVE period, so every piece really is inside the world the
+      // burst measures in. Under the load-time 2560x1440 snapshot a third of them landed outside a
+      // level-1 1920x1080 world, where the test's own wrap arithmetic below and the game's shortDelta
+      // would have been answering about different boards.
       const p = new X.Garbage(
-        (i * 137) % X.WORLD_W, (i * 271) % X.WORLD_H, 0, 0);
+        (i * 137) % liveW(X), (i * 271) % liveH(X), 0, 0);
       p.coalesceDelay = SENTINEL;
       g.garbage.push(p);
     }
@@ -970,8 +992,9 @@ function stepProbe(X, p, dt = 1 / 60) {
     eq(visits, 220, "J: ⛔ exactly 220 visits at the 220-piece ceiling — one per piece, no nested walk");
     // ...and only the in-range ones were actually written, which is the other half of the cost claim.
     const inRange = g.garbage.filter(p => {
-      let dx = Math.abs(p.x - g.ship.x); if (dx > X.WORLD_W / 2) dx = X.WORLD_W - dx;
-      let dy = Math.abs(p.y - g.ship.y); if (dy > X.WORLD_H / 2) dy = X.WORLD_H - dy;
+      const w = liveW(X), h = liveH(X);   // CS026 P3: wrap-fold over the LIVE period
+      let dx = Math.abs(p.x - g.ship.x); if (dx > w / 2) dx = w - dx;
+      let dy = Math.abs(p.y - g.ship.y); if (dy > h / 2) dy = h - dy;
       return dx * dx + dy * dy < X.MAGNET_RANGE * X.MAGNET_RANGE;
     });
     const written = g.garbage.filter(p => p.coalesceDelay !== SENTINEL);
@@ -997,7 +1020,7 @@ function stepProbe(X, p, dt = 1 / 60) {
     X.applyPowerup("magnet");
     const probe = makeProbe(X, 120, 0);
     for (let i = 0; i < X.GARBAGE_SOFT_MAX - 1; i++) {
-      const p = new X.Garbage((i * 137) % X.WORLD_W, (i * 271) % X.WORLD_H, 0, 0);
+      const p = new X.Garbage((i * 137) % liveW(X), (i * 271) % liveH(X), 0, 0);   // CS026 P3: live period
       p.coalesceDelay = SENTINEL;    // a quiet field: the measurement is the burst count, not coalescence
       g.garbage.push(p);
     }
@@ -1081,10 +1104,10 @@ function stepProbe(X, p, dt = 1 / 60) {
   }
 
   // Registry 73 -> 75 (CS026 P2 repoint: -> 78, the junkSplit lever's three knobs).
-  eq(X.DEBUG_ENTRIES.length, 78, "K: the registry holds 78 value entries (CS025 P1's 73 + these two + CS026 P2's three)");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 78, "K: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 78, "K: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 78, "K: ...and the display map agrees");
+  eq(X.DEBUG_ENTRIES.length, 79, "K: the registry holds 79 value entries (CS025 P1's 73 + these two + CS026 P2's three + CS026 P3's earlyWorldLevels)");
+  eq(X.DEBUG_VARS.filter(v => !v.header).length, 79, "K: ...and DEBUG_VARS agrees");
+  eq(Object.keys(X.DEBUG).length, 79, "K: ...and the native DEBUG map agrees");
+  eq(Object.keys(X.debugShown).length, 79, "K: ...and the display map agrees");
   eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "K: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "K: DEBUG_ROWS is the registry plus its four trailer rows");
   // CS026 P2 repoint: 17 -> 18 (junkSplit). K's claim — that NEITHER of P2's two magnet knobs is a
@@ -1137,7 +1160,8 @@ function stepProbe(X, p, dt = 1 / 60) {
     // ids were added" is a statement about the working tree rather than about P2. P2's own claim — that
     // it added exactly magnetPushKick and magnetPushSpread, in that order — is what is checked here; the
     // order pin below (the real append-only claim) is untouched. Later phases are named, not wildcarded.
-    const LATER = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id);   // CS026 P2
+    const LATER = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id)    // CS026 P2
+      || id === "earlyWorldLevels";                                 // CS026 P3
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))

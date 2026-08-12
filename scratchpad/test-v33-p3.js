@@ -82,7 +82,10 @@ const returnList = ["startGame", "update", "game", "Garbage", "applyPowerup", "d
   "DebrisSatellite", "HunterSatellite", "Saucer", "Achievements",
   "POWERUP_DROP_WEIGHTS", "POWERUP_DROP_TYPES", "POWERUP_DECAY",
   "SCOOP_MAX_LEVEL", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
-  "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H",
+  // CS026 P3: `worldDims` joins the list. WORLD_W/WORLD_H are a MODULE-LOAD SNAPSHOT of the 2560x1440
+  // field world; startGame() now drops a fresh run into the 1920x1080 small world, so every seam and
+  // centre this file stages goes through liveDims() below instead.
+  "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H", "worldDims",
   "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W", "inScoopBox",
   "liveLevers"];   // CS026 P2: the Debris split count is a lever now — see (11)
 const wrapped = new Function(
@@ -94,7 +97,9 @@ const { startGame, update, game, Garbage, applyPowerup, damageShip,
   DebrisSatellite, HunterSatellite, Saucer, Achievements,
   POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, SCOOP_MAX_LEVEL,
   SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_HITS_PER_LEVEL, SCOOP_MAX_BONUS, GARBAGE_PICKUP, SHIP_RADIUS,
-  WORLD_W, WORLD_H, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox, liveLevers } = G;
+  WORLD_W, WORLD_H, worldDims, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox, liveLevers } = G;
+// CS026 P3: the LIVE torus period, read off the game's own state rather than the load-time snapshot.
+const liveDims = () => worldDims(game.worldSize);
 const scriptHasPowerupDropChance = /const\s+POWERUP_DROP_CHANCE\b/.test(scriptSrc);
 
 let passed = 0, failed = 0;
@@ -118,16 +123,21 @@ function placeShip(angle, sx, sy) {
 // Put a single garbage at ship-local (forward, lateral) — inverse of inScoopBox's projection, wrapped.
 function placeGarbage(forward, lateral) {
   const s = game.ship, ca = Math.cos(s.angle), sa = Math.sin(s.angle);
-  const wx = wrapC(s.x + forward * ca - lateral * sa, WORLD_W);
-  const wy = wrapC(s.y + forward * sa + lateral * ca, WORLD_H);
+  const [w, h] = liveDims();   // CS026 P3: fold onto the LIVE period, not the load-time snapshot
+  const wx = wrapC(s.x + forward * ca - lateral * sa, w);
+  const wy = wrapC(s.y + forward * sa + lateral * ca, h);
   const g = new Garbage(wx, wy);
   game.garbage = [g];
   return g;
 }
 // Set scoop level, run one real update frame, report whether the single garbage got hooked.
-function captured(level, forward, lateral, angle = 0, sx = WORLD_W / 2, sy = WORLD_H / 2) {
+// CS026 P3: sx/sy may be a NUMBER or a FUNCTION of the live period, resolved AFTER beginPlaying().
+// It has to be a function for the seam cases: the live period is not knowable at the call site,
+// because beginPlaying() -> startGame() is what sets it (a fresh run is level 1, the small world).
+function captured(level, forward, lateral, angle = 0, sx = w => w / 2, sy = (w, h) => h / 2) {
   beginPlaying();
-  placeShip(angle, sx, sy);
+  const [w, h] = liveDims();
+  placeShip(angle, typeof sx === "function" ? sx(w, h) : sx, typeof sy === "function" ? sy(w, h) : sy);
   game.scoopLevel = level; game.scoopHits = 0;
   placeGarbage(forward, lateral);
   update(1 / 60);
@@ -158,7 +168,7 @@ assert(POWERUP_DROP_WEIGHTS && POWERUP_DROP_WEIGHTS.scoop === 2 && POWERUP_DROP_
 console.log("(1) applyPowerup('scoop') climbs then caps + pays a bonus");
 {
   beginPlaying();
-  placeShip(0, WORLD_W / 2, WORLD_H / 2);
+  placeShip(0, liveDims()[0] / 2, liveDims()[1] / 2);   // CS026 P3: the LIVE world centre
   game.scoopLevel = 0; game.scoopHits = 0; game.score = 0;
   const picked0 = game.stats.powerupsPicked;
   for (let i = 1; i <= SCOOP_MAX_LEVEL; i++) {
@@ -181,11 +191,12 @@ assert(30 > GARBAGE_PICKUP, "2: sanity — forward 30 is outside the base GARBAG
 for (const ang of [0, Math.PI / 2, Math.PI, -Math.PI / 2, 1.0, 2.6]) {
   assert(captured(5, 30, 0, ang), `2: L5 mouth captures a canister at forward 30 (heading ${ang.toFixed(2)})`);
 }
-// across the world x-seam: ship 5px shy of WORLD_W facing +x, garbage 30px ahead (wraps to x~25)
-assert(captured(5, 30, 0, 0, WORLD_W - 5, WORLD_H / 2),
+// across the world x-seam: ship 5px shy of the right edge facing +x, garbage 30px ahead (wraps to x~25).
+// CS026 P3: the edge is the LIVE one, passed as a function so it resolves after the run is started.
+assert(captured(5, 30, 0, 0, w => w - 5),
   "2: the box is wrap-aware — captures across the world x-seam");
 // across the world y-seam facing +y
-assert(captured(5, 30, 0, Math.PI / 2, WORLD_W / 2, WORLD_H - 5),
+assert(captured(5, 30, 0, Math.PI / 2, w => w / 2, (w, h) => h - 5),
   "2: the box captures across the world y-seam too");
 // a lateral-but-in-mouth canister (within L5 half-width 27) still counts
 assert(captured(5, 25, 20, 0), "2: L5 mouth captures a canister at forward 25, lateral 20 (inside 27 half-width)");
@@ -210,7 +221,7 @@ assert(captured(5, 30, 0, 0) && !captured(0, 30, 0, 0),
 console.log("(5) scoop decays by damage: 5 hits = -1 level, 4 = none, 10 = -2; level 0 harmless");
 {
   beginPlaying();
-  const s = placeShip(0, WORLD_W / 2, WORLD_H / 2);
+  const s = placeShip(0, liveDims()[0] / 2, liveDims()[1] / 2);   // CS026 P3: the LIVE world centre
   game.scoopLevel = 3; game.scoopHits = 0;
   const hit = () => { s.invuln = 0; return damageShip(10, s.x + 100, s.y); }; // non-lethal, i-frames cleared
   hit(); hit(); hit(); hit();
@@ -229,7 +240,7 @@ console.log("(5) scoop decays by damage: 5 hits = -1 level, 4 = none, 10 = -2; l
 console.log("(6) a shielded / i-frame hit does NOT count toward scoopHits");
 {
   beginPlaying();
-  const s = placeShip(0, WORLD_W / 2, WORLD_H / 2);
+  const s = placeShip(0, liveDims()[0] / 2, liveDims()[1] / 2);   // CS026 P3: the LIVE world centre
   game.scoopLevel = 2; game.scoopHits = 0;
   s.shieldOn = true;
   const r1 = damageShip(10, s.x + 100, s.y);
@@ -289,7 +300,7 @@ console.log("(10) the drawn scoop V's points match SCOOP_DEPTH/WIDTH; inScoopBox
 {
   for (let lvl = 1; lvl <= SCOOP_MAX_LEVEL; lvl++) {
     beginPlaying();
-    const s = placeShip(0, WORLD_W / 2, WORLD_H / 2);
+    const s = placeShip(0, liveDims()[0] / 2, liveDims()[1] / 2);   // CS026 P3: the LIVE world centre
     game.scoopLevel = lvl;
     s.invuln = 0; // not blinking — the V is drawn in the !blink branch
 

@@ -571,7 +571,7 @@ function evalSlice(literal) {
   // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
   // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
   // CS024 P6f repoint: +3 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — non-levers, HUNTER section).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 78, "G: TRAP 2 — 78 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs, +3 CS026 P2 junkSplit lever knobs)");
+  eq(X.DEBUG_VARS.filter(e => e.id).length, 79, "G: TRAP 2 — 79 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs, +3 CS026 P2 junkSplit lever knobs, +1 CS026 P3 earlyWorldLevels)");
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {
@@ -604,7 +604,11 @@ function evalSlice(literal) {
       .replace(/,magnetPushKick,magnetPushSpread/, "")
       // CS026 P2 repoint: and the junkSplit lever's collapsed key (JUNK section, appended after
       // junkSpeedSmall) — CS026 P2's lever, not P6b's. Same reasoning a fifth time.
-      .replace(/,junkSplit/, "");
+      .replace(/,junkSplit/, "")
+      // CS026 P3 repoint: and earlyWorldLevels (GLOBAL, inserted after debrisBounceRestitution and
+      // before P6d's startLevel, which the `,startLevel$` strip above has already taken off the tail) —
+      // CS026 P3's row, not P6b's. Same reasoning a sixth time.
+      .replace(/,earlyWorldLevels$/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it

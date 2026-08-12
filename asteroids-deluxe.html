@@ -114,10 +114,29 @@ const VIEW_W = 1280, VIEW_H = 720;      // visible viewport = canvas size
 // ANY VALUE DERIVED FROM THEM AND CACHED AT MODULE LOAD IS A BUG. STAR_COUNT/`stars` was the only
 // one and §4.3 handles it (generated once for WORLD_SIZE_MAX, filtered per world into starsActive).
 // Everything else reads them live, inside a function, which is what makes the resize safe.
+// CS026 P3 (spec §2.2): THE SMALL EARLY-LEVEL WORLD. Levels 1..DEBUG.earlyWorldLevels (default 5) run
+// here; level 6 on runs at WORLD_SIZE_FIELD. 1920x1080 — k = 1.5, so the dimensions are exact integers
+// like every other entry in this table. The problem it answers is the TAIL, not the combat: at 2560x1440
+// the viewport shows 25% of the world and the farthest a body can be from the ship is 1,469 px, so the
+// last two or three smalls of an early level are a search rather than a fight. At 1920x1080 it is 44%
+// and 1,101 px.
+//
+// ⛔ 2.25 IS THE FLOOR OF THIS TABLE AND THAT IS A HARD RENDERING BOUND, NOT A TASTE JUDGEMENT. Do not
+// try a smaller size here later without fixing drawEntity() first. Each body is drawn at EXACTLY ONE
+// wrapped image, and onScreen()'s reach is VIEW/2 + CULL_MARGIN(100) + radius — so for a large satellite
+// (r = 46) the world's HALF-period must clear 786 x 506 or the body clips at the seam instead of
+// crossing it. At 1920x1080 the half-period is 960 x 540 and clears both. At 1600x900 (size 1.5625) it
+// is 800 x 450: 450 < 506, and bodies clip at the top and bottom seams. At 1280x720 (size 1) they clip
+// AND a SPAWN_MAX_DIST spawn lands 80 px from the ship wrap-aware — inside SPAWN_MIN_DIST and inside
+// DOCK_RADIUS — so a fully-visible world would need the flat spawn/dock rings scaled too, which is a
+// different and much larger change than returning a smaller number.
+const WORLD_SIZE_EARLY = 2.25;          // early levels: 1920x1080 — the floor, see above
 const WORLD_SIZE_FIELD = 4;             // field levels: 2560x1440 — deliberately UNCHANGED from the
                                         // v3.1 P1 shrink (spec C4: the bigger world was tried and
                                         // rejected, and the spawn/dock rings are flat constants that
-                                        // would just leave more dead space in it)
+                                        // would just leave more dead space in it). CS026 P3: still the
+                                        // size every level from 6 on runs at, and still the size
+                                        // startGame() boots in — only levels 1-5 moved.
 const WORLD_SIZE_ORBIT = 9;             // 3840x2160 — the 3x3 world. CS024 P1: NO LEVEL RUNS AT THIS SIZE
                                         // ANY MORE (worldSizeFor returns WORLD_SIZE_FIELD
                                         // unconditionally now that the orbit archetype is gone), and the
@@ -131,7 +150,14 @@ const WORLD_SIZE_ORBIT = 9;             // 3840x2160 — the 3x3 world. CS024 P1
                                         // not rename it for tidiness — a rename here is a diff across
                                         // every world-size test for no behavioural gain.
 const WORLD_SIZE_MAX = Math.max(WORLD_SIZE_FIELD, WORLD_SIZE_ORBIT); // largest size in the table; the
-                                        // starfield is generated once for THIS (§4.3/FLAG-CS022-d)
+                                        // starfield is generated once for THIS (§4.3/FLAG-CS022-d).
+                                        // CS026 P3: WORLD_SIZE_EARLY is DELIBERATELY not in this
+                                        // Math.max, and the expression is untouched. 2.25 is below both
+                                        // operands, so adding it could not change the answer — and the
+                                        // starfield contract is "generate once at the biggest size,
+                                        // filter per world in rebuildStarsActive()", which a SMALLER
+                                        // world is already the easy case for (fewer active stars, a
+                                        // strict sub-region of the same sky, no new roll).
 let WORLD_W = 2560, WORLD_H = 1440;     // simulation space (the wrap boundary). WAS `const` through
                                         // CS021. Boots at the FIELD size and must always equal
                                         // worldDims(WORLD_SIZE_FIELD) — asserted headlessly.
@@ -144,23 +170,40 @@ function worldDims(size) { const k = Math.sqrt(size); return [VIEW_W * k, VIEW_H
 // CS022 P1 (FORK-CS022-C): a pure function of the level number, evaluated fresh at every wave boundary
 // — never a stored schedule.
 //
-// CS024 P1 (spec §3.6/§4.1, consequence 3): IT RETURNS WORLD_SIZE_FIELD UNCONDITIONALLY. The archetype
-// key is gone with the orbit levels, so every level now runs at 2560x1440 and nextWave()'s
-// `nextWorldSize !== game.worldSize` compare never fires in normal play.
+// CS024 P1 (spec §3.6/§4.1, consequence 3): IT RETURNED WORLD_SIZE_FIELD UNCONDITIONALLY. The archetype
+// key went with the orbit levels, so for two changesets every level ran at 2560x1440 and nextWave()'s
+// `nextWorldSize !== game.worldSize` compare never fired in normal play.
 //
-// THE WHOLE SIZE SEAM IS KEPT LIVE ANYWAY, AND THAT IS A DELIBERATE INSTRUCTION, NOT AN OVERSIGHT: this
+// THE WHOLE SIZE SEAM WAS KEPT LIVE ANYWAY, AND THAT WAS A DELIBERATE INSTRUCTION, NOT AN OVERSIGHT: this
 // function, resizeWorld(), applyWorldSize(), worldDims(), the size table, WORLD_SIZE_MAX and
 // WORLD_SIZE_ORBIT's slot in that table all stay. Paul's explicit call — the 9x path (3840x2160) is to
-// remain available and testable for possible future use, at near-zero cost. Two things keep it from
+// remain available and testable for possible future use, at near-zero cost. Two things kept it from
 // rotting into untested dead code: WORLD_SIZE_MAX still reads WORLD_SIZE_ORBIT (so STAR_COUNT is still
 // generated at the largest table size and filtered per world, unchanged), and test-cs024-p1.js §E drives
 // resizeWorld(WORLD_SIZE_ORBIT) directly against a live field and asserts the same six-step contract
 // CS022 P1 shipped. Do not "clean up" any of it on the grounds that nothing calls it.
 //
-// `level` is now unused and is KEPT: every call site passes one, and the parameter is the seam a future
-// per-level scheme would re-enter through (the orbitRadiusStepFor(count) precedent, retired this phase).
+// ⛔ CS026 P3 (spec §2.2): `level` IS LIVE AGAIN, AND SO IS resizeWorld() IN REAL PLAY. CS024 P1's note
+// here said the parameter was kept as "the seam a future per-level scheme would re-enter through" — this
+// is that scheme, and it is no longer hypothetical. Levels 1..DEBUG.earlyWorldLevels run in the small
+// 1920x1080 world; every level after runs in the 2560x1440 field world, exactly as before.
+//
+// TWO CONSEQUENCES WORTH NAMING AT THE SITE, because both were dormant for two changesets:
+//   * resizeWorld() — the six-step carried-entity re-homing pass — now FIRES IN LIVE PLAY, once per run,
+//     at the level 5 -> 6 boundary, WITH A FULL FIELD CARRIED ACROSS IT (debris, Hunters, garbage,
+//     powerups, particles, floaters, the tow chain). That transition is the one place it runs, and it is
+//     what test-cs026-p3.js §E drives for real. Its body is UNCHANGED by this phase — this gave it a
+//     caller, not an edit.
+//   * The knob is read LIVE, at the wave boundary, never cached. DEBUG.earlyWorldLevels = 0 turns the
+//     feature off completely (no level satisfies `level <= 0`, so this returns WORLD_SIZE_FIELD for
+//     everything and the build behaves exactly as CS025 shipped) — that is the gate's clean A/B, and it
+//     is why the comparison is `<=` against a count of levels rather than a `<` against a boundary.
+//
+// The registry entry IS the source of truth for the default (5) — no shipped constant backs it, the
+// chainGuardIntercepts idiom. This reads DEBUG at CALL time, not at module load, which is what makes
+// that legal: DEBUG is populated far below this line and every caller is a wave-boundary caller.
 function worldSizeFor(level) {
-  return WORLD_SIZE_FIELD;
+  return level <= DEBUG.earlyWorldLevels ? WORLD_SIZE_EARLY : WORLD_SIZE_FIELD;
 }
 
 const SHIP_TURN = 4.2;          // rad/sec — the design-default turn rate (before the player scale)
@@ -3475,6 +3518,22 @@ const DEBUG_VARS = [
   // block as a layout artefact of that block's CS024 P1 removal, not a scoping claim).
   { id: "debrisBounceRestitution", label: "Satellite bounce restitution", unit: "",
     def: DEBRIS_BOUNCE_RESTITUTION, min: 0, max: 1.5, step: 0.05 },
+  // CS026 P3 (spec §2.2): how many levels run in the small 1920x1080 world (WORLD_SIZE_EARLY) before the
+  // game settles into the 2560x1440 field world for good. worldSizeFor(level) reads this LIVE at every
+  // wave boundary, so a panel change takes effect on the next level rather than the next run.
+  //   ⛔ 0 TURNS THE FEATURE OFF ENTIRELY, and that is the point of the min rather than a side effect: no
+  // level satisfies `level <= 0`, so worldSizeFor returns WORLD_SIZE_FIELD for everything and the build
+  // behaves exactly as CS025 shipped, resizeWorld() included (it never fires). That is the gate's clean
+  // A/B — flip this to 0, play the same first five levels, compare.
+  //   NOT A LEVER, and the distinction is the usual one: this is a stability/legibility property, not a
+  // difficulty axis. No floor/ceil/steps triple, no ▼/↳ glyph, no carriesTo, no LEVERS entry. GLOBAL
+  // rather than JUNK because the world period is not the junk chain's business — every system in the
+  // game measures through it.
+  //   No shipped constant backs the default: "how many levels are early" has no meaning outside this
+  // knob, so this entry IS the source of truth for it — the chainGuardIntercepts idiom, not the
+  // DEBRIS_BOUNCE_RESTITUTION one directly above.
+  { id: "earlyWorldLevels", label: "Small-world levels", unit: "",
+    def: 5, min: 0, max: 20, step: 1 },
   // CS024 P6d (gate tooling, PLANNED-FEATURES-CS024.md §4.5): jumps startGame()'s wave seed so Gate B
   // can sample a deep level without playing up to it. NOT A LEVER — a plain flat knob, no ▼/↳ glyph, no
   // (inv), no floor/ceil/steps triple; it belongs to no chain. FIDELITY LIMIT (real, do not "fix" by

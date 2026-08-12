@@ -175,8 +175,24 @@ function build({ audio = true, src = scriptSrc, extra = FIXED_EXTRA } = {}) {
     "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
     src + "\n;return { " + names.join(", ") + ", " + SPIES.join(", ") + " };"
   );
-  return factory(windowStub, documentStub, { now: () => 100000 }, () => 0,
+  const mod = factory(windowStub, documentStub, { now: () => 100000 }, () => 0,
     { getGamepads: () => [] }, localStorageStub);
+  // ⛔ REPOINTED BY CS026 P3 — THIS FILE RUNS THE SMALL-WORLD FEATURE **OFF**, ON PURPOSE.
+  // CS026 P3 puts levels 1..DEBUG.earlyWorldLevels in a 1920x1080 world. This file is a CROSS-BUILD
+  // comparison: sections (B) and (J) drive the live build and the PRE_FIX_REF build at 09d443f through
+  // the same seeded sequence and compare scores and floater WORLD COORDINATES byte-for-byte. The pre-fix
+  // build predates the world-size seam entirely, so with the feature on, the two builds would be
+  // running level 1 in different-sized worlds — a divergence about the world period, not about the dock
+  // exploit this file exists to pin. Setting the knob to 0 is the feature's own documented off switch
+  // (no level satisfies `level <= 0`, so worldSizeFor returns WORLD_SIZE_FIELD for everything and
+  // resizeWorld never fires), which restores exactly the build this file was written against.
+  //   It also keeps quiet()'s dock parking honest: quiet() parks the dock at the LOAD-TIME snapshot
+  // (1280, 720) — deliberately, per its own note, because (J)'s byte-for-byte coordinate comparison
+  // needs a point both builds agree on — and (1280, 720) is only 360 px from the seam of a 1920x1080
+  // world, which quiet()'s own CS022 P1 guard correctly refuses.
+  //   Guarded by an `in` check because the pre-fix build's DEBUG has no such key.
+  if (mod.DEBUG && "earlyWorldLevels" in mod.DEBUG) mod.DEBUG.earlyWorldLevels = 0;
+  return mod;
 }
 
 let preFixSrcCache = null;
@@ -439,7 +455,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // AND AGAIN BY CS024 P6c: 33 -> 67 — every lever's single flat row becomes THREE (floor, ceiling,
   // step count), so the 17 lever rows become 51 and the 16 non-lever knobs stay exactly as they were.
   const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 78, "A: TRAP 3 — DEBUG_VARS holds exactly 78 value entries after CS026 P2");
+  eq(valueEntries, 79, "A: TRAP 3 — DEBUG_VARS holds exactly 79 value entries after CS026 P3");
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

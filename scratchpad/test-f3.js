@@ -50,7 +50,7 @@ const returnList = [
   "GARBAGE_PICKUP", "DEBUG",
   "CHAIN_LINK", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG",
-  "WORLD_W", "WORLD_H"
+  "WORLD_W", "WORLD_H", "worldDims"   // CS026 P3: worldDims, because WORLD_W/WORLD_H are only a snapshot
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -65,11 +65,21 @@ const {
   GARBAGE_PICKUP, DEBUG,
   CHAIN_LINK, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG,
-  WORLD_W, WORLD_H
+  WORLD_W, WORLD_H, worldDims
 } = A;
 
 const DT = 1 / 60;
-const cx = WORLD_W / 2, cy = WORLD_H / 2;
+// ⛔ REPOINTED BY CS026 P3, AND IT WAS A REAL 1-IN-20 FLAKE, NOT A COSMETIC FIX. `cx`/`cy` is where
+// resetShip() parks the ship, and it was the LOAD-TIME WORLD_W/WORLD_H snapshot — (1280, 720), the
+// centre of the 2560x1440 field world. Levels 1-5 now run at 1920x1080, whose centre is (960, 540),
+// so (1280, 720) became an ARBITRARY point 367 px off-centre. The dock is placed on a random ring
+// DOCK_MIN_DIST(260)..DOCK_MAX_DIST(620) around the SHIP SPAWN — the real centre — so roughly one run
+// in twenty put the dock (radius 88) on top of that arbitrary point, and section (C)'s canister was
+// swallowed by the dock instead of hooked onto the chain. Parking at the LIVE centre restores the
+// invariant the file was written against: the spawn point is never inside the dock, because
+// DOCK_MIN_DIST is three times the dock radius. Assigned after startGame() below, since nothing knows
+// the live period until the run is started.
+let cx = WORLD_W / 2, cy = WORLD_H / 2;
 let passed = 0, failed = 0;
 function assert(cond, msg) {
   if (cond) { passed++; }
@@ -98,6 +108,7 @@ function node(x, y, mass) {
 }
 
 startGame();
+[cx, cy] = worldDims(game.worldSize).map(v => v / 2);   // CS026 P3: the LIVE world centre — see above
 game.state = "playing"; game.paused = false;
 console.log(`(config) DEBRIS_GARBAGE=${DEBRIS_GARBAGE}  (garbage decays on DEBUG.garbageLifetime=${DEBUG.garbageLifetime}, CS015 P6; the frozen pre-P6 GARBAGE_DECAY=22 single-only const was deleted as dead in CS024 P2)`);
 
