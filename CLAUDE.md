@@ -1,4 +1,4 @@
-# CLAUDE.md — Asteroid Field Deluxe (ADD-Orbital-Overhaul)
+# CLAUDE.md — Orbital Overhaul (ADD-Orbital-Overhaul)
 
 Auto-loaded every session. Read this, then `STATUS.md`, then your phase prompt.
 Nothing else unless the prompt names it.
@@ -24,6 +24,25 @@ A standalone browser-based vector arcade shooter in the spirit of Atari's
 *Asteroids Deluxe*, with an original radioactive-salvage tow-chain mechanic.
 Canvas 2D + vanilla JS + Web Audio. Solo developer (Paul); you are the
 implementer only. Repo: `github.com/freakingid/ADD-Orbital-Overhaul` (GPL-3.0).
+
+**The one canonical name is `Orbital Overhaul`** (CS029 P5). Not "Asteroids
+Deluxe: Orbital Overhaul", not "Asteroid Field Deluxe" — those are earlier
+working names, retired. The GitHub repo keeps `ADD-Orbital-Overhaul` — that is
+a URL, not the game's name, and is never renamed to match.
+
+⛔ **The name sweep does not touch `archive/` or `log/`.** Those are a
+historical record — a planning doc or narrative log written under an earlier
+working name stays exactly as written. Only live, currently-read docs
+(`CLAUDE.md`, `ORBITAL-OVERHAUL-GDD.md`, `EXTERNAL-FILES.md`, `RATIONALE.md`,
+`STATUS.md`, the in-game strings) and the wider repo (excluding those two
+directories) get swept.
+
+⚠ **SETTLED — a legacy filename or working name inside a historical test pin is
+correct, not a miss.** `_phase-ref.js`'s `parentSource()`/`gameFileAt()` reads
+across the CS029 P1 rename (`asteroids-deluxe.html` → `orbital-overhaul.html`)
+by design carry both names, and pins into pre-rename history legitimately cite
+the old path. Don't "fix" one on a sweep pass — it's pointing at what the repo
+actually looked like at that SHA.
 
 ---
 

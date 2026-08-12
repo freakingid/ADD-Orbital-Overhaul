@@ -281,9 +281,12 @@ function stageVisit(X, canisterCount) {
 
 // ================= (F) TRAPs =====================
 (function sectionF() {
-  console.log("(F) TRAPs: GAME_VERSION unmoved (P5 owns the bump), LEVERS untouched, scope pin");
+  console.log("(F) TRAPs: GAME_VERSION moved off P4's own \"1.0.0.28\" (P5 owns the bump), LEVERS untouched, scope pin");
   const X = buildGame();
-  eq(X.GAME_VERSION, "1.0.0.28", "F: GAME_VERSION is unmoved — this phase does not own the version bump (P5 does)");
+  // ⚠ SETTLED (CLAUDE.md pins): at a version bump, a phase-local pin flips to its standing mirror
+  // image rather than being re-pointed to a new literal. GAME_VERSION was "1.0.0.28" for this
+  // phase's own commit, permanently true, so the pin is a permanent !== from here on.
+  assert(X.GAME_VERSION !== "1.0.0.28", "F: GAME_VERSION has moved off P4's own \"1.0.0.28\"");
 
   const ps = parentSource(PARENT_SHA);
   if (ps === null) {
