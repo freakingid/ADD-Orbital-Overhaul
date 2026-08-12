@@ -1,5 +1,5 @@
 // scratchpad/run-all.js — discovers and runs every scratchpad/test-*.js in its own child process.
-// Built by CS027 P1 per IMPLEMENTATION-PHASES-CS027.md P1.
+// Built by CS027 P1 per archive/IMPLEMENTATION-PHASES-CS027.md P1.
 //
 //   node scratchpad/run-all.js [--only <substring>] [--quiet]
 //

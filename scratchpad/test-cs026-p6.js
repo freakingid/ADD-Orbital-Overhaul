@@ -169,10 +169,13 @@ const build = opts => buildFrom(scriptSrc, opts);
   finally { fs.unlinkSync(tmp); }
 
   const X = build();
-  eq(X.GAME_VERSION, "1.0.0.26", "A: GAME_VERSION is exactly \"1.0.0.26\"");
-  eq(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1], "1.0.0.26", "A: ...in the source literal too");
+  // ⚠ SETTLED (flipped by CS027 P6, per CLAUDE.md's phase-local-pin rule): this phase's own
+  // "GAME_VERSION IS 1.0.0.26" claim does not survive the next closing phase's bump. Mirrored
+  // against the pre-CS026-P6 baseline instead — permanently true, never re-pointed.
+  assert(X.GAME_VERSION !== "1.0.0.25", "A: GAME_VERSION has moved off the pre-CS026-P6 baseline 1.0.0.25");
+  assert(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1] !== "1.0.0.25", "A: ...in the source literal too");
   assert(/^\d+\.\d+\.\d+\.\d+$/.test(X.GAME_VERSION), "A: the unprefixed Major.Minor.Patch.Changeset shape is kept");
-  eq(X.GAME_VERSION.split(".")[3], "26", "A: the 4th segment IS the changeset number");
+  assert(X.GAME_VERSION.split(".")[3] !== "25", "A: the 4th segment moved off the pre-CS026-P6 baseline 25");
 
   // The skip tombstone must survive: ".23" stays skipped and must never be back-filled.
   assert(/SKIPPED DELIBERATELY/.test(scriptSrc),
@@ -180,7 +183,7 @@ const build = opts => buildFrom(scriptSrc, opts);
 
   // The second consumer of the constant — a fresh high-score record stamps the new build.
   const rec = X.HighScores.add(12345, "ABC");
-  assert(!rec || rec.build === "1.0.0.26", "A: a fresh HighScores.add() stamps build \"1.0.0.26\"");
+  assert(!rec || rec.build === X.GAME_VERSION, "A: a fresh HighScores.add() stamps build === GAME_VERSION, whatever it currently is");
 })();
 
 // ================= (B) the Q5 retune at the registry =====================

@@ -347,7 +347,9 @@ function compareBuilds(L, R, tag) {
     skip("E: opts.source against the parent build");
   } else {
     const OLD = buildGame({ source: prev });
-    eq(OLD.GAME_VERSION, X.GAME_VERSION, "E: parentSource() output builds, and cs-27 p1 moved no game code");
+    // ⚠ SETTLED (fixed by CS027 P6): pinned to the PARENT SHA's own frozen version, not the live
+    // build's — X.GAME_VERSION moves at every later closing phase, PARENT_SHA's does not.
+    eq(OLD.GAME_VERSION, "1.0.0.26", "E: parentSource() output builds, and cs-27 p1 moved no game code");
     eq(OLD.DEBUG_ENTRIES.length, X.DEBUG_ENTRIES.length, "E: ...same registry");
     assert(Object.keys(OLD).length > 500, "E: ...and the harvest re-ran against the parent's own symbol set");
   }
