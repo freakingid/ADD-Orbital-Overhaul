@@ -939,19 +939,39 @@ The 12-frame first stint delivers exactly 3 canisters (the offload timer needs 4
 
 **Q1 — pacing, the changeset's central bet.** With the split at its new value, does a level *end* at about the right time? Play level 1 and a level in the 8–11 band and say which one is wrong, if either. Slider: the split knob (JUNK section) — set it back to 3 for the clean A/B. **Report the number.**
 
+Paul says: None are wrong. Pacing is much better.
+
 **Q2 — did the tail fix do the work?** With the split change alone the last few satellites are still somewhere in the other 75% of the world. Does the tail fix make "where is it" into "go there"? If it is the chevron: does ≤3 remaining feel like the right trigger, or should it show earlier? Slider if built. **Report the number.**
+
+Paul says: This is fine.
 
 **Q3 — the score curve.** Whatever FORK-C resolved to: does the run feel like it pays what it should, and does the hull repair often enough? This is the question that catches a wrong answer to FORK-C.
 
+Paul says: Yes, score curve is fine.
+
 **Q4 — garbage density, and it must be answered in this session.** The split moved the shed volume by roughly half at every level. Do you ever *see* a canister vanish? (The cull is silent by design; catching one means `garbageSoftMax` is too low.) Does a level-10 field read as salvage-rich or as noise? Sliders: `Garbage soft max`, `Garbage hard max`. **Report the number.** ⛔ Do not raise past ~350 without saying so — beyond that the O(n²) walk, not readability, is what binds.
+
+Paul says: Garbage density is fine. I do not know what number to report, so forget about that unless you have to have something.
 
 **Q5 — the delivery payoff, the other central bet.** Deliver a full haul. Does the escalation *read* now — can you see it climbing? Is the dock the right place for it, or does it want to be nearer the ship? And the specific failure to watch for: does it collide with `SALVAGE BONUS` (at 8) or `MAX HAUL` (at 24)?
 
+Paul says: It needs to be closer to the ship, and the score numbers need to fade more slowly, and they need to travel upwards more slowly. The text of the score numbers is a good size.
+
 **Q6 — the incidental case.** Park at the dock with a Magnet and let it feed you. Whatever FORK-G resolved to: does that read as sensible, or as the same smear in a new place?
+
+Paul says: It is fine.
 
 **Q7 — the level banner, first sight.** It has never been playtested. Does "Level N" at **72 px**, held **2.2 s** with a **0.5 s** ramp each end, read as *briefly, large, easy to read, fading*? Too big, too long, too easy to miss in a busy frame? It sits at screen centre, where the ship usually is — does it ever obscure something that matters at the instant a level starts? **All four are sliders as of P5. Report the numbers.** Also: `P` exports a frame with the banner across it for the first 2.2 s of every level (FLAG-CS026-c). Correct, or annoying?
 
+Paul says: The level banner looks great.
+
 **Q8 — the look-call backlog, in words.** No sliders here, so words are the answer: the modal dialog's proportions; the title menu's row spacing (the tightest in the game); the two-tab Achievements layout; and specifically — **does the Options screen's dim "Save" row read as *coming soon* or as *broken*?**
+
+Paul says: Most things look great. These are the issues, below:
+1. In the two-tab Achievements layout, it is difficult to understand which of the tabs is currently selected. Something other than just the brightness of the text needs to happen when selected. One idea is simply a downward-facing triangle just to the right of the text for the selected tab.
+2. Also in the Achievements layout, There is no whitespace above the title of the achievement. This seems to occur throughout the Achievements panel. Build in an appropriate amount of space.
+3. Also in the Achievements layout, there is too much vertical space beneath the name of the achievement and the description of the achievement.
+4. Also in the Achievements layout, there is so much horizontal space between the name of the achievement (on the left) and the status of the achievement (on the right) that it is difficult to discern which status belongs with which achievement. One solution is to alternate a light background every-other row in the listings, so we have a visual line connecting left to right.
 
 **✅ CS025's PLAYTEST GATE IS CLOSED. All six questions were answered by Paul and applied by CS025 P5; the answers are preserved inline below, under each question, as the record of what was decided and why.** **The numbers came back CLEAN — nothing moved** (250 ms / 120 px/s / 45° all confirmed, the Hunter-on-top-of-you problem reported gone, the defensive fill loop reported fine). **Two answers were not numbers**, both were put to Paul before any code was written, and both were approved: **Q4 backed out CS025 P3's scoop energy tell outright**, and **Q6 asked for the level announcement to be made critical and given a large fading centre-screen "Level N"** — both shipped in P5. **⛔ Q6 did NOT report a stale `cargo_full`**, so the phase prompt's inherited-defect clause never fired.
 
