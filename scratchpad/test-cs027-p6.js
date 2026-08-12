@@ -57,13 +57,16 @@ const { assert, eq } = A;
   finally { fs.unlinkSync(tmp); }
 
   const X = buildGame();
-  eq(X.GAME_VERSION, "1.0.0.27", "A: GAME_VERSION is exactly \"1.0.0.27\"");
-  eq(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1], "1.0.0.27", "A: ...in the source literal too");
-  eq(X.GAME_VERSION.split(".")[3], "27", "A: the 4th segment IS the changeset number");
+  // ⚠ SETTLED (CLAUDE.md): a phase-local version pin flips to its standing mirror image at a later
+  // bump, permanently true — it is not re-pointed to a new literal. GAME_VERSION was "1.0.0.27" for
+  // CS027 P6 itself; every later phase (CS028 P2 first) makes these three assertions !== instead.
+  assert(X.GAME_VERSION !== "1.0.0.27", "A: GAME_VERSION has moved off CS027 P6's own \"1.0.0.27\"");
+  assert(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1] !== "1.0.0.27", "A: ...in the source literal too");
+  assert(X.GAME_VERSION.split(".")[3] !== "27", "A: the 4th segment is no longer CS027's changeset number");
   assert(/SKIPPED DELIBERATELY/.test(scriptSrc), "A: CS024 P7's \".23 is skipped\" tombstone survives");
 
   const rec = X.HighScores.add({ initials: "AAA", score: 100, wave: 1, delivered: 1 });
-  assert(rec.build === "1.0.0.27", "A: a fresh HighScores.add() stamps build \"1.0.0.27\"");
+  assert(rec.build !== "1.0.0.27", "A: a fresh HighScores.add() no longer stamps CS027 P6's build \"1.0.0.27\"");
 })();
 
 // ================= (B) TRAP-CS027-A, reconstructed and measured =====================

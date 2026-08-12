@@ -154,7 +154,7 @@ const sig = polys => polys.map(pl => `${pl.closed ? "C" : "O"}${pl.pts.length}`)
   // Clear only what a kill fills; startGame() has already built the rest of the world.
   const clear = () => { X.game.debris.length = 0; X.game.garbage.length = 0; X.game.particles.length = 0; };
 
-  const TRIALS = 300;   // x2 levels = the 600 splits PLANNED-FEATURES-CS028.md §4 pre-verified
+  const TRIALS = 300;   // x2 levels = the 600 splits archive/PLANNED-FEATURES-CS028.md §4 pre-verified
   for (const [level, wantChildren] of [[1, 2], [15, 3]]) {
     X.game.wave = level;
     let okCount = 0, okSize = 0, okCraft = 0, okRange = 0, okDistinct = 0;
