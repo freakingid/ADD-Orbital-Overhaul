@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.26 · Changeset: CS027 · Phase: P4 · Registry: 85 · Levers: 18
+Version: 1.0.0.26 · Changeset: CS027 · Phase: P5 · Registry: 85 · Levers: 18
 
 ## Phase ledger — CS027
 - P0 — archived the CS026 planning pair, repointed 17 live bare-filename references to it.
@@ -8,13 +8,18 @@ Version: 1.0.0.26 · Changeset: CS027 · Phase: P4 · Registry: 85 · Levers: 18
 - P3 — moved global counts (registry/header/lever/POWERUP_DROP_TYPES counts) into `test-registry.js`; 28 files decoupled from hardcoded counts.
 - P4 — split `archive/STATUS-HISTORY.md` and STATUS.md's CS023–026 narrative into per-changeset `log/CS0##.md`; folded `GDD-VERSION-HISTORY.md` into the same files; STATUS.md cut to one page.
 
+- P5 — `CLAUDE.md` now states rules only (528 → 427 lines, ⛔ INVARIANT / ⚠ SETTLED markers); `RATIONALE.md` created from the stripped prose under 18 anchors; GDD §5 rewritten off the attach-everything workflow.
+
 ## Working / verified
 - Full suite green throughout: 106/106 at P1, 108/108 at P2 (registry + P2's own test added), 108/108 re-confirmed at P4 after the log/ split touched 11 scratchpad files + `_phase-ref.js`'s shared allowlist (already carried `log/` from P3).
 - `buildGame()` evaluates the RAW script; the comment-strip idiom (deletes 80 live lines of the current build and still parses — `asteroids-deluxe.html:6556`) is confined to `execSource()`, a dedicated character-scanner used only for tombstone greps, never for building. `test-cs027-p2.js` (185 assertions) proves the two paths byte-identical and behavior-identical.
 - `outsideScope(changed, extra)` in `_phase-ref.js` is now the one "nothing else moved" allowlist (base: `asteroids-deluxe.html`, `STATUS.md`, `scratchpad/`, `log/`); six files' hand-rolled variants converted to call it.
 - `scratchpad/test-registry.js` is the only file allowed to name a global count: 85 entries / 9 headers / 18 levers / 5 `POWERUP_DROP_TYPES`.
+- **P5 rule-survival audit is mechanical, not eyeballed**: all 73 bolded rules ≥12 chars in `89a9a3a:CLAUDE.md` were extracted and matched against `CLAUDE.md` ∪ `RATIONALE.md` (blockquote markers stripped). **64 survive byte-identically; the other 9 are restatements the supplied `CLAUDE.md` tightened deliberately** (e.g. "Game logic in one file, vanilla JS, no modules" → the ⛔ one-`<script>`-block rule). Zero dropped. All 6 old `⛔` blocks located. Suite re-run green after the doc edits: 108/108, 0 skipped, 28.90s.
+- `RATIONALE.md` defines 18 anchors; `CLAUDE.md` currently points at 2 (`#pins`, `#voice-queue`). Both resolve. The other 16 are addressable but unreferenced — deliberate, so a future rule can link one without a new file edit.
 
 ## Known issues
+- **FLAG-CS027-e (P5, non-blocking, for Paul — raised, not changed) — `destroyHunter()` is marked `⚠ SETTLED` in the new `CLAUDE.md`, but it also meets the `⛔ INVARIANT` test.** Levering the split count moves the 1+3+9 lineage total and so breaks `ACH_LINEAGE_FULL = 13`, a shipped achievement threshold — that is "breaks a shipped guarantee". It genuinely reads as both (it *looks* wrong that one kill path isn't levered, and isn't), so this is a marker-classification call, not a defect. Left as supplied per the ⚠ protocol: don't change a SETTLED item in the session that noticed it. The old file marked it `⛔`.
 - **FLAG-CS027-d — twelve suite files grep a comment-stripped copy of the source that's missing the same 80 lines `execSource()` fixed. Latent, not live**: audited, no assertion any of them makes currently falls in the deleted region. Becomes live the moment one does. One-line-per-file fix (`execSource()`); not urgent, bundle with an opportunistic migration.
 - ⛔ `GDD-VERSION-HISTORY.md` had no CS018 entry (its bullets run CS017 → CS019 directly), even though CS018 shipped (nine test files, its own `log/CS018.md` entries exist from the STATUS-HISTORY split). No CS014 entry either, and CS014 appears never to have existed. Both are reported, not reconstructed — writing a missing changelog entry now would be composing history, not relocating it.
 - One paragraph — `archive/STATUS-HISTORY.md`'s own opening note explaining why the archive exists — carried no CS0NN/version marker of its own and was parked at `log/UNSORTED.md` rather than guessed into a changeset, per this phase's own instruction not to guess an owner.
@@ -30,7 +35,7 @@ Version: 1.0.0.26 · Changeset: CS027 · Phase: P4 · Registry: 85 · Levers: 18
 - **(carried from CS023) `DEBRIS_BOUNCE_RESTITUTION` (1.0) and `DEBRIS_BOUNCE_MIN` (40 px/s) are both first-pass and browser-unverified**, same status as `SHIELD_BOUNCE_RESTITUTION`/`MIN` at CS021 P1b. Measured consequence: a rail satellite sweeping into a parked free one throws it up to 511.5 px/s off the outer fast ring — nearly double the 255.7 px/s cap CS023 P4's drift derives from, and the number to watch if the shell reads like a pinball table.
 
 ## Next up
-- CS027 P5 (planned, not yet scoped in detail): repoint CLAUDE.md's remaining 3 `GDD-VERSION-HISTORY.md` references now that P4's `log/` split has landed and passed the suite.
+- CS027 P6 (closing): version bump to 1.0.0.27, TRAP-CS027-A (assert the parent-to-HEAD script delta is exactly the `GAME_VERSION` line), two consecutive suite runs diffed, doc sweep, and the §5 success-criteria table with **measured** actuals. P5 note for it: the fixed-context metric is now `CLAUDE.md` + `STATUS.md` only — `RATIONALE.md` is explicitly not session context and must not be counted into that budget.
 - **(carried from CS026 §11 backlog) The satellite sprite redesign is its own changeset, with two clarifying questions still open** before it can be scoped as planning docs.
 
 ## Playtest asks

@@ -639,60 +639,48 @@ Ordered roughly by effort. Each is scoped to fit a single working session.
 
 ## 5. Session Handoff Protocol
 
-This mirrors the Atomic Dustbin Dan workflow: each new Claude session gets three attachments and a short kickoff prompt.
+A session is **one phase**, with a fixed, small context. `CLAUDE.md` auto-loads and carries the rules; this section describes only what a *session* gets and owes. Where the two overlap, `CLAUDE.md` wins.
 
-### 5.1 What to attach to every new session
-1. **`asteroids-deluxe.html`** — the current build (always the latest working version).
-2. **This GDD** — or at minimum Sections 1–3 plus whichever Section 4 item is being built. The per-changeset changelog (§7, one file per changeset in `log/CS0##.md`) is **NOT attached by default** — attach the relevant `log/CS0##.md` only when a session genuinely needs project history.
-3. **`STATUS.md`** — the running status document (template below). Update it at the end of every session.
-4. **For an in-flight changeset:** attach that changeset's planning docs, named by changeset number, zero-padded to three digits — `PLANNED-FEATURES-CS###.md` / `IMPLEMENTATION-PHASES-CS###.md` (both at the repo root) — and paste that phase's ready-to-paste prompt. Fully-shipped changesets' planning docs are archived under `archive/` (historical reference only, not active specs) — Section 2 + `STATUS.md` stay authoritative.
+### 5.1 What a session gets
+
+Nothing is "attached" any more — the working directory is live, and a session reads what it needs:
+
+1. **`CLAUDE.md` — auto-loaded, every session.** Rules, invariants, code map. It is not attached, pasted, or summarized; it is already there.
+2. **`STATUS.md` — read first, before any code.** One page, current changeset only. Build reality.
+3. **The phase prompt**, pasted from `IMPLEMENTATION-PHASES-CS0##.md`.
+4. **For an in-flight changeset:** the planning pair at the repo root — `PLANNED-FEATURES-CS0##.md` + `IMPLEMENTATION-PHASES-CS0##.md`, changeset-numbered, zero-padded to three digits. Shipped changesets' pairs move to `archive/`.
+5. **Everything else is pulled on demand, and the session says it did.** This GDD (§1–§3 before writing code), `DIFFICULTY-LEVERS.md`, `EXTERNAL-FILES.md`, `RATIONALE.md`, and the per-changeset history in `log/CS0##.md` — see `CLAUDE.md`'s document map for which is which. `log/` and `archive/` are **never** session context by default.
+
+The build itself (`asteroids-deluxe.html`) is edited in place with surgical `str_replace` edits, never delivered as a file.
 
 ### 5.2 Kickoff prompt template
 
-> I'm continuing development of Asteroid Field Deluxe, a single-file HTML5 vector arcade game. Attached: the current build, the game design document, and the status doc.
+> Read `CLAUDE.md` and `STATUS.md` first. This is CS0##, phase P#.
 >
-> Read the GDD's Architecture Map (Section 3) before writing code — especially the wrap-aware collision helpers, the dead-flag/filter lifecycle, and the tuning-constants convention.
+> [paste the phase's prompt from `IMPLEMENTATION-PHASES-CS0##.md`, including its model/effort line]
 >
-> **This session's goal:** [one specific item, e.g. "Roadmap item 5: power-up drops — rapid fire and shield overcharge only"]
->
-> Constraints: keep it a single self-contained HTML file, no external assets or libraries, all changes consistent with the design pillars in GDD Section 1. Deliver the full updated file plus a summary of what changed for the status doc.
+> Commit: `cs-## p#: <subject>`
+
+Everything the old template spelled out — single self-contained HTML file, no external assets, the pillars, the Architecture Map — is a standing rule in `CLAUDE.md` and does not get restated per session.
 
 ### 5.3 STATUS.md template
 
-```markdown
-# Asteroid Field Deluxe — STATUS
-Last updated: [date] · Build version: [x.y] · Last session: [one line]
+Lives in `CLAUDE.md` under **"STATUS.md format"** — that is the one copy, and it is not duplicated here. The shape in brief: a version/changeset/phase header line, a **phase ledger** of one line per phase, then `Working / verified`, `Known issues`, `Open questions (blocking)`, `Next up`, `Playtest asks`.
 
-## Working / verified
-- [features confirmed working in a real browser]
+Three constraints on it, stated in full in `CLAUDE.md`: it covers the **current changeset only** and stays under ~400 lines; a phase entry is **one ledger line and ~200 words at most** in the body, with reasoning going to `log/CS0##.md`; and **every entry starts on its own paragraph** (`\n\n`). The closing phase moves the whole document to `log/CS0##.md` and resets it from the template.
 
-## Known issues
-- [bugs, with repro steps if known]
+### 5.4 What a session owes
 
-## Balance notes
-- [tuning observations from playtesting, e.g. "small wedges feel unfair at turnRate 2.6"]
+`CLAUDE.md` is the rulebook. These are the handoff-specific obligations that outlive any one phase:
 
-## Next up
-- [the next roadmap item, plus any prep notes]
-
-## Changed this session
-- [diff-level summary a future session can trust without re-reading everything]
-```
-
-### 5.4 Rules for future sessions (instructions to Claude)
-
-Any Claude session working on this project should:
-
-1. **Deliver the complete file, not fragments.** The build must always be runnable as-is. If the file grows too large for a single response, deliver it in clearly-marked sequential parts and reassemble instructions.
-2. **Preserve the tuning-constants convention.** New mechanics get named constants at the top of the script, never inline magic numbers.
-3. **Use the wrap-aware helpers** (`dist2`, `angleTo`) for all distance and aiming math. This is the most common way to introduce subtle bugs.
-4. **Follow the entity lifecycle**: `dead` flag + end-of-frame `.filter()`. Never remove entities mid-iteration.
-5. **Respect the design pillars** (Section 1). If a requested feature conflicts with a pillar, say so and propose an alternative before building.
-6. **Route all scoring through `addScore()`** so extra-life logic stays correct.
-7. **Syntax-check AND functionally test before delivering.** Extract the script block and run `node --check`. For gameplay logic, use the headless harness pattern established in v1.1: stub `window`, `document.getElementById` (returning a canvas whose `getContext` yields a Proxy that no-ops all methods), and `requestAnimationFrame`; then drive `startGame()` and `update(1/60)` directly, teleporting the ship to set up scenarios. AudioSys is safe headless because every method early-returns when `this.ctx` is null (init only fires on keydown). Verified this way in v1.1: pickup, tow constraint length, screen-wrap chain integrity, dock delivery scoring, and chain severing.
-8. **Version bump + changelog.** Append the phase entry to `log/CS0##.md` under `## GDD version history`, update GDD §2 in place to describe the shipped result, and produce a "Changed this session" summary for STATUS.md. Do **not** append to the GDD's top-of-file version line — it no longer exists (split out in CS009 P0).
-9. **Don't refactor unprompted.** Paul knows this codebase; large structural rewrites make session-to-session diffs unreadable. Propose refactors, don't spring them.
-10. **Flag playtest asks.** Claude can't play the game — end each session with 2–3 specific things Paul should verify in the browser (e.g. "confirm the new power-up despawns after 8 s").
+1. **Edit in place, surgically.** `str_replace` over full-file rewrites — re-read the region first. (This replaces the old "deliver the complete file, not fragments" rule, which predated direct file access and contradicted current practice.)
+2. **Respect the design pillars** (§1). If a requested feature conflicts with a pillar, say so and propose an alternative before building — don't quietly bend the pillar.
+3. **Ship the test with the code.** Extract the script block and `node --check` it; for gameplay logic, drive the real `startGame()` / `nextWave()` / `update(1/60)` headlessly through `scratchpad/_harness.js`, teleporting the ship to set up scenarios — never against an inlined copy of the logic. `AudioSys` is safe headless because every method early-returns when `this.ctx` is null (init only fires on keydown). **Headless tests drive `update()` directly and never call `loop()`, so anything `loop()` does before `update()` — `pollGamepad()` for the controller path, for one — must be called by the test itself.** A phase isn't done until its test passes, and `node scratchpad/run-all.js` must be green before the commit.
+4. **Update the docs in the same commit.** Move a shipped feature's spec out of the planning pair into §2, describing the build as it now is. Append the changeset's version-history entry to `log/CS0##.md` under `## GDD version history` — there is no central changelog (§7). Update `STATUS.md`.
+5. **Commit per phase, on `main`; never push.** One phase, one commit, code and docs together, so a regression rolls back to the last known-good phase.
+6. **Don't refactor unprompted.** Paul knows this codebase; large structural rewrites make session-to-session diffs unreadable. Propose refactors, don't spring them.
+7. **Flag playtest asks.** Claude can't play the game — end a phase with the specific things Paul should verify in the browser (e.g. "confirm the new power-up despawns after 8 s"). Answered asks move to the log; only open ones stay in `STATUS.md`.
+8. **Flag the risks the prompt didn't.** If a hazard surfaces that the phase prompt didn't name, record it in `STATUS.md` so the next prompt can account for it. If a genuine *design* decision surfaces that the planning pair doesn't cover, stop and surface it — don't invent design.
 
 ---
 
