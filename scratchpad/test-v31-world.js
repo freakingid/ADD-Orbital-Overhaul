@@ -28,6 +28,18 @@
 //     world in the table and filtered per world into starsActive (spec §4.3 / FLAG-CS022-d).
 
 "use strict";
+
+// ⛔ CS026 P6: SEEDED. This file was one of FOUR the closing phase's twice-and-diff run caught still
+// running unseeded — CS026 P1 pinned five paths, and these were not among them because nothing had
+// ever diffed two full-suite runs before. Its spawn-distance sweeps sampled a different
+// population every run (157 vs 161 pieces, ranges [221.9, 629.9] vs [220.9, 639.4]); the range
+// assertions are bounds checks so they never failed, but the sample they were checking was not
+// reproducible. Under the seed the same population is swept every run.
+// Installed at the TOP OF THE FILE, BEFORE THE FIRST BUILD, per _seeded-random.js: this file drives
+// the real game after building it, so randomness lands on BOTH sides of the factory invocation and a
+// seed installed later would fix nothing.
+const { installSeed } = require("./_seeded-random.js");
+installSeed(20260813);
 const fs = require("fs");
 const path = require("path");
 

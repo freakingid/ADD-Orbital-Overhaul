@@ -137,7 +137,10 @@ const RETURN = [
   "Achievements", "COLOR", "TIER_COLOR", "ACH_SCALE", "ACH_SCROLL_STEP", "ACH_STATUS_DY", "ACH_DESC_DY",
   "ACH_ROW_STEP", "MENU_HINT_SIZE", "MENU_OPTIONS", "drawAchievements", "drawAchRow", "AudioSys", "VIEW_W", "VIEW_H",
   // CS016 P5: the two-tab layout's own symbols.
-  "ACH_TABS", "ACH_TAB_DEFAULT", "ACH_COL_X", "ACH_COL_W", "ACH_TAB_STEP", "ACH_TAB_Y", "ACH_HINT", "achTabIndex"
+  "ACH_TABS", "ACH_TAB_DEFAULT", "ACH_COL_X", "ACH_COL_W", "ACH_TAB_STEP", "ACH_TAB_Y", "ACH_HINT", "achTabIndex",
+  // CS026 P6 (gate Q8): the row-0 baseline is now IMPORTED rather than re-derived (see below), and the
+  // selected tab wears a mark.
+  "ACH_ROW0_Y", "ACH_TAB_MARK"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -148,7 +151,8 @@ const {
   startGame, update, game, gotoScreen, menuAchievements, achMaxScroll,
   Achievements, COLOR, TIER_COLOR, ACH_SCALE, ACH_SCROLL_STEP, ACH_STATUS_DY, ACH_DESC_DY,
   ACH_ROW_STEP, MENU_HINT_SIZE, MENU_OPTIONS, drawAchievements, drawAchRow, AudioSys, VIEW_W, VIEW_H,
-  ACH_TABS, ACH_TAB_DEFAULT, ACH_COL_X, ACH_COL_W, ACH_TAB_STEP, ACH_TAB_Y, ACH_HINT, achTabIndex
+  ACH_TABS, ACH_TAB_DEFAULT, ACH_COL_X, ACH_COL_W, ACH_TAB_STEP, ACH_TAB_Y, ACH_HINT, achTabIndex,
+  ACH_ROW0_Y, ACH_TAB_MARK
 } = A;
 
 AudioSys.init();
@@ -177,7 +181,18 @@ const cx = VIEW_W / 2;
 // Panel geometry (mirrors menuPanel(1200,660) + drawAchievements' own constants) — derived here, not
 // re-imported, so a geometry regression in the real code shows up as a position mismatch below.
 const px = (VIEW_W - 1200) / 2, py = (VIEW_H - 660) / 2;
-const ry0 = py + 130, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE pre-P2; now the real (bumped) row step
+// ⛔ CS026 P6 (gate Q8.2): `ry0` was the literal `py + 130` and that is why this file lost 233
+// assertions the moment ACH_ROW0_Y moved to +152. The rest of this block is deliberately re-derived
+// rather than imported (a geometry regression should surface as a position mismatch), but row 0's
+// baseline is the ONE value the viewer's own answer to a playtest note moves, so re-deriving it was
+// pinning the look-call rather than the geometry. It is imported now; `py` is still local and still
+// cross-checks the panel's own maths.
+const ry0 = ACH_ROW0_Y, step = ACH_ROW_STEP; // CS015 P2: was a bare 40*ACH_SCALE pre-P2; now the real (bumped) row step
+// The selected tab's label carries ACH_TAB_MARK (CS026 P6, gate Q8.1), so every label match in this
+// file has to accept either form. Exact-match both ways — never startsWith(), which the panel's own
+// "WEEKLY SET ..." subtitle would satisfy first.
+const isTabLabel = str => ACH_TABS.some(t => t.label === str || t.label + ACH_TAB_MARK === str);
+const tabEntry = (log, label) => log.find(e => e.c === "fillText" && (e.str === label || e.str === label + ACH_TAB_MARK));
 
 // CS016 P5: enter the viewer with a specific tab active, driving the REAL handler — gotoScreen always
 // lands on Weekly, so reaching Lifetime means pressing "right" exactly as a player would. No direct
@@ -211,9 +226,14 @@ const statusSizeFor = ach => (ach.tiers ? 13 : 14) * ACH_SCALE;
     // Tab header (CS016 P5, replacing the three COLOR.satellite column headers): same 15*ACH_SCALE
     // size, now carrying the established selected/idle colour convention.
     ACH_TABS.forEach((t, i) => {
-      const hit = at(log, ACH_COL_X + i * ACH_TAB_STEP, py + ACH_TAB_Y).find(e => e.str === t.label);
+      // CS026 P6 (gate Q8.1): the SELECTED tab's label carries ACH_TAB_MARK, so match either form.
+      const hit = at(log, ACH_COL_X + i * ACH_TAB_STEP, py + ACH_TAB_Y)
+        .find(e => e.str === t.label || e.str === t.label + ACH_TAB_MARK);
       assert(!!hit, `B: [${tab.id}] tab label "${t.label}" logs a fillText at its expected position`);
       assert(!!hit && fontSize(hit) === 15 * ACH_SCALE, `B: [${tab.id}] tab label "${t.label}" size == 15*ACH_SCALE`);
+      // ...and the mark is on the ACTIVE tab only — additive to, never a replacement for, the colour split.
+      assert(!!hit && (hit.str === t.label + ACH_TAB_MARK) === (i === ti),
+        `B: [${tab.id}] tab label "${t.label}" wears ACH_TAB_MARK iff it is the active tab`);
       assert(!!hit && hit.color === (i === ti ? COLOR.text : COLOR.menuIdle),
         `B: [${tab.id}] tab label "${t.label}" reads ${i === ti ? "COLOR.text (active)" : "COLOR.menuIdle (idle)"}`);
     });
@@ -310,7 +330,7 @@ const statusSizeFor = ach => (ach.tiers ? 13 : 14) * ACH_SCALE;
     assert(rowFillTexts.length === expectedRows * 3, `D: [${tab.id}] exactly ${expectedRows * 3} row fillTexts (name+status+desc x ${expectedRows}) inside the clip (got ${rowFillTexts.length})`);
 
     const titleEntry = log.find(e => e.c === "fillText" && e.str === "ACHIEVEMENTS");
-    const headerEntries = log.filter(e => e.c === "fillText" && ACH_TABS.some(t => t.label === e.str));
+    const headerEntries = log.filter(e => e.c === "fillText" && isTabLabel(e.str));
     const subtitleEntry = log.find(e => e.c === "fillText" && /^WEEKLY SET/.test(e.str));
     const footerEntry = log.find(e => e.c === "fillText" && e.str === ACH_HINT);
     assert(headerEntries.length === ACH_TABS.length, `D: [${tab.id}] both tab labels are drawn (got ${headerEntries.length})`);

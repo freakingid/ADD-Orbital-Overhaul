@@ -47,6 +47,20 @@
 //  (L) TRAPs.
 
 "use strict";
+
+// ⛔ CS026 P6: SEEDED. This file was one of FOUR the closing phase's twice-and-diff run caught still
+// running unseeded — CS026 P1 pinned five paths, and these were not among them because nothing had
+// ever diffed two full-suite runs before. It was also the only one of the four that actually FLAKED rather than merely
+// printing different numbers: §F's "five nodes were hooked" failed 1 run in ~10, because
+// mergeToSaturation() places its pieces at random and one could land outside the capture region on
+// the single frame the intake is measured over. Under the seed it hooks all five, every run —
+// verified non-vacuous, not merely quiet (the _seeded-random.js caveat: a seed stops a flake, it
+// does not make a vacuous assertion meaningful).
+// Installed at the TOP OF THE FILE, BEFORE THE FIRST BUILD, per _seeded-random.js: this file drives
+// the real game after building it, so randomness lands on BOTH sides of the factory invocation and a
+// seed installed later would fix nothing.
+const { installSeed } = require("./_seeded-random.js");
+installSeed(20260813);
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");

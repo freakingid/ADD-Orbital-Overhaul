@@ -16,6 +16,17 @@
 //  (5) The procedural hull/shards are gone (art fully replaces them).
 
 "use strict";
+
+// ⛔ CS026 P6: SEEDED. This file was one of FOUR the closing phase's twice-and-diff run caught still
+// running unseeded — CS026 P1 pinned five paths, and these were not among them because nothing had
+// ever diffed two full-suite runs before. Its per-size angle/spin draws printed different values
+// every run. The assertions are range checks and always passed; the seed makes the reported values
+// stable so a future change to the draw is visible in a diff instead of hiding in the noise.
+// Installed at the TOP OF THE FILE, BEFORE THE FIRST BUILD, per _seeded-random.js: this file drives
+// the real game after building it, so randomness lands on BOTH sides of the factory invocation and a
+// seed installed later would fix nothing.
+const { installSeed } = require("./_seeded-random.js");
+installSeed(20260813);
 const fs = require("fs");
 const path = require("path");
 

@@ -32,6 +32,19 @@
 //      own position at DOCK_POWERUP_SPEED, with the floater firing only on the first award (8).
 
 "use strict";
+
+// ⛔ CS026 P6: SEEDED. The FIFTH file the closing phase's twice-and-diff run caught running unseeded,
+// and the second of the five that actually FLAKED rather than merely printing different numbers: §C's
+// "at cargoMax=12 a 13th canister is refused" and §F's "exactly 24 canisters delivered" failed together
+// roughly 1 run in 10, because the canisters this file gathers are placed at random and one could fall
+// outside the pickup radius on the frame the count is taken. Under the seed all 53 assertions pass
+// every run — verified non-vacuous over repeated runs, not merely quiet (the _seeded-random.js caveat).
+// ⛔ NOT RELATED TO CS026 P6 despite the filename — this is the ORIGINAL Phase 6 test, and the
+// collision is only in the name.
+// Installed at the TOP OF THE FILE, BEFORE THE FIRST BUILD, per _seeded-random.js: this file drives the
+// real game after building it, so randomness lands on BOTH sides of the factory invocation.
+const { installSeed } = require("./_seeded-random.js");
+installSeed(20260813);
 const fs = require("fs");
 const path = require("path");
 

@@ -308,7 +308,11 @@ let X = null;
 // ================= (F) TRAPs =====================
 (function sectionF() {
   console.log("(F) TRAPs: version, LEVERS/leverState byte-identical, registry +4, DIFFICULTY-LEVERS.md row, no GDD edit, scope pin");
-  eq(X.GAME_VERSION, "1.0.0.25", "F: ⛔ TRAP 1 — GAME_VERSION is still 1.0.0.25 (P6 owns the bump)");
+  // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE (the test-cs021-p4.js/test-cs025-p*.js
+  // precedent). This pin asserted the version was UNCHANGED while CS026 P5 ran, and named P6 as the
+  // phase that owns the bump — so P6 doing exactly that FALSIFIES the literal form by
+  // instruction. Inverted, the claim is permanently true. Do not re-point it to a literal again.
+  assert(X.GAME_VERSION !== "1.0.0.25", "F: ⛔ TRAP 1 — GAME_VERSION has moved off the pre-CS026-P6 baseline 1.0.0.25");
 
   const ps = parentSource(PARENT_SHA);
   let parentEntryCount = null;
@@ -329,7 +333,12 @@ let X = null;
       for (const k of Object.keys(now)) if (!(k in before)) moved++;
     }
     eq(moved, 0, "F: ⛔ TRAP 3 — leverState is identical to the parent at EVERY level 1..200");
-    eq(X.GAME_VERSION, OLD.GAME_VERSION, "F: ⛔ TRAP 1 — and the version matches the parent exactly");
+    // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE, matching the literal TRAP 1 pin in this
+    // same file. The claim was "CS026 P5 did not move the version off ITS parent"; P6 owns the bump and
+    // moves it off that same parent BY INSTRUCTION, so the equality is permanently false and the
+    // inequality permanently true. Do not re-point either form to a literal version again.
+    assert(X.GAME_VERSION !== OLD.GAME_VERSION,
+      "F: ⛔ TRAP 1 — the version has moved off P5's parent (CS026 P6 owns that bump)");
     // ⛔ TRAP 4 — the registry grows by EXACTLY four, verified by BUILDING the file (both the parent's and
     // this phase's own DEBUG_ENTRIES), not by adding up the table.
     eq(X.DEBUG_ENTRIES.length - parentEntryCount, 4, "F: ⛔ TRAP 4 — the registry grows by exactly four (measured, not counted)");

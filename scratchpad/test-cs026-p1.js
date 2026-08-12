@@ -466,7 +466,11 @@ const FIVE = [
 
   // TRAP 1 — the version. Still live, because P6 owns the next bump and nothing between here and there
   // may move it.
-  eq(X.GAME_VERSION, "1.0.0.25", "H: ⛔ TRAP 1 — GAME_VERSION is unmoved; CS026 P6 owns the next bump");
+  // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE (the test-cs021-p4.js/test-cs025-p*.js
+  // precedent). This pin asserted the version was UNCHANGED while CS026 P1 ran, and named P6 as the
+  // phase that owns the bump — so P6 doing exactly that FALSIFIES the literal form by
+  // instruction. Inverted, the claim is permanently true. Do not re-point it to a literal again.
+  assert(X.GAME_VERSION !== "1.0.0.25", "H: ⛔ TRAP 1 — GAME_VERSION has moved off the pre-CS026-P6 baseline 1.0.0.25");
 
   // ⛔ TRAPs 3 AND 4 ARE MEASURED AT THIS PHASE'S OWN COMMIT AS OF CS026 P2, NOT ON THE LIVE BUILD, AND
   // THE CORRECTION IS THIS FILE'S OWN DOCTRINE APPLIED TO ITSELF. Both traps are claims about what P1

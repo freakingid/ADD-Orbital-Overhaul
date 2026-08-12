@@ -668,7 +668,11 @@ let X = null;
 (function sectionG() {
   console.log("(G) TRAPs: version, no design doc, LEVERS untouched, the starfield untouched, byte-identity");
   // TRAP 1 — the version stays put. P6 owns the bump.
-  eq(X.GAME_VERSION, "1.0.0.25", "G: ⛔ TRAP 1 — GAME_VERSION is still 1.0.0.25");
+  // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE (the test-cs021-p4.js/test-cs025-p*.js
+  // precedent). This pin asserted the version was UNCHANGED while CS026 P3 ran, and named P6 as the
+  // phase that owns the bump — so P6 doing exactly that FALSIFIES the literal form by
+  // instruction. Inverted, the claim is permanently true. Do not re-point it to a literal again.
+  assert(X.GAME_VERSION !== "1.0.0.25", "G: ⛔ TRAP 1 — GAME_VERSION has moved off the pre-CS026-P6 baseline 1.0.0.25");
 
   // TRAP 4 — the starfield was not touched. WORLD_SIZE_MAX still reads WORLD_SIZE_ORBIT, so the sky is
   // still generated once at the LARGEST table size and filtered per world; a SMALLER world is simply the
@@ -728,7 +732,12 @@ let X = null;
     // TRAP 4 against the parent too, and TRAP 1.
     for (const k of ["WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT", "WORLD_SIZE_MAX", "STAR_COUNT", "STAR_DENSITY"])
       eq(X[k], OLD[k], `G: ⛔ TRAP 4 — ${k} matches the parent exactly`);
-    eq(X.GAME_VERSION, OLD.GAME_VERSION, "G: ⛔ TRAP 1 — and the version matches the parent");
+    // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE, matching the literal TRAP 1 pin in this
+    // same file. The claim was "CS026 P3 did not move the version off ITS parent"; P6 owns the bump and
+    // moves it off that same parent BY INSTRUCTION, so the equality is permanently false and the
+    // inequality permanently true. Do not re-point either form to a literal version again.
+    assert(X.GAME_VERSION !== OLD.GAME_VERSION,
+      "G: ⛔ TRAP 1 — the version has moved off P3's parent (CS026 P6 owns that bump)");
 
     // TRAP 5 — the two functions this phase must NOT have changed, pinned on their EXECUTABLE source.
     // ⛔ The standing strip idiom replaces a trailing `//…` FIRST, which turns a whole-line comment into

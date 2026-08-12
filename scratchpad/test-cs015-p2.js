@@ -179,8 +179,21 @@ function openTab(id) {
 (function sectionB() {
   console.log("(B) name/status/desc stack on three real lines: ry, ry+ACH_STATUS_DY, ry+ACH_DESC_DY");
   assert(ACH_ROW0_Y === ry0, "B: ACH_ROW0_Y exported and consistent");
-  assert(0 < ACH_STATUS_DY && ACH_STATUS_DY < ACH_DESC_DY && ACH_DESC_DY < ACH_ROW_STEP,
-    `B: stacking order holds (0 < ACH_STATUS_DY=${ACH_STATUS_DY} < ACH_DESC_DY=${ACH_DESC_DY} < ACH_ROW_STEP=${ACH_ROW_STEP})`);
+  // ⛔ SUPERSEDED BY CS026 P6, GATE Q8.4 — AND THIS FILE IS THE DEDICATED REGRESSION FOR THE VERY
+  // CLAIM THAT WAS REVERSED, so the supersession is recorded here rather than the file being deleted.
+  // CS015 P2 moved the status onto its OWN line (ACH_STATUS_DY 24) because at ACH_SCALE 1.5 a long
+  // name and a long status could collide in the middle of one shared baseline. Paul's Q8.4 report was
+  // that the resulting 1140 px of clear air between them made it impossible to tell which status
+  // belonged to which row, so the status is back on the name's baseline (ACH_STATUS_DY 0) and the
+  // collision is now prevented a different way: achLeader()'s dotted run is what occupies the gap, it
+  // is what gets SQUEEZED as the pair widens, and it VANISHES entirely (the ACH_LEADER_MIN bail)
+  // before the two can touch. That protection is asserted for real, on the widest shipped pair, in
+  // test-cs026-p6.js §E — it is not merely assumed here.
+  // The stacking order therefore reads `0 === ACH_STATUS_DY` now, not `0 < ACH_STATUS_DY`. Everything
+  // else CS015 P2 pinned — the description's own line, the row step that fits three lines, the sizes
+  // and alignments — is unchanged and still asserted below.
+  assert(ACH_STATUS_DY === 0 && ACH_STATUS_DY < ACH_DESC_DY && ACH_DESC_DY < ACH_ROW_STEP,
+    `B: stacking order holds, CS026-P6 shape (ACH_STATUS_DY=${ACH_STATUS_DY} === 0 < ACH_DESC_DY=${ACH_DESC_DY} < ACH_ROW_STEP=${ACH_ROW_STEP})`);
 
   game.state = "playing";
   resetAch();
@@ -203,7 +216,10 @@ function openTab(id) {
       assert(status.length === 1, `B: [${tab.id}] row ${i} ("${ach.name}") status at (x+ACH_COL_W, ry+ACH_STATUS_DY) (got ${status.length} matches)`);
       assert(status.length === 1 && status[0].align === "right", `B: [${tab.id}] row ${i} status stays right-aligned`);
       assert(status.length === 1 && fontSize(status[0]) === statusSize, `B: [${tab.id}] row ${i} status size == ${statusSize} (tiers=${!!ach.tiers})`);
-      assert(at(log, ACH_COL_X + ACH_COL_W, ry).length === 0, `B: [${tab.id}] row ${i} status no longer shares the name's baseline (ry)`);
+      // CS026 P6 (gate Q8.4): the status SHARES the name's baseline again — the inverse of what this
+      // line asserted for CS015 P2. `ACH_STATUS_DY` is 0, so the two lookups above and below are the
+      // same y by construction; assert the sharing explicitly rather than leaving it implied.
+      assert(at(log, ACH_COL_X + ACH_COL_W, ry).length === 1, `B: [${tab.id}] row ${i} status shares the name's baseline again (ry)`);
 
       const desc = at(log, ACH_COL_X, ry + ACH_DESC_DY).find(e => e.str === ach.desc);
       assert(!!desc, `B: [${tab.id}] row ${i} description fillText at (ACH_COL_X, ry+ACH_DESC_DY)`);

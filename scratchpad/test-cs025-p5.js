@@ -173,10 +173,20 @@ function quiet(X) {
 
 // ============ (A) the version ============
 (function sectionA() {
-  console.log("(A) GAME_VERSION is \"1.0.0.25\", and the high-score build stamp follows it");
+  console.log("(A) GAME_VERSION has moved off CS025 P5's own bump, and the high-score build stamp follows it");
   const X = build();
-  eq(X.GAME_VERSION, "1.0.0.25", "A: GAME_VERSION is exactly \"1.0.0.25\"");
-  eq(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1], "1.0.0.25", "A: ...in the source literal too");
+  // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE, joining its four p1/p2/p3/p4 siblings — which
+  // this file's own phase flipped for exactly this reason one changeset ago. CS025 P5 was the closing
+  // phase that BUMPED the version to "1.0.0.25", and pinned that as a live literal. Every subsequent
+  // closing phase falsifies it by instruction, so as a literal it is a standing repair bill. Inverted
+  // against the value CS025 P5 bumped AWAY from, the claim ("the bump this phase owned really happened")
+  // is permanently true. ⛔ Do not re-point this to a literal version again — the small deliberate set
+  // of live HEAD-tracking pins lives elsewhere (test-cs010-p0, -cs013-p4, -cs015-p7, -cs016-p5,
+  // -cs017-p7, -cs018-p10, -cs021-p4) and this file is not one of them.
+  assert(X.GAME_VERSION !== "1.0.0.24", "A: GAME_VERSION has moved off the pre-CS025-P5 baseline 1.0.0.24");
+  assert(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1] !== "1.0.0.24", "A: ...in the source literal too");
+  // The shape CS025 P5 actually owned is still pinned, and is version-agnostic.
+  assert(/^\d+\.\d+\.\d+\.\d+$/.test(X.GAME_VERSION), "A: the unprefixed Major.Minor.Patch.Changeset shape is kept");
 
   // The skip tombstone must survive: ".23" stays skipped and must never be back-filled.
   assert(/\.23.*SKIPPED DELIBERATELY|SKIPPED DELIBERATELY/.test(scriptSrc),
@@ -185,7 +195,8 @@ function quiet(X) {
   // A fresh high-score record stamps the new build (the second consumer of the constant).
   if (X.HighScores && typeof X.HighScores.add === "function") {
     const rec = X.HighScores.add(12345, "ABC");
-    assert(!rec || rec.build === "1.0.0.25", "A: a fresh HighScores.add() stamps build \"1.0.0.25\"");
+    // Same flip: the CLAIM is that the stamp FOLLOWS the constant, not that it holds any one literal.
+    assert(!rec || rec.build === X.GAME_VERSION, "A: a fresh HighScores.add() stamps build === GAME_VERSION, whatever it currently is");
   } else {
     assert(true, "A: (HighScores.add not exported here — test-cs010-p0.js owns that pin)");
   }

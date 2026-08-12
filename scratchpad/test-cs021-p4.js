@@ -211,7 +211,7 @@ const hudBody = (() => {
   eq(HUD_FX_BASE_Y, 640, "A: HUD_FX_BASE_Y (powerup stack floor) unmoved");
   eq(HUD_FX_ROW_H, 40, "A: HUD_FX_ROW_H unmoved");
 
-  eq(GAME_VERSION, "1.0.0.25", "A: GAME_VERSION is CS026 P3's — P6 owns the next bump");
+  eq(GAME_VERSION, "1.0.0.26", "A: GAME_VERSION is CS026 P6's — the next changeset's closing phase owns the next bump");
 })();
 
 // ================= (B) the CS020 P1b 8/1100 scenario — driven for real, readout ABSENT throughout =====

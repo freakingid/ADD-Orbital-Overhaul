@@ -406,8 +406,12 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // size 12 (was COLOR.dock, default size) plus the new deliveryFloatRise/Life knobs, so it separates
   // too but never shares the towed branch's tally or colour (FLAG-CS020-d's "an incidental keeps its
   // FloatText" claim survives; only its look changed).
-  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, node\.x, node\.y, COLOR\.dim, 12,\s*\n\s*DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)\);/.test(scriptSrc),
-    "A: an incidental keeps its FloatText (FLAG-CS020-d), now quieted per CS026 P4");
+  // RE-REPOINTED BY CS026 P6 (gate Q5): the ORIGIN moved too. It was `node.x, node.y` — the popped
+  // node, i.e. the chain's TAIL and so the canister farthest from the ship — and is now the ship
+  // itself. FLAG-CS020-d's actual claim ("an incidental keeps its FloatText") is what this asserts and
+  // it still holds; only the look and the position have moved under it, twice, by two gate answers.
+  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, game\.ship\.x, game\.ship\.y - DELIVERY_FLOAT_DY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)\);/.test(scriptSrc),
+    "A: an incidental keeps its FloatText (FLAG-CS020-d), quieted per CS026 P4 and re-homed to the ship per CS026 P6");
   assert(scriptSrc.includes("AudioSys.deliver(1);"),
     "A: an incidental calls AudioSys.deliver(1) — flat, not combo-pitched (FLAG-CS020-e)");
   assert(!/DOCK_INCIDENTAL_SCORE/.test(scriptSrc),
@@ -1062,8 +1066,23 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     if (k === "floaters") continue;
     eq(fixed[k], pre[k], `J: ${k} is bit-identical to the pre-fix build`);
   }
-  eq(fixed.floaters, pre.floaters,
-    "J: every floater — text AND position to six decimal places — is bit-identical to the pre-fix build");
+  // ⛔ NARROWED BY CS026 P6 (gate Q5), AND THE NARROWING IS THE POINT OF THE CLAIM, NOT A WEAKENING.
+  // This pin compared floater TEXT **and POSITION** against a build of the CS020 pre-fix parent. CS020's
+  // claim was that tagging nodes `towed` changed nothing observable about the delivery feedback — that
+  // no floater was added, removed, reordered or re-texted. POSITION was only ever a proxy for that, and
+  // it is now a proxy that must fail: CS026 P6 deliberately moved every delivery floater's origin from
+  // the popped chain node to the ship, so the pre-fix build (which predates the move) draws them
+  // somewhere else BY DESIGN. Comparing text-and-order still proves exactly what CS020 asserted, and
+  // still fails on any of the four regressions it was written to catch. The positions themselves are
+  // pinned where they now belong — against this phase's own parent, in test-cs026-p6.js §C.
+  const textsOnly = str => str.split("|").map(t => t.slice(0, t.lastIndexOf("@"))).join("|");
+  eq(textsOnly(fixed.floaters), textsOnly(pre.floaters),
+    "J: every floater — text AND order — is identical to the pre-fix build (position is CS026 P6's, see below)");
+  eq(fixed.floaters.split("|").length, pre.floaters.split("|").length,
+    "J: ...and the floater COUNT is identical too — none added or dropped");
+  // Non-vacuity: the positions really did move, so the narrowing above is not quietly comparing equals.
+  assert(fixed.floaters !== pre.floaters,
+    "J: (non-vacuity) the positions DID change — this is the CS026 P6 origin move, not a silent no-op");
 
   // And the tag really was live throughout: this is a control, not a run where nothing was tagged.
   assert(/towed: !inRing/.test(scriptSrc), "J: (control validity) the tag is present in the build under test");

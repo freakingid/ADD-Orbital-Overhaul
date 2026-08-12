@@ -153,10 +153,14 @@ let X = null;
   // -- the two delivery push sites read the new DEBUG knobs --
   eq((codeSrc.match(/DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife/g) || []).length, 2,
     "A: exactly TWO push sites read DEBUG.deliveryFloatRise/deliveryFloatLife — the towed and incidental branches");
-  assert(/new FloatText\("\+" \+ pts, node\.x, node\.y, COLOR\.dock, 16,\s*\n\s*DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
-    "A: the TOWED branch keeps COLOR.dock, size 16 (unchanged) and adds the two live knobs");
-  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, node\.x, node\.y, COLOR\.dim, 12,\s*\n\s*DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
-    "A: ⛔ the INCIDENTAL branch is QUIETED (COLOR.dim, size 12), not folded into the towed tally/colour");
+  // ⛔ REPOINTED BY CS026 P6 (gate Q5): both branches' ORIGIN moved from `node.x, node.y` — the popped
+  // node, which is the chain's TAIL — to the ship. P4's own claims (the towed branch keeps COLOR.dock
+  // at 16, the incidental is quieted to COLOR.dim at 12, both read the two knobs) are UNCHANGED and are
+  // still exactly what these two lines assert; only the coordinates under them moved.
+  assert(/new FloatText\("\+" \+ pts, game\.ship\.x, game\.ship\.y - DELIVERY_FLOAT_DY,\s*\n\s*COLOR\.dock, 16, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
+    "A: the TOWED branch keeps COLOR.dock, size 16 (unchanged), reads the two live knobs, and is born at the ship");
+  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, game\.ship\.x, game\.ship\.y - DELIVERY_FLOAT_DY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
+    "A: ⛔ the INCIDENTAL branch is QUIETED (COLOR.dim, size 12), not folded into the towed tally/colour — same ship origin");
 
   // -- every other FloatText call site is untouched: total call sites vs. sites naming the new knobs --
   const totalSites = (codeSrc.match(/new FloatText\(/g) || []).length;
@@ -178,7 +182,11 @@ let X = null;
   const rise = X.DEBUG_VARS[iRise], life = X.DEBUG_VARS[iLife];
   eq(rise.label, "Delivery floater rise", "B: deliveryFloatRise label");
   eq(rise.unit, "px/s", "B: deliveryFloatRise unit");
-  eq(rise.def, 300, "B: deliveryFloatRise def 300");
+  // ⛔ REPOINTED BY CS026 P6 (gate Q5). P4 SHIPPED THESE AS FIRST GUESSES SPECIFICALLY SO THE GATE
+  // COULD SETTLE THEM — its own comment said so — so the gate moving them is this phase working as
+  // designed, not a regression. Paul: "the score numbers need to fade more slowly, and they need to
+  // travel upwards more slowly."
+  eq(rise.def, 160, "B: deliveryFloatRise def 160 (P4 shipped 300; the gate settled it)");
   eq(rise.min, 30, "B: deliveryFloatRise min 30");
   eq(rise.max, 600, "B: deliveryFloatRise max 600");
   eq(rise.step, 10, "B: deliveryFloatRise step 10");
@@ -186,7 +194,7 @@ let X = null;
 
   eq(life.label, "Delivery floater life", "B: deliveryFloatLife label");
   eq(life.unit, "s", "B: deliveryFloatLife unit");
-  eq(life.def, 0.55, "B: deliveryFloatLife def 0.55");
+  eq(life.def, 1.2, "B: deliveryFloatLife def 1.2 (P4 shipped 0.55; the gate settled it)");
   eq(life.min, 0.2, "B: deliveryFloatLife min 0.2");
   eq(life.max, 2.0, "B: deliveryFloatLife max 2.0");
   eq(life.step, 0.05, "B: deliveryFloatLife step 0.05");
@@ -195,8 +203,8 @@ let X = null;
   eq(X.DEBUG_ENTRIES.length, 85, "B: the registry holds 85 value entries (CS026 P3's 79 + this phase's 2 + CS026 P5's four level banner knobs)");
   eq(Object.keys(X.DEBUG).length, 85, "B: ...and the native DEBUG map agrees");
   eq(Object.keys(X.debugShown).length, 85, "B: ...and the display map agrees");
-  eq(X.DEBUG.deliveryFloatRise, 300, "B: the live value seeds from def (rise)");
-  eq(X.DEBUG.deliveryFloatLife, 0.55, "B: ...and (life)");
+  eq(X.DEBUG.deliveryFloatRise, 160, "B: the live value seeds from def (rise)");
+  eq(X.DEBUG.deliveryFloatLife, 1.2, "B: ...and (life)");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4,
     "B: DEBUG_ROWS is still registry + Dump + Reset All + Reset Scores + Back");
 
@@ -207,7 +215,7 @@ let X = null;
   eq(A.DEBUG.deliveryFloatRise, 500, "B: applyDebug writes deliveryFloatRise live");
   eq(A.DEBUG.deliveryFloatLife, 1.0, "B: ...and deliveryFloatLife live");
   A.applyDebug(A.DEBUG_OVERRIDE_ID, 0);
-  eq(A.DEBUG.deliveryFloatRise, 300, "B: overrides OFF derives from def, like every other row");
+  eq(A.DEBUG.deliveryFloatRise, 160, "B: overrides OFF derives from def, like every other row");
   eq(A.debugShown.deliveryFloatRise, 500, "B: ...without discarding the edit");
 })();
 
@@ -369,10 +377,16 @@ let X = null;
   const gap = probe0.y - probe1.y;
   const wantGap = -(A.DEBUG.deliveryFloatRise * (birthGapFrames / 60));
   close(gap, wantGap, "E: ⛔ the REAL FloatText.update(), run for the MEASURED birth gap, separates them by rise * gap", 1e-9);
-  close(A.DEBUG.deliveryFloatRise * A.DOCK_OFFLOAD_INTERVAL, 15,
-    "E: ⛔ at the shipped knobs, consecutive floaters separate by 15px (was 1.5px) — spec §3.2's headline number");
-  close(A.DEBUG.deliveryFloatRise * A.DEBUG.deliveryFloatLife, 165,
-    "E: ⛔ ...and each travels 165px before expiring (was 33px) — spec item 2's headline number");
+  // ⛔ REPOINTED BY CS026 P6 (gate Q5) — AND THE SEPARATION NUMBER WENT **DOWN**, DELIBERATELY.
+  // P4's 15 px assumed rise 300 AND an origin that carried the chain's own spread. The gate cut the
+  // rise to 160 and collapsed every floater onto ONE origin at the ship, so separation is now purely
+  // rise x cadence: 160 x 0.05 = 8 px. Paul was shown that arithmetic, and the alternative that buys
+  // it back (cadence 0.05 -> 0.10, restoring 16 px but doubling a 24-canister visit to 2.4 s), and
+  // chose to hold delivery pacing. The travel distance went the other way: 160 x 1.2 = 192 px.
+  close(A.DEBUG.deliveryFloatRise * A.DOCK_OFFLOAD_INTERVAL, 8,
+    "E: ⛔ at the shipped knobs, consecutive floaters separate by 8px nominal (P4 measured 15 at rise 300)");
+  close(A.DEBUG.deliveryFloatRise * A.DEBUG.deliveryFloatLife, 192,
+    "E: ⛔ ...and each travels 192px before expiring (P4: 165; the ambient default was 33)");
 
   // -- deconfliction (spec §3.6): SALVAGE BONUS / MAX HAUL are UNTOUCHED — still default rise/life,
   //    still at dock.y - 22, never moved and never given the new knobs. --
@@ -392,7 +406,11 @@ let X = null;
 // ================= (F) TRAPs =====================
 (function sectionF() {
   console.log("(F) TRAPs: version, LEVERS/leverState byte-identical, no design doc, scope pin");
-  eq(X.GAME_VERSION, "1.0.0.25", "F: ⛔ TRAP 1 — GAME_VERSION is still 1.0.0.25 (P6 owns the bump)");
+  // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE (the test-cs021-p4.js/test-cs025-p*.js
+  // precedent). This pin asserted the version was UNCHANGED while CS026 P4 ran, and named P6 as the
+  // phase that owns the bump — so P6 doing exactly that FALSIFIES the literal form by
+  // instruction. Inverted, the claim is permanently true. Do not re-point it to a literal again.
+  assert(X.GAME_VERSION !== "1.0.0.25", "F: ⛔ TRAP 1 — GAME_VERSION has moved off the pre-CS026-P6 baseline 1.0.0.25");
 
   const ps = parentSource(PARENT_SHA);
   if (!ps) {
@@ -411,7 +429,12 @@ let X = null;
       for (const k of Object.keys(now)) if (!(k in before)) moved++;
     }
     eq(moved, 0, "F: ⛔ TRAP 3 — leverState is identical to the parent at EVERY level 1..200");
-    eq(X.GAME_VERSION, OLD.GAME_VERSION, "F: ⛔ TRAP 1 — and the version matches the parent exactly");
+    // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE, exactly like the literal pin above it. P4's
+    // claim was that IT did not move the version off ITS parent; P6 owns the bump and moves it off that
+    // same parent by instruction, so the equality is permanently false and the inequality permanently
+    // true. Do not re-point either form to a literal.
+    assert(X.GAME_VERSION !== OLD.GAME_VERSION,
+      "F: ⛔ TRAP 1 — the version has moved off P4's parent (CS026 P6 owns that bump)");
   }
 
   const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);

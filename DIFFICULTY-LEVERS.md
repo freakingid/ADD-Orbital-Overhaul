@@ -88,7 +88,7 @@ on purpose. `leverState` has no in-game caller and is not vestigial — it is wh
 
 ## 3. The shipped levers
 
-Seventeen levers, three chains. Every one carries three debug rows —
+Eighteen levers, three chains. Every one carries three debug rows —
 `<id>Floor`, `<id>Ceil`, `<id>Steps` — so a ramp's start, end and length are all
 tunable live (CS024 P6c). **Setting Floor equal to Ceil pins a lever flat at
 every level.**
@@ -99,21 +99,22 @@ every level.**
 | 2 | `junkSpeedLarge` | 60 → 110 px/s | 5 | — | — (plateaus L41) |
 | 3 | `junkSpeedMedium` | 95 → 165 px/s | 5 | — | — (plateaus L41) |
 | 4 | `junkSpeedSmall` | 140 → 240 px/s | 5 | — | — (plateaus L41) |
-| 5 | `coalescePause` **(inv)** | 5.0 → 1.5 s | 8 | 1 | **DRIVER** → `hunterSpeedMedium`, `hunterSpeedSmall` |
-| 6 | `hunterSpeedMedium` | 60 → 110 px/s | 5 | — | — (plateaus L33) |
-| 7 | `hunterSpeedSmall` | 90 → 160 px/s | 5 | — | — (plateaus L33) |
-| 8 | `ufoAppearFreq` **(inv)** | 25 → 12 s | 8 | 1 | **DRIVER** → all nine UFO levers below |
-| 9 | `ufoFlightSpeedBig` | 100 → 150 px/s | 5 | — | — (plateaus L33) |
-| 10 | `ufoFlightSpeedSmall` | 150 → 210 px/s | 5 | — | — (plateaus L33) |
-| 11 | `ufoFireFreqBig` **(inv)** | 1.8 → 0.7 × | 6 | — | — (plateaus L41) |
-| 12 | `ufoFireFreqSmall` **(inv)** | 1.8 → 0.6 × | 6 | — | — (plateaus L41) |
-| 13 | `ufoDirChangeBig` **(inv)** | 2.2 → 1.0 s | 7 | — | — (plateaus L49) |
-| 14 | `ufoDirChangeSmall` **(inv)** | 1.8 → 0.7 s | 7 | — | — (plateaus L49) |
-| 15 | `ufoShotSpeedBig` | 300 → 430 px/s | 8 | — | — (plateaus L57) |
-| 16 | `ufoShotSpeedSmall` | 320 → 470 px/s | 8 | — | — (plateaus L57) |
-| 17 | `ufoAccuracySmall` **(inv)** | 30 → 8 ° | 9 | — | — (plateaus L65) |
+| 5 | `junkSplit` | 2 → 3 children | 2 | — | — (↳ carried by `junkCount`; **2 through L10, 3 from L11 on, forever**) |
+| 6 | `coalescePause` **(inv)** | 5.0 → 1.5 s | 8 | 1 | **DRIVER** → `hunterSpeedMedium`, `hunterSpeedSmall` |
+| 7 | `hunterSpeedMedium` | 60 → 110 px/s | 5 | — | — (plateaus L33) |
+| 8 | `hunterSpeedSmall` | 90 → 160 px/s | 5 | — | — (plateaus L33) |
+| 9 | `ufoAppearFreq` **(inv)** | 25 → 12 s | 8 | 1 | **DRIVER** → all nine UFO levers below |
+| 10 | `ufoFlightSpeedBig` | 100 → 150 px/s | 5 | — | — (plateaus L33) |
+| 11 | `ufoFlightSpeedSmall` | 150 → 210 px/s | 5 | — | — (plateaus L33) |
+| 12 | `ufoFireFreqBig` **(inv)** | 1.8 → 0.7 × | 6 | — | — (plateaus L41) |
+| 13 | `ufoFireFreqSmall` **(inv)** | 1.8 → 0.6 × | 6 | — | — (plateaus L41) |
+| 14 | `ufoDirChangeBig` **(inv)** | 2.2 → 1.0 s | 7 | — | — (plateaus L49) |
+| 15 | `ufoDirChangeSmall` **(inv)** | 1.8 → 0.7 s | 7 | — | — (plateaus L49) |
+| 16 | `ufoShotSpeedBig` | 300 → 430 px/s | 8 | — | — (plateaus L57) |
+| 17 | `ufoShotSpeedSmall` | 320 → 470 px/s | 8 | — | — (plateaus L57) |
+| 18 | `ufoAccuracySmall` **(inv)** | 30 → 8 ° | 9 | — | — (plateaus L65) |
 
-Three notes on that table, each of which will otherwise look like a mistake:
+Four notes on that table, each of which will otherwise look like a mistake:
 
 - **The nine UFO step counts are UNEVEN ON PURPOSE (CS024 P6b) — do not "tidy"
   them into one number.** One driver wrap every 8 levels feeds all nine, so a
@@ -124,6 +125,18 @@ Three notes on that table, each of which will otherwise look like a mistake:
   reads exactly as level 1. Deliberate: it is the driver, and a driver that
   stopped cycling would freeze all nine levers under it. UFO *pressure*
   escalates through those nine; UFO *rhythm* stays constant.
+- **`junkSplit` (CS026 P2, FORK-CS026-A) is a TWO-STATE lever and the table's
+  only one — floor 2, ceil 3, steps 2 means it takes exactly one step, ever.**
+  It is `↳`-carried by `junkCount`, so it advances on that driver's wrap: 2-way
+  splits through level 10, 3-way from level 11 on, and then flat forever. That
+  makes level 1 a **21-body** tree instead of 39 — the changeset's central
+  pacing bet — while a 2-way level 10 (84 bodies) is still busier than a 3-way
+  level 1 ever was, so nothing sags in the middle. **It is consumed by
+  `destroyDebris()` only.** `destroyHunter()` carries its own, separate,
+  hardcoded 3-way loop and is deliberately NOT levered: `ACH_LINEAGE_FULL = 13`
+  (1 + 3 + 9) is an achievement built on that number, so levering the Hunter
+  split would silently make an achievement unreachable at some levels. **⛔ The
+  CS026 gate (Q1) confirmed this one: "none are wrong. Pacing is much better."**
 - **`junkCount` is the one integer-valued lever, and it is rounded at the
   consumer** — `nextWave()` spawns `Math.round(lv.junkCount)`. Round, not floor:
   it is the nearest achievable count to the authored curve, it returns both
@@ -150,6 +163,8 @@ with the level, on purpose.
 | **Large-Hunter speed** | Frozen `HUNTER_SPEED_CEIL[3] × HUNTER_FLOOR_FRAC` = 40.6 px/s | Large Hunters do not pursue, so there is nothing for a speed ramp to mean. Only medium and small are levered. |
 | `hunterCapMax` / `hunterCapLevelsPerStep` / `heldClumpMax` | Flat knobs (6 / 2 / 4) | See §5 — a **ceiling**, and a ceiling on concurrent threats is a stability guarantee, not a difficulty axis. The player should never feel it move. |
 | `magnetResumeDelay` / `magnetPushKick` / `magnetPushSpread` | Flat knobs (250 ms / 120 px/s / 45°), CS025 P1/P2, **POWERUPS** section | **Knobs on a POWERUP'S BEHAVIOUR, not difficulty axes.** They tune how the Magnet behaves when the tow chain is full — how long the pull stays suppressed after a slot opens, and how hard/wide the full-cargo repulsion burst throws the gathered cloud. None of them describes a quantity that should get harder as the player gets deeper: the Magnet is the player's own tool, and scaling its recovery by level would make a powerup **worse the further you get**, which is backwards. All three are flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and none has a shipped constant behind its default (a resume delay has no meaning outside the knob), so the registry entry *is* the source of truth, the `chainGuardIntercepts` idiom. |
+| `deliveryFloatRise` / `deliveryFloatLife` | Flat knobs (160 px/s / 1.2 s), CS026 P4 shape + P6 tuning, **DELIVERY** section | **A floater's speed and fade are look-calls on a REWARD, not pressure axes.** They tune how the per-canister `"+pts"` column at the dock reads; nothing about how hard the level plays. Scaling them by level would be backwards twice over — the delivery payoff is the player's own reward, and a deeper level pays *more*, so a level-scaled fade would make the biggest numbers the hardest to read. Both flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and both knob-only, with no shipped constant behind them (the `magnetResumeDelay` idiom, not the `debrisBounceRestitution` one). `DELIVERY_FLOAT_DY` (22 px, the floaters' offset above the ship) is a **frozen constant and not even a knob**: it is a fixed nudge clear of the hull. ⛔ `DOCK_OFFLOAD_INTERVAL` (0.05 s) is likewise NOT a knob and was deliberately left alone at the CS026 gate — see §6. |
+| `earlyWorldLevels` | Flat knob (5), CS026 P3, **GLOBAL** section | **A world SIZE boundary, not a difficulty ramp.** It says how many levels run in the small 1920×1080 torus before the 2560×1440 one takes over — one resize per run, at the 5→6 seam. It is not levered because it is not a quantity that should scale: it names a fixed early-game window, and there is nothing for "more of it per level" to mean. 0 turns the feature off entirely for a same-session A/B, which is the other reason it must stay a plain knob. **No combat number depends on it** — see §5's note on why it changes no ceiling. |
 | `levelBannerTime` / `levelBannerFade` / `levelBannerSize` / `levelBannerY` | Flat knobs (2.2 s / 0.5 s / 72 px / 24 px), CS025 P5 constants promoted to knobs CS026 P5, **GLOBAL** section | **A banner's size and duration are look-calls, not pressure axes.** They tune how the centre-screen "Level N" announcement looks and how long it holds — nothing about how hard the level plays. Scaling any of them by level would be meaningless: the banner reads the same at level 1 as at level 90. All four are flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and each stays anchored to its own shipped constant as the row's `def` (`LEVEL_BANNER_TIME`/`FADE`/`SIZE`/`Y`), the `debrisBounceRestitution` idiom, not the knob-only one directly above. |
 
 ## 5. Explicit ceilings
@@ -182,6 +197,20 @@ here, in the same commit that can grow it.**
   44,850 at 300, measured with a deterministic counter. **Quadratic in the
   ceiling** — ~99,900/frame at 450, ~500,000 at 1,000 — so raising to ~300–350
   is affordable and beyond that wants a spatial grid, not a bigger number.
+  **⛔ RE-CHECKED AND HELD AT THE CS026 GATE (Q4), WHICH IS THE POINT** — CS026
+  P2's split lever moved the shed volume by roughly half at every level, so a
+  ceiling tuned against the old volume had to be re-read against the new one in
+  the same session or neither reading meant anything. It was, and Paul reported
+  *"garbage density is fine"* with no canister ever seen to vanish. **Both
+  numbers stand at 220 / 300, now playtested against the post-split volume
+  rather than the pre-split one.** They have not moved since CS024 and
+  FLAG-CS024-c is discharged.
+- **⛔ THE EARLY-WORLD SHRINK (CS026 P3) CHANGES NO CEILING, and that is worth
+  stating rather than leaving to inference.** Levels 1–5 run in a 1920×1080
+  torus (56% of the 2560×1440 area), which raises garbage *density* per unit
+  area without raising any *count*: `GARBAGE_SOFT_MAX`/`HARD_MAX` are absolute
+  piece counts, not areal densities, so the O(n²) pair-walk budget above is
+  unchanged. Nothing here grew a new unbounded quantity.
 - **`SWEEP_POWERUP_CAP` (48)** — the Super Mega Delivery's fixed spawn ceiling:
   at most 48 powerups from one sweep, counting the guaranteed type set plus
   every per-piece payout. Deliberately **not** a debug knob.
@@ -192,6 +221,45 @@ here, in the same commit that can grow it.**
   field.
 
 ## 6. Retune log
+
+- **CS026 P6 (the CS026 gate). ⛔ NOT a clean gate — but NO LEVER MOVED, and
+  nothing on this document's subject moved either.** Six of the eight questions
+  came back clean: **Q1 pacing** *"none are wrong. Pacing is much better."* —
+  which is this changeset's central bet confirmed and the `junkSplit` lever
+  (§3, row 5) validated at its shipped 2/3 shape; **Q2** the smaller early world
+  *"is fine"*; **Q3** the score curve *"is fine"*, which is the answer that
+  clears FORK-CS026-C's accepted risk (halving the debris score curve also
+  halves how often the fixed 10,000-point `REPAIR_MILESTONE` repairs the hull —
+  the one place this changeset could have made the early game *harder*, and it
+  did not); **Q4** garbage density fine (see §5 — re-checked against the new
+  volume and held at 220/300); **Q6** the incidental delivery fine; **Q7** the
+  level banner *"looks great"*, so all four of its knobs stand unmoved at their
+  CS025 first guesses, now playtested.
+  **`LEVERS` and `leverState` are pinned byte-identical at every level 1..200
+  against this phase's own parent commit** (`test-cs026-p6.js` §G) — the retune
+  this gate did return touched no lever, no floor, no ceiling, no step count and
+  no chain composition.
+  **The two questions that returned work were both look-calls, and both were put
+  to Paul before a line of code was written** (the standing rule, and the CS025
+  P5 precedent). **Q5** asked for the delivery floaters to be *"closer to the
+  ship"*, to *"fade more slowly"* and to *"travel upwards more slowly"* —
+  applied as `deliveryFloatRise` 300 → **160**, `deliveryFloatLife` 0.55 → **1.2**
+  and a move of both delivery branches' origin from the popped chain node to the
+  ship. **He was offered a third knob and declined it:** a single origin makes
+  floater separation purely `rise × DOCK_OFFLOAD_INTERVAL`, so the tighter rise
+  costs separation (8 px nominal, ~10.7 px on screen after frame quantisation,
+  against 15 px nominal before), and buying it back meant slowing the offload
+  cadence to 0.10 s and doubling a 24-canister dock visit to 2.4 s. **He chose
+  to hold delivery pacing and accept the tighter column, so the registry did not
+  grow at all this phase** — no new knob, the count holds at 85. **Q8** returned
+  four named Achievements-screen layout defects, fixed at look-call constants;
+  his own first suggestion there (an alternating row background) was **not**
+  built, because it would have been a fill and therefore a third named GDD §3.2
+  exception — shown the trade, he chose a dotted leader run instead, which is
+  `drawText` and adds no exception.
+  **The one number in the whole gate that Paul declined to give was Q4's**
+  (*"I do not know what number to report"*), and the correct handling was to
+  change nothing — see the standing instruction at the top of every gate.
 
 - **CS025 P5 (the CS025 gate).** **A completely clean gate — not one number
   moved, and no lever moved.** All three of CS025's new knobs came back

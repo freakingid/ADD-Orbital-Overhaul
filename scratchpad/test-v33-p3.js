@@ -39,6 +39,17 @@
 //  (14) v3.6 P3: Powerup drag is gone — a drop's speed is unchanged 5 real seconds after launch.
 
 "use strict";
+
+// ⛔ CS026 P6: SEEDED. This file was one of FOUR the closing phase's twice-and-diff run caught still
+// running unseeded — CS026 P1 pinned five paths, and these were not among them because nothing had
+// ever diffed two full-suite runs before. Its powerup drop-type set came out in a different
+// ORDER every run and the large-core velocity differed run to run. Both assertions are order- and
+// value-agnostic, so neither failed; the seed makes the output reproducible.
+// Installed at the TOP OF THE FILE, BEFORE THE FIRST BUILD, per _seeded-random.js: this file drives
+// the real game after building it, so randomness lands on BOTH sides of the factory invocation and a
+// seed installed later would fix nothing.
+const { installSeed } = require("./_seeded-random.js");
+installSeed(20260813);
 const fs = require("fs");
 const path = require("path");
 

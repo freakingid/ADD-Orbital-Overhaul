@@ -15,7 +15,7 @@
 // modulo keeps that a proper carousel if a third tab is ever added. §C asserts the wrap explicitly.
 //
 // Sections:
-//  (A) node --check on the extracted <script>; GAME_VERSION === "1.0.0.25" (live pin, tracks HEAD).
+//  (A) node --check on the extracted <script>; GAME_VERSION === "1.0.0.26" (live pin, tracks HEAD).
 //  (B) Entry defaults to the Weekly tab with scroll 0 — on a SECOND entry too, after the first entry
 //      has been left on the Lifetime tab and scrolled.
 //  (C) left/right switch tabs in both directions and WRAP at both ends; every switch resets
@@ -134,6 +134,7 @@ const RETURN = [
   "menuAchievements", "menuInput", "achMaxScroll", "achTabIndex", "achRows", "setAchTab",
   "Achievements", "COLOR", "TIER_COLOR", "MENU_TITLE", "MENU_HINT_SIZE",
   "ACH_SCALE", "ACH_SCROLL_STEP", "ACH_STATUS_DY", "ACH_DESC_DY", "ACH_ROW_STEP", "ACH_ROW0_Y",
+  "ACH_TAB_MARK",  // CS026 P6 (gate Q8.1): the selected tab's suffix
   "ACH_ROW_VISIBLE_H", "ACH_ROW_CLIP_TOP", "ACH_ROW_CLIP_BOTTOM", "ACH_PANEL_W", "ACH_PANEL_X", "ACH_PANEL_Y",
   "ACH_TABS", "ACH_TAB_DEFAULT", "ACH_COL_X", "ACH_COL_W", "ACH_TAB_STEP", "ACH_TAB_Y", "ACH_HINT",
   "drawAchievements", "drawAchRow", "AudioSys", "VIEW_W", "VIEW_H"
@@ -148,10 +149,17 @@ const {
   menuAchievements, menuInput, achMaxScroll, achTabIndex, achRows, setAchTab,
   Achievements, COLOR, TIER_COLOR, MENU_TITLE, MENU_HINT_SIZE,
   ACH_SCALE, ACH_SCROLL_STEP, ACH_STATUS_DY, ACH_DESC_DY, ACH_ROW_STEP, ACH_ROW0_Y,
+  ACH_TAB_MARK,
   ACH_ROW_VISIBLE_H, ACH_ROW_CLIP_TOP, ACH_ROW_CLIP_BOTTOM, ACH_PANEL_W, ACH_PANEL_X, ACH_PANEL_Y,
   ACH_TABS, ACH_TAB_DEFAULT, ACH_COL_X, ACH_COL_W, ACH_TAB_STEP, ACH_TAB_Y, ACH_HINT,
   drawAchievements, drawAchRow, AudioSys, VIEW_W, VIEW_H
 } = A;
+
+// CS026 P6 (gate Q8): two matchers this file needs everywhere it used to compare a label by identity.
+// ⛔ MATCH EXACTLY, in both forms — never startsWith(), which the panel's own "WEEKLY SET 2026-33 —
+// resets each calendar week" subtitle would satisfy before the real tab label.
+const isTabLabel = (str, t) => str === t.label || str === t.label + ACH_TAB_MARK;
+const isLeaderRun = str => typeof str === "string" && str.length > 0 && [...str].every(ch => ch === "\u00b7");
 
 AudioSys.init();
 startGame();
@@ -184,7 +192,7 @@ function openTab(id) {
 
 // ================= (A2) GAME_VERSION pin =====================
 (function sectionA() {
-  assert(GAME_VERSION === "1.0.0.25", `A: GAME_VERSION is exactly "1.0.0.25" (got "${GAME_VERSION}")`);
+  assert(GAME_VERSION === "1.0.0.26", `A: GAME_VERSION is exactly "1.0.0.26" (got "${GAME_VERSION}")`);
   assert(/^\d+\.\d+\.\d+\.\d+$/.test(GAME_VERSION), "A: GAME_VERSION keeps the unprefixed Major.Minor.Patch.Changeset shape");
   // Table shape: exactly two tabs, the first one being the default the entry reset names.
   assert(ACH_TABS.length === 2, `A: ACH_TABS carries exactly two tabs (got ${ACH_TABS.length})`);
@@ -303,7 +311,7 @@ function openTab(id) {
     tab.rows().forEach(ach => assert(strs.includes(ach.desc), `D: [${tab.id}] the active tab's description for "${ach.name}" is rendered`));
     other.rows().forEach(ach => assert(!strs.includes(ach.desc), `D: [${tab.id}] the INACTIVE tab's description for "${ach.name}" is NOT rendered`));
     // Both tab LABELS are always drawn (the header is a tab strip, not just the active caption).
-    ACH_TABS.forEach(t => assert(strs.includes(t.label), `D: [${tab.id}] both tab labels are drawn, including "${t.label}"`));
+    ACH_TABS.forEach(t => assert(strs.some(str => isTabLabel(str, t)), `D: [${tab.id}] both tab labels are drawn, including "${t.label}" (bare or ACH_TAB_MARK-suffixed)`));
   });
 })();
 
@@ -400,14 +408,23 @@ function openTab(id) {
     // Exactly the active tab's rows, three fillTexts each, INSIDE the bracket.
     const inside = log.slice(clipIdx + 1, restoreIdx).filter(e => e.c === "fillText");
     const n = tab.rows().length;
-    assert(inside.length === n * 3, `F: [${tab.id}] exactly ${n * 3} row fillTexts (name+status+desc x ${n}) inside the clip (got ${inside.length})`);
+    // ⛔ CS026 P6 (gate Q8.4): a row is FOUR fillTexts now, not three — name, status, description and
+    // the dotted leader run tying the first two together. The leader is conditional (achLeader() bails
+    // on a span under ACH_LEADER_MIN or a degenerate glyph width), so the count is bounded rather than
+    // fixed: at least three per row, at most four, and every leader inside the bracket must be a run
+    // of ACH_LEADER_DOT. Pinning `n * 4` flat would make this assertion depend on this stub's
+    // measureText model rather than on the renderer.
+    const leaders = inside.filter(e => isLeaderRun(e.str));
+    assert(inside.length === n * 3 + leaders.length,
+      `F: [${tab.id}] ${n} rows draw ${n * 3} name/status/desc fillTexts plus ${leaders.length} leader runs, all inside the clip (got ${inside.length})`);
+    assert(leaders.length === n, `F: [${tab.id}] every one of the ${n} rows got a leader run (got ${leaders.length})`);
     tab.rows().forEach(ach => assert(inside.some(e => e.str === ach.name), `F: [${tab.id}] "${ach.name}" draws INSIDE the clip`));
 
     // Chrome outside: panel title, subtitle, both tab labels, footer.
     const chrome = [
       log.find(e => e.c === "fillText" && e.str === "ACHIEVEMENTS"),
       log.find(e => e.c === "fillText" && /^WEEKLY SET/.test(e.str)),
-      ...ACH_TABS.map(t => log.find(e => e.c === "fillText" && e.str === t.label)),
+      ...ACH_TABS.map(t => log.find(e => e.c === "fillText" && isTabLabel(e.str, t))),
       log.find(e => e.c === "fillText" && e.str === ACH_HINT)
     ];
     chrome.forEach(e => {
@@ -416,19 +433,22 @@ function openTab(id) {
     });
     assert(log.indexOf(chrome[0]) < saveIdx, `F: [${tab.id}] the panel title draws before the clip (menuPanel)`);
     ACH_TABS.forEach((t, i) => {
-      const e = log.find(e => e.c === "fillText" && e.str === t.label);
+      const e = log.find(e => e.c === "fillText" && isTabLabel(e.str, t));
       assert(log.indexOf(e) < saveIdx, `F: [${tab.id}] the tab label "${t.label}" draws before the clip`);
     });
     assert(log.indexOf(chrome[chrome.length - 1]) > restoreIdx, `F: [${tab.id}] the footer draws after restore`);
 
     // Tab header + footer detail: position, size, selected/idle contrast, hint routing.
     ACH_TABS.forEach((t, i) => {
-      const hit = at(log, ACH_COL_X + i * ACH_TAB_STEP, ACH_PANEL_Y + ACH_TAB_Y).find(e => e.str === t.label);
+      const hit = at(log, ACH_COL_X + i * ACH_TAB_STEP, ACH_PANEL_Y + ACH_TAB_Y).find(e => isTabLabel(e.str, t));
       assert(!!hit, `F: [${tab.id}] tab label "${t.label}" sits at (ACH_COL_X + i*ACH_TAB_STEP, panelY+ACH_TAB_Y)`);
       assert(!!hit && fontSize(hit) === 15 * ACH_SCALE, `F: [${tab.id}] tab label "${t.label}" is 15*ACH_SCALE`);
       assert(!!hit && hit.align === "left", `F: [${tab.id}] tab label "${t.label}" is left-aligned`);
       assert(!!hit && hit.color === (t.id === tab.id ? COLOR.text : COLOR.menuIdle),
         `F: [${tab.id}] tab label "${t.label}" uses the COLOR.text/COLOR.menuIdle selected-idle convention`);
+      // CS026 P6 (gate Q8.1): ...and the mark rides ON TOP of that convention, on the selected tab only.
+      assert(!!hit && (hit.str === t.label + ACH_TAB_MARK) === (t.id === tab.id),
+        `F: [${tab.id}] tab label "${t.label}" wears ACH_TAB_MARK iff selected — additive to the colour, not a replacement`);
     });
     const footer = log.find(e => e.c === "fillText" && e.str === ACH_HINT);
     assert(!!footer && footer.x === cx && footer.y === ACH_PANEL_Y + 644, `F: [${tab.id}] the footer sits at (cx, panelY+644)`);

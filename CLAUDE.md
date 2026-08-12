@@ -123,6 +123,30 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   inline a copy of the logic under test. `AudioSys` is safe headless because
   every method early-returns when `this.ctx` is null. Deliver tests with the
   code, not after; a phase isn't done until its headless test passes.
+- **⛔ A PHASE-LOCAL PIN USES `scratchpad/_phase-ref.js` AND NEVER `HEAD`.**
+  This is the standing rule CS026 P1 built that helper to enforce, and it has
+  cost more repairs than anything else in the suite: **nine such pins were
+  retired in one go in CS024 P7**, and CS025 P3's retirement note called it the
+  tenth time the lesson had been paid for. The failure is always the same
+  shape — a phase asserts something true about *its own session* ("no design
+  doc was touched", "only these files changed", "the version is unmoved") by
+  measuring against a **moving reference**. `git diff HEAD` means "since
+  whatever is checked out now", so the claim silently re-aims at every later
+  commit and eventually fails for reasons that have nothing to do with the
+  phase. Write the claim against **this phase's own parent SHA**, pinned as a
+  literal: `parentSource(sha)` builds the parent's script, `ownCommits(sha,
+  subject)` finds the phase's own commits by subject line, and
+  `changedFiles(sha, own)` gives the file set — falling back to the working
+  tree, and **skipping loudly** (`SKIP_TAG`) when git history is unavailable
+  rather than passing vacuously (FORK-CS026-H; a closing phase asserts zero
+  skips). Two corollaries, both learned the hard way: a **"no design doc was
+  touched" pin cannot survive a closing phase by construction** — that phase
+  rewrites four documents by instruction — so don't write one; and a
+  phase-local **version** pin (`=== "1.0.0.N"`, "the next phase owns the bump")
+  is falsified by that bump, so at the bump it flips to its **standing mirror
+  image** (`!== "1.0.0.N"`, permanently true) rather than being re-pointed to a
+  new literal. Live pins that genuinely track HEAD's version are a separate,
+  small, deliberate set and *are* re-pointed each changeset.
 - **Entity lifecycle: `dead` flag + end-of-frame `.filter()`.** Every entity
   class follows the same contract: constructor / `update(dt)` / `draw()` /
   `dead`. Kill by setting `dead = true`; arrays are filtered once at the end
@@ -152,6 +176,15 @@ Repo: https://github.com/freakingid/ADD-Orbital-Overhaul (public, GPL-3.0).
   is the segmented-ring sibling — `segs` gapped wedges, the first `filled`
   lit via `glowStroke`, the rest a plain dim stroke — used for the Scoop
   level indicator; same never-`closePath()`s convention.
+  `achLeader(x0, x1, y)` + `achTextW(str, size)` (CS026 P6) are the
+  Achievements viewer's dotted name→status leader run and its shared measuring
+  path — **text, not a primitive**: the run is a `drawText`, so it adds no
+  §3.2 fill exception (the count stays at two). ⛔ `achLeader()` is the only
+  render code in the repo that does arithmetic on `ctx.measureText().width`,
+  and several suite stubs return `{width: 0}` — `"·".repeat(span / 0)` is
+  `repeat(Infinity)`, a `RangeError` out of the *menu* renderer. Its guards are
+  written `!(x >= n)` / `!(x > 0)`, never `x < n` / `x <= 0`, because NaN fails
+  every ordinary comparison; keep that form if you touch it.
 - **The HUD draws with `glowStroke` like everything else — no `fillRect`,
   no `strokeRect`.** The CS009 HUD rebuild (P0–P6) replaced every hull/
   shield/cargo/powerup fill bar with rings via `drawRingArc`; CS012 P2
@@ -342,7 +375,17 @@ asteroids-deluxe.html
     //                   its own block: the LEVERS table (CS024 P4/P5, the
     //                   game's ONE difficulty mechanism — see
     //                   DIFFICULTY-LEVERS.md) with leverState/liveLevers/
-    //                   payloadSlots/largeHunterCap. GARBAGE_SOFT_MAX/
+    //                   payloadSlots/largeHunterCap. junkSplit (CS026 P2) is
+    //                   the 18th lever — the debris split count, ↳-carried by
+    //                   junkCount: 2-way through L10, 3-way from L11 on.
+    //                   ⛔ destroyHunter() is NOT levered and stays 3-way
+    //                   (ACH_LINEAGE_FULL = 13 depends on it).
+    //                   WORLD_SIZE_EARLY + DEBUG.earlyWorldLevels (CS026 P3)
+    //                   re-arm the world-size seam: levels 1..5 at 1920x1080,
+    //                   L6+ unchanged, exactly one resize per run.
+    //                   DELIVERY_FLOAT_DY (CS026 P6) is the delivery floaters'
+    //                   fixed offset above the SHIP — deliberately a frozen
+    //                   constant, not a knob. GARBAGE_SOFT_MAX/
     //                   HARD_MAX (CS024 P3) is the density ceiling that
     //                   replaced garbage decay; ENGINE_BURN_SECONDS/
     //                   ENGINE_MASS_MULT + the count budgets (RAPID_SHOTS

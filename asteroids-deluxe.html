@@ -448,7 +448,8 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // CS023 landed P1-P4c, was interrupted before its doc-sweep/bump phase (P5), and CS024 deleted most of
 // what it built. A version it never carried is not invented for it retroactively (spec §0).
 // CS025 P5: "1.0.0.24" -> "1.0.0.25". Back on the changeset number, no skip this time.
-const GAME_VERSION = "1.0.0.25";
+// CS026 P6: "1.0.0.25" -> "1.0.0.26". Still tracking the changeset number.
+const GAME_VERSION = "1.0.0.26";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -641,6 +642,12 @@ const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare litera
                                      // canisters peeling off at the dock.
 const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of the hub's per-visit
                                      // powerup drop, random direction from the dock's own position.
+// CS026 P6 (gate Q5): how far ABOVE the ship a delivery "+pts" floater is born. The floaters used to
+// spawn at the popped chain node, which is the chain's TAIL — on a full haul the canister ~24 links
+// BEHIND the ship, i.e. exactly where the player is not looking. Paul's answer was "it needs to be
+// closer to the ship", so both delivery branches now share ONE origin at the ship. Not a knob: it is
+// a fixed nudge clear of the hull, the same role SALVAGE BONUS/MAX HAUL's own -22 plays at the dock.
+const DELIVERY_FLOAT_DY = 22;
 
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
@@ -3386,10 +3393,20 @@ const DEBUG_VARS = [
   // CS026 P4 (spec §3, PLANNED-FEATURES-CS026.md §3.3a/§3.4): the delivery floaters' own rise/life,
   // separating what DOCK_OFFLOAD_INTERVAL's 20/sec cadence used to stack into an unreadable smear.
   // First-guess numbers — the gate is what settles them, which is why they are knobs, not constants.
+  // CS026 P6 (gate Q5): settled. "They need to travel upwards more slowly" -> rise 300 -> 160; "the
+  // score numbers need to fade more slowly" -> life 0.55 -> 1.2. Both stay inside their P4 ranges.
+  // ⛔ THE ACCEPTED CONSEQUENCE, RECORDED SO IT IS NOT REDISCOVERED AS A BUG: the floaters now share
+  // ONE origin (DELIVERY_FLOAT_DY above the ship) instead of spreading along the chain, so consecutive
+  // floaters separate by rise x DOCK_OFFLOAD_INTERVAL and nothing else — 160 x 0.05 = 8 px, where P4
+  // measured 15 px (300 x 0.05). Paul was shown that arithmetic and chose to hold the offload cadence
+  // at 0.05 rather than pay for the separation with a slower dock visit (the alternative on the table
+  // was 0.10, which restores 16 px but doubles a 24-canister visit to 2.4 s). If a later gate wants
+  // the column opened back up, DOCK_OFFLOAD_INTERVAL is the lever — NOT a bigger rise, which is the
+  // one thing Q5 explicitly asked to reduce.
   { id: "deliveryFloatRise", label: "Delivery floater rise", unit: "px/s",
-    def: 300, min: 30, max: 600, step: 10 },
+    def: 160, min: 30, max: 600, step: 10 },
   { id: "deliveryFloatLife", label: "Delivery floater life", unit: "s",
-    def: 0.55, min: 0.2, max: 2.0, step: 0.05 },
+    def: 1.2, min: 0.2, max: 2.0, step: 0.05 },
   // CS024 P5/P6c (spec §2.4/§2.6/§4.5/§5): the JUNK chain, THREE knobs per lever (floor, ceil, steps) —
   // see leverKnob() above, which also derives the ▼ / ↳ / (inv) markers straight off LEVERS. junkCount
   // is the driver (sawtooths every 10 levels, so it wears ▼); the three sizes are fully independent (no
@@ -8060,10 +8077,15 @@ function update(dt) {
           Achievements.lifetime.delivered++;
           Achievements.lifetime.deliveryScore += pts;
           // CS026 P4 (spec §3.3a/§3.4): rise/life read from the DELIVERY registry knobs so consecutive
-          // floaters at DOCK_OFFLOAD_INTERVAL's fast cadence separate instead of stacking. Text, position,
-          // colour and every downstream count are untouched — this changes how the delivery LOOKS only.
-          game.floaters.push(new FloatText("+" + pts, node.x, node.y, COLOR.dock, 16,
-            DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
+          // floaters at DOCK_OFFLOAD_INTERVAL's fast cadence separate instead of stacking. Text, colour
+          // and every downstream count are untouched — this changes how the delivery LOOKS only.
+          // CS026 P6 (gate Q5): the ORIGIN moves too — was `node.x, node.y`, the popped node, which is
+          // the chain's TAIL and therefore the canister FARTHEST from the ship (up to ~24 links back on
+          // a full haul). Now the ship, which is where the player is already looking. The milestone
+          // floaters (SALVAGE BONUS / MAX HAUL) deliberately do NOT move — see spec §3.6: they belong
+          // to the dock, and keeping them there is what keeps the two readouts from colliding.
+          game.floaters.push(new FloatText("+" + pts, game.ship.x, game.ship.y - DELIVERY_FLOAT_DY,
+            COLOR.dock, 16, DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
           AudioSys.deliver(game.deliveryCount);
           // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
           // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
@@ -8077,12 +8099,15 @@ function update(dt) {
           // latches downstream (the 8/12/16/20 reward tiers, Heavy Hauler, Maxed Out, the Super Mega
           // Delivery). Fixing it AT THE COUNTER is what keeps those correct without a second guard.
           // AudioSys.deliver(1) deliberately, not the combo pitch: audible, but flat.
-          // CS026 P4 (spec §3.5/FORK-CS026-G): QUIETED, not folded in — same text/position, but COLOR.dim
-          // + size 12 so it never reads as, or shares a tally with, the towed branch's floater. Same new
-          // rise/life knobs so a Magnet-parked run of incidentals separates too, not just towed hauls.
+          // CS026 P4 (spec §3.5/FORK-CS026-G): QUIETED, not folded in — same text, but COLOR.dim + size
+          // 12 so it never reads as, or shares a tally with, the towed branch's floater. Same rise/life
+          // knobs so a Magnet-parked run of incidentals separates too, not just towed hauls.
+          // CS026 P6 (gate Q5): born at the ship, like the towed branch — ONE origin for both, so a
+          // Magnet-fed run of incidentals reads in the same place as a real haul. The quieting is
+          // untouched: it was never the position that distinguished them, it is the colour and size.
           addScore(DOCK_BASE_SCORE);
-          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, node.x, node.y, COLOR.dim, 12,
-            DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
+          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, game.ship.x, game.ship.y - DELIVERY_FLOAT_DY,
+            COLOR.dim, 12, DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
           AudioSys.deliver(1);
         }
         game.offloadTimer = DOCK_OFFLOAD_INTERVAL;
@@ -8803,13 +8828,36 @@ const ACH_COL_X = ACH_PANEL_X + 30;                  // CS016 P5: the single col
 const ACH_COL_W = ACH_PANEL_W - 60;                  // CS016 P5: full panel width less a 30px gutter each side
 const ACH_TAB_Y = 108;                               // tab-header baseline, relative to the panel top (the old column-header y)
 const ACH_TAB_STEP = 260;                            // px between tab labels — playtest knob
-const ACH_ROW0_Y = ACH_PANEL_Y + 130;                // first row baseline (unchanged from pre-P3)
-const ACH_STATUS_DY = 24;                            // CS015 P2: status line's y-offset below the row's name baseline (playtest knob)
-const ACH_DESC_DY = 46;                              // CS015 P2: description line's y-offset below the row's name baseline (playtest knob)
+// CS026 P6 (gate Q8.1): the selected tab wears a mark as well as the lit colour. Paul's report was that
+// brightness alone did not read as "this one is selected", and named the glyph. ADDITIVE — the existing
+// COLOR.text/COLOR.menuIdle split is untouched, so the mark is a second cue, not a replacement.
+const ACH_TAB_MARK = " ▼";
+// CS026 P6 (gate Q8.2): +130 -> +152. Row 0's name baseline sat 22px under the tab baseline, which at
+// 15*ACH_SCALE (22.5px) type is roughly zero air — Paul's "there is no whitespace above the title".
+const ACH_ROW0_Y = ACH_PANEL_Y + 152;                // first row baseline
+// CS026 P6 (gate Q8.4): 24 -> 0. The status rejoins the NAME's baseline, which is what lets the leader
+// run below connect the two horizontally. CS015 P2 split them onto separate lines to stop a long name
+// and a long status colliding in the middle at ACH_SCALE 1.5; the leader restores that protection
+// differently — the run is what's squeezed as the pair widens, and it vanishes entirely before they
+// touch (see achLeader's ACH_LEADER_MIN bail).
+const ACH_STATUS_DY = 0;                             // status sits on the row's name baseline
+// CS026 P6 (gate Q8.3): 46 -> 30. Paul's "too much vertical space beneath the name and the description".
+const ACH_DESC_DY = 30;                              // description line's y-offset below the row's name baseline
 const ACH_ROW_STEP = 48 * ACH_SCALE;                 // row-to-row baseline spacing (was 40*ACH_SCALE pre-CS015-P2; three stacked lines need more headroom)
 const ACH_ROW_CLIP_TOP = ACH_ROW0_Y - 16;             // headroom above row 0, below the tab header (baseline y+ACH_TAB_Y)
 const ACH_ROW_CLIP_BOTTOM = ACH_PANEL_Y + 620;        // headroom above the footer (drawn at ACH_PANEL_Y+644)
 const ACH_ROW_VISIBLE_H = ACH_ROW_CLIP_BOTTOM - ACH_ROW_CLIP_TOP;
+// CS026 P6 (gate Q8.4): the dotted leader run that ties a row's name (left) to its status (right).
+// Paul's report was that ACH_COL_W's 1140px of clear air between the two made it hard to tell which
+// status belonged to which achievement, and he first suggested an alternating row background. That
+// would have been a FILL, i.e. a THIRD named GDD §3.2 exception; shown the trade, he chose the leader.
+// ⛔ THE LEADER IS drawText — the already-sanctioned fillText path — so the exception count stays at
+// TWO (the death flash and the low-health corner glow). Do not "improve" this into a rule/rect.
+const ACH_LEADER_DOT  = "·";                         // the run's glyph
+const ACH_LEADER_SIZE = 10 * ACH_SCALE;              // smaller than the name: a connector, not a column
+const ACH_LEADER_PAD  = 12;                          // px of clear air at each end, off name and status
+const ACH_LEADER_MIN  = 24;                          // px: a span shorter than this draws nothing at all
+const ACH_LEADER_MAX  = 200;                         // hard cap on dots — see the guard in achLeader()
 
 // CS016 P5: the two tabs are DATA. `rows` is a thunk, not a snapshot — activeWeekly() re-derives from
 // the live weekly rotation every frame, and a test that swaps Achievements.LIFETIME still sees the swap.
@@ -8849,6 +8897,37 @@ function achMaxScroll() {
   return Math.max(0, contentH - ACH_ROW_VISIBLE_H);
 }
 
+// CS026 P6 (gate Q8.4). Width of `str` at `size`, in the menu's monospace face. Split out so achLeader()
+// and drawAchRow() measure through ONE path — the leader's endpoints have to be the real glyph extents
+// of the very strings drawn beside it, or the run overlaps them at some name length nobody tested.
+// ⛔ THE RETURN VALUE ITSELF CAN BE undefined, NOT JUST ITS `.width`. A no-op canvas Proxy — the
+// standing headless stub idiom — answers every unknown method with `() => {}`, so a stub that never
+// modelled `measureText` returns `undefined` and `.width` on it THROWS rather than reading NaN.
+// `test-f9.js` is exactly that stub and this is exactly how it broke. NaN is the right degradation:
+// it propagates into achLeader()'s span and trips its negated guard, so the row simply loses its
+// leader instead of taking the menu renderer down.
+function achTextW(str, size) {
+  ctx.font = size + "px monospace";
+  const m = ctx.measureText(String(str));
+  return m ? m.width : NaN;
+}
+// The leader run itself: dim dots from x0 to x1 on baseline y, or NOTHING if the span doesn't earn one.
+// ⛔ THIS FUNCTION DIVIDES BY A MEASURED GLYPH WIDTH, and it is the first code in the Achievements
+// render path to do arithmetic on measureText() at all. Real canvases never return 0, but several
+// headless stubs in scratchpad/ do, and `"·".repeat(span / 0)` is `repeat(Infinity)` — a RangeError
+// thrown out of the MENU renderer, on a path a dozen test files drive. Both guards below are written
+// as `!(x >= n)` / `!(x > 0)` rather than `x < n` / `x <= 0` DELIBERATELY: NaN fails every ordinary
+// comparison, so the negated form is what makes a NaN width bail instead of falling through.
+function achLeader(x0, x1, y) {
+  const span = x1 - x0;
+  if (!(span >= ACH_LEADER_MIN)) return;   // too tight, negative, or NaN -> the row simply has no leader
+  const dw = achTextW(ACH_LEADER_DOT, ACH_LEADER_SIZE);
+  if (!(dw > 0)) return;                   // 0 / NaN / absent / negative glyph width -> draw nothing
+  const n = Math.min(ACH_LEADER_MAX, Math.floor(span / dw));
+  if (n < 1) return;
+  drawText(ACH_LEADER_DOT.repeat(n), x0, y, ACH_LEADER_SIZE, COLOR.dim, "left");
+}
+
 function drawAchievements() {
   ctx.fillStyle = "rgba(4,10,20,0.88)"; // v3.3 P1: matches drawMenu's raised backdrop dim (look-call)
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -8858,9 +8937,12 @@ function drawAchievements() {
   // CS016 P5: the tab header replaces the three column headers, in the established selected/idle
   // convention every other menu uses (COLOR.text lit / COLOR.menuIdle dim) rather than the old
   // uniform COLOR.satellite — these are now a cursor position, not three static captions.
+  // CS026 P6 (gate Q8.1): the selected tab additionally wears ACH_TAB_MARK. The colour split above is
+  // unchanged — this is a second, non-colour cue, which is what Paul asked for.
   const ti = achTabIndex();
   ACH_TABS.forEach((t, i) => {
-    drawText(t.label, ACH_COL_X + i * ACH_TAB_STEP, y + ACH_TAB_Y, 15 * ACH_SCALE, i === ti ? COLOR.text : COLOR.menuIdle, "left");
+    drawText(t.label + (i === ti ? ACH_TAB_MARK : ""), ACH_COL_X + i * ACH_TAB_STEP, y + ACH_TAB_Y,
+             15 * ACH_SCALE, i === ti ? COLOR.text : COLOR.menuIdle, "left");
   });
 
   // CS013 P3 (§2.3.3): clamp against the same ceiling menuAchievements() uses, then clip the row
@@ -8903,18 +8985,27 @@ function fmtCommas(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); 
 // stays right-aligned at x+w, just on its own row now.
 // CS016 P5: unchanged — the tab rebuild only changed the `w` it is handed (350 -> ACH_COL_W) and how
 // many callers there are (three columns -> one), never the three-line shape itself.
+// CS026 P6 (gate Q8.3/Q8.4): name and status share the row's baseline again (ACH_STATUS_DY 0), tied by
+// a dotted leader; the description follows ACH_DESC_DY below. BOTH branches get the leader — the tiered
+// path is a separate return, and a fix applied to only one of them is the classic miss here.
 function drawAchRow(ach, x, ry, w) {
   if (ach.tiers) {
     const idx = Achievements.tierIndex(ach);
     const col = idx >= 0 ? TIER_COLOR[idx] : COLOR.text;   // badge/name in the current tier's tint
+    const status = Achievements.tierStatusText(ach);
+    achLeader(x + achTextW(ach.name, 15 * ACH_SCALE) + ACH_LEADER_PAD,
+              x + w - achTextW(status, 13 * ACH_SCALE) - ACH_LEADER_PAD, ry + ACH_STATUS_DY);
     drawText(ach.name, x, ry, 15 * ACH_SCALE, col, "left");
-    drawText(Achievements.tierStatusText(ach), x + w, ry + ACH_STATUS_DY, 13 * ACH_SCALE, idx >= 0 ? col : COLOR.menuIdle, "right");
+    drawText(status, x + w, ry + ACH_STATUS_DY, 13 * ACH_SCALE, idx >= 0 ? col : COLOR.menuIdle, "right");
     drawText(ach.desc, x, ry + ACH_DESC_DY, 10 * ACH_SCALE, COLOR.menuIdle, "left");
     return;
   }
   const done = Achievements.isUnlocked(ach);
+  const status = done ? "✓" : Achievements.progressText(ach);
+  achLeader(x + achTextW(ach.name, 15 * ACH_SCALE) + ACH_LEADER_PAD,
+            x + w - achTextW(status, 14 * ACH_SCALE) - ACH_LEADER_PAD, ry + ACH_STATUS_DY);
   drawText(ach.name, x, ry, 15 * ACH_SCALE, done ? COLOR.ach : COLOR.text, "left");
-  drawText(done ? "✓" : Achievements.progressText(ach), x + w, ry + ACH_STATUS_DY, 14 * ACH_SCALE, done ? COLOR.ach : COLOR.menuIdle, "right");
+  drawText(status, x + w, ry + ACH_STATUS_DY, 14 * ACH_SCALE, done ? COLOR.ach : COLOR.menuIdle, "right");
   drawText(ach.desc, x, ry + ACH_DESC_DY, 10 * ACH_SCALE, COLOR.menuIdle, "left");
 }
 

@@ -593,7 +593,11 @@ let X = null;
   console.log("(J) TRAPs 1-5, the LEVERS diff, and the scope pin — against this phase's own parent SHA");
 
   // TRAP 1 — the version does not move here. P6 owns the bump.
-  eq(X.GAME_VERSION, "1.0.0.25", "J: ⛔ TRAP 1 — GAME_VERSION stays 1.0.0.25; CS026 P6 owns the next bump");
+  // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE (the test-cs021-p4.js/test-cs025-p*.js
+  // precedent). This pin asserted the version was UNCHANGED while CS026 P2 ran, and named P6 as the
+  // phase that owns the bump — so P6 doing exactly that FALSIFIES the literal form by
+  // instruction. Inverted, the claim is permanently true. Do not re-point it to a literal again.
+  assert(X.GAME_VERSION !== "1.0.0.25", "J: ⛔ TRAP 1 — GAME_VERSION has moved off the pre-CS026-P6 baseline 1.0.0.25");
 
   // TRAP 5 — DEBRIS_SCORE is untouched. Paul accepted the leaner curve; compensating is not this
   // phase's job (FORK-CS026-C -> (a)), and a "helpful" doubling here would be inventing design.
@@ -660,7 +664,12 @@ let X = null;
     // TRAP 5, and DEBRIS_MASS, against the parent rather than against a remembered literal.
     eq(JSON.stringify(X.DEBRIS_SCORE), JSON.stringify(OLD.DEBRIS_SCORE), "J: ⛔ TRAP 5 — DEBRIS_SCORE matches the parent exactly");
     eq(JSON.stringify(X.DEBRIS_MASS), JSON.stringify(OLD.DEBRIS_MASS), "J: ⛔ DEBRIS_MASS matches the parent exactly — the comment moved, the numbers did not");
-    eq(X.GAME_VERSION, OLD.GAME_VERSION, "J: ⛔ TRAP 1 — and the version matches the parent");
+    // ⛔ FLIPPED BY CS026 P6 TO THE STANDING MIRROR IMAGE, matching the literal TRAP 1 pin in this
+    // same file. The claim was "CS026 P2 did not move the version off ITS parent"; P6 owns the bump and
+    // moves it off that same parent BY INSTRUCTION, so the equality is permanently false and the
+    // inequality permanently true. Do not re-point either form to a literal version again.
+    assert(X.GAME_VERSION !== OLD.GAME_VERSION,
+      "J: ⛔ TRAP 1 — the version has moved off P2's parent (CS026 P6 owns that bump)");
 
     // Byte-identity on the two functions this phase must NOT have changed.
     const bodyOf = (src, sig) => { const i = src.indexOf(sig); return src.slice(i, src.indexOf("\n}\n", i)); };
@@ -718,9 +727,19 @@ let X = null;
     // ⛔ The four GDD "3-way split" passages P6 owns are still there, untouched, and still say 3-way —
     // which is what makes them findable. This is a POSITIVE pin on a deferral, not on a claim.
     const gdd = fs.readFileSync(path.join(repoRoot, "ORBITAL-OVERHAUL-GDD.md"), "utf8");
-    assert(/3-way split/.test(gdd), "J: ⛔ TRAP 2 — the GDD's '3-way split' passages are still there for P6 to sweep");
+    // ⛔ NARROWED BY CS026 P6. P2 deferred the GDD sweep and pinned the passages' presence to prove it.
+    // P6 swept them — but only ONE of the four was ever a DEBRIS claim; the other three are HUNTER
+    // claims and are correct as written, because destroyHunter() is deliberately still 3-way
+    // (ACH_LINEAGE_FULL = 13 depends on it). So "3-way split" still appears, and must: what P6 owed
+    // was §2.4's debris passage, which now names the junkSplit lever instead.
+    assert(/3-way split/.test(gdd), "J: ⛔ TRAP 2 — the GDD still says '3-way split' where it should: the HUNTER passages");
+    assert(/junkSplit/.test(gdd), "J: ⛔ TRAP 2 — ...and §2.4's DEBRIS passage now names the junkSplit lever, swept by P6");
     const levers = fs.readFileSync(path.join(repoRoot, "DIFFICULTY-LEVERS.md"), "utf8");
-    assert(!/junkSplit/.test(levers), "J: ⛔ TRAP 2 — DIFFICULTY-LEVERS.md has no junkSplit row yet; its §3 row is P6's");
+    // ⛔ INVERTED BY CS026 P6, WHICH IS THE PHASE THIS PIN WAS WAITING FOR. P2 deferred the
+    // DIFFICULTY-LEVERS.md row to the closing sweep and pinned its ABSENCE to prove the deferral was
+    // real. P6 has now written it, so the absence pin becomes a presence pin — the deferral was
+    // honoured AND discharged, which is the whole claim either way round.
+    assert(/junkSplit/.test(levers), "J: ⛔ TRAP 2 — DIFFICULTY-LEVERS.md now carries the junkSplit row, written by P6 as deferred");
   }
 })();
 
