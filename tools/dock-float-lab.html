@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dock Float Lab — Orbital Overhaul</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050a12; color: #a8d4ff;
+    font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; }
+  #canvasWrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+    overflow: auto; }
+  canvas { background: #050a12; border: 1px solid #223347; }
+  #panel { flex: 0 0 340px; padding: 16px; overflow-y: auto; border-left: 1px solid #223347;
+    box-sizing: border-box; }
+  h1 { font-size: 16px; color: #9fd8ff; margin: 0 0 4px; }
+  h2 { font-size: 12px; color: #70ffa0; text-transform: uppercase; letter-spacing: 0.05em;
+    margin: 20px 0 8px; border-bottom: 1px solid #223347; padding-bottom: 4px; }
+  p.sub { color: #3a5a80; margin: 0 0 12px; }
+  label { display: block; margin: 10px 0 2px; color: #a8d4ff; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { flex: 1 1 auto; }
+  .val { width: 52px; text-align: right; color: #70ffa0; font-variant-numeric: tabular-nums; }
+  button { background: #12203a; color: #a8d4ff; border: 1px solid #3a5a80; border-radius: 4px;
+    padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #70ffa0; color: #70ffa0; }
+  button.active { background: #1a3a2a; border-color: #70ffa0; color: #70ffa0; }
+  .btnRow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .off { opacity: 0.35; }
+  #readout { background: #0a1220; border: 1px solid #223347; padding: 8px; }
+  #colVal { font-size: 26px; font-variant-numeric: tabular-nums; color: #70ffa0; }
+  #colVal.bad, #sepVal.bad { color: #ff4040; }
+  #sepUnit { color: #3a5a80; font-size: 12px; }
+  .stat { display: flex; justify-content: space-between; color: #6f92bd; font-size: 12px;
+    margin-top: 3px; font-variant-numeric: tabular-nums; }
+  pre#configOut { background: #0a1220; border: 1px solid #223347; padding: 8px; font-size: 11px;
+    white-space: pre-wrap; }
+  #copyBtn { margin-top: 6px; width: 100%; }
+  #copyBtn.copied { border-color: #ffcf5a; color: #ffcf5a; }
+  .hint { color: #3a5a80; font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="canvasWrap"><canvas id="cv" width="860" height="880"></canvas></div>
+<div id="panel">
+  <h1>Dock Float Lab</h1>
+  <p class="sub">Standalone design harness for the delivery "+pts" floater column. Not part of the
+  game build — no build step, no imports; this file carries its own copies of the real math
+  (FloatText, drawText, drawPoly, glowStroke, the dock octagon, the offload point formula).
+  <b>Any knob change restarts the run</b>, so the minimum-separation number below always describes
+  one clean run under the settings you are looking at.</p>
+
+  <h2>Model</h2>
+  <div class="btnRow" id="modelRow"></div>
+  <p class="hint" id="modelDesc"></p>
+
+  <h2>Anchor</h2>
+  <div class="btnRow" id="anchorRow"></div>
+  <label id="anchorFracLbl">anchorFrac (y = dock.y &minus; DOCK_RADIUS &times; frac)
+    <div class="row"><input type="range" id="anchorFrac" min="0" max="1.5" step="0.05">
+      <span class="val" id="anchorFracVal"></span></div>
+  </label>
+  <label id="shipDriftLbl">shipDrift (px/s, ship anchor only)
+    <div class="row"><input type="range" id="shipDrift" min="0" max="200" step="5">
+      <span class="val" id="shipDriftVal"></span></div>
+  </label>
+  <p class="hint">Ship mode reproduces today's shipped behaviour: origin = ship.y &minus;
+  DELIVERY_FLOAT_DY (22). The mock ship circles the dock at radius 60 — a delivering ship has to
+  stay inside dock.radius + 10, so it can only ever smear the column, not leave it.</p>
+
+  <h2>Floater</h2>
+  <label>rise (px/s) — DEBUG.deliveryFloatRise
+    <div class="row"><input type="range" id="rise" min="30" max="600" step="10">
+      <span class="val" id="riseVal"></span></div>
+  </label>
+  <label>life (s) — DEBUG.deliveryFloatLife
+    <div class="row"><input type="range" id="life" min="0.2" max="2.0" step="0.05">
+      <span class="val" id="lifeVal"></span></div>
+  </label>
+  <label id="minGapLbl">minGap (px, model B only)
+    <div class="row"><input type="range" id="minGap" min="8" max="40" step="1">
+      <span class="val" id="minGapVal"></span></div>
+  </label>
+
+  <h2>Visit</h2>
+  <label>interval (s) — DOCK_OFFLOAD_INTERVAL
+    <div class="row"><input type="range" id="interval" min="0.02" max="0.30" step="0.01">
+      <span class="val" id="intervalVal"></span></div>
+  </label>
+  <label>canisterCount
+    <div class="row"><input type="range" id="canisterCount" min="1" max="24" step="1">
+      <span class="val" id="canisterCountVal"></span></div>
+  </label>
+  <p class="hint">The offload timer is reset to a flat interval and decremented by whole frames with
+  no remainder carried, so the realised cadence is a whole number of frames. At 60Hz, 0.05 costs
+  <b>four</b> frames (0.0667s), not three — the shipped column's true spacing is 10.7px where the
+  CS026 comment records the ideal 8.0. Both numbers are in the readout below. The game does exactly
+  this, in exactly this way; the lab copies it rather than idealising it.</p>
+  <p class="hint">Points are the real formula: DOCK_BASE_SCORE + DOCK_BONUS_STEP &times; (n&minus;1)
+  = +50 &hellip; +625 at 24. SALVAGE BONUS fires at canister 8, MAX HAUL at canister 24
+  (CARGO_CAP_MAX) — both at dock.y &minus; 22 with the FloatText defaults (rise 30, life 1.1), i.e.
+  dock-anchored, exactly as shipped. Set canisterCount to 24 to see both.</p>
+
+  <h2>Playback</h2>
+  <label>timeScale
+    <div class="row"><input type="range" id="timeScale" min="0.1" max="1.0" step="0.05">
+      <span class="val" id="timeScaleVal"></span></div>
+  </label>
+  <div class="btnRow">
+    <button id="replayBtn">Replay</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="stepBtn">Step</button>
+  </div>
+
+  <h2>Minimum separation this run</h2>
+  <div id="readout">
+    <div><span id="colVal">—</span> <span id="sepUnit">px · delivery column · red below the 16px glyph</span></div>
+    <div class="stat"><span>all live floaters (milestones included)</span><span id="sepVal">—</span></div>
+    <div class="stat"><span>live floaters</span><span id="liveVal">0</span></div>
+    <div class="stat"><span>rise &times; interval (ideal)</span><span id="arithVal">—</span></div>
+    <div class="stat"><span>&hellip; quantised to whole frames @60Hz</span><span id="quantVal">—</span></div>
+    <div class="stat"><span>run</span><span id="phaseVal">—</span></div>
+  </div>
+  <p class="hint">Both numbers are run-minimums of the vertical gap between two live floaters,
+  measured in y only — so in ship mode two floaters far apart in x still count as close. That is
+  deliberate: a column that only separates because the ship wandered is not separated.</p>
+  <p class="hint"><b>Why two numbers.</b> The specced "any two live floaters" figure is the second
+  one, and <i>no model can improve it</i>: SALVAGE BONUS / MAX HAUL are born at dock.y &minus; 22
+  with FloatText's defaults, so they climb 30 &times; 1.1 = 33px and top out at dock.y &minus; 55 —
+  straight up through a dock anchor set below that, whatever the column is doing. The lever for that
+  collision is anchorFrac, not the model. Measured, all-floaters minimum at the defaults:</p>
+  <pre style="background:#0a1220;border:1px solid #223347;padding:6px;font-size:11px">frac  anchor    A      B      C
+0.50   44.0    0.2    0.3    0.0
+0.625  55.0    3.2    5.2    1.0
+0.70   61.6    9.8   11.8    7.6
+0.75   66.0   10.7   16.2   12.0
+0.80   70.4   10.7   20.0   16.4
+1.00   88.0   10.7   20.0   32.0</pre>
+  <p class="hint">Crossing stops above 0.625 (55/88); a clear glyph of air needs ~0.81 ((55+16)/88),
+  where each model saturates at its own column figure and the milestone stops being the binding
+  pair. The first readout isolates the delivery column, which is what tells A, B and C apart.</p>
+
+  <h2>Copy gate answers</h2>
+  <pre id="configOut"></pre>
+  <button id="copyBtn">Copy constants</button>
+</div>
+
+<script>
+"use strict";
+
+// ---- Copied verbatim from orbital-overhaul.html (this lab intentionally duplicates rather than
+// imports — no build step is a house rule, and drift here can only ever produce a bad PREVIEW,
+// never a bad BUILD). Keep these in sync by eye if the game's versions change shape. ----
+const TAU = Math.PI * 2;
+const DOCK_RADIUS = 88;
+const DOCK_BASE_SCORE = 50;      // 1st canister of a visit
+const DOCK_BONUS_STEP = 25;      // each additional canister: +25 over the last
+const DOCK_OFFLOAD_INTERVAL = 0.05;
+const DELIVERY_FLOAT_DY = 22;    // today's ship-relative origin (CS026 P6)
+const CARGO_CAP_MAX = 24;
+const SHIP_HULL = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
+const COLOR = {
+  ship: "#9fd8ff",
+  text: "#a8d4ff",
+  dim: "#3a5a80",
+  garbage: "#c8ff50",
+  dock: "#70ffa0",
+  ach: "#ffcf5a",
+};
+
+function glowStroke(color, width = 1.6, blur = 10) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+function drawPoly(points, x, y, angle, color, closed = true) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed) ctx.closePath();
+  glowStroke(color);
+  ctx.restore();
+}
+function drawText(str, x, y, size, color = COLOR.text, align = "center") {
+  ctx.font = `${size}px monospace`;
+  ctx.textAlign = align;
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  ctx.fillText(str, x, y);
+  ctx.shadowBlur = 0;
+}
+
+// FloatText, plus two lab-only fields: `pinned` (model C's ticker holds at the anchor and does not
+// age until it is released at the last canister) and `kind` (which of the two separation
+// run-minimums this floater feeds).
+class Floater {
+  constructor(text, x, y, color, size = 16, rise = 30, life = 1.1) {
+    this.text = text; this.x = x; this.y = y; this.color = color; this.size = size;
+    this.rise = rise; this.life = life; this.life0 = life; this.dead = false;
+    this.pinned = false; this.kind = "delivery";
+  }
+  update(dt) {
+    if (this.pinned) return;
+    this.y -= this.rise * dt;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+  draw() {
+    ctx.globalAlpha = Math.max(0, this.life / this.life0);
+    drawText(this.text, this.x, this.y, this.size, this.color);
+    ctx.globalAlpha = 1;
+  }
+}
+// ---- end copied game math ----
+
+const GLYPH_H = 16;              // the delivery floater's size — the overlap threshold
+const SHIP_ORBIT_R = 60;         // mock ship's path radius in ship-anchor mode (inside radius + 10)
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+// The dock sits at the horizontal centre but LOW: a 24-canister model-B column is ~650px tall and
+// would run off the top of a vertically-centred dock. Everything else about it is the real dock.
+const dock = { x: cv.width / 2, y: cv.height - 180, radius: DOCK_RADIUS, spin: 0, pts: [] };
+for (let i = 0; i < 8; i++) {
+  const th = (i / 8) * TAU + TAU / 16;
+  dock.pts.push([Math.cos(th) * dock.radius, Math.sin(th) * dock.radius]);
+}
+
+const cfg = {
+  model: "A",
+  anchor: "dock",
+  anchorFrac: 0.5,
+  rise: 160,
+  life: 1.2,
+  minGap: 20,
+  interval: DOCK_OFFLOAD_INTERVAL,
+  canisterCount: CARGO_CAP_MAX,
+  shipDrift: 60,
+  timeScale: 1.0,
+};
+
+const MODEL_DESC = {
+  A: "A — dock-anchored, timing-spaced. Today's mechanism with the origin moved. Separation is " +
+     "rise × interval and nothing else. The control.",
+  B: "B — dock-anchored slot column. Born at the anchor, then pushed minGap above anything it " +
+     "would land inside. All rise together, so the gap survives for life; overlap is impossible " +
+     "at any cadence. (The spec's one-reference version of this rule does not hold — see the " +
+     "slotY() comment in this file.)",
+  C: "C — accumulating ticker. One floater at the anchor, its text rewritten to the running visit " +
+     "total as each canister lands. Released as an ordinary rising floater at the LAST canister " +
+     "of the visit.",
+};
+
+// ---- run state ----
+let floaters = [];
+let ticker = null;      // model C: the live accumulating floater, or null
+let visitTotal = 0;
+let nextIndex = 0;      // canisters already peeled off
+let offloadTimer = 0;   // first canister pops immediately, as the game's offloadTimer=0 does
+let elapsed = 0;
+let shipTh = -TAU / 4;
+let minSep = Infinity;      // the specced figure: any two live floaters
+let minSepCol = Infinity;   // delivery floaters only — the one that tells A / B / C apart
+let paused = false;
+
+const ship = { x: 0, y: 0, angle: 0 };
+
+function resetRun() {
+  floaters = [];
+  ticker = null;
+  visitTotal = 0;
+  nextIndex = 0;
+  offloadTimer = 0;
+  elapsed = 0;
+  shipTh = -TAU / 4;
+  minSep = Infinity;
+  minSepCol = Infinity;
+  placeShip();
+}
+function placeShip() {
+  if (cfg.anchor === "ship") {
+    ship.x = dock.x + Math.cos(shipTh) * SHIP_ORBIT_R;
+    ship.y = dock.y + Math.sin(shipTh) * SHIP_ORBIT_R;
+    ship.angle = shipTh + TAU / 4;
+  } else {
+    ship.x = dock.x;
+    ship.y = dock.y + SHIP_ORBIT_R;
+    ship.angle = -TAU / 4;
+  }
+}
+
+function anchorX() { return cfg.anchor === "ship" ? ship.x : dock.x; }
+function anchorY() {
+  return cfg.anchor === "ship" ? ship.y - DELIVERY_FLOAT_DY
+                               : dock.y - DOCK_RADIUS * cfg.anchorFrac;
+}
+
+// MODEL B's slot search. ⚠ THIS IS NOT THE RULE AS WRITTEN IN THE SPEC, and the difference is the
+// finding of this phase. The spec's rule — "born at the anchor UNLESS the previous delivery floater
+// is still within minGap of it, in which case born at prevFloater.y - minGap" — does not have the
+// property it claims. A new floater placed at prev.y - minGap lands ABOVE prev, so the
+// last-spawned floater is no longer the LOWEST one; two spawns later the anchor test passes against
+// that high floater and the column resets to the anchor with an older floater still sitting inside
+// it. Measured, at the defaults: the column runs 13.3 / 33.3 / 34.7 / 54.7 px above the anchor —
+// a 1.4px gap, worse than model A. One reference cannot see it.
+// What the spec DESCRIBES is a column that never overlaps at any cadence, and this is the smallest
+// rule that delivers it: start at the anchor, walk the live column from the bottom up, and rise
+// minGap above anything you would land inside. It is still derived, never stored — no column-height
+// counter (spec §6.2's actual concern), just a read of where the floaters currently are. At a slow
+// cadence the loop never fires and every floater is born at the anchor, which is the behaviour the
+// spec's "UNLESS" clause exists to get.
+function slotY(ay) {
+  const live = floaters.filter(f => f.kind === "delivery").sort((a, b) => b.y - a.y); // lowest first
+  let y = ay;
+  for (const f of live) if (Math.abs(y - f.y) < cfg.minGap) y = f.y - cfg.minGap;
+  return y;
+}
+
+// One canister peels off. Mirrors the towed branch of the game's dock block: points, the two
+// milestone floaters, then the "+pts" floater — whose placement is what the three models differ on.
+function offload() {
+  nextIndex++;
+  const n = nextIndex;
+  const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (n - 1);
+  visitTotal += pts;
+  const ax = anchorX(), ay = anchorY();
+
+  if (cfg.model === "C") {
+    if (!ticker) {
+      ticker = new Floater("+" + visitTotal, ax, ay, COLOR.dock, 16, cfg.rise, cfg.life);
+      ticker.pinned = true;
+      floaters.push(ticker);
+    } else {
+      ticker.text = "+" + visitTotal;
+    }
+    if (n >= cfg.canisterCount) { ticker.pinned = false; ticker = null; }
+  } else {
+    const y = cfg.model === "B" ? slotY(ay) : ay;
+    floaters.push(new Floater("+" + pts, ax, y, COLOR.dock, 16, cfg.rise, cfg.life));
+  }
+
+  // The two dock-anchored milestone floaters, at their real dock.y - 22 and with FloatText's
+  // defaults (rise 30, life 1.1) — the game passes neither, so they age slowly and drift up 33px.
+  if (n === 8) {
+    const f = new Floater("SALVAGE BONUS", dock.x, dock.y - 22, COLOR.dock);
+    f.kind = "milestone"; floaters.push(f);
+  }
+  if (n === CARGO_CAP_MAX) {
+    const f = new Floater("MAX HAUL", dock.x, dock.y - 22, COLOR.ach, 24);
+    f.kind = "milestone"; floaters.push(f);
+  }
+}
+
+function sim(dt) {
+  elapsed += dt;
+  dock.spin += dt * 0.7;
+
+  if (cfg.anchor === "ship") shipTh += (cfg.shipDrift / SHIP_ORBIT_R) * dt;
+  placeShip();
+
+  if (nextIndex < cfg.canisterCount) {
+    offloadTimer -= dt;
+    if (offloadTimer <= 0) {
+      offload();
+      offloadTimer = cfg.interval;
+    }
+  }
+
+  if (ticker) { ticker.x = anchorX(); ticker.y = anchorY(); }  // pinned: follows a moving anchor
+  for (const f of floaters) f.update(dt);
+  floaters = floaters.filter(f => !f.dead);
+
+  for (let i = 0; i < floaters.length; i++) {
+    for (let j = i + 1; j < floaters.length; j++) {
+      const d = Math.abs(floaters[i].y - floaters[j].y);
+      if (d < minSep) minSep = d;
+      if (floaters[i].kind === "delivery" && floaters[j].kind === "delivery" && d < minSepCol) {
+        minSepCol = d;
+      }
+    }
+  }
+}
+
+function render() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  // dock: octagon + rotating intake vanes + RECYCLE label
+  drawPoly(dock.pts, dock.x, dock.y, 0, COLOR.dock);
+  for (let i = 0; i < 3; i++) {
+    const th = dock.spin + (i * TAU) / 3;
+    ctx.beginPath();
+    ctx.moveTo(dock.x + Math.cos(th) * (dock.radius - 10), dock.y + Math.sin(th) * (dock.radius - 10));
+    ctx.lineTo(dock.x + Math.cos(th + 0.25) * 28, dock.y + Math.sin(th + 0.25) * 28);
+    glowStroke(COLOR.dock, 1.4, 8);
+  }
+  drawText("RECYCLE", dock.x, dock.y + dock.radius + 44, 14,
+    nextIndex < cfg.canisterCount ? COLOR.garbage : COLOR.dim);
+
+  // the anchor itself — a tick, so the origin is visible whether or not anything is floating
+  const ax = anchorX(), ay = anchorY();
+  ctx.beginPath();
+  ctx.moveTo(ax - 10, ay); ctx.lineTo(ax + 10, ay);
+  glowStroke(COLOR.dim, 1, 4);
+
+  drawPoly(SHIP_HULL, ship.x, ship.y, ship.angle, COLOR.ship);
+  for (const f of floaters) f.draw();
+}
+
+function loop(ts) {
+  const dt = Math.min(0.05, (ts - lastTs) / 1000) || 0;
+  lastTs = ts;
+  if (!paused) sim(dt * cfg.timeScale);
+  render();
+  syncReadout();
+  requestAnimationFrame(loop);
+}
+let lastTs = performance.now();
+
+// ---- controls ----
+const sliders = ["anchorFrac", "rise", "life", "minGap", "interval", "canisterCount", "shipDrift", "timeScale"];
+for (const id of sliders) {
+  const el = document.getElementById(id);
+  el.value = cfg[id];
+  el.addEventListener("input", () => {
+    cfg[id] = parseFloat(el.value);
+    syncLabels();
+    if (id !== "timeScale") resetRun();   // a knob change means a fresh run-minimum
+    syncConfigOut();
+  });
+}
+const DECIMALS = { anchorFrac: 2, rise: 0, life: 2, minGap: 0, interval: 2, canisterCount: 0, shipDrift: 0, timeScale: 2 };
+function syncLabels() {
+  for (const id of sliders) {
+    document.getElementById(id + "Val").textContent = cfg[id].toFixed(DECIMALS[id]);
+  }
+  document.getElementById("minGapLbl").classList.toggle("off", cfg.model !== "B");
+  document.getElementById("minGap").disabled = cfg.model !== "B";
+  document.getElementById("shipDriftLbl").classList.toggle("off", cfg.anchor !== "ship");
+  document.getElementById("shipDrift").disabled = cfg.anchor !== "ship";
+  document.getElementById("anchorFracLbl").classList.toggle("off", cfg.anchor !== "dock");
+  document.getElementById("anchorFrac").disabled = cfg.anchor !== "dock";
+  document.getElementById("modelDesc").textContent = MODEL_DESC[cfg.model];
+}
+
+const modelRow = document.getElementById("modelRow");
+for (const m of ["A", "B", "C"]) {
+  const b = document.createElement("button");
+  b.textContent = "Model " + m;
+  b.addEventListener("click", () => {
+    cfg.model = m;
+    [...modelRow.children].forEach((c, i) => c.classList.toggle("active", "ABC"[i] === m));
+    syncLabels(); resetRun(); syncConfigOut();
+  });
+  modelRow.appendChild(b);
+}
+const anchorRow = document.getElementById("anchorRow");
+for (const a of [["dock", "anchor: dock"], ["ship", "anchor: ship (today)"]]) {
+  const b = document.createElement("button");
+  b.textContent = a[1];
+  b.addEventListener("click", () => {
+    cfg.anchor = a[0];
+    [...anchorRow.children].forEach((c, i) => c.classList.toggle("active", i === (a[0] === "dock" ? 0 : 1)));
+    syncLabels(); resetRun(); syncConfigOut();
+  });
+  anchorRow.appendChild(b);
+}
+modelRow.children[0].classList.add("active");
+anchorRow.children[0].classList.add("active");
+
+const pauseBtn = document.getElementById("pauseBtn");
+document.getElementById("replayBtn").addEventListener("click", resetRun);
+pauseBtn.addEventListener("click", () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? "Resume" : "Pause";
+  pauseBtn.classList.toggle("active", paused);
+});
+document.getElementById("stepBtn").addEventListener("click", () => {
+  paused = true;
+  pauseBtn.textContent = "Resume";
+  pauseBtn.classList.add("active");
+  sim(1 / 60);
+});
+
+function syncReadout() {
+  const col = document.getElementById("colVal");
+  col.textContent = minSepCol === Infinity ? "—" : minSepCol.toFixed(1);
+  col.classList.toggle("bad", minSepCol < GLYPH_H);
+  const sep = document.getElementById("sepVal");
+  sep.textContent = minSep === Infinity ? "—" : minSep.toFixed(1) + " px";
+  sep.classList.toggle("bad", minSep < GLYPH_H);
+  document.getElementById("liveVal").textContent = floaters.length;
+  document.getElementById("arithVal").textContent = (cfg.rise * cfg.interval).toFixed(1) + " px";
+  // The offload timer is reset to a flat `interval` and decremented by whole frames, with no
+  // remainder carried — so the realised cadence is ceil(interval / frame) frames, not `interval`.
+  // At 60Hz and 0.05 that is 4 frames (0.0667s), not 3: the shipped column's true spacing is 10.7px,
+  // where the CS026 comment records the ideal 8.0. The game does exactly this, in exactly this way.
+  // Counted by replaying the same sequential subtraction rather than dividing — at 0.05 the two
+  // disagree, which is the entire point.
+  let t = cfg.interval, frames = 0;
+  while (t > 0 && frames < 999) { t -= 1 / 60; frames++; }
+  document.getElementById("quantVal").textContent =
+    `${frames} fr · ${(cfg.rise * frames / 60).toFixed(1)} px`;
+  document.getElementById("phaseVal").textContent =
+    nextIndex < cfg.canisterCount ? `offloading ${nextIndex}/${cfg.canisterCount} · ${elapsed.toFixed(2)}s`
+    : floaters.length ? `draining · ${elapsed.toFixed(2)}s`
+    : `done · ${elapsed.toFixed(2)}s`;
+}
+
+function syncConfigOut() {
+  const g4 = cfg.model === "B" ? cfg.minGap.toFixed(0) : "n/a";
+  document.getElementById("configOut").textContent =
+`// dock-float-lab — model ${cfg.model}, anchor: ${cfg.anchor}
+const DELIVERY_FLOAT_ANCHOR_FRAC = ${cfg.anchorFrac.toFixed(2)};  // y = dock.y - DOCK_RADIUS * frac
+const DELIVERY_FLOAT_MIN_GAP     = ${cfg.minGap.toFixed(0)};    // px, model B only
+const DOCK_OFFLOAD_INTERVAL      = ${cfg.interval.toFixed(2)};
+DEBUG.deliveryFloatRise = ${cfg.rise.toFixed(0)};   // px/s
+DEBUG.deliveryFloatLife = ${cfg.life.toFixed(2)};  // s
+
+// GATE: G1=${cfg.model} G2=${cfg.anchorFrac.toFixed(2)} G3=${cfg.rise.toFixed(0)}px/s,${cfg.life.toFixed(2)}s G4=${g4} G5=${cfg.interval.toFixed(2)}`;
+}
+
+const copyBtn = document.getElementById("copyBtn");
+copyBtn.addEventListener("click", () => {
+  const text = document.getElementById("configOut").textContent;
+  const done = () => { copyBtn.classList.add("copied"); copyBtn.textContent = "Copied!";
+    setTimeout(() => { copyBtn.classList.remove("copied"); copyBtn.textContent = "Copy constants"; }, 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, done);
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta); done();
+  }
+});
+
+syncLabels();
+syncConfigOut();
+resetRun();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

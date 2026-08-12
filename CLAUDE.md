@@ -411,6 +411,10 @@ bad *build*.
 
 - **`tools/orbit-lab.html`** — orbit geometry.
 - **`tools/scoop-lab.html`** — Scoop capture-mouth sizing (GDD §2.14.1).
+- **`tools/sat-art-lab.html`** — the twelve satellite craft's `SAT_ART` / `SAT_SCRAP` polylines.
+- **`tools/dock-float-lab.html`** — the delivery "+pts" floater column: anchor, cadence, and the
+  three placement models (CS029 P3). Its `slotY()` header records why the model-B rule as first
+  written does not hold.
 - **`tools/music-lab.html`** — the porting source for every `MUSIC_TRACKS` entry.
 - **`tools/voice-lab.html`** — the CS010 engine source (formant synth).
 - **`tools/voice-robot-lab.html`** — ⛔ **the active source for all `phon`
