@@ -417,86 +417,49 @@ const SAT_ART = [
 
 ### Step 2 — Constructor: identity propagation
 
-Find the signature (~5077):
+**Add two optional parameters, `craft` and `piece`**, both defaulted so the two
+non-split call sites (Step 4) need no edit at all. Locate the current
+archetype-selection block by its own comment text — search for "Authored
+satellite silhouette", not a line number, since anchors have already drifted
+once this session — and rewrite the *selection* logic to this dispatch. Leave
+the jitter-bake loop beneath it (`const jit = this.radius * 0.045; this.art =
+polys.map(...)`) untouched; only what assigns `polys` changes.
 
-```js
-  constructor(x, y, size, speed = DEBRIS_SPEEDS[size]) {
-```
+| size | `craft` | draws |
+|---|---|---|
+| 3 (fresh spawn) | unset → roll one at random from `SAT_ART`, same as today | `.full` |
+| 2 (split child) | **the value passed in** — the split site (Step 3) always supplies the parent's | `.pieces[piece % pieces.length]` |
+| 1 (split-of-split) | irrelevant, ignore the parameter | a random `SAT_SCRAP` entry |
 
-Replace with:
-
-```js
-  constructor(x, y, size, speed = DEBRIS_SPEEDS[size], craft = null, piece = 0) {
-```
-
-Then find this block near the end of the constructor body (~5105–5117; grep the
-distinctive comment text, not the line number):
-
-```js
-    // Authored satellite silhouette (v3.3 P2). Pick one archetype per instance (splits
-    // re-roll independently), use the simplified `small` variant at the r=13 small tier,
-    // then bake a per-instance copy scaled to `this.radius` with a small random per-vertex
-    // jitter — the "wrecked/no two alike" look, applied ONCE here, never per frame. All the
-    // draw path does is rotate this by this.angle; nothing anchors art to a fixed "up".
-    const artDef = SAT_ART[Math.floor(rand(0, SAT_ART.length))];
-    const polys = this.size === 1 ? artDef.small : artDef.full;
-```
-
-Replace those two `const` lines (keep everything from `const jit =` onward
-exactly as it is) with:
-
-```js
-    // CS028 P1: satellites now carry identity ACROSS a split rather than re-rolling per
-    // instance. A fresh spawn (size 3, craft unset) rolls a random craft exactly as before.
-    // A split child (size 2) inherits the PARENT's craft from the split site and draws one
-    // of that craft's three authored breakup pieces — piece 0 is the recognisable-core
-    // convention (PLANNED-FEATURES-CS028.md §0.4). Size 1 drops craft identity BY DESIGN:
-    // at r=13 with jitter no silhouette survives, so it draws from the shared,
-    // craft-agnostic SAT_SCRAP pool instead.
-    // `this.piece` is deliberately stored though the draw path never reads it — it is what
-    // makes the "children get distinct pieces" invariant directly assertable in
-    // test-cs028-p1.js. Two craft (Hubble, Skylab) have pieces whose polyline vertex-count
-    // signatures collide, so inferring the piece from baked art geometry is NOT reliable.
-    this.craft = craft !== null ? craft : Math.floor(rand(0, SAT_ART.length));
-    this.piece = size === 2 ? piece % SAT_ART[this.craft].pieces.length : -1;
-    let polys;
-    if (this.size === 1) {
-      polys = SAT_SCRAP[Math.floor(rand(0, SAT_SCRAP.length))];
-    } else if (this.size === 2) {
-      polys = SAT_ART[this.craft].pieces[this.piece];
-    } else {
-      polys = SAT_ART[this.craft].full;
-    }
-```
+Store the resolved values as `this.craft` and `this.piece`. `this.piece` is not
+read anywhere in the draw path — it exists purely so the split-distinctness
+invariant (Step 5) can be asserted directly on the instance rather than
+inferred from its baked art. **That inference is not reliable**: Hubble's
+pieces 1/2 and Skylab's pieces 0/2 have identical polyline vertex-count
+signatures, so two different pieces can look the same by that measure even
+when the assignment is correct. Store `-1` for `this.piece` at sizes 1 and 3,
+where it doesn't apply.
 
 ### Step 3 — Split site: FORK-CS028-A resolution
 
-In `destroyDebris()` (~6149–6153), find:
+In `destroyDebris()`'s `if (a.size > 1)` block, the child-spawn loop currently
+constructs each `DebrisSatellite` with no craft — every child re-rolls
+independently, which is exactly the behavior this changeset removes (§3).
+**Pass `a.craft` through** so every child inherits the parent's archetype.
 
-```js
-    const children = Math.round(lv.junkSplit);
-    for (let i = 0; i < children; i++) {
-      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speed));
-    }
-```
+**Piece assignment is FORK-CS028-A** (`PLANNED-FEATURES-CS028.md` §4), and
+ships resolved: a **random offset, not a fixed index** —
+`Math.floor(rand(0, 3))`, rolled once per kill and added to the loop index
+before the constructor takes it mod 3. A fixed `i` would always show pieces 0
+and 1 while `junkSplit` is 2 (levels 1–10) and never show piece 2 until level
+11. Comment the reasoning at the call site, and flag it for the gate (§5 q1) —
+it's a best guess, not closed; a swap to fixed `i` is a one-line change if the
+gate prefers piece 2 to read as a deliberate late-game reveal.
 
-Replace with:
-
-```js
-    const children = Math.round(lv.junkSplit);
-    // CS028 P1 (FORK-CS028-A, PLANNED-FEATURES-CS028.md §4): a random per-kill offset rather
-    // than a fixed index, so WHICH of the 3 authored pieces appear varies even while
-    // junkSplit is 2 (levels 1-10). A fixed `i` would show pieces 0 and 1 forever and leave
-    // piece 2 unseen for the first third of a typical run. Modulo (applied in the ctor)
-    // keeps this safe if a debug override pushes junkSplit past 3.
-    // ⚠ FLAGGED FOR THE GATE (§5 q1) — best guess, not a closed decision. If the gate prefers
-    // piece 2 to read as a deliberate late-game reveal, P2 drops `pieceOffset +` and this
-    // becomes `i`.
-    const pieceOffset = Math.floor(rand(0, 3));
-    for (let i = 0; i < children; i++) {
-      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speed, a.craft, pieceOffset + i));
-    }
-```
+**This has already been proven against a live patched build, not just
+reasoned about** — 600 simulated splits, 600/600 correct craft inheritance,
+600/600 distinct piece indices, 600/600 in range. Your own test in Step 5
+should reproduce that result, not just take it on faith.
 
 ### Step 4 — Confirm the other two call sites need nothing
 
@@ -645,3 +608,16 @@ Suggested commit message:
   baked art is unreliable — Hubble's and Skylab's pieces collide on polyline
   vertex-count signature, which produced a false 374/400 before the field
   existed and a true 600/600 after.
+- **Steps 2–3 were rewritten from literal find/replace source diffs to a
+  behavioral spec**, after Paul pointed out this project's implementation
+  phases don't normally hand Claude Code pre-written code — they describe the
+  contract (parameters, dispatch, invariants) and trust the session to locate
+  and write the actual diff, the way CS027 P2 specified `_harness.js`'s
+  interface and said "derive it by reading X, Y, Z... not by inventing a new
+  sandbox" rather than pasting `_harness.js` itself. The original diffs had
+  already been written and proven against a live patched build while resolving
+  FORK-CS028-A (§4's 600/600 figure comes from that patch), which is why they
+  existed at all — but shipping them as literal paste targets took a design
+  decision Claude Code should own (exactly how to restructure the archetype-
+  selection block) and turned it into a transcription task. The reasoning and
+  the proof stayed; the pre-written code did not.
