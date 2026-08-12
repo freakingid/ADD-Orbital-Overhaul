@@ -46,6 +46,17 @@ Measured, not assumed: 12 craft / 3 pieces each / worst authored `|p|` **0.9879*
 **CS028 gate — four questions, blocking P2** (`PLANNED-FEATURES-CS028.md` §5, `IMPLEMENTATION-PHASES-CS028.md` GATE):
 
 1. **FORK-CS028-A.** Play past level 11 so both `junkSplit` values are seen. Rotating offset (what shipped) or fixed index? A fixed `i` would make piece 2 a deliberate level-11 reveal; the rotation shows all three from level 1.
+
+Paul says: rotating is good.
+
 2. **Jitter vs. regular geometry (FLAG-CS028-b, deliberately not pre-built).** Telstar's facet grid and Webb's hexagon seams are repeating regular geometry that the `radius * 0.045` jitter may read as sloppy rather than damaged. Watch both at the large tier. Fix if needed is a per-polyline `jitter: false` opt-out.
+
+Paul says: use the per-polyline `jitter: false` opt-out.
+
 3. **Piece distinctness across craft.** ⚠ Measured concern, not a hunch: Hubble's pieces 1/2 and Skylab's 0/2 have identical polyline vertex-count signatures, and Juno's folded blade is a third member of that family. Readable as different objects at r=26 with jitter, or convergent? **This is the one most likely to mean real art rework — which is its own changeset, not a P2 edit.**
+
+Paul says: Do not worry about this. Leave it as is.
+
 4. **Spawn dilution.** Twelve archetypes at even odds is ~8.3% per craft per kill, against the old 16.7%. Richer variety, or diluted recognition?
+
+Paul says: this is fine, it's good.
