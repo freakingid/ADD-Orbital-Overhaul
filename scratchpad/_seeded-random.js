@@ -1,5 +1,5 @@
 // scratchpad/_seeded-random.js — a pure, seeded PRNG for the headless suite.
-// Built by CS026 P1 per PLANNED-FEATURES-CS026.md §5.
+// Built by CS026 P1 per archive/PLANNED-FEATURES-CS026.md §5.
 //
 //   const { withSeed, installSeed, mulberry32 } = require("./_seeded-random.js");
 //
@@ -10,7 +10,7 @@
 // ============================================================================================
 // ⛔ WHY THIS EXISTS, AND WHY IT IS *NOT* A "SEED MY TEST'S OWN Math.random CALLS" UTILITY
 // ============================================================================================
-// PLANNED-FEATURES-CS026.md §5.2 corrected the brief on exactly this point, and the correction is
+// archive/PLANNED-FEATURES-CS026.md §5.2 corrected the brief on exactly this point, and the correction is
 // the whole design. Of the five nondeterministic paths CS026 P1 pins, TWO — `test-starfield.js`
 // and `test-p5.js` — contain ZERO `Math.random` calls of their own. Their nondeterminism is the
 // GAME's, and it is fixed at MODULE LOAD, inside the factory:

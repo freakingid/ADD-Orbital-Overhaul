@@ -2,7 +2,7 @@
 //
 //   node scratchpad/test-cs026-p4.js
 //
-// WHY (PLANNED-FEATURES-CS026.md §3). DOCK_OFFLOAD_INTERVAL is 0.05s (20 canisters/sec) but FloatText
+// WHY (archive/PLANNED-FEATURES-CS026.md §3). DOCK_OFFLOAD_INTERVAL is 0.05s (20 canisters/sec) but FloatText
 // has always risen 30px/s and lived 1.1s, so consecutive delivery floaters were born 1.5px apart — a
 // twelve-canister haul stacked twelve of them inside a 33px band. Nothing was ever removed (the escalating
 // +50/+75/+100 floater still fires every delivery); the information was simply unreadable.

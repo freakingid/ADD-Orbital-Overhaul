@@ -2,7 +2,7 @@
 //
 //   node scratchpad/test-cs021-p4.js
 //
-// ⛔ INVERTED BY CS026 P4 (PLANNED-FEATURES-CS026.md §3.4/§3, closes FLAG-CS020-i's READOUT — not its
+// ⛔ INVERTED BY CS026 P4 (archive/PLANNED-FEATURES-CS026.md §3.4/§3, closes FLAG-CS020-i's READOUT — not its
 // underlying claim; see STATUS.md for the recorded risk). The readout this file was written to prove
 // EXISTS is now REMOVED outright: HUD_COMBO_X/Y/SIZE and the `game.deliveryCount > 0` block are gone from
 // drawHUD(), on the bet that the CS026 P4 dock-anchored delivery floaters (spread and legible, no longer

@@ -2,7 +2,7 @@
 //
 //   node scratchpad/test-cs026-p1.js
 //
-// WHY (PLANNED-FEATURES-CS026.md §4 and §5). Two costs the suite had been paying in maintenance rather
+// WHY (archive/PLANNED-FEATURES-CS026.md §4 and §5). Two costs the suite had been paying in maintenance rather
 // than in code:
 //
 //   §4 — TEN phase-reference repairs across four changesets, every one of them a pin written against a

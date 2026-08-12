@@ -763,7 +763,7 @@ const LEVERS = [
   { id: "junkSpeedLarge",      floor: 60,  ceil: 110, steps: 5 },
   { id: "junkSpeedMedium",     floor: 95,  ceil: 165, steps: 5 },
   { id: "junkSpeedSmall",      floor: 140, ceil: 240, steps: 5 },
-  // CS026 P2 (PLANNED-FEATURES-CS026.md §1, FORK-CS026-A -> (b)): the BRANCHING FACTOR of the debris
+  // CS026 P2 (archive/PLANNED-FEATURES-CS026.md §1, FORK-CS026-A -> (b)): the BRANCHING FACTOR of the debris
   // tree — how many children destroyDebris() pushes — is a lever, carried by junkCount like the three
   // speeds beside it. At floor 2 / ceil 3 / steps 2 it reads 2 for levels 1-10 and 3 from level 11
   // FOREVER, because junkCount wraps every ten levels and a carried lever plateaus at its top step.
@@ -3390,7 +3390,7 @@ const DEBUG_VARS = [
   { header: "DELIVERY" },
   { id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
     def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
-  // CS026 P4 (spec §3, PLANNED-FEATURES-CS026.md §3.3a/§3.4): the delivery floaters' own rise/life,
+  // CS026 P4 (spec §3, archive/PLANNED-FEATURES-CS026.md §3.3a/§3.4): the delivery floaters' own rise/life,
   // separating what DOCK_OFFLOAD_INTERVAL's 20/sec cadence used to stack into an unreadable smear.
   // First-guess numbers — the gate is what settles them, which is why they are knobs, not constants.
   // CS026 P6 (gate Q5): settled. "They need to travel upwards more slowly" -> rise 300 -> 160; "the

@@ -843,7 +843,7 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   // TRAP 2 — no lever. The LEVERS table and leverState are unchanged from what P6f shipped.
   //
   // ⛔ REPOINTED BY CS026 P2, FROM `HEAD` TO A LITERAL SHA, for the third time in this suite and for the
-  // same reason (PLANNED-FEATURES-CS026.md §4.1). `HEAD` was right only while P6f was uncommitted; after
+  // same reason (archive/PLANNED-FEATURES-CS026.md §4.1). `HEAD` was right only while P6f was uncommitted; after
   // it landed the pin compared the live build against itself and passed vacuously, and the first phase
   // to legitimately touch LEVERS — CS026 P2, which added the `junkSplit` lever — failed it for a change
   // TRAP 2 has no opinion about. `82eae5a` is P6f's own commit, so the question is the one this TRAP

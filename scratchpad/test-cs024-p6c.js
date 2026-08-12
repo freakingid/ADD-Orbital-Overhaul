@@ -87,7 +87,7 @@ const execOnly = scriptSrc
 // directions: once P6c committed, `HEAD` began following whatever landed most recently, so the pin
 // compared the live build against ITSELF and passed vacuously — and the first phase to legitimately
 // move the ramp (CS026 P2, adding the junkSplit lever) made it fail for a change §J has no opinion
-// about. This is the moving-reference defect PLANNED-FEATURES-CS026.md §4.1 is about, and the fix is
+// about. This is the moving-reference defect archive/PLANNED-FEATURES-CS026.md §4.1 is about, and the fix is
 // the one that section prescribes: A HARDCODED LITERAL SHA. `273dbb2` IS P6c's own commit — so §J now
 // asks the question it always meant to ask, "is the shipped ramp still what P6c shipped?", and asks it
 // of a reference that cannot move again.

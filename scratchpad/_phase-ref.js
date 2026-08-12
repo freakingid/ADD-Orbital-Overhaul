@@ -1,5 +1,5 @@
 // scratchpad/_phase-ref.js — the phase-reference helper for the headless suite.
-// Built by CS026 P1 per PLANNED-FEATURES-CS026.md §4.
+// Built by CS026 P1 per archive/PLANNED-FEATURES-CS026.md §4.
 //
 //   const { parentSource, ownCommit, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
 //

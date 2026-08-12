@@ -2,7 +2,7 @@
 //
 //   node scratchpad/test-cs026-p2.js
 //
-// WHY (PLANNED-FEATURES-CS026.md §1). Wave clear is `game.debris.length === 0` — debris only — so a
+// WHY (archive/PLANNED-FEATURES-CS026.md §1). Wave clear is `game.debris.length === 0` — debris only — so a
 // level's length IS its debris tree, and the tree was a hardcoded 3-way split at every tier. §1.2
 // measured the shape and found the surprise: `junkCount` SAWTOOTHS 3 -> 12 every ten levels, so by body
 // count the EARLY levels are the SHORTEST in the game (level 1 is 39 bodies, level 10 is 156). A 2-way
@@ -79,7 +79,7 @@ const { execFileSync } = require("child_process");
 const { parentSource, ownCommit, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
 const { installSeed } = require("./_seeded-random.js");
 
-// ⛔ SEEDED BEFORE THE FIRST BUILD, WHICH IS THE POINT (CS026 P1, PLANNED-FEATURES-CS026.md §5.2). This
+// ⛔ SEEDED BEFORE THE FIRST BUILD, WHICH IS THE POINT (CS026 P1, archive/PLANNED-FEATURES-CS026.md §5.2). This
 // file contains no Math.random calls of its own — the nondeterminism is the GAME'S, and some of it is
 // spent at MODULE LOAD inside the factory, so a seed installed after `new Function(...)(...)` fixes
 // nothing. §K's long real run was measured flaking 2 in 12 unseeded (it reached level 10 instead of

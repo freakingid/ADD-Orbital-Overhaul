@@ -2,7 +2,7 @@
 //
 //   node scratchpad/test-cs026-p3.js
 //
-// WHY (PLANNED-FEATURES-CS026.md §2). The slog in an early level is not the fight, it is FINDING the
+// WHY (archive/PLANNED-FEATURES-CS026.md §2). The slog in an early level is not the fight, it is FINDING the
 // last two or three smalls. At 2560x1440 the viewport shows 25% of the world and the farthest a body can
 // be from the ship is 1,469 px. At 1920x1080 it shows 44% and the farthest is 1,101 px.
 //
@@ -80,7 +80,7 @@ const { execFileSync } = require("child_process");
 const { parentSource, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
 const { installSeed } = require("./_seeded-random.js");
 
-// ⛔ SEEDED BEFORE THE FIRST BUILD (CS026 P1, PLANNED-FEATURES-CS026.md §5.2). This file makes no
+// ⛔ SEEDED BEFORE THE FIRST BUILD (CS026 P1, archive/PLANNED-FEATURES-CS026.md §5.2). This file makes no
 // Math.random calls of its own — the nondeterminism is the GAME'S, and some of it is spent at MODULE
 // LOAD inside the factory (the starfield), so a seed installed after `new Function(...)(...)` fixes
 // nothing. §C samples hundreds of real spawns and §E/§H drive real frames, all of which roll dice.

@@ -291,7 +291,7 @@ let X = null, STORE = null, CALLS = null;
   // ⛔ REPOINTED BY CS026 P2, FROM `HEAD` TO A LITERAL SHA. `HEAD` was correct only while P6d was the
   // uncommitted phase: the moment it landed, this compared the live build against ITSELF and passed
   // vacuously, and the first phase to legitimately touch the odometer (CS026 P2's junkSplit lever) made
-  // it fail for a change §H has no opinion about. PLANNED-FEATURES-CS026.md §4.1's rule: the reference
+  // it fail for a change §H has no opinion about. archive/PLANNED-FEATURES-CS026.md §4.1's rule: the reference
   // is a HARDCODED LITERAL, and `c4f924c` is P6d's own commit — so the question is the one this section
   // always meant to ask, "is the odometer still what P6d shipped?", against a reference that cannot move.
   const P6D_REF = "c4f924c";   // cs-24 p6d: startLevel debug knob — this file's own commit

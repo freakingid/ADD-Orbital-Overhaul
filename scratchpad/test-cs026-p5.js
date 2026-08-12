@@ -2,7 +2,7 @@
 //
 //   node scratchpad/test-cs026-p5.js
 //
-// WHY (PLANNED-FEATURES-CS026.md §6). CS025 P5 built the level banner out of the CS025 gate's own Q6
+// WHY (archive/PLANNED-FEATURES-CS026.md §6). CS025 P5 built the level banner out of the CS025 gate's own Q6
 // answer, so it arrived AFTER that gate closed — nobody has ever seen it in motion. Its four constants
 // (LEVEL_BANNER_TIME/FADE/SIZE/Y) are first-guess numbers tuned by eye against nothing, and because they
 // were look-calls (no registry row), the only way to retune them was a source edit — which collides with
