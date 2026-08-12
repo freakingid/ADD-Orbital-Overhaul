@@ -9,8 +9,9 @@
 // phase prompt explicitly authorized ("Do not touch asteroids-deluxe.html except for doc-path
 // references inside comments"). The plan's "exactly one line" undercounted its own P0 scope. §B
 // asserts the TRUE invariant — the delta is EXACTLY these three known substitutions and nothing
-// else — by reconstructing HEAD from the parent and requiring byte equality. A fourth, unlisted
-// change fails this test for real. Recorded in STATUS.md rather than silently absorbed.
+// else — by reconstructing a5ef9f4 from 89a9a3a and requiring byte equality (CS028 P1 made that
+// second end a literal; it used to read the live build, which only worked while HEAD was a5ef9f4).
+// A fourth, unlisted change fails this test for real. Recorded in STATUS.md, not silently absorbed.
 //
 // Sections: (A) node --check; GAME_VERSION "1.0.0.27"; HighScores stamps it. (B) TRAP-CS027-A,
 // reconstructed and measured; registry/levers unmoved (85/18). (C) the closing scope pin.
@@ -33,6 +34,15 @@ const PHASE_SUBJECT = "cs-27 p6:";
 
 // The changeset's OWN start point — CS026 P6, what TRAP-CS027-A measures against (per the plan).
 const CS027_START_SHA = "89a9a3ae8fe857e255c921ca911c1ca0e01bfcbe";
+
+// ⛔ REPOINTED BY CS028 P1 — the pin's TARGET was a moving reference, which is the one defect
+// _phase-ref.js exists to stop. §B's claim is about CS027's OWN diff (89a9a3a -> a5ef9f4), and it
+// compared the reconstruction to the LIVE build, which is only the same thing while HEAD is still
+// a5ef9f4. CS028 P1's first code change broke it — not because CS027's diff changed, but because
+// HEAD moved. Both ends are literals now, so the claim is permanently measurable. THE CLAIM IS
+// UNCHANGED. What stayed pointed at HEAD is the part that genuinely tracks it: registry/levers
+// unmoved, and GAME_VERSION having moved off the parent's.
+const CS027_CLOSE_SHA = "a5ef9f47557b5b82dc050db6cd54169ea16d1fa1";
 
 const A = mkAssert();
 const { assert, eq } = A;
@@ -60,7 +70,8 @@ const { assert, eq } = A;
 (function sectionB() {
   console.log("(B) TRAP-CS027-A: the <script> delta from 89a9a3a, measured against a full reconstruction");
   const ps = parentSource(CS027_START_SHA);
-  if (!ps) { A.skip("§B TRAP-CS027-A (no git history)"); return; }
+  const closeSrc = parentSource(CS027_CLOSE_SHA);   // CS028 P1: the pin's other end, now a literal too
+  if (!ps || !closeSrc) { A.skip("§B TRAP-CS027-A (no git history)"); return; }
 
   // The exact, enumerated substitutions found by measurement — see the header. Anything else that
   // changed will make `reconstructed !== scriptSrc` below and fail this test for real.
@@ -86,8 +97,8 @@ const { assert, eq } = A;
     eq(before === reconstructed, false, `B: (setup) substitution target found verbatim in the parent: ${JSON.stringify(from.slice(0, 60))}...`);
   }
 
-  eq(reconstructed, scriptSrc,
-    "B: ⛔ the ONLY differences from 89a9a3a are the three enumerated substitutions — GAME_VERSION plus P0's two doc-path repoints. " +
+  eq(reconstructed, closeSrc,
+    "B: ⛔ the ONLY differences between 89a9a3a and a5ef9f4 are the three enumerated substitutions — GAME_VERSION plus P0's two doc-path repoints. " +
     "archive/PLANNED-FEATURES-CS027.md §2 undercounted this as \"exactly one line\"; the true count is three, all legitimate CS027 diffs.");
 
   // The corollary the plan actually cares about: no LOGIC changed. Registry and levers unmoved.

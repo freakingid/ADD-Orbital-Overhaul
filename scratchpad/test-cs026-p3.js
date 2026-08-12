@@ -821,8 +821,23 @@ let X = null;
   eq(A.game.worldSize, A.WORLD_SIZE_FIELD, "H: ...ending in the field world");
   const [w, h] = A.liveDims();
   const bodies = [...A.game.debris, ...A.game.hunters, ...A.game.garbage, ...A.game.powerups, ...A.game.chain];
-  assert(bodies.every(p => p.x >= 0 && p.x < w && p.y >= 0 && p.y < h),
-    "H: every surviving body is inside the world the run ended in");
+  // ⛔ CORRECTED BY CS028 P1 — this assertion was WRONG ABOUT THE BUILD'S CONTRACT and passed only
+  // because the pinned seed happened not to land on the counter-example. `wrap()` folds a body only
+  // once it is more than 60 px past an edge, so a live body legitimately sits up to 60 px OUTSIDE
+  // [0, w) at any moment; the strict `p.x < w` form asserted an invariant the game never had.
+  // Measured at HEAD (a5ef9f4, this file untouched): seed 9 ends with a Powerup at y = -22.7 and the
+  // pinned seed's own run under a different stream position ends with Garbage at exactly y = 1440 —
+  // both inside the margin, both failing the old bound. CS028 P1 shifted the Math.random stream (the
+  // split path spends one fewer roll per child and one more per kill), which is what surfaced it.
+  // The claim §H cares about is unchanged and is what is asserted now: resizeWorld left nothing
+  // STRANDED — every body is within one wrap margin of the world it ended in, not a world away.
+  const mrg = (scriptSrc.match(/function wrap\(obj\) \{\s*\n\s*if \(obj\.x < -(\d+)\)/) || [])[1];
+  assert(mrg !== undefined, "H: (setup) wrap()'s fold margin was read off the build, not hardcoded");
+  const M = Number(mrg);
+  const stray = bodies.filter(p => !(p.x >= -M && p.x <= w + M && p.y >= -M && p.y <= h + M));
+  eq(stray.length, 0,
+    `H: every surviving body is within wrap()'s ${M} px margin of the world the run ended in` +
+    (stray.length ? ` (worst ${JSON.stringify({ x: +stray[0].x.toFixed(1), y: +stray[0].y.toFixed(1) })} vs ${w}x${h})` : ""));
 })();
 
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);

@@ -4968,97 +4968,393 @@ class Bullet {
   }
 }
 
-// SAT_ART (v3.3 P2): authored line-art satellite silhouettes for the Debris Satellites.
-// Each entry is ONE wrecked satellite archetype (a bent panel, a snapped truss, a hanging
-// antenna — this is a debris field, not a working constellation). Coordinates live in UNIT
-// SPACE: every point sits inside the radius-1 circle, so a design scales cleanly to any tier
-// by multiplying by `this.radius`. Drawn through the existing drawPoly — no fills, no new
-// primitive, no external assets (these are ORIGINAL stylized silhouettes authored in code,
-// evoking real archetypes; nothing is traced/imported — the file stays a self-contained
-// GPL-3.0 HTML, FLAG A-7). A polyline is `{ pts, closed }`; `closed` picks drawPoly's mode.
-//   full  — the detailed silhouette, used at the large/medium tiers.
-//   small — a simplified 2-4 stroke variant (body + one feature) for the small tier (r=13),
-//           where a 10+ segment design turns to mush. Legibility gate, tuned by eye (item 4).
+// SAT_ART (v3.3 P2; twelve real craft + breakup model, CS028 P1): authored line-art satellite
+// silhouettes for the Debris Satellites. Each entry is ONE real spacecraft, picked so no two
+// silhouettes collide as archetypes, and every one is drawn WRECKED — the accurate outline plus
+// exactly one authored injury (a snapped whisker, a stoved-in drum, a wing torn loose). This is a
+// debris field, not a working constellation.
+//
+// Coordinates live in UNIT SPACE: every point sits inside the radius-1 circle (worst case 0.988,
+// the Apollo LM's piece 2), so a design scales cleanly to any tier by multiplying by `this.radius`.
+// Drawn through the existing drawPoly — no fills, no new primitive, no external assets. These are
+// ORIGINAL stylized line drawings authored in code from published geometry; nothing is traced or
+// imported, so the file stays a self-contained GPL-3.0 HTML (FLAG A-7). A polyline is
+// `{ pts, closed }`; `closed` picks drawPoly's mode. Composed in a standalone lab and pasted in
+// verbatim — ⚠ that lab is NOT in tools/, so this table is currently its own source of truth.
+//
+//   full   — the whole craft, drawn at the large tier (r=46).
+//   pieces — ⛔ ALWAYS EXACTLY THREE. The medium tier is the large tier's BREAKUP, not an
+//            independent draw: a split child inherits its parent's craft and takes one of these
+//            (see the constructor below and destroyDebris). Piece 0 is by convention a recognizable
+//            part of the parent — Sputnik's pressure sphere, Hubble's tube, Voyager's dish, the LM's
+//            ascent stage. Pieces 1 and 2 are secondary structure and carry no authenticity bar.
+//
+// ⛔ The per-craft `small` field is GONE (CS028 P1). At r=13 with jitter no silhouette survives, so
+// the small tier abandons craft identity entirely and draws a generic SAT_SCRAP shard instead. Do
+// not re-add a per-craft small variant — that legibility gate was measured, not assumed.
+
+// Generic scrap for the small tier (size 1). Craft-agnostic by design: at r=13
+// no silhouette survives, so identity is deliberately abandoned here.
+const SAT_SCRAP = [
+  [ // bent panel shard
+    { pts: [[-0.85,-0.3],[0.2,-0.45],[0.85,0.25],[-0.3,0.5]], closed: true },
+    { pts: [[-0.32,-0.38],[0.1,0.4]], closed: false }
+  ],
+  [ // torn truss offcut
+    { pts: [[-0.85,-0.22],[0.7,-0.3]], closed: false },
+    { pts: [[-0.8,0.28],[0.85,0.2]], closed: false },
+    { pts: [[-0.82,-0.22],[-0.3,0.26],[0.2,-0.26],[0.7,0.22]], closed: false }
+  ],
+  [ // hull plate + stub
+    { pts: [[-0.7,-0.4],[0.3,-0.62],[0.8,0.1],[0.15,0.62],[-0.6,0.35]], closed: true },
+    { pts: [[0.3,-0.62],[0.48,-0.8]], closed: false }
+  ]
+];
+
 const SAT_ART = [
-  { // 0 — comms bus + twin solar panels (right panel snapped and skewed)
+  { // 0 — Sputnik 1 (USSR, 1957): sphere + swept whiskers; one whisker snapped and kinked back
     full: [
-      { pts: [[-0.20,-0.26],[0.20,-0.26],[0.20,0.26],[-0.20,0.26]], closed: true },        // bus body
-      { pts: [[-0.20,-0.15],[-0.92,-0.15],[-0.92,0.15],[-0.20,0.15]], closed: true },       // left panel (intact)
-      { pts: [[-0.56,-0.15],[-0.56,0.15]], closed: false },                                  // panel spar
-      { pts: [[0.20,-0.13],[0.70,-0.20],[0.78,0.02],[0.20,0.13]], closed: true },            // right panel (bent/snapped)
-      { pts: [[0.00,-0.26],[0.05,-0.60]], closed: false },                                   // antenna whip
-      { pts: [[-0.05,-0.60],[0.16,-0.60]], closed: false }                                   // antenna crossbar
+      { pts: [[0.68,0],[0.6,0.18],[0.42,0.26],[0.24,0.18],[0.16,0],[0.24,-0.18],[0.42,-0.26],[0.6,-0.18]], closed: true },
+      { pts: [[0.16,0],[0.68,0]], closed: false },
+      { pts: [[0.28,-0.2],[-0.62,-0.56]], closed: false },
+      { pts: [[0.28,0.2],[-0.62,0.56]], closed: false },
+      { pts: [[0.2,-0.1],[-0.78,-0.24]], closed: false },
+      { pts: [[0.2,0.1],[-0.3,0.3],[-0.38,0.52]], closed: false }
     ],
-    small: [
-      { pts: [[-0.26,-0.30],[0.26,-0.30],[0.26,0.30],[-0.26,0.30]], closed: true },          // body
-      { pts: [[-0.26,-0.16],[-0.90,-0.16],[-0.90,0.16],[-0.26,0.16]], closed: true }         // one panel
+    pieces: [
+      [ // 0 — pressure sphere
+        { pts: [[0.55,0],[0.39,0.39],[0,0.55],[-0.39,0.39],[-0.55,0],[-0.39,-0.39],[0,-0.55],[0.39,-0.39]], closed: true },
+        { pts: [[-0.55,0],[0.55,0]], closed: false },
+        { pts: [[-0.39,-0.39],[-0.72,-0.62]], closed: false }
+      ],
+      [ // 1 — whisker pair on torn root
+        { pts: [[0.3,0.1],[0.55,-0.15],[0.4,-0.4],[0.15,-0.2]], closed: true },
+        { pts: [[0.2,-0.15],[-0.8,0.2]], closed: false },
+        { pts: [[0.28,0.02],[-0.7,0.55]], closed: false }
+      ],
+      [ // 2 — hull shard + bent whisker
+        { pts: [[0.5,-0.45],[0.1,-0.72],[-0.45,-0.48],[-0.58,0.05],[-0.15,0.3],[0.35,0.05]], closed: true },
+        { pts: [[0.35,0.05],[0.65,0.45],[0.55,0.8]], closed: false }
+      ]
     ]
   },
-  { // 1 — dish relay (parabolic dish, one side drooping/cracked)
+  { // 1 — Vanguard 1 (US Navy (NRL), 1958): sphere + radial spikes; one spike bent double
     full: [
-      { pts: [[-0.75,0.06],[-0.55,-0.28],[-0.28,-0.45],[0.00,-0.50],[0.30,-0.42],[0.58,-0.22],[0.72,0.18]], closed: false }, // dish rim (asymmetric = damaged)
-      { pts: [[-0.40,-0.30],[0.00,-0.05]], closed: false },                                  // feed strut
-      { pts: [[0.40,-0.28],[0.00,-0.05]], closed: false },                                   // feed strut
-      { pts: [[-0.18,0.05],[0.18,0.05],[0.18,0.46],[-0.18,0.46]], closed: true },             // bus body
-      { pts: [[0.18,0.34],[0.52,0.52]], closed: false }                                       // hanging whip antenna
+      { pts: [[0.22,0],[0.156,0.156],[0,0.22],[-0.156,0.156],[-0.22,0],[-0.156,-0.156],[0,-0.22],[0.156,-0.156]], closed: true },
+      { pts: [[-0.86,0],[0.86,0]], closed: false },
+      { pts: [[0.43,0.74],[-0.43,-0.74]], closed: false },
+      { pts: [[-0.11,0.19],[-0.43,0.74]], closed: false },
+      { pts: [[0.11,-0.19],[0.34,-0.48],[0.6,-0.42]], closed: false }
     ],
-    small: [
-      { pts: [[-0.60,0.10],[-0.30,-0.40],[0.00,-0.50],[0.30,-0.40],[0.60,0.10]], closed: false }, // dish
-      { pts: [[-0.20,0.10],[0.20,0.10],[0.20,0.50],[-0.20,0.50]], closed: true }              // body
+    pieces: [
+      [ // 0 — sphere + spike stubs
+        { pts: [[0.42,0],[0.3,0.3],[0,0.42],[-0.3,0.3],[-0.42,0],[-0.3,-0.3],[0,-0.42],[0.3,-0.3]], closed: true },
+        { pts: [[-0.85,0],[0.85,0]], closed: false },
+        { pts: [[0.21,-0.36],[0.45,-0.78]], closed: false }
+      ],
+      [ // 1 — bent spike on hull frag
+        { pts: [[-0.3,0.2],[0.05,-0.1],[-0.1,-0.45],[-0.5,-0.25]], closed: true },
+        { pts: [[-0.1,-0.2],[0.35,0.2],[0.3,0.7]], closed: false },
+        { pts: [[-0.35,-0.05],[-0.85,0.25]], closed: false }
+      ],
+      [ // 2 — crossed spike pair
+        { pts: [[-0.8,-0.5],[0.8,0.5]], closed: false },
+        { pts: [[-0.55,0.72],[0.45,-0.6]], closed: false },
+        { pts: [[-0.12,-0.05],[0.1,-0.14],[0.18,0.06],[-0.04,0.15]], closed: true }
+      ]
     ]
   },
-  { // 2 — boxy Earth-observer with an instrument boom (one panel snapped and hanging)
+  { // 2 — Explorer 1 (US Army / JPL, 1958): pencil cylinder + turnstile whips; one turnstile whip sheared to a stub
     full: [
-      { pts: [[-0.28,-0.34],[0.28,-0.34],[0.28,0.34],[-0.28,0.34]], closed: true },           // body
-      { pts: [[0.28,0.00],[0.90,0.00]], closed: false },                                       // boom
-      { pts: [[0.82,-0.10],[0.98,-0.10],[0.98,0.10],[0.82,0.10]], closed: true },              // instrument at boom tip
-      { pts: [[-0.15,-0.34],[-0.15,-0.82],[0.15,-0.82],[0.15,-0.34]], closed: true },          // dorsal panel (intact)
-      { pts: [[-0.28,0.14],[-0.70,0.34],[-0.66,0.50],[-0.26,0.32]], closed: true }             // snapped panel (hanging)
+      { pts: [[-0.82,-0.09],[0.62,-0.09],[0.86,0],[0.62,0.09],[-0.82,0.09]], closed: true },
+      { pts: [[-0.4,-0.09],[-0.4,0.09]], closed: false },
+      { pts: [[0.1,-0.09],[0.1,0.09]], closed: false },
+      { pts: [[0,-0.09],[-0.5,-0.62]], closed: false },
+      { pts: [[0,0.09],[-0.5,0.62]], closed: false },
+      { pts: [[-0.2,-0.09],[-0.72,-0.4]], closed: false },
+      { pts: [[-0.2,0.09],[-0.44,0.34]], closed: false }
     ],
-    small: [
-      { pts: [[-0.30,-0.36],[0.30,-0.36],[0.30,0.36],[-0.30,0.36]], closed: true },            // body
-      { pts: [[0.30,0.00],[0.92,0.00]], closed: false }                                        // boom
+    pieces: [
+      [ // 0 — nose cone section
+        { pts: [[-0.55,-0.22],[0.55,-0.1],[0.85,0],[0.55,0.1],[-0.55,0.22]], closed: true },
+        { pts: [[-0.2,-0.17],[-0.2,0.17]], closed: false },
+        { pts: [[-0.55,-0.22],[-0.68,-0.05],[-0.55,0.22]], closed: false }
+      ],
+      [ // 1 — mid tube + whip stubs
+        { pts: [[-0.75,-0.16],[0.75,-0.16],[0.75,0.16],[-0.75,0.16]], closed: true },
+        { pts: [[0.1,-0.16],[-0.35,-0.7]], closed: false },
+        { pts: [[0.1,0.16],[-0.3,0.72]], closed: false }
+      ],
+      [ // 2 — aft tube, torn open
+        { pts: [[-0.7,-0.18],[0.6,-0.14],[0.68,0.16],[-0.7,0.2]], closed: true },
+        { pts: [[0.6,-0.14],[0.8,0.02],[0.68,0.16]], closed: false },
+        { pts: [[-0.25,-0.19],[-0.25,0.19]], closed: false }
+      ]
     ]
   },
-  { // 3 — Sputnik-ish sphere + radial whip antennas (one antenna bent)
+  { // 3 — Telstar 1 (AT&T / Bell Labs, 1962): faceted geodesic sphere; upper-right facet peeled open
     full: [
-      { pts: [[0.34,0.00],[0.24,0.24],[0.00,0.34],[-0.24,0.24],[-0.34,0.00],[-0.24,-0.24],[0.00,-0.34],[0.24,-0.24]], closed: true }, // sphere (octagon)
-      { pts: [[0.24,-0.24],[0.68,-0.68]], closed: false },                                     // whip
-      { pts: [[-0.24,-0.24],[-0.68,-0.68]], closed: false },                                    // whip
-      { pts: [[0.24,0.24],[0.68,0.68]], closed: false },                                        // whip
-      { pts: [[-0.24,0.24],[-0.58,0.48],[-0.52,0.74]], closed: false }                          // bent whip
+      { pts: [[0.6,0],[0.52,0.3],[0.3,0.52],[0,0.6],[-0.3,0.52],[-0.52,0.3],[-0.6,0],[-0.52,-0.3],[-0.3,-0.52],[0,-0.6],[0.3,-0.52],[0.52,-0.3]], closed: true },
+      { pts: [[-0.58,-0.12],[0.58,-0.12]], closed: false },
+      { pts: [[-0.58,0.12],[0.58,0.12]], closed: false },
+      { pts: [[-0.35,-0.12],[-0.35,0.12]], closed: false },
+      { pts: [[0.35,-0.12],[0.35,0.12]], closed: false },
+      { pts: [[-0.52,-0.3],[0.52,-0.3]], closed: false },
+      { pts: [[-0.52,0.3],[0.52,0.3]], closed: false },
+      { pts: [[0.3,-0.52],[0.46,-0.7],[0.58,-0.44]], closed: false }
     ],
-    small: [
-      { pts: [[0.32,0.00],[0.16,0.28],[-0.16,0.28],[-0.32,0.00],[-0.16,-0.28],[0.16,-0.28]], closed: true }, // sphere (hexagon)
-      { pts: [[0.16,-0.28],[0.62,-0.62]], closed: false },                                     // whip
-      { pts: [[-0.16,0.28],[-0.62,0.62]], closed: false }                                        // whip
+    pieces: [
+      [ // 0 — faceted hemisphere
+        { pts: [[0.62,0],[0.54,-0.31],[0.31,-0.54],[0,-0.62],[-0.31,-0.54],[-0.54,-0.31],[-0.62,0]], closed: true },
+        { pts: [[-0.54,-0.31],[0.54,-0.31]], closed: false },
+        { pts: [[0,-0.62],[0,0]], closed: false }
+      ],
+      [ // 1 — equatorial antenna belt
+        { pts: [[-0.85,-0.15],[0.85,-0.25],[0.85,0.2],[-0.85,0.3]], closed: true },
+        { pts: [[-0.35,-0.19],[-0.35,0.26]], closed: false },
+        { pts: [[0.3,-0.23],[0.3,0.22]], closed: false }
+      ],
+      [ // 2 — peeled facet panel
+        { pts: [[-0.45,-0.55],[0.35,-0.65],[0.6,0.1],[-0.2,0.55],[-0.6,0.05]], closed: true },
+        { pts: [[-0.02,-0.6],[-0.05,0.3]], closed: false }
+      ]
     ]
   },
-  { // 4 — cylindrical spent upper stage / booster (dented, flared nozzle)
+  { // 4 — Syncom / Early Bird (NASA / Hughes, 1964): spin-stabilised drum; drum wall stoved in on one side
     full: [
-      { pts: [[-0.78,-0.22],[0.58,-0.22],[0.78,-0.10],[0.78,0.10],[0.58,0.22],[-0.78,0.22]], closed: true }, // tapered cylinder
-      { pts: [[-0.78,-0.13],[-0.95,-0.20],[-0.95,0.20],[-0.78,0.13]], closed: false },         // nozzle bell
-      { pts: [[-0.30,-0.22],[-0.30,0.22]], closed: false },                                     // structural band
-      { pts: [[0.18,-0.22],[0.18,0.22]], closed: false },                                       // structural band
-      { pts: [[-0.02,-0.22],[0.08,-0.11],[0.20,-0.22]], closed: false }                         // dent (kinked skin)
+      { pts: [[-0.42,-0.26],[0.42,-0.26],[0.36,0.02],[0.42,0.26],[-0.42,0.26]], closed: true },
+      { pts: [[-0.42,-0.26],[0,-0.36],[0.42,-0.26]], closed: false },
+      { pts: [[-0.42,0.26],[0,0.36],[0.42,0.26]], closed: false },
+      { pts: [[-0.2,-0.3],[-0.2,0.3]], closed: false },
+      { pts: [[0.16,-0.3],[0.16,0.3]], closed: false },
+      { pts: [[-0.16,0.34],[-0.26,0.62],[0.26,0.62],[0.16,0.34]], closed: false },
+      { pts: [[0,-0.36],[0,-0.82]], closed: false },
+      { pts: [[-0.14,-0.72],[0.14,-0.72]], closed: false }
     ],
-    small: [
-      { pts: [[-0.80,-0.24],[0.66,-0.24],[0.80,0.00],[0.66,0.24],[-0.80,0.24]], closed: true }, // cylinder
-      { pts: [[-0.80,-0.14],[-0.96,0.00],[-0.80,0.14]], closed: false }                         // nozzle
+    pieces: [
+      [ // 0 — stoved-in drum
+        { pts: [[-0.6,-0.38],[0.6,-0.38],[0.52,0.03],[0.6,0.38],[-0.6,0.38]], closed: true },
+        { pts: [[-0.6,-0.38],[0,-0.52],[0.6,-0.38]], closed: false },
+        { pts: [[-0.28,-0.42],[-0.28,0.42]], closed: false }
+      ],
+      [ // 1 — apogee nozzle cone
+        { pts: [[-0.3,-0.6],[-0.58,0.58],[0.58,0.58],[0.3,-0.6]], closed: true },
+        { pts: [[-0.38,-0.1],[0.38,-0.1]], closed: false }
+      ],
+      [ // 2 — antenna stalk + cap shard
+        { pts: [[0.05,0.85],[-0.05,-0.6]], closed: false },
+        { pts: [[-0.3,-0.42],[0.28,-0.48]], closed: false },
+        { pts: [[-0.35,0.55],[0.3,0.62],[0.42,0.82],[-0.2,0.8]], closed: true }
+      ]
     ]
   },
-  { // 5 — truss / array segment (broken lattice, one rail snapped short)
+  { // 5 — Hubble Space Telescope (NASA / ESA, 1990): tube telescope + two wings; lower wing torn loose and skewed
     full: [
-      { pts: [[-0.85,-0.20],[0.85,-0.20]], closed: false },                                     // top rail (intact)
-      { pts: [[-0.85,0.20],[0.50,0.20]], closed: false },                                        // bottom rail (snapped short)
-      { pts: [[-0.85,-0.20],[-0.55,0.20],[-0.25,-0.20],[0.05,0.20],[0.35,-0.20],[0.65,0.20]], closed: false }, // lattice zigzag
-      { pts: [[-0.85,-0.20],[-0.85,-0.48],[-0.50,-0.48],[-0.50,-0.20]], closed: true },          // end panel
-      { pts: [[0.85,-0.20],[0.85,0.06]], closed: false }                                         // torn end cap
+      { pts: [[-0.55,-0.28],[0.45,-0.28],[0.45,0.28],[-0.55,0.28]], closed: true },
+      { pts: [[-0.2,-0.28],[-0.2,0.28]], closed: false },
+      { pts: [[0.45,-0.28],[0.86,-0.38]], closed: false },
+      { pts: [[0.45,-0.18],[0.84,-0.28]], closed: false },
+      { pts: [[-0.34,-0.28],[-0.34,-0.8],[0.16,-0.8],[0.16,-0.28]], closed: true },
+      { pts: [[-0.34,-0.54],[0.16,-0.54]], closed: false },
+      { pts: [[-0.34,0.28],[-0.4,0.76],[0.06,0.86],[0.16,0.28]], closed: true },
+      { pts: [[-0.37,0.52],[0.11,0.57]], closed: false }
     ],
-    small: [
-      { pts: [[-0.85,-0.18],[0.85,-0.18]], closed: false },                                      // top rail
-      { pts: [[-0.85,0.18],[0.85,0.18]], closed: false },                                         // bottom rail
-      { pts: [[-0.85,-0.18],[-0.35,0.18],[0.15,-0.18],[0.65,0.18]], closed: false }               // zigzag
+    pieces: [
+      [ // 0 — tube + aperture door
+        { pts: [[-0.6,-0.34],[0.42,-0.34],[0.42,0.34],[-0.6,0.34]], closed: true },
+        { pts: [[0.42,-0.34],[0.82,-0.45]], closed: false },
+        { pts: [[0.42,-0.22],[0.8,-0.34]], closed: false },
+        { pts: [[-0.2,-0.34],[-0.2,0.34]], closed: false }
+      ],
+      [ // 1 — intact solar wing
+        { pts: [[-0.7,-0.45],[0.7,-0.45],[0.7,0.45],[-0.7,0.45]], closed: true },
+        { pts: [[-0.7,0],[0.7,0]], closed: false },
+        { pts: [[0,-0.45],[0,0.45]], closed: false }
+      ],
+      [ // 2 — torn wing + spar
+        { pts: [[-0.65,-0.35],[0.55,-0.55],[0.72,0.3],[-0.45,0.55]], closed: true },
+        { pts: [[-0.55,0.1],[0.62,-0.12]], closed: false },
+        { pts: [[-0.65,-0.35],[-0.88,-0.25]], closed: false }
+      ]
+    ]
+  },
+  { // 6 — James Webb Space Telescope (NASA / ESA / CSA, 2021): hex mirror + kite sunshield; sunshield membrane ripped at the port tip
+    full: [
+      { pts: [[0,-0.2],[0.95,0.18],[0,0.62],[-0.95,0.18]], closed: true },
+      { pts: [[0,-0.08],[0.72,0.2],[0,0.52],[-0.72,0.2]], closed: true },
+      { pts: [[0.29,-0.63],[0,-0.8],[-0.29,-0.63],[-0.29,-0.29],[0,-0.12],[0.29,-0.29]], closed: true },
+      { pts: [[-0.29,-0.63],[0.29,-0.29]], closed: false },
+      { pts: [[0.29,-0.63],[-0.29,-0.29]], closed: false },
+      { pts: [[0,-0.8],[0,-0.12]], closed: false },
+      { pts: [[-0.22,-0.66],[0,-0.95]], closed: false },
+      { pts: [[0.22,-0.66],[0,-0.95]], closed: false },
+      { pts: [[-0.95,0.18],[-0.78,0.4],[-0.6,0.22]], closed: false }
+    ],
+    pieces: [
+      [ // 0 — hex mirror cluster
+        { pts: [[0.5,-0.29],[0,-0.58],[-0.5,-0.29],[-0.5,0.29],[0,0.58],[0.5,0.29]], closed: true },
+        { pts: [[-0.5,-0.29],[0.5,0.29]], closed: false },
+        { pts: [[0.5,-0.29],[-0.5,0.29]], closed: false },
+        { pts: [[0,-0.58],[0,0.58]], closed: false }
+      ],
+      [ // 1 — torn sunshield corner
+        { pts: [[-0.9,0.1],[0.2,-0.45],[0.75,0.2],[-0.3,0.62]], closed: true },
+        { pts: [[-0.7,0.12],[0.15,-0.28],[0.58,0.2]], closed: false },
+        { pts: [[-0.9,0.1],[-0.72,0.35],[-0.5,0.2]], closed: false }
+      ],
+      [ // 2 — tripod + loose segments
+        { pts: [[-0.45,0.55],[0,-0.85],[0.45,0.55]], closed: false },
+        { pts: [[0.18,0.3],[0.4,0.3],[0.51,0.49],[0.4,0.68],[0.18,0.68],[0.07,0.49]], closed: true },
+        { pts: [[-0.55,0.15],[-0.33,0.15],[-0.22,0.34],[-0.33,0.53],[-0.55,0.53],[-0.66,0.34]], closed: true }
+      ]
+    ]
+  },
+  { // 7 — Voyager (NASA / JPL, 1977): dish + long lattice boom; magnetometer boom kinked at mid-span
+    full: [
+      { pts: [[-0.55,-0.3],[-0.4,-0.55],[0,-0.66],[0.4,-0.55],[0.55,-0.3]], closed: false },
+      { pts: [[-0.55,-0.3],[0.55,-0.3]], closed: false },
+      { pts: [[-0.2,-0.28],[0.2,-0.28],[0.26,-0.1],[0.14,0.06],[-0.14,0.06],[-0.26,-0.1]], closed: true },
+      { pts: [[-0.2,0.02],[-0.52,0.14],[-0.7,0.44]], closed: false },
+      { pts: [[-0.22,0.1],[-0.38,0.06],[-0.54,0.22],[-0.62,0.32]], closed: false },
+      { pts: [[0.22,0.02],[0.62,0.24]], closed: false },
+      { pts: [[0.58,0.14],[0.86,0.3],[0.78,0.46],[0.5,0.3]], closed: true },
+      { pts: [[0.1,0.06],[0.44,0.7]], closed: false },
+      { pts: [[-0.1,0.06],[-0.3,0.76]], closed: false }
+    ],
+    pieces: [
+      [ // 0 — high-gain dish
+        { pts: [[-0.8,0.3],[-0.58,-0.28],[0,-0.5],[0.58,-0.28],[0.8,0.3]], closed: false },
+        { pts: [[-0.8,0.3],[0.8,0.3]], closed: false },
+        { pts: [[-0.3,-0.12],[0,0.3],[0.3,-0.12]], closed: false }
+      ],
+      [ // 1 — RTG cluster on boom stub
+        { pts: [[-0.85,-0.35],[-0.2,-0.05]], closed: false },
+        { pts: [[-0.25,-0.3],[0.55,0.1],[0.35,0.5],[-0.45,0.1]], closed: true },
+        { pts: [[-0.05,-0.1],[0.15,0.3]], closed: false }
+      ],
+      [ // 2 — kinked lattice boom
+        { pts: [[-0.85,-0.3],[0.2,0.1],[0.75,0.55]], closed: false },
+        { pts: [[-0.8,-0.05],[0.1,0.35],[0.6,0.75]], closed: false },
+        { pts: [[-0.82,-0.28],[-0.45,0.1],[-0.1,-0.1],[0.15,0.32],[0.45,0.2],[0.68,0.6]], closed: false }
+      ]
+    ]
+  },
+  { // 8 — Pioneer 10 (NASA Ames / TRW, 1972): dish + hex bus + boom rtgs; port rtg boom snapped off short
+    full: [
+      { pts: [[0.52,-0.62],[0.28,-0.34],[0.2,0],[0.28,0.34],[0.52,0.62]], closed: false },
+      { pts: [[-0.1,-0.28],[0.14,-0.28],[0.22,0],[0.14,0.28],[-0.1,0.28],[-0.18,0]], closed: true },
+      { pts: [[0.52,-0.62],[0.86,0],[0.52,0.62]], closed: false },
+      { pts: [[0.2,0],[0.86,0]], closed: false },
+      { pts: [[-0.18,-0.12],[-0.66,-0.44]], closed: false },
+      { pts: [[-0.6,-0.56],[-0.86,-0.4],[-0.78,-0.26],[-0.52,-0.42]], closed: true },
+      { pts: [[-0.18,0.12],[-0.44,0.3],[-0.52,0.42]], closed: false },
+      { pts: [[-0.1,0.28],[-0.3,0.78]], closed: false }
+    ],
+    pieces: [
+      [ // 0 — dish + tripod feed
+        { pts: [[0.1,-0.75],[-0.25,-0.4],[-0.35,0],[-0.25,0.4],[0.1,0.75]], closed: false },
+        { pts: [[0.1,-0.75],[0.75,0],[0.1,0.75]], closed: false },
+        { pts: [[-0.35,0],[0.75,0]], closed: false }
+      ],
+      [ // 1 — hex bus + boom stubs
+        { pts: [[-0.25,-0.5],[0.3,-0.5],[0.55,0],[0.3,0.5],[-0.25,0.5],[-0.5,0]], closed: true },
+        { pts: [[-0.5,-0.2],[-0.85,-0.4]], closed: false },
+        { pts: [[-0.42,0.3],[-0.75,0.5]], closed: false }
+      ],
+      [ // 2 — RTG on bent arm
+        { pts: [[-0.8,-0.45],[-0.25,-0.15],[0.05,-0.3]], closed: false },
+        { pts: [[0,-0.45],[0.6,-0.1],[0.4,0.35],[-0.2,0]], closed: true },
+        { pts: [[0.2,-0.28],[0.05,0.1]], closed: false }
+      ]
+    ]
+  },
+  { // 9 — Juno (NASA / JPL, 2011): three-bladed pinwheel; third blade folded back on its hinge
+    full: [
+      { pts: [[0.22,0],[0.11,0.19],[-0.11,0.19],[-0.22,0],[-0.11,-0.19],[0.11,-0.19]], closed: true },
+      { pts: [[-0.13,-0.2],[-0.13,-0.92],[0.13,-0.92],[0.13,-0.2]], closed: true },
+      { pts: [[-0.13,-0.56],[0.13,-0.56]], closed: false },
+      { pts: [[0.125,0.223],[0.735,0.573],[0.865,0.347],[0.255,-0.003]], closed: true },
+      { pts: [[0.43,0.4],[0.56,0.17]], closed: false },
+      { pts: [[-0.125,0.223],[-0.44,0.33],[-0.62,0.52],[-0.78,0.34],[-0.57,0.1],[-0.255,-0.003]], closed: true }
+    ],
+    pieces: [
+      [ // 0 — hex bus + blade roots
+        { pts: [[0.45,0],[0.22,0.39],[-0.22,0.39],[-0.45,0],[-0.22,-0.39],[0.22,-0.39]], closed: true },
+        { pts: [[-0.16,-0.4],[-0.16,-0.72],[0.16,-0.72],[0.16,-0.4]], closed: false },
+        { pts: [[0.3,0.3],[0.62,0.55]], closed: false }
+      ],
+      [ // 1 — intact blade
+        { pts: [[-0.2,-0.85],[0.2,-0.85],[0.2,0.85],[-0.2,0.85]], closed: true },
+        { pts: [[-0.2,-0.28],[0.2,-0.28]], closed: false },
+        { pts: [[-0.2,0.28],[0.2,0.28]], closed: false }
+      ],
+      [ // 2 — folded blade
+        { pts: [[-0.18,-0.8],[0.22,-0.72],[0.4,0.2],[0.1,0.55],[-0.28,0.3]], closed: true },
+        { pts: [[0.3,-0.28],[-0.22,-0.2]], closed: false },
+        { pts: [[0.36,0.05],[-0.2,0.15]], closed: false }
+      ]
+    ]
+  },
+  { // 10 — Apollo Lunar Module (NASA / Grumman, 1969): spider-legged lander; starboard leg buckled, footpad gone
+    full: [
+      { pts: [[-0.34,-0.52],[0.34,-0.52],[0.4,-0.24],[0.22,-0.1],[-0.22,-0.1],[-0.4,-0.24]], closed: true },
+      { pts: [[-0.26,-0.44],[-0.1,-0.44],[-0.14,-0.32]], closed: true },
+      { pts: [[0.1,-0.44],[0.26,-0.44],[0.22,-0.32]], closed: true },
+      { pts: [[-0.46,-0.1],[0.46,-0.1],[0.46,0.18],[-0.46,0.18]], closed: true },
+      { pts: [[-0.12,0.18],[-0.18,0.36],[0.18,0.36],[0.12,0.18]], closed: false },
+      { pts: [[-0.68,0.54],[-0.4,0.18],[0.4,0.18],[0.68,0.54]], closed: false },
+      { pts: [[-0.34,0.6],[-0.2,0.18],[0.2,0.18],[0.3,0.48],[0.16,0.66]], closed: false },
+      { pts: [[-0.78,0.56],[-0.58,0.56]], closed: false },
+      { pts: [[0.58,0.56],[0.78,0.56]], closed: false },
+      { pts: [[-0.44,0.62],[-0.24,0.62]], closed: false }
+    ],
+    pieces: [
+      [ // 0 — ascent stage + windows
+        { pts: [[-0.55,-0.42],[0.55,-0.42],[0.65,0.1],[0.35,0.42],[-0.35,0.42],[-0.65,0.1]], closed: true },
+        { pts: [[-0.42,-0.28],[-0.15,-0.28],[-0.22,-0.05]], closed: true },
+        { pts: [[0.15,-0.28],[0.42,-0.28],[0.35,-0.05]], closed: true }
+      ],
+      [ // 1 — descent stage + engine bell
+        { pts: [[-0.75,-0.3],[0.75,-0.3],[0.75,0.2],[-0.75,0.2]], closed: true },
+        { pts: [[-0.2,0.2],[-0.32,0.62],[0.32,0.62],[0.2,0.2]], closed: false },
+        { pts: [[-0.25,-0.3],[-0.25,0.2]], closed: false }
+      ],
+      [ // 2 — leg pair + footpads
+        { pts: [[-0.72,0.5],[-0.28,-0.35],[0.28,-0.35],[0.72,0.5]], closed: false },
+        { pts: [[-0.84,0.52],[-0.6,0.52]], closed: false },
+        { pts: [[0.6,0.52],[0.84,0.52]], closed: false }
+      ]
+    ]
+  },
+  { // 11 — Skylab (NASA, 1973): single-wing station + atm windmill; port wing ripped away at launch — stub only
+    full: [
+      { pts: [[-0.3,-0.26],[0.62,-0.26],[0.62,0.26],[-0.3,0.26]], closed: true },
+      { pts: [[0.24,-0.26],[0.24,0.26]], closed: false },
+      { pts: [[-0.1,-0.26],[-0.1,-0.86],[0.44,-0.86],[0.44,-0.26]], closed: true },
+      { pts: [[-0.1,-0.56],[0.44,-0.56]], closed: false },
+      { pts: [[-0.06,0.26],[-0.14,0.44],[0.1,0.4]], closed: false },
+      { pts: [[-0.88,-0.42],[-0.32,0.42]], closed: false },
+      { pts: [[-0.88,0.42],[-0.32,-0.42]], closed: false },
+      { pts: [[-0.66,-0.1],[-0.54,-0.1],[-0.54,0.1],[-0.66,0.1]], closed: true }
+    ],
+    pieces: [
+      [ // 0 — orbital workshop hull
+        { pts: [[-0.8,-0.42],[0.8,-0.42],[0.8,0.42],[-0.8,0.42]], closed: true },
+        { pts: [[-0.25,-0.42],[-0.25,0.42]], closed: false },
+        { pts: [[0.3,-0.42],[0.3,0.42]], closed: false },
+        { pts: [[0.8,-0.42],[0.92,-0.1],[0.8,0.42]], closed: false }
+      ],
+      [ // 1 — ATM windmill
+        { pts: [[-0.8,-0.55],[0.8,0.55]], closed: false },
+        { pts: [[-0.8,0.55],[0.8,-0.55]], closed: false },
+        { pts: [[-0.18,-0.14],[0.18,-0.14],[0.18,0.14],[-0.18,0.14]], closed: true }
+      ],
+      [ // 2 — surviving solar wing
+        { pts: [[-0.55,-0.75],[0.55,-0.75],[0.55,0.6],[-0.55,0.6]], closed: true },
+        { pts: [[-0.55,-0.25],[0.55,-0.25]], closed: false },
+        { pts: [[-0.55,0.2],[0.55,0.2]], closed: false },
+        { pts: [[-0.55,0.6],[-0.25,0.78],[0.2,0.6]], closed: false }
+      ]
     ]
   }
 ];
@@ -5074,7 +5370,11 @@ class DebrisSatellite {
   // (junkSpeedLarge/Medium/Small) at their own point of use and pass the result straight in. The default
   // is DEBRIS_SPEEDS[size] — the shipped base table survives as exactly that: the level-less fallback
   // for the one caller that isn't lever-driven (the title-screen decoration, below).
-  constructor(x, y, size, speed = DEBRIS_SPEEDS[size]) {
+  // CS028 P1: `craft` and `piece` carry IDENTITY across a split (see the art dispatch below). Both are
+  // OPTIONAL and default to the -1 "does not apply" sentinel, so the two non-split call sites — the wave
+  // spawner and the title decoration, both size 3 — pass nothing and are unchanged. Only destroyDebris
+  // supplies them.
+  constructor(x, y, size, speed = DEBRIS_SPEEDS[size], craft = -1, piece = -1) {
     this.x = x; this.y = y;
     this.size = size;
     this.radius = DEBRIS_RADII[size];
@@ -5102,13 +5402,41 @@ class DebrisSatellite {
     // orbitAngVel — the rail motion mode) and CS023 P4's `drifting` latch. Both are gone, so a
     // DebrisSatellite now carries exactly the fields this constructor writes and update() is a single
     // unconditional linear-integration path again.
-    // Authored satellite silhouette (v3.3 P2). Pick one archetype per instance (splits
-    // re-roll independently), use the simplified `small` variant at the r=13 small tier,
-    // then bake a per-instance copy scaled to `this.radius` with a small random per-vertex
-    // jitter — the "wrecked/no two alike" look, applied ONCE here, never per frame. All the
-    // draw path does is rotate this by this.angle; nothing anchors art to a fixed "up".
-    const artDef = SAT_ART[Math.floor(rand(0, SAT_ART.length))];
-    const polys = this.size === 1 ? artDef.small : artDef.full;
+    // Authored satellite silhouette (v3.3 P2; breakup model CS028 P1). ⛔ SPLITS NO LONGER RE-ROLL.
+    // A body carries an identity through its own destruction — `this.craft` is which of the twelve
+    // real spacecraft it is, `this.piece` is which third of that craft — and destroyDebris hands both
+    // down, so a shattered Hubble becomes three pieces of Hubble rather than three unrelated wrecks.
+    //   size 3 — fresh spawn: roll a craft, draw its `full` silhouette. piece does not apply (-1).
+    //   size 2 — split child: the PARENT'S craft, drawn as pieces[piece]. MODULO, not a clamp: the
+    //            split site adds a rotating offset, and junkSplit could exceed 3 under a debug
+    //            override; both have to wrap onto the three authored pieces.
+    //   size 1 — split-of-split: identity is deliberately abandoned (at r=13 no silhouette survives
+    //            the jitter), so it draws a generic SAT_SCRAP shard and BOTH fields stay -1.
+    // `this.piece` is never read by the draw path. It exists so the split invariant is assertable on
+    // the instance: baked art cannot be reverse-engineered to a piece index, because several craft
+    // (Hubble 1/2, Skylab 0/2) have two pieces with the same polyline vertex-count signature.
+    let polys;
+    if (this.size === 1) {
+      this.craft = -1; this.piece = -1;
+      polys = SAT_SCRAP[Math.floor(rand(0, SAT_SCRAP.length))];
+    } else {
+      // An absent or out-of-range craft rolls fresh — that is the size-3 spawn path, and it is also
+      // what keeps a hand-built `new DebrisSatellite(x, y, 2)` from indexing off the end of the table.
+      this.craft = craft >= 0 && craft < SAT_ART.length
+        ? Math.floor(craft) : Math.floor(rand(0, SAT_ART.length));
+      const artDef = SAT_ART[this.craft];
+      if (this.size === 2) {
+        this.piece = piece >= 0 ? Math.floor(piece) % artDef.pieces.length
+                                : Math.floor(rand(0, artDef.pieces.length));
+        polys = artDef.pieces[this.piece];
+      } else {
+        this.piece = -1;
+        polys = artDef.full;
+      }
+    }
+    // The jitter bake is unchanged (v3.3 P2): one per-instance copy scaled to this.radius with a small
+    // random per-vertex wobble — the "wrecked/no two alike" look, applied ONCE here, never per frame.
+    // All the draw path does is rotate it by this.angle; nothing anchors art to a fixed "up".
     const jit = this.radius * 0.045;    // per-vertex bend/jitter (px); subtle, keeps silhouettes legible
     this.art = polys.map(pl => ({
       closed: pl.closed,
@@ -6148,8 +6476,18 @@ function destroyDebris(a, awardScore = true) {
     // endpoints exactly, it is the nearest achievable count to the authored curve, and flooring would
     // shave every interior step of every future retune downward.
     const children = Math.round(lv.junkSplit);
+    // CS028 P1 (spec §3): IDENTITY CROSSES THE SPLIT. Every child inherits `a.craft`, so a large and
+    // the mediums it shatters into are the same spacecraft — they were one object a moment ago. (At
+    // the medium -> small step the constructor ignores both args: the small tier draws generic scrap.)
+    // FORK-CS028-A — the piece index is a ROTATING OFFSET rolled once per kill, not the bare loop
+    // index. junkSplit is 2 through level 10, so `piece = i` would show pieces 0 and 1 for the first
+    // ten levels and never piece 2 until level 11 — a third of the art unseen for a third of a typical
+    // run. The offset keeps a kill's children distinct (consecutive indices, mod 3 in the ctor) while
+    // making WHICH pieces you see a per-kill roll. ⚠ Best guess, open at the CS028 gate (§5 q1): a
+    // swap to the bare `i` is one line, if piece 2 should instead read as a late-game reveal.
+    const pieceOffset = Math.floor(rand(0, 3));
     for (let i = 0; i < children; i++) {
-      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speed));
+      game.debris.push(new DebrisSatellite(a.x, a.y, a.size - 1, speed, a.craft, pieceOffset + i));
     }
   }
 }

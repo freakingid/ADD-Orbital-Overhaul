@@ -325,8 +325,14 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     // the junkSplit lever. The part of the claim that mattered is untouched and still asserted here —
     // it is still a PLAIN loop pushing bare DebrisSatellites at that same derived speed, with no rail
     // handoff and no per-child special-casing; only its bound became a lever.
-    assert(/const children = Math\.round\(lv\.junkSplit\);\n\s+for \(let i = 0; i < children; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speed\)\);/.test(body),
-      "A: ...and the split is still a plain N-child loop over the lever, each child taking that same derived speed");
+    // REPOINTED AGAIN BY CS028 P1: the constructor call now carries two more arguments — the parent's
+    // craft (identity crosses the split) and a rotating piece index. ⚠ ONE WORD OF THE CLAIM GENUINELY
+    // CHANGED and is not being quietly preserved: children are no longer argument-identical to each
+    // other, because `pieceOffset + i` varies per child. What this pin still asserts, and what CS023 P2
+    // actually cared about, is unchanged: ONE plain loop, no branch inside it, no rail handoff, every
+    // child at the same derived speed and the same inherited craft.
+    assert(/const children = Math\.round\(lv\.junkSplit\);\n(?:\s*\/\/[^\n]*\n)*\s+const pieceOffset = Math\.floor\(rand\(0, 3\)\);\n\s+for \(let i = 0; i < children; i\+\+\) \{\n\s+game\.debris\.push\(new DebrisSatellite\(a\.x, a\.y, a\.size - 1, speed, a\.craft, pieceOffset \+ i\)\);/.test(body),
+      "A: REPOINTED BY CS028 P1 — still ONE plain N-child loop over the lever, same derived speed and inherited craft for every child");
   }
 
   // --- wrap-awareness, asserted at the SITE rather than trusted (CLAUDE.md's single commonest bug source)
