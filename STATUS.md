@@ -1,9 +1,11 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.28 · Changeset: CS029 · Phase: P1 · Registry: 85 · Levers: 18
+Version: 1.0.0.28 · Changeset: CS029 · Phase: P2 · Registry: 85 · Levers: 18
 
 ## Phase ledger — CS029
 
 - P1 — renamed `asteroids-deluxe.html` -> `orbital-overhaul.html` (`git mv`); no behaviour change.
+- P2 — ESC now opens the pause menu at game over; the game-over footer collapsed from two lines
+  (a blinking 22px "play again" + a dim 14px "MENU: O" hint) to one `drawMenuHint` line.
 
 ## Working / verified
 
@@ -15,6 +17,16 @@ Version: 1.0.0.28 · Changeset: CS029 · Phase: P1 · Registry: 85 · Levers: 18
   name). FLAG-CS029-a (the `test-cs024-p6b.js` pathspec spanning the rename) was run, not assumed —
   git's rename detection held, `-U0` hunk structure intact, 315/315 in that file. Full suite:
   111/111 passed, 0 failed, 0 skipped post-commit.
+- **P2 — the game-over exit path.** §0.1's read confirmed: `MENU_ROOT_OVER`/`rootItems()`/
+  `openPause()`/`closePause()` all already routed gameover correctly; nothing there needed a
+  change. The one-line input guard now admits `game.state === "gameover"` alongside `"playing"`,
+  carrying the standing `!game.entry` operand. The footer re-flow is the CS016 P2 move applied to
+  the one screen that missed it: `drawMenuHint` gained a trailing optional `size` parameter
+  (default `MENU_HINT_SIZE`), all 9 pre-existing call sites stay byte-identical, and the gameover
+  screen's two retired lines are replaced by one call at `GAMEOVER_HINT_SIZE` (20 — a playtest
+  knob, since this is the only on-screen affordance rather than a reminder under a visible menu).
+  New test `test-cs029-p2.js` drives the real keydown listener and `draw()` through a recording
+  ctx (22/22). Full suite: 112/112 passed, 0 failed, 0 skipped.
 
 ## Known issues
 

@@ -2984,7 +2984,7 @@ window.addEventListener("keydown", e => {
   // arrive at the title with a menu armed, but nothing guarantees a future state won't reach the title
   // with a null screen, and the fallback costs nothing.
   if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover") && !game.entry) startGame();
-  if (bindings.pause.keys.includes(k) && game.state === "playing") openPause();
+  if (bindings.pause.keys.includes(k) && (game.state === "playing" || game.state === "gameover") && !game.entry) openPause();
   // "O" opens OPTIONS directly from title/gameover (v3.0 P4 replaced the old P->options path; CS012 P4
   // FORK-CS012-C → a replaced the Options/Achievements system-menu root with Options itself). No game to
   // pause here — openPause() routes to the Options screen off game.state.
@@ -3141,6 +3141,11 @@ const TITLE_MENU_HINT_Y = VIEW_H / 2 + 170;  // control-hint baseline, below the
 // Routed through drawMenuHint() (the CS013 P2 shared-footer helper), not a fresh drawText literal.
 const TITLE_MENU_HINT   = "↑↓ move    ENTER / A select    ESC / B options";
 const MENU_HINT_SIZE = 16;  // CS013 P2: control-hint footer text size (drawMenuHint) — playtest knob
+// CS029 P2 (§3.2): game-over's ONLY on-screen affordance — no visible menu sits above it like every
+// other drawMenuHint footer, so it runs 20 rather than the standard 16. Knob if it reads wrong at gate.
+const GAMEOVER_HINT      = "ENTER / A play again    ESC / B menu";
+const GAMEOVER_HINT_SIZE = 20;  // PLAYTEST KNOB — see FORK-CS029-C
+const GAMEOVER_HINT_Y    = VIEW_H / 2 + 290;
 const ACH_SCALE = 1.5;      // CS013 P3: Achievements-viewer text-size multiplier (readability pass) — playtest knob
 const ACH_SCROLL_STEP = 60; // CS013 P3: px per up/down scroll press in the Achievements viewer, ~one row — playtest knob
 // CS018 P2: the hidden Debug Options panel's layout + scroll geometry. Before this phase the panel sized
@@ -8778,8 +8783,8 @@ function drawText(str, x, y, size, color = COLOR.text, align = "center") {
 
 // CS013 P2 (§2.2): the shared control-hint footer look — larger + higher-contrast than the old
 // literal size-12/COLOR.dim footers. Centered, like every menu footer.
-function drawMenuHint(text, cx, y) {
-  drawText(text, cx, y, MENU_HINT_SIZE, COLOR.menuIdle, "center");
+function drawMenuHint(text, cx, y, size = MENU_HINT_SIZE) {
+  drawText(text, cx, y, size, COLOR.menuIdle, "center");
 }
 
 // CS011 P2: Dan's on-screen caption — the voice channel's visible echo (settings.captions), centered near
@@ -9361,7 +9366,7 @@ function drawAchRow(ach, x, ry, w) {
 // rank number instead of a record.
 // `scale` (CS010 P5, §8a) multiplies every font size, the row pitch/header offset, AND the column
 // x-offsets (bigger glyphs need wider columns). Defaults to 1 (the gameover caller, unchanged: its
-// layout is already tight against "PRESS ENTER TO PLAY AGAIN"/the O-hint below it, and the fresh
+// layout is already tight against the GAMEOVER_HINT footer below it (CS029 P2), and the fresh
 // entry is already highlighted gold there, so it doesn't need the bigger type to stand out). The
 // browsable screen (drawHighScores) passes 1.8 — don't unify the two callers, the gameover table
 // has no room to grow without re-flowing that screen (a separate, un-scoped job — see STATUS.md).
@@ -9635,12 +9640,10 @@ function draw() {
       drawEntrySlots(VIEW_H/2 + 110);
     } else {
       drawScoreTable(VIEW_W/2, VIEW_H/2 + 60, game.lastScoreId);
-      if (Math.floor(performance.now() / 600) % 2 === 0)
-        drawText("PRESS ENTER TO PLAY AGAIN", VIEW_W/2, VIEW_H/2 + 280, 22);
-      // CS013 P1: gameover now opens a root (Play Again/Options/Quit to Title), not Options directly —
-      // the hint reads "MENU" here, distinct from the title's still-direct-to-Options "OPTIONS /
-      // ACHIEVEMENTS" copy at L5559 (unchanged, do not conflate the two).
-      drawText("MENU: O    (controller: B)", VIEW_W/2, VIEW_H/2 + 312, 14, COLOR.ach);
+      // CS029 P2 (§3.2): the CS016 P2 move, applied to the one screen that never got it — the old
+      // blinking 22px play-again line and the dim 14px O-menu hint are gone, replaced by one
+      // drawMenuHint footer at GAMEOVER_HINT_SIZE (see the const block for why it's 20, not 16).
+      drawMenuHint(GAMEOVER_HINT, VIEW_W/2, GAMEOVER_HINT_Y, GAMEOVER_HINT_SIZE);
     }
   }
 
