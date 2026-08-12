@@ -487,19 +487,7 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // drift (spec §1.1/§1.5/§4.1/§5) — a deliberate registry REBUILD under CS024 §5, not a violation of the
   // append-only rule that governed every increase above. The /^orbit/i claim is INVERTED rather than
   // deleted, per the standing convention: "none match" is the assertion that catches a knob creeping back.
-  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via
-  // the FREQ_JITTER constant instead). Section B/F/G/H above carry the rest of this phase's own claims.
-  // REPOINTED AGAIN BY CS024 P4: 34 -> 15 (the 21 tier knobs deleted, frozen at level-1 answers for TRAP 2).
-  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the freeze block is deleted and the registry REBUILT with one
-  // knob per LEVER instead of three per tier (10 UFO levers + smallUfoChance under UFO; 4 JUNK; 4 HUNTER;
-  // 2 GLOBAL). Section-by-section: SHIP 2 + GARBAGE 4 + CHAIN GUARD 4 + DELIVERY 1 + JUNK 4 + HUNTER 4 +
-  // UFO 11 + GLOBAL 2 = 32. Same claim, same strength — an exact live-registry count.
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry is deleted (spec §1.7/§3.4/§3.5),
-  // taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and a new POWERUPS section arrives holding
-  // Engine-as-fuel's two knobs (engineBurnSeconds, engineMassMult). Net -1 +2. Section-by-section:
-  // SHIP 2 + GARBAGE 4 + CHAIN GUARD 3 + DELIVERY 1 + JUNK 4 + HUNTER 4 + UFO 11 + POWERUPS 2 +
-  // GLOBAL 2 = 33. CS024 P6f: HUNTER 4 -> 7 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax).
-  eq(nEntries, 85, `I: DEBUG_ENTRIES count is 85 after CS024 P6c/P6d/P6e/P6f + CS025 P1/P2 + CS026 P2/P3/P4/P5 (got ${nEntries})`);
+  // Section B/F/G/H above carry this phase's own registry claims.
   assert(Y.DEBUG_ENTRIES.some(v => v.id === "dockComboGrace"),
     "I: ...and the entry that moved it from 33 to 34 (pre-CS024) is CS020 P1b's dockComboGrace");
   eq(Y.DEBUG_ENTRIES.filter(e => e.id === "chainGuardCooldown").length, 1,

@@ -57,7 +57,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { parentSource, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+const { parentSource, ownCommits, changedFiles, outsideScope, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
@@ -200,9 +200,6 @@ let X = null;
   eq(life.step, 0.05, "B: deliveryFloatLife step 0.05");
   assert(!life.toNative, "B: no toNative hook — shown value is native");
 
-  eq(X.DEBUG_ENTRIES.length, 85, "B: the registry holds 85 value entries (CS026 P3's 79 + this phase's 2 + CS026 P5's four level banner knobs)");
-  eq(Object.keys(X.DEBUG).length, 85, "B: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 85, "B: ...and the display map agrees");
   eq(X.DEBUG.deliveryFloatRise, 160, "B: the live value seeds from def (rise)");
   eq(X.DEBUG.deliveryFloatLife, 1.2, "B: ...and (life)");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4,
@@ -457,7 +454,7 @@ let X = null;
     if (provisional) console.log("  (TRAP 2 measured against the WORKING TREE — this phase is not committed yet)");
     const designDocs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
     eq(designDocs.join(","), "", `F: ⛔ TRAP 2 — no design doc was touched (found: ${designDocs.join(", ") || "none"})`);
-    const outside = changed.filter(f => !f.startsWith("scratchpad/") && f !== "STATUS.md" && f !== "asteroids-deluxe.html");
+    const outside = outsideScope(changed);
     eq(outside.join(","), "", `F: this phase touched nothing outside the game file, scratchpad/ and STATUS.md (found: ${outside.join(", ") || "none"})`);
     assert(changed.includes("asteroids-deluxe.html"), "F: (setup) the game file is in the diff");
     assert(changed.includes("scratchpad/test-cs026-p4.js"), "F: (setup) ...including this test file");

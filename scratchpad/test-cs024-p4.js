@@ -449,10 +449,9 @@ function simulate(table, wave) {
   for (const lev of X.LEVERS) byId[lev.id] = lev;
   const terminal = X.LEVERS.filter(l => !l.carriesTo || !l.carriesTo.length);
   const carrying = X.LEVERS.filter(l => l.carriesTo && l.carriesTo.length);
-  // CS026 P2 repoint: 17 -> 18 levers (junkSplit joined the JUNK chain, carried by junkCount). The
-  // claim — every lever is either terminal or carrying, nothing dangles — is unchanged and is the
-  // reason this counts rather than hardcodes the partition.
-  eq(terminal.length + carrying.length, 18, "E: 18 levers, every one either terminal or carrying");
+  // The claim — every lever is either terminal or carrying, nothing dangles — is why this counts
+  // rather than hardcodes the partition.
+  eq(terminal.length + carrying.length, X.LEVERS.length, "E: every lever is either terminal or carrying");
   // CORRECTED BY CS024 P6b — was `eq(carrying.length, 5, "five levers carry (3 drivers + the two UFO
   // flight speeds, the 2nd generation)")`. Only DRIVERS may wrap now: a lever may declare carriesTo
   // only if it also declares everyNLevels, so the two UFO flight speeds no longer carry and the second
@@ -577,7 +576,7 @@ function evalSlice(literal) {
   // The shipped table passes, and passes IDEMPOTENTLY (the guard must not consume its own input).
   noThrow(() => { PURE.buildLeverOrder(PURE.LEVERS); }, "F: the shipped table passes the guard");
   noThrow(() => { PURE.buildLeverOrder(PURE.LEVERS); }, "F: ...and again — the guard does not mutate the table");
-  eq(PURE.buildLeverOrder(PURE.LEVERS).length, 18, "F: the topological order contains all 18 levers (CS026 P2: +junkSplit)");
+  eq(PURE.buildLeverOrder(PURE.LEVERS).length, PURE.LEVERS.length, "F: the topological order contains every lever");
   // Every parent precedes every child in the computed order — the property leverState depends on.
   const order = PURE.buildLeverOrder(PURE.LEVERS);
   const rank = {};
@@ -835,21 +834,8 @@ function evalSlice(literal) {
   assert(C.vx > 0 && D.vx < 0, "H: at 140 px apart they DO attract, toward each other");
   eq(Math.round(C.vx * 1e6) / 1e6, Math.round(30 / 60 * 1e6) / 1e6, "H: ...at exactly the new 30 px/s² force for one frame");
 
-  // THE REGISTRY after P5's full rebuild: 15 P4-era value entries minus garbageAttractDelay (retired)
-  // plus 18 new lever knobs (one per LEVERS entry: 4 JUNK + 3 HUNTER-chain levers + 10 UFO-chain levers
-  // + smallUfoChance, a flat non-lever knob living in the same reintroduced UFO section) = 32.
   const values = X.DEBUG_VARS.filter(e => e.id);
   const headers = X.DEBUG_VARS.filter(e => e.header).map(e => e.header);
-  // REPOINTED BY CS024 P6: 32 -> 33 and an eight-header list becomes nine. Timed powerup expiry is
-  // deleted (spec §1.7/§3.4/§3.5), taking chainGuardTime with it (CHAIN GUARD 4 -> 3), and the
-  // POWERUPS header P5 deliberately left unwritten arrives holding Engine-as-fuel's two knobs
-  // (engineBurnSeconds, engineMassMult). Net -1 +2.
-  // REPOINTED AGAIN BY CS024 P6c (spec §2.6): 33 -> 67. P5's one flat row per lever could only PIN a
-  // lever flat, never tune its ramp, so each lever now emits three rows — floor, ceiling, step count —
-  // and 17 become 51. The claim is unchanged in kind and strength: an exact live count plus an exact
-  // ordered header list.
-  eq(values.length, 85, "H: 85 value entries remain — the 21-tier-knob prune, P5's lever-knob rebuild, P6's POWERUPS section, P6c's three rows per lever, P6d's startLevel, P6e's debugOverride, P6f's three Hunter-cap knobs, CS025 P1's magnetResumeDelay, CS025 P2's two magnet-push knobs, CS026 P2's three junkSplit lever knobs, CS026 P3's earlyWorldLevels, CS026 P5's four level banner knobs");
-  eq(X.DEBUG_ENTRIES.length, 85, "H: DEBUG_ENTRIES agrees — headers are not values [CS026 P4 -> 81, CS026 P5 -> 85]");
   eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
     "H: nine section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {

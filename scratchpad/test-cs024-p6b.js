@@ -192,10 +192,6 @@ let X = null;
   if (!X) { console.error("ABORT: build failed"); process.exit(1); }
   assert(OLD !== null, `A: the pre-P6b build was recovered from git at ${PRE_P6B_REF} (the §B/§D/§G reference)`);
 
-  // CS026 P2 repoint: 17 -> 18. P6b's own claim ("this phase restages step counts, it neither adds nor
-  // removes a lever") is still what §A is about; CS026 P2 legitimately added junkSplit, so the count
-  // moves with the table while §D below keeps proving P6b touched none of the JUNK/HUNTER entries.
-  eq(X.LEVERS.length, 18, "A: 18 levers (CS026 P2 added junkSplit) — P6b restages step counts, it adds and removes none");
   // THE RULE, as a property of the shipped table: every carrier is a driver.
   const carriers = X.LEVERS.filter(l => l.carriesTo && l.carriesTo.length);
   const drivers = X.LEVERS.filter(l => l.everyNLevels);
@@ -305,7 +301,7 @@ function evalSlice(literal) {
   noThrow(() => X.buildLeverOrder(CONTROL), "C: CONTROL — a driver carrying into a terminal lever passes the guard");
   noThrow(() => X.buildLeverOrder(CONTROL), "C: ...and again — the guard does not mutate the table");
   noThrow(() => X.buildLeverOrder(X.LEVERS), "C: the shipped table passes it too");
-  eq(X.buildLeverOrder(X.LEVERS).length, 18, "C: ...and it hands back all 18 levers as leverState's walk order (CS026 P2: +junkSplit)");
+  eq(X.buildLeverOrder(X.LEVERS).length, X.LEVERS.length, "C: ...and it hands back every lever as leverState's walk order");
 
   // GUARD 1 — THE RULE. carriesTo without everyNLevels.
   throwsWith(() => X.buildLeverOrder([L("a", { everyNLevels: 1, carriesTo: ["b"] }), L("b", { carriesTo: ["c"] }), L("c")]),
@@ -560,18 +556,10 @@ function evalSlice(literal) {
   // UNCHANGED while CS024 P6b ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "G: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
-  // TRAP 2 — the registry was P6c's, and P6c has since taken it: this phase's own claim was "P6b adds,
-  // removes and reshapes NOTHING in the registry", which was pinned entry-by-entry against the pre-P6b
-  // build. CS024 P6c then replaced every lever's single flat row with THREE (<id>Floor/<id>Ceil/
-  // <id>Steps, 33 -> 67 entries, spec §2.6), so a literal entry-by-entry comparison is no longer the
-  // right instrument. REPOINTED, NOT DROPPED: the claim P6b actually makes survives intact at the
-  // LEVER level, so it is asserted there — the registry names exactly the same levers in exactly the
-  // same order, and the only thing about them P6b touched is the derived slider step of the nine
-  // restaged UFO knobs.
-  // CS024 P6d repoint: +1 (startLevel, GLOBAL, gate tooling — no lever, appended at the registry's tail).
-  // CS024 P6e repoint: +1 more (debugOverride, the master toggle — no lever, inserted at the TOP, spec §3).
-  // CS024 P6f repoint: +3 (hunterCapMax, hunterCapLevelsPerStep, heldClumpMax — non-levers, HUNTER section).
-  eq(X.DEBUG_VARS.filter(e => e.id).length, 85, "G: TRAP 2 — 85 value entries (CS024 P6c's three rows per lever, +1 P6d startLevel, +1 P6e debugOverride, +3 P6f Hunter-cap knobs, +1 CS025 P1 magnetResumeDelay, +2 CS025 P2 magnet-push knobs, +3 CS026 P2 junkSplit lever knobs, +1 CS026 P3 earlyWorldLevels, +4 CS026 P5 level banner knobs)");
+  // TRAP 2 — this phase's own claim was "P6b adds, removes and reshapes NOTHING in the registry".
+  // REPOINTED, NOT DROPPED: the claim survives intact at the LEVER level, asserted there — the
+  // registry names exactly the same levers in exactly the same order, and the only thing about them
+  // P6b touched is the derived slider step of the nine restaged UFO knobs.
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
     "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
   if (OLD) {

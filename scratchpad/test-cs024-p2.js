@@ -365,22 +365,13 @@ function build({ audio = true, ctxLog = null } = {}) {
 
 // ================= (F) TRAPs =====================
 (function sectionF() {
-  console.log("(F) TRAPs — GAME_VERSION unchanged; debug registry is 34 entries, freqJitter gone");
+  console.log("(F) TRAPs — GAME_VERSION unchanged; freqJitter gone");
   const X = build();
   // REPOINTED BY CS024 P7 — the standing MIRROR IMAGE. This pin asserted the version was
   // UNCHANGED while CS024 P2 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "F: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
-  // REPOINTED BY CS024 P3: 34 -> 36 (garbageLifetime out with the decay clock; garbageSoftMax,
-  // garbageHardMax and lastStandSpeed in). The claim this TRAP carries — freqJitter is gone and stays
-  // gone — is asserted directly below rather than through a total that later phases keep moving.
-  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names).
-  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 (the levers wired: 17 new lever-knob entries plus
-  // smallUfoChance, registry rebuilt).
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
-  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 85, "F: TRAP — the debug registry is exactly 85 value entries after CS026 P3 [CS026 P4 -> 81, CS026 P5 -> 85]");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "F: ...and DEBUG_VARS agrees");
+  // The claim this TRAP carries — freqJitter is gone and stays gone — is asserted in §E above.
   assert(X.DEBUG_ENTRIES.some(e => e.id === "debrisBounceRestitution"),
     "F: debrisBounceRestitution (untouched by this phase) still survives in the registry");
   // TRAP (docs) — [RETIRED IN PLACE BY CS024 P7, exactly as test-cs024-p6b.js §G TRAP 6 was retired,

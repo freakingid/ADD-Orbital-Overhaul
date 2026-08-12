@@ -423,21 +423,9 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // UNCHANGED while CS023 P2 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "A: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
-  // TRAP 4 — REPOINTED THREE TIMES NOW, and CS024 P1 is the first repoint that runs the other way.
-  // CS023 P4 flipped these to their positive successors as the drift landed; P4B renamed them
-  // (orbitGravityAccel -> debrisDriftAccel, ORBIT_GRAVITY_* -> DEBRIS_DRIFT_*). CS024 P1 REMOVES THE DRIFT
-  // ENTIRELY (spec §1.5/§4.1), so every one of those claims inverts to an ABSENCE — which is the form
-  // that now does the work, since a silently-restored drift is the thing this file should catch.
-  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
-  // via the FREQ_JITTER constant instead).
-  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 (the 21 tier knobs).
-  // REPOINTED AGAIN BY CS024 P5: 15 -> 32. P5 rebuilt the registry outright to wire the levers: 17 new
-  // lever knobs (def: null, the "follow the live odometer" sentinel) join the survivors across SHIP,
-  // GARBAGE, CHAIN GUARD, DELIVERY, JUNK, HUNTER, UFO, GLOBAL — and garbageAttractDelay drops out with
-  // the constant it derived from (retired outright, replaced by the coalescePause lever).
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
-  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 85, "A: TRAP 4 REPOINTED BY CS026 P3 — the debug registry is 85 value entries (three per lever + startLevel + debugOverride + P6f's three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs + the three junkSplit lever knobs + earlyWorldLevels + the four level banner knobs) [CS026 P4 -> 81, CS026 P5 -> 85]");
+  // TRAP 4 — CS024 P1 REMOVES THE DRIFT ENTIRELY (spec §1.5/§4.1), so every orbit-shaped claim
+  // inverts to an ABSENCE — which is the form that now does the work, since a silently-restored
+  // drift is the thing this file should catch.
   // The id filter below is deliberately LEFT WIDE (it still matches /gravity|drift/), because a
   // silently-restored drift knob is exactly what it exists to catch. CS024 P6's engineMassMult joins
   // the matched set only because /mass/i catches it — it is a POWERUP knob, nothing to do with the

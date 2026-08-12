@@ -436,34 +436,8 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // -- TRAP 1: the version did not move in P1 — REPOINTED BY CS020 P2, mirror image not weakened:
   //    P2 is the phase that bumps it, so the claim now is that it has moved past what P1 shipped. --
   assert(GAME_VERSION !== "1.0.0.19", "A: TRAP 1 — GAME_VERSION has moved past what P1 shipped (bumped in P2)");
-  // -- TRAP 3: the debug registry gains nothing IN P1.
-  //    REPOINTED BY CS020 P1b, to the mirror image and not weakened: P1b adds exactly ONE knob
-  //    (dockComboGrace, under its own DELIVERY header), so 33 -> 34. What P1's trap was really
-  //    guarding — that P1 itself invented no towed/incidental knob — is asserted directly below and
-  //    is unchanged. The exact count keeps living here so a second unplanned knob still fails. --
-  // REPOINTED AGAIN BY CS021 P3: + 10 (the ORBIT section) -> 44. Same treatment, same strength.
-  // REPOINTED AGAIN BY CS023 P4: + 2 (orbitGravityAccel, debrisBounceRestitution) -> 46.
-  // REPOINTED AGAIN BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
-  // orbit-scoped). Count stays 46, row unmoved; only the id (and its /^orbit/i membership) changes.
-  // REPOINTED AGAIN BY CS024 P1: 46 -> 35. The ORBIT section (10 knobs + header) and debrisDriftAccel are
-  // removed outright with the orbit archetype and the inward drift (spec §1.1/§1.5/§4.1/§5). What P1's
-  // trap actually guards — that CS020 P1 invented no towed/incidental knob — is the assertion two lines
-  // below and is UNCHANGED and still passing, which is the point of keeping the exact count here rather
-  // than loosening it: a second unplanned knob still fails.
-  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
-  // via the FREQ_JITTER constant instead).
-  // AND AGAIN BY CS024 P4: 36 -> 15 — the biggest single prune the registry has ever taken. All 21 tier
-  // knobs (7 levers x low/normal/high) went with levelDef()'s tier names, along with their three now-
-  // empty section headers. P5 rebuilds JUNK and UFO around one knob per LEVER, which is a different
-  // shape, not a restoration — so expect this number to move again next phase.
-  // AND AGAIN BY CS024 P5: 15 -> 32 — the levers wired: 17 new lever-knob entries (JUNK/HUNTER/UFO
-  // headers rebuilt around them) plus smallUfoChance, as predicted above.
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
-  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  // AND AGAIN BY CS024 P6c: 33 -> 67 — every lever's single flat row becomes THREE (floor, ceiling,
-  // step count), so the 17 lever rows become 51 and the 16 non-lever knobs stay exactly as they were.
-  const valueEntries = DEBUG_VARS.filter(e => !e.header).length;
-  eq(valueEntries, 85, "A: TRAP 3 — DEBUG_VARS holds exactly 85 value entries after CS026 P3 [CS026 P4 -> 81, CS026 P5 -> 85]");
+  // -- TRAP 3: what P1's trap actually guards — that CS020 P1 invented no towed/incidental knob —
+  //    is the assertion directly below. --
   assert(DEBUG_VARS.some(e => e.id === "dockComboGrace"),
     "A: REPOINTED — one of the added knobs is P1b's dockComboGrace");
   assert(DEBUG_VARS.filter(e => /^orbit/i.test(e.id)).length === 0,

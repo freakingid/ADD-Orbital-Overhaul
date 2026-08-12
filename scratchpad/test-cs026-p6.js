@@ -83,7 +83,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { parentSource, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+const { parentSource, ownCommits, changedFiles, outsideScope, SKIP_TAG } = require("./_phase-ref.js");
 const { installSeed } = require("./_seeded-random.js");
 
 // ⛔ CS026 P1 §5.2: installed at the TOP OF THE FILE, BEFORE THE FIRST BUILD. This file drives real
@@ -210,11 +210,7 @@ let X = null;
   close(X.DOCK_OFFLOAD_INTERVAL, 0.05, "B: ⛔ DOCK_OFFLOAD_INTERVAL is UNMOVED at 0.05 — delivery pacing is untouched");
   assert(/const DOCK_OFFLOAD_INTERVAL = 0\.05;/.test(scriptSrc), "B: ...as a literal in the source too");
 
-  // -- the registry count HOLDS: this gate answer added no knob at all (TRAP 2) --
-  eq(X.DEBUG_ENTRIES.length, 85, "B: the registry still holds 85 value entries — no row added or removed");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "B: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 85, "B: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 85, "B: ...and the display map agrees");
+  // -- the registry count HOLDS: this gate answer added no knob at all — measured in §G's TRAP 2 --
 
   // -- the two retuned rows are still adjacent, still in DELIVERY, still ordinary knobs --
   const ids = X.DEBUG_ENTRIES.map(v => v.id);
@@ -727,9 +723,8 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     assert(changed.includes("scratchpad/test-cs026-p6.js"), "G: (setup) ...including this test file");
     // Nothing OUTSIDE the sanctioned set — the planning pair in particular is not rewritten by a
     // closing phase; it is the record of what the changeset set out to do.
-    const allowed = new Set(["asteroids-deluxe.html", "STATUS.md", "ORBITAL-OVERHAUL-GDD.md",
-      "DIFFICULTY-LEVERS.md", "GDD-VERSION-HISTORY.md", "CLAUDE.md"]);
-    const outside = changed.filter(f => !f.startsWith("scratchpad/") && !allowed.has(f));
+    const outside = outsideScope(changed,
+      ["ORBITAL-OVERHAUL-GDD.md", "DIFFICULTY-LEVERS.md", "GDD-VERSION-HISTORY.md", "CLAUDE.md"]);
     eq(outside.join(","), "", `G: nothing outside the sanctioned sweep set (found: ${outside.join(", ") || "none"})`);
   }
 

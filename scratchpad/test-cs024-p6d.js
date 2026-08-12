@@ -334,9 +334,6 @@ let X = null, STORE = null, CALLS = null;
     console.log("  (skipped byte-identical pin — not a git checkout)");
   }
 
-  // CS026 P2 repoint: 17 -> 18 (junkSplit). TRAP 3's claim — startLevel is a knob, not a lever — is
-  // unchanged, and the per-entry pins above are what actually carry it.
-  eq(X.LEVERS.length, 18, "H: TRAP 3 — LEVERS is 18 entries (CS026 P2's junkSplit); startLevel added none");
 })();
 
 console.log(`\n${passed} passed, ${failed} failed`);

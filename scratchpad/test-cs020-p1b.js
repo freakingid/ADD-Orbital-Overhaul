@@ -412,26 +412,9 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // -- the knob: 33 -> 34, its own DELIVERY header, placed after CHAIN GUARD --
   // REPOINTED BY CS021 P3: 34 -> 44 (the ORBIT section). This phase's own claim — that P1b adds exactly
   // one knob — is unaffected; the count just has to track the live registry or it goes stale.
-  // REPOINTED BY CS023 P4: 44 -> 46 (orbitGravityAccel, debrisBounceRestitution). Same reasoning.
-  // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15). Count unaffected.
-  // REPOINTED BY CS024 P1: 46 -> 35 (the ORBIT section's 10 knobs + header, and debrisDriftAccel, removed
-  // outright with the orbit archetype and the inward drift — spec §1.1/§1.5/§4.1/§5). This phase's own
-  // claim — that CS020 P1b adds exactly one knob, under a DELIVERY header placed between CHAIN GUARD and
-  // JUNK — is unaffected and is still asserted directly below; only the live total moves.
-  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
-  // via the FREQ_JITTER constant instead).
-  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 — all 21 tier knobs removed with levelDef()'s tier names,
-  // and the three headers left empty by that (JUNK, UFO MOVEMENT, UFO WEAPONS) removed with them.
-  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
-  // entries (JUNK header restored around junkCount/junkSpeedLarge/junkSpeedMedium/junkSpeedSmall,
-  // among others) plus smallUfoChance.
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
-  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  // REPOINTED AGAIN BY CS024 P6c: 33 -> 67 — three knobs per lever (floor/ceiling/step count) replace
-  // P5's one flat row, so 17 lever rows become 51; the 16 non-lever knobs are untouched.
-  const valueEntries = DEBUG_ENTRIES.length;
-  eq(valueEntries, 85, "A: DEBUG_VARS holds 85 value entries (33 -> 34 this phase; CS021 P3 -> 44; CS023 P4 -> 46; CS024 P1 -> 35; CS024 P2 -> 34; CS024 P3 -> 36; CS024 P4 -> 15; CS024 P5 -> 32; CS024 P6 -> 33; CS024 P6c -> 67; CS024 P6d -> 68; CS024 P6e -> 69; CS024 P6f -> 72; CS025 P1 -> 73; CS025 P2 -> 75; CS026 P2 -> 78; CS026 P3 -> 79; CS026 P4 -> 81; CS026 P5 -> 85)");
-  eq(DEBUG_VARS.filter(e => !e.header).length, 85, "A: ...and DEBUG_ENTRIES agrees with the registry");
+  // This phase's own claim — that CS020 P1b adds exactly one knob, under a DELIVERY header placed
+  // between CHAIN GUARD and JUNK — is asserted directly below and by the dockComboGrace shape check
+  // further down.
   const hdrs = DEBUG_VARS.filter(e => e.header).map(e => e.header);
   assert(hdrs.includes("DELIVERY"), "A: a DELIVERY section header exists");
   const iGuard = DEBUG_VARS.findIndex(e => e.header === "CHAIN GUARD");

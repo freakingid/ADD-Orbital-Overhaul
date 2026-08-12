@@ -77,7 +77,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { parentSource, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+const { parentSource, ownCommits, changedFiles, outsideScope, SKIP_TAG } = require("./_phase-ref.js");
 const { installSeed } = require("./_seeded-random.js");
 
 // ⛔ SEEDED BEFORE THE FIRST BUILD (CS026 P1, archive/PLANNED-FEATURES-CS026.md §5.2). This file makes no
@@ -412,9 +412,6 @@ let X = null;
   eq(globalIds.join(","),
     "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY",
     "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel (CS026 P5's four level banner knobs trail startLevel)");
-  eq(X.DEBUG_ENTRIES.length, 85, "D: the registry holds 85 value entries (CS026 P2's 78 + this one) [CS026 P4 -> 81, CS026 P5 -> 85]");
-  eq(Object.keys(X.DEBUG).length, 85, "D: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 85, "D: ...and the display map agrees");
   eq(X.DEBUG.earlyWorldLevels, 5, "D: the live value seeds from the def");
 
   // It is READ LIVE at the wave boundary, never cached — a panel change takes effect on the next level.
@@ -788,7 +785,7 @@ let X = null;
     // deliberately outside this pin.
     const designDocs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
     eq(designDocs.join(","), "", `G: ⛔ TRAP 2 — no design doc was touched (found: ${designDocs.join(", ") || "none"})`);
-    const outside = changed.filter(f => !f.startsWith("scratchpad/") && f !== "STATUS.md" && f !== "asteroids-deluxe.html");
+    const outside = outsideScope(changed);
     eq(outside.join(","), "", `G: this phase touched nothing outside the game file, scratchpad/ and STATUS.md (found: ${outside.join(", ") || "none"})`);
     assert(changed.includes("asteroids-deluxe.html"), "G: (setup) the pin really is looking at this phase's diff — the game file is in it");
     assert(changed.includes("scratchpad/test-cs026-p3.js"), "G: (setup) ...including this test file");

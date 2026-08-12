@@ -762,12 +762,6 @@ function fullAndHolding(X, { level = 1 } = {}) {
         `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
-  // Registry 72 -> 73 (CS025 P2 repoint: -> 75, its two magnet-push knobs; CS026 P2 repoint: -> 78, the
-  // junkSplit lever's three knobs).
-  eq(X.DEBUG_ENTRIES.length, 85, "G: the registry holds 85 value entries (CS024 P6f's 72 + this one + CS025 P2's two + CS026 P2's three + CS026 P3's earlyWorldLevels) [CS026 P4 -> 81, CS026 P5 -> 85]");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "G: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 85, "G: ...and the native DEBUG map agrees");
-  eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "G: still nine section headers — no new section");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "G: DEBUG_ROWS is the registry plus its four trailer rows");
 
   // Persistence: an ordinary DEBUG_ENTRIES row through the existing generic path. No schema bump.

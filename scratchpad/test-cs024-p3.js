@@ -332,14 +332,6 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
       eq(X.DEBUG[id], def, `A: ...and DEBUG.${id} is seeded from it`);
     }
   }
-  // REPOINTED BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names). This phase's
-  // own three additions are pinned by name directly below; only the live total moves.
-  // REPOINTED BY CS024 P5: 15 was the P4 interim count (21-knob tier prune, before the odometer was
-  // wired). P5's registry rebuild adds 17 lever knobs + smallUfoChance, back to 32.
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
-  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 85, "A: the registry holds 85 value entries after CS026 P3 (P6c's three rows per lever + startLevel + debugOverride + the three Hunter-cap knobs + magnetResumeDelay + the two magnet-push knobs + the three junkSplit lever knobs + earlyWorldLevels + the four level banner knobs) [CS026 P4 -> 81, CS026 P5 -> 85]");
-
   // Tombstones are checked POSITIVELY and separately, so a comment naming a dead symbol can never be
   // confused for a live one (the standing test-cs024-p1/p2 idiom).
   assert(commentsOnly.includes("CS024 P3"), "A: the removals are documented with CS024 P3 tombstone comments");

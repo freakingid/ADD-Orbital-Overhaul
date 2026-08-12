@@ -679,55 +679,7 @@ function levelForCap(n) {
   // REPOINTED BY CS019 P2: mirror image of the stale "unchanged this phase (bumps in P10)" claim —
   // the version has since moved past what P4 (this phase) shipped.
   assert(Y.GAME_VERSION !== "1.0.0.17", "H: GAME_VERSION has moved past what P4 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
-  // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob. REPOINTED BY CS018 P6,
-  // then again by P7, then again by CS019 P1 (mirror-image of the old claim each time, not weakened):
-  // P3's 15 -> P6's 25 (9 UFO MOVEMENT + 2 GLOBAL added, 1 retired saucerGapPressure removed) -> P7's 32
-  // (9 UFO WEAPONS added, 2 retired saucerPressureSecs/saucerAimPressure removed) -> CS019 P1's 33
-  // (chainGuardCooldown appended to the CHAIN GUARD group) — none of these are P4 facts, but this pin has
-  // to track the live registry size or it goes stale every time a later phase touches it. The exact
-  // count is still an exact count; naming the one entry that moved it makes it strictly harder to pass
-  // by accident than the bare number was.
-  // REPOINTED BY CS020 P1b: 33 -> 34 (dockComboGrace, under a new DELIVERY header). Same treatment as
-  // every repoint above — the exact count, plus the id of the single entry that moved it.
-  // REPOINTED BY CS021 P3: 34 -> 44 (the ten-entry ORBIT section, under a new ORBIT header).
-  // REPOINTED BY CS023 P4: 44 -> 46 (orbitGravityAccel + debrisBounceRestitution, APPENDED to the ORBIT
-  // section). Same treatment as every repoint above — the exact live count, plus the ids that moved it.
-  // REPOINTED BY CS023 P4B: orbitGravityAccel -> debrisDriftAccel (spec C15 — the drift is not
-  // orbit-scoped, so its id no longer says "orbit"). The count stays 46 and the row does not move; only
-  // the id, and therefore its membership in an `/^orbit/i` filter, changes.
-  // REPOINTED BY CS024 P1: 46 -> 35. The ten ORBIT knobs, their section header and debrisDriftAccel are
-  // REMOVED OUTRIGHT with the orbit archetype and the inward drift (spec §1.1/§1.5/§4.1/§5). This is the
-  // first time this pin has gone DOWN, and the reason matters: every earlier repoint was an append under
-  // the registry's append-only rule, whereas CS024 §5 scopes a deliberate REBUILD, so row indices below
-  // the removal shift and that is expected rather than a regression. The two orbit-shaped claims below
-  // are INVERTED to their positive successors rather than deleted, per the standing repoint convention —
-  // "exactly ten match /^orbit/i" becomes "NONE match", which is the assertion that would actually catch
-  // a knob creeping back in.
-  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
-  // via the FREQ_JITTER constant instead). AND AGAIN BY CS024 P3: 34 -> 36 — garbageLifetime out with
-  // the decay clock, garbageSoftMax/garbageHardMax/lastStandSpeed in. AND AGAIN BY CS024 P4 (the freeze
-  // block): 36 -> 15 — the whole JUNK section, and every tier knob under the old SAUCER-derived UFO
-  // MOVEMENT/UFO WEAPONS headers, deleted outright and replaced by nothing (P4 built the odometer but
-  // did not expose it as knobs — TRAP 2 applied to the debug panel too).
-  //
-  // REPOINTED BY CS024 P5 (spec §2.4/§4.5/§5), and it is a REBUILD like CS024 P1's was, not a plain
-  // append: 15 -> 32. JUNK/HUNTER/UFO are rebuilt with ONE leverKnob() PER LEVER (def: null, the
-  // "no override, follow leverState" sentinel) rather than the old per-tier trios/generic singles —
-  // JUNK regains its header with 4 entries (junkCount + 3 sizes), HUNTER gains coalescePause +
-  // hunterSpeedMedium/Small (3 — replacing the retired garbageAttractDelay knob outright, not renaming
-  // it: coalescePause lives under HUNTER, not GARBAGE), and UFO gains all ten of its levers, split per
-  // size. Section headers are pinned by exact order too, since a header can silently gain/lose members
-  // without moving the total.
-  //
-  // REPOINTED BY CS024 P6 (spec §1.7/§3.4/§3.5/§5): 32 -> 33, and the POWERUPS header P5 deliberately
-  // left unwritten is created there — an empty header renders as a stray label, so it waits for its
-  // first knob. Net +1 from -1 (chainGuardTime, deleted with timed expiry) +2 (engineBurnSeconds,
-  // engineMassMult). CHAIN GUARD survives as a header on 3 knobs rather than 4.
-  // REPOINTED AGAIN BY CS024 P6c (spec §2.6): 33 -> 67. Each of the 17 levers now emits THREE rows
-  // (<id>Floor / <id>Ceil / <id>Steps) instead of one flat row, so 17 become 51 and the 16 non-lever
-  // knobs are untouched. The header list is unchanged — this is a reshape inside three sections.
-  // CS024 P6e repoint: 68 -> 69 (+1 debugOverride master toggle, spec §3).
-  eq(Y.DEBUG_VARS.filter(v => v.id).length, 85, "H: DEBUG_VARS holds 85 value entries as of CS026 P5 (+3 junkSplit lever knobs, +1 earlyWorldLevels, +4 level banner knobs)");
+  // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob.
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
   const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),

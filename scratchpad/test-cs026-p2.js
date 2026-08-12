@@ -76,8 +76,9 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { parentSource, ownCommit, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+const { parentSource, ownCommit, ownCommits, changedFiles, outsideScope, SKIP_TAG } = require("./_phase-ref.js");
 const { installSeed } = require("./_seeded-random.js");
+const { hasLever } = require("./test-registry.js");
 
 // ⛔ SEEDED BEFORE THE FIRST BUILD, WHICH IS THE POINT (CS026 P1, archive/PLANNED-FEATURES-CS026.md §5.2). This
 // file contains no Math.random calls of its own — the nondeterminism is the GAME'S, and some of it is
@@ -217,8 +218,8 @@ let X = null;
   const ids = X.LEVERS.map(l => l.id);
   eq(ids.indexOf("junkSplit"), ids.indexOf("junkSpeedSmall") + 1,
     "A: the row sits immediately after junkSpeedSmall — the JUNK chain reads in order");
-  eq(X.LEVERS.length, 18, "A: 18 levers now (17 + junkSplit)");
-  eq(X.LEVER_ORDER.length, 18, "A: ...and buildLeverOrder accepted all 18 at load");
+  hasLever(X, "junkSplit", { floor: 2, ceil: 3, steps: 2 }, { assert, eq });
+  eq(X.LEVER_ORDER.length, X.LEVERS.length, "A: ...and buildLeverOrder accepted every row at load");
 })();
 
 // ================= (B) THE TABLE, at every level 1..40 =====================
@@ -503,13 +504,7 @@ let X = null;
 
 // ================= (H) the registry =====================
 (function sectionH() {
-  console.log("(H) registry 75 -> 78: three junkSplit rows in JUNK, after junkSpeedSmall, ranges DERIVED");
-  eq(X.DEBUG_ENTRIES.length, 85, "H: the registry holds 85 value entries (75 + junkSplit's three + CS026 P3's earlyWorldLevels) [CS026 P4 -> 81, CS026 P5 -> 85]");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "H: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 85, "H: ...and the native DEBUG map");
-  eq(Object.keys(X.debugShown).length, 85, "H: ...and the display map");
-  eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "H: still nine section headers — no new section");
-
+  console.log("(H) three junkSplit rows in JUNK, after junkSpeedSmall, ranges DERIVED");
   const ids = X.DEBUG_VARS.map(v => (v.header ? `#${v.header}` : v.id));
   const at = ids.indexOf("junkSplitFloor");
   assert(at > 0, "H: junkSplitFloor is in the registry");
@@ -618,7 +613,7 @@ let X = null;
     // ⛔ TRAP 3 — THE ONLY `LEVERS` DIFF IS ONE NEW ROW AND ONE ARRAY ELEMENT. Asserted per entry, so a
     // retuned floor/ceil/steps anywhere in the table fails here rather than being absorbed by a count.
     eq(OLD.LEVERS.length, 17, "J: (setup) the parent shipped 17 levers");
-    eq(X.LEVERS.length, 18, "J: ...and this phase ships 18");
+    eq(X.LEVERS.length, OLD.LEVERS.length + 1, "J: ...and this phase ships exactly one more");
     const oldIds = OLD.LEVERS.map(l => l.id);
     eq(X.LEVERS.filter(l => oldIds.includes(l.id)).map(l => l.id).join(","), oldIds.join(","),
       "J: every lever the parent had is still there, in the parent's order");
@@ -720,7 +715,7 @@ let X = null;
     // session by standing instruction, and is deliberately outside this pin.
     const designDocs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
     eq(designDocs.join(","), "", `J: ⛔ TRAP 2 — no design doc was touched (found: ${designDocs.join(", ") || "none"})`);
-    const outside = changed.filter(f => !f.startsWith("scratchpad/") && f !== "STATUS.md" && f !== "asteroids-deluxe.html");
+    const outside = outsideScope(changed);
     eq(outside.join(","), "", `J: this phase touched nothing outside the game file, scratchpad/ and STATUS.md (found: ${outside.join(", ") || "none"})`);
     assert(changed.includes("asteroids-deluxe.html"), "J: (setup) the pin really is looking at this phase's diff — the game file is in it");
     assert(changed.includes("scratchpad/test-cs026-p2.js"), "J: (setup) ...including this test file");

@@ -441,10 +441,6 @@ const P6E_PARENT_REF = "7c4c6b3f69ab2764629996e1dd280e4896267ba4"; // "Docs for 
   // UNCHANGED while CS024 P6e ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "I: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
-  // CS026 P2 repoint: 17 -> 18 (junkSplit joined the JUNK chain). TRAP 2's claim — P6e's master toggle
-  // added no lever — is unchanged, and §G's per-lever pins above are what carry it.
-  eq(X.LEVERS.length, 18, "I: TRAP 2 — LEVERS is 18 entries (CS026 P2's junkSplit); this phase added none");
-
   assert(/STORAGE_KEY = "afd_settings_v1"/.test(scriptSrc), "I: TRAP 3 — afd_settings_v1 name unchanged");
   assert(/STORAGE_KEY: "afd_achievements_v2"/.test(scriptSrc), "I: TRAP 3 — afd_achievements_v2 name unchanged");
   assert(/STORAGE_KEY: "afd_scores_v1"/.test(scriptSrc), "I: TRAP 3 — afd_scores_v1 name unchanged");

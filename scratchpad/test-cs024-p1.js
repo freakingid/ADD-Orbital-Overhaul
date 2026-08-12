@@ -323,19 +323,8 @@ function atWave(X, w) {
   assert(!/R reroll orbit start angles/.test(codeOnly), "B: ...and its debug-panel footer hint with it");
 
   // --- the debug registry ---
-  // REPOINTED BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25% via the
-  // FREQ_JITTER constant instead).
-  // REPOINTED BY CS024 P4: 36 -> 15 (the 21 tier knobs, out with levelDef()'s tier names). What THIS
-  // phase's trap guards — that its own twelve orbit/drift removals happened and nothing crept back —
-  // is asserted directly below and is untouched; only the live total moves.
-  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
-  // entries plus smallUfoChance. This phase's own trap (its twelve orbit/drift removals stayed removed)
-  // is unaffected; only the live total moves, same as every other repoint above.
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
-  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  // REPOINTED BY CS024 P6e: 68 -> 69 (the debugOverride master toggle, spec §3), and the trailing-row
-  // count 2 -> 4 (Reset all debug knobs to defaults + Reset high scores join Dump + Back, spec §2/§4).
-  eq(X.DEBUG_ENTRIES.length, 85, "B: the debug registry holds 85 value entries after CS026 P3 [CS026 P4 -> 81, CS026 P5 -> 85]");
+  // What THIS phase's trap guards — that its own twelve orbit/drift removals happened and nothing
+  // crept back — is asserted directly below.
   eq(X.DEBUG_ENTRIES.filter(e => /orbit/i.test(e.id)).length, 0, "B: ...none of whose ids is orbit-shaped");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisDriftAccel").length, 0, "B: ...and debrisDriftAccel is not among them");
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,

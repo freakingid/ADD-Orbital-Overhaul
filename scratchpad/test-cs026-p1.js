@@ -534,7 +534,7 @@ const FIVE = [
     // ⛔ TRAP 3, the second half: the game file is not in the diff AT ALL.
     assert(!changed.includes("asteroids-deluxe.html"),
       "H: ⛔ TRAP 3 — asteroids-deluxe.html is not in this phase's diff");
-    const outside = changed.filter(f => !f.startsWith("scratchpad/") && f !== "STATUS.md");
+    const outside = REF.outsideScope(changed);
     eq(outside.join(","), "", `H: this phase touched NOTHING outside scratchpad/ and STATUS.md (found: ${outside.join(", ") || "none"})`);
     assert(changed.includes("scratchpad/_phase-ref.js") && changed.includes("scratchpad/_seeded-random.js"),
       "H: (setup) the pin really is looking at this phase's diff — both new helpers are in it");

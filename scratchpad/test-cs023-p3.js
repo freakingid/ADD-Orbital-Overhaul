@@ -619,18 +619,7 @@ function saucerAt(X, x, y, small) {
   // UNCHANGED while CS023 P3 ran; P7 bumped it to "1.0.0.24", so the claim inverts and then
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "A: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
-  // REPOINTED BY CS023 P4: 44 -> 46. REPOINTED AGAIN BY CS024 P1: 46 -> 35, the ten ORBIT knobs plus
-  // debrisDriftAccel removed outright with the orbit archetype and the inward drift. P3's own claim —
-  // that IT added no knob — is what this guarded and is asserted directly on the next line, unchanged;
-  // the exact live count keeps guarding it.
-  // REPOINTED AGAIN BY CS024 P2: 35 -> 34 — freqJitter removed outright (spec §1.8/§5, frozen at 25%
-  // via the FREQ_JITTER constant instead).
-  // REPOINTED AGAIN BY CS024 P4: 36 -> 15 — the 21 tier knobs removed with levelDef()'s tier names.
-  // REPOINTED AGAIN BY CS024 P5: 15 -> 32 — the levers wired, registry rebuilt with 17 new lever-knob
-  // entries plus smallUfoChance.
-  // REPOINTED AGAIN BY CS024 P6: 32 -> 33 — timed powerup expiry deleted (chainGuardTime out), a new
-  // POWERUPS section in with engineBurnSeconds + engineMassMult (Engine-as-fuel). Net -1 +2.
-  eq(X.DEBUG_ENTRIES.length, 85, "A: TRAP 4 — the debug registry is exactly 85 value entries (repointed CS026 P3: +3 junkSplit lever knobs, +1 earlyWorldLevels) [CS026 P4 -> 81, CS026 P5 -> 85]");
+  // P3's own claim — that IT added no knob — is asserted directly on the next line.
   assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
     "A: TRAP 4 — ...and P3 still contributed none of them");
   {

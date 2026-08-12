@@ -57,7 +57,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { parentSource, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+const { parentSource, ownCommits, changedFiles, outsideScope, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
@@ -193,9 +193,6 @@ let X = null;
 // ================= (B) the registry =====================
 (function sectionB() {
   console.log("(B) registry count, live seeding, applyDebug round-trip, override toggle");
-  eq(X.DEBUG_ENTRIES.length, 85, "B: the registry holds 85 value entries (CS026 P4's 81 + this phase's 4)");
-  eq(Object.keys(X.DEBUG).length, 85, "B: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 85, "B: ...and the display map agrees");
   eq(X.DEBUG.levelBannerTime, 2.2, "B: live value seeds from def (time)");
   eq(X.DEBUG.levelBannerFade, 0.5, "B: ...(fade)");
   eq(X.DEBUG.levelBannerSize, 72, "B: ...(size)");
@@ -368,8 +365,7 @@ let X = null;
     const designDocs = changed.filter(f => f.endsWith(".md") && f !== "STATUS.md");
     eq(designDocs.join(","), "DIFFICULTY-LEVERS.md",
       `F: ⛔ TRAP 2 — the only design doc touched is DIFFICULTY-LEVERS.md (found: ${designDocs.join(", ") || "none"})`);
-    const outside = changed.filter(f =>
-      !f.startsWith("scratchpad/") && f !== "STATUS.md" && f !== "asteroids-deluxe.html" && f !== "DIFFICULTY-LEVERS.md");
+    const outside = outsideScope(changed, ["DIFFICULTY-LEVERS.md"]);
     eq(outside.join(","), "", `F: this phase touched nothing outside the game file, DIFFICULTY-LEVERS.md, scratchpad/ and STATUS.md (found: ${outside.join(", ") || "none"})`);
     assert(changed.includes("asteroids-deluxe.html"), "F: (setup) the game file is in the diff");
     assert(changed.includes("DIFFICULTY-LEVERS.md"), "F: (setup) ...and DIFFICULTY-LEVERS.md");

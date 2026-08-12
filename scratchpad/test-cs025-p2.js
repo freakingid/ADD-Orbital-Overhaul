@@ -55,6 +55,7 @@ const { execFileSync } = require("child_process");
 // DECOMPOSITION is unchanged and is the point — PARENT_SHA stays a hardcoded literal below, and it is
 // this phase's OWN COMMIT that gets resolved dynamically, by subject, within PARENT_SHA..HEAD.
 const { parentSource, ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+const { hasKnob } = require("./test-registry.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "asteroids-deluxe.html");
@@ -1104,15 +1105,9 @@ function stepProbe(X, p, dt = 1 / 60) {
   }
 
   // Registry 73 -> 75 (CS026 P2 repoint: -> 78, the junkSplit lever's three knobs).
-  eq(X.DEBUG_ENTRIES.length, 85, "K: the registry holds 85 value entries (CS025 P1's 73 + these two + CS026 P2's three + CS026 P3's earlyWorldLevels) [CS026 P4 -> 81, CS026 P5 -> 85]");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "K: ...and DEBUG_VARS agrees");
-  eq(Object.keys(X.DEBUG).length, 85, "K: ...and the native DEBUG map agrees");
-  eq(Object.keys(X.debugShown).length, 85, "K: ...and the display map agrees");
-  eq(X.DEBUG_VARS.filter(v => v.header).length, 9, "K: still nine section headers — no new section");
+  hasKnob(X, "magnetPushKick", { def: 120, min: 0, max: 600, step: 10 }, { assert, eq });
+  hasKnob(X, "magnetPushSpread", { def: 45, min: 0, max: 180, step: 5 }, { assert, eq });
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "K: DEBUG_ROWS is the registry plus its four trailer rows");
-  // CS026 P2 repoint: 17 -> 18 (junkSplit). K's claim — that NEITHER of P2's two magnet knobs is a
-  // lever — is what the two per-id checks below carry; the count simply follows the table.
-  eq(X.LEVERS.length, 18, "K: the LEVERS table is 18 levers (CS026 P2's junkSplit) — neither magnet knob joined it");
   for (const id of ["magnetPushKick", "magnetPushSpread"])
     assert(!X.LEVERS.some(l => l.id === id), `K: ...${id} specifically is not in it`);
 

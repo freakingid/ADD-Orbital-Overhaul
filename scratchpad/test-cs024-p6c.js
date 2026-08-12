@@ -220,26 +220,12 @@ let X = null;
   noThrow(() => { X = build(); }, "A: the build evaluates");
   if (!X) { console.error("ABORT: build failed"); process.exit(1); }
 
-  // CS026 P2 repoint: 17 -> 18 (junkSplit). P6c's claim is that IT added knobs and not levers; a later
-  // phase legitimately adding one moves the count without touching that claim, which §J still pins.
-  eq(X.LEVERS.length, 18, "A: 18 levers — P6c adds knobs, not levers; CS026 P2 added junkSplit");
   // THE COUNT, MEASURED AND THEN PINNED (the spec deliberately does not predict it): 16 non-lever
   // rows survive P6's registry unchanged, and 17 levers x 3 = 51 replace P5's 17 flat rows.
-  // CS024 P6d repoint: registry 67 -> 68 (+1 non-lever `startLevel` GLOBAL knob, gate tooling, no lever).
-  // CS024 P6e repoint: registry 68 -> 69 (+1 non-lever `debugOverride` master toggle, spec §3, no lever).
-  // CS024 P6f repoint: 69 -> 72 (+3 non-lever Hunter-cap knobs — hunterCapMax, hunterCapLevelsPerStep,
-  // heldClumpMax; §2.5's not-a-lever list, so the LEVER half of this count is untouched at 51).
-  // CS026 P2 repoint: 75 -> 78, and the LEVER half 51 -> 54 — the first repoint here to move the lever
-  // half rather than the non-lever one, because junkSplit is a LEVER and its three rows come from
-  // leverKnob() like every other triple.
-  eq(X.DEBUG_ENTRIES.length, 85, "A: the registry holds exactly 85 value entries (31 non-lever + 54 lever) [CS026 P4 -> 81, CS026 P5 -> 85]");
-  eq(X.DEBUG_VARS.filter(v => !v.header).length, 85, "A: ...and DEBUG_VARS agrees");
-  eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, 54,
-    "A: ...54 of them are lever knobs");
+  eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, X.LEVERS.length * 3,
+    "A: three lever-knob rows per LEVERS entry — the standard leverKnob() triple");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset Scores + Back");
-  eq(Object.keys(X.DEBUG).length, 85, "A: the native DEBUG map agrees with the registry");
-  eq(Object.keys(X.debugShown).length, 85, "A: ...and so does the display map");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -682,7 +668,7 @@ let X = null;
   // The markers are nowhere in the label ARGUMENTS — they cannot have been typed in.
   const registryBlock = scriptSrc.slice(scriptSrc.indexOf("const DEBUG_VARS = ["), scriptSrc.indexOf("const DEBUG_ENTRIES"));
   const knobCalls = registryBlock.split("\n").filter(l => l.trim().startsWith("...leverKnob("));
-  eq(knobCalls.length, 18, "G: all 18 lever knobs are SPREAD into the registry from leverKnob() (CS026 P2: +junkSplit)");
+  eq(knobCalls.length, X.LEVERS.length, "G: every lever's knobs are SPREAD into the registry from leverKnob()");
   eq(registryBlock.split("\n").filter(l => /(^|[^.])\bleverKnob\(/.test(l.replace(/\s*\/\/.*$/, "").trim())).length, 0,
     "G: ...and none is called without the spread (which would seed a nested array as one row)");
   assert(!knobCalls.some(l => /▼|↳|\(inv\)|· floor|· ceil|· steps/.test(l)),
@@ -738,7 +724,7 @@ let X = null;
   eq(X.leverValues(alt, 1).junkCount, 1, "H: leverValues answers from the table it is given");
   eq(X.leverState(1).junkCount, 3, "H: ...and the shipped table is untouched by that call");
   // liveLevers is the ONLY DEBUG reader in the odometer's consumer chain.
-  eq(X.leverTable().length, 18, "H: leverTable() returns all 18 levers (CS026 P2: +junkSplit)");
+  eq(X.leverTable().length, X.LEVERS.length, "H: leverTable() returns every lever");
   assert(X.leverTable()[0] !== X.LEVERS[0], "H: ...as COPIES — a slider can never write back into LEVERS");
   eq(JSON.stringify(X.leverTable()), JSON.stringify(X.LEVERS), "H: ...byte-identical to LEVERS while untouched");
 })();
