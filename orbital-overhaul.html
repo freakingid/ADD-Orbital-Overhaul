@@ -2935,6 +2935,28 @@ window.addEventListener("keydown", e => {
     return;
   }
 
+  // CS031 P3: raw capture for the name-entry screen — the second consumer of the hook above, and modelled
+  // on it exactly. menuNameEntry() only ever sees ABSTRACT actions, so letters, digits, space and
+  // Backspace have to be taken here. Same gating and the same reason: only on that screen, and only while
+  // the secret-code window is NOT armed — DEBUG_CODE contains letters and a digit, so a live capture
+  // window keeps first claim on keystrokes and this hook stands down until it lapses. It sits AFTER that
+  // block for exactly that reason. `!game.menu.modal` has no counterpart above (the debug hook is
+  // accidentally covered there — an open dialog leaves the cursor on a non-value row, so its
+  // debugSelectedVar() gate is already false); this screen has no such accident, and raw typing must not
+  // reach the buffer behind a dialog P4 hangs over it. ENTER/ESC are deliberately NOT handled here: they
+  // stay on the abstract layer as confirm/back, so gamepad A/B commit and cancel identically.
+  // ⛔ Consumed (preventDefault + return) so Backspace can't navigate the browser back and a character
+  // can't reach branch (2)/(3).
+  // ⛔ Consequence, deliberate: on this screen WASD is text, not navigation, and "p" is text, not pause.
+  // A text field that swallowed w/a/s/d as movement could not spell a name; the arrows and the whole pad
+  // still navigate, and ESC still backs out.
+  if (game.menu.screen === "nameentry" && !DebugCode.armed && !game.menu.rebinding && !game.menu.modal &&
+      !game.entry && !e.repeat && (e.key.length === 1 || e.key === "Backspace")) {
+    e.preventDefault();
+    nameEntryKey(e.key);
+    return;
+  }
+
   // CS024 P1: CS021 P3's "r" START-ANGLE REROLL KEYBIND (FLAG-CS021-c) STOOD HERE — a raw debug-screen
   // capture that rerolled the live orbit layout's ring start angles. Removed with the layout it acted on.
   // "r" is now inert on the debug screen and reaches the ordinary handlers below, as it did pre-CS021.
@@ -3244,6 +3266,41 @@ const MODAL_ROW_Y        = 172;       // first choice row (confirm), relative to
 const MODAL_ROW_STEP     = 46;        // px between the two choice rows — drawRootMenu's step
 const MODAL_ROW_SIZE     = 24;        // choice-row text size — drawRootMenu's size
 const MODAL_HINT_Y       = 272;       // control-hint baseline, relative to the panel top
+// --- CS031 P3: the name-entry screen's grid (FORK-CS031-D → b, spec §4.4) ---
+// The cell list is DERIVED, never a typed-out table: every character of SCORES_CHARSET (the
+// initials-entry alphabet the build already ships, L440) followed by the three verb cells. The row
+// count follows from the cell count, so widening the charset re-flows the grid instead of overflowing
+// the panel — drawRootMenu's self-healing precedent. At 37 characters + 3 verbs over 10 columns that
+// is exactly 4 full rows today.
+// ⛔ THE LAST ROW MAY BE PARTIAL if either the charset or the column count ever changes. nameRowLen()
+//    is what keeps the cursor off a cell that does not exist, and every mover goes through it.
+// The three verb labels are multi-character on purpose: SCORES_CHARSET holds single characters only,
+// so a cell can never be mistaken for a verb, and menuNameEntry can dispatch on the value itself.
+const NAME_CELL_DEL = "DEL", NAME_CELL_DONE = "DONE", NAME_CELL_CANCEL = "CANCEL";
+const NAME_CELLS     = SCORES_CHARSET.split("").concat([NAME_CELL_DEL, NAME_CELL_DONE, NAME_CELL_CANCEL]);
+const NAME_GRID_COLS = 10;
+const NAME_GRID_ROWS = Math.ceil(NAME_CELLS.length / NAME_GRID_COLS);
+const NAME_PANEL_W   = 720;
+const NAME_PANEL_H   = 470;
+const NAME_FIELD_W   = 420;   // the typed-name box; the counter sits outside its right edge
+const NAME_FIELD_H   = 44;
+const NAME_FIELD_Y   = 118;   // typed-name baseline, relative to the panel top
+const NAME_FIELD_SIZE= 28;
+const NAME_ERR_Y     = 162;   // inline validation message baseline, relative to the panel top
+const NAME_ERR_SIZE  = 16;
+const NAME_GRID_Y    = 226;   // first grid-row baseline, relative to the panel top
+const NAME_CELL_W    = 62;    // 10 columns span 620 of the 720-wide panel
+const NAME_CELL_H    = 44;
+const NAME_CHAR_SIZE = 22;    // a single-character cell
+const NAME_VERB_SIZE = 13;    // DEL / DONE / CANCEL / SPACE — the word cells
+const NAME_TITLE_ADD    = "NEW PROFILE";
+const NAME_TITLE_RENAME = "RENAME PROFILE";
+const NAME_HINT = "↑↓◄► move   ENTER/A select   ESC/B erase (cancel if empty)   or type";
+// Static strings: these consts are evaluated at load, far ABOVE PROFILE_NAME_MAX (L4513), so a message
+// that interpolated the cap would be a TDZ throw at load. The cap is shown live by the field counter.
+const NAME_ERR_EMPTY = "Enter a name";
+const NAME_ERR_LONG  = "Name is too long";
+const NAME_ERR_TAKEN = "That name is already in use";
 function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
@@ -4056,6 +4113,7 @@ function menuInput(action) {
     case "difficulty":   menuDifficulty(action); break;
     case "achievements": menuAchievements(action); break;
     case "highscores":   menuHighScores(action); break;
+    case "nameentry":    menuNameEntry(action); break;  // CS031 P3: the profile name grid
     case "debug":        menuDebug(action); break;   // CS015 P4: hidden, secret-code-only
   }
 }
@@ -4715,6 +4773,123 @@ const Profiles = {
     return true;
   }
 };
+
+// ---------- The "nameentry" screen (CS031 P3, spec §4.4 / FORK-CS031-D → b) ----------
+// The build's first text field. It RENDERS AND VALIDATES ONLY — it creates nothing, renames nothing
+// and touches the roster only to ask nameTaken(). The verbs are P4's, and they live in the onCommit
+// closure the caller supplies; this screen's whole output is one validated, trimmed string.
+//
+// Two input paths reach the same three functions, which is what keeps pad and keyboard identical:
+//   * ABSTRACT actions (menuNameEntry, from menuInput) — grid nav, and confirm/back on a cell.
+//   * RAW characters (nameEntryKey, from the keydown hook at L2938) — typing.
+// ⛔ ENTER and ESC are NOT raw-captured, so gamepad A/B commit and cancel through the very same
+//    branches a keyboard player uses.
+//
+// State lives on game.menu: `row`/`col` are the grid cursor (the Controls-screen precedent), plus
+// nameBuf / nameCtx / nameErr — all three declared in BOTH the game literal and startGame()'s reset,
+// per the standing CS016 P3 rule.
+function nameRowLen(r) { return Math.min(NAME_GRID_COLS, NAME_CELLS.length - r * NAME_GRID_COLS); }
+function nameCell() { return NAME_CELLS[game.menu.row * NAME_GRID_COLS + game.menu.col]; }
+// A cell's drawn label. The space character would otherwise be an invisible cell, so it gets a word
+// like the three verbs do; every other character cell IS its character.
+function nameCellLabel(cell) { return cell === " " ? "SPACE" : cell; }
+
+// The validator. Returns "" when clean, else the message that goes on screen. ⛔ THE ONE PLACE THE
+// RULES LIVE — the live path and the commit path both call this, so they can never disagree.
+// Collision is Profiles.nameTaken()'s job (trimmed + case-insensitive, already shipped in P1); in
+// rename mode the profile being renamed is excluded from the comparison, which is what lets "Paul"
+// become "PAUL".
+function nameEntryError(buf, ctx) {
+  const n = (typeof buf === "string" ? buf : "").trim();
+  if (!n) return NAME_ERR_EMPTY;
+  if (n.length > PROFILE_NAME_MAX) return NAME_ERR_LONG;
+  if (Profiles.nameTaken(n, ctx && ctx.mode === "rename" ? ctx.id : undefined)) return NAME_ERR_TAKEN;
+  return "";
+}
+// Live re-validation after every buffer edit. An EMPTY buffer shows nothing rather than "Enter a name":
+// a field nobody has typed into yet is not a mistake, and the message is still raised the moment DONE is
+// pressed on it. Every other state (whitespace-only included) reports immediately.
+function nameEntryRevalidate() {
+  const m = game.menu;
+  m.nameErr = m.nameBuf.length === 0 ? "" : nameEntryError(m.nameBuf, m.nameCtx);
+}
+// One character in or out, whichever path asked. The cap DROPS the keystroke rather than truncating,
+// and an empty-buffer Backspace is inert — both are debugEntryKey()'s conventions, blip included.
+function nameEntryKey(key) {
+  const m = game.menu;
+  if (key === "Backspace") {
+    if (!m.nameBuf.length) return;
+    m.nameBuf = m.nameBuf.slice(0, -1);
+  } else {
+    if (m.nameBuf.length >= PROFILE_NAME_MAX) return;
+    m.nameBuf += key;
+  }
+  nameEntryRevalidate();
+  AudioSys.ui(false);
+}
+
+// P4 supplies ctx: `mode` ("add" / "rename") and, for a rename, the `id`; `back`/`backIndex` name the
+// screen that raised this one (gotoScreen's own two arguments); `onCommit(name)` receives the validated
+// string. onCommit is openModal's onConfirm closure precedent — a caller wires the screen in one call
+// with no per-screen state, and the roster op stays entirely on the caller's side.
+// ⛔ THIS IS THE ONLY WAY IN, and it re-initialises all three fields — which is why no other menu
+// teardown has to clear them. They are inert unless game.menu.screen === "nameentry", and both the
+// literal and startGame()'s reset seed them, so they are never `undefined` for a handler to trip on.
+function openNameEntry(ctx, initial) {
+  const m = game.menu;
+  m.nameCtx = ctx || { mode: "add" };
+  m.nameBuf = typeof initial === "string" ? initial.slice(0, PROFILE_NAME_MAX) : "";
+  m.nameErr = "";
+  gotoScreen("nameentry");   // resets row/col/scroll/modal and plays the open blip
+}
+// Leave without committing — CANCEL, `back` on an empty buffer, or a successful commit's own exit.
+// Defaults to the title menu, which is where the screen's only caller can be reached from (FORK-I).
+function closeNameEntry() {
+  const c = game.menu.nameCtx || {};
+  const back = c.back || "titlemenu", backIndex = c.backIndex || 0;
+  game.menu.nameBuf = ""; game.menu.nameCtx = null; game.menu.nameErr = "";
+  gotoScreen(back, backIndex);
+}
+function nameEntryCommit() {
+  const m = game.menu;
+  // ⛔ RE-VALIDATED HERE, never trusted from nameErr: nameCtx is supplied from outside and nameBuf can
+  // be prefilled (a rename opens on the current name), so the live path may never have run at all.
+  const err = nameEntryError(m.nameBuf, m.nameCtx);
+  if (err) { m.nameErr = err; AudioSys.ui(false); return; }
+  const run = m.nameCtx && m.nameCtx.onCommit;
+  const name = m.nameBuf.trim();
+  // CLEAR BEFORE INVOKING — menuModal's rule, and for its reason: onCommit is free to navigate, and a
+  // teardown running after it would clobber the screen the callback just set.
+  closeNameEntry();
+  if (run) run(name);
+}
+function menuNameEntry(a) {
+  const m = game.menu;
+  if (a === "up" || a === "down") {
+    m.row = (m.row + NAME_GRID_ROWS + (a === "down" ? 1 : -1)) % NAME_GRID_ROWS;
+    m.col = Math.min(m.col, nameRowLen(m.row) - 1);   // a partial last row must not strand the cursor
+    AudioSys.ui(false);
+  }
+  else if (a === "left" || a === "right") {
+    const len = nameRowLen(m.row);
+    m.col = (m.col + len + (a === "right" ? 1 : -1)) % len;
+    AudioSys.ui(false);
+  }
+  else if (a === "confirm") {
+    const cell = nameCell();
+    if (cell === NAME_CELL_DONE) nameEntryCommit();
+    else if (cell === NAME_CELL_CANCEL) closeNameEntry();
+    else if (cell === NAME_CELL_DEL) nameEntryKey("Backspace");
+    else nameEntryKey(cell);
+  }
+  // ⛔ `back` IS BACKSPACE WHILE ANYTHING IS TYPED, and only aborts on an empty buffer. The pad's B must
+  // not force a trip across the grid to CANCEL for every typo; the DEL cell stays for players who want it.
+  else if (a === "back") {
+    if (m.nameBuf.length) nameEntryKey("Backspace");
+    else closeNameEntry();
+  }
+  else if (a === "pause") closePause();   // Start/ESC out of the whole menu — closePause lands on the title menu
+}
 
 // --- Persistence (localStorage, guarded). Note: unavailable in the claude.ai artifact sandbox but
 // works as a real local file; a storage failure must never crash the game, so everything is wrapped. ---
@@ -6387,7 +6562,8 @@ const game = {
   // CS016 P2: boots on the title's own menu (state starts "title"), NOT null — the title screen is a
   // navigable menu now, and a null screen there would render cursor-less and read menuActive() false.
   // index 0 = "Start Game", so ENTER / A on a cold boot still starts a run immediately.
-  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id
+  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT,
+          nameBuf: "", nameCtx: null, nameErr: "" }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id; nameBuf/nameCtx/nameErr: CS031 P3, the name-entry screen (typed buffer / what commit does / inline validation message)
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   // CS022 P1: the world size the sim is CURRENTLY running at (WORLD_SIZE_FIELD | WORLD_SIZE_ORBIT).
@@ -6626,7 +6802,9 @@ function startGame() {
   // that lands in one and not the other is `undefined` for the whole of a run. CS016 P5's `achTab`
   // follows the same rule (achTabIndex() defends against a bad id anyway, but the field should never
   // BE undefined in the first place).
-  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null, achTab: ACH_TAB_DEFAULT }; // ensure no menu carries in
+  // CS031 P3: nameBuf/nameCtx/nameErr are here AND in the game literal, same standing rule.
+  game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null, achTab: ACH_TAB_DEFAULT,
+                nameBuf: "", nameCtx: null, nameErr: "" }; // ensure no menu carries in
   DiffLog.rows = []; // CS017 P2: dev log is per-run, never carries into a fresh game
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
@@ -9325,6 +9503,7 @@ function drawMenu() {
   else if (s === "difficulty") drawDifficulty();
   else if (s === "achievements") drawAchievements();
   else if (s === "highscores") drawHighScores();
+  else if (s === "nameentry") drawNameEntry();   // CS031 P3: the profile name grid
   else if (s === "debug") drawDebug();   // CS015 P4: hidden, secret-code-only
   drawModal();  // CS016 P3: LAST, unconditionally — it must paint over whichever panel raised it
 }
@@ -9593,6 +9772,40 @@ function drawControlsMenu() {
   drawText((m.row === dRow ? "▶ " : "   ") + "Return to Defaults", VIEW_W / 2, y + 122 + dRow * 42 + 26, 20, m.row === dRow ? COLOR.text : COLOR.menuIdle);
   drawText((m.row === bRow ? "▶ " : "   ") + "Back", VIEW_W / 2, y + 122 + bRow * 42 + 26, 20, m.row === bRow ? COLOR.text : COLOR.menuIdle);
   drawMenuHint("↑↓ row    ◄► column / rotation    ENTER / A rebind    ESC / B back", VIEW_W / 2, y + 494);
+}
+
+// CS031 P3: the name-entry screen. Panel title names the mode, so a player can never be unsure whether
+// they are creating or renaming. Layout is the Controls-grid family — a stroked box marks the cursor,
+// selected text goes COLOR.text and everything else COLOR.menuIdle.
+// Cell geometry is DERIVED from the cell list (NAME_GRID_COLS / nameRowLen), never from a typed table,
+// so this render and menuNameEntry's cursor cannot disagree about which cells exist.
+// Menu rects are exempt from the HUD no-fills rule (drawTurnScaleRow's precedent); these are all
+// strokes anyway. The caret is a plain trailing "_" — no blink, so nothing here needs a clock.
+function drawNameEntry() {
+  const m = game.menu;
+  const mode = m.nameCtx && m.nameCtx.mode;
+  const { y } = menuPanel(NAME_PANEL_W, NAME_PANEL_H, mode === "rename" ? NAME_TITLE_RENAME : NAME_TITLE_ADD);
+  const fx = VIEW_W / 2 - NAME_FIELD_W / 2, fy = y + NAME_FIELD_Y;
+  ctx.strokeStyle = COLOR.shield; ctx.lineWidth = 1;
+  ctx.strokeRect(fx, fy - NAME_FIELD_H + 10, NAME_FIELD_W, NAME_FIELD_H);
+  drawText(m.nameBuf + "_", VIEW_W / 2, fy, NAME_FIELD_SIZE, COLOR.text);
+  drawText(m.nameBuf.length + " / " + PROFILE_NAME_MAX, fx + NAME_FIELD_W + 16, fy, 14,
+           m.nameBuf.length >= PROFILE_NAME_MAX ? COLOR.garbage : COLOR.dim, "left");
+  if (m.nameErr) drawText(m.nameErr, VIEW_W / 2, y + NAME_ERR_Y, NAME_ERR_SIZE, COLOR.lowhp);
+  const gx = VIEW_W / 2 - (NAME_GRID_COLS * NAME_CELL_W) / 2;
+  NAME_CELLS.forEach((cell, i) => {
+    const r = Math.floor(i / NAME_GRID_COLS), c = i % NAME_GRID_COLS;
+    const cx = gx + c * NAME_CELL_W + NAME_CELL_W / 2, cy = y + NAME_GRID_Y + r * NAME_CELL_H;
+    const sel = m.row === r && m.col === c;
+    if (sel) {
+      ctx.strokeStyle = COLOR.shield; ctx.lineWidth = 1;
+      ctx.strokeRect(cx - NAME_CELL_W / 2 + 4, cy - NAME_CELL_H + 14, NAME_CELL_W - 8, NAME_CELL_H - 8);
+    }
+    const word = cell.length > 1 || cell === " ";   // the three verbs, plus SPACE
+    drawText(nameCellLabel(cell), cx, cy, word ? NAME_VERB_SIZE : NAME_CHAR_SIZE,
+             sel ? COLOR.text : COLOR.menuIdle);
+  });
+  drawMenuHint(NAME_HINT, VIEW_W / 2, y + NAME_PANEL_H - 34);
 }
 
 // One slider row for the ship-rotation preference on the Controls screen (§10b). Readout is a

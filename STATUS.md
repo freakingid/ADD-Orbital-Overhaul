@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.30 · Changeset: CS031 · Phase: P2 · Registry: 87 · Levers: 18
+Version: 1.0.0.30 · Changeset: CS031 · Phase: P3 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS031
 
@@ -10,10 +10,32 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P2 · Registry: 87 · Levers: 18
   `lastUsed` → reset the runtime to shipped defaults, writing nothing → `loadSettings()` +
   `Achievements.init()`. Still no UI; nothing calls it until P4.
 
+- P3 — the `"nameentry"` screen: a 10×4 grid derived from `SCORES_CHARSET` + DEL/DONE/CANCEL, a raw
+  keydown passthrough for live typing, and the trimmed/case-insensitive validator. Renders and
+  validates only — it creates and renames nothing.
+
 ## Working / verified
 
-- Full suite on a full clone: **119 files, 119 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **120 files, 120 passed, 0 failed, 0 skipped, 0 timed out.**
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved since CS030 P3.
+- CS031 P3: the screen is wired in all three places — `menuInput`'s switch, `drawMenu`'s dispatch, and
+  the `pause` branch through `closePause()` (driven, not grepped: it lands on `"titlemenu"`).
+  `nameBuf`/`nameCtx`/`nameErr` are in **both** the `game` literal and `startGame()`'s reset.
+- **The raw keydown hook is placed AFTER both prior claimants** (the secret-code window, then the debug
+  numeric hook) and pinned there on the source — the harness's `window.addEventListener` is a no-op, so
+  the listener is unreferenceable and ordering can only be a source fact. Behaviour is driven through
+  `nameEntryKey()`, the function the hook calls. ⛔ Consequence, deliberate: on this screen **WASD is
+  text, not navigation, and `p` is text, not pause**; arrows, the whole pad, ENTER and ESC still work.
+- One gate the debug hook does not have: `!game.menu.modal`. The debug hook is covered there **by
+  accident** — an open dialog leaves its cursor on a non-value row, so `debugSelectedVar()` is already
+  false. This screen has no such accident, so the guard is explicit.
+- `test-cs031-p3.js` is mutation-checked: nine breakages (the `!DebugCode.armed` gate, rename's
+  own-profile exemption, the cap, `back`'s backspace half, commit's re-validation, the `startGame`
+  fields, the trim, the row clamp, the `drawMenu` branch) each turn the file red — worst 6 assertions.
+- ⛔ **`test-cs026-p3.js` §G TRAP 5 was NARROWED, not weakened** (the third time; CS029 P4 and CS030 P1
+  did the same). The three new menu fields are an EDIT to an existing line, not a new one, so
+  `DROPPED_LINES` could not express it — one regex folds that assignment back to its parent form, keyed
+  on all three field names, and every other byte of `startGame()` still has to match.
 - CS031 P2: writes are suppressed by **factoring, not a flag** — `returnToDefaults()` is now
   `restoreDefaultBindings(); saveSettings();` and `activate()` calls the save-free half. A
   suppression flag is global mutable state that an exception mid-`activate()` would leave set,
@@ -52,6 +74,15 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P2 · Registry: 87 · Levers: 18
   roster at all is still `p0`).
 
 ## Known issues
+
+- **FLAG-CS031-f — P3's handoff contract, which P4 consumes.** `openNameEntry(ctx, initial)` is the
+  ONLY way in. `ctx` = `{ mode:"add" }` or `{ mode:"rename", id }`, plus two optional fields P3 added
+  because "return to whatever screen raised it" needs them: `back`/`backIndex` (passed straight to
+  `gotoScreen`, defaulting to `"titlemenu"`) and **`onCommit(name)`**, a plain closure receiving the
+  validated, trimmed string — `openModal`'s `onConfirm` precedent, and where P4's roster op goes.
+  `nameCtx` is cleared BEFORE `onCommit` runs, so the closure is free to navigate. Two things P3
+  deliberately did not build, both P4's: the empty-roster case where Add must not be cancellable
+  (spec FORK-E), and any use of `mode`/`id` beyond the rename collision exemption.
 
 - ⛔ **FLAG-CS031-d — `game.stats` is a THIRD bleed vector, not covered by spec §4.3's step 3, and
   NOT fixed here (it is a design call, not an implementation gap).** Two non-tiered lifetime
@@ -133,8 +164,8 @@ None.
   instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   could migrate to `execSource()` whenever one of them is next open for other reasons.
-- **CS031 P3 — the name-entry screen.** Independent of P2; needs P1's roster for the collision check.
-- **CS031 P4 — the Choose Profile screen.** The first caller of `activate()`. Read FLAG-CS031-d and
+- **CS031 P4 — the Choose Profile screen.** The first caller of `activate()` and of P3's
+  `openNameEntry()` — read FLAG-CS031-f for the handoff contract. Also read FLAG-CS031-d and
   FLAG-CS031-e before wiring the verbs: the delete path's `activate()`/`remove()` order matters, and
   a switch made with a finished game's `game.stats` still live can hand the incoming profile two
   achievements it never earned.

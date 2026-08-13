@@ -763,8 +763,15 @@ let X = null;
       "game.celebration = null;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
-    eq(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function startGame()"))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — startGame()'s EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset and CS030 P1's pendingAch/celebration resets");
+    // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
+    // reset (`nameBuf` / `nameCtx` / `nameErr`), which is an EDIT to an existing line rather than a new
+    // one, so DROPPED_LINES cannot express it: the literal now wraps across two lines. Same principle
+    // though — fold that one assignment back to its parent form by NAME, and every other byte of
+    // startGame() still has to match. The pattern is anchored on all three field names, so a fourth
+    // field (or any other edit to that line) fails this trap rather than slipping through.
+    const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "" \};/, " };");
+    eq(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function startGame()")))), strip(bodyOf(ps, "function startGame()")),
+      "G: ⛔ TRAP 5 — startGame()'s EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets and CS031 P3's three name-entry menu fields");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),
