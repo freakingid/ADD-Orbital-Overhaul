@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.29 · Changeset: CS030 · Phase: P3 · Registry: 87 · Levers: 18
+Version: 1.0.0.29 · Changeset: CS030 · Phase: P4 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS030
 
@@ -31,9 +31,31 @@ Version: 1.0.0.29 · Changeset: CS030 · Phase: P3 · Registry: 87 · Levers: 18
     `test-cs018-p4.js`, `test-cs018-p6.js`, `test-cs024-p4/p5/p6/p6b/p6c.js`, `test-cs025-p1/p2/p5.js`,
     `test-cs026-p2/p3/p5/p6.js`, `test-cs027-p2/p6.js`, `test-cs029-p4.js`, `test-cs030-p1.js`.
 
+- P4 — the celebration panel itself, wired at **game over only** (§4.3/§4.4). `drawCelebration()` +
+  `celebrationMaxScroll()` / `celebrationScroll()` / `dismissCelebration()` / `drawCelebrationRow()`,
+  behind a `CELEB_*` geometry block. Called from `draw()`'s tail: **outside `drawHUD()`** (H cannot
+  hide it) and **before `drawMenu()`**, so draw order mirrors input priority. The gameover draw block
+  is byte-unchanged — *pinned* against the parent, not merely intended. Opens at the
+  `"dying"`→`"gameover"` seam when `game.pendingAch.length`: flush the bucket, `resetMenuNav()`, one
+  `AudioSys.achievement()` (FORK-CS030-F's cheapest default; still open at the P6 gate). Guards in
+  BOTH input handlers, each immediately before its own `game.entry` block — that ordering is the whole
+  of FORK-CS030-C's "panel first"; entry's arming is untouched. Registry 87 / levers 18, unmoved.
+  - `celebrationMaxScroll()` deliberately does **not** transcribe `achMaxScroll()`'s arithmetic. That
+    formula measures content height from row 0's *baseline* and so falls its own clip headroom short —
+    invisible at the viewer's 16px, not invisible here, where 44px of emblem headroom cut the bottom
+    row's emblem in half at full scroll. Measured from the clip top instead: shared-ceiling role kept,
+    arithmetic corrected, and pinned in the test off the build's own consts.
+  - Two older files **repointed, not weakened**: `test-v36-death.js` §E and `test-v36-scores.js`'s
+    `freshDeath()` now also clear `game.celebration` — the same "later phase named" treatment §E
+    already gave `game.entry` when v3.6 P6 put initials entry in front of the same confirm.
+
 ## Working / verified
 
-- Full suite on a full clone: **115 files, 115 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **116 files, 116 passed, 0 failed, 0 skipped, 0 timed out.**
+- **Both input guards mutation-checked**, not just asserted: deleting the gamepad half fails 15
+  assertions, deleting the keyboard half 21, and perturbing one number inside the gameover draw block
+  trips the parent byte-identity pin. The panel's layout was measured off a recording ctx (longest
+  real row renders to x=837 inside a panel ending at 1050; four rows fit with no scroll).
 - **Emblem legibility measured at r=32, not assumed** (CS028 P1 precedent). All eight clear:
   worst unit norm **0.962** (bar 1.000), tightest gap between two features meant to read apart
   **5.1px** (bar 4px; welded pairs like a spike foot on its ring counted separately, not flagged).
@@ -48,6 +70,13 @@ Version: 1.0.0.29 · Changeset: CS030 · Phase: P3 · Registry: 87 · Levers: 18
   `game.deliveryTicker = null`.
 
 ## Known issues
+
+- **FLAG-CS030-b (new, P4) — while the panel is up, the gamepad's Start is SWALLOWED, and dismissal
+  is silent.** Start is inert rather than dismissing, mirroring the initials-entry block's own
+  "nothing interrupts this" convention (confirm/back dismiss; the footer hint names both). Dismissal
+  plays no `AudioSys.ui()` blip because the phase prompt sanctioned exactly one audio touch (the
+  fanfare on open). Both are defensible at game over and both get louder at level end, where P5 has
+  the panel freezing live play — worth a look-call at the P6 gate rather than a silent choice.
 
 - **FLAG-CS030-a (new, P2) — `COLOR.ach` (`#ffcf5a`) is byte-identical to `TIER_COLOR[2]`
   (Gold).** The two pool emblems and the Gold tier emblem therefore ship in the *same colour*,
@@ -99,9 +128,10 @@ None.
   (see `## Known issues`) could migrate to `execSource()` whenever one of them is next open for
   other reasons.
 - CS030 in flight (the achievement celebration panel). P1 built the collector, P2 the emblem lab,
-  P3 (this session) pasted `ACH_EMBLEM` + `drawEmblem()` and the two registry rows. Remaining, per
-  `IMPLEMENTATION-PHASES-CS030.md`: the panel itself (draw/state/scroll/input, §4.3) and the
-  game-over + level-end integration points (§4.4).
+  P3 pasted `ACH_EMBLEM` + `drawEmblem()` and the two registry rows, P4 (this session) built the panel
+  and wired it at game over. Remaining, per `IMPLEMENTATION-PHASES-CS030.md`: P5's level-end
+  integration (§4.4) — which REUSES this panel wholesale and adds only the second call site plus
+  `update()`'s freeze — then the P6 gate and the P7 close.
 
 ## Playtest asks (open only — answered ones move to the log)
 

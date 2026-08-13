@@ -2964,6 +2964,25 @@ window.addEventListener("keydown", e => {
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
   keys[k] = true;
 
+  // CS030 P4 (FORK-CS030-C): the achievement celebration panel owns input while it is up. This guard
+  // sits IMMEDIATELY BEFORE the initials-entry block below, and that placement IS what "panel first"
+  // means — both are armed at the same "dying"->"gameover" seam, and the panel's opaque backdrop
+  // covers entry's slots, so nothing about entry's arming or draw needed touching. The `return` is
+  // load-bearing for exactly the reason the entry block's is: without it the confirm that just
+  // dismissed the panel would fall straight through into entryInput() or startGame() in the SAME
+  // keypress. ESC resolves as "dismiss" here rather than "pause" because this returns before the
+  // openPause() guard below — the same confirm->back->pause order handleMenuKey() already uses.
+  // Mirrored in handleGamepadMenu(), at the matching position; the two share celebrationScroll() /
+  // dismissCelebration() so they cannot drift.
+  if (game.celebration) {
+    if (!e.repeat) {
+      if (k === "arrowup" || k === "w") celebrationScroll(-1);
+      else if (k === "arrowdown" || k === "s") celebrationScroll(1);
+      else if (bindings.confirm.keys.includes(k) || bindings.back.keys.includes(k)) dismissCelebration();
+    }
+    return;
+  }
+
   // v3.6 P6: high-score initials entry (live only on "gameover", armed at the "dying"->"gameover"
   // seam) intercepts nav/confirm here — and returns, so a confirm that just committed the entry
   // (clearing game.entry) can't fall through to the startGame() check below in the SAME keypress.
@@ -3033,6 +3052,23 @@ function handleGamepadMenu() {
     if (pressedConfirm) menuInput("confirm");
     if (pressedBack)    menuInput("back");
     if (pressedStart)   menuInput("pause");   // Start fully resumes from any menu screen
+    return;
+  }
+
+  // (2.4) CS030 P4: the celebration panel — the MANDATORY mirror of the keydown guard. Without this
+  // half a controller player blows straight through the panel with Start and never sees it. It sits
+  // BEFORE the initials-entry block below for the same reason its keyboard twin does: both are armed
+  // at the same seam, and "panel first" (FORK-CS030-C) is delivered by input priority, so entry must
+  // not be reachable until the panel is dismissed. Edge-detected throughout (menuNavEdges is strictly
+  // edge-detected, gpPressed already excludes held-button repeats), so a held stick can't spin the
+  // scroll. Start is SWALLOWED, not acted on — same convention as the entry block below, and it is
+  // what stops Start reaching the startGame() chain at (3). Scroll/dismiss go through the same two
+  // functions the keyboard path calls.
+  if (game.celebration) {
+    const nav = menuNavEdges();
+    if (nav.up)   celebrationScroll(-1);
+    if (nav.down) celebrationScroll(1);
+    if (pressedConfirm || pressedBack) dismissCelebration();
     return;
   }
 
@@ -8164,6 +8200,21 @@ function updateDeath(dt) {
     game.lastScoreId = null;
     game.entry = (!game.debugRun && HighScores.qualifies(game.score)) ? { initials: [0, 0, 0], idx: 0 } : null;
     if (game.entry) resetMenuNav(); // a stick held through the spectacle mustn't fire a phantom first move
+    // CS030 P4 (§4.4): the achievement celebration panel opens at this SAME seam. killShip()'s final
+    // Achievements.evaluate() ran on the frame the ship died, so by here the bucket is complete —
+    // this is a flush, never a filter. The entry arming above is deliberately untouched: with both
+    // armed on a qualifying run the entry slots may render under the panel's own opaque backdrop,
+    // and it is the INPUT guards (which sit before entry's, in both handlers) that make this "panel
+    // first" (FORK-CS030-C). resetMenuNav() for the same held-stick reason as entry's.
+    // FORK-CS030-F is OPEN (a P6 gate question): one fanfare on open, routed through the existing
+    // AudioSys.achievement() rather than a new sound, so the gate can retune it to per-item or to
+    // silent without restructuring anything.
+    if (game.pendingAch.length) {
+      game.celebration = { items: game.pendingAch, scroll: 0 };
+      game.pendingAch = [];
+      resetMenuNav();
+      AudioSys.achievement();
+    }
   }
 }
 
@@ -9595,6 +9646,128 @@ function drawToasts() {
   });
 }
 
+// ---------- Achievement celebration panel (CS030 P4) ----------
+// The roll-call of everything banked in game.pendingAch since the last flush: one row per unlock,
+// [emblem] [name + tier badge] / [description]. An OVERLAY, not a modal replace (FORK-CS030-B) — it
+// draws its own menuPanel() chrome over whatever screen it sits on, exactly as drawMenu() has always
+// drawn over the game-over text, so that screen's own draw code is never gated, wrapped or touched.
+//
+// ⛔ THIS IS NOT PART OF THE MENU SYSTEM. game.menu.screen stays null, game.paused stays false,
+// menuActive() stays false. It therefore CANNOT use game.menu.scroll, which setAchTab() and every
+// gotoScreen() zero: the panel carries its OWN scroll on game.celebration = { items, scroll }, so an
+// unrelated menu action can never reset panel scroll, or vice versa (§2.6).
+//
+// Geometry is hoisted to consts for the same reason the ACH_* block is (CS013 P3):
+// celebrationMaxScroll() is called from the two INPUT handlers, which have no drawing context, and
+// has to derive the exact numbers drawCelebration() renders with. Panel position is deterministic
+// (VIEW_W/H and the panel's own w/h are fixed), so this needs no second menuPanel() call.
+const CELEB_PANEL_W = 820, CELEB_PANEL_H = 560;
+const CELEB_PANEL_X = (VIEW_W - CELEB_PANEL_W) / 2;   // menuPanel()'s own maths, mirrored (cf. ACH_PANEL_X)
+const CELEB_PANEL_Y = (VIEW_H - CELEB_PANEL_H) / 2;
+const CELEB_SUB_Y = CELEB_PANEL_Y + 82;               // the "N NEW UNLOCKS" count line, under menuPanel's title
+const CELEB_ROW_X = CELEB_PANEL_X + 40;               // a row's left edge — which is the emblem's left edge
+const CELEB_ROW0_Y = CELEB_PANEL_Y + 168;             // first row's NAME baseline
+const CELEB_ROW_STEP = 84;                            // row-to-row baseline spacing — playtest knob
+const CELEB_DESC_DY = 26;                             // description baseline, below the row's name baseline
+const CELEB_NAME_SIZE = 22;
+const CELEB_DESC_SIZE = 14;
+const CELEB_EMBLEM_DY = 4;                            // emblem centre, relative to the row's name baseline
+const CELEB_EMBLEM_GAP = 24;                          // clear air between the emblem's right edge and the text
+const CELEB_ROW_CLIP_TOP = CELEB_ROW0_Y - 44;         // headroom above row 0's emblem, below the count line
+const CELEB_ROW_CLIP_BOTTOM = CELEB_PANEL_Y + 484;    // headroom above the footer hint
+const CELEB_ROW_VISIBLE_H = CELEB_ROW_CLIP_BOTTOM - CELEB_ROW_CLIP_TOP;
+const CELEB_HINT_Y = CELEB_PANEL_Y + 522;
+const CELEB_HINT = "↑↓ scroll    ENTER / A / ESC / B  continue";
+
+// The panel's ONE scroll ceiling — the game.celebration.items analogue of achMaxScroll(), and a
+// top-level function for the same reason: drawCelebration() clamps with it, and so do both input
+// handlers, so the renderer must never grow its own copy of this maths.
+//
+// ⚠ The content height is measured from the CLIP TOP, not from row 0's baseline. achMaxScroll()
+// measures from the baseline and so falls its own headroom short — at full scroll the Achievements
+// viewer's last description sits a shade under its clip. That is invisible there (16px of headroom
+// against a 15px line) and would NOT be invisible here: this panel's headroom is 44px, sized for an
+// emblem that stands 28px above the baseline, so transcribing that formula clipped over half of the
+// bottom row's emblem. The ROLE is the analogue — one shared, row-count-derived ceiling — not the
+// arithmetic. Measured from the clip top, full scroll lands a row's lowest ink exactly on the clip
+// bottom. That lowest ink is normally the description's; the emblem only overtakes it once
+// celebrationEmblemSize is cranked past CELEB_DESC_DY + CELEB_DESC_SIZE (40), which is why the knob
+// is read here. Past ~40 that knob also lets adjacent rows touch — a consequence of the slider, not
+// of the shipped layout, whose default (32) leaves 20px of air between emblems.
+function celebrationMaxScroll() {
+  const n = game.celebration ? game.celebration.items.length : 0;
+  if (n === 0) return 0;
+  const rowBottom = Math.max(CELEB_DESC_DY + CELEB_DESC_SIZE, CELEB_EMBLEM_DY + DEBUG.celebrationEmblemSize);
+  const contentH = (CELEB_ROW0_Y - CELEB_ROW_CLIP_TOP) + (n - 1) * CELEB_ROW_STEP + rowBottom;
+  return Math.max(0, contentH - CELEB_ROW_VISIBLE_H);
+}
+
+// The panel's two verbs. BOTH input paths — the keydown listener and handleGamepadMenu() — call
+// THESE rather than carrying their own copy of the arithmetic: a fix that lands on one handler and
+// not the other is the named risk for this feature (spec §5.1). `dir` is -1 (up) / +1 (down).
+function celebrationScroll(dir) {
+  const c = game.celebration;
+  if (!c) return;
+  c.scroll = Math.max(0, Math.min(celebrationMaxScroll(), c.scroll + dir * DEBUG.celebrationScrollStep));
+}
+// Confirm/back dismisses UNCONDITIONALLY, at any scroll position — the Achievements viewer's own
+// convention (§2.6, FORK-CS030-E). No "scroll to the bottom before you can leave" gate exists
+// anywhere in this codebase's menu idiom, and the panel does not invent one; the ▲/▼ affordance is
+// the shipped mitigation for a player who dismisses without having looked at everything.
+function dismissCelebration() {
+  game.celebration = null;
+}
+
+// One row: the emblem, then the name (carrying its tier badge, in that tier's colour) over the
+// description. Same two-line stack and the same lit/dim colour convention as drawAchRow(); the badge
+// string is built exactly as onUnlock()'s toast label is ("Name — Gold"), so the panel and the toast
+// that fired during play name the same unlock the same way.
+function drawCelebrationRow(item, x, ry) {
+  const r = DEBUG.celebrationEmblemSize;
+  drawEmblem(x + r, ry + CELEB_EMBLEM_DY, r, item.tierIdx, item.pool);
+  // ⛔ typeof, never truthiness — tierIdx 0 is Bronze, a VALID tier (see drawEmblem's header).
+  const tiered = typeof item.tierIdx === "number";
+  const col = tiered ? TIER_COLOR[item.tierIdx] : COLOR.ach;
+  const tx = x + 2 * r + CELEB_EMBLEM_GAP;
+  drawText(tiered ? item.name + " — " + TIER_NAMES[item.tierIdx] : item.name,
+           tx, ry, CELEB_NAME_SIZE, col, "left");
+  drawText(item.desc, tx, ry + CELEB_DESC_DY, CELEB_DESC_SIZE, COLOR.menuIdle, "left");
+}
+
+// Called from draw()'s tail, OUTSIDE drawHUD() — the standing rule at drawHUD's header is that
+// menus, toasts and the game-over text stay in draw(), so Capture's H toggle only ever hides the
+// always-on overlay. ⛔ H MUST NOT HIDE THIS PANEL. Self-gated on game.celebration, like its
+// drawCaption()/drawLevelBanner() siblings, so the call site stays a bare call.
+// menuPanel() fills before it strokes, so its own near-opaque backdrop is what puts the panel in
+// front of whatever is underneath — there is no separate dimming pass and none is needed.
+function drawCelebration() {
+  const c = game.celebration;
+  if (!c) return;
+  const { x } = menuPanel(CELEB_PANEL_W, CELEB_PANEL_H, "ACHIEVEMENTS UNLOCKED");
+  const n = c.items.length;
+  drawText(n === 1 ? "1 NEW UNLOCK" : n + " NEW UNLOCKS", VIEW_W / 2, CELEB_SUB_Y, 14, COLOR.dim);
+
+  // Clamp against the same ceiling both input handlers clamp against, then clip the row region so a
+  // scrolled row can never spill past the panel or under the header/footer — drawAchievements()'s
+  // idiom, reproduced rather than shared (that renderer reads game.menu.scroll and this one must not).
+  const maxScroll = celebrationMaxScroll();
+  c.scroll = Math.max(0, Math.min(maxScroll, c.scroll));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, CELEB_ROW_CLIP_TOP, CELEB_PANEL_W, CELEB_ROW_VISIBLE_H);
+  ctx.clip(); // not a fill — GDD §3.2's no-fills rule gains no new exception here
+  c.items.forEach((it, i) => drawCelebrationRow(it, CELEB_ROW_X, CELEB_ROW0_Y + i * CELEB_ROW_STEP - c.scroll));
+  ctx.restore();
+
+  // Scroll affordance: drawn OUTSIDE the clip like the header/footer chrome, and only while there is
+  // anything to scroll — ▲ iff something sits above, ▼ iff something sits below.
+  if (maxScroll > 0) {
+    if (c.scroll > 0)         drawText("▲", VIEW_W / 2, CELEB_ROW_CLIP_TOP - 4, 16, COLOR.menuIdle, "center");
+    if (c.scroll < maxScroll) drawText("▼", VIEW_W / 2, CELEB_ROW_CLIP_BOTTOM + 10, 16, COLOR.menuIdle, "center");
+  }
+  drawMenuHint(CELEB_HINT, VIEW_W / 2, CELEB_HINT_Y);
+}
+
 // Background stars scattered across the whole world (count scales with world area
 // to preserve the original on-screen density). Drawn in screen space, wrap-aware,
 // so the field scrolls seamlessly and never shows a tiling repeat or an edge seam.
@@ -9795,6 +9968,13 @@ function draw() {
       drawMenuHint(GAMEOVER_HINT, VIEW_W/2, GAMEOVER_HINT_Y, GAMEOVER_HINT_SIZE);
     }
   }
+
+  // CS030 P4 (§2.5/§2.7): the achievement celebration panel, an OVERLAY sharing drawMenu()'s tail
+  // slot — the gameover block above is byte-unchanged, ungated and unaware of it; this simply draws
+  // on top. It sits BEFORE drawMenu() so DRAW ORDER MIRRORS INPUT PRIORITY: the keydown listener
+  // routes to an open menu (branch 2) before it ever reaches the panel's guard (branch 3), so
+  // whatever owns input has to be the thing on top. Outside drawHUD(), so H never hides it.
+  drawCelebration();
 
   // Drawn after the gameover text so the system menu overlays it (v3.0 P4); for a mid-game pause the
   // gameover block is skipped, so this still sits above the HUD as before (F8).

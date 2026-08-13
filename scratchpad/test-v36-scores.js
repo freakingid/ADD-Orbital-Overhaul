@@ -123,12 +123,19 @@ function toGameover() {
   for (let i = 0; i < frames; i++) update(DT);
 }
 // A clean run into "gameover" with a chosen score/wave/delivered, empty field (no stray detonations).
+// CS030 P4: a run that banked achievement unlocks now also opens the celebration panel at this seam,
+// and that panel's input guard sits BEFORE game.entry's in both handlers — so a confirm would dismiss
+// the panel instead of reaching entryInput(). This file's subject is the high-score table, not which
+// modals queue in front of it (the panel has its own test, test-cs030-p4.js §E), so the helper
+// dismisses it here. NAMED, not worked around: without this line every §F/§G/§H press below is
+// answered by the panel, and which runs bank an unlock depends on the achievement thresholds.
 function freshDeath(score, wave, delivered) {
   startGame();
   game.score = score; game.wave = wave; game.stats.delivered = delivered;
   game.debris.length = 0; game.hunters.length = 0; game.saucers.length = 0;
   killShip();
   toGameover();
+  game.celebration = null;
 }
 
 // ================= (A) storage isolation: settings/achievements keys untouched =====================

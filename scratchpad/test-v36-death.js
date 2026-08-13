@@ -250,7 +250,13 @@ function stepDeath() { update(DT); }
   // commits initials instead of starting a game (see test-v36-scores.js §F for that behaviour) — an
   // orthogonal, later-phase concern. Clear it here so this P5-only assertion (the confirm binding
   // genuinely still reaches startGame once nothing is intercepting it) stays isolated.
+  // CS030 P4 added a SECOND interceptor at the same seam, on the same grounds and with priority over
+  // game.entry: a run that banked achievement unlocks opens the celebration panel, whose confirm
+  // dismisses the panel rather than starting a game (see test-cs030-p4.js §E). Same treatment, named
+  // rather than worked around — this assertion is about the startGame() call site, not about which
+  // modals sit in front of it.
   game.entry = null;
+  game.celebration = null;
   keydown(confirmKey);
   assert(game.state === "playing", "E: confirm at 'gameover' DOES start a new game (unchanged site)");
 })();
