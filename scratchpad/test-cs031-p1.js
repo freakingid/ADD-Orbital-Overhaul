@@ -72,9 +72,15 @@ const roster = (lastUsed, ids, seq) => JSON.stringify({
     "A: ⛔ Profiles.init() is called on the line immediately above loadSettings() — the first caller of keyFor()");
 
   // ⛔ init() must not reach for Achievements (defined ~2500 lines below; a TDZ throw at boot).
+  // NARROWED BY CS031 P2, from the whole module to init()'s own body: activate() calls
+  // Achievements.save()/init() by design (spec §2.4) — that reference resolves at CALL time, and
+  // activate() never runs during boot. The invariant P1 owns is init()'s, and it is unchanged.
   const mod = blockAt(stripped, iMod + 1);
   assert(mod.length > 0, "A: (setup) the module brace-matched");
-  assert(!/\bAchievements\b/.test(mod), "A: ⛔ nothing in the Profiles module references `Achievements`");
+  const initBody = blockAt(mod, mod.indexOf("\n  init() {") + 1);
+  assert(initBody.length > 0, "A: (setup) init() brace-matched inside the module");
+  assert(!/\bAchievements\b/.test(initBody),
+    "A: ⛔ nothing in Profiles.init() references `Achievements` — init() runs at boot, ~2500 lines above that module");
 
   // ⛔ the roster is an EXPLICIT key — localStorage is never enumerated (spec §2.5).
   for (const needle of ["localStorage.key(", "localStorage.length", "Object.keys(localStorage", "for (const k in localStorage"]) {

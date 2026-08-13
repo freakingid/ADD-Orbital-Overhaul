@@ -4458,18 +4458,26 @@ function capturePadRebind(btn) {
   saveSettings();
   AudioSys.ui(true);
 }
-// Controls-screen "Return to Defaults": resets rebindable key/pad bindings ONLY.
-// FLAG-10a (CS010 §10b): this deliberately does NOT reset settings.shipTurnScale — Paul asked that the
-// rotation-speed slider return to 100% MANUALLY, not via this button. Do NOT "fix" it to also reset
-// shipTurnScale; that would reverse an explicit design call. (Counter-intuitive because the slider row
-// lives on this same screen, hence this comment.)
-function returnToDefaults() {
+// CS031 P2: the binding reset itself, FACTORED OUT of returnToDefaults() below so a profile switch can
+// reuse it without the saveSettings() that follows it there. ⛔ Profiles.activate() must reset the
+// runtime while writing NOTHING — mid-switch a save lands on whichever key activeId names at that
+// instant, corrupting either the profile being left or the one being entered (spec §4.3). Deep copy:
+// `.slice()` and a fresh axis object, so mutating a binding can never reach back into the snapshot.
+function restoreDefaultBindings() {
   for (const name of REBINDABLE) {
     const d = DEFAULT_BINDINGS[name];
     bindings[name].keys = d.keys.slice();
     bindings[name].buttons = d.buttons.slice();
     bindings[name].axis = d.axis ? { index: d.axis.index, dir: d.axis.dir } : null;
   }
+}
+// Controls-screen "Return to Defaults": resets rebindable key/pad bindings ONLY.
+// FLAG-10a (CS010 §10b): this deliberately does NOT reset settings.shipTurnScale — Paul asked that the
+// rotation-speed slider return to 100% MANUALLY, not via this button. Do NOT "fix" it to also reset
+// shipTurnScale; that would reverse an explicit design call. (Counter-intuitive because the slider row
+// lives on this same screen, hence this comment.)
+function returnToDefaults() {
+  restoreDefaultBindings();
   saveSettings();
 }
 
@@ -4507,6 +4515,17 @@ const PROFILE_NAME_MAX = 12;                  // characters, measured after trim
 // purpose: Achievements.STORAGE_KEY is unreachable from here (TDZ, above), and both strings are
 // frozen by rule, so a literal cannot drift out of step with the symbol it duplicates.
 const PROFILE_LEGACY_PROBE = ["afd_settings_v1", "afd_achievements_v2"];
+
+// CS031 P2 — PRISTINE SNAPSHOTS of the two shipped-default tables activate() restores. Same idiom, and
+// the same reason, as DEFAULT_BINDINGS (L2828): capture the literal's own values ONCE, before anything
+// has applied a player's save over them, so the reset has a source of truth to read rather than a
+// retyped constant that drifts. ⛔ THEIR PLACEMENT IS THE INVARIANT: below every literal they copy
+// (AudioSys L1176, settings L3275) and ABOVE loadSettings()'s boot call below — the first thing in the
+// build that writes either. Nothing between those points mutates them. test-cs031-p2.js §B pins that
+// non-vacuously, by seeding a store and checking these still hold the shipped values.
+// Every field in both is a primitive, so the spread IS a deep copy.
+const SETTINGS_DEFAULTS  = { ...settings };
+const AUDIO_VOL_DEFAULTS = { ...AudioSys.vol };
 
 const Profiles = {
   activeId: PROFILE_LEGACY,   // ⛔ defaults to the legacy id, so a build that never loads a roster keys
@@ -4633,6 +4652,67 @@ const Profiles = {
     // flag (CS031 P5); until then activeId is the legacy id, so this build stores exactly where the
     // pre-profile build did and an untouched machine cannot tell the difference.
     this.firstBoot = true;
+  },
+
+  // --- The runtime switch (CS031 P2, spec §4.3). Returns false for an id the roster does not hold. ---
+  // Title-only by design (FORK-I); the SCREEN that calls this enforces that, not this function.
+  //
+  // ⛔ RESET, THEN LOAD — never load alone. Both loaders are written for a COLD boot and are CORRECT AS
+  // THEY STAND; the fix belongs on this side of the call, not in them:
+  //   * loadSettings() applies a saved blob OVER the live state with NO else-branch on seven of its
+  //     eight fields (spec §2.2) — that is exactly what makes the standing known-value-else-default rule
+  //     work, so an unknown or absent key leaves the runtime default in place and a removed field needs
+  //     no migration shim. ⛔ Do not add else-branches to it.
+  //   * Achievements.init() clears three collections but never `lifetime`, and loadCounters() copies
+  //     only the keys a blob HAS (spec §2.3) — shared by the v2 load and the v1 migration by design.
+  //     ⛔ Do not restructure it.
+  // Without step 3, a switch therefore hands the incoming profile the OUTGOING one's volumes, bindings,
+  // music track, voice, captions, auto-shield and debug knobs, plus its entire lifetime progress — and
+  // deriveLifetime() then silently re-derives that player's tier badges onto a stranger.
+  //
+  // ⛔ NOTHING IN STEP 3 MAY WRITE. returnToDefaults() ends with saveSettings(), and the Reset-All-Debug
+  // menu row calls saveSettings() right after resetAllDebug(). Calling either of those consumers here
+  // writes a defaults blob into a store — and WHICH store depends on whether step 2 has already run, so
+  // it corrupts either the profile being left or the one being entered. The bindings half is therefore
+  // called through restoreDefaultBindings(), the save-free function returnToDefaults() was factored
+  // into; resetAllDebug() was already save-free and its menu caller keeps its own save.
+  activate(id) {
+    if (!this.byId(id)) return false;
+
+    // 1. Flush the OUTGOING profile at the key it still owns — activeId does not move until step 2.
+    //    (Achievements.save() is a no-op during a debug run, by its own standing gate. Correct: a debug
+    //    run must not persist progress, and abandoning one by switching profiles is no exception.)
+    saveSettings();
+    Achievements.save();
+
+    // 2. The switch itself, plus the roster write that makes it the next boot's profile.
+    this.activeId = id;
+    this.lastUsed = id;
+    this.save();
+
+    // 3. Reset the runtime to its SHIPPED defaults — every one derived from its single source of truth.
+    Object.assign(settings, SETTINGS_DEFAULTS);
+    Object.assign(AudioSys.vol, AUDIO_VOL_DEFAULTS);
+    restoreDefaultBindings();
+    resetAllDebug();
+    // Every lifetime counter ships at 0, SUM and MAX alike, so the literal's own KEY SET is the source
+    // of truth here and no default is retyped.
+    for (const k in Achievements.lifetime) Achievements.lifetime[k] = 0;
+
+    // 4-5. Now load the incoming profile OVER those defaults — precisely what both contracts assume.
+    loadSettings();
+    Achievements.init();
+
+    // 6. Push the result to the two LIVE runtime shadows that neither loader moves, or the incoming
+    //    player hears the outgoing player's mix in the outgoing player's voice. The four gain nodes hold
+    //    their own value (only setVol writes them) and VOICE_PARAMS is a live binding only setStyle()
+    //    re-points. loadSettings() does call setStyle — but ONLY after `if (!raw) return`, so it never
+    //    runs for a profile with no saved blob, which is EVERY newly created one. At boot neither shadow
+    //    exists yet (no audio graph until the first keypress), which is why the cold path has never
+    //    needed this; both calls are inert without an AudioContext, so this stays headless-safe.
+    for (const c of Object.keys(AudioSys.vol)) AudioSys.setVol(c, AudioSys.vol[c]);
+    VoiceSys.setStyle(settings.voiceStyle);
+    return true;
   }
 };
 

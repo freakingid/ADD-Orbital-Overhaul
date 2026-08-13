@@ -1,16 +1,46 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.30 · Changeset: CS031 · Phase: P1 · Registry: 87 · Levers: 18
+Version: 1.0.0.30 · Changeset: CS031 · Phase: P2 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS031
 
 - P1 — the `Profiles` module (roster, `keyFor()`, silent legacy migration), settings + achievements
   keys routed per-profile, the `LEGACY_KEY` v1 fallback gated to `p0`, additive
   `profileId`/`profileName` on new high-score records. No UI; nothing player-visible moved.
+- P2 — `Profiles.activate(id)`: flush the outgoing profile at its own key → switch + persist
+  `lastUsed` → reset the runtime to shipped defaults, writing nothing → `loadSettings()` +
+  `Achievements.init()`. Still no UI; nothing calls it until P4.
 
 ## Working / verified
 
-- Full suite on a full clone: **118 files, 118 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **119 files, 119 passed, 0 failed, 0 skipped, 0 timed out.**
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved since CS030 P3.
+- CS031 P2: writes are suppressed by **factoring, not a flag** — `returnToDefaults()` is now
+  `restoreDefaultBindings(); saveSettings();` and `activate()` calls the save-free half. A
+  suppression flag is global mutable state that an exception mid-`activate()` would leave set,
+  silently disabling every later save; the split has no such failure mode. `resetAllDebug()` was
+  already save-free, so its menu consumer keeps its own `saveSettings()` untouched.
+- Defaults are read from `SETTINGS_DEFAULTS` / `AUDIO_VOL_DEFAULTS` (pristine spreads of the
+  `settings` and `AudioSys.vol` literals, taken above the boot `loadSettings()`), `DEFAULT_BINDINGS`
+  via the helper, and the registry via `resetAllDebug()`. No default is retyped.
+- **Save-site audit (the phase prompt's ask): nothing can fire mid-switch.** All eleven
+  `saveSettings()` sites are input-driven menu handlers (`menuSound` ×4, `menuDifficulty`,
+  `debugEntryCommit`, `menuDebug` ×3, `captureKeyRebind`, `capturePadRebind`, `returnToDefaults`,
+  `adjustShipTurnScale`); `Achievements.save()`'s are `onUnlock`, `tick`, `killShip` and
+  `quitToTitle`. `activate()` is synchronous and yields to no event-loop turn, so none of them can
+  interleave, and `quitToTitle()`'s flush runs strictly before any title-screen switch. Each writes
+  whatever key `activeId` names at the time, which is correct on both sides of a switch.
+- **Two live runtime shadows neither loader moves, handled as `activate()` step 6** (verified by
+  §C): the four gain nodes (only `setVol` writes them) and `VOICE_PARAMS` (only `setStyle`
+  re-points it). `loadSettings()` does call `setStyle` — but below `if (!raw) return`, so never for
+  a profile with no blob, which is **every newly created one**. Without step 6 the incoming player
+  hears the outgoing player's mix in the outgoing player's voice. Both calls are inert with no
+  `AudioContext`.
+- `test-cs031-p2.js` is mutation-checked: nine deliberate breakages of `activate()` (each reset
+  dropped in turn, the writing wrapper substituted, the flush dropped, the flush moved after the
+  switch) each turn the file red, the worst on 21 assertions across three sections.
+- `test-cs031-p1.js` §A's "nothing in the Profiles module references `Achievements`" is **narrowed
+  to `init()`'s own body** — `activate()` references it by design (spec §2.4), resolved at call
+  time. The invariant P1 owns is unchanged and still non-vacuous.
 - CS031 P1: `Profiles` sits immediately above `const STORAGE_KEY`, `Profiles.init()` immediately
   above `loadSettings()`. `p0`'s stores **are** the three frozen keys — the migration mints a roster
   entry and copies/moves/rewrites nothing, pinned byte-for-byte by `test-cs031-p1.js` §C. Every
@@ -23,6 +53,24 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P1 · Registry: 87 · Levers: 18
 
 ## Known issues
 
+- ⛔ **FLAG-CS031-d — `game.stats` is a THIRD bleed vector, not covered by spec §4.3's step 3, and
+  NOT fixed here (it is a design call, not an implementation gap).** Two non-tiered lifetime
+  achievements read the per-GAME stats rather than the lifetime counters — `untouchable`
+  (`game.wave >= 10 && !s.everBelowHalf`) and `max_haul` (`s.maxChainVisit`) — and `game.stats` is
+  reset **only** in `startGame()`, so at the title after a game it still holds the last game's
+  values. **Measured:** with `game.wave = 12`, `everBelowHalf = false`, `maxChainVisit = true`,
+  switching to a fresh profile hands it *both* achievements at `deriveLifetime()`, and B's next
+  `Achievements.save()` persists them. Not reachable today — nothing calls `activate()` until P4 —
+  but P4 wires it to a title-screen verb, which is exactly the state where it bites. Candidate
+  fixes differ materially (reset `game.stats` in `activate()`; gate the switch on a clean title
+  state; teach `deriveLifetime()` to skip per-game predicates), so it wants Paul's call, and the P6
+  gate should look for it.
+- **FLAG-CS031-e — two ordering notes for P4/P5 that `activate()` deliberately does not decide.**
+  (1) `Profiles.firstBoot` is not cleared by `activate()`, matching P1's convention that roster ops
+  don't touch it — P5's title routing must clear it or read `roster.length` instead. (2) Per §4.5
+  the delete path must `activate()` another profile in the same act; do it **before** `remove()`,
+  or step 1 flushes the current runtime into the just-removed profile's store (harmless — it is
+  that profile's own data, at its own key — but it re-creates a store the roster no longer names).
 - **FLAG-CS031-a — one P1 choice the spec did not name: the roster blob carries a monotonic `seq`.**
   Ids are minted `p0`, `p1`, … from it and a removed profile's id is **never** recycled, because
   `remove()` is roster-only and does not clear that profile's stores — a recycled id would resurrect
@@ -85,10 +133,11 @@ None.
   instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   could migrate to `execSource()` whenever one of them is next open for other reasons.
-- **CS031 P2 — `activate()`, the teardown/reload path.** It needs P1's `keyFor()` and must read
-  `PLANNED-FEATURES-CS031.md` §2.2 / §2.3 / §4.3 in full first: seven of `loadSettings()`'s eight
-  fields bleed across a switch, and `Achievements.init()` never zeroes the twenty lifetime counters.
-  Reset to shipped defaults with writes SUPPRESSED, *then* load.
+- **CS031 P3 — the name-entry screen.** Independent of P2; needs P1's roster for the collision check.
+- **CS031 P4 — the Choose Profile screen.** The first caller of `activate()`. Read FLAG-CS031-d and
+  FLAG-CS031-e before wiring the verbs: the delete path's `activate()`/`remove()` order matters, and
+  a switch made with a finished game's `game.stats` still live can hand the incoming profile two
+  achievements it never earned.
 
 ## Playtest asks (open only — answered ones move to the log)
 
