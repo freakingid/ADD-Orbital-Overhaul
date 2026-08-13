@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.30 · Changeset: CS031 · Phase: P3 · Registry: 87 · Levers: 18
+Version: 1.0.0.30 · Changeset: CS031 · Phase: P4 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS031
 
@@ -13,10 +13,36 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P3 · Registry: 87 · Levers: 18
 - P3 — the `"nameentry"` screen: a 10×4 grid derived from `SCORES_CHARSET` + DEL/DONE/CANCEL, a raw
   keydown passthrough for live typing, and the trimmed/case-insensitive validator. Renders and
   validates only — it creates and renames nothing.
+- P4 — the `"profiles"` screen: rows are `[...roster, "Add Profile"]`. A left/right VERB COLUMN
+  (`PROFILE_VERBS = ["SWITCH","RENAME","DELETE"]`, `game.menu.col`, resets to 0 on every row move) is
+  the one affordance chosen for Rename/Delete — no modifier key. Confirm at the default column
+  (SWITCH) reproduces the spec's plain text verbatim: `Profiles.activate(id)` + return to the title
+  menu. Delete goes through `openModal()` untouched (`index: 1` CANCEL default still fires first).
+  `blankLegacyStores()` overwrites p0's two frozen keys with the shipped-default blob through
+  `saveSettings()`/`Achievements.save()` themselves — never `removeItem` — by round-tripping through
+  `Profiles.activate(PROFILE_LEGACY)` first (a correct, harmless flush of whoever was active before)
+  regardless of whether p0 was the one active; non-legacy profiles' suffixed keys ARE `removeItem`'d.
+  `profileDelete()` always `activate()`s a replacement before `Profiles.remove()` when the deleted
+  profile was active, so `activeId` is never left dangling (closes FLAG-CS031-b).
 
 ## Working / verified
 
-- Full suite on a full clone: **120 files, 120 passed, 0 failed, 0 skipped, 0 timed out.**
+- CS031 P4: `test-cs031-p4.js`, 82 assertions, drives the real `menuProfiles()`/`drawProfiles()` (no
+  reimplemented roster or store logic). Covers: Add opens `nameentry{mode:"add", back:"profiles"}`
+  and the roster grows on commit with no store written for the new profile until it is first saved;
+  the `PROFILE_MAX` cap dims the Add row and no-ops confirm (`drawProfiles()`'s own source grepped for
+  the shared `COLOR.dim` idiom); Switch end-to-end through the screen reproduces P2's no-bleed
+  contract (a fresh profile gets shipped defaults and zeroed counters, switching back round-trips the
+  outgoing flush); Rename prefills from the highlighted row's OWN name, independent of which profile
+  is active; Delete non-active removes its suffixed keys, Delete ACTIVE re-activates another with
+  `activeId` never dangling; three shapes of deleting p0 (active, not active, sole other profile) each
+  confirm the frozen keys survive holding an empty/default blob and — the specific regression this
+  file exists to catch — that the CURRENTLY active OTHER profile's live runtime and its own suffixed
+  store are untouched by the p0-blanking detour; the last-remaining-profile refusal and the modal's
+  untouched CANCEL default; the FORK-E empty-roster trap (`back`/`pause` inert with zero profiles);
+  the verb-column's wrap-both-ways-and-reset-per-row shape; render smoke across populated/capped/empty
+  rosters, headless throughout.
+- Full suite on a full clone: **121 files, 121 passed, 0 failed, 0 skipped, 0 timed out.**
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved since CS030 P3.
 - CS031 P3: the screen is wired in all three places — `menuInput`'s switch, `drawMenu`'s dispatch, and
   the `pause` branch through `closePause()` (driven, not grepped: it lands on `"titlemenu"`).
@@ -75,7 +101,7 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P3 · Registry: 87 · Levers: 18
 
 ## Known issues
 
-- **FLAG-CS031-f — P3's handoff contract, which P4 consumes.** `openNameEntry(ctx, initial)` is the
+- **FLAG-CS031-f — P3's handoff contract; CONSUMED by P4.** `openNameEntry(ctx, initial)` is the
   ONLY way in. `ctx` = `{ mode:"add" }` or `{ mode:"rename", id }`, plus two optional fields P3 added
   because "return to whatever screen raised it" needs them: `back`/`backIndex` (passed straight to
   `gotoScreen`, defaulting to `"titlemenu"`) and **`onCommit(name)`**, a plain closure receiving the
@@ -85,31 +111,27 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P3 · Registry: 87 · Levers: 18
   (spec FORK-E), and any use of `mode`/`id` beyond the rename collision exemption.
 
 - ⛔ **FLAG-CS031-d — `game.stats` is a THIRD bleed vector, not covered by spec §4.3's step 3, and
-  NOT fixed here (it is a design call, not an implementation gap).** Two non-tiered lifetime
-  achievements read the per-GAME stats rather than the lifetime counters — `untouchable`
-  (`game.wave >= 10 && !s.everBelowHalf`) and `max_haul` (`s.maxChainVisit`) — and `game.stats` is
-  reset **only** in `startGame()`, so at the title after a game it still holds the last game's
-  values. **Measured:** with `game.wave = 12`, `everBelowHalf = false`, `maxChainVisit = true`,
-  switching to a fresh profile hands it *both* achievements at `deriveLifetime()`, and B's next
-  `Achievements.save()` persists them. Not reachable today — nothing calls `activate()` until P4 —
-  but P4 wires it to a title-screen verb, which is exactly the state where it bites. Candidate
-  fixes differ materially (reset `game.stats` in `activate()`; gate the switch on a clean title
-  state; teach `deriveLifetime()` to skip per-game predicates), so it wants Paul's call, and the P6
-  gate should look for it.
-- **FLAG-CS031-e — two ordering notes for P4/P5 that `activate()` deliberately does not decide.**
-  (1) `Profiles.firstBoot` is not cleared by `activate()`, matching P1's convention that roster ops
-  don't touch it — P5's title routing must clear it or read `roster.length` instead. (2) Per §4.5
-  the delete path must `activate()` another profile in the same act; do it **before** `remove()`,
-  or step 1 flushes the current runtime into the just-removed profile's store (harmless — it is
-  that profile's own data, at its own key — but it re-creates a store the roster no longer names).
+  NOT fixed here (it is a design call, not an implementation gap). STILL OPEN, and now CODE-reachable.**
+  Two non-tiered lifetime achievements read the per-GAME stats rather than the lifetime counters —
+  `untouchable` (`game.wave >= 10 && !s.everBelowHalf`) and `max_haul` (`s.maxChainVisit`) — and
+  `game.stats` is reset **only** in `startGame()`, so at the title after a game it still holds the
+  last game's values. **Measured:** with `game.wave = 12`, `everBelowHalf = false`,
+  `maxChainVisit = true`, switching to a fresh profile hands it *both* achievements at
+  `deriveLifetime()`, and B's next `Achievements.save()` persists them. P4's SWITCH verb now calls
+  `Profiles.activate()` from exactly the title-screen state the measurement above describes, so the
+  bleed is live in the code today — **still not PLAYER-reachable** only because nothing routes to
+  `"profiles"` from `MENU_TITLE` until P5. P5 must not wire that row without Paul deciding a fix first
+  (reset `game.stats` in `activate()`; gate the switch on a clean title state; teach
+  `deriveLifetime()` to skip per-game predicates) — the P6 gate should look for it either way.
+- **FLAG-CS031-e note 1 — `Profiles.firstBoot` is not cleared by `activate()`.** Matches P1's
+  convention that roster ops don't touch it — P5's title routing must clear it or read
+  `roster.length` instead. (Note 2, the delete-path ordering, is CLOSED by P4: `profileDelete()`
+  always `activate()`s a replacement before `Profiles.remove()`.)
 - **FLAG-CS031-a — one P1 choice the spec did not name: the roster blob carries a monotonic `seq`.**
   Ids are minted `p0`, `p1`, … from it and a removed profile's id is **never** recycled, because
   `remove()` is roster-only and does not clear that profile's stores — a recycled id would resurrect
   a deleted player's achievements. `load()` raises a hand-edited-low `seq` to the roster's own floor.
   Additive on CS031's own key; flagged so P2/P4 know it exists.
-- **FLAG-CS031-b — `Profiles.remove()` deliberately leaves `activeId` naming a removed profile.**
-  It is roster-only by the phase prompt, and `activate()` does not exist until P2. Per spec §4.5 the
-  P4 caller must `activate()` another profile in the same act; nothing in P1 calls `remove()`.
 
 - **FLAG-CS030-c — two resume details for the level-end panel.** (1) The fanfare plays over live,
   un-ducked gameplay music at the level-end call site (the panel is deliberately not a menu). (2) A
@@ -164,11 +186,11 @@ None.
   instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   could migrate to `execSource()` whenever one of them is next open for other reasons.
-- **CS031 P4 — the Choose Profile screen.** The first caller of `activate()` and of P3's
-  `openNameEntry()` — read FLAG-CS031-f for the handoff contract. Also read FLAG-CS031-d and
-  FLAG-CS031-e before wiring the verbs: the delete path's `activate()`/`remove()` order matters, and
-  a switch made with a finished game's `game.stats` still live can hand the incoming profile two
-  achievements it never earned.
+- **CS031 P5 — Title integration.** The `MENU_TITLE` Profile row is what makes the `"profiles"`
+  screen (and therefore `Profiles.activate()`) PLAYER-reachable for the first time. ⛔ Read
+  FLAG-CS031-d first: the `game.stats` bleed is already live in the code (P4's SWITCH verb), and P5
+  wiring the title row is what turns it player-facing — Paul needs to pick a fix before or alongside
+  this phase. Also read FLAG-CS031-e note 1 (`Profiles.firstBoot`) for the first-boot routing.
 
 ## Playtest asks (open only — answered ones move to the log)
 

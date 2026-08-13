@@ -3301,6 +3301,19 @@ const NAME_HINT = "↑↓◄► move   ENTER/A select   ESC/B erase (cancel if e
 const NAME_ERR_EMPTY = "Enter a name";
 const NAME_ERR_LONG  = "Name is too long";
 const NAME_ERR_TAKEN = "That name is already in use";
+
+// ---------- CS031 P4: the "profiles" screen (spec §4.4/§4.5) ----------
+// Rows are [...Profiles.roster, "Add Profile"]. game.menu.index is the row cursor (the standing
+// list-screen convention); on a profile row game.menu.col selects one of PROFILE_VERBS — the ONE
+// left/right verb-column affordance the phase prompt asked for, no modifier key. col resets to 0 on
+// every row move, so a leftover DELETE selection can never carry onto a different profile.
+const PROFILE_VERBS     = ["SWITCH", "RENAME", "DELETE"];
+const PROFILES_TITLE    = "CHOOSE PROFILE";
+const PROFILES_ROW_Y    = 118;   // first row baseline, relative to panel top — drawRootMenu's own value
+const PROFILES_ROW_STEP = 46;    // px between rows — drawRootMenu's own step
+const PROFILES_PANEL_W  = 560;
+const PROFILES_HINT     = "↑↓ move   ◄► action   ENTER/A select   ESC/B back";
+const PROFILE_ADD_LABEL = "Add Profile";
 function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
@@ -4114,6 +4127,7 @@ function menuInput(action) {
     case "achievements": menuAchievements(action); break;
     case "highscores":   menuHighScores(action); break;
     case "nameentry":    menuNameEntry(action); break;  // CS031 P3: the profile name grid
+    case "profiles":     menuProfiles(action); break;   // CS031 P4: the roster screen
     case "debug":        menuDebug(action); break;   // CS015 P4: hidden, secret-code-only
   }
 }
@@ -4889,6 +4903,98 @@ function menuNameEntry(a) {
     else closeNameEntry();
   }
   else if (a === "pause") closePause();   // Start/ESC out of the whole menu — closePause lands on the title menu
+}
+
+// ---------- The "profiles" screen (CS031 P4, spec §4.4/§4.5) ----------
+// The roster list: switch / add / rename / delete. Confirm on a profile with the default verb
+// (SWITCH) reproduces the plain spec text verbatim — "confirm on a profile calls Profiles.activate(id)
+// and returns to the title menu" — with Rename/Delete reached by cycling game.menu.col first.
+function profilesRowCount() { return Profiles.roster.length + 1; }   // +1 = the trailing Add Profile row
+function onAddProfileRow(m) { return m.index >= Profiles.roster.length; }
+
+function menuProfiles(a) {
+  const m = game.menu, N = profilesRowCount();
+  if (a === "up")   { m.index = (m.index + N - 1) % N; m.col = 0; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % N; m.col = 0; AudioSys.ui(false); }
+  else if (a === "left" || a === "right") {
+    if (!onAddProfileRow(m)) {
+      m.col = (m.col + PROFILE_VERBS.length + (a === "right" ? 1 : -1)) % PROFILE_VERBS.length;
+      AudioSys.ui(false);
+    }
+  }
+  else if (a === "confirm") {
+    if (onAddProfileRow(m)) {
+      // Shared unavailable-row idiom (MENU_ROOT_PLAY's "Save"): the row stays PRESENT and drawn dim
+      // at the cap; confirm just has no branch that fires. Do not touch "Save" itself — CS032's row.
+      if (Profiles.roster.length >= PROFILE_MAX) return;
+      openNameEntry({ mode: "add", back: "profiles", onCommit: name => Profiles.add(name) });
+      return;
+    }
+    const p = Profiles.roster[m.index], verb = PROFILE_VERBS[m.col];
+    if (verb === "SWITCH") { Profiles.activate(p.id); returnToTitleMenu(); }
+    else if (verb === "RENAME") {
+      openNameEntry({ mode: "rename", id: p.id, back: "profiles", onCommit: name => Profiles.rename(p.id, name) }, p.name);
+    } else if (verb === "DELETE") {
+      if (Profiles.roster.length <= 1) return;   // ⛔ refuse the LAST remaining profile (spec §4.5)
+      openModal('Delete "' + p.name + '"? All of its progress will be lost.', "DELETE", () => {
+        profileDelete(p.id);
+        m.index = Math.min(m.index, Profiles.roster.length);   // the roster shrank; keep the cursor valid
+        m.col = 0;
+      });
+    }
+  }
+  // ⛔ FORK-E: a genuinely empty roster (first boot, clean install) has ONLY the Add Profile row, and
+  // back/pause must NOT escape it — that would leave the title with no active profile at all.
+  else if (a === "back" || a === "pause") {
+    if (!Profiles.roster.length) return;
+    closePause();
+  }
+}
+
+// Overwrites the LEGACY profile's frozen stores (afd_settings_v1 / afd_achievements_v2) with the
+// shipped-default blob, through the normal guarded save paths — never a raw removeItem, same reasoning
+// as resetHighScores()'s own key. Works whether or not p0 is currently active: Profiles.activate
+// (PROFILE_LEGACY) always lands the runtime on p0's OWN real data first (a correct, harmless flush of
+// whoever was active before), so the reset that follows overwrites p0's data specifically and nothing
+// else's. `keepActiveId` is who should be left active once this returns.
+function blankLegacyStores(keepActiveId) {
+  Profiles.activate(PROFILE_LEGACY);
+  Object.assign(settings, SETTINGS_DEFAULTS);
+  Object.assign(AudioSys.vol, AUDIO_VOL_DEFAULTS);
+  restoreDefaultBindings();
+  resetAllDebug();
+  for (const k in Achievements.lifetime) Achievements.lifetime[k] = 0;
+  Achievements.lifetimeUnlocked = new Set();
+  Achievements.weeklyUnlocked = new Set();
+  Achievements.lifetimeTiers = {};
+  saveSettings();
+  Achievements.save();
+  Profiles.activate(keepActiveId);
+}
+// Non-legacy profiles' keys are NOT frozen — remove them, or an abandoned profile's stores accumulate
+// in localStorage forever. `id` is never PROFILE_LEGACY here (callers branch on that first).
+function removeProfileStores(id) {
+  const ls = storageOK(); if (!ls) return;
+  try {
+    ls.removeItem(STORAGE_KEY + ":" + id);
+    ls.removeItem(Achievements.STORAGE_KEY + ":" + id);
+  } catch (e) { /* quota / privacy mode / disabled — ignore, same as every other guarded store op */ }
+}
+// The roster-shrinking half of Delete (spec §4.5). Order matters: the active profile is switched away
+// from BEFORE Profiles.remove() drops it from the roster, or activeId is left dangling at a profile
+// the roster no longer names (FLAG-CS031-e). The last-remaining guard is re-checked here too, so the
+// store-clearing work below never runs for a refusal.
+function profileDelete(id) {
+  if (Profiles.roster.length <= 1 || !Profiles.byId(id)) return false;
+  const keepActive = Profiles.activeId === id
+    ? Profiles.roster.find(p => p.id !== id).id
+    : Profiles.activeId;
+  if (id === PROFILE_LEGACY) blankLegacyStores(keepActive);
+  else {
+    if (Profiles.activeId === id) Profiles.activate(keepActive);
+    removeProfileStores(id);
+  }
+  return Profiles.remove(id);
 }
 
 // --- Persistence (localStorage, guarded). Note: unavailable in the claude.ai artifact sandbox but
@@ -9504,6 +9610,7 @@ function drawMenu() {
   else if (s === "achievements") drawAchievements();
   else if (s === "highscores") drawHighScores();
   else if (s === "nameentry") drawNameEntry();   // CS031 P3: the profile name grid
+  else if (s === "profiles") drawProfiles();     // CS031 P4: the roster screen
   else if (s === "debug") drawDebug();   // CS015 P4: hidden, secret-code-only
   drawModal();  // CS016 P3: LAST, unconditionally — it must paint over whichever panel raised it
 }
@@ -9806,6 +9913,29 @@ function drawNameEntry() {
              sel ? COLOR.text : COLOR.menuIdle);
   });
   drawMenuHint(NAME_HINT, VIEW_W / 2, y + NAME_PANEL_H - 34);
+}
+
+// CS031 P4: the "profiles" screen. Panel height is DERIVED from the row count (drawRootMenu's own
+// shape at L9682) so PROFILE_MAX's 9 possible rows (8 profiles + Add) never need a fixed panel resize.
+function drawProfiles() {
+  const roster = Profiles.roster, N = profilesRowCount();
+  const hintY = PROFILES_ROW_Y + (N - 1) * PROFILES_ROW_STEP + 62;
+  const h = hintY + 28;
+  const { y } = menuPanel(PROFILES_PANEL_W, h, PROFILES_TITLE);
+  const m = game.menu;
+  roster.forEach((p, i) => {
+    const sel = m.index === i;
+    let label = p.name + (p.id === Profiles.activeId ? "  (active)" : "");
+    if (sel) label += "   ◄ " + PROFILE_VERBS[m.col] + " ►";
+    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, y + PROFILES_ROW_Y + i * PROFILES_ROW_STEP, 22,
+             sel ? COLOR.text : COLOR.menuIdle);
+  });
+  // Shared unavailable-row idiom (MENU_ROOT_PLAY's "Save", L3189): always COLOR.dim at the cap,
+  // focused or not, so silence at confirm reads as "this row does nothing" rather than "nothing happened".
+  const addSel = onAddProfileRow(m);
+  const addColor = roster.length >= PROFILE_MAX ? COLOR.dim : (addSel ? COLOR.text : COLOR.menuIdle);
+  drawText((addSel ? "▶ " : "   ") + PROFILE_ADD_LABEL, VIEW_W / 2, y + PROFILES_ROW_Y + roster.length * PROFILES_ROW_STEP, 22, addColor);
+  drawMenuHint(PROFILES_HINT, VIEW_W / 2, y + hintY);
 }
 
 // One slider row for the ship-rotation preference on the Controls screen (§10b). Readout is a
