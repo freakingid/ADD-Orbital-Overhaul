@@ -748,6 +748,10 @@ let X = null;
   let threw = null;
   try {
     for (let i = 0; i < 4000; i++) {
+      // CS030 P5: keep the unlock bucket empty — a banked unlock now opens the level-end
+      // celebration panel at a clear and freezes the field until dismissal, which would park this
+      // smoke run on one level. The levers, not the panel, are what it crosses the plateau to reach.
+      A.game.pendingAch.length = 0;
       A.update(1 / 60);
       if (i % 200 === 0) A.draw();
       // Clear the field periodically so the run actually advances levels through the real wave-clear

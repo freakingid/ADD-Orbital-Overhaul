@@ -8209,8 +8209,10 @@ function updateDeath(dt) {
     // FORK-CS030-F is OPEN (a P6 gate question): one fanfare on open, routed through the existing
     // AudioSys.achievement() rather than a new sound, so the gate can retune it to per-item or to
     // silent without restructuring anything.
+    // CS030 P5: `resume: null` — this panel owes nothing on dismissal. Its twin at level end stamps
+    // "wave" and owes the deferred nextWave(); see dismissCelebration(), which reads this field.
     if (game.pendingAch.length) {
-      game.celebration = { items: game.pendingAch, scroll: 0 };
+      game.celebration = { items: game.pendingAch, scroll: 0, resume: null };
       game.pendingAch = [];
       resetMenuNav();
       AudioSys.achievement();
@@ -8225,7 +8227,19 @@ function update(dt) {
     updateDeath(dt);
     return;
   }
-  if (game.state !== "playing" || game.paused) {
+  // CS030 P5 (§4.4): ⛔ THE CELEBRATION PANEL FREEZES THE FIELD. The term that earns its keep is the
+  // LEVEL-END panel, which is up while game.state is STILL "playing" — and the wave-clear window it
+  // opens in is live gameplay, not a lull (§0.1: Hunters hunt, saucers shoot, loose garbage drifts,
+  // and the player can die in it). Without this the field would keep simulating behind an opaque
+  // panel and kill a player who cannot see it coming. At game over the state test already covers the
+  // panel, so this term is redundant there — deliberately, so ONE condition covers both call sites.
+  // ⛔ NOT game.paused. Setting that would satisfy menuActive() and drag in the whole menu chrome
+  // path — music ducking, drawMenu()'s input branch, the pause screen's semantics — and the panel is
+  // deliberately not part of the menu system (see drawCelebration()'s header).
+  // Everything this early-return already freezes freezes with it, which is the intent: the hull ease,
+  // the cargo/relief flashes, game.lowHpPhase, game.waveTime and Achievements.tick() all stop, so the
+  // run is genuinely on hold rather than quietly running down behind the panel.
+  if (game.state !== "playing" || game.paused || game.celebration) {
     AudioSys.thrust(false);
     return;
   }
@@ -8941,6 +8955,32 @@ function update(dt) {
         // once the Hunter family + saucers + Debris density are all mid-ramp. game.wave is still the
         // completed wave here (nextWave increments it below).
         if (game.wave >= 8) game.stats.flawlessLateWave = true;
+      }
+      // CS030 P5 (§4.4, FORK-CS030-A = both): the celebration panel at LEVEL END. Everything banked
+      // since the last flush is shown BEFORE the next wave starts, so nextWave() — and with it
+      // game.levelBanner AND VoiceSys.sayLevel(), which both fire from inside it — is DEFERRED to
+      // dismissCelebration(). "Level 8" announces after the celebration, never underneath it.
+      // ⛔ THE `return` IS THE DEFERRAL. Do not "tidy" it into an if/else that still falls through.
+      // It also drops this frame's remaining passes (Achievements.evaluate(), the heartbeat, the
+      // voice drain) — deliberate, and they resume on the first unfrozen frame after dismissal: an
+      // unlock raised by THIS clear would otherwise toast on top of the panel (drawToasts() draws
+      // last) and still not appear IN it, since evaluate() runs after this flush either way (§0.4).
+      // ⛔ `game.state === "playing"` IS NOT REDUNDANT. killShip() flips the state to "dying" MID-FRAME
+      // and update() runs on to here regardless, so the player dying on the exact frame the timer
+      // crosses could otherwise open a level-end panel over the death spectacle — and its dismissal
+      // would then fire nextWave() at GAME OVER. On that frame this falls through to the plain
+      // nextWave() below, exactly as the pre-CS030 build does.
+      // waveClearTimer was zeroed at the top of this branch and update() freezes on game.celebration
+      // from the very next frame, so the branch cannot be re-entered to fire a second panel on one
+      // clear. resetMenuNav()/AudioSys.achievement() mirror the game-over seam's open (in
+      // updateDeath()) exactly — the nav latch matters MORE here, where the player is mid-flight and
+      // may well be holding the stick when the panel arrives.
+      if (game.state === "playing" && game.pendingAch.length) {
+        game.celebration = { items: game.pendingAch, scroll: 0, resume: "wave" };
+        game.pendingAch = [];
+        resetMenuNav();
+        AudioSys.achievement();
+        return;
       }
       nextWave();
     }
@@ -9714,8 +9754,20 @@ function celebrationScroll(dir) {
 // convention (§2.6, FORK-CS030-E). No "scroll to the bottom before you can leave" gate exists
 // anywhere in this codebase's menu idiom, and the panel does not invent one; the ▲/▼ affordance is
 // the shipped mitigation for a player who dismisses without having looked at everything.
+//
+// CS030 P5: ONE dismissal, TWO resumes. `resume` is stamped at the open site and records WHY the
+// panel opened, which is the only thing dismissal has to answer — deliberately not `game.state`,
+// which answers the different question "what is underneath" and only agrees by an invariant
+// maintained elsewhere. "wave" is the level-end panel and owes the deferred nextWave() (and with it
+// the level banner and Dan's "Level N"); the game-over panel owes nothing and just closes, handing
+// input back to initials entry / the gameover screen. BOTH input handlers call THIS one function, so
+// neither knows or cares which panel it dismissed — the scroll/dismiss logic is never forked per
+// call site, which is the whole of spec §5.1's mitigation. Cleared BEFORE nextWave() runs, so the
+// wave it builds is never seeded under a panel that is still up.
 function dismissCelebration() {
+  const resume = game.celebration ? game.celebration.resume : null;
   game.celebration = null;
+  if (resume === "wave") nextWave();
 }
 
 // One row: the emblem, then the name (carrying its tier badge, in that tier's colour) over the

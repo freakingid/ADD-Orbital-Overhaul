@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.29 · Changeset: CS030 · Phase: P4 · Registry: 87 · Levers: 18
+Version: 1.0.0.29 · Changeset: CS030 · Phase: P5 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS030
 
@@ -49,9 +49,36 @@ Version: 1.0.0.29 · Changeset: CS030 · Phase: P4 · Registry: 87 · Levers: 18
     `freshDeath()` now also clear `game.celebration` — the same "later phase named" treatment §E
     already gave `game.entry` when v3.6 P6 put initials entry in front of the same confirm.
 
+- P5 — the panel's **second call site, at level end** (§4.4, FORK-CS030-A = both). In the
+  `waveClearTimer > 2.5` branch, after the perfect-wave block: flush the bucket into
+  `game.celebration = { items, scroll: 0, resume: "wave" }` and **`return` without calling
+  `nextWave()`** — so `game.levelBanner` and `VoiceSys.sayLevel()`, which both fire from inside it,
+  announce *after* the celebration. `dismissCelebration()` gained the one branch (`resume === "wave"`
+  → `nextWave()`); the game-over site stamps `resume: null`. Every other P4 function is byte-identical
+  to the parent, pinned. `update()`'s early-return gained `|| game.celebration` — **not** `game.paused`
+  (that would satisfy `menuActive()`); the level-end panel is therefore a genuine new pause of live
+  play, which the P6 gate (G7/G8) re-checks. Registry 87 / levers 18, unmoved.
+  - **Hazard the prompt didn't name, found and handled:** `killShip()` flips the state to `"dying"`
+    **mid-frame** and `update()` runs on to the wave-clear branch, so dying on the exact crossing
+    frame could open a level-end panel whose dismissal would fire `nextWave()` at game over. The open
+    is gated `game.state === "playing" && game.pendingAch.length`; that frame falls through to the
+    plain `nextWave()`, byte-identical to pre-CS030. Pinned in the test with a real mid-frame death.
+  - **Four older files repointed, not weakened:** `test-f9.js` (C6, two C9 loops), `test-cs024-p3.js`
+    §B, `test-cs026-p2.js` §K, `test-cs026-p3.js` §H drive multi-wave runs that now stall at the first
+    clear on a real unlock. Each empties `game.pendingAch` per driven frame — the majority
+    empty-bucket path, the same shape as the `saucerTimer = 1e9` controls they already carry. The
+    unlocks still fire; only the panel's copy is dropped, and none of the four reads the bucket.
+
 ## Working / verified
 
-- Full suite on a full clone: **116 files, 116 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **117 files, 117 passed, 0 failed, 0 skipped, 0 timed out.**
+- **P5 mutation-checked, not just asserted:** dropping the freeze term fails 11 assertions, dropping
+  the deferral `return` 11, dropping `dismissCelebration()`'s `nextWave()` 24, and dropping the
+  mid-frame-death guard 4. The empty-bucket path is traced **frame-by-frame against the P4 parent
+  build** (same seed, ten frames across the clear) and is identical — the common case is untouched.
+- The freeze is read two independent ways: nothing moved (ship, particles, `waveTime`, `gameTime`,
+  `Achievements.lifetime.playTime`), and **zero entity `update()` bodies ran** in 90 frames.
+  `game.paused`/`menuActive()` stay false throughout, pad Start included.
 - **Both input guards mutation-checked**, not just asserted: deleting the gamepad half fails 15
   assertions, deleting the keyboard half 21, and perturbing one number inside the gameover draw block
   trips the parent byte-identity pin. The panel's layout was measured off a recording ctx (longest
@@ -71,7 +98,15 @@ Version: 1.0.0.29 · Changeset: CS030 · Phase: P4 · Registry: 87 · Levers: 18
 
 ## Known issues
 
-- **FLAG-CS030-b (new, P4) — while the panel is up, the gamepad's Start is SWALLOWED, and dismissal
+- **FLAG-CS030-c (new, P5) — two resume details for the G7 look-call.** (1) The level-end panel fires
+  the same single `AudioSys.achievement()` on open as the game-over one, now *over the live gameplay
+  music*, which is un-ducked (the panel is deliberately not a menu). (2) The keydown handler records
+  the raw key into `keys{}` **before** the panel's guard, and `↑` is the thrust binding — scrolling
+  up is inert while frozen, but a key (or pad A) still HELD at dismissal resumes as thrust/fire.
+  That is what holding it means, and it is unchanged input semantics; recorded because G7 asks
+  specifically whether the resume is fair.
+
+- **FLAG-CS030-b (P4, now live at level end too) — while the panel is up, the gamepad's Start is SWALLOWED, and dismissal
   is silent.** Start is inert rather than dismissing, mirroring the initials-entry block's own
   "nothing interrupts this" convention (confirm/back dismiss; the footer hint names both). Dismissal
   plays no `AudioSys.ui()` blip because the phase prompt sanctioned exactly one audio touch (the
@@ -128,10 +163,11 @@ None.
   (see `## Known issues`) could migrate to `execSource()` whenever one of them is next open for
   other reasons.
 - CS030 in flight (the achievement celebration panel). P1 built the collector, P2 the emblem lab,
-  P3 pasted `ACH_EMBLEM` + `drawEmblem()` and the two registry rows, P4 (this session) built the panel
-  and wired it at game over. Remaining, per `IMPLEMENTATION-PHASES-CS030.md`: P5's level-end
-  integration (§4.4) — which REUSES this panel wholesale and adds only the second call site plus
-  `update()`'s freeze — then the P6 gate and the P7 close.
+  P3 pasted `ACH_EMBLEM` + `drawEmblem()` and the two registry rows, P4 wired the panel at game over,
+  P5 (this session) added the level-end call site + the freeze. Remaining, per
+  `IMPLEMENTATION-PHASES-CS030.md`: **the P6 playtest gate (⛔ BLOCKING, no code — G1–G10, numbers
+  where a slider is involved)**, then the P7 close. G7/G8 are the ones this phase was built to be
+  judged by: is the resume after a level-end pause fair, and does the per-level cadence earn it.
 
 ## Playtest asks (open only — answered ones move to the log)
 

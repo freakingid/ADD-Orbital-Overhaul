@@ -386,7 +386,10 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
     const waveBefore = g.wave;
     for (let w = 0; w < 5; w++) {
       g.debris.length = 0;             // clear the field -> the real wave-clear path advances the level
-      for (let f = 0; f < 200; f++) X.update(1 / 60);
+      // CS030 P5: keep the unlock bucket empty. A banked unlock now opens the level-end celebration
+      // panel at the clear and freezes the field until it is dismissed, and this pin is about
+      // garbage carrying ACROSS a transition, not about the panel.
+      for (let f = 0; f < 200; f++) { g.pendingAch.length = 0; X.update(1 / 60); }
     }
     assert(g.wave >= waveBefore + 5, `B: five real wave transitions happened (wave ${waveBefore} -> ${g.wave})`);
     const survivors = carried.filter(p => !p.dead && g.garbage.includes(p));

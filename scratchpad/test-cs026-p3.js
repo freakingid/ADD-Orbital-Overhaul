@@ -823,6 +823,10 @@ let X = null;
   try {
     for (let i = 0; i < 4000; i++) {
       A.game.ship.hp = A.SHIP_MAX_HP;    // keep the run in "playing" — the resize is a live-sim property
+      // CS030 P5: keep the unlock bucket empty — a banked unlock now opens the level-end celebration
+      // panel at a clear and freezes the field until dismissal, which would park this run short of
+      // the 5 -> 6 boundary. The world resize, not the panel, is what it is crossing to reach.
+      A.game.pendingAch.length = 0;
       A.update(1 / 60);
       if (i % 200 === 0) A.draw();
       sizes.add(A.game.worldSize);

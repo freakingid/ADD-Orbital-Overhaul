@@ -358,7 +358,11 @@ game.wave = 3; game.debris = []; game.hunters = []; game.saucers = []; game.bull
 game.saucerTimer = 1e9; game.hunterTimer = 1e9; game.healthTimer = 1e9;
 game.ship.invuln = 1e9; game.stats.dmgThisWave = 0; game.waveClearTimer = 0;
 let guard = 0;
-while (game.wave === 3 && guard++ < 200) update(0.1); // accumulate waveClearTimer past 2.5s -> nextWave
+// CS030 P5: the bucket is emptied every frame. A banked unlock now opens the level-end celebration
+// panel at the clear and FREEZES the field until it is dismissed — this run is about the wave clear,
+// not the panel, so it drives the (majority) empty-bucket path. The unlocks themselves still fire;
+// only the panel's copy is dropped, and every assertion below reads Achievements, not the bucket.
+while (game.wave === 3 && guard++ < 200) { game.pendingAch.length = 0; update(0.1); } // past 2.5s -> nextWave
 assert(game.wave === 4, "C6: the empty wave 3 cleared into wave 4");
 assert(game.stats.noScratchWave3 && wUnlocked("no_scratches"), "C6: damage-free wave 3 -> No Scratches");
 // Perfect Wave is now TIERED [5,10,50,100,250,500]: the 10th perfect wave reaches Silver (tier 1).
@@ -510,13 +514,15 @@ startGame(); resetAch();
 game.wave = 7; game.debris = []; game.hunters = []; game.saucers = []; game.bullets = [];
 game.saucerTimer = 1e9; game.hunterTimer = 1e9; game.healthTimer = 1e9;
 game.ship.invuln = 1e9; game.stats.dmgThisWave = 0; game.waveClearTimer = 0;
-let g9 = 0; while (game.wave === 7 && g9++ < 200) update(0.1);
+// CS030 P5: bucket emptied per frame, same reason as (C6) above — the level-end panel would
+// otherwise freeze the field at the clear and this loop would time out on its guard.
+let g9 = 0; while (game.wave === 7 && g9++ < 200) { game.pendingAch.length = 0; update(0.1); }
 assert(game.wave === 8, "C9: empty wave 7 cleared into wave 8");
 assert(!game.stats.flawlessLateWave && !wUnlocked("flawless_run"), "C9: a damage-free wave-7 clear does NOT arm Flawless Run (floor is 8)");
 // nextWave repopulated the field for wave 8 — clear it again so the wave-8 clear can trip.
 game.debris = []; game.hunters = []; game.saucers = []; game.bullets = [];
 game.stats.dmgThisWave = 0; game.waveClearTimer = 0;
-let g9b = 0; while (game.wave === 8 && g9b++ < 200) update(0.1);
+let g9b = 0; while (game.wave === 8 && g9b++ < 200) { game.pendingAch.length = 0; update(0.1); } // CS030 P5, as above
 assert(game.wave === 9, "C9: empty wave 8 cleared into wave 9");
 assert(game.stats.flawlessLateWave && wUnlocked("flawless_run"), "C9: a damage-free wave-8 clear -> Flawless Run");
 
