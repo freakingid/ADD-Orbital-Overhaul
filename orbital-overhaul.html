@@ -4483,10 +4483,165 @@ function adjustShipTurnScale(dir) {
   saveSettings();
 }
 
+// ---------- Player Profiles (CS031 P1) ----------
+// A roster of named players layered OVER the existing stores rather than beside them. The active
+// profile picks the key every per-profile store reads and writes, through the one keyFor() below.
+//
+// ⛔ THE LEGACY PROFILE'S STORES *ARE* THE FROZEN KEYS. "p0" gets `afd_settings_v1` verbatim; every
+//    other profile gets `afd_settings_v1:pN`. Nothing is copied, moved or rewritten when a returning
+//    player is migrated — their data simply stays exactly where it has always been, which is what
+//    keeps the frozen-key invariant true rather than merely honoured.
+// ⛔ THE ROSTER IS AN EXPLICIT KEY. localStorage is NEVER enumerated — no key(i), no .length, no
+//    Object.keys. The origin is shared with anything else served from the same path, and the
+//    headless harness's stub has no enumeration at all.
+// ⛔ init() RUNS AT BOOT, ABOVE loadSettings(), AND MUST NOT TOUCH `Achievements` — that module is
+//    defined ~2500 lines below and reading it from here is a TDZ throw. It needs only storageOK(),
+//    which is a hoisted function declaration and so is callable from above its own definition.
+// Roster ops (add / remove / rename) are roster-only: no settings write, no achievement touch, no
+// switch. The runtime switch — flush, reset to shipped defaults, reload — is activate(), CS031 P2.
+const PROFILES_KEY     = "afd_profiles_v1";   // NEW key, owned by CS031 — not one of the three frozen ones
+const PROFILE_LEGACY   = "p0";                // the id whose stores ARE the frozen keys
+const PROFILE_MAX      = 8;                   // roster cap
+const PROFILE_NAME_MAX = 12;                  // characters, measured after trimming
+// The pre-profile stores init() probes to tell a returning player from an empty install. LITERALS on
+// purpose: Achievements.STORAGE_KEY is unreachable from here (TDZ, above), and both strings are
+// frozen by rule, so a literal cannot drift out of step with the symbol it duplicates.
+const PROFILE_LEGACY_PROBE = ["afd_settings_v1", "afd_achievements_v2"];
+
+const Profiles = {
+  activeId: PROFILE_LEGACY,   // ⛔ defaults to the legacy id, so a build that never loads a roster keys
+                              // every store exactly where every pre-profile build did
+  roster: [],                 // [{ id, name, created }] — an OBJECT per entry, so CS032 can add fields
+  lastUsed: "",               // the id to re-activate at the next boot ("" = none recorded)
+  seq: 0,                     // next numeric suffix to mint. Monotonic on purpose: a removed profile's
+                              // id is never handed out again, because its stores are not cleared with it
+  firstBoot: false,           // set ONLY on a genuinely empty install — the title screen routes off it
+
+  // The one key router. Every per-profile store asks through this and nothing else.
+  keyFor(base) { return this.activeId === PROFILE_LEGACY ? base : base + ":" + this.activeId; },
+
+  byId(id) { return this.roster.find(p => p.id === id) || null; },
+  nameOf(id) { const p = this.byId(id); return p ? p.name : ""; },
+
+  // Trim + cap. Returns "" for anything unusable, which is what every caller tests.
+  cleanName(name) { return typeof name === "string" ? name.trim().slice(0, PROFILE_NAME_MAX) : ""; },
+  // Trimmed and case-insensitive (spec §4.5). `exceptId` lets rename() ignore the profile it is renaming.
+  nameTaken(name, exceptId) {
+    const n = this.cleanName(name).toLowerCase();
+    if (!n) return false;
+    return this.roster.some(p => p.id !== exceptId && p.name.toLowerCase() === n);
+  },
+
+  // --- Roster ops. They persist the roster and NOTHING else. ---
+  // Returns the new entry, or null if the name is empty/duplicate or the roster is full.
+  add(name) {
+    const n = this.cleanName(name);
+    if (!n || this.roster.length >= PROFILE_MAX || this.nameTaken(n)) return null;
+    const p = { id: "p" + this.seq, name: n, created: Date.now() };
+    this.seq++;
+    this.roster.push(p);
+    this.save();
+    return p;
+  },
+  // ⛔ Refuses the LAST profile: an empty roster after first boot is the state that produces a dead
+  // title screen. Removing the ACTIVE profile is allowed and leaves activeId naming a gone id — the
+  // caller must activate() another in the same act (spec §4.5).
+  remove(id) {
+    if (this.roster.length <= 1) return false;
+    const i = this.roster.findIndex(p => p.id === id);
+    if (i < 0) return false;
+    this.roster.splice(i, 1);
+    if (this.lastUsed === id) this.lastUsed = "";
+    this.save();
+    return true;
+  },
+  rename(id, name) {
+    const p = this.byId(id);
+    const n = this.cleanName(name);
+    if (!p || !n || this.nameTaken(n, id)) return false;
+    p.name = n;
+    this.save();
+    return true;
+  },
+
+  // --- Persistence (own key; the same guarded idiom as saveSettings — never crash on storage failure). ---
+  save() {
+    const ls = storageOK(); if (!ls) return;
+    try {
+      ls.setItem(PROFILES_KEY, JSON.stringify({ v: 1, lastUsed: this.lastUsed, seq: this.seq,
+        profiles: this.roster.map(p => ({ id: p.id, name: p.name, created: p.created })) }));
+    } catch (e) { /* quota / privacy mode / disabled — ignore */ }
+  },
+  // known-value-else-default on every field. Returns TRUE only when a usable, non-empty roster came
+  // back; absent, unreadable, corrupt and empty all answer false and leave the roster empty, which is
+  // the single signal init() branches on.
+  load() {
+    this.roster = []; this.lastUsed = ""; this.seq = 0;
+    const ls = storageOK(); if (!ls) return false;
+    try {
+      const raw = ls.getItem(PROFILES_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.profiles)) return false;
+      const list = [], seen = new Set();
+      for (const p of data.profiles) {
+        if (list.length >= PROFILE_MAX) break;
+        if (!p || typeof p.id !== "string" || !p.id || seen.has(p.id)) continue;
+        const name = this.cleanName(p.name);
+        if (!name) continue;
+        seen.add(p.id);
+        list.push({ id: p.id, name, created: typeof p.created === "number" ? p.created : 0 });
+      }
+      // seq never drops BELOW what the roster already uses, however the stored value was edited.
+      let seq = 0;
+      for (const p of list) { const m = /^p(\d+)$/.exec(p.id); if (m) seq = Math.max(seq, Number(m[1]) + 1); }
+      if (Number.isFinite(data.seq) && data.seq > seq) seq = Math.floor(data.seq);
+      this.roster = list;
+      this.lastUsed = typeof data.lastUsed === "string" ? data.lastUsed : "";
+      this.seq = seq;
+      return list.length > 0;
+    } catch (e) {
+      this.roster = []; this.lastUsed = ""; this.seq = 0;   // corrupt / unreadable — no roster, don't crash
+      return false;
+    }
+  },
+  // Boot, called ONCE immediately above loadSettings() — the first thing that asks keyFor().
+  init() {
+    this.firstBoot = false;
+    if (this.load()) {
+      this.activeId = this.byId(this.lastUsed) ? this.lastUsed : this.roster[0].id;
+      this.lastUsed = this.activeId;
+      return;
+    }
+    // No usable roster. A machine already holding pre-profile save data gets ONE profile minted over
+    // it — ⛔ the blobs themselves are NOT copied, moved or rewritten; p0's stores ARE those keys.
+    const ls = storageOK();
+    let legacy = false;
+    if (ls) {
+      try { for (const k of PROFILE_LEGACY_PROBE) if (ls.getItem(k) !== null) legacy = true; }
+      catch (e) { legacy = false; }
+    }
+    this.activeId = PROFILE_LEGACY;
+    if (legacy) {
+      this.roster = [{ id: PROFILE_LEGACY, name: "PLAYER 1", created: Date.now() }];
+      this.seq = 1;
+      this.lastUsed = PROFILE_LEGACY;
+      this.save();
+      return;
+    }
+    // A genuinely empty install: mint NOTHING and ask nobody here. The title screen routes off this
+    // flag (CS031 P5); until then activeId is the legacy id, so this build stores exactly where the
+    // pre-profile build did and an untouched machine cannot tell the difference.
+    this.firstBoot = true;
+  }
+};
+
 // --- Persistence (localStorage, guarded). Note: unavailable in the claude.ai artifact sandbox but
 // works as a real local file; a storage failure must never crash the game, so everything is wrapped. ---
 // v3.3 P1 rename (Orbital Overhaul): the "afd_" prefix is FROZEN. Renaming this key wipes every
 // player's saved settings/bindings on their next load — do not "tidy" it to match the new name.
+// CS031 P1: the key is now routed through Profiles.keyFor() at both sites below — VERBATIM for the
+// legacy profile, suffixed for every other. The string itself is untouched and stays frozen.
 const STORAGE_KEY = "afd_settings_v1";
 function storageOK() {
   try { return typeof localStorage !== "undefined" ? localStorage : null; } catch (e) { return null; }
@@ -4507,13 +4662,13 @@ function saveSettings() {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
     }
-    ls.setItem(STORAGE_KEY, JSON.stringify(data));
+    ls.setItem(Profiles.keyFor(STORAGE_KEY), JSON.stringify(data));
   } catch (e) { /* quota / privacy mode / disabled — ignore */ }
 }
 function loadSettings() {
   const ls = storageOK(); if (!ls) return;
   try {
-    const raw = ls.getItem(STORAGE_KEY);
+    const raw = ls.getItem(Profiles.keyFor(STORAGE_KEY));
     if (!raw) return;
     const data = JSON.parse(raw);
     if (data.vol) {
@@ -4569,6 +4724,7 @@ function loadSettings() {
     }
   } catch (e) { /* corrupt / unreadable — fall back to defaults, don't crash */ }
 }
+Profiles.init(); // CS031 P1: resolve the active profile FIRST — loadSettings() asks keyFor() for its key
 loadSettings(); // apply saved settings (if any) over the shipped defaults, once at startup
 
 // ---------- Helpers ----------
@@ -7204,7 +7360,7 @@ const Achievements = {
         lifetimeUnlocked: [...this.lifetimeUnlocked],     // non-tiered lifetime ids
         weekly: { key: this.weekKey, unlocked: [...this.weeklyUnlocked] }
       };
-      ls.setItem(this.STORAGE_KEY, JSON.stringify(data));
+      ls.setItem(Profiles.keyFor(this.STORAGE_KEY), JSON.stringify(data));   // CS031 P1: per-profile
     } catch (e) { /* quota / privacy mode / disabled — ignore */ }
   },
   // Copy persisted lifetime COUNTERS over the defaults (only known numeric keys — unknown keys and
@@ -7227,7 +7383,7 @@ const Achievements = {
     const ls = storageOK();
     if (ls) {
       try {
-        const raw = ls.getItem(this.STORAGE_KEY);
+        const raw = ls.getItem(Profiles.keyFor(this.STORAGE_KEY));   // CS031 P1: per-profile
         if (raw) {
           // --- v2 load: counters + tier state + non-tiered unlocks + (same-week) weekly unlocks ---
           const data = JSON.parse(raw);
@@ -7249,8 +7405,16 @@ const Achievements = {
           // lifetime COUNTERS and let tiers + non-tiered unlocks re-derive below. The old v1 unlock
           // SETS (flat lifetime/weekly ids) are intentionally ignored — badges recompute from the
           // counters; the returning player's current-week weekly unlocks may reset once. ---
-          const legacy = ls.getItem(this.LEGACY_KEY);
-          if (legacy) this.loadCounters(JSON.parse(legacy));
+          // ⛔ CS031 P1 — GATED TO THE LEGACY PROFILE. `afd_achievements_v1` is a MACHINE-WIDE
+          // pre-profile blob and is never suffixed. Under per-profile keys "no v2 save yet" is true
+          // for EVERY newly created profile, so an ungated fallback hands each new profile the
+          // machine's old counters — a returning player's lifetime progress silently cloned onto a
+          // stranger. Only p0, whose stores ARE the frozen keys, may claim it. This is invisible on a
+          // clean machine; scratchpad/test-cs031-p1.js §E is what keeps it fixed.
+          if (Profiles.activeId === PROFILE_LEGACY) {
+            const legacy = ls.getItem(this.LEGACY_KEY);
+            if (legacy) this.loadCounters(JSON.parse(legacy));
+          }
         }
       } catch (e) { /* corrupt / unreadable — start fresh, don't crash */ }
     }
@@ -7287,7 +7451,11 @@ const HighScores = {
   // Build + insert the wire-shape record for a just-committed run, then persist. Returns the record
   // so the caller can remember its id (the gameover table's fresh-entry highlight).
   add({ initials, score, wave, delivered }) {
-    const rec = { v: 1, id: this.makeId(), initials, score, wave, delivered, ts: Date.now(), build: GAME_VERSION };
+    // CS031 P1 (FORK-B a): the table stays ONE shared machine-wide store — `afd_scores_v1` is NOT
+    // routed through Profiles.keyFor(). The two stamps below are purely ADDITIVE, exactly the future
+    // playerId/name fields this module's header already reserves: append, never rename or repurpose.
+    const rec = { v: 1, id: this.makeId(), initials, score, wave, delivered, ts: Date.now(), build: GAME_VERSION,
+      profileId: Profiles.activeId, profileName: Profiles.nameOf(Profiles.activeId) };
     this.entries.push(rec);
     this.entries.sort((a, b) => b.score - a.score);
     this.entries.length = Math.min(this.entries.length, SCORES_MAX);
