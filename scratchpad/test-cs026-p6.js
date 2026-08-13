@@ -643,9 +643,14 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // answer was applied entirely at existing `def`s, and his Q8 answer entirely at look-call consts,
     // so nothing here earned a registry row: "no new knob unless a gate answer requires it".
     eq(OLD.DEBUG_ENTRIES.length, 85, "G: (setup) the parent's registry was 85, matching P5's recorded count");
-    eq(X.DEBUG_ENTRIES.length - OLD.DEBUG_ENTRIES.length, 0,
-      "G: ⛔ TRAP 2 — the registry did not grow at all, measured not counted");
-    eq(X.DEBUG_ENTRIES.map(v => v.id).join(","), OLD.DEBUG_ENTRIES.map(v => v.id).join(","),
+    // REPOINTED BY CS030 P3: +2 more (celebrationScrollStep, celebrationEmblemSize) — a later phase's
+    // rows, named rather than wildcarded. TRAP 2's claim is "P6 itself added no knob", which stays
+    // provable by excluding the later phase's named rows before comparing.
+    const laterIds = new Set(["celebrationScrollStep", "celebrationEmblemSize"]);
+    const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIds.has(id));
+    eq(xIdsSansLater.length - OLD.DEBUG_ENTRIES.length, 0,
+      "G: ⛔ TRAP 2 — the registry did not grow at all (bar CS030 P3's later rows), measured not counted");
+    eq(xIdsSansLater.join(","), OLD.DEBUG_ENTRIES.map(v => v.id).join(","),
       "G: ⛔ TRAP 2 — the same rows, in the same order (a swap would net to zero and hide here otherwise)");
 
     // TRAP 1, INVERTED FOR THIS PHASE — the closing phase is the one that MUST move the version.

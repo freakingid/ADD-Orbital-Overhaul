@@ -650,7 +650,8 @@ let X = null;
     // row arriving with no changeset behind it still fails.
     const LATER_ROWS = id => id === "earlyWorldLevels"     // CS026 P3
       || id === "deliveryFloatRise" || id === "deliveryFloatLife"    // CS026 P4
-      || id.startsWith("levelBanner");                                // CS026 P5
+      || id.startsWith("levelBanner")                                 // CS026 P5
+      || id.startsWith("celebration");                                // CS030 P3
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",
       `J: exactly THREE rows were added by THIS phase, in that order (all added since: ${added.join(", ")})`);
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRows.includes(id)).join(","), oldRows.join(","),

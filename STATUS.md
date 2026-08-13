@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.29 · Changeset: CS030 · Phase: P2 · Registry: 85 · Levers: 18
+Version: 1.0.0.29 · Changeset: CS030 · Phase: P3 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS030
 
@@ -17,9 +17,23 @@ Version: 1.0.0.29 · Changeset: CS030 · Phase: P2 · Registry: 85 · Levers: 18
   verbatim** — the lab ships first and stays the source of truth (contrast `SAT_ART`, §2.3).
   Lab only; `orbital-overhaul.html` untouched, no test added.
 
+- P3 — pasted the lab's `ACH_EMBLEM` export verbatim near `TIER_NAMES`/`TIER_COLOR`, and added
+  `drawEmblem(cx, cy, r, tierIdx, pool)` beside `drawPoly()`. Resolves `typeof tierIdx === "number"`
+  (never truthiness) so Bronze (tierIdx 0) routes correctly, never to the untiered emblem. Added the
+  two `DEBUG_VARS` rows (`celebrationScrollStep`, `celebrationEmblemSize`) under a new CELEBRATION
+  header. Registry moved **85 -> 87**, section headers **9 -> 10** — measured via the harness, not
+  predicted, and `test-registry.js`'s `COUNTS` updated to match. No panel yet, no draw call site
+  wired — data + one helper only, per §4.2.
+  - Eighteen older suite files pin literal/derived registry snapshots (section-header lists, "GLOBAL
+    is the last header", "the registry grows by exactly N", parent-diff LATER-phase allowlists). Every
+    one of the 18 was repointed to name CS030 P3's two new rows explicitly (the same "later phase
+    named, never wildcarded" idiom CS025 P1/P2/P5 already used) rather than weakened or deleted. See
+    `test-cs018-p4.js`, `test-cs018-p6.js`, `test-cs024-p4/p5/p6/p6b/p6c.js`, `test-cs025-p1/p2/p5.js`,
+    `test-cs026-p2/p3/p5/p6.js`, `test-cs027-p2/p6.js`, `test-cs029-p4.js`, `test-cs030-p1.js`.
+
 ## Working / verified
 
-- Full suite on a full clone: **114 files, 114 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **115 files, 115 passed, 0 failed, 0 skipped, 0 timed out.**
 - **Emblem legibility measured at r=32, not assumed** (CS028 P1 precedent). All eight clear:
   worst unit norm **0.962** (bar 1.000), tightest gap between two features meant to read apart
   **5.1px** (bar 4px; welded pairs like a spike foot on its ring counted separately, not flagged).
@@ -84,11 +98,10 @@ None.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   (see `## Known issues`) could migrate to `execSource()` whenever one of them is next open for
   other reasons.
-- CS030 in flight (the achievement celebration panel). P1 built the collector, P2 (this session)
-  the emblem lab. **P3 is a paste-and-wire phase**: take `tools/emblem-lab.html`'s copy-out
-  verbatim into `ACH_EMBLEM` near `TIER_NAMES`/`TIER_COLOR`, add `drawEmblem()`, and add the two
-  `DEBUG_VARS` rows. Remaining after that, per `IMPLEMENTATION-PHASES-CS030.md`: the panel itself
-  (draw/state/scroll/input, §4.3) and the game-over + level-end integration points (§4.4).
+- CS030 in flight (the achievement celebration panel). P1 built the collector, P2 the emblem lab,
+  P3 (this session) pasted `ACH_EMBLEM` + `drawEmblem()` and the two registry rows. Remaining, per
+  `IMPLEMENTATION-PHASES-CS030.md`: the panel itself (draw/state/scroll/input, §4.3) and the
+  game-over + level-end integration points (§4.4).
 
 ## Playtest asks (open only — answered ones move to the log)
 

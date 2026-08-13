@@ -87,7 +87,9 @@ const src = scriptSource();
 (function sectionB() {
   console.log("(B) registry HOLDS at 85 — model C adds no knob; DOCK_OFFLOAD_INTERVAL unmoved (G5)");
   const X = buildGame();
-  eq(X.DEBUG_ENTRIES.length, 85, "B: ⛔ DEBUG_ENTRIES.length is unchanged — G1=C carries no new registry row");
+  // REPOINTED BY CS030 P3: +2 later (celebrationScrollStep, celebrationEmblemSize) — a later phase's
+  // rows, named rather than re-litigated. This phase's own claim (G1=C adds nothing) is unaffected.
+  eq(X.DEBUG_ENTRIES.length, 87, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two later rows) — G1=C carries no new registry row");
   assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
   assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
     "B: no minGap knob either — that belongs to model B, which was not picked");

@@ -142,7 +142,10 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // joins GLOBAL, inserted after debrisBounceRestitution and BEFORE P6d's startLevel — which keeps the
   // gate-tooling knob reading as the registry's trailing dev tool rather than stranding it mid-section.
   // It is a non-lever flat knob, so it takes one row, not a floor/ceil/steps triple.
-  const globalIds = X.DEBUG_VARS.slice(gIdx + 1).map(v => v.id);
+  // REPOINTED BY CS030 P3: GLOBAL is no longer the last header — a CELEBRATION section trails it. The
+  // claim narrows to GLOBAL's own membership (up to the next header), not "everything after GLOBAL".
+  const nextHIdx = X.DEBUG_VARS.findIndex((v, i) => i > gIdx && v.header);
+  const globalIds = X.DEBUG_VARS.slice(gIdx + 1, nextHIdx === -1 ? undefined : nextHIdx).map(v => v.id);
   assert(deepEq(globalIds, ["sweepCoalescePause", "debrisBounceRestitution", "earlyWorldLevels", "startLevel",
     "levelBannerTime", "levelBannerFade", "levelBannerSize", "levelBannerY"]),
     `B: GLOBAL header followed by sweepCoalescePause, debrisBounceRestitution, CS026 P3's earlyWorldLevels, P6d's startLevel, then CS026 P5's four level banner knobs, freqJitter still removed (got ${JSON.stringify(globalIds)})`);

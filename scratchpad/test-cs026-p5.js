@@ -140,7 +140,9 @@ let X = null;
   const iY    = X.DEBUG_VARS.findIndex(v => v.id === "levelBannerY");
   assert(iStart >= 0 && iTime === iStart + 1 && iFade === iTime + 1 && iSize === iFade + 1 && iY === iSize + 1,
     "A: the four rows appear immediately after startLevel, in order: Time, Fade, Size, Y");
-  eq(iY, X.DEBUG_VARS.length - 1, "A: levelBannerY is the LAST row in DEBUG_VARS — nothing was appended after this phase's own rows");
+  // REPOINTED BY CS030 P3: a CELEBRATION section (2 rows) now trails GLOBAL, so levelBannerY is no
+  // longer literally the last row in DEBUG_VARS — narrowed to "nothing else was appended to GLOBAL".
+  eq(iY, X.DEBUG_VARS.length - 1 - 3, "A: levelBannerY is the last row of GLOBAL — only CS030 P3's CELEBRATION header + 2 rows trail it");
 
   const rTime = X.DEBUG_VARS[iTime], rFade = X.DEBUG_VARS[iFade], rSize = X.DEBUG_VARS[iSize], rY = X.DEBUG_VARS[iY];
   eq(rTime.label, "Level banner hold", "A: levelBannerTime label");
@@ -336,9 +338,11 @@ let X = null;
     // inequality permanently true. Do not re-point either form to a literal version again.
     assert(X.GAME_VERSION !== OLD.GAME_VERSION,
       "F: ⛔ TRAP 1 — the version has moved off P5's parent (CS026 P6 owns that bump)");
-    // ⛔ TRAP 4 — the registry grows by EXACTLY four, verified by BUILDING the file (both the parent's and
-    // this phase's own DEBUG_ENTRIES), not by adding up the table.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 4, "F: ⛔ TRAP 4 — the registry grows by exactly four (measured, not counted)");
+    // ⛔ TRAP 4 — the registry grows by EXACTLY four (this phase's own four), verified by BUILDING the
+    // file (both the parent's and this phase's own DEBUG_ENTRIES), not by adding up the table.
+    // REPOINTED BY CS030 P3: +2 more (celebrationScrollStep, celebrationEmblemSize) — a later phase's
+    // rows, named rather than wildcarded, same idiom as every other TRAP in this suite.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 6, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows plus CS030 P3's two (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

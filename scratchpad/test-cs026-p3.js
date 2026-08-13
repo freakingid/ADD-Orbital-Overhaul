@@ -408,7 +408,10 @@ let X = null;
   // gate-tooling knob reading as the registry's trailing dev tool.
   const gIdx = X.DEBUG_VARS.findIndex(v => v.header === "GLOBAL");
   assert(gIdx >= 0, "D: (setup) there is a GLOBAL section");
-  const globalIds = X.DEBUG_VARS.slice(gIdx + 1).map(v => v.id);
+  // REPOINTED BY CS030 P3: GLOBAL is no longer the last header — a CELEBRATION section trails it. The
+  // claim narrows to GLOBAL's own membership (up to the next header), not "everything after GLOBAL".
+  const nextHIdx = X.DEBUG_VARS.findIndex((v, i) => i > gIdx && v.header);
+  const globalIds = X.DEBUG_VARS.slice(gIdx + 1, nextHIdx === -1 ? undefined : nextHIdx).map(v => v.id);
   eq(globalIds.join(","),
     "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY",
     "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel (CS026 P5's four level banner knobs trail startLevel)");

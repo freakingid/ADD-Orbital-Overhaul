@@ -350,7 +350,9 @@ function compareBuilds(L, R, tag) {
     // ⚠ SETTLED (fixed by CS027 P6): pinned to the PARENT SHA's own frozen version, not the live
     // build's — X.GAME_VERSION moves at every later closing phase, PARENT_SHA's does not.
     eq(OLD.GAME_VERSION, "1.0.0.26", "E: parentSource() output builds, and cs-27 p1 moved no game code");
-    eq(OLD.DEBUG_ENTRIES.length, X.DEBUG_ENTRIES.length, "E: ...same registry");
+    // REPOINTED BY CS030 P3: the registry held steady at 85 from cs-27 p1 through CS030 P2, but P3
+    // added its two CELEBRATION knobs — a later phase's rows, named rather than re-litigated.
+    eq(OLD.DEBUG_ENTRIES.length + 2, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two later rows)");
     assert(Object.keys(OLD).length > 500, "E: ...and the harvest re-ran against the parent's own symbol set");
   }
 })();

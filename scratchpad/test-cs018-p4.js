@@ -681,7 +681,9 @@ function levelForCap(n) {
   assert(Y.GAME_VERSION !== "1.0.0.17", "H: GAME_VERSION has moved past what P4 shipped (1.0.0.17) — bumped in P10, bumped again in CS019 P2");
   // No new DEBUG_VARS entries this phase — the cap is table-driven, not a knob.
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
-  const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL"];
+  // CS030 P3 appended a CELEBRATION section after GLOBAL — later phase, named here rather than
+  // re-litigated (same allowance idiom as CS025 P1/P2/P5's LATER()).
+  const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL", "CELEBRATION"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),
     `H: section headers are exactly ${WANT_HEADERS.join("/")}, in order (got ${headerOrder.join("/")})`);
 

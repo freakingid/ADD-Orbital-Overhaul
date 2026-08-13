@@ -814,7 +814,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || /^junkSplit(Floor|Ceil|Steps)$/.test(id)             // CS026 P2
       || id === "earlyWorldLevels"                            // CS026 P3
       || id === "deliveryFloatRise" || id === "deliveryFloatLife" // CS026 P4
-      || id.startsWith("levelBanner");                        // CS026 P5
+      || id.startsWith("levelBanner")                         // CS026 P5
+      || id.startsWith("celebration");                        // CS030 P3
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
@@ -826,9 +827,12 @@ function fullAndHolding(X, { level = 1 } = {}) {
     for (const oe of OLD.DEBUG_ENTRIES)
       eq(X.DEBUG[oe.id], OLD.DEBUG[oe.id], `G: DEBUG.${oe.id} is byte-identical to the parent on an untouched panel`);
     // Likewise re-stated as the permanent structural truth it was always testing: the panel grows by
-    // exactly one row per added registry entry, never by a hidden special case.
-    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length,
-      "G: the panel grew by exactly one row per added registry entry");
+    // exactly one row per added registry entry (plus one per added SECTION HEADER — CS030 P3 added a
+    // whole new CELEBRATION section, not just rows under an existing one), never by a hidden special case.
+    const oldHeaders = new Set(OLD.DEBUG_VARS.filter(v => v.header).map(v => v.header));
+    const headersAdded = X.DEBUG_VARS.filter(v => v.header && !oldHeaders.has(v.header)).length;
+    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length + headersAdded,
+      "G: the panel grew by exactly one row per added registry entry (and one per added section header)");
   } else {
     skip("the parent-commit registry pins");
   }

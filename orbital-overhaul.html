@@ -3597,6 +3597,14 @@ const DEBUG_VARS = [
     def: LEVEL_BANNER_SIZE, min: 16, max: 160, step: 4 },
   { id: "levelBannerY", label: "Level banner y offset", unit: "px",
     def: LEVEL_BANNER_Y, min: -200, max: 200, step: 4 },
+  // CS030 P3 (spec §4.5): the achievement celebration panel's two knobs. celebrationScrollStep
+  // matches ACH_SCROLL_STEP's default but is independently tunable — the panel's row height
+  // differs from the Achievements viewer's. celebrationEmblemSize is drawEmblem()'s radius.
+  { header: "CELEBRATION" },
+  { id: "celebrationScrollStep", label: "Celebration scroll step", unit: "px",
+    def: 60, min: 10, max: 200, step: 10 },
+  { id: "celebrationEmblemSize", label: "Celebration emblem size", unit: "px",
+    def: 32, min: 12, max: 64, step: 2 },
 ];
 // CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
@@ -4742,6 +4750,17 @@ function drawPoly(points, x, y, angle, color, closed = true) {
   ctx.restore();
 }
 
+// Achievement celebration emblem (CS030 P3). tierIdx is a number (0-5, Bronze..Diamond) for a
+// tiered unlock, or absent/null for an untiered one, in which case `pool` ("weekly" | "lifetime")
+// picks the mark. tierIdx 0 is Bronze, a VALID tier — must test `typeof tierIdx === "number"`,
+// never truthiness, or every Bronze unlock misroutes to the untiered emblem.
+function drawEmblem(cx, cy, r, tierIdx, pool) {
+  const tiered = typeof tierIdx === "number";
+  const color = tiered ? TIER_COLOR[tierIdx] : COLOR.ach;
+  const polys = tiered ? ACH_EMBLEM.tier[tierIdx] : ACH_EMBLEM[pool];
+  for (const pl of polys) drawPoly(pl.pts.map(p => [p[0] * r, p[1] * r]), cx, cy, 0, color, pl.closed);
+}
+
 // A HUD ring arc: from 12 o'clock, clockwise, sweeping `frac` of a full turn. `frac` is NOT clamped
 // here — callers clamp (banking can exceed 1.0, see the overcharge arc). Track-only when frac <= 0.
 function drawRingArc(x, y, r, frac, color, width = HUD_RING_W, blur = HUD_RING_BLUR) {
@@ -4803,6 +4822,73 @@ const COLOR = {
 // a new hazard. All six are look-call tunables — swap TIER_COLOR[] freely after a browser playtest.
 const TIER_NAMES = ["Bronze", "Silver", "Gold", "Titanium", "Platinum", "Diamond"];
 const TIER_COLOR = ["#c8823c", "#c0c8d2", "#ffcf5a", "#e8d8b0", "#dfe8f2", "#ffffff"];
+
+// ACH_EMBLEM (CS030 P2): the achievement celebration panel's marks — six tier rungs plus
+// one for each untiered pool. Same contract as SAT_ART: coordinates live in UNIT SPACE
+// (every point inside the radius-1 circle, worst case 0.962), so a design scales to any
+// size by multiplying by the radius. A polyline is `{ pts, closed }`; `closed` picks
+// drawPoly's mode. Stroke only — no fills, no new primitive, no external assets. ORIGINAL
+// line drawings authored in code, so the file stays self-contained GPL-3.0 (FLAG A-7).
+//
+// ⛔ Composed in tools/emblem-lab.html and pasted in VERBATIM. That lab is the source of
+// truth and every number below is regenerable from it — never retouch a coordinate here.
+//
+// The six tiers are ONE FAMILY WITH SIX RUNGS, not six shapes: every rung draws the same
+// delta mark inside the SAME circle (r=0.66), and the ladder is how much of that circle
+// exists — 120° cradle, 240°, 300°, closed, closed + four points, points bound in an
+// outer facet ring. Legibility measured in the lab at r=32 (celebrationEmblemSize's
+// default): tightest gap between two features meant to read apart is 5.1px.
+//
+// ⛔ tierIdx 0 is Bronze and is a VALID tier. Resolve with `typeof tierIdx === "number"`.
+// ⚠ The two pool marks draw in COLOR.ach, which is BYTE-IDENTICAL to TIER_COLOR[2]
+// (Gold). Shape is the only thing keeping them off the tier family, so it carries the
+// whole load: both are rectilinear, with no ring and no delta.
+const ACH_EMBLEM = {
+  tier: [
+    [ // 0 — Bronze: mark over a 120° cradle
+      { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33]], closed: false }
+    ],
+    [ // 1 — Silver: the cradle grows to 240°
+      { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.572,-0.33],[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33]], closed: false }
+    ],
+    [ // 2 — Gold: 300°, and the nose still breaks out
+      { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.33,-0.572],[0.572,-0.33],[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572]], closed: false }
+    ],
+    [ // 3 — Titanium: the ring closes
+      { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572],[0,-0.66],[0.33,-0.572],[0.572,-0.33]], closed: true }
+    ],
+    [ // 4 — Platinum: closed ring + four points
+      { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572],[0,-0.66],[0.33,-0.572],[0.572,-0.33]], closed: true },
+      { pts: [[0.547,0.355],[0.665,0.665],[0.355,0.547]], closed: false },
+      { pts: [[-0.355,0.547],[-0.665,0.665],[-0.547,0.355]], closed: false },
+      { pts: [[-0.547,-0.355],[-0.665,-0.665],[-0.355,-0.547]], closed: false },
+      { pts: [[0.355,-0.547],[0.665,-0.665],[0.547,-0.355]], closed: false }
+    ],
+    [ // 5 — Diamond: the points bound in an outer facet ring
+      { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572],[0,-0.66],[0.33,-0.572],[0.572,-0.33]], closed: true },
+      { pts: [[0.547,0.355],[0.665,0.665],[0.355,0.547]], closed: false },
+      { pts: [[-0.355,0.547],[-0.665,0.665],[-0.547,0.355]], closed: false },
+      { pts: [[-0.547,-0.355],[-0.665,-0.665],[-0.355,-0.547]], closed: false },
+      { pts: [[0.355,-0.547],[0.665,-0.665],[0.547,-0.355]], closed: false },
+      { pts: [[0.94,0],[0.665,0.665],[0,0.94],[-0.665,0.665],[-0.94,0],[-0.665,-0.665],[0,-0.94],[0.665,-0.665]], closed: true }
+    ]
+  ],
+  weekly: [ // hourglass — time-limited
+    { pts: [[-0.46,-0.62],[0.46,-0.62],[0.1,0],[0.46,0.62],[-0.46,0.62],[-0.1,0]], closed: true },
+    { pts: [[-0.56,-0.78],[0.56,-0.78]], closed: false },
+    { pts: [[-0.56,0.78],[0.56,0.78]], closed: false }
+  ],
+  lifetime: [ // stamped plate — one and done
+    { pts: [[-0.68,-0.68],[0.68,-0.68],[0.68,0.68],[-0.68,0.68]], closed: true },
+    { pts: [[-0.34,0.02],[-0.08,0.32],[0.4,-0.34]], closed: false }
+  ]
+};
 
 // Per-type powerup identity (F6): a distinct glow color + a short HUD label per kind. Health
 // keeps the universal red-cross red; the rest are hued apart for a readable at-a-glance tell.

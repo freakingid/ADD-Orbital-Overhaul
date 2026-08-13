@@ -407,7 +407,8 @@ function atWave(A, w) {
   // REPOINTED BY CS024 P6c (spec §2.6): P5's "one knob per lever" was incoherent (a lever is a floor,
   // a ceiling, a step count and the level number, not a value), and its single row could only PIN a
   // lever flat. Each lever now emits three rows — checked per-id below, by name, not by count.
-  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL",
+  // REPOINTED BY CS030 P3: a CELEBRATION section trails GLOBAL — later phase, named here.
+  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION",
     "G: section headers, in the specced order, POWERUPS now present (CS024 P6's)");
   for (const h of headers) {
     const i = A.DEBUG_VARS.findIndex(e => e.header === h);

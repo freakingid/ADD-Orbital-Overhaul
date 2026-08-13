@@ -561,8 +561,9 @@ function evalSlice(literal) {
   // REPOINTED, NOT DROPPED: the claim survives intact at the LEVER level, asserted there — the
   // registry names exactly the same levers in exactly the same order, and the only thing about them
   // P6b touched is the derived slider step of the nine restaged UFO knobs.
+  // REPOINTED BY CS030 P3: a CELEBRATION section trails GLOBAL — later phase, named here.
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
-    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL", "G: ...and the same nine section headers, in the same order");
+    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION", "G: ...and the same ten section headers, in the same order");
   if (OLD) {
     const RESTAGED = new Set(["ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
       "ufoDirChangeBig", "ufoDirChangeSmall", "ufoShotSpeedBig", "ufoShotSpeedSmall", "ufoAccuracySmall"]);
@@ -586,7 +587,12 @@ function evalSlice(literal) {
     // CS026 P5 repoint: strip the FOUR level banner knobs (levelBannerTime/Fade/Size/Y, GLOBAL, appended
     // after startLevel) FIRST — they are now the true tail, which is why this strip runs before the
     // `,startLevel$` one below rather than being appended to that regex's own alternation.
+    // CS030 P3 repoint: strip the trailing CELEBRATION section (celebrationScrollStep,
+    // celebrationEmblemSize, appended after levelBannerY, which is why this strip runs FIRST —
+    // levelBannerY is no longer the true tail) — CS030 P3's rows, not P6b's. Same reasoning an
+    // eighth time.
     const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "")
+      .replace(/,CELEBRATION,celebrationScrollStep,celebrationEmblemSize$/, "")
       .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
       .replace(/,startLevel$/, "")
       .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "")

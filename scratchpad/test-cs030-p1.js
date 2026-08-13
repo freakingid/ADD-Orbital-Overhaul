@@ -189,7 +189,9 @@ const src = scriptSource();
     skip("G: registry byte-identity against the parent (no git history)");
   } else {
     const OLD = buildGame({ source: ps });
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length, "G: ⛔ DEBUG_ENTRIES.length unchanged — a data-only collector adds no knob");
+    // REPOINTED BY CS030 P3: +2 later (celebrationScrollStep, celebrationEmblemSize) — a later phase's
+    // rows, named rather than re-litigated. P1's own claim (a data-only collector adds no knob) holds.
+    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two later rows — a data-only collector adds no knob");
     eq(X.LEVERS.length, OLD.LEVERS.length, "G: ⛔ LEVERS.length unchanged");
   }
 

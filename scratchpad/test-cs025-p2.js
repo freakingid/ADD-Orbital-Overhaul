@@ -1158,11 +1158,12 @@ function stepProbe(X, p, dt = 1 / 60) {
     const LATER = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id)    // CS026 P2
       || id === "earlyWorldLevels"                                  // CS026 P3
       || id === "deliveryFloatRise" || id === "deliveryFloatLife"   // CS026 P4
-      || id.startsWith("levelBanner");                              // CS026 P5
+      || id.startsWith("levelBanner")                                // CS026 P5
+      || id.startsWith("celebration");                               // CS030 P3
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))
-      assert(true, `K: ...and ${id} is a later phase's (CS026 P2's junkSplit lever knobs, CS026 P3's earlyWorldLevels, CS026 P4's delivery floater knobs, or CS026 P5's level banner knobs)`);
+      assert(true, `K: ...and ${id} is a later phase's (CS026 P2's junkSplit lever knobs, CS026 P3's earlyWorldLevels, CS026 P4's delivery floater knobs, CS026 P5's level banner knobs, or CS030 P3's celebration knobs)`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
     eq(removed.length, 0, "K: ...and none was removed");
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldIds.has(id)).join(","),
@@ -1170,8 +1171,11 @@ function stepProbe(X, p, dt = 1 / 60) {
        "K: every pre-existing id keeps its relative order (append-only within POWERUPS)");
     for (const oe of OLD.DEBUG_ENTRIES)
       eq(X.DEBUG[oe.id], OLD.DEBUG[oe.id], `K: DEBUG.${oe.id} is byte-identical to the parent on an untouched panel`);
-    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length,
-      "K: the panel grew by exactly one row per added registry entry");
+    // CS030 P3 added a whole new CELEBRATION section header, not just rows under an existing one.
+    const oldHeaders = new Set(OLD.DEBUG_VARS.filter(v => v.header).map(v => v.header));
+    const headersAdded = X.DEBUG_VARS.filter(v => v.header && !oldHeaders.has(v.header)).length;
+    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length + headersAdded,
+      "K: the panel grew by exactly one row per added registry entry (and one per added section header)");
   } else {
     skip("the parent-commit registry pins");
   }

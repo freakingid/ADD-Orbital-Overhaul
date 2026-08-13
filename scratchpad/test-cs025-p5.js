@@ -506,7 +506,8 @@ function quiet(X) {
     const LATER_ROWS = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id)    // CS026 P2
       || id === "earlyWorldLevels"                                       // CS026 P3
       || id === "deliveryFloatRise" || id === "deliveryFloatLife"        // CS026 P4
-      || id.startsWith("levelBanner");                                   // CS026 P5
+      || id.startsWith("levelBanner")                                    // CS026 P5
+      || id.startsWith("celebration");                                   // CS030 P3
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;
