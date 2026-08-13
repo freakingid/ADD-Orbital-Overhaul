@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.30 · Changeset: CS031 · Phase: P4 · Registry: 87 · Levers: 18
+Version: 1.0.0.30 · Changeset: CS031 · Phase: P5 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS031
 
@@ -25,8 +25,42 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P4 · Registry: 87 · Levers: 18
   `profileDelete()` always `activate()`s a replacement before `Profiles.remove()` when the deleted
   profile was active, so `activeId` is never left dangling (closes FLAG-CS031-b).
 
+- P5 — title integration: `MENU_TITLE` gains `"Profile"` as row 2 (FORK-H → c: the row IS the name
+  display, `Profile: NAME`, falling back to `Profile: —` on an empty roster); confirm opens
+  `"profiles"` (FORK-I: title-only — `MENU_ROOT_PLAY`/`MENU_ROOT_OVER` untouched). `TITLE_MENU_Y`/
+  `TITLE_MENU_STEP` are now DERIVED via `titleMenuLayout(n)`, a pure function of `MENU_TITLE.length`
+  (FORK-G → b): N=4 → Y 333 / step 38 (room to spare); N=5 (live) → Y 324 / step 33; N=6 (CS032's
+  future row) → Y 324 / step ≈26.4 — the block stays centered with 24px clearance from both the
+  `O V E R H A U L` baseline and the flavour line at every N. All four (`TITLE_MENU_TOP/BOTTOM/
+  MARGIN/STEP_MAX`) are PLAYTEST KNOBS, numbers due at the P6 gate (G3). Boot routing (FORK-E → c):
+  `Profiles.firstBoot`, read once at `game.menu`'s own construction (no clearing needed — it is never
+  consulted again), sends a genuinely empty install straight to `"profiles"`; a migrated p0 or an
+  existing roster boots normally to `"titlemenu"`. **FLAG-CS031-d CLOSED**, and widened mid-phase:
+  `Profiles.activate()` now resets both `game.stats` AND `game.wave` before `Achievements.init()` —
+  `game.stats` alone still let `untouchable` bleed, since its predicate (`game.wave >= 10 &&
+  !everBelowHalf`) also reads `game.wave`, a field `resetGameStats()` never touched. Fixing the boot
+  screen for an empty store changed default behavior for any headless build with an unseeded
+  `localStorage`; three pre-existing suite files (`test-cs010-p4.js`, `test-cs016-p2.js`, `test-p4.js`)
+  were updated — seeded a returning-player store, or updated a pinned `MENU_TITLE`/`TITLE_MENU_*`
+  literal to the new shape — the same "re-runs against the current build" precedent already in use.
+
 ## Working / verified
 
+- CS031 P5: `test-cs031-p5.js`, 66 assertions, drives the real `menuTitle()`/`menuInput()`/
+  `drawTitleMenu()`/`titleMenuLayout()`/`Profiles.activate()` — no navigation, layout arithmetic or
+  roster logic reimplemented. Covers: `MENU_TITLE`'s new shape and that every label-based consumer
+  (including `Achievements`/`High Scores`, whose indices shifted) still resolves via `indexOf`, with a
+  source pin on the `"Profile"` wiring itself; `titleMenuLayout(n)` asserted generically at N=5 (the
+  live build) AND N=6 (CS032's future row, computed directly — no waiting for that row to exist),
+  proving the step genuinely shrinks below its 38px max rather than the clearance holding by luck, and
+  that N=4 still gets the full step; first-boot routing for a genuinely empty store vs. a
+  legacy-migrated store vs. an existing saved roster; the Profile row's own `"Profile: NAME"` /
+  `"Profile: —"` render, captured by installing a recording override directly on the build's own `ctx`
+  proxy (no hand-rolled second sandbox) and re-verified after a live switch; neither mid-run root
+  (driven row-by-row, state reset fresh each iteration) ever reaches `"profiles"`; and FLAG-CS031-d's
+  repro (`game.wave` 12, `everBelowHalf` false, `maxChainVisit` true) no longer hands a freshly
+  switched-to profile either `untouchable` or `max_haul`.
+- Full suite on a full clone: **122 files, 122 passed, 0 failed, 0 skipped, 0 timed out.**
 - CS031 P4: `test-cs031-p4.js`, 82 assertions, drives the real `menuProfiles()`/`drawProfiles()` (no
   reimplemented roster or store logic). Covers: Add opens `nameentry{mode:"add", back:"profiles"}`
   and the roster grows on commit with no store written for the new profile until it is first saved;
@@ -42,7 +76,6 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P4 · Registry: 87 · Levers: 18
   untouched CANCEL default; the FORK-E empty-roster trap (`back`/`pause` inert with zero profiles);
   the verb-column's wrap-both-ways-and-reset-per-row shape; render smoke across populated/capped/empty
   rosters, headless throughout.
-- Full suite on a full clone: **121 files, 121 passed, 0 failed, 0 skipped, 0 timed out.**
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved since CS030 P3.
 - CS031 P3: the screen is wired in all three places — `menuInput`'s switch, `drawMenu`'s dispatch, and
   the `pause` branch through `closePause()` (driven, not grepped: it lands on `"titlemenu"`).
@@ -110,23 +143,6 @@ Version: 1.0.0.30 · Changeset: CS031 · Phase: P4 · Registry: 87 · Levers: 18
   deliberately did not build, both P4's: the empty-roster case where Add must not be cancellable
   (spec FORK-E), and any use of `mode`/`id` beyond the rename collision exemption.
 
-- ⛔ **FLAG-CS031-d — `game.stats` is a THIRD bleed vector, not covered by spec §4.3's step 3, and
-  NOT fixed here (it is a design call, not an implementation gap). STILL OPEN, and now CODE-reachable.**
-  Two non-tiered lifetime achievements read the per-GAME stats rather than the lifetime counters —
-  `untouchable` (`game.wave >= 10 && !s.everBelowHalf`) and `max_haul` (`s.maxChainVisit`) — and
-  `game.stats` is reset **only** in `startGame()`, so at the title after a game it still holds the
-  last game's values. **Measured:** with `game.wave = 12`, `everBelowHalf = false`,
-  `maxChainVisit = true`, switching to a fresh profile hands it *both* achievements at
-  `deriveLifetime()`, and B's next `Achievements.save()` persists them. P4's SWITCH verb now calls
-  `Profiles.activate()` from exactly the title-screen state the measurement above describes, so the
-  bleed is live in the code today — **still not PLAYER-reachable** only because nothing routes to
-  `"profiles"` from `MENU_TITLE` until P5. P5 must not wire that row without Paul deciding a fix first
-  (reset `game.stats` in `activate()`; gate the switch on a clean title state; teach
-  `deriveLifetime()` to skip per-game predicates) — the P6 gate should look for it either way.
-- **FLAG-CS031-e note 1 — `Profiles.firstBoot` is not cleared by `activate()`.** Matches P1's
-  convention that roster ops don't touch it — P5's title routing must clear it or read
-  `roster.length` instead. (Note 2, the delete-path ordering, is CLOSED by P4: `profileDelete()`
-  always `activate()`s a replacement before `Profiles.remove()`.)
 - **FLAG-CS031-a — one P1 choice the spec did not name: the roster blob carries a monotonic `seq`.**
   Ids are minted `p0`, `p1`, … from it and a removed profile's id is **never** recycled, because
   `remove()` is roster-only and does not clear that profile's stores — a recycled id would resurrect
@@ -186,11 +202,13 @@ None.
   instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   could migrate to `execSource()` whenever one of them is next open for other reasons.
-- **CS031 P5 — Title integration.** The `MENU_TITLE` Profile row is what makes the `"profiles"`
-  screen (and therefore `Profiles.activate()`) PLAYER-reachable for the first time. ⛔ Read
-  FLAG-CS031-d first: the `game.stats` bleed is already live in the code (P4's SWITCH verb), and P5
-  wiring the title row is what turns it player-facing — Paul needs to pick a fix before or alongside
-  this phase. Also read FLAG-CS031-e note 1 (`Profiles.firstBoot`) for the first-boot routing.
+- **CS031 P6 — playtest gate, BLOCKING. No code; Claude Code does not run.** Paul plays the built
+  file from `file://` and answers G1–G9 (`IMPLEMENTATION-PHASES-CS031.md`). G1 (the real-browser
+  round-trip of all three frozen keys plus the new `afd_profiles_v1`) and G2 (the upgrade path from a
+  CS030 build) are the ones that matter — everything else in CS031 is built on an unverified
+  assumption until those two pass. G3 wants literal `TITLE_MENU_*` numbers at the live 5-row layout;
+  P5's own measurement (Y 324 / step 33) is a starting point, not a substitute for a played answer.
+  Nothing proceeds to P7 until the answers are in.
 
 ## Playtest asks (open only — answered ones move to the log)
 

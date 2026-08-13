@@ -74,7 +74,11 @@ const rafStub = () => 0;
 let fakePads = [];
 const navigatorStub = { getGamepads: () => fakePads };
 
-const lsStore = {};
+// CS031 P5: an unseeded store reads as a genuinely empty install (Profiles.firstBoot), which now boots
+// straight to the "profiles" screen instead of "titlemenu" (FORK-CS031-E) — every section below assumes
+// a returning player already on the title menu, so seed one frozen key to make Profiles.init() migrate
+// a roster the same way a real upgrading player's machine would, same idiom as test-cs016-p2.js.
+const lsStore = { afd_settings_v1: "{}" };
 global.localStorage = {
   getItem: k => (k in lsStore ? lsStore[k] : null),
   setItem: (k, v) => { lsStore[k] = String(v); },

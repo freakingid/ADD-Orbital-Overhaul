@@ -110,7 +110,8 @@ const RETURN = [
   "TITLE_MENU_Y", "TITLE_MENU_STEP", "TITLE_MENU_SIZE", "TITLE_MENU_HINT_Y", "TITLE_MENU_HINT",
   "MENU_HINT_SIZE", "COLOR", "VIEW_W", "VIEW_H", "GAME_VERSION",
   "drawTitleMenu", "drawMenu", "DEBUG_CODE", "DebugCode", "bindings", "GP", "keys", "AudioSys",
-  "DEBUG_VARS"   // CS018 P2: section (I) derives the debug panel's first selectable row from the registry
+  "DEBUG_VARS",   // CS018 P2: section (I) derives the debug panel's first selectable row from the registry
+  "Profiles"      // CS031 P5: section (K) reads the Profile row's own name-display contract off it
 ];
 
 // `audio: true` gives the real keydown listener a live AudioSys (it calls AudioSys.init() up front);
@@ -128,7 +129,11 @@ function build({ audio = true } = {}) {
   };
   let pads = [];
   const navigatorStub = { getGamepads: () => pads };
-  const lsStore = {};
+  // CS031 P5: an unseeded store reads as a genuinely empty install (Profiles.firstBoot), which now
+  // boots straight to the "profiles" screen instead of "titlemenu" (FORK-CS031-E). Every section in
+  // this file assumes a returning player already on the title menu, so seed one frozen key to migrate
+  // a roster the same way a real upgrading player's machine would.
+  const lsStore = { afd_settings_v1: "{}" };
   const localStorageStub = {
     getItem: k => (k in lsStore ? lsStore[k] : null),
     setItem: (k, v) => { lsStore[k] = String(v); },
@@ -161,8 +166,10 @@ function build({ audio = true } = {}) {
 (function sectionA_shapes() {
   console.log("(A) MENU_TITLE and the shrunk MENU_OPTIONS shapes");
   const A = build();
-  assert(eqJSON(A.MENU_TITLE, ["Start Game", "Achievements", "High Scores", "Options"]),
-    `A: MENU_TITLE === [Start Game, Achievements, High Scores, Options]; got ${JSON.stringify(A.MENU_TITLE)}`);
+  // CS031 P5 inserted "Profile" as the second row — pinned to its current post-P5 shape, the same
+  // "re-runs against the current build" precedent MENU_ROOT_PLAY's own comment below already follows.
+  assert(eqJSON(A.MENU_TITLE, ["Start Game", "Profile", "Achievements", "High Scores", "Options"]),
+    `A: MENU_TITLE === [Start Game, Profile, Achievements, High Scores, Options]; got ${JSON.stringify(A.MENU_TITLE)}`);
   assert(eqJSON(A.MENU_OPTIONS, ["Sound / Music", "Controls", "Difficulty", "Back"]),
     `A: MENU_OPTIONS shrank 6 -> 4; got ${JSON.stringify(A.MENU_OPTIONS)}`);
   assert(A.MENU_OPTIONS.length === 4, "A: MENU_OPTIONS is exactly 4 rows");
@@ -590,8 +597,12 @@ function build({ audio = true } = {}) {
   const fontSize = e => parseInt(e.font, 10);
 
   // The layout constants are real, named, and derived from VIEW_H (not magic inline numbers).
-  assert(A.TITLE_MENU_Y === A.VIEW_H / 2 - 18, "K: TITLE_MENU_Y is VIEW_H/2 - 18 (342 at 720)");
-  assert(A.TITLE_MENU_STEP === 38, "K: TITLE_MENU_STEP is 38px");
+  // CS031 P5 (FORK-CS031-G → b): Y and STEP are now DERIVED from MENU_TITLE.length via
+  // titleMenuLayout(n), not the fixed literals this section originally pinned — this pins the current
+  // 5-row shape's OUTPUT. See scratchpad/test-cs031-p5.js for the derivation itself, asserted at the
+  // hypothetical N=6 CS032 adds a row at too.
+  assert(A.TITLE_MENU_Y === 324, "K: TITLE_MENU_Y is 324 at the current 5-row MENU_TITLE (derived, CS031 P5)");
+  assert(A.TITLE_MENU_STEP === 33, "K: TITLE_MENU_STEP is 33px at the current 5-row MENU_TITLE (derived, CS031 P5)");
   assert(A.TITLE_MENU_SIZE === 24, "K: TITLE_MENU_SIZE is 24 (matches drawRootMenu's rows)");
   assert(A.TITLE_MENU_HINT_Y === A.VIEW_H / 2 + 170, "K: TITLE_MENU_HINT_Y is VIEW_H/2 + 170 (530 at 720)");
 
@@ -613,7 +624,11 @@ function build({ audio = true } = {}) {
     const sel = i === g.menu.index;
     assert(rows[0].color === (sel ? A.COLOR.text : A.COLOR.menuIdle),
       `K: "${label}" draws in ${sel ? "COLOR.text" : "COLOR.menuIdle"}`);
-    assert(rows[0].str === (sel ? "▶ " : "   ") + label, `K: "${label}" uses the shared "▶ " selection prefix`);
+    // CS031 P5 (FORK-CS031-H → c): the Profile row IS the name display — it renders "Profile: NAME",
+    // not the bare label. scratchpad/test-cs031-p5.js owns that render's own contract; this section
+    // only checks that the shared "▶ " prefix idiom still applies to it.
+    const text = label === "Profile" ? "Profile: " + A.Profiles.nameOf(A.Profiles.activeId) : label;
+    assert(rows[0].str === (sel ? "▶ " : "   ") + text, `K: "${label}" uses the shared "▶ " selection prefix`);
     assert(fontSize(rows[0]) === A.TITLE_MENU_SIZE, `K: "${label}" draws at TITLE_MENU_SIZE`);
   });
   const hint = at(log, cx, A.TITLE_MENU_HINT_Y);
@@ -636,7 +651,9 @@ function build({ audio = true } = {}) {
   assert(texts.includes("BEWARE THE HUNTER SATELLITE"), "K: the flavour line kept");
   assert(texts.some(t => t === "v" + A.GAME_VERSION), "K: the version stamp kept");
   A.MENU_TITLE.forEach(label => {
-    assert(texts.some(t => t.endsWith(label)), `K: the "${label}" row is drawn by the title branch`);
+    // CS031 P5: the Profile row renders "Profile: NAME", so it never ends with the bare label "Profile".
+    const want = label === "Profile" ? "Profile: " + A.Profiles.nameOf(A.Profiles.activeId) : label;
+    assert(texts.some(t => t.endsWith(want)), `K: the "${label}" row is drawn by the title branch`);
   });
   assert(!full.some(e => e.c === "strokeRect"), "K: the title screen strokes no menu panel");
   assert(!full.some(e => e.c === "fillRect" && e.w === A.VIEW_W && e.h === A.VIEW_H),

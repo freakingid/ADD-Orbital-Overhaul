@@ -3195,13 +3195,38 @@ const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover 
 // FORK-CS016-A) — they are deliberately no longer under Options, and so no longer reachable mid-run
 // or at gameover. Cursor defaults to "Start Game" on every entry, so ENTER / A still starts a run
 // immediately (the existing muscle memory survives).
-const MENU_TITLE = ["Start Game", "Achievements", "High Scores", "Options"];
+// CS031 P5 (FORK-CS031-H → c): "Profile" is second — the row IS the current profile's name display
+// (drawTitleMenu renders it "Profile: NAME") and the way into the "profiles" screen (FORK-CS031-I:
+// title-only, never added to MENU_ROOT_PLAY / MENU_ROOT_OVER). Every consumer below resolves this
+// array by LABEL via indexOf, never a hardcoded index, so the insertion needed no other edit.
+const MENU_TITLE = ["Start Game", "Profile", "Achievements", "High Scores", "Options"];
 // Title-menu layout (FORK-CS016-B → b: chrome-less, drawn straight onto the title art — no backdrop
 // dim, no menuPanel box). The rows sit in the band the two removed keyboard-legend lines vacated,
 // between "O V E R H A U L" (baseline VIEW_H/2 - 60) above and "BEWARE THE HUNTER SATELLITE"
-// (baseline VIEW_H/2 + 120) below. All four are PLAYTEST KNOBS.
-const TITLE_MENU_Y      = VIEW_H / 2 - 18;   // first row baseline (342 at VIEW_H 720)
-const TITLE_MENU_STEP   = 38;                // px between row baselines — 4 rows span 114px, ending at 456
+// (baseline VIEW_H/2 + 120) below.
+// CS031 P5 (FORK-CS031-G → b): Y and STEP are DERIVED from MENU_TITLE.length via titleMenuLayout(n),
+// not fixed literals — a 5th row (Profile, this phase) no longer fits the old fixed arithmetic (it
+// would land 14px below the flavour line), and CS032's planned 6th ("Load Saved Game") would be worse
+// still. titleMenuLayout is a pure function of n, mirroring drawRootMenu's own height-derivation
+// precedent (L9694, "h DERIVED from items.length"), so the block recentres itself as rows are added —
+// and so scratchpad/test-cs031-p5.js can assert the arithmetic at N=5 and N=6 without waiting for
+// CS032's real row. Step shrinks below its TITLE_MENU_STEP_MAX only once the row count would otherwise
+// overflow the band; until then the block is centered with TITLE_MENU_MARGIN px of clearance on both
+// sides. All four constants below (TOP/BOTTOM implicitly via VIEW_H, MARGIN, STEP_MAX) are PLAYTEST
+// KNOBS — see STATUS.md for what they evaluate to at N=4/5/6.
+const TITLE_MENU_TOP      = VIEW_H / 2 - 60;   // "O V E R H A U L" baseline — never cross above this
+const TITLE_MENU_BOTTOM   = VIEW_H / 2 + 120;  // flavour-line baseline — never cross below this
+const TITLE_MENU_MARGIN   = 24;                // clearance kept from each boundary — PLAYTEST KNOB
+const TITLE_MENU_STEP_MAX = 38;                // row spacing when the band has room — PLAYTEST KNOB
+function titleMenuLayout(n) {
+  const band = (TITLE_MENU_BOTTOM - TITLE_MENU_MARGIN) - (TITLE_MENU_TOP + TITLE_MENU_MARGIN);
+  const step = n > 1 ? Math.min(TITLE_MENU_STEP_MAX, band / (n - 1)) : TITLE_MENU_STEP_MAX;
+  const y = TITLE_MENU_TOP + TITLE_MENU_MARGIN + (band - (n - 1) * step) / 2;
+  return { y, step };
+}
+const TITLE_MENU_LAYOUT = titleMenuLayout(MENU_TITLE.length);
+const TITLE_MENU_Y      = TITLE_MENU_LAYOUT.y;      // first row baseline (324 at N=5, VIEW_H 720)
+const TITLE_MENU_STEP   = TITLE_MENU_LAYOUT.step;   // px between row baselines (33 at N=5)
 const TITLE_MENU_SIZE   = 24;                // row text size, matching drawRootMenu's rows
 const TITLE_MENU_HINT_Y = VIEW_H / 2 + 170;  // control-hint baseline, below the flavour line (530)
 // Routed through drawMenuHint() (the CS013 P2 shared-footer helper), not a fresh drawText literal.
@@ -4157,6 +4182,10 @@ function menuTitle(a) {
   else if (a === "confirm") {
     const label = MENU_TITLE[m.index];
     if (label === "Start Game")        startGame();
+    // CS031 P5 (FORK-CS031-H → c / FORK-CS031-I): the "profiles" screen's ONE entry point. gotoScreen
+    // resets index/row/col/scroll, so the roster cursor always starts fresh, and menuProfiles'/
+    // closePause's own "back lands on titlemenu" precedent brings the player straight back here.
+    else if (label === "Profile")      gotoScreen("profiles");
     else if (label === "Achievements") gotoScreen("achievements");
     else if (label === "High Scores")  gotoScreen("highscores");
     // openPause() (not gotoScreen) on purpose: it sets game.paused, which is what keeps Options and
@@ -4742,6 +4771,17 @@ const Profiles = {
   // music track, voice, captions, auto-shield and debug knobs, plus its entire lifetime progress — and
   // deriveLifetime() then silently re-derives that player's tier badges onto a stranger.
   //
+  // ⛔ game.stats IS A THIRD BLEED VECTOR, closed here (CS031 P5, FLAG-CS031-d). It is reset only in
+  // startGame(), so at the title after a game it still holds that game's values; two non-tiered lifetime
+  // achievements (untouchable, max_haul) read it directly rather than a lifetime counter, so an ungated
+  // switch hands the incoming profile THOSE two badges via deriveLifetime() below, earned by a game it
+  // never played. Same fix shape as step 3's other resets: a fresh resetGameStats(), no write.
+  // ⛔ game.wave RIDES ALONG for the same reason: untouchable's own predicate is `game.wave >= 10 &&
+  // !s.everBelowHalf`, and game.wave is a SEPARATE field also reset only in startGame() — a
+  // resetGameStats() alone still leaves a post-wave-10 game's wave number sitting on game.wave at the
+  // title, which alone satisfies half of that predicate regardless of the stats reset. Safe to zero
+  // here: activate() is title-only by construction (FORK-CS031-I), so no live gameplay ever reads it.
+  //
   // ⛔ NOTHING IN STEP 3 MAY WRITE. returnToDefaults() ends with saveSettings(), and the Reset-All-Debug
   // menu row calls saveSettings() right after resetAllDebug(). Calling either of those consumers here
   // writes a defaults blob into a store — and WHICH store depends on whether step 2 has already run, so
@@ -4767,6 +4807,9 @@ const Profiles = {
     Object.assign(AudioSys.vol, AUDIO_VOL_DEFAULTS);
     restoreDefaultBindings();
     resetAllDebug();
+    game.stats = resetGameStats();   // CS031 P5 (FLAG-CS031-d): the outgoing game's per-game flags must
+                                      // not survive to be re-read by the incoming profile's deriveLifetime()
+    game.wave = 0;                   // ...and neither does the wave number untouchable's predicate reads
     // Every lifetime counter ships at 0, SUM and MAX alike, so the literal's own KEY SET is the source
     // of truth here and no default is retyped.
     for (const k in Achievements.lifetime) Achievements.lifetime[k] = 0;
@@ -6668,7 +6711,11 @@ const game = {
   // CS016 P2: boots on the title's own menu (state starts "title"), NOT null — the title screen is a
   // navigable menu now, and a null screen there would render cursor-less and read menuActive() false.
   // index 0 = "Start Game", so ENTER / A on a cold boot still starts a run immediately.
-  menu: { screen: "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT,
+  // CS031 P5 (FORK-CS031-E → c): a genuinely empty install (Profiles.firstBoot, set only when init()
+  // found neither a roster nor legacy data) boots straight to "profiles" instead — there is no name to
+  // show on a "Profile: —" title row and nothing to play as. An upgrading player (legacy data migrated
+  // into p0) has firstBoot false and boots normally, exactly as before this phase.
+  menu: { screen: Profiles.firstBoot ? "profiles" : "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT,
           nameBuf: "", nameCtx: null, nameErr: "" }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id; nameBuf/nameCtx/nameErr: CS031 P3, the name-entry screen (typed buffer / what commit does / inline validation message)
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
@@ -9655,7 +9702,12 @@ function drawModal() {
 function drawTitleMenu() {
   MENU_TITLE.forEach((label, i) => {
     const sel = i === game.menu.index;
-    drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, TITLE_MENU_Y + i * TITLE_MENU_STEP,
+    // CS031 P5 (FORK-CS031-H → c): the Profile row IS the current profile's name display — no separate
+    // line anywhere else. An empty roster (first boot, before Add Profile is ever confirmed) can't
+    // actually reach this screen (see the boot routing below), but the "—" fallback keeps this render
+    // honest on its own rather than assuming that invariant holds.
+    const text = label === "Profile" ? "Profile: " + (Profiles.nameOf(Profiles.activeId) || "—") : label;
+    drawText((sel ? "▶ " : "   ") + text, VIEW_W / 2, TITLE_MENU_Y + i * TITLE_MENU_STEP,
              TITLE_MENU_SIZE, sel ? COLOR.text : COLOR.menuIdle);
   });
   drawMenuHint(TITLE_MENU_HINT, VIEW_W / 2, TITLE_MENU_HINT_Y);

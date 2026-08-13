@@ -120,7 +120,9 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
     `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a order, CS016 P2 shrink); got ${JSON.stringify(A.MENU_OPTIONS)}`);
   assert(!A.MENU_OPTIONS.includes("High Scores") && !A.MENU_OPTIONS.includes("Achievements"),
     "B: neither moved screen is still an Options row (CS016 P2 single-parent IA)");
-  assert(JSON.stringify(A.MENU_TITLE) === JSON.stringify(["Start Game", "Achievements", "High Scores", "Options"]),
+  // CS031 P5 inserted "Profile" as the second row — pinned to its current post-P5 shape, the same
+  // "re-runs against the current build" precedent MENU_ROOT_PLAY's own comment above already follows.
+  assert(JSON.stringify(A.MENU_TITLE) === JSON.stringify(["Start Game", "Profile", "Achievements", "High Scores", "Options"]),
     `B: MENU_TITLE is the new sole parent of both; got ${JSON.stringify(A.MENU_TITLE)}`);
   // CS010 P9 added the "Voice Volume" slider row (SOUND_ROWS/VOL_LABELS/VOL_CATS grew together);
   // CS011 P3 added "Voice" (style picker) + "Captions" (toggle), both value-column rows outside
