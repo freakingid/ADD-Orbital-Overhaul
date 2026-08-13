@@ -472,7 +472,20 @@ function fakeItems(n) {
   } else {
     const theirs = gameoverBlock(ps);
     assert(theirs !== null, "G: (setup) the parent's gameover draw block brace-matched");
-    eq(mine, theirs, "G: ⛔ the gameover draw block is BYTE-UNCHANGED by this phase — never gated, never wrapped");
+    // REPOINTED BY CS030 P7 (gate G6): "hide entry entirely until dismissal" changed exactly the
+    // if/else-if condition pair guarding drawEntrySlots()/drawScoreTable() — a later phase's named,
+    // gate-mandated edit, not a re-litigation of P4's own byte-identity claim. Apply that one known
+    // substitution to the parent text, then require IDENTITY on everything else.
+    const theirsWithG6 = theirs
+      .replace(
+        'highlighted.\n    if (game.entry) {\n      drawEntrySlots',
+        'highlighted.\n    // CS030 P7 (gate G6): entry stays ARMED but its slots must not RENDER while the celebration\n' +
+        '    // panel is up — the panel\'s backdrop covers this whole block either way, so the entry branch\n' +
+        '    // simply waits for game.celebration to clear rather than drawing underneath it.\n' +
+        '    if (game.entry && !game.celebration) {\n      drawEntrySlots')
+      .replace('} else {\n      drawScoreTable', '} else if (!game.entry) {\n      drawScoreTable');
+    eq(mine, theirsWithG6,
+      "G: ⛔ the gameover draw block matches the parent except CS030 P7's gate-G6 entry/table condition — no OTHER edit");
   }
 
   const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);

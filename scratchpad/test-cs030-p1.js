@@ -3,7 +3,7 @@
 //
 //   node scratchpad/test-cs030-p1.js
 //
-// PLANNED-FEATURES-CS030.md §4.1: pendingAch/celebration are declared in BOTH the `game` literal
+// archive/PLANNED-FEATURES-CS030.md §4.1: pendingAch/celebration are declared in BOTH the `game` literal
 // and startGame()'s reset (CS016 P3 rule). onUnlock() appends { id, name, desc, tierIdx, pool } —
 // tierIdx stays undefined for untiered unlocks, the collector is a FLUSHED bucket never filtered
 // by game.wave (§0.4), and it is NOT gated on game.debugRun (that guard belongs only to

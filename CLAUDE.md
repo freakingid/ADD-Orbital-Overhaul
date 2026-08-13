@@ -344,6 +344,19 @@ Found via a difficulty regression at level 33.
 ⛔ **`destroyHunter()` is not levered and stays 3-way** — `ACH_LINEAGE_FULL = 13`
 depends on it. Levering the split moves a shipped achievement threshold.
 
+### Achievement celebration panel
+
+⛔ **`game.pendingAch` is a flushed bucket, never filtered by `game.wave`.** In a
+wave-clear frame `nextWave()` (which increments `game.wave`) runs before
+`Achievements.evaluate()`, so a Perfect Wave earned clearing wave 7 is banked
+while `game.wave === 8`. Recording or filtering an item by wave misattributes it
+(CS030 spec §0.4).
+⛔ **Both the keyboard and gamepad input handlers gate on `game.celebration` —
+including its scroll input — before falling through to `game.entry` or normal
+play.** Two independent input paths; a guard added to one and not the other lets
+a controller player blow straight through the panel with Start and never see it
+(CS030 P4).
+
 ### New enemies
 
 Wire into `startGame` reset, `update()` entity update + collision passes +

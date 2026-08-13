@@ -1,5 +1,5 @@
 // Headless test for CS030 Phase 3 — ACH_EMBLEM + drawEmblem(): pastes P2's lab export
-// verbatim and adds the one draw helper. No panel yet (PLANNED-FEATURES-CS030.md §4.2).
+// verbatim and adds the one draw helper. No panel yet (archive/PLANNED-FEATURES-CS030.md §4.2).
 //
 //   node scratchpad/test-cs030-p3.js
 //

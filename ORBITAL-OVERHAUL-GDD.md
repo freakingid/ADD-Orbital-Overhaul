@@ -545,6 +545,72 @@ A hidden, developer-facing tuning panel — never listed in any menu, reached on
 
 > Structure: `DEBUG_VARS`/`DEBUG_ENTRIES`/`DEBUG_ROWS`/`DebugPanel`/`DEBUG` (CS018 P2 added the middle three) /`debugShown`/`applyDebug` + `DEBUG_CODE`/`DEBUG_CODE_IDLE_MS`/`DebugCode` sit just after the `settings` object; the `DEBUG_PANEL_*`/`DEBUG_ROW*`/`DEBUG_VALUE_X`/`DEBUG_ENTRY_MAXLEN` layout constants sit with the other menu-layout knobs by `ACH_SCROLL_STEP`; `debugFirstRow`/`debugSelectedVar`/`debugStep`/`debugScrollTop` + `DEBUG_ENTRY_CHARS`/`debugEntryActive`/`debugEntryKey`/`debugEntryCommit`/`debugEntryCancel` sit immediately above `menuDebug`; `enterDebug` beside `openDebug`; `DIFFLOG_MAX`/`DiffLog`/`DIFFLOG_FIELDS`/`logDifficultySnapshot`/`difficultyLogCSV`/`dumpDifficultyLog` sit right after `DebugCode`; `openDebug` with `openPause`/`gotoScreen`; `menuDebug`/`debugReturn` after `menuDifficulty`; `drawDebug` after `drawDifficulty`; `secretArm`/`secretDisarm` in AudioSys; the arm/append/match block in the `keydown` listener and the idle-timeout tick in `loop()`; `nextWave()` calls `logDifficultySnapshot()` at the end of its own body. **`LEVERS`/`leverState`/`liveLevers`/`payloadSlots`/`largeHunterCap` (CS024 P4/P5/P6f) sit in the Level Progression block, not with `DEBUG_VARS`** — the table itself is not a registry entry, only the three knobs per lever that point *at* it are; `leverKnob()` derives each of those rows from the table, so the panel and the mechanism cannot disagree. **`levelDef`/`stepAt`/`PHASE_LEN`/`LEVEL_MAX`/`JUNK_CYCLE`/`HUNTER_CAP_STEPS`/`TIER_STEPS` (CS018 P1), every `ORBIT_*` constant, `spawnOrbitWave`/`rerollOrbitStartAngles` and the `"r"` reroll keybind are all deleted** (CS024 P1/P4) — `"r"` on the debug screen now resets the selected row (CS024 P6e), an unrelated rebinding of a letter the excision had freed. `wavePressure()` (CS017 P4) is **retired (CS018 P7)** and no longer exists.
 
+### 2.20 Achievement Celebration Panel (CS030)
+
+A dedicated overlay that presents every achievement unlocked since it last flushed — name, tier
+badge, full description and an emblem — instead of letting a run's unlocks pass as toasts alone.
+Two call sites, one shared panel.
+
+- **The collector — `game.pendingAch` + `game.celebration` (P1).** `onUnlock()` (the single unlock
+  choke point, alongside the existing toast push) appends `{ id, name, desc, tierIdx, pool }` to
+  `game.pendingAch` for every unlock. **⛔ It is a flushed bucket, never filtered by `game.wave`** —
+  in a wave-clear frame `nextWave()` (which increments `game.wave`) runs before
+  `Achievements.evaluate()`, so a Perfect Wave earned clearing wave 7 is banked while
+  `game.wave === 8`; recording or filtering by wave would misattribute it. Not gated on
+  `game.debugRun` — that guard belongs to `Achievements.save()` (a persistence point); the
+  collector is UI state, and a debug run must still show the panel or it can never be tested.
+  `game.celebration` is `null`, or `{ items, scroll }` while a panel is live; both fields are
+  declared in the `game` object literal and in `startGame()`'s reset (CS016 P3 rule).
+- **Emblems — `ACH_EMBLEM`, `drawEmblem()` (P2/P3).** Eight unit-space `{ pts, closed }` polyline
+  designs, the same `SAT_ART` contract, authored in `tools/emblem-lab.html` and pasted verbatim: six
+  tier rungs (Bronze…Diamond) that read as one family — the same delta mark inside the same r=0.66
+  circle, the ladder expressed as how much of that circle exists — plus two off-family pool marks
+  (an hourglass for weekly, a stamped plate for untiered-lifetime), both rectilinear, no ring, no
+  delta. `drawEmblem(cx, cy, r, tierIdx, pool)` resolves `typeof tierIdx === "number"` (never
+  truthiness, so Bronze — tier index 0 — routes correctly) to pick the tier design in
+  `TIER_COLOR[tierIdx]`, else the weekly/lifetime pool design in `COLOR.ach`.
+- **The panel — overlay, not modal (P4/P5).** `drawCelebration()` draws a `menuPanel()`-style box in
+  the same tail slot as `drawMenu()` — after the gameover text block, outside `drawHUD()` (Capture's
+  **H** toggle never hides it) — so whatever screen or field it sits over is never gated, wrapped or
+  otherwise touched by its presence. Content is one row per item (`drawCelebrationRow`): emblem, name
+  + tier badge, description, inside a clipped scroll region (`CELEB_ROW_CLIP_TOP/BOTTOM`) with a
+  ▲/▼ affordance shown only when there's more to see — the exact clip/scroll idiom the Achievements
+  viewer already uses, but with its **own** `scroll` field on `game.celebration` rather than the
+  menu-scoped `game.menu.scroll`. `celebrationMaxScroll()` is the shared render/input ceiling
+  function (mirrors `achMaxScroll()`'s contract). Confirm/back dismisses unconditionally, regardless
+  of scroll position — matching the Achievements viewer's own convention. Two `DEBUG_VARS` knobs:
+  `celebrationScrollStep` (px per up/down press, default 60) and `celebrationEmblemSize` (emblem
+  radius px, default 32).
+- **Game-over call site (P4).** At the `"dying"` → `"gameover"` seam, once `killShip()`'s final
+  `Achievements.evaluate()` flush has run, a non-empty `game.pendingAch` opens the panel and empties
+  the bucket. The panel's input guard sits immediately before `game.entry`'s in **both** the keyboard
+  and gamepad handlers, so a qualifying run's initials entry cannot be interacted with until the
+  panel is dismissed — "panel first," delivered through input priority rather than draw order.
+  **Gate G6 (P6/P7):** entry's slots do not *render* while the panel is up either — `game.entry`
+  stays armed, but the gameover draw block only calls `drawEntrySlots()` when `!game.celebration`,
+  so a player never sees initials-entry slots peeking out from behind the panel's backdrop.
+- **Level-end call site (P5).** The 2.5s `waveClearTimer` window is **not** a pause — the ship still
+  flies, Hunters and loose garbage stay live and hunting, saucers can still shoot, and `nextWave()`
+  is normally called inline the instant the timer crosses 2.5s. A non-empty `game.pendingAch` at that
+  crossing opens the panel and **defers `nextWave()`** (and with it `game.levelBanner` /
+  `VoiceSys.sayLevel()`, both fired from inside `nextWave()`) until dismissal — a genuine new pause of
+  live gameplay, chosen knowingly (Paul, FORK-CS030-A) rather than reused from an existing one.
+  `update()`'s early-return is extended to also freeze while `game.celebration` is set at level end —
+  **without** setting `game.paused`, so `menuActive()` stays false and no menu chrome is pulled in.
+  An empty bucket at the same crossing calls `nextWave()` immediately, byte-identical to the
+  pre-CS030 build — this is the common case, most wave clears bank nothing.
+- **Fanfare.** A single `AudioSys.achievement()` call fires when the panel first opens (game over or
+  level end) — the same call `onUnlock()` already makes at unlock time, routed through no new sound.
+  Confirmed at the P6 gate as the shipping behaviour (G5 = once on open).
+
+> New constants: `CELEB_PANEL_W/H`, `CELEB_PANEL_X/Y`, `CELEB_SUB_Y`, `CELEB_ROW_X`, `CELEB_ROW0_Y`,
+> `CELEB_ROW_STEP`, `CELEB_DESC_DY`, `CELEB_NAME_SIZE`, `CELEB_DESC_SIZE`, `CELEB_EMBLEM_DY/GAP`,
+> `CELEB_ROW_CLIP_TOP/BOTTOM`, `CELEB_ROW_VISIBLE_H`, `CELEB_HINT_Y`, `CELEB_HINT` sit just above
+> `drawCelebration`; `ACH_EMBLEM` sits near `TIER_NAMES`/`TIER_COLOR`; `drawEmblem` sits beside
+> `drawPoly`. `game.pendingAch`/`game.celebration` sit with `game.toasts` on the game object, both
+> reset in `startGame`. `celebrationMaxScroll`/`celebrationScroll`/`dismissCelebration`/
+> `drawCelebrationRow`/`drawCelebration` sit together near `drawAchievements`.
+
 ---
 
 ## 3. Code Architecture Map
