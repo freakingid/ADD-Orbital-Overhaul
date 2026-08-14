@@ -1,28 +1,33 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.31 · Changeset: CS031 · Phase: CLOSED · Registry: 87 · Levers: 18
+Version: 1.0.0.31 · Changeset: CS032 · Phase: P1 · Registry: 87 · Levers: 18
 
-## Phase ledger — CS031
+## Phase ledger — CS032
 
-- CS031 is closed. See `log/CS031.md` for the full P1–P7 build log and the GDD version-history
-  entry. Player Profiles: a named roster layered over the three existing `localStorage` stores
-  (`afd_settings_v1`, `afd_achievements_v2`, `afd_scores_v1`), plus a new fourth key
-  (`afd_profiles_v1`). P6's playtest gate came back clean on every one of nine answers, including
-  the two that mattered most — the real-browser round-trip of all four keys (G1) and the CS030-build
-  upgrade path (G2) — so P7 applied zero code changes and moved straight to documentation and the
-  version bump.
+- P1 — `SaveSlots` store (`afd_saves_v1`, per-profile via `Profiles.keyFor()`, lazy, guarded
+  read/write/clear/count with a boolean `write()`) + pure `buildSaveEntry()` reading live `game`
+  state. No restore logic, no menu wiring, no `game.resumedRun` — P2/P3/P4's territory.
+
+CS031 is closed; see `log/CS031.md` for its full P1–P7 build log. Player Profiles: a named roster
+layered over the three existing `localStorage` stores (`afd_settings_v1`, `afd_achievements_v2`,
+`afd_scores_v1`), plus `afd_profiles_v1`.
 
 ## Working / verified
 
-- Full suite on a full clone: **122 files, 122 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **123 files, 123 passed, 0 failed, 0 skipped, 0 timed out.**
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
+- `SaveSlots` is lazy (no boot-time read) and routes both its read and write through
+  `Profiles.keyFor(SAVES_KEY)`, per-profile, exactly like Achievements' own store.
+- `buildSaveEntry()` deep-copies `game.stats.powerUsed` (nested) and shallow-copies `game.powerBudget`
+  (flat) — verified non-aliasing: mutating the live run after capture does not move the entry.
+- An envelope holding a slot with an unrecognised `kind` (e.g. `"snapshot"`) is handed back as data,
+  not coerced to `null` — SaveSlots validates the envelope (`v`, array-ness, length 3), never a
+  slot's own contents; that's the slots screen's (P3) job.
 - `keyFor()` is the one route from a store's base name to the key it reads/writes; `localStorage`
   is never enumerated anywhere in the build.
 - `p0`'s stores ARE the three pre-CS031 frozen keys, verbatim — the legacy migration copies, moves
   and rewrites nothing.
 - `Profiles.activate(id)` resets the runtime to shipped defaults before loading the incoming
   profile; nothing in the reset step writes to storage.
-- **CS026's "three `localStorage` keys never round-tripped in a real browser" item is RETIRED** —
-  CS031 P6's G1/G2 closed it, five changesets after it was first opened. See `log/CS031.md`.
 
 ## Known issues
 
@@ -42,6 +47,12 @@ Version: 1.0.0.31 · Changeset: CS031 · Phase: CLOSED · Registry: 87 · Levers
 - **The milestone floaters can still touch the dock anchor at the picked gate value (from
   CS029).** `SALVAGE BONUS`/`MAX HAUL` measured at 0.0px clearance from the delivery ticker at
   `anchorFrac` 0.50 — zero crossing, but no air either. Paul picked 0.50 anyway.
+- **CS032 P1 repointed `test-cs024-p6b.js`'s TRAP 5 fixed-ref diff pin** — `powerBudget` left the
+  "no diff line touches this symbol" list, same precedent already applied there to
+  `engineBurnSeconds` (CS024 P7) and `powerActive` (CS025 P1): `buildSaveEntry()` legitimately adds
+  a new READER (`{ ...game.powerBudget }`) without touching the store's declaration or any existing
+  consumer. Flagged here because it's a one-line edit outside CS032's own file, made under the
+  standing "may not leave the suite redder than it found it" rule rather than CS032's own scope.
 
 ## Open questions (blocking)
 
@@ -49,10 +60,11 @@ None.
 
 ## Next up
 
-- **CS032 — Save Game / Load Saved Game / the three save slots.** Explicitly out of scope for
-  CS031 (`IMPLEMENTATION-PHASES-CS031.md`'s CS032 boundary note). `MENU_ROOT_PLAY`'s `"Save"` row
-  and its unavailable-row idiom, `menuRoot()`'s dispatch, and `drawRootMenu()`'s forced `COLOR.dim`
-  branch are all still exactly as CS016 P4 left them — confirmed untouched this changeset.
+- **CS032 P2 — `resumeFromSave()` + `resumedRun`.** Opus, xhigh, `ultrathink` per the phase doc —
+  the restore-ordering invariant (`game.stats` before `nextWave()`) and the new sticky
+  `game.resumedRun` eligibility flag. `MENU_ROOT_PLAY`'s `"Save"` row and its unavailable-row idiom,
+  `menuRoot()`'s dispatch, `drawRootMenu()`'s forced `COLOR.dim` branch, `startGame()`, and
+  `nextWave()` are all still exactly as they were before CS032 P1 — confirmed untouched this phase.
 - **FLAG-CS027-c (opportunistic, non-blocking) — 8 test files hardcode world dimensions**
   instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**

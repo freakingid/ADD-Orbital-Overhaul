@@ -4832,6 +4832,52 @@ const Profiles = {
   }
 };
 
+// ---------- Save Slots (CS032 P1) ----------
+// Three per-profile save slots, routed through Profiles.keyFor() exactly like Achievements'
+// per-profile store — its own NEW key, additive, not a bump of any of the four existing ones.
+// This module owns STORAGE ONLY: read/write/clear/count. The capture half (buildSaveEntry(), below
+// game's declaration) and the restore half (resumeFromSave(), P2) are deliberately separate — this
+// object never reads `game` and never reads Achievements/HighScores.
+//
+// ⛔ LAZY: nothing calls read() at boot. SaveSlots does not participate in Profiles.init()'s boot
+// ordering — the slots screen (P3) is the first reader, and Save (P3/P4) is the first writer.
+// ⛔ known-value-else-default on the ENVELOPE: absent, unreadable JSON, wrong `v`, a non-array
+// `slots`, or a `slots` of the wrong length all resolve to three empty slots rather than throwing or
+// partially trusting a bad blob. An individual SLOT's `kind` is NOT interpreted here — FORK-H's "an
+// unrecognised kind renders as unreadable" is the slots screen's (P3) job, not the store's; this
+// module hands back whatever object sits in a valid envelope's slot array, opaque.
+// ⛔ write() returns a BOOLEAN. Every other store in the build swallows a storage failure silently
+// (a background write nobody is watching); Save is a player-initiated act with an expectation of
+// success (spec §4.4), so this is the one guarded site that reports failure to its caller instead.
+const SAVES_KEY = "afd_saves_v1";   // NEW key, owned by CS032 — not one of the four existing ones
+const SaveSlots = {
+  emptySlots() { return [null, null, null]; },
+
+  read() {
+    const ls = storageOK(); if (!ls) return this.emptySlots();
+    try {
+      const raw = ls.getItem(Profiles.keyFor(SAVES_KEY));
+      if (!raw) return this.emptySlots();
+      const data = JSON.parse(raw);
+      if (!data || data.v !== 1 || !Array.isArray(data.slots) || data.slots.length !== 3) return this.emptySlots();
+      return data.slots.slice();
+    } catch (e) { return this.emptySlots(); }   // corrupt / unreadable — three empties, don't crash
+  },
+  // Overwrites slot `i` and rewrites the whole envelope (three slots is small enough that a
+  // read-modify-write is simpler than a partial patch, and matches Profiles.save()'s own shape).
+  write(i, entry) {
+    const ls = storageOK(); if (!ls) return false;
+    try {
+      const slots = this.read();
+      slots[i] = entry;
+      ls.setItem(Profiles.keyFor(SAVES_KEY), JSON.stringify({ v: 1, slots }));
+      return true;
+    } catch (e) { return false; }   // quota / privacy mode / disabled — reportable, not silent
+  },
+  clear(i) { return this.write(i, null); },
+  count() { return this.read().filter(s => s !== null).length; },
+};
+
 // ---------- The "nameentry" screen (CS031 P3, spec §4.4 / FORK-CS031-D → b) ----------
 // The build's first text field. It RENDERS AND VALIDATES ONLY — it creates nothing, renames nothing
 // and touches the roster only to ask nameTaken(). The verbs are P4's, and they live in the onCommit
@@ -6941,6 +6987,37 @@ function resizeWorld(newSize) {
   // ---- 6. SYNC THE CAMERA ------------------------------------------------------------------------
   // So a draw() landing between this resize and the next update() can't show a stale view.
   game.camera.x = ship.x; game.camera.y = ship.y;
+}
+
+// ---------- Save-moment capture (CS032 P1, spec FORK-A) ----------
+// The entire "capture" half of CS032. PURE: reads `game` and Profiles, returns a plain object,
+// mutates nothing. No restore logic (P2's resumeFromSave()) and no game.* field additions live here.
+//
+// ⛔ COPY SEMANTICS ARE LOAD-BEARING. game.stats.powerUsed is a NESTED object — a bare
+// `{ ...game.stats }` would leave `powerUsed` ALIASED to the live run, so a "snapshot" would
+// silently keep rewriting itself as the player's run continues past the save. powerBudget is flat
+// (five numeric keys), so a shallow spread is correct there.
+//
+// Deliberately absent (spec P1 body): game.checkpoint (does not exist), cargoMax/worldSize (both
+// re-derived from `wave` by nextWave() on resume), every entity array (chain/garbage/debris/etc —
+// FORK-G), powerBank/powerBankAmt (flash-display state), magnetHoldT/cargoWasFull/comboGrace/
+// sweepPause/deliveryCount (all in-flight, meaningless at a wave start), and game.resumedRun (P2's
+// field — capturing it would let a resumed-then-resaved run regain eligibility on the next reload).
+function buildSaveEntry() {
+  return {
+    kind: "wave",
+    saved: Date.now(),
+    profileName: Profiles.nameOf(Profiles.activeId),
+    wave: game.wave,
+    score: game.score,
+    hp: game.ship.hp,
+    nextRepair: game.nextRepair,
+    scoopLevel: game.scoopLevel,
+    scoopHits: game.scoopHits,
+    powerBudget: { ...game.powerBudget },
+    stats: { ...game.stats, powerUsed: { ...game.stats.powerUsed } },
+    debugRun: game.debugRun,
+  };
 }
 
 function startGame() {

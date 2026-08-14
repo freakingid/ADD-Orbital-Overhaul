@@ -652,7 +652,13 @@ function evalSlice(literal) {
     // applied it at ENGINE_BURN_SECONDS, and that constant's line names the knob. The STRUCTURE of the
     // powerup surface — the two tables, the drop path, the two predicates, the budget store — is what
     // P6b actually promised not to disturb, and every one of those is still pinned below.
-    for (const sym of ["POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "dropPowerup", "powerBudget",
+    // REPOINTED BY CS032 P1 — `powerBudget` LEAVES this list, same reason engineBurnSeconds and
+    // powerActive left it before: a fixed-ref diff pin cannot outlive a later phase legitimately
+    // ADDING A READER. buildSaveEntry() spreads `game.powerBudget` into a save-slot snapshot
+    // (`{ ...game.powerBudget }`) — a new line that MENTIONS the symbol without touching the store's
+    // own declaration or any existing consumer. What P6b actually promised is that the budget STORE
+    // itself was left alone, which the remaining symbols below still cover in full.
+    for (const sym of ["POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "dropPowerup",
                        "engineMassMult", "chainGuardMinTow"])
       assert(!new RegExp("^[-+].*\\b" + sym + "\\b", "m").test(diff), `G: TRAP 5 — no diff line touches ${sym}`);
     // REPOINTED BY CS025 P1 — `powerActive` LEAVES the "no line mentions it" list and gains a SHARPER
