@@ -1,6 +1,8 @@
 // Headless test for CS016 Phase 4 — the shared "unavailable row" idiom: a menu row that is visible and
-// focusable but cannot be actioned. Two consumers: the disabled "Save" row in the pause root
-// (MENU_ROOT_PLAY), and the three Difficulty value rows locked while a run is in progress.
+// focusable but cannot be actioned. This phase built two consumers: the disabled "Save" row in the
+// pause root (MENU_ROOT_PLAY), and the Difficulty value rows locked while a run is in progress.
+// ⛔ CS032 P4 made "Save" LIVE, so the Difficulty lock is the consumer this file still tests — §B was
+// repointed in place (see its own header) and §D–§G are untouched.
 //
 //   node scratchpad/test-cs016-p4.js
 //
@@ -11,8 +13,8 @@
 //
 // Sections:
 //  (A) node --check; MENU_ROOT_PLAY is 4 rows with Save at index 1; MENU_ROOT_OVER still 3 rows, no Save.
-//  (B) the cursor CAN land on Save; confirm on Save changes nothing; the row renders COLOR.dim while
-//      focused (and unfocused).
+//  (B) the cursor CAN land on and pass through Save; confirm opens the "slots" screen in save mode;
+//      the row renders in the ordinary selected/idle colours (REPOINTED, CS032 P4 — was inert + dim).
 //  (C) drawRootMenu's derived panel height fits every row + the hint, for BOTH the 4-row pause root and
 //      the 3-row gameover root — read off the real strokeRect bounds, not a re-derived formula.
 //  (D) locked Difficulty (game.state "playing"): left/right on shot/magnet/autoshield is a byte-identical
@@ -190,42 +192,49 @@ const DIFFICULTY_HELP_DY = 248;    // CS024 P6: the help line's y offset inside 
   assert(eqJSON(A.MENU_ROOT_OVER, ["Play Again", "Options", "Quit to Title"]), "A: MENU_ROOT_OVER unchanged");
 })();
 
-// ================= (B) the Save row: focusable, inert, always dim =====================
+// ================= (B) the Save row: focusable, live, ordinary colours =====================
+// ⛔ REPOINTED BY CS032 P4. This section originally pinned the OTHER half of what this phase built:
+// "Save" as the unavailable-row idiom's canonical demonstrator — inert confirm, forced COLOR.dim. That
+// row went LIVE in CS032 P4 (both halves, one commit), so those two claims are now false OF THIS ROW
+// and were repointed rather than deleted: the claims that survive the change (the cursor can land on
+// it, the cursor passes freely through it) stay here, and the pair that flipped is asserted in its new
+// direction. The IDIOM itself is untouched and still fully under test — by this file's own §D–§G
+// (Difficulty's mid-run lock, the phase's second consumer) and by test-cs031-p4.js's "Add Profile" cap,
+// which is now its canonical example. test-cs032-p4.js §A/§B owns the Save row's new contract.
 (function sectionB() {
-  console.log("(B) cursor CAN land on Save; confirm on Save is a total no-op; renders COLOR.dim");
+  console.log("(B) cursor CAN land on Save; confirm opens the slots screen; renders in the ordinary colours");
   const A = build();
   const g = A.game;
 
   A.atPauseRoot("Save");
   assert(A.rootItems()[g.menu.index] === "Save", "B: (precondition) cursor is parked on Save");
 
-  const before = { state: g.state, paused: g.paused, screen: g.menu.screen, index: g.menu.index };
   A.menuInput("confirm");
-  assert(g.state === before.state, "B: confirm on Save left game.state unchanged");
-  assert(g.paused === before.paused, "B: ...left game.paused unchanged");
-  assert(g.menu.screen === before.screen, "B: ...left game.menu.screen unchanged");
-  assert(g.menu.index === before.index, "B: ...and did not move the cursor either");
-  assert(A.setItemCalls() === 0, "B: confirm on Save wrote nothing to storage");
+  assert(g.menu.screen === "slots", "B: confirm on Save opens the slots screen (CS032 P4 — was inert)");
+  assert(g.menu.slotMode === "save", "B: ...in save mode");
+  assert(g.state === "playing" && g.paused === true, "B: ...without disturbing the paused run underneath");
+  assert(A.setItemCalls() === 0, "B: merely OPENING the screen writes nothing to storage");
 
-  // The cursor also freely passes THROUGH Save on the way to a live row (never trapped there).
+  // The cursor also freely passes THROUGH Save on the way to a live row (never trapped there) — as
+  // true of a live row as it was of a dim one, and the reason the row's position could stay put.
   A.atPauseRoot("Continue");
   A.menuInput("down"); A.menuInput("down");
   assert(A.rootItems()[g.menu.index] === "Options", "B: down x2 from Continue reaches Options, having passed through Save");
 
-  // Render: Save draws COLOR.dim both while focused and while merely passed over.
+  // Render: no root row is forced dim any more — Save follows the plain selected/idle convention.
   A.atPauseRoot("Save");
   let log = A.render(A.drawRootMenu);
   let entry = log.find(e => e.c === "fillText" && e.str.endsWith("Save"));
   assert(!!entry, "B: Save row rendered a fillText");
   assert(entry.str === "▶ Save", "B: ...with the focused \"▶ \" prefix");
-  assert(entry.color === A.COLOR.dim, `B: ...focused Save draws COLOR.dim, not COLOR.text (got ${entry && entry.color})`);
+  assert(entry.color === A.COLOR.text, `B: ...focused Save draws COLOR.text (got ${entry && entry.color})`);
 
   A.atPauseRoot("Continue");
   log = A.render(A.drawRootMenu);
   entry = log.find(e => e.c === "fillText" && e.str.endsWith("Save"));
   assert(!!entry, "B: Save row rendered a fillText while unfocused");
   assert(entry.str === "   Save", "B: ...with the unfocused blank prefix");
-  assert(entry.color === A.COLOR.dim, `B: ...unfocused Save also draws COLOR.dim, not COLOR.menuIdle (got ${entry && entry.color})`);
+  assert(entry.color === A.COLOR.menuIdle, `B: ...unfocused Save draws COLOR.menuIdle (got ${entry && entry.color})`);
 })();
 
 // ================= (C) drawRootMenu: derived height fits every row, both root layouts =====================
@@ -419,6 +428,11 @@ const DIFFICULTY_HELP_DY = 248;    // CS024 P6: the help line's y offset inside 
     A.game.menu.index = A.rootItems().indexOf("Save");
     A.draw();
     A.menuInput("confirm");
+    A.draw();
+    // CS032 P4: that confirm now LANDS somewhere (the slots screen), so back out of it before the
+    // Difficulty sweep below — without this the rest of the section would drive menuSlots by accident
+    // and quietly stop smoking what it was written to smoke.
+    A.menuInput("back");
     A.draw();
     // Difficulty, locked: nav every row, try left/right, draw each time.
     A.game.menu.index = A.rootItems().indexOf("Options"); A.menuInput("confirm");

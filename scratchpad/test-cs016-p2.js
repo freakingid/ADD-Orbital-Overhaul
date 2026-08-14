@@ -111,7 +111,8 @@ const RETURN = [
   "MENU_HINT_SIZE", "COLOR", "VIEW_W", "VIEW_H", "GAME_VERSION",
   "drawTitleMenu", "drawMenu", "DEBUG_CODE", "DebugCode", "bindings", "GP", "keys", "AudioSys",
   "DEBUG_VARS",   // CS018 P2: section (I) derives the debug panel's first selectable row from the registry
-  "Profiles"      // CS031 P5: section (K) reads the Profile row's own name-display contract off it
+  "Profiles",     // CS031 P5: section (K) reads the Profile row's own name-display contract off it
+  "SaveSlots"     // CS032 P4: section (K) asks the REAL store whether the Load row should be dim
 ];
 
 // `audio: true` gives the real keydown listener a live AudioSys (it calls AudioSys.init() up front);
@@ -168,8 +169,13 @@ function build({ audio = true } = {}) {
   const A = build();
   // CS031 P5 inserted "Profile" as the second row — pinned to its current post-P5 shape, the same
   // "re-runs against the current build" precedent MENU_ROOT_PLAY's own comment below already follows.
-  assert(eqJSON(A.MENU_TITLE, ["Start Game", "Profile", "Achievements", "High Scores", "Options"]),
-    `A: MENU_TITLE === [Start Game, Profile, Achievements, High Scores, Options]; got ${JSON.stringify(A.MENU_TITLE)}`);
+  // REPOINTED BY CS031 P5 ("Profile") and CS032 P4 ("Load Saved Game", inserted beside "Start Game"),
+  // both of which this phase's own claim — the title menu is the sole parent of Achievements and High
+  // Scores — is indifferent to. The literal is re-pinned rather than loosened so a row appearing or
+  // disappearing unnoticed still fails here.
+  const TITLE_ROWS = ["Start Game", "Load Saved Game", "Profile", "Achievements", "High Scores", "Options"];
+  assert(eqJSON(A.MENU_TITLE, TITLE_ROWS),
+    `A: MENU_TITLE === ${JSON.stringify(TITLE_ROWS)}; got ${JSON.stringify(A.MENU_TITLE)}`);
   assert(eqJSON(A.MENU_OPTIONS, ["Sound / Music", "Controls", "Difficulty", "Back"]),
     `A: MENU_OPTIONS shrank 6 -> 4; got ${JSON.stringify(A.MENU_OPTIONS)}`);
   assert(A.MENU_OPTIONS.length === 4, "A: MENU_OPTIONS is exactly 4 rows");
@@ -599,10 +605,12 @@ function build({ audio = true } = {}) {
   // The layout constants are real, named, and derived from VIEW_H (not magic inline numbers).
   // CS031 P5 (FORK-CS031-G → b): Y and STEP are now DERIVED from MENU_TITLE.length via
   // titleMenuLayout(n), not the fixed literals this section originally pinned — this pins the current
-  // 5-row shape's OUTPUT. See scratchpad/test-cs031-p5.js for the derivation itself, asserted at the
-  // hypothetical N=6 CS032 adds a row at too.
-  assert(A.TITLE_MENU_Y === 324, "K: TITLE_MENU_Y is 324 at the current 5-row MENU_TITLE (derived, CS031 P5)");
-  assert(A.TITLE_MENU_STEP === 33, "K: TITLE_MENU_STEP is 33px at the current 5-row MENU_TITLE (derived, CS031 P5)");
+  // shape's OUTPUT. See scratchpad/test-cs031-p5.js for the derivation itself.
+  // REPOINTED BY CS032 P4: N went 5 -> 6 ("Load Saved Game"). Y is unmoved at 324 — the block stays
+  // centred in the band — and STEP shrank 33 -> 26.4, which is the self-healing FORK-G bought and the
+  // reason this phase needed no TITLE_MENU_* knob edit.
+  assert(A.TITLE_MENU_Y === 324, "K: TITLE_MENU_Y is 324 at the current 6-row MENU_TITLE (derived, CS031 P5)");
+  assert(A.TITLE_MENU_STEP === 26.4, `K: TITLE_MENU_STEP is 26.4px at the current 6-row MENU_TITLE (got ${A.TITLE_MENU_STEP})`);
   assert(A.TITLE_MENU_SIZE === 24, "K: TITLE_MENU_SIZE is 24 (matches drawRootMenu's rows)");
   assert(A.TITLE_MENU_HINT_Y === A.VIEW_H / 2 + 170, "K: TITLE_MENU_HINT_Y is VIEW_H/2 + 170 (530 at 720)");
 
@@ -622,8 +630,14 @@ function build({ audio = true } = {}) {
     assert(rows.length === 1, `K: exactly one fillText for the "${label}" row`);
     if (!rows.length) return;
     const sel = i === g.menu.index;
-    assert(rows[0].color === (sel ? A.COLOR.text : A.COLOR.menuIdle),
-      `K: "${label}" draws in ${sel ? "COLOR.text" : "COLOR.menuIdle"}`);
+    // CS032 P4: "Load Saved Game" is the unavailable-row idiom's newest consumer — COLOR.dim while the
+    // active profile has zero occupied slots, which is this build's state (asked through the REAL
+    // SaveSlots, not assumed). scratchpad/test-cs032-p4.js §E owns that rule in both directions; here
+    // the row is only excluded from the plain selected/idle convention.
+    const dim = label === "Load Saved Game" && A.SaveSlots.count() === 0;
+    const want = dim ? A.COLOR.dim : (sel ? A.COLOR.text : A.COLOR.menuIdle);
+    assert(rows[0].color === want,
+      `K: "${label}" draws in ${dim ? "COLOR.dim" : sel ? "COLOR.text" : "COLOR.menuIdle"}`);
     // CS031 P5 (FORK-CS031-H → c): the Profile row IS the name display — it renders "Profile: NAME",
     // not the bare label. scratchpad/test-cs031-p5.js owns that render's own contract; this section
     // only checks that the shared "▶ " prefix idiom still applies to it.

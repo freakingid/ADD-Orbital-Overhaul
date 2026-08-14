@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.31 · Changeset: CS032 · Phase: P3 · Registry: 87 · Levers: 18
+Version: 1.0.0.31 · Changeset: CS032 · Phase: P4 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS032
 
@@ -35,13 +35,37 @@ Version: 1.0.0.31 · Changeset: CS032 · Phase: P3 · Registry: 87 · Levers: 18
   `achTab` already gets. Reachable only from the test harness this phase — `MENU_ROOT_PLAY`,
   `MENU_TITLE` and both menus' dispatch are untouched; P4 wires the two real callers.
 
+- P4 — menu wiring. `"Save"`'s three-piece unavailable-row idiom unpicked in one commit: `menuRoot()`
+  gained a `"Save"` branch (`slotMode = "save"` → `gotoScreen("slots")`) and `drawRootMenu()`'s
+  `it === "Save" ? COLOR.dim` ternary was **deleted** — `MENU_ROOT_PLAY` itself is byte-identical, label
+  and position both. `MENU_TITLE` gained `"Load Saved Game"` at index 1, beside `"Start Game"`; N went
+  5 → 6 with **no** `TITLE_MENU_*` edit (Y unmoved at 324, step self-healed 33 → 26.4, pinned
+  byte-identical against P3's SHA). The row is the idiom's new consumer: present, focusable, dim and
+  inert at `SaveSlots.count() === 0`, asked fresh in `drawTitleMenu()` (draw time) and `menuTitle()`
+  (confirm time), never cached. All four `unavailable-row idiom` citations repointed at
+  `menuProfiles()`'s `Add Profile` cap, now the canonical example — including `menuDifficulty()`'s,
+  which the prompt did not list. Six suite files repointed; `test-cs032-p4.js` mutation-tested eight
+  ways.
+
 CS031 is closed; see `log/CS031.md` for its full P1–P7 build log. Player Profiles: a named roster
 layered over the three existing `localStorage` stores (`afd_settings_v1`, `afd_achievements_v2`,
 `afd_scores_v1`), plus `afd_profiles_v1`.
 
 ## Working / verified
 
-- Full suite on a full clone: **125 files, 125 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **126 files, 126 passed, 0 failed, 0 skipped, 0 timed out.**
+- **P4's pins were mutation-tested, not just asserted.** Eight deliberate breaks — restoring the
+  forced-dim ternary, dropping `drawTitleMenu()`'s dim rule, dropping `menuTitle()`'s count guard,
+  re-adding a stale `MENU_ROOT_PLAY's "Save"` citation, deleting the `menuRoot()` branch, adding
+  `"Save"` to `MENU_ROOT_OVER`, hiding the Load row instead of dimming it, and hand-tuning
+  `TITLE_MENU_STEP_MAX` — each failed in the section written to catch it. No pin passed vacuously.
+  Restoring the ternary alone (the silent failure this phase exists for) fails §A four ways.
+- **Title-menu layout at N=6** (the values the build's `TITLE_MENU_*` comment points here for):
+  Y 324, step 26.4, last row 456 — 24px clear of the flavour line at 480. N=5 was Y 324 / step 33;
+  N=4 is Y 324 / step 38 (the full `STEP_MAX`). Y is unmoved at every count because the block
+  re-centres; only the step shrinks.
+- Driven end-to-end through the real `draw()`: title → `"Load Saved Game"` → the slots screen renders
+  its three rows with `game.paused` false, and Back returns to the title menu.
 - **One reset list, textually pinned:** `game.debris = [];` occurs exactly once in the whole build
   (`test-cs032-p2.js` §M). A resumed run and a fresh run at the same level agree on `cargoMax`,
   `worldSize`, live world dimensions and `hudHull`, checked at level 3 (small world) and level 9.
@@ -110,6 +134,46 @@ layered over the three existing `localStorage` stores (`afd_settings_v1`, `afd_a
   input runs — asserting laziness directly, so it stays correct through however many later phases
   add more (non-boot) callers.
 
+- **CS032 P4 repointed SIX suite files, same standing "may not leave the suite redder" rule** — more
+  than any earlier phase this changeset, because making a shipped row live and inserting a title row
+  are both visible to tests that never mentioned CS032. All six are repoints, not loosenings; each
+  says in place what changed and why. `test-cs016-p4.js` §A/§B is the load-bearing one: that phase
+  BUILT the unavailable-row idiom and used `"Save"` as its demonstrator, so §B's "inert + always dim"
+  pair is now false *of that row*. It was repointed in its new direction rather than deleted — the
+  claims that survive (the cursor lands on it, passes through it) stay — and the idiom itself is still
+  fully under test by that file's own §D–§G (the Difficulty mid-run lock) and `test-cs031-p4.js`'s
+  `Add Profile` cap. Its §H smoke also gained a `back` after the Save confirm; without it the rest of
+  that section would have driven `menuSlots()` by accident and quietly stopped smoking the Difficulty
+  cycle it was written for. The other five: `test-cs010-p4.js`/`test-cs016-p2.js` §A (the `MENU_TITLE`
+  literal, re-pinned at 6 rather than loosened), `test-cs016-p2.js` §K (step 33 → 26.4, and the row
+  colour loop now asks the real `SaveSlots` whether the Load row should be dim), `test-cs013-p2.js` §C
+  (the `"Save"` colour exception deleted), `test-f8.js` §A (the pause-root walk now backs out of the
+  slots screen), and `test-cs031-p5.js` §A/§B (Profile is row 2 now, and its forecast N=6 is real).
+
+- **⛔ FLAG-CS032-a — `drawTitleMenu()` calls `SaveSlots.count()` every frame**, which is a
+  `localStorage.getItem` + `JSON.parse` per title-screen frame at 60fps. This is what the spec asked
+  for (§4.3: *"`drawTitleMenu()` asks `SaveSlots.count() === 0` at draw time"*, explicitly not cached,
+  because a profile switch or delete changes the answer) and `drawSlots()` already reads per frame the
+  same way, so it is deliberate, not an oversight. Recorded because it is the build's first
+  **unconditional** per-frame storage read — it runs on the title screen whether or not the player
+  ever opens a menu. If it ever measures, the fix is a cache invalidated at the three sites that can
+  change the answer (profile activate, profile delete, slot write), not a moved question.
+
+- **Back from the slots screen in LOAD mode lands the title cursor on `"Options"`, not on
+  `"Load Saved Game"`.** `menuSlots()`'s back calls `returnToTitleMenu()`, which hardcodes
+  `MENU_TITLE.indexOf("Options")` — correct for its other callers (menuOptions' Back, profile SWITCH),
+  slightly off here: the player backs out of Load and the cursor has jumped four rows. Shipped in P3
+  and untouched by P4, but P4 is what makes it player-reachable for the first time. Not fixed —
+  changing it is a `returnToTitleMenu()` signature question, which is design, not wiring. Save mode is
+  unaffected (it restores the cursor to `"Save"` correctly).
+
+- **The P4 prompt named three idiom citation sites; there were four, and one of the named three did
+  not exist.** Actual: `menuProfiles()`'s cap, `drawProfiles()`, `drawSlots()`, and
+  `menuDifficulty()`'s `DIFFICULTY_LOCK_HELP` note (unlisted). The `MENU_TITLE` region carried no
+  citation — it carried a *stale forecast* (`CS032's planned 6th`), swept separately. All four are
+  repointed, and `test-cs032-p4.js` §F now pins the citation form itself (`MENU_ROOT_PLAY's "Save"`
+  appears nowhere; no line mentioning the idiom quotes `"Save"`) so the next such sweep is mechanical.
+
 - **`test-cs030-p1.js` §A reads a fixed 3000-CHARACTER window** from `function startGame()` to find
   `game.pendingAch = []` / `game.celebration = null`. Those now sit at +2102 / +2187 — inside, with
   ~800 characters of headroom against ~1500 before P2. It bit once during this phase and the fix was
@@ -133,17 +197,17 @@ None.
 
 ## Next up
 
-- **CS032 P4 — menu wiring.** Opus, xhigh. The `"slots"` screen is built and fully tested but has no
-  real caller yet. Make `"Save"` live in the pause root — all three pieces of the unavailable-row
-  idiom in one commit (`menuRoot()`'s confirm branch → `gotoScreen("slots")` + `slotMode = "save"`;
-  **delete** `drawRootMenu()`'s `it === "Save" ? COLOR.dim : ...` ternary — the piece that's silent
-  when forgotten). Add `"Load Saved Game"` to `MENU_TITLE` (after `"Start Game"`) with the same
-  unavailable-row idiom when `SaveSlots.count() === 0`, recomputed on every title-menu entry (not
-  cached — a profile switch or delete changes the answer). `titleMenuLayout(n)` already derives from
-  `MENU_TITLE.length`; do not hand-edit `TITLE_MENU_STEP_MAX`/`_MARGIN`. Grep for every comment citing
-  `MENU_ROOT_PLAY`'s `"Save"` as the unavailable-row idiom's canonical example (`menuProfiles()`'s cap,
-  `drawProfiles()`, the `MENU_TITLE` region) and repoint them at `Add Profile`, which stays a true
-  example.
+- **CS032 P5 — profile-delete purge + edge tests.** `removeProfileStores()` and `blankLegacyStores()`
+  are different code and both need the slot purge; a deleted profile's `afd_saves_v1:pN` must go with
+  its settings and achievements, and the legacy path blanks rather than removes. Then the full suite.
+  ⛔ P4 note for P5: with `"Load Saved Game"` now live, a profile delete changes the title row's dim
+  state — the row already recomputes, so P5 needs no render work, but the purge is what makes the
+  recomputation *correct* rather than merely fresh.
+
+- **⛔ P7 doc sweep — `MENU_TITLE` is 6 rows and the pause root's `"Save"` is live.** The GDD's menu
+  IA section and any passage calling `"Save"` a placeholder both need the update; GDD §2's
+  unavailable-row-idiom passage (if it names `"Save"` as the example) repoints at `Add Profile`, as
+  the build's own comments now do.
 
 - **⛔ P7 doc sweep — the GDD names `startGame()` as the site of the reset list in ~4 places** (the
   level-banner clear at §2, the world-resize contract, `game.worldSize`'s both-places note). The

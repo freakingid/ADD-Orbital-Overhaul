@@ -124,8 +124,14 @@ console.log("(A) menu state machine transitions");
 assert(!menuActive(), "A: not in a menu while playing");
 openPause();
 assert(game.paused === true && game.menu.screen === "root" && game.menu.index === 0, "A: pause opens root");
-menuInput("down"); assert(game.menu.index === 1 && rootItems()[game.menu.index] === "Save", "A: down -> Save row (CS016 P4, focusable but inert)");
-menuInput("confirm"); assert(game.menu.screen === "root", "A: confirm on Save is inert — still on root");
+menuInput("down"); assert(game.menu.index === 1 && rootItems()[game.menu.index] === "Save", "A: down -> Save row");
+// REPOINTED BY CS032 P4: the Save row went LIVE. It was inert here (the unavailable-row idiom) from
+// CS016 P4 until this changeset; confirm now opens the "slots" screen in save mode, and slots' own
+// Back lands back on the root with the cursor restored to Save — which is what lets this walk carry on.
+menuInput("confirm");
+assert(game.menu.screen === "slots" && game.menu.slotMode === "save", "A: confirm on Save -> the slots screen in save mode");
+menuInput("back");
+assert(game.menu.screen === "root" && rootItems()[game.menu.index] === "Save", "A: back from slots -> root, cursor restored to Save");
 menuInput("down"); assert(rootItems()[game.menu.index] === "Options", "A: down again -> Options row");
 menuInput("confirm"); assert(game.menu.screen === "options", "A: confirm Options -> options screen");
 game.menu.index = MENU_OPTIONS.indexOf("Controls"); menuInput("confirm"); assert(game.menu.screen === "controls", "A: confirm Controls -> controls screen");
@@ -138,7 +144,8 @@ menuInput("back"); assert(game.paused === false && game.menu.screen === null, "A
 // =====================================================================
 console.log("(B) volume sliders + gain-node routing + clamping");
 // CS010 P4: the sliders moved off Options onto a nested "Sound / Music" screen (SOUND_ROWS).
-// CS016 P4: one more "down" than before to step past the inserted "Save" row.
+// CS016 P4: one more "down" than before to step past the inserted "Save" row (still just passed
+// OVER, never confirmed, so CS032 P4 making that row live changes nothing here).
 openPause(); menuInput("down"); menuInput("down"); menuInput("confirm"); // -> options, index 0 = "Sound / Music"
 assert(game.menu.screen === "options" && MENU_OPTIONS[game.menu.index] === "Sound / Music", "B: on Sound/Music row");
 menuInput("confirm"); // -> sound, index 0 = SFX

@@ -3184,9 +3184,13 @@ function firstPressedButton() {
 // with its own session verbs (Play Again / Quit to Title) — distinct from the paused-mid-game root
 // (Continue / Quit). rootItems() picks the layout off game.state; update() skips the sim outside
 // "playing", so game.paused is safe in any state.
-// CS016 P4 (§4): "Save" is a placeholder row — save-game itself is not implemented this round. It uses
-// the shared unavailable-row idiom (below): focusable, always COLOR.dim, confirm is inert. MENU_ROOT_OVER
-// is deliberately NOT given one — there is no run in progress at gameover for a save to apply to.
+// CS032 P4: "Save" is LIVE — it opens the "slots" screen in save mode (menuRoot's confirm chain, and
+// drawRootMenu with no forced-dim ternary left in it). The label and its position are CS016 P4's and
+// are deliberately unchanged; what went away is the unavailable-row idiom this row used to DEMONSTRATE
+// while save-game was unimplemented. The idiom itself is unchanged and still has live consumers — see
+// menuProfiles' "Add Profile" cap, which is now its canonical example.
+// CS016 P4's other half stands: MENU_ROOT_OVER is deliberately given NO "Save" — there is no run in
+// progress at gameover for a save to apply to.
 const MENU_ROOT_PLAY = ["Continue", "Save", "Options", "Quit"];     // paused mid-game
 const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover (CS013 P1)
 // CS016 P2 (§1): the TITLE screen's own root menu — the third root layout, and the only one that is
@@ -3200,18 +3204,25 @@ const MENU_ROOT_OVER = ["Play Again", "Options", "Quit to Title"];  // gameover 
 // (drawTitleMenu renders it "Profile: NAME") and the way into the "profiles" screen (FORK-CS031-I:
 // title-only, never added to MENU_ROOT_PLAY / MENU_ROOT_OVER). Every consumer below resolves this
 // array by LABEL via indexOf, never a hardcoded index, so the insertion needed no other edit.
-const MENU_TITLE = ["Start Game", "Profile", "Achievements", "High Scores", "Options"];
+// CS032 P4: "Load Saved Game" sits SECOND, beside "Start Game" — the two are both "start a run" verbs
+// and everything from "Profile" down is configuration. It is the unavailable-row idiom's newest
+// consumer: present, focusable, COLOR.dim and inert whenever the ACTIVE profile has zero occupied
+// slots (spec §4.3). Kept PRESENT rather than hidden so MENU_TITLE.length — and therefore
+// titleMenuLayout()'s derived geometry below — never varies with save state; a row that came and went
+// would shift the whole block vertically. Both halves (drawTitleMenu's colour, menuTitle's confirm)
+// ask SaveSlots.count() fresh and never cache it: a profile switch or a profile delete changes it.
+const MENU_TITLE = ["Start Game", "Load Saved Game", "Profile", "Achievements", "High Scores", "Options"];
 // Title-menu layout (FORK-CS016-B → b: chrome-less, drawn straight onto the title art — no backdrop
 // dim, no menuPanel box). The rows sit in the band the two removed keyboard-legend lines vacated,
 // between "O V E R H A U L" (baseline VIEW_H/2 - 60) above and "BEWARE THE HUNTER SATELLITE"
 // (baseline VIEW_H/2 + 120) below.
 // CS031 P5 (FORK-CS031-G → b): Y and STEP are DERIVED from MENU_TITLE.length via titleMenuLayout(n),
-// not fixed literals — a 5th row (Profile, this phase) no longer fits the old fixed arithmetic (it
-// would land 14px below the flavour line), and CS032's planned 6th ("Load Saved Game") would be worse
-// still. titleMenuLayout is a pure function of n, mirroring drawRootMenu's own height-derivation
+// not fixed literals — a 5th row (Profile, CS031 P5) no longer fits the old fixed arithmetic (it
+// would land 14px below the flavour line), and CS032 P4's 6th ("Load Saved Game", now shipped) is
+// worse still. titleMenuLayout is a pure function of n, mirroring drawRootMenu's own height-derivation
 // precedent (L9694, "h DERIVED from items.length"), so the block recentres itself as rows are added —
-// and so scratchpad/test-cs031-p5.js can assert the arithmetic at N=5 and N=6 without waiting for
-// CS032's real row. Step shrinks below its TITLE_MENU_STEP_MAX only once the row count would otherwise
+// and so scratchpad/test-cs031-p5.js could assert the arithmetic at N=5 and N=6 a changeset before
+// N=6 was real. Step shrinks below its TITLE_MENU_STEP_MAX only once the row count would otherwise
 // overflow the band; until then the block is centered with TITLE_MENU_MARGIN px of clearance on both
 // sides. All four constants below (TOP/BOTTOM implicitly via VIEW_H, MARGIN, STEP_MAX) are PLAYTEST
 // KNOBS — see STATUS.md for what they evaluate to at N=4/5/6.
@@ -3226,8 +3237,8 @@ function titleMenuLayout(n) {
   return { y, step };
 }
 const TITLE_MENU_LAYOUT = titleMenuLayout(MENU_TITLE.length);
-const TITLE_MENU_Y      = TITLE_MENU_LAYOUT.y;      // first row baseline (324 at N=5, VIEW_H 720)
-const TITLE_MENU_STEP   = TITLE_MENU_LAYOUT.step;   // px between row baselines (33 at N=5)
+const TITLE_MENU_Y      = TITLE_MENU_LAYOUT.y;      // first row baseline (324 at N=6, VIEW_H 720)
+const TITLE_MENU_STEP   = TITLE_MENU_LAYOUT.step;   // px between row baselines (26.4 at N=6, was 33 at N=5)
 const TITLE_MENU_SIZE   = 24;                // row text size, matching drawRootMenu's rows
 const TITLE_MENU_HINT_Y = VIEW_H / 2 + 170;  // control-hint baseline, below the flavour line (530)
 // Routed through drawMenuHint() (the CS013 P2 shared-footer helper), not a fresh drawText literal.
@@ -4201,6 +4212,17 @@ function menuTitle(a) {
   else if (a === "confirm") {
     const label = MENU_TITLE[m.index];
     if (label === "Start Game")        startGame();
+    // CS032 P4 (spec §4.3): the "slots" screen's LOAD entry point, and the second half of this row's
+    // unavailable-row idiom — the count is asked HERE, at confirm time, exactly as drawTitleMenu asks
+    // it at draw time. Never cached: a profile switch or a profile delete changes the answer, and a
+    // cached "there is something to load" would send the player to three inert rows. The early return
+    // is silent (no gotoScreen, so no AudioSys.ui blip), which is what makes the row read as inert
+    // rather than broken — menuProfiles' "Add Profile" cap does the same thing the same way.
+    else if (label === "Load Saved Game") {
+      if (SaveSlots.count() === 0) return;
+      game.menu.slotMode = "load";   // set BEFORE gotoScreen — the screen reads it on its first draw
+      gotoScreen("slots");
+    }
     // CS031 P5 (FORK-CS031-H → c / FORK-CS031-I): the "profiles" screen's ONE entry point. gotoScreen
     // resets index/row/col/scroll, so the roster cursor always starts fresh, and menuProfiles'/
     // closePause's own "back lands on titlemenu" precedent brings the player straight back here.
@@ -4224,10 +4246,12 @@ function menuRoot(a) {
     // Continue/Options/Quit, gameover gives Play Again/Options/Quit to Title. Dispatch by label
     // (menuOptions precedent) so the two layouts share one handler without an index branch.
     const label = items[m.index];
-    // CS016 P4 (§4): "Save" is deliberately given no branch — an unmatched label falls off this chain
-    // as a no-op (no state change, no AudioSys.ui() blip), which is the inert half of the shared
-    // unavailable-row idiom. drawRootMenu renders it in COLOR.dim so the cursor visibly stops there.
     if (label === "Continue")          closePause();
+    // CS032 P4: "Save" is live — the "slots" screen's SAVE entry point, and the row's only caller
+    // (spec §0.2: Save is reachable from the paused root and nowhere else, which is why menuSlots'
+    // Back can derive its destination from slotMode alone). MENU_ROOT_OVER carries no "Save" row, so
+    // this branch can never fire at gameover even though both roots share this one handler.
+    else if (label === "Save")         { game.menu.slotMode = "save"; gotoScreen("slots"); }
     else if (label === "Play Again")   startGame();
     else if (label === "Options")      gotoScreen("options");
     // CS016 P3: the two Quit rows split here, and label dispatch already tells them apart with no
@@ -4349,7 +4373,7 @@ const DIFFICULTY_ROWS = ["autoshield", "back"];
 // game.state === "playing" specifically (NOT game.paused, which the title also carries as of CS016 P2;
 // NOT gameover, where the run is already over and changing settings for the next one is harmless).
 // The value row stays focusable (so the player can still READ it) and renders COLOR.dim — the
-// shared unavailable-row idiom (see MENU_ROOT_PLAY's "Save" above); "back" is unaffected.
+// shared unavailable-row idiom (see menuProfiles' "Add Profile" cap below); "back" is unaffected.
 const DIFFICULTY_LOCK_HELP = "Difficulty can't be changed during a run.";
 function menuDifficulty(a) {
   const m = game.menu, N = DIFFICULTY_ROWS.length;
@@ -5032,8 +5056,12 @@ function menuProfiles(a) {
   }
   else if (a === "confirm") {
     if (onAddProfileRow(m)) {
-      // Shared unavailable-row idiom (MENU_ROOT_PLAY's "Save"): the row stays PRESENT and drawn dim
-      // at the cap; confirm just has no branch that fires. Do not touch "Save" itself — CS032's row.
+      // ⛔ The CANONICAL example of the shared unavailable-row idiom (repointed here by CS032 P4,
+      // which made the paused root's old example — a save row with nothing behind it — live and so
+      // retired it): the row stays PRESENT and focusable, renders COLOR.dim (drawProfiles), and
+      // confirm returns without firing anything. The silence is the point — no state change and no
+      // AudioSys.ui blip reads as "this row does nothing" rather than "nothing happened". Label,
+      // dispatch and render are three pieces and they move together, all or none.
       if (Profiles.roster.length >= PROFILE_MAX) return;
       openNameEntry({ mode: "add", back: "profiles", onCommit: name => Profiles.add(name) });
       return;
@@ -5108,9 +5136,9 @@ function profileDelete(id) {
 // ---------- The "slots" screen (CS032 P3, spec FORK-CS032-E) ----------
 // One screen serving both Save (write) and Load Saved Game (read); game.menu.slotMode is set by the
 // caller before gotoScreen("slots"), exactly the "one screen, caller sets what commit does" precedent
-// openNameEntry's ctx already established for "nameentry". Reachable only from a test harness this
-// phase — P4 wires the two real callers (the paused root's "Save" row, the title's "Load Saved Game"
-// row). Because those are the ONLY two callers the spec allows (§0.2 — Save only from state==="playing";
+// openNameEntry's ctx already established for "nameentry". CS032 P4 wired the two real callers: the
+// paused root's "Save" row (menuRoot) and the title's "Load Saved Game" row (menuTitle).
+// Because those are the ONLY two callers the spec allows (§0.2 — Save only from state==="playing";
 // §4.3 — Load only from the title), slotMode alone tells Back where to land: no separate return-screen
 // field is needed, unlike nameCtx's back/backIndex, which serves screens reachable from more than one
 // place.
@@ -9990,6 +10018,10 @@ function drawModal() {
 // prefix and the COLOR.text (selected) / COLOR.menuIdle (idle) convention from drawRootMenu, and the
 // shared drawMenuHint() footer from CS013 P2. Every y here is a TITLE_MENU_* playtest knob.
 function drawTitleMenu() {
+  // CS032 P4 (spec §4.3): asked once per draw, never cached at boot — a profile switch or a profile
+  // delete changes which slots exist, and the row's dim state has to follow. This is the render half
+  // of the unavailable-row idiom; menuTitle's confirm branch asks the same question the same way.
+  const noSaves = SaveSlots.count() === 0;
   MENU_TITLE.forEach((label, i) => {
     const sel = i === game.menu.index;
     // CS031 P5 (FORK-CS031-H → c): the Profile row IS the current profile's name display — no separate
@@ -9997,8 +10029,12 @@ function drawTitleMenu() {
     // actually reach this screen (see the boot routing below), but the "—" fallback keeps this render
     // honest on its own rather than assuming that invariant holds.
     const text = label === "Profile" ? "Profile: " + (Profiles.nameOf(Profiles.activeId) || "—") : label;
+    // Two special-cased rows now, both keyed on the LABEL (never on an index, so reordering
+    // MENU_TITLE can't shift either one onto the wrong row): "Profile" above owns the text, and
+    // "Load Saved Game" owns the colour.
+    const dim = label === "Load Saved Game" && noSaves;
     drawText((sel ? "▶ " : "   ") + text, VIEW_W / 2, TITLE_MENU_Y + i * TITLE_MENU_STEP,
-             TITLE_MENU_SIZE, sel ? COLOR.text : COLOR.menuIdle);
+             TITLE_MENU_SIZE, dim ? COLOR.dim : (sel ? COLOR.text : COLOR.menuIdle));
   });
   drawMenuHint(TITLE_MENU_HINT, VIEW_W / 2, TITLE_MENU_HINT_Y);
 }
@@ -10038,9 +10074,10 @@ function drawRootMenu() {
   const { y } = menuPanel(w, h, game.state === "playing" ? "PAUSED" : "MENU");
   items.forEach((it, i) => {
     const sel = i === game.menu.index;
-    // CS016 P4 (§4): "Save" is the shared unavailable-row idiom — always COLOR.dim, focused or not,
-    // so silence (no confirm blip) reads as "this row does nothing" rather than "nothing happened".
-    const color = it === "Save" ? COLOR.dim : (sel ? COLOR.text : COLOR.menuIdle);
+    // CS032 P4: no row here is forced dim any more. The `it === "Save" ? COLOR.dim : ...` ternary
+    // CS016 P4 put here is DELETED along with the row's inert dispatch — unpicking one without the
+    // other is silent (the row would work and still render permanently grey), so both moved together.
+    const color = sel ? COLOR.text : COLOR.menuIdle;
     drawText((sel ? "▶ " : "   ") + it, VIEW_W / 2, y + 118 + i * 46, 24, color);
   });
   drawMenuHint(ROOT_MENU_HINT, VIEW_W / 2, y + hintY);
@@ -10272,8 +10309,9 @@ function drawProfiles() {
     drawText((sel ? "▶ " : "   ") + label, VIEW_W / 2, y + PROFILES_ROW_Y + i * PROFILES_ROW_STEP, 22,
              sel ? COLOR.text : COLOR.menuIdle);
   });
-  // Shared unavailable-row idiom (MENU_ROOT_PLAY's "Save", L3189): always COLOR.dim at the cap,
-  // focused or not, so silence at confirm reads as "this row does nothing" rather than "nothing happened".
+  // The render half of the shared unavailable-row idiom's canonical example (menuProfiles' cap above,
+  // repointed by CS032 P4): always COLOR.dim at the cap, focused or not, so silence at confirm reads
+  // as "this row does nothing" rather than "nothing happened".
   const addSel = onAddProfileRow(m);
   const addColor = roster.length >= PROFILE_MAX ? COLOR.dim : (addSel ? COLOR.text : COLOR.menuIdle);
   drawText((addSel ? "▶ " : "   ") + PROFILE_ADD_LABEL, VIEW_W / 2, y + PROFILES_ROW_Y + roster.length * PROFILES_ROW_STEP, 22, addColor);
@@ -10291,7 +10329,7 @@ function drawSlots() {
   slots.forEach((entry, i) => {
     const state = slotRowState(entry);
     const sel = m.index === i;
-    // Unavailable-row idiom (MENU_ROOT_PLAY's "Save"/drawProfiles' "Add Profile"): dim and inert only
+    // Unavailable-row idiom (drawProfiles' "Add Profile" at the cap): dim and inert only
     // where the row-state table (spec P3) says so — an empty or unreadable row in LOAD mode. Every row
     // is live in SAVE mode; there is no cap here.
     const dim = mode === "load" && state !== "occupied";

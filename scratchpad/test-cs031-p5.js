@@ -8,8 +8,8 @@
 // navigation, layout arithmetic or roster logic is reimplemented here.
 //
 // Sections: (A) MENU_TITLE gained "Profile"; the wiring at all label-based consumers. (B) FORK-G:
-// titleMenuLayout(n) is a pure function of the row count, asserted at N=5 (the real build) AND N=6
-// (CS032's future row) without waiting for that row to exist. (C) FORK-E: first-boot routing.
+// titleMenuLayout(n) is a pure function of the row count, asserted at N=5 (this phase's build) AND
+// N=6 (CS032 P4's "Load Saved Game", the live count since). (C) FORK-E: first-boot routing.
 // (D) FORK-H the row's own render contract + FORK-I its title-only reachability. (E) FLAG-CS031-d:
 // Profiles.activate() no longer bleeds a stale game.stats onto the incoming profile. (F) scope pin.
 
@@ -63,7 +63,11 @@ function recordFillText(X, drawFn) {
   console.log("(A) MENU_TITLE has a \"Profile\" row; label-dispatch consumers still resolve, no hardcoded index");
   const X = buildGame({ store: seededStore("Paul") });
 
-  eq(X.MENU_TITLE.indexOf("Profile"), 1, "A: \"Profile\" is the second row (FORK-CS031-H → c)");
+  // REPOINTED BY CS032 P4: "Load Saved Game" was inserted at index 1 (beside "Start Game", its
+  // "start a run" sibling), so Profile is the THIRD row now. What FORK-CS031-H → c actually fixed is
+  // that Profile heads the CONFIGURATION rows and is reached by label, never by position — both still
+  // hold, so the index is re-pinned rather than the claim weakened.
+  eq(X.MENU_TITLE.indexOf("Profile"), 2, "A: \"Profile\" heads the configuration rows (FORK-CS031-H → c)");
   assert(X.MENU_TITLE.includes("Start Game") && X.MENU_TITLE.includes("Achievements") &&
     X.MENU_TITLE.includes("High Scores") && X.MENU_TITLE.includes("Options"),
     "A: the four pre-existing rows are all still there");
@@ -78,13 +82,14 @@ function recordFillText(X, drawFn) {
   // Driven, not just grepped: walking DOWN from the default cursor lands on Profile second, and
   // confirming it (through menuInput, not menuTitle directly) reaches the roster screen.
   X.game.menu.index = 0;
-  X.menuInput("down");
-  eq(X.game.menu.index, 1, "A: down-walk from Start Game lands on row 1");
+  const profileRow = X.MENU_TITLE.indexOf("Profile");
+  for (let i = 0; i < profileRow; i++) X.menuInput("down");
+  eq(X.game.menu.index, profileRow, "A: down-walk from Start Game reaches the Profile row");
   eq(X.MENU_TITLE[X.game.menu.index], "Profile", "A: ...which is the Profile row");
   X.menuInput("confirm");
   eq(X.game.menu.screen, "profiles", "A: confirm on Profile opens the roster screen");
 
-  // Achievements/High Scores' own indices shifted (2, 3 now, not 1, 2) — indexOf still resolves them
+  // Achievements/High Scores' own indices shifted (3, 4 as of CS032 P4) — indexOf still resolves them
   // correctly, which is the whole point of dispatching by label rather than position.
   X.gotoScreen("titlemenu");
   X.game.menu.index = X.MENU_TITLE.indexOf("High Scores");
@@ -97,20 +102,22 @@ function recordFillText(X, drawFn) {
   console.log("(B) titleMenuLayout(n): the block clears the art above and the flavour line below at N=5 AND N=6");
   const X = buildGame({ store: seededStore("Paul") });
 
-  // The live constants are exactly what the function returns for the live row count (5 rows today).
+  // The live constants are exactly what the function returns for the live row count.
   const live = X.titleMenuLayout(X.MENU_TITLE.length);
   eq(X.TITLE_MENU_Y, live.y, "B: TITLE_MENU_Y === titleMenuLayout(N).y for the live MENU_TITLE");
   eq(X.TITLE_MENU_STEP, live.step, "B: TITLE_MENU_STEP === titleMenuLayout(N).step for the live MENU_TITLE");
-  eq(X.MENU_TITLE.length, 5, "B: (setup) the live row count this phase ships is 5");
+  // REPOINTED BY CS032 P4: N=6 stopped being hypothetical — "Load Saved Game" shipped, and it cost no
+  // TITLE_MENU_* edit, which is exactly what this section predicted a changeset early.
+  eq(X.MENU_TITLE.length, 6, "B: (setup) the live row count is 6 (CS032 P4's row landed)");
 
   // The two boundaries the block must never cross (the title art above, the flavour line below).
   const TOP = X.VIEW_H / 2 - 60, BOTTOM = X.VIEW_H / 2 + 120;
   eq(X.TITLE_MENU_TOP, TOP, "B: (setup) TITLE_MENU_TOP matches the O V E R H A U L baseline");
   eq(X.TITLE_MENU_BOTTOM, BOTTOM, "B: (setup) TITLE_MENU_BOTTOM matches the flavour-line baseline");
 
-  // N=5 is the REAL row count this phase ships (Profile inserted). N=6 is CS032's planned "Load Saved
-  // Game" row — asserted here, on the pure function, so CS032 costs no layout edit AND this pin does
-  // not have to wait for that row to exist to prove the formula holds for it.
+  // N=5 was the row count THIS phase shipped; N=6 is the live one since CS032 P4 added "Load Saved
+  // Game". Both stay asserted on the pure function — N=5 keeps this phase's own claim honest, N=6 is
+  // now the build's real shape rather than the forecast it was written as.
   for (const n of [5, 6]) {
     const { y, step } = X.titleMenuLayout(n);
     const lastRow = y + (n - 1) * step;

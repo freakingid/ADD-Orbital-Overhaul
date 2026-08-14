@@ -157,7 +157,7 @@ const cx = VIEW_W / 2;
 
 // ================= (C) drawRootMenu =================
 (function sectionC() {
-  console.log("(C) drawRootMenu: unselected -> menuIdle, selected -> text; Save always dim; footer -> drawMenuHint");
+  console.log("(C) drawRootMenu: unselected -> menuIdle, selected -> text, no exceptions; footer -> drawMenuHint");
   game.state = "playing";
   // CS016 P4 grew MENU_ROOT_PLAY (Continue/Save/Options/Quit) and derived the panel height from
   // items.length instead of a fixed 300 — select by label and read the panel's own strokeRect for its
@@ -171,9 +171,11 @@ const cx = VIEW_W / 2;
   items.forEach((it, i) => {
     const entries = at(log, cx, y + 118 + i * 46);
     assert(entries.length === 1, `C: exactly one fillText for root item "${it}" (got ${entries.length})`);
-    // CS016 P4: "Save" is the shared unavailable-row idiom — always COLOR.dim, focused or not.
-    const expect = it === "Save" ? COLOR.dim : (i === game.menu.index ? COLOR.text : COLOR.menuIdle);
-    const expectName = it === "Save" ? "COLOR.dim" : (i === game.menu.index ? "COLOR.text" : "COLOR.menuIdle");
+    // REPOINTED BY CS032 P4: the "Save" special case is GONE. The row went live (menuRoot dispatches
+    // it to the "slots" screen) and drawRootMenu's forced-dim ternary was deleted in the same commit,
+    // so every root row now follows the plain selected/idle rule with no exception.
+    const expect = i === game.menu.index ? COLOR.text : COLOR.menuIdle;
+    const expectName = i === game.menu.index ? "COLOR.text" : "COLOR.menuIdle";
     assert(entries[0].color === expect, `C: root item "${it}" draws in ${expectName}`);
   });
   const footer = log.find(e => e.c === "fillText" && e.str === ROOT_MENU_HINT);
