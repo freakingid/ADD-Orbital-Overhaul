@@ -324,6 +324,14 @@ otherwise "tidy": nothing was renamed, migrated, or moved to make it true.
 `afd_scores_v1` stays one shared machine-wide table across every profile,
 records additively stamped `profileId`/`profileName` (GDD §2.21).
 
+⛔ **CS032 adds a fifth key, `afd_saves_v1` — additive, owned by CS032, not
+frozen.** Three save slots per profile, routed through `Profiles.keyFor()` at
+both the read and write site exactly like `afd_settings_v1`/
+`afd_achievements_v2`: a non-legacy profile reads/writes a suffixed key
+(`afd_saves_v1:p3`), `"p0"` reads/writes the bare base name. Unlike those two,
+`afd_saves_v1` is **lazy** — nothing reads it at boot; it is touched only when
+the slots screen opens or a save/load fires (GDD §2.22).
+
 ⛔ **New state is additive, under known-value-else-default loading.** Removing a
 field needs **no key rename and no migration shim** — a saved value for a deleted
 field orphans harmlessly, which is the whole point of the rule.
