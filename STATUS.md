@@ -1,196 +1,47 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.30 · Changeset: CS031 · Phase: P5 · Registry: 87 · Levers: 18
+Version: 1.0.0.31 · Changeset: CS031 · Phase: CLOSED · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS031
 
-- P1 — the `Profiles` module (roster, `keyFor()`, silent legacy migration), settings + achievements
-  keys routed per-profile, the `LEGACY_KEY` v1 fallback gated to `p0`, additive
-  `profileId`/`profileName` on new high-score records. No UI; nothing player-visible moved.
-- P2 — `Profiles.activate(id)`: flush the outgoing profile at its own key → switch + persist
-  `lastUsed` → reset the runtime to shipped defaults, writing nothing → `loadSettings()` +
-  `Achievements.init()`. Still no UI; nothing calls it until P4.
-
-- P3 — the `"nameentry"` screen: a 10×4 grid derived from `SCORES_CHARSET` + DEL/DONE/CANCEL, a raw
-  keydown passthrough for live typing, and the trimmed/case-insensitive validator. Renders and
-  validates only — it creates and renames nothing.
-- P4 — the `"profiles"` screen: rows are `[...roster, "Add Profile"]`. A left/right VERB COLUMN
-  (`PROFILE_VERBS = ["SWITCH","RENAME","DELETE"]`, `game.menu.col`, resets to 0 on every row move) is
-  the one affordance chosen for Rename/Delete — no modifier key. Confirm at the default column
-  (SWITCH) reproduces the spec's plain text verbatim: `Profiles.activate(id)` + return to the title
-  menu. Delete goes through `openModal()` untouched (`index: 1` CANCEL default still fires first).
-  `blankLegacyStores()` overwrites p0's two frozen keys with the shipped-default blob through
-  `saveSettings()`/`Achievements.save()` themselves — never `removeItem` — by round-tripping through
-  `Profiles.activate(PROFILE_LEGACY)` first (a correct, harmless flush of whoever was active before)
-  regardless of whether p0 was the one active; non-legacy profiles' suffixed keys ARE `removeItem`'d.
-  `profileDelete()` always `activate()`s a replacement before `Profiles.remove()` when the deleted
-  profile was active, so `activeId` is never left dangling (closes FLAG-CS031-b).
-
-- P5 — title integration: `MENU_TITLE` gains `"Profile"` as row 2 (FORK-H → c: the row IS the name
-  display, `Profile: NAME`, falling back to `Profile: —` on an empty roster); confirm opens
-  `"profiles"` (FORK-I: title-only — `MENU_ROOT_PLAY`/`MENU_ROOT_OVER` untouched). `TITLE_MENU_Y`/
-  `TITLE_MENU_STEP` are now DERIVED via `titleMenuLayout(n)`, a pure function of `MENU_TITLE.length`
-  (FORK-G → b): N=4 → Y 333 / step 38 (room to spare); N=5 (live) → Y 324 / step 33; N=6 (CS032's
-  future row) → Y 324 / step ≈26.4 — the block stays centered with 24px clearance from both the
-  `O V E R H A U L` baseline and the flavour line at every N. All four (`TITLE_MENU_TOP/BOTTOM/
-  MARGIN/STEP_MAX`) are PLAYTEST KNOBS, numbers due at the P6 gate (G3). Boot routing (FORK-E → c):
-  `Profiles.firstBoot`, read once at `game.menu`'s own construction (no clearing needed — it is never
-  consulted again), sends a genuinely empty install straight to `"profiles"`; a migrated p0 or an
-  existing roster boots normally to `"titlemenu"`. **FLAG-CS031-d CLOSED**, and widened mid-phase:
-  `Profiles.activate()` now resets both `game.stats` AND `game.wave` before `Achievements.init()` —
-  `game.stats` alone still let `untouchable` bleed, since its predicate (`game.wave >= 10 &&
-  !everBelowHalf`) also reads `game.wave`, a field `resetGameStats()` never touched. Fixing the boot
-  screen for an empty store changed default behavior for any headless build with an unseeded
-  `localStorage`; three pre-existing suite files (`test-cs010-p4.js`, `test-cs016-p2.js`, `test-p4.js`)
-  were updated — seeded a returning-player store, or updated a pinned `MENU_TITLE`/`TITLE_MENU_*`
-  literal to the new shape — the same "re-runs against the current build" precedent already in use.
+- CS031 is closed. See `log/CS031.md` for the full P1–P7 build log and the GDD version-history
+  entry. Player Profiles: a named roster layered over the three existing `localStorage` stores
+  (`afd_settings_v1`, `afd_achievements_v2`, `afd_scores_v1`), plus a new fourth key
+  (`afd_profiles_v1`). P6's playtest gate came back clean on every one of nine answers, including
+  the two that mattered most — the real-browser round-trip of all four keys (G1) and the CS030-build
+  upgrade path (G2) — so P7 applied zero code changes and moved straight to documentation and the
+  version bump.
 
 ## Working / verified
 
-- CS031 P5: `test-cs031-p5.js`, 66 assertions, drives the real `menuTitle()`/`menuInput()`/
-  `drawTitleMenu()`/`titleMenuLayout()`/`Profiles.activate()` — no navigation, layout arithmetic or
-  roster logic reimplemented. Covers: `MENU_TITLE`'s new shape and that every label-based consumer
-  (including `Achievements`/`High Scores`, whose indices shifted) still resolves via `indexOf`, with a
-  source pin on the `"Profile"` wiring itself; `titleMenuLayout(n)` asserted generically at N=5 (the
-  live build) AND N=6 (CS032's future row, computed directly — no waiting for that row to exist),
-  proving the step genuinely shrinks below its 38px max rather than the clearance holding by luck, and
-  that N=4 still gets the full step; first-boot routing for a genuinely empty store vs. a
-  legacy-migrated store vs. an existing saved roster; the Profile row's own `"Profile: NAME"` /
-  `"Profile: —"` render, captured by installing a recording override directly on the build's own `ctx`
-  proxy (no hand-rolled second sandbox) and re-verified after a live switch; neither mid-run root
-  (driven row-by-row, state reset fresh each iteration) ever reaches `"profiles"`; and FLAG-CS031-d's
-  repro (`game.wave` 12, `everBelowHalf` false, `maxChainVisit` true) no longer hands a freshly
-  switched-to profile either `untouchable` or `max_haul`.
 - Full suite on a full clone: **122 files, 122 passed, 0 failed, 0 skipped, 0 timed out.**
-- CS031 P4: `test-cs031-p4.js`, 82 assertions, drives the real `menuProfiles()`/`drawProfiles()` (no
-  reimplemented roster or store logic). Covers: Add opens `nameentry{mode:"add", back:"profiles"}`
-  and the roster grows on commit with no store written for the new profile until it is first saved;
-  the `PROFILE_MAX` cap dims the Add row and no-ops confirm (`drawProfiles()`'s own source grepped for
-  the shared `COLOR.dim` idiom); Switch end-to-end through the screen reproduces P2's no-bleed
-  contract (a fresh profile gets shipped defaults and zeroed counters, switching back round-trips the
-  outgoing flush); Rename prefills from the highlighted row's OWN name, independent of which profile
-  is active; Delete non-active removes its suffixed keys, Delete ACTIVE re-activates another with
-  `activeId` never dangling; three shapes of deleting p0 (active, not active, sole other profile) each
-  confirm the frozen keys survive holding an empty/default blob and — the specific regression this
-  file exists to catch — that the CURRENTLY active OTHER profile's live runtime and its own suffixed
-  store are untouched by the p0-blanking detour; the last-remaining-profile refusal and the modal's
-  untouched CANCEL default; the FORK-E empty-roster trap (`back`/`pause` inert with zero profiles);
-  the verb-column's wrap-both-ways-and-reset-per-row shape; render smoke across populated/capped/empty
-  rosters, headless throughout.
-- Registry confirmed at **87**, `LEVERS` at **18** — unmoved since CS030 P3.
-- CS031 P3: the screen is wired in all three places — `menuInput`'s switch, `drawMenu`'s dispatch, and
-  the `pause` branch through `closePause()` (driven, not grepped: it lands on `"titlemenu"`).
-  `nameBuf`/`nameCtx`/`nameErr` are in **both** the `game` literal and `startGame()`'s reset.
-- **The raw keydown hook is placed AFTER both prior claimants** (the secret-code window, then the debug
-  numeric hook) and pinned there on the source — the harness's `window.addEventListener` is a no-op, so
-  the listener is unreferenceable and ordering can only be a source fact. Behaviour is driven through
-  `nameEntryKey()`, the function the hook calls. ⛔ Consequence, deliberate: on this screen **WASD is
-  text, not navigation, and `p` is text, not pause**; arrows, the whole pad, ENTER and ESC still work.
-- One gate the debug hook does not have: `!game.menu.modal`. The debug hook is covered there **by
-  accident** — an open dialog leaves its cursor on a non-value row, so `debugSelectedVar()` is already
-  false. This screen has no such accident, so the guard is explicit.
-- `test-cs031-p3.js` is mutation-checked: nine breakages (the `!DebugCode.armed` gate, rename's
-  own-profile exemption, the cap, `back`'s backspace half, commit's re-validation, the `startGame`
-  fields, the trim, the row clamp, the `drawMenu` branch) each turn the file red — worst 6 assertions.
-- ⛔ **`test-cs026-p3.js` §G TRAP 5 was NARROWED, not weakened** (the third time; CS029 P4 and CS030 P1
-  did the same). The three new menu fields are an EDIT to an existing line, not a new one, so
-  `DROPPED_LINES` could not express it — one regex folds that assignment back to its parent form, keyed
-  on all three field names, and every other byte of `startGame()` still has to match.
-- CS031 P2: writes are suppressed by **factoring, not a flag** — `returnToDefaults()` is now
-  `restoreDefaultBindings(); saveSettings();` and `activate()` calls the save-free half. A
-  suppression flag is global mutable state that an exception mid-`activate()` would leave set,
-  silently disabling every later save; the split has no such failure mode. `resetAllDebug()` was
-  already save-free, so its menu consumer keeps its own `saveSettings()` untouched.
-- Defaults are read from `SETTINGS_DEFAULTS` / `AUDIO_VOL_DEFAULTS` (pristine spreads of the
-  `settings` and `AudioSys.vol` literals, taken above the boot `loadSettings()`), `DEFAULT_BINDINGS`
-  via the helper, and the registry via `resetAllDebug()`. No default is retyped.
-- **Save-site audit (the phase prompt's ask): nothing can fire mid-switch.** All eleven
-  `saveSettings()` sites are input-driven menu handlers (`menuSound` ×4, `menuDifficulty`,
-  `debugEntryCommit`, `menuDebug` ×3, `captureKeyRebind`, `capturePadRebind`, `returnToDefaults`,
-  `adjustShipTurnScale`); `Achievements.save()`'s are `onUnlock`, `tick`, `killShip` and
-  `quitToTitle`. `activate()` is synchronous and yields to no event-loop turn, so none of them can
-  interleave, and `quitToTitle()`'s flush runs strictly before any title-screen switch. Each writes
-  whatever key `activeId` names at the time, which is correct on both sides of a switch.
-- **Two live runtime shadows neither loader moves, handled as `activate()` step 6** (verified by
-  §C): the four gain nodes (only `setVol` writes them) and `VOICE_PARAMS` (only `setStyle`
-  re-points it). `loadSettings()` does call `setStyle` — but below `if (!raw) return`, so never for
-  a profile with no blob, which is **every newly created one**. Without step 6 the incoming player
-  hears the outgoing player's mix in the outgoing player's voice. Both calls are inert with no
-  `AudioContext`.
-- `test-cs031-p2.js` is mutation-checked: nine deliberate breakages of `activate()` (each reset
-  dropped in turn, the writing wrapper substituted, the flush dropped, the flush moved after the
-  switch) each turn the file red, the worst on 21 assertions across three sections.
-- `test-cs031-p1.js` §A's "nothing in the Profiles module references `Achievements`" is **narrowed
-  to `init()`'s own body** — `activate()` references it by design (spec §2.4), resolved at call
-  time. The invariant P1 owns is unchanged and still non-vacuous.
-- CS031 P1: `Profiles` sits immediately above `const STORAGE_KEY`, `Profiles.init()` immediately
-  above `loadSettings()`. `p0`'s stores **are** the three frozen keys — the migration mints a roster
-  entry and copies/moves/rewrites nothing, pinned byte-for-byte by `test-cs031-p1.js` §C. Every
-  other profile suffixes (`afd_settings_v1:p3`). New key `afd_profiles_v1` (CS031's own, not frozen);
-  it is an **explicit** key and `localStorage` is never enumerated.
-- The `LEGACY_KEY` trap is closed and measured: the ungated build hands a brand-new profile the
-  machine's `afd_achievements_v1` counters (26 000 deliveries reproduced), the gated build hands it
-  zeros. §E pins both sides, plus the two non-vacuous mirrors (`p0` still migrates; a machine with no
-  roster at all is still `p0`).
+- Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
+- `keyFor()` is the one route from a store's base name to the key it reads/writes; `localStorage`
+  is never enumerated anywhere in the build.
+- `p0`'s stores ARE the three pre-CS031 frozen keys, verbatim — the legacy migration copies, moves
+  and rewrites nothing.
+- `Profiles.activate(id)` resets the runtime to shipped defaults before loading the incoming
+  profile; nothing in the reset step writes to storage.
+- **CS026's "three `localStorage` keys never round-tripped in a real browser" item is RETIRED** —
+  CS031 P6's G1/G2 closed it, five changesets after it was first opened. See `log/CS031.md`.
 
 ## Known issues
 
-- **FLAG-CS031-f — P3's handoff contract; CONSUMED by P4.** `openNameEntry(ctx, initial)` is the
-  ONLY way in. `ctx` = `{ mode:"add" }` or `{ mode:"rename", id }`, plus two optional fields P3 added
-  because "return to whatever screen raised it" needs them: `back`/`backIndex` (passed straight to
-  `gotoScreen`, defaulting to `"titlemenu"`) and **`onCommit(name)`**, a plain closure receiving the
-  validated, trimmed string — `openModal`'s `onConfirm` precedent, and where P4's roster op goes.
-  `nameCtx` is cleared BEFORE `onCommit` runs, so the closure is free to navigate. Two things P3
-  deliberately did not build, both P4's: the empty-roster case where Add must not be cancellable
-  (spec FORK-E), and any use of `mode`/`id` beyond the rename collision exemption.
-
-- **FLAG-CS031-a — one P1 choice the spec did not name: the roster blob carries a monotonic `seq`.**
-  Ids are minted `p0`, `p1`, … from it and a removed profile's id is **never** recycled, because
-  `remove()` is roster-only and does not clear that profile's stores — a recycled id would resurrect
-  a deleted player's achievements. `load()` raises a hand-edited-low `seq` to the roster's own floor.
-  Additive on CS031's own key; flagged so P2/P4 know it exists.
-
-- **FLAG-CS030-c — two resume details for the level-end panel.** (1) The fanfare plays over live,
-  un-ducked gameplay music at the level-end call site (the panel is deliberately not a menu). (2) A
-  key/pad-button HELD at dismissal resumes as thrust/fire — unchanged input semantics, recorded
-  because the P6 gate asked specifically about resume fairness. Both accepted at the gate.
-- **FLAG-CS030-b — the gamepad's Start is swallowed while the panel is up, and dismissal is
-  silent** (no `AudioSys.ui()` blip; the phase prompt sanctioned exactly one audio touch, the open
-  fanfare). Mirrors the initials-entry block's own "nothing interrupts this" convention.
-- **FLAG-CS030-a — `COLOR.ach` is byte-identical to `TIER_COLOR[2]` (Gold).** The two pool emblems
-  and the Gold tier emblem ship in the same colour; shape carries the whole "not a tier rung"
-  distinction. Confirmed readable at the P6 gate (G4), but a one-channel tell worth a future look.
-- **FLAG-CS031-c — `test-f2.js` flakes ~3% of runs, and it is CS030 P4's freeze leaking across
-  sections. Pre-existing, found at the P1 gate, NOT fixed here (another phase's test).** Section (d)
-  kills the ship; the game-over call site banks whatever `Achievements.evaluate()` unlocked (usually
-  `speed_recycler`, from scattered chain garbage randomly drifting into the dock during the death
-  spectacle) and opens a panel. `game.celebration` is then never cleared, so CS030 P4's early-return
-  freezes `update()` for the whole rest of the file, and section (g) fails on
-  `g: shield deflection consumed energy` — the shield code never runs. Measured: **17/400 at
-  `ee064fe`, 28/800 at parent `919e9ea`** — same rate, my change consumes no randomness (a 300-seed
-  HEAD-vs-parent trace of that scenario differs in 0 seeds). Thirteen full-suite runs this session,
-  one red. **One-line fix**: add `game.celebration = null;` to `test-f2.js`'s `resetShip()`.
-  ⛔ **29 suite files reach a death/gameover and never mention `game.celebration`** — only `test-f2`
-  has actually flaked so far, but the class is latent and P7 needs a green run.
-- **`test-registry.js`'s FLAG-CS027-d — twelve suite files grep a comment-stripped copy of the
-  source missing the same 80 lines `execSource()` fixed.** Latent, not live. One-line-per-file fix
-  (`execSource()`); bundle with an opportunistic migration.
+- **FLAG-CS031-c — `test-f2.js` flakes ~3% of runs** (CS030's celebration-panel `game.celebration`
+  leaking across sections in `resetShip()`; pre-existing, not this changeset's). One-line fix
+  identified: `game.celebration = null;` in `resetShip()`. 29 suite files reach a death/gameover
+  and never mention `game.celebration` — the class is latent beyond `test-f2`. See `log/CS031.md`.
+- **`test-registry.js`'s `FLAG-CS027-d`** — twelve suite files grep a comment-stripped copy of the
+  source missing the same 80 lines `execSource()` fixed. Latent, not live.
 - **Piece-distinctness concern, deliberately unresolved (CS028).** Hubble's pieces 1/2 and
   Skylab's 0/2 share a polyline vertex-count signature; Juno's folded blade is a third member.
-  Paul's gate call: leave as is. A real fix is new art authoring, its own changeset.
-- **Ten suite files still hard-fail, not skip, on a shallow clone (from CS026)** — measured:
-  `git clone --depth 1` runs 101 files, 91 passing, 10 failing. Each reaches for a reference/parent
-  commit and throws instead of skipping. Mechanical fix, same shape as CS026 P1/P2's conversions.
-  See `log/CS026.md`.
-- **The three `localStorage` keys have never been round-tripped in a real browser (from CS026)** —
-  one manual set-reload-confirm at a gate would close it; the failure mode if wrong is silent and
-  total. See `log/CS026.md` §11 backlog. ⛔ **CS031 is a persistence changeset built on top of this**
-  (spec §5.1); the P6 gate's G1/G2 are the real-browser round-trip and upgrade path that close it.
+  Paul's gate call: leave as is.
+- **Ten suite files still hard-fail, not skip, on a shallow clone (from CS026).** Mechanical fix,
+  same shape as CS026 P1/P2's conversions. See `log/CS026.md`.
 - **Satellite-vs-satellite elastic bounce and mutual collision damage were never playtested (from
   CS023).** Both are live in the game today; no gate since has asked about them. See `log/CS023.md`.
 - **The milestone floaters can still touch the dock anchor at the picked gate value (from
   CS029).** `SALVAGE BONUS`/`MAX HAUL` measured at 0.0px clearance from the delivery ticker at
-  `anchorFrac` 0.50 — zero crossing, but no air either. Paul picked 0.50 anyway; recorded so a
-  future "looks like it's touching" report is recognised as this, not a new regression.
+  `anchorFrac` 0.50 — zero crossing, but no air either. Paul picked 0.50 anyway.
 
 ## Open questions (blocking)
 
@@ -198,17 +49,14 @@ None.
 
 ## Next up
 
+- **CS032 — Save Game / Load Saved Game / the three save slots.** Explicitly out of scope for
+  CS031 (`IMPLEMENTATION-PHASES-CS031.md`'s CS032 boundary note). `MENU_ROOT_PLAY`'s `"Save"` row
+  and its unavailable-row idiom, `menuRoot()`'s dispatch, and `drawRootMenu()`'s forced `COLOR.dim`
+  branch are all still exactly as CS016 P4 left them — confirmed untouched this changeset.
 - **FLAG-CS027-c (opportunistic, non-blocking) — 8 test files hardcode world dimensions**
   instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
   could migrate to `execSource()` whenever one of them is next open for other reasons.
-- **CS031 P6 — playtest gate, BLOCKING. No code; Claude Code does not run.** Paul plays the built
-  file from `file://` and answers G1–G9 (`IMPLEMENTATION-PHASES-CS031.md`). G1 (the real-browser
-  round-trip of all three frozen keys plus the new `afd_profiles_v1`) and G2 (the upgrade path from a
-  CS030 build) are the ones that matter — everything else in CS031 is built on an unverified
-  assumption until those two pass. G3 wants literal `TITLE_MENU_*` numbers at the live 5-row layout;
-  P5's own measurement (Y 324 / step 33) is a starting point, not a substitute for a played answer.
-  Nothing proceeds to P7 until the answers are in.
 
 ## Playtest asks (open only — answered ones move to the log)
 

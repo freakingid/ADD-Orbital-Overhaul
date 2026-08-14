@@ -13,7 +13,7 @@
 //      tokens (the same zero-err gate the lab enforces).
 //  (D) VOICE_PRIORITY.chain_broken unchanged (still 2).
 //  (E) VoiceSys.say("chain_broken") is headless-safe: AudioSys.ctx null -> early-return, no throw.
-//  (F) GAME_VERSION === "1.0.0.30".
+//  (F) GAME_VERSION === "1.0.0.31".
 //  (G) node --check style full-file smoke: startGame()/update(1/60) don't crash with ctx null.
 
 "use strict";
@@ -131,9 +131,9 @@ const APPROVED = [
 
 // ================= (F) GAME_VERSION pin =====================
 (function () {
-  console.log("(F) GAME_VERSION === \"1.0.0.30\"");
+  console.log("(F) GAME_VERSION === \"1.0.0.31\"");
   const { GAME_VERSION } = buildInstance();
-  assert(GAME_VERSION === "1.0.0.30", `F: GAME_VERSION is "1.0.0.30" (got "${GAME_VERSION}")`);
+  assert(GAME_VERSION === "1.0.0.31", `F: GAME_VERSION is "1.0.0.31" (got "${GAME_VERSION}")`);
 })();
 
 // ================= (G) full-file smoke: startGame()/update(1/60) don't crash =====================

@@ -309,10 +309,38 @@ sequencer.
 them.** `afd_settings_v1`, `afd_achievements_v2`, `afd_scores_v1`. Independent
 stores, each with its own `storageOK()` try/catch path; none reads or writes
 another. Renaming any of them silently wipes every player's data (GDD §2.16).
+**Still true post-CS031** — Player Profiles (below) reads and writes these
+same three keys, unrenamed; it does not add a fourth frozen key so much as
+route these three through a suffix.
+
+⛔ **CS031 adds a fourth key, `afd_profiles_v1` — additive, owned by CS031,
+not frozen.** The roster of named profiles. `afd_settings_v1` and
+`afd_achievements_v2` are now **per-profile**: `Profiles.keyFor(base)` maps a
+non-legacy profile to a suffixed key (`afd_settings_v1:p3`), while the legacy
+profile (`"p0"`) resolves to the bare base name — **`p0`'s stores ARE
+`afd_settings_v1`/`afd_achievements_v2` themselves, verbatim,** not a copy of
+them. Say this explicitly because it is the fact a future cleanup pass will
+otherwise "tidy": nothing was renamed, migrated, or moved to make it true.
+`afd_scores_v1` stays one shared machine-wide table across every profile,
+records additively stamped `profileId`/`profileName` (GDD §2.21).
 
 ⛔ **New state is additive, under known-value-else-default loading.** Removing a
 field needs **no key rename and no migration shim** — a saved value for a deleted
 field orphans harmlessly, which is the whole point of the rule.
+
+### Profiles (CS031)
+
+⛔ **`Profiles.keyFor(base)` is the one route from a store's base name to the
+key it actually reads/writes. `localStorage` is never enumerated** — no
+`key(i)`, no `.length`, no `Object.keys` over storage — anywhere in the build.
+⛔ **The `PROFILE_LEGACY_PROBE` / migrate-into-`"p0"` fallback runs only inside
+`Profiles.init()`, gated to first boot.** Nothing later in the build re-probes
+those two literal key names. ⛔ **`Profiles.activate(id)` resets the runtime to
+shipped defaults BEFORE it loads the incoming profile — never load alone.**
+`loadSettings()`/`Achievements.init()` are correctly written for a cold boot
+and assume the runtime already holds defaults; skipping the reset step bleeds
+the outgoing profile's settings, bindings, or lifetime achievements onto the
+incoming one. See GDD §2.21 for the full contract.
 
 ### Two traps that have each burned twice
 
@@ -387,6 +415,10 @@ orbital-overhaul.html
                    Channel: say -> _emit (the one gate) -> _schedule;
                    _enqueue + update (no dt, called at the END of update())
     Input          keys{} map + input.* predicates; call sites never read keys{}
+    Profiles       roster + keyFor() (CS031) — the "nameentry"/"profiles" menu
+                   screens, immediately above STORAGE_KEY/saveSettings/
+                   loadSettings, which every per-profile store still routes
+                   through
     Helpers        rand, wrap, dist2, angleTo, shortDelta, glowStroke, drawPoly,
                    drawRingArc, drawRingSegments, COLOR
     Entities       Ship, Bullet, Asteroid, Satellite, Wedge, Saucer, Particle,
@@ -441,7 +473,6 @@ composing data before porting the result in. Each duplicates whatever slice of
 game logic it needs; drift here can only ever produce a bad *preview*, never a
 bad *build*.
 
-- **`tools/orbit-lab.html`** — orbit geometry.
 - **`tools/scoop-lab.html`** — Scoop capture-mouth sizing (GDD §2.14.1).
 - **`tools/sat-art-lab.html`** — the twelve satellite craft's `SAT_ART` / `SAT_SCRAP` polylines.
 - **`tools/dock-float-lab.html`** — the delivery "+pts" floater column: anchor, cadence, and the

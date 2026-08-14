@@ -26,7 +26,7 @@
 //      the pool drops below SHIELD_HIT_COST and hits start landing for real again, passive recharge
 //      resumes normally during those hits' own i-frames — by design, "a lull still lets it recover"
 //      (IMPLEMENTATION-PHASES-CS013.md P4) applies to ANY gap, not just ones following a save.
-//  (G) GAME_VERSION === "1.0.0.30".
+//  (G) GAME_VERSION === "1.0.0.31".
 
 "use strict";
 const fs = require("fs");
@@ -221,9 +221,9 @@ function armShip(A, hp) {
 
 // ================= (G) version bump =====================
 (function () {
-  console.log("(G) GAME_VERSION === \"1.0.0.30\"");
+  console.log("(G) GAME_VERSION === \"1.0.0.31\"");
   const A = buildInstance();
-  assert(A.GAME_VERSION === "1.0.0.30", "G: GAME_VERSION is exactly \"1.0.0.30\"");
+  assert(A.GAME_VERSION === "1.0.0.31", "G: GAME_VERSION is exactly \"1.0.0.31\"");
 })();
 
 // ================= headless no-crash smoke =====================
