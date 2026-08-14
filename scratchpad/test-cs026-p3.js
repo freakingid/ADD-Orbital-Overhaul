@@ -773,7 +773,10 @@ let X = null;
     // though — fold that one assignment back to its parent form by NAME, and every other byte of
     // startGame() still has to match. The pattern is anchored on all three field names, so a fourth
     // field (or any other edit to that line) fails this trap rather than slipping through.
-    const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "" \};/, " };");
+    // NARROWED AGAIN BY CS032 P3 — the slots screen adds two more CS016-P3-rule fields to the SAME
+    // wrapped line (`slotMode` / `slotMsg`), so the pattern is widened to still anchor on every field
+    // by name rather than loosened into a wildcard — a sixth field would still fail this trap.
+    const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "" \};/, " };");
     // ⛔ REPOINTED BY CS032 P2 — THE RESET LIST MOVED, WHOLE AND UNEDITED, out of startGame() and into a
     // new shared `resetRun(wave, debugRun)` that resumeFromSave() calls too (CS032 spec Risk 5: ONE
     // reset list, never a hand-copied second, because a duplicated list is a drift generator). What this
@@ -792,7 +795,7 @@ let X = null;
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields and CS032 P2's resumedRun field + extraction into resetRun()");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), and CS032 P3's slotMode/slotMsg menu fields");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

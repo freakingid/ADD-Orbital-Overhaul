@@ -65,7 +65,19 @@ const countOf = (text, needle) => text.split(needle).length - 1;
   const iBoot = stripped.indexOf("\nProfiles.init();");
   assert(iInit > 0 && iBoot > 0, "A: (setup) both anchors found");
   assert(!/SaveSlots/.test(stripped.slice(iInit, iInit + 1500)), "A: ⛔ Profiles.init()'s body never mentions SaveSlots");
-  eq(countOf(stripped, "SaveSlots.read()"), 0, "A: ⛔ nothing calls SaveSlots.read() at module-eval time (P1 has no caller yet)");
+  // ⛔ REPOINTED BY CS032 P3 — the slots screen gives SaveSlots.read() its first two real callers
+  // (menuSlots()/drawSlots()), so a textual "zero call sites in the whole build" count is no longer
+  // the right proxy for what this trap actually protects: LAZINESS, i.e. nothing reads the store at
+  // BOOT. Driven behaviourally instead of textually, so it stays correct no matter how many later
+  // phases add real (non-boot) callers — a Proxy `store` records every key `buildGame()` alone
+  // touches, before any menu action ever runs.
+  const touched = new Set();
+  const spyStore = new Proxy({}, {
+    has(t, p) { if (typeof p === "string" && p.indexOf("afd_saves_v1") === 0) touched.add(p); return p in t; },
+    get(t, p) { if (typeof p === "string" && p.indexOf("afd_saves_v1") === 0) touched.add(p); return t[p]; },
+  });
+  buildGame({ store: spyStore });
+  eq(touched.size, 0, "A: ⛔ SaveSlots' own key is never touched by buildGame() alone — still lazy at boot");
 })();
 
 // A run with every captured field pushed off its startGame() default, via the real code only.

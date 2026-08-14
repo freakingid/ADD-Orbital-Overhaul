@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.31 · Changeset: CS032 · Phase: P2 · Registry: 87 · Levers: 18
+Version: 1.0.0.31 · Changeset: CS032 · Phase: P3 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS032
 
@@ -19,13 +19,29 @@ Version: 1.0.0.31 · Changeset: CS032 · Phase: P2 · Registry: 87 · Levers: 18
   so a resumed run can never write back through into the slot it came from — the mirror of
   `buildSaveEntry()`'s own copy rule. No menu wiring; `resumeFromSave()` has no caller until P3.
 
+- P3 — the `"slots"` screen: one screen, `game.menu.slotMode` = `"save"` | `"load"`, following
+  `drawProfiles()`'s panel/row-step/prefix/footer idiom exactly. Row state is `empty` / `occupied` /
+  `unreadable` (FORK-H: an unrecognised `kind`, or malformed data, reads as unreadable — never
+  guessed at). Save on empty writes straight through (`buildSaveEntry()` + `SaveSlots.write()`); save
+  on occupied/unreadable raises an `openModal()` overwrite confirm naming what's lost; a failed
+  `write()` sets `game.menu.slotMsg` and the screen stays open (spec §4.4 — never reports success on
+  failure). Load confirm on an occupied row calls `resumeFromSave()`, whose own `resetRun()` already
+  clears the menu and lands `game.state = "playing"` — no extra teardown needed here. `slotMode` has
+  no separate return-screen field: Back derives its destination FROM the mode itself (`"save"` → the
+  paused root, `"load"` → the title), since those are the only two callers the spec allows (§0.2/§4.3)
+  — a stored back/backIndex pair (nameCtx's own shape) would just duplicate what the mode already
+  implies. `slotMode`/`slotMsg` follow the CS016 P3 both-places rule (game literal + `resetRun()`);
+  `gotoScreen()` also unconditionally clears `slotMsg` on every screen change, the same treatment
+  `achTab` already gets. Reachable only from the test harness this phase — `MENU_ROOT_PLAY`,
+  `MENU_TITLE` and both menus' dispatch are untouched; P4 wires the two real callers.
+
 CS031 is closed; see `log/CS031.md` for its full P1–P7 build log. Player Profiles: a named roster
 layered over the three existing `localStorage` stores (`afd_settings_v1`, `afd_achievements_v2`,
 `afd_scores_v1`), plus `afd_profiles_v1`.
 
 ## Working / verified
 
-- Full suite on a full clone: **124 files, 124 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **125 files, 125 passed, 0 failed, 0 skipped, 0 timed out.**
 - **One reset list, textually pinned:** `game.debris = [];` occurs exactly once in the whole build
   (`test-cs032-p2.js` §M). A resumed run and a fresh run at the same level agree on `cargoMax`,
   `worldSize`, live world dimensions and `hudHull`, checked at level 3 (small world) and level 9.
@@ -40,7 +56,10 @@ layered over the three existing `localStorage` stores (`afd_settings_v1`, `afd_a
   (flat) — verified non-aliasing: mutating the live run after capture does not move the entry.
 - An envelope holding a slot with an unrecognised `kind` (e.g. `"snapshot"`) is handed back as data,
   not coerced to `null` — SaveSlots validates the envelope (`v`, array-ness, length 3), never a
-  slot's own contents; that's the slots screen's (P3) job.
+  slot's own contents; the slots screen (P3) is what renders that data as `unreadable`.
+- P3's `menuSlots()`/`drawSlots()` drive the real `SaveSlots`/`buildSaveEntry()`/`resumeFromSave()` —
+  nothing about a row's state or a write's success/failure is reimplemented in the test. The modal's
+  CANCEL-safe default (index 1) is reused verbatim from profile Delete, not re-derived.
 - `keyFor()` is the one route from a store's base name to the key it reads/writes; `localStorage`
   is never enumerated anywhere in the build.
 - `p0`'s stores ARE the three pre-CS031 frozen keys, verbatim — the legacy migration copies, moves
@@ -81,6 +100,16 @@ layered over the three existing `localStorage` stores (`afd_settings_v1`, `afd_a
   the first to move it. `test-cs032-p2.js` §M carries the compensating half: `startGame()`'s new
   two-line body is pinned literally, so the folds cannot hide an edit to what they fold.
 
+- **CS032 P3 repointed two more pins, same standing rule.** `test-cs026-p3.js`'s §G TRAP 5
+  `foldMenuReset` regex now folds `slotMode`/`slotMsg` back too (the fifth narrowing of that pin) —
+  anchored on both new field names by name, not loosened into a wildcard. `test-cs032-p1.js`'s §A
+  "nothing calls `SaveSlots.read()`" pin was a P1-scoped textual proxy for a boot-time-laziness
+  invariant, correct only because P1 truly had zero call sites; P3 gives it two real ones
+  (`menuSlots()`/`drawSlots()`). Repointed to drive the actual invariant instead of the proxy: a
+  `Proxy` `store` records every `afd_saves_v1*` key `buildGame()` alone touches, before any menu
+  input runs — asserting laziness directly, so it stays correct through however many later phases
+  add more (non-boot) callers.
+
 - **`test-cs030-p1.js` §A reads a fixed 3000-CHARACTER window** from `function startGame()` to find
   `game.pendingAch = []` / `game.celebration = null`. Those now sit at +2102 / +2187 — inside, with
   ~800 characters of headroom against ~1500 before P2. It bit once during this phase and the fix was
@@ -104,12 +133,17 @@ None.
 
 ## Next up
 
-- **CS032 P3 — the slots screen.** Sonnet. `resumeFromSave(entry)` is live and fully tested but has
-  **no caller** — P3's `"load"` confirm is its first. It takes a slot's contents exactly as
-  `SaveSlots.read()` hands them back and needs no pre-validation: it is written for untrusted JSON
-  (every field falls back to the fresh-run default). It sets `game.state = "playing"` and clears
-  `game.menu` itself, so P3's load path does not have to. `MENU_ROOT_PLAY`, `MENU_TITLE`,
-  `menuRoot()`, `drawRootMenu()` and `nextWave()` remain untouched through P2 — confirmed.
+- **CS032 P4 — menu wiring.** Opus, xhigh. The `"slots"` screen is built and fully tested but has no
+  real caller yet. Make `"Save"` live in the pause root — all three pieces of the unavailable-row
+  idiom in one commit (`menuRoot()`'s confirm branch → `gotoScreen("slots")` + `slotMode = "save"`;
+  **delete** `drawRootMenu()`'s `it === "Save" ? COLOR.dim : ...` ternary — the piece that's silent
+  when forgotten). Add `"Load Saved Game"` to `MENU_TITLE` (after `"Start Game"`) with the same
+  unavailable-row idiom when `SaveSlots.count() === 0`, recomputed on every title-menu entry (not
+  cached — a profile switch or delete changes the answer). `titleMenuLayout(n)` already derives from
+  `MENU_TITLE.length`; do not hand-edit `TITLE_MENU_STEP_MAX`/`_MARGIN`. Grep for every comment citing
+  `MENU_ROOT_PLAY`'s `"Save"` as the unavailable-row idiom's canonical example (`menuProfiles()`'s cap,
+  `drawProfiles()`, the `MENU_TITLE` region) and repoint them at `Add Profile`, which stays a true
+  example.
 
 - **⛔ P7 doc sweep — the GDD names `startGame()` as the site of the reset list in ~4 places** (the
   level-banner clear at §2, the world-resize contract, `game.worldSize`'s both-places note). The

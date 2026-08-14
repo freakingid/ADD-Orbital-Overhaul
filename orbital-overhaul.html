@@ -3340,6 +3340,22 @@ const PROFILES_ROW_STEP = 46;    // px between rows — drawRootMenu's own step
 const PROFILES_PANEL_W  = 560;
 const PROFILES_HINT     = "↑↓ move   ◄► action   ENTER/A select   ESC/B back";
 const PROFILE_ADD_LABEL = "Add Profile";
+
+// ---------- CS032 P3: the "slots" screen (spec FORK-CS032-E) ----------
+// One screen, two modes (game.menu.slotMode = "save" | "load"), same panel/row-step/prefix/footer
+// idiom as drawProfiles() above. Row geometry is fixed at SLOT_COUNT — three never scrolls.
+const SLOT_COUNT          = 3;
+const SLOTS_TITLE_SAVE    = "SAVE GAME";
+const SLOTS_TITLE_LOAD    = "LOAD SAVED GAME";
+const SLOTS_ROW_Y         = 118;   // first row baseline, relative to panel top — PROFILES_ROW_Y's own value
+const SLOTS_ROW_STEP      = 46;    // px between rows — PROFILES_ROW_STEP's own value
+const SLOTS_PANEL_W       = 620;
+const SLOTS_HINT          = "↑↓ move   ENTER/A select   ESC/B back";
+const SLOT_EMPTY_LABEL      = "— EMPTY —";
+const SLOT_UNREADABLE_LABEL = "— UNREADABLE —";
+// A failed write must be visible, not silent (spec §4.4) — drawn in the same COLOR.lowhp the
+// name-entry screen already uses for its own inline validation message.
+const SLOT_SAVE_FAIL_MSG  = "Save failed — storage unavailable.";
 function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_ROOT_PLAY; }
 // menuOptions()/drawOptionsMenu() dispatch by LABEL (like menuRoot), not by hardcoded index, so
 // adding a row here is purely additive and can't silently shift the other handlers out from under
@@ -4050,6 +4066,7 @@ function gotoScreen(s, index) {
   game.menu.index = index || 0; game.menu.row = 0; game.menu.col = 0; game.menu.scroll = 0;
   game.menu.modal = null;  // CS016 P3: a dialog belongs to the screen that raised it and never survives a screen change
   game.menu.achTab = ACH_TAB_DEFAULT;  // CS016 P5: sits beside the scroll reset — re-entry is always Weekly, unscrolled
+  game.menu.slotMsg = "";  // CS032 P3: same reasoning as achTab — a stale write-failure banner must not survive a screen change
   AudioSys.ui(true);
 }
 // CS015 P4: open the hidden Debug Options panel straight from the Title screen (where there is no root
@@ -4154,6 +4171,7 @@ function menuInput(action) {
     case "highscores":   menuHighScores(action); break;
     case "nameentry":    menuNameEntry(action); break;  // CS031 P3: the profile name grid
     case "profiles":     menuProfiles(action); break;   // CS031 P4: the roster screen
+    case "slots":        menuSlots(action); break;      // CS032 P3: the save/load slots screen
     case "debug":        menuDebug(action); break;   // CS015 P4: hidden, secret-code-only
   }
 }
@@ -5085,6 +5103,79 @@ function profileDelete(id) {
     removeProfileStores(id);
   }
   return Profiles.remove(id);
+}
+
+// ---------- The "slots" screen (CS032 P3, spec FORK-CS032-E) ----------
+// One screen serving both Save (write) and Load Saved Game (read); game.menu.slotMode is set by the
+// caller before gotoScreen("slots"), exactly the "one screen, caller sets what commit does" precedent
+// openNameEntry's ctx already established for "nameentry". Reachable only from a test harness this
+// phase — P4 wires the two real callers (the paused root's "Save" row, the title's "Load Saved Game"
+// row). Because those are the ONLY two callers the spec allows (§0.2 — Save only from state==="playing";
+// §4.3 — Load only from the title), slotMode alone tells Back where to land: no separate return-screen
+// field is needed, unlike nameCtx's back/backIndex, which serves screens reachable from more than one
+// place.
+//
+// FORK-H: a slot's `kind` decides readability, not its mere presence. "wave" is the only kind this
+// changeset writes or restores; anything else (a future `kind: "snapshot"`, or corrupt/hand-edited
+// data) renders as UNREADABLE rather than being guessed at.
+function slotRowState(entry) {
+  if (entry === null || entry === undefined) return "empty";
+  if (typeof entry === "object" && entry.kind === "wave") return "occupied";
+  return "unreadable";
+}
+// The occupied row's copy is a literal readout of buildSaveEntry()'s own save-moment capture (spec
+// FORK-A) — nothing here is re-derived or estimated.
+function timeAgo(ts) {
+  const s = Math.max(0, Math.floor((Date.now() - (typeof ts === "number" ? ts : 0)) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + (m === 1 ? " minute ago" : " minutes ago");
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + (h === 1 ? " hour ago" : " hours ago");
+  const d = Math.floor(h / 24);
+  return d + (d === 1 ? " day ago" : " days ago");
+}
+function slotLabel(entry, state) {
+  if (state === "empty") return SLOT_EMPTY_LABEL;
+  if (state === "unreadable") return SLOT_UNREADABLE_LABEL;
+  return "LEVEL " + entry.wave + " · " + fmtCommas(entry.score) + " · " + timeAgo(entry.saved);
+}
+// Overwrite copy names what is LOST — the existing slot's own level, never the incoming run's (spec
+// "Copy names what is lost: the existing slot's level, not the incoming one"). An unreadable slot's
+// own fields aren't trustworthy, so its copy stays generic rather than asserting a level it can't
+// honestly read.
+function slotOverwriteText(i, state, entry) {
+  if (state === "occupied") return "Overwrite Slot " + (i + 1) + "? Level " + entry.wave + " progress will be lost.";
+  return "Overwrite Slot " + (i + 1) + "? The existing save will be lost.";
+}
+// ⛔ A failed write must not report success (spec §4.4) — on failure the screen stays put with
+// slotMsg set; the caller (menuSlots' confirm branch) never navigates away in that case.
+function slotWrite(i) {
+  if (SaveSlots.write(i, buildSaveEntry())) gotoScreen("root", rootItems().indexOf("Save"));
+  else game.menu.slotMsg = SLOT_SAVE_FAIL_MSG;
+}
+function menuSlots(a) {
+  const m = game.menu, mode = m.slotMode;
+  if (a === "up")   { m.index = (m.index + SLOT_COUNT - 1) % SLOT_COUNT; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % SLOT_COUNT; AudioSys.ui(false); }
+  else if (a === "confirm") {
+    const entry = SaveSlots.read()[m.index], state = slotRowState(entry);
+    if (mode === "load") {
+      if (state !== "occupied") return;   // empty/unreadable rows are dim and inert in load mode
+      resumeFromSave(entry);              // sets game.state = "playing" and clears the menu itself (resetRun())
+    } else if (state === "empty") {
+      slotWrite(m.index);                 // nothing to lose — writes straight through, no modal
+    } else {
+      openModal(slotOverwriteText(m.index, state, entry), "OVERWRITE", () => slotWrite(m.index));
+    }
+  }
+  // Back steps up to whichever screen this mode is only ever reachable from; pause fully closes the
+  // menu, matching every sibling screen's own back-vs-pause split (menuOptions/menuSound et al.).
+  else if (a === "back") {
+    if (mode === "save") gotoScreen("root", rootItems().indexOf("Save"));
+    else returnToTitleMenu();
+  }
+  else if (a === "pause") closePause();
 }
 
 // --- Persistence (localStorage, guarded). Note: unavailable in the claude.ai artifact sandbox but
@@ -6763,7 +6854,7 @@ const game = {
   // show on a "Profile: —" title row and nothing to play as. An upgrading player (legacy data migrated
   // into p0) has firstBoot false and boots normally, exactly as before this phase.
   menu: { screen: Profiles.firstBoot ? "profiles" : "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT,
-          nameBuf: "", nameCtx: null, nameErr: "" }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id; nameBuf/nameCtx/nameErr: CS031 P3, the name-entry screen (typed buffer / what commit does / inline validation message)
+          nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "" }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id; nameBuf/nameCtx/nameErr: CS031 P3, the name-entry screen (typed buffer / what commit does / inline validation message); slotMode/slotMsg: CS032 P3, the slots screen (caller-set save/load mode / inline write-failure message)
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   // CS022 P1: the world size the sim is CURRENTLY running at (WORLD_SIZE_FIELD | WORLD_SIZE_ORBIT).
@@ -7074,8 +7165,9 @@ function resetRun(wave, debugRun) {
   // follows the same rule (achTabIndex() defends against a bad id anyway, but the field should never
   // BE undefined in the first place).
   // CS031 P3: nameBuf/nameCtx/nameErr are here AND in the game literal, same standing rule.
+  // CS032 P3: slotMode/slotMsg follow it too.
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null, achTab: ACH_TAB_DEFAULT,
-                nameBuf: "", nameCtx: null, nameErr: "" }; // ensure no menu carries in
+                nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "" }; // ensure no menu carries in
   DiffLog.rows = []; // CS017 P2: dev log is per-run, never carries into a fresh game
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
@@ -9855,6 +9947,7 @@ function drawMenu() {
   else if (s === "highscores") drawHighScores();
   else if (s === "nameentry") drawNameEntry();   // CS031 P3: the profile name grid
   else if (s === "profiles") drawProfiles();     // CS031 P4: the roster screen
+  else if (s === "slots") drawSlots();           // CS032 P3: the save/load slots screen
   else if (s === "debug") drawDebug();   // CS015 P4: hidden, secret-code-only
   drawModal();  // CS016 P3: LAST, unconditionally — it must paint over whichever panel raised it
 }
@@ -10185,6 +10278,29 @@ function drawProfiles() {
   const addColor = roster.length >= PROFILE_MAX ? COLOR.dim : (addSel ? COLOR.text : COLOR.menuIdle);
   drawText((addSel ? "▶ " : "   ") + PROFILE_ADD_LABEL, VIEW_W / 2, y + PROFILES_ROW_Y + roster.length * PROFILES_ROW_STEP, 22, addColor);
   drawMenuHint(PROFILES_HINT, VIEW_W / 2, y + hintY);
+}
+
+// CS032 P3: the "slots" screen. Follows drawProfiles() exactly — same panel/row-step/prefix/footer
+// idiom, fixed at SLOT_COUNT rows (three never scrolls, so no row-count derivation is needed here).
+function drawSlots() {
+  const m = game.menu, mode = m.slotMode;
+  const hintY = SLOTS_ROW_Y + (SLOT_COUNT - 1) * SLOTS_ROW_STEP + 62;
+  const h = hintY + 28;
+  const { y } = menuPanel(SLOTS_PANEL_W, h, mode === "load" ? SLOTS_TITLE_LOAD : SLOTS_TITLE_SAVE);
+  const slots = SaveSlots.read();
+  slots.forEach((entry, i) => {
+    const state = slotRowState(entry);
+    const sel = m.index === i;
+    // Unavailable-row idiom (MENU_ROOT_PLAY's "Save"/drawProfiles' "Add Profile"): dim and inert only
+    // where the row-state table (spec P3) says so — an empty or unreadable row in LOAD mode. Every row
+    // is live in SAVE mode; there is no cap here.
+    const dim = mode === "load" && state !== "occupied";
+    const color = dim ? COLOR.dim : (sel ? COLOR.text : COLOR.menuIdle);
+    drawText((sel ? "▶ " : "   ") + (i + 1) + ".  " + slotLabel(entry, state),
+             VIEW_W / 2, y + SLOTS_ROW_Y + i * SLOTS_ROW_STEP, 22, color);
+  });
+  if (m.slotMsg) drawText(m.slotMsg, VIEW_W / 2, y + hintY - 30, 16, COLOR.lowhp);
+  drawMenuHint(SLOTS_HINT, VIEW_W / 2, y + hintY);
 }
 
 // One slider row for the ship-rotation preference on the Controls screen (§10b). Readout is a
