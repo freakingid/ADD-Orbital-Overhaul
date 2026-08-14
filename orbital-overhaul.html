@@ -5105,6 +5105,7 @@ function blankLegacyStores(keepActiveId) {
   Achievements.lifetimeTiers = {};
   saveSettings();
   Achievements.save();
+  for (let i = 0; i < SLOT_COUNT; i++) SaveSlots.clear(i);   // still activated as p0 — through keyFor(), never removeItem
   Profiles.activate(keepActiveId);
 }
 // Non-legacy profiles' keys are NOT frozen — remove them, or an abandoned profile's stores accumulate
@@ -5114,6 +5115,7 @@ function removeProfileStores(id) {
   try {
     ls.removeItem(STORAGE_KEY + ":" + id);
     ls.removeItem(Achievements.STORAGE_KEY + ":" + id);
+    ls.removeItem(SAVES_KEY + ":" + id);
   } catch (e) { /* quota / privacy mode / disabled — ignore, same as every other guarded store op */ }
 }
 // The roster-shrinking half of Delete (spec §4.5). Order matters: the active profile is switched away

@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.31 · Changeset: CS032 · Phase: P4 · Registry: 87 · Levers: 18
+Version: 1.0.0.31 · Changeset: CS032 · Phase: P5 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS032
 
@@ -47,13 +47,32 @@ Version: 1.0.0.31 · Changeset: CS032 · Phase: P4 · Registry: 87 · Levers: 18
   which the prompt did not list. Six suite files repointed; `test-cs032-p4.js` mutation-tested eight
   ways.
 
+- P5 — the purge. `removeProfileStores(id)` gained a third `ls.removeItem(SAVES_KEY + ":" + id)`
+  beside the two existing removes. `blankLegacyStores()` clears `p0`'s three slots through
+  `SaveSlots.clear(i)` — the guarded write path, never a raw `removeItem`, matching how its two
+  sibling stores are reset-in-place. `Profiles.activate()` needed no change: `SaveSlots` is lazy and
+  reads through `keyFor()` at call time, confirmed by test rather than inspection (write under
+  profile A, switch to B, read empty, switch back, read A's write intact — no flush/reload).
+  `quitToTitle()` is confirmed untouched: no `SaveSlots`/`buildSaveEntry` reference in its body, and
+  a spied `SaveSlots.write` counts zero calls across a mid-run quit. `test-cs032-p5.js`: (A)
+  non-legacy delete removes just that id's saves key, leaving siblings' intact; (B) `p0` delete
+  blanks `p0`'s slots in both the p0-active and p0-not-active shapes; (C) deleting the ACTIVE
+  profile hands `activeId` to the roster's next survivor (per `profileDelete()`'s own unreordered
+  ordering) and purges only the deleted id's slots — the newly-active profile's own slot, written
+  before the delete, reads back unchanged; (D) per-profile isolation across `activate()`; (E)
+  `quitToTitle()` writes nothing. Full suite: **127 files, 127 passed, 0 failed, 0 skipped.**
+
 CS031 is closed; see `log/CS031.md` for its full P1–P7 build log. Player Profiles: a named roster
 layered over the three existing `localStorage` stores (`afd_settings_v1`, `afd_achievements_v2`,
 `afd_scores_v1`), plus `afd_profiles_v1`.
 
 ## Working / verified
 
-- Full suite on a full clone: **126 files, 126 passed, 0 failed, 0 skipped, 0 timed out.**
+- Full suite on a full clone: **127 files, 127 passed, 0 failed, 0 skipped, 0 timed out.**
+- **P5's mutation trap confirmed by reverting the code change:** on the pre-P5 build, `test-cs032-p5.js`
+  fails 7 ways across §A/§B/§C (Ripley's/p0's saves keys survive a delete, the "deleted, not
+  newly-active" isolation reads Ripley's own leftover data) and passes clean once the two removes
+  land. No pin passed vacuously.
 - **P4's pins were mutation-tested, not just asserted.** Eight deliberate breaks — restoring the
   forced-dim ternary, dropping `drawTitleMenu()`'s dim rule, dropping `menuTitle()`'s count guard,
   re-adding a stale `MENU_ROOT_PLAY's "Save"` citation, deleting the `menuRoot()` branch, adding
@@ -197,12 +216,11 @@ None.
 
 ## Next up
 
-- **CS032 P5 — profile-delete purge + edge tests.** `removeProfileStores()` and `blankLegacyStores()`
-  are different code and both need the slot purge; a deleted profile's `afd_saves_v1:pN` must go with
-  its settings and achievements, and the legacy path blanks rather than removes. Then the full suite.
-  ⛔ P4 note for P5: with `"Load Saved Game"` now live, a profile delete changes the title row's dim
-  state — the row already recomputes, so P5 needs no render work, but the purge is what makes the
-  recomputation *correct* rather than merely fresh.
+- **⛔ CS032 P6 — PLAYTEST GATE, BLOCKING.** No code phase follows until Paul answers G1–G11 in
+  `IMPLEMENTATION-PHASES-CS032.md`. Real browser, real `file://` load, not the harness. G4 is the
+  gate's real question — the direct playtest of save-moment values (FORK-A) via `RESUMED RUN` +
+  suppressed initials entry at game over; a fail there means P2's eligibility wiring has a gap and
+  P7 does not proceed until it's fixed.
 
 - **⛔ P7 doc sweep — `MENU_TITLE` is 6 rows and the pause root's `"Save"` is live.** The GDD's menu
   IA section and any passage calling `"Save"` a placeholder both need the update; GDD §2's
