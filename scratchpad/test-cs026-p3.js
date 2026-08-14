@@ -757,10 +757,14 @@ let X = null;
     // NARROWED AGAIN BY CS030 P1 — the achievement unlock collector adds two more CS016-P3-rule reset
     // lines, `game.pendingAch = [];` and `game.celebration = null;`. Same treatment: filtered out by
     // name, not a weakened comparison.
+    // NARROWED AGAIN BY CS032 P2 — `game.resumedRun = false;`, the phase's one new CS016-P3-rule field,
+    // sits beside `game.debugRun` in the list. Same treatment, filtered out by name. (The list ITSELF
+    // moved this phase; see the repoint note at the comparison below.)
     const DROPPED_LINES = new Set([
       "game.deliveryTicker = null;",
       "game.pendingAch = [];",
       "game.celebration = null;",
+      "game.resumedRun = false;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
@@ -770,8 +774,25 @@ let X = null;
     // startGame() still has to match. The pattern is anchored on all three field names, so a fourth
     // field (or any other edit to that line) fails this trap rather than slipping through.
     const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "" \};/, " };");
-    eq(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function startGame()")))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — startGame()'s EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets and CS031 P3's three name-entry menu fields");
+    // ⛔ REPOINTED BY CS032 P2 — THE RESET LIST MOVED, WHOLE AND UNEDITED, out of startGame() and into a
+    // new shared `resetRun(wave, debugRun)` that resumeFromSave() calls too (CS032 spec Risk 5: ONE
+    // reset list, never a hand-copied second, because a duplicated list is a drift generator). What this
+    // pin has always been about is the LIST, so it is re-aimed at the function that now holds it — the
+    // same kind of repoint CS029 P4 / CS030 P1 / CS031 P3 each made, and for the same reason: a
+    // fixed-ref pin cannot outlive a later phase legitimately touching what it watches. Every byte of
+    // the list still has to match; the three things the extraction legitimately changed are folded back
+    // BY NAME below, so any OTHER edit still fails here.
+    //   1. the signature — the body is the subject, the function's name never was;
+    //   2. the two `DEBUG.startLevel` seeds became the parameters. startGame() hands back the identical
+    //      two expressions, so nothing is lost — test-cs032-p2.js §M pins that call literally;
+    //   3. `nextWave()` left the list for the two callers — also pinned, literally, in that same §M.
+    const foldResetRun = t => t
+      .replace("function resetRun(wave, debugRun) {", "function startGame() {")
+      .replace("  game.debugRun = debugRun;", "  game.debugRun = DEBUG.startLevel > 1;")
+      .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
+      + "\n  nextWave();";
+    eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields and CS032 P2's resumedRun field + extraction into resetRun()");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

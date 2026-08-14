@@ -3761,8 +3761,8 @@ const DEBUG_ROWS = [
 // CS018 P2: the panel's transient VIEW state — the scroll window's top row and the pending numeric-entry
 // buffer (`null` = not typing; a string = the digits typed so far, not yet committed). Module-level beside
 // DebugCode rather than fields on game.menu ON PURPOSE: game.menu is written from two literals (its own and
-// startGame's reset), and a field added to only one of them reads `undefined` for a whole run — see the
-// standing note at startGame's reset. This state belongs to one hidden screen with exactly one entry point
+// resetRun()'s), and a field added to only one of them reads `undefined` for a whole run — see the
+// standing note at resetRun(). This state belongs to one hidden screen with exactly one entry point
 // (enterDebug), which is the single place it resets.
 const DebugPanel = { scroll: 0, entry: null };
 const DEBUG = {};        // native-unit live values — what consumers read (e.g. seconds for the regen lock)
@@ -4890,7 +4890,7 @@ const SaveSlots = {
 //    branches a keyboard player uses.
 //
 // State lives on game.menu: `row`/`col` are the grid cursor (the Controls-screen precedent), plus
-// nameBuf / nameCtx / nameErr — all three declared in BOTH the game literal and startGame()'s reset,
+// nameBuf / nameCtx / nameErr — all three declared in BOTH the game literal and resetRun(),
 // per the standing CS016 P3 rule.
 function nameRowLen(r) { return Math.min(NAME_GRID_COLS, NAME_CELLS.length - r * NAME_GRID_COLS); }
 function nameCell() { return NAME_CELLS[game.menu.row * NAME_GRID_COLS + game.menu.col]; }
@@ -4938,7 +4938,7 @@ function nameEntryKey(key) {
 // with no per-screen state, and the roster op stays entirely on the caller's side.
 // ⛔ THIS IS THE ONLY WAY IN, and it re-initialises all three fields — which is why no other menu
 // teardown has to clear them. They are inert unless game.menu.screen === "nameentry", and both the
-// literal and startGame()'s reset seed them, so they are never `undefined` for a handler to trip on.
+// literal and resetRun() seed them, so they are never `undefined` for a handler to trip on.
 function openNameEntry(ctx, initial) {
   const m = game.menu;
   m.nameCtx = ctx || { mode: "add" };
@@ -6768,7 +6768,7 @@ const game = {
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   // CS022 P1: the world size the sim is CURRENTLY running at (WORLD_SIZE_FIELD | WORLD_SIZE_ORBIT).
   // nextWave() compares worldSizeFor(game.wave) against this and resizes only on a real change.
-  // Declared in BOTH this literal and startGame()'s reset per the standing CS016 P3 rule (STATUS.md
+  // Declared in BOTH this literal and resetRun() per the standing CS016 P3 rule (STATUS.md
   // Known issues): a field that lands in only one of the two is `undefined` for a whole run.
   worldSize: WORLD_SIZE_FIELD,
   debris: [], bullets: [], saucers: [], hunters: [], particles: [],
@@ -6806,13 +6806,13 @@ const game = {
   // breakChain(), scatterChain(), startGame(), and nextWave()'s cargoMax GROWTH, which frees a slot
   // with no delivery and no pickup at all and is the one that would have been missed). Ticks on `dt`,
   // so it freezes with a pause like every other in-game timer. Declared in BOTH this literal and
-  // startGame()'s reset per the standing CS016 P3 rule.
+  // resetRun() per the standing CS016 P3 rule.
   magnetHoldT: 0,
   // CS025 P2 (spec §2.3): was the tow chain full on the PREVIOUS pickup-block frame? The rising-edge
   // detector for the repulsion kick, and NOTHING else reads it. A plain stored boolean, deliberately
   // NOT inferred from magnetHoldT — see the ⛔ note at its one writer, at the top of update()'s pickup
   // block, for why the tempting inference re-fires the burst at the playtest gate. Declared in BOTH
-  // this literal and startGame()'s reset per the standing CS016 P3 rule.
+  // this literal and resetRun() per the standing CS016 P3 rule.
   cargoWasFull: false,
   cargoMax: CARGO_BASE,                                // runtime tow cap; set from payloadSlots(game.wave) in nextWave() (CS018 P5) — this is only the pre-level-1 default
   cargoFlash: 0,                                       // CS009 P3: >0 for HUD_CAP_FLASH sec after a cap-up —
@@ -6834,9 +6834,19 @@ const game = {
   // CS024 P6d: true iff this run was started above level 1 via the startLevel debug knob. Set ONCE in
   // startGame() from the knob's value at that instant, never re-read mid-run (see startGame()). Gates
   // the three persistence points (HighScores entry, achievement-unlock save, lifetime-stats save) so a
-  // debug jump can never record. Declared in BOTH this literal and startGame()'s reset per the standing
+  // debug jump can never record. Declared in BOTH this literal and resetRun() per the standing
   // CS016 P3 rule — a field in only one of the two reads `undefined` for a whole run.
   debugRun: false,
+  // CS032 P2 (spec §2.9 / FORK-F): true iff this run was ever loaded out of a save slot. A SIBLING of
+  // debugRun above, deliberately not a reuse of it — resumeFromSave() is the ONE site that sets it, it
+  // sets it unconditionally on every call, and nothing re-reads or clears it until the next run starts.
+  // It ORs into the same two persistence gates debugRun owns (Achievements.save() and the initials-entry
+  // arm) and gets its OWN HUD tell, because printing "DEBUG RUN" at a player who merely loaded a save
+  // would be wrong on its face. ⛔ STICKY FOR THE RUN'S LIFETIME — do NOT build a path that gives
+  // eligibility back once the player plays past their load point: the banked score from before the load
+  // is already inside game.score and cannot be separated out again (spec §4.1, §3 FORK-F). Declared in
+  // BOTH this literal and resetRun() (the shared reset both run paths call) per the CS016 P3 rule.
+  resumedRun: false,
   waveTime: 0,   // seconds elapsed in the current level; ticked in update(), zeroed by nextWave().
                  // CS018 P4 (FLAG-k): kept as telemetry — nextWave() logs the level just finished.
   nextRepair: REPAIR_MILESTONE,   // next score threshold that repairs the hull (F2)
@@ -7020,7 +7030,37 @@ function buildSaveEntry() {
   };
 }
 
+// ---------- Starting a run, and resuming one (CS032 P2) ----------
+// TWO ENTRY POINTS, ONE RESET LIST. Before this phase the whole reset was startGame()'s own body; the
+// body is now resetRun(), verbatim, and startGame() is the thin caller that seeds it from the debug
+// knob. resumeFromSave() is the SIBLING entry point, never a branch inside startGame() — it calls the
+// same resetRun(), overwrites the loaded fields on top, and only then runs the wave.
+//
+// ⛔ THE EXTRACTION IS THE POINT (spec Risk 5). A resumed run must not be able to drift away from a
+// fresh run at the same level, and the way this project has been bitten before is a second, hand-copied
+// reset list that silently falls a field behind. There is exactly one list; both callers get all of it.
+//
+// The two parameters are the only two values the callers disagree about, and both must be in place
+// BEFORE the reset body runs: `wave` because game.saucerTimer's seed reads game.wave through
+// ufoAppearInterval(), and `debugRun` because it is set once per run and never recomputed.
+//
+// CS024 P6d: the startLevel debug knob seeds the wave counter, and the call below is its ONE read site
+// — wave 0 lands nextWave() on level 1 exactly as before (startLevel's default is 1). Any value above 1
+// sets the STICKY debugRun flag from the knob's value AT THIS INSTANT only; DEBUG.startLevel is never
+// re-read for the rest of the run, so dragging the slider mid-run can neither re-arm recording for a
+// debug run nor retroactively void a legitimate one. See the registry entry for the fidelity limit this
+// knob does NOT paper over.
 function startGame() {
+  resetRun(DEBUG.startLevel - 1, DEBUG.startLevel > 1);
+  nextWave();
+}
+
+// The shared reset — everything a run needs zeroed, and nothing else. It deliberately does NOT call
+// nextWave(): the caller does, because resumeFromSave() has restore work to do in between.
+// ⛔ THE STANDING CS016 P3 RULE'S SECOND SITE — every "declared in BOTH this literal and ..." note
+// in the game object points HERE. A new game.* field goes in the game literal and in this body, never
+// in startGame(): a field added there is set for a fresh run and missed by every resumed one.
+function resetRun(wave, debugRun) {
   game.state = "playing";
   game.paused = false;
   game.deathT = 0; game.shake = 0;   // v3.6 P5: a fresh run never carries death-spectacle state over
@@ -7042,13 +7082,13 @@ function startGame() {
   game.pendingAch = [];           // CS030 P1: clear any lingering unflushed unlocks
   game.celebration = null;        // CS030 P1: no panel carries into a fresh game
   game.score = 0;
-  // CS024 P6d: the startLevel debug knob seeds the wave counter — game.wave = 0 lands nextWave() on
-  // level 1 exactly as before (startLevel's def is 1). Any value above 1 sets the STICKY debugRun flag
-  // from the knob at this instant only; DEBUG.startLevel is never re-read for the rest of the run, so
-  // dragging the slider mid-run can neither re-arm recording for a debug run nor retroactively void a
-  // legitimate one. See the registry entry for the fidelity limit this knob does NOT paper over.
-  game.debugRun = DEBUG.startLevel > 1;
-  game.wave = DEBUG.startLevel - 1;
+  // CS024 P6d: STICKY, and set exactly once per run — from the caller's argument, never re-read from
+  // DEBUG.startLevel down here (see the knob comment at startGame()'s own call).
+  game.debugRun = debugRun;
+  // CS032 P2 (spec §2.9): the both-places rule's second site for game.resumedRun. Every run starts
+  // eligible; resumeFromSave() flips it true AFTER this reset returns, and nothing ever flips it back.
+  game.resumedRun = false;
+  game.wave = wave;
   // A fresh run never carries a stale waveTime. nextWave() (called at the end of this function) zeroes
   // it again for level 1, exactly as it does for every other level. (CS018 P4 removed the
   // game.cycle/game.cycleWave resets that used to sit on this line with it.)
@@ -7106,6 +7146,77 @@ function startGame() {
   // of the level the player is about to start, and the bug would only show on level 1.
   game.levelBanner = { text: "", life: 0 };
   VoiceSys.reset();
+}
+
+// ---------- Resuming a run from a save slot (CS032 P2; spec §1.3, FORK-A, FORK-F) ----------
+// The restore half of CS032, and the sibling of startGame() above. `entry` is one slot's contents as
+// SaveSlots.read() hands it back — a plain object parsed straight out of localStorage, so it is
+// untrusted data, not a value this code produced. The order below is the whole phase:
+//
+//   1. resetRun()  — identical to a fresh run, from the ONE shared list.
+//   2. overwrite   — the save-moment values (FORK-A), on top of the fresh state.
+//   3. resumedRun  — forced true, unconditionally, every call.
+//   4. nextWave()  — announces the level and builds the field, exactly as a fresh run does.
+//
+// ⛔ INVARIANT — STEP 2 PRECEDES STEP 4 (spec §2.6). nextWave() reads game.stats.powerupsPicked to gate
+// Achievements.lifetime.maxWaveNoPowerup. Restore the stats after it and that gate reads a fresh-zeroed
+// counter and credits the resumed level to a MAX counter that never earned it. Step 3 stops that from
+// ever reaching disk, but it would still fire a same-session toast the player did not earn.
+//
+// ⛔ INVARIANT — game.hudHull FOLLOWS THE RESTORED HP. resetRun() set it from a full-HP ship; leaving it
+// there and dropping hp to 30 plays a phantom drain animation over the resumed run's first half-second.
+//
+// ⛔ THE WAVE COMES FROM THE ENTRY, NEVER FROM DEBUG.startLevel — it is passed into resetRun() rather
+// than assigned after it, for the same reason startGame() passes its own: the reset seeds
+// game.saucerTimer from the level it is about to play. Same value, one line earlier than the spec's
+// step list, and no reader in between.
+//
+// ⛔ NOTHING IS CLEARED FROM THE SLOT (FORK-D). This function does not touch SaveSlots at all.
+//
+// KNOWN-VALUE-ELSE-DEFAULT, per the standing save-data rule: a slot is persisted JSON that a corrupt
+// write, a hand edit, or a future `kind` could have left with a missing or wrong-typed field, and an
+// undefined landing in game.score poisons the run's arithmetic forever. Every field falls back to the
+// value resetRun() just installed, which is by definition the honest fresh-run default.
+function resumeFromSave(entry) {
+  const e = entry && typeof entry === "object" ? entry : {};
+  const num = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+
+  // ---- 1. Fresh-run state, through the SAME reset startGame() uses ----
+  resetRun(num(e.wave, 1) - 1, e.debugRun === true);
+
+  // ---- 2. The save-moment values, on top ----
+  game.score      = num(e.score, game.score);
+  game.nextRepair = num(e.nextRepair, game.nextRepair);
+  game.scoopLevel = num(e.scoopLevel, game.scoopLevel);
+  game.scoopHits  = num(e.scoopHits, game.scoopHits);
+  // HP is set on the Ship resetRun() just constructed. Clamped into [1, SHIP_MAX_HP]: a slot is only
+  // ever written mid-play so a real one is always in range, but a value outside it would resume either
+  // an unkillable ship or an already-dead one that no damage path is holding the death for.
+  game.ship.hp = Math.max(1, Math.min(SHIP_MAX_HP, num(e.hp, game.ship.hp)));
+  game.hudHull = game.ship.hp / SHIP_MAX_HP;   // ⛔ the invariant above — no phantom drain on frame 1
+  const pb = e.powerBudget && typeof e.powerBudget === "object" ? e.powerBudget : {};
+  for (const k in game.powerBudget) game.powerBudget[k] = num(pb[k], game.powerBudget[k]);
+  // stats: known keys only, type-matched, over the defaults resetGameStats() just installed — the
+  // Achievements.loadCounters() idiom. Copied field by field rather than assigned wholesale so the run
+  // can never end up ALIASING the slot object it resumed from (the mirror of buildSaveEntry()'s own
+  // copy rule): a live run writing through into a slot is exactly the bug that rule exists to stop.
+  const st = e.stats && typeof e.stats === "object" ? e.stats : {};
+  for (const k in game.stats) {
+    if (k === "powerUsed") continue;                                  // nested — its own loop below
+    if (typeof st[k] === typeof game.stats[k]) game.stats[k] = st[k];
+  }
+  const pu = st.powerUsed && typeof st.powerUsed === "object" ? st.powerUsed : {};
+  for (const k in game.stats.powerUsed)
+    if (typeof pu[k] === "boolean") game.stats.powerUsed[k] = pu[k];
+
+  // ---- 3. ⛔ UNCONDITIONAL. Every call, every entry, no exceptions ----
+  // This is the flag that makes FORK-A's save-moment values safe to ship: the run that just loaded can
+  // no longer reach the high-score table or persist an achievement/lifetime write, so score banked
+  // before the load cannot be replayed into a record. There is no "earn it back" path, by design.
+  game.resumedRun = true;
+
+  // ---- 4. The level the player saved on ----
+  // Its voice line and banner fire normally: the player wants to know where they landed.
   nextWave();
 }
 
@@ -7839,8 +7950,13 @@ const Achievements = {
   // save" (onUnlock, tick's periodic flush, killShip and the abandon path all funnel through here) —
   // gating it once suppresses every write a debug run (game.debugRun) could otherwise leave behind.
   // In-memory state (lifetime counters, tier progress, toasts) is untouched: only the write is skipped.
+  // CS032 P2 (spec §2.7, FORK-F): game.resumedRun ORs in here and changes nothing else. A run that ever
+  // loaded a save is barred from persisting achievement or lifetime state for the rest of that run, for
+  // the same reason a debug run is, and through this same one choke point — which is exactly why the
+  // flag needed no new architecture. Toasts and in-memory unlocks still fire, as they already do on a
+  // debug run (a pre-existing, accepted quirk this phase does not change).
   save() {
-    if (game.debugRun) return;
+    if (game.debugRun || game.resumedRun) return;
     const ls = storageOK(); if (!ls) return;
     try {
       const data = {
@@ -8855,8 +8971,11 @@ function updateDeath(dt) {
     // CS024 P6d: a debug run (game.debugRun) never offers initials entry, qualifying score or not —
     // HighScores.add() is only ever reachable through commitEntry(), so gating the entry here is what
     // suppresses that persistence point ("no high-score entry" — the standing suppression contract).
+    // CS032 P2 (spec §2.7, FORK-F): !game.resumedRun joins the gate as one more clause, same shape and
+    // same contract — a resumed run's final score can never be separated from the score it loaded in
+    // with, so it never enters. The HUD's "RESUMED RUN" tag is what stops the absence reading as a bug.
     game.lastScoreId = null;
-    game.entry = (!game.debugRun && HighScores.qualifies(game.score)) ? { initials: [0, 0, 0], idx: 0 } : null;
+    game.entry = (!game.debugRun && !game.resumedRun && HighScores.qualifies(game.score)) ? { initials: [0, 0, 0], idx: 0 } : null;
     if (game.entry) resetMenuNav(); // a stick held through the spectacle mustn't fire a phantom first move
     // CS030 P4 (§4.4): the achievement celebration panel opens at this SAME seam. killShip()'s final
     // Achievements.evaluate() ran on the frame the ship died, so by here the bucket is complete —
@@ -10797,6 +10916,11 @@ function drawHUD() {
   // CS024 P6d: the visible tell for a debug run — without it, a good score silently failing to record
   // is baffling. Centered top, dim, reflows nothing (every other readout is left/right-column).
   if (game.debugRun) drawText("DEBUG RUN", VIEW_W / 2, 18, 14, COLOR.dim, "center");
+  // CS032 P2 (spec §2.8/§4.1): the same tell for a resumed run, for the same stated reason — a good
+  // score silently failing to record is exactly as baffling either way. ⛔ MUTUALLY EXCLUSIVE, and
+  // debugRun WINS: a run can be both (a debug-knob run that was later saved and reloaded), and
+  // debugRun's tag already says "this cannot record". Same spot, one draw call, no layout change.
+  else if (game.resumedRun) drawText("RESUMED RUN", VIEW_W / 2, 18, 14, COLOR.dim, "center");
   drawText(String(game.score).padStart(6, "0"), 30, 46, 30, COLOR.text, "left");
   // v3.3 P1 (spec §7): "LEVEL" is the player-facing label for game.wave — moved from the dim,
   // easy-to-miss top-right corner into the left column, lit like the other HUD readouts. game.wave /
