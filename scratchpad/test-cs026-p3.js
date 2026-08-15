@@ -760,11 +760,15 @@ let X = null;
     // NARROWED AGAIN BY CS032 P2 — `game.resumedRun = false;`, the phase's one new CS016-P3-rule field,
     // sits beside `game.debugRun` in the list. Same treatment, filtered out by name. (The list ITSELF
     // moved this phase; see the repoint note at the comparison below.)
+    // NARROWED AGAIN BY CS033 P2 — `Leaderboard.beginRun();` is the run-start hook for the leaderboard
+    // integration, added at the end of the shared reset (not a game.* field, so it isn't CS016-P3-rule
+    // state, but the same filtered-out-by-name treatment applies: any OTHER new line still fails here).
     const DROPPED_LINES = new Set([
       "game.deliveryTicker = null;",
       "game.pendingAch = [];",
       "game.celebration = null;",
       "game.resumedRun = false;",
+      "Leaderboard.beginRun();",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
@@ -795,7 +799,7 @@ let X = null;
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), and CS032 P3's slotMode/slotMsg menu fields");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, and CS033 P2's Leaderboard.beginRun() call");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

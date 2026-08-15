@@ -303,10 +303,15 @@ const roster = (lastUsed, ids, seq) => JSON.stringify({
   eq(P.remove(P.roster[0].id), false, "F: ⛔ the LAST profile cannot be removed — an empty roster is a dead title screen");
 
   // Round-trip: everything above is already persisted, so a fresh build reads it back verbatim.
-  const snap = JSON.stringify(P.roster);
+  // playerId (CS033) is excluded from this comparison on purpose: CS031 P1 does not own that
+  // field's mint timing, and a reboot into a profile that predates it is exactly the case CS033
+  // backfills — Y is expected to differ from P there. See test-cs033-p1.js.
+  const stripPid = arr => arr.map(({ playerId, ...rest }) => rest);
+  const snap = JSON.stringify(stripPid(P.roster));
   const seq = P.seq;
   const Y = buildGame({ store });
-  eq(JSON.stringify(Y.Profiles.roster), snap, "F: the roster round-trips through save/load unchanged");
+  eq(JSON.stringify(stripPid(Y.Profiles.roster)), snap,
+    "F: the roster round-trips through save/load unchanged (id/name/created)");
   eq(Y.Profiles.seq, seq, "F: ⛔ ...and so does seq, so ids stay monotonic across sessions");
 
   // Corrupt / hostile blobs never throw, and never leave a half-built roster behind.

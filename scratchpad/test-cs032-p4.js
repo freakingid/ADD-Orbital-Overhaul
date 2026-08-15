@@ -13,7 +13,8 @@
 //
 // Sections: (A) drawRootMenu renders Save in the ordinary colours and holds no COLOR.dim at all.
 // (B) confirm on Save opens "slots" in save mode. (C) MENU_ROOT_OVER still carries no Save row.
-// (D) MENU_TITLE is 6 rows and the four TITLE_MENU_* knobs are byte-identical to the parent commit.
+// (D) MENU_TITLE is 7 rows (CS033 P2 added "Leaderboard") and the four TITLE_MENU_* knobs are
+// byte-identical to the parent commit.
 // (E) the Load row: dim + inert at zero slots, lit + live once one is written. (F) no surviving
 // idiom comment cites the now-live "Save" row. (G) node --check. (H) scope pin.
 
@@ -165,25 +166,27 @@ function atTitleMenu(label, slots = []) {
   assert(!rendered.some(s => s.endsWith("Save")), "C: ⛔ ...and the gameover root draws no Save row either");
 })();
 
-// ================= (D) MENU_TITLE is 6 rows; the layout knobs are byte-identical =====================
+// ================= (D) MENU_TITLE is 7 rows; the layout knobs are byte-identical =====================
+// REPOINTED BY CS033 P2: N went 6 -> 7 ("Leaderboard", inserted beside "High Scores"). Same no-edit
+// outcome as CS032 P4's own repoint note below predicts — titleMenuLayout(n) absorbs it.
 (function sectionD() {
-  console.log("(D) MENU_TITLE.length === 6; titleMenuLayout(6) is the live layout; no TITLE_MENU_* knob moved");
+  console.log("(D) MENU_TITLE.length === 7; titleMenuLayout(7) is the live layout; no TITLE_MENU_* knob moved");
   const X = buildGame({ store: {} });
-  eq(X.MENU_TITLE.length, 6, "D: MENU_TITLE is 6 rows");
+  eq(X.MENU_TITLE.length, 7, "D: MENU_TITLE is 7 rows");
   eq(JSON.stringify(X.MENU_TITLE),
-    JSON.stringify(["Start Game", "Load Saved Game", "Profile", "Achievements", "High Scores", "Options"]),
+    JSON.stringify(["Start Game", "Load Saved Game", "Profile", "Achievements", "High Scores", "Leaderboard", "Options"]),
     "D: ⛔ \"Load Saved Game\" sits SECOND, beside its \"start a run\" sibling");
 
-  // The live constants ARE titleMenuLayout(6) — the derivation, not a hand-tuned pair.
-  const want = X.titleMenuLayout(6);
-  eq(X.TITLE_MENU_Y, want.y, "D: TITLE_MENU_Y === titleMenuLayout(6).y");
-  eq(X.TITLE_MENU_STEP, want.step, "D: TITLE_MENU_STEP === titleMenuLayout(6).step");
+  // The live constants ARE titleMenuLayout(7) — the derivation, not a hand-tuned pair.
+  const want = X.titleMenuLayout(7);
+  eq(X.TITLE_MENU_Y, want.y, "D: TITLE_MENU_Y === titleMenuLayout(7).y");
+  eq(X.TITLE_MENU_STEP, want.step, "D: TITLE_MENU_STEP === titleMenuLayout(7).step");
   // The values test-cs031-p5.js forecast and test-cs016-p2.js §K now pins: Y unmoved, step shrunk.
   eq(X.TITLE_MENU_Y, 324, "D: ⛔ Y is still 324 — the block re-centred rather than sliding");
-  eq(X.TITLE_MENU_STEP, 26.4, "D: ⛔ step shrank 33 -> 26.4, which is FORK-CS031-G's self-healing doing its job");
+  eq(X.TITLE_MENU_STEP, 22, "D: ⛔ step shrank 26.4 -> 22, which is FORK-CS031-G's self-healing doing its job");
   const TOP = X.VIEW_H / 2 - 60, BOTTOM = X.VIEW_H / 2 + 120;
   assert(X.TITLE_MENU_Y > TOP, `D: the first row (${X.TITLE_MENU_Y}) clears the O V E R H A U L baseline (${TOP})`);
-  const lastRow = X.TITLE_MENU_Y + 5 * X.TITLE_MENU_STEP;
+  const lastRow = X.TITLE_MENU_Y + 6 * X.TITLE_MENU_STEP;
   assert(lastRow < BOTTOM, `D: the last row (${lastRow}) clears the flavour-line baseline (${BOTTOM})`);
 
   // ⛔ NO LAYOUT EDIT. The four knobs are gate-confirmed (CS031 G3); if this phase had needed to move

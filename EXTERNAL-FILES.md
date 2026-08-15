@@ -12,14 +12,26 @@ constraint was replaced with a contract, not removed.
 ## The contract
 
 1. **Game logic stays in one `<script>` block** in `orbital-overhaul.html`. No
-   bundler, no build step, no ES modules, no npm runtime deps. External files
-   carry *data/assets*, never game logic.
+   bundler, no build step, no npm runtime deps. External files carry
+   *data/assets*, never game logic. **Exception (CS033):** a *third-party shared
+   client module* — code this repo doesn't author and was told not to fork
+   locally — may ship as its own ES module, loaded by a second, separate
+   `<script type="module">` tag that does nothing but hand the module's exports
+   to one `window.*` global. That tag carries no game logic either; every real
+   call into the module lives in the classic script, gated on the global (see
+   rule 2). `lib/kit-leaderboard.js` is the first case — see the registry.
 
-2. **`file://` must still work.** The HTML must open and play by double-click,
-   with no local server. Therefore external files load **only** as classic
-   `<script src="…">` subresources (e.g. a `*-data.js` that assigns a base64
-   string to a global, decoded via `decodeAudioData` at boot). **Never** via
-   `fetch()` or `import` — both are blocked by CORS/module rules on `file://`.
+2. **`file://` must still work — for the game.** The HTML must open and play by
+   double-click, with no local server. A classic external file (audio data,
+   etc.) loads **only** as a `<script src="…">` subresource; it must **never**
+   use `fetch()` or `import`, both blocked by CORS/module rules on `file://`.
+   A module-script exception (rule 1) is different in kind, not degree: it
+   *fails outright* on `file://` (module scripts are blocked there too), and
+   that's fine — every read of its `window.*` global is guarded (rule 3), so
+   the *game* still opens and plays with no server; only that one enhancement
+   is absent, exactly like a missing classic file. Use a local dev server
+   (`python -m http.server`, `npx serve`, …) to exercise a module-script
+   enhancement during development.
 
 3. **Every external file is a non-essential ENHANCEMENT.** The game must remain
    fully playable when the file is missing, corrupt, blocked, or slow. Concretely:
@@ -48,7 +60,7 @@ registry.
 
 | File | Type | Loaded via | Fallback when absent | Changeset | Status |
 |------|------|-----------|----------------------|-----------|--------|
-| _(none yet)_ | | | | | |
+| `lib/kit-leaderboard.js` | coinless-kit v0.1.0 client module (unmodified; contract in `lib/docs/kit-leaderboard-client-api.md`) | `<script type="module">` bridge → `window.KitLeaderboard` (rule 1 exception) | No online leaderboard: the title's "Leaderboard" row renders dim/inert, `Leaderboard.*` calls are no-ops. Local High Scores table is unaffected — no network dependency either way. | CS033 | shipped |
 
 <!-- Row template:
 | voice-data.js | base64 audio (Opus/MP3), ~N KB | <script src>, decoded at boot | voice silent, game unchanged | CS0XX | shipped / planned |

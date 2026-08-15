@@ -79,6 +79,7 @@ actually looked like at that SHA.
 | `DIFFICULTY-LEVERS.md` | The `LEVERS` table, documented. | Touching difficulty |
 | `EXTERNAL-FILES.md` | Runtime files the shipped game loads. | Adding one |
 | `RATIONALE.md` | Why the rules in this file exist. | On demand only |
+| `DECISIONS.md` | Judgment calls made off-cycle (outside the phase flow) where no plan doc covered the question. | On demand only |
 | `log/CS0##.md` | Per-changeset narrative build log **and** that changeset's version-history entry. | **Never by default** |
 | `archive/` | Spent planning docs. | **Never by default** |
 
@@ -191,14 +192,23 @@ This rule has been paid for at least ten times. See `RATIONALE.md#pins`.
 ### Shape of the build
 
 ⛔ **All game logic lives in one `<script>` block in `orbital-overhaul.html`.**
-No ES modules, no bundler, no npm runtime deps. The file must open and play from
-`file://` by double-click. (`scratchpad/` and `tools/` are unconstrained — tests
-are Node CommonJS.)
+No bundler, no npm runtime deps. The file must open and play from `file://` by
+double-click. (`scratchpad/` and `tools/` are unconstrained — tests are Node
+CommonJS.) **One narrow exception (CS033):** a third-party shared client
+module this repo doesn't author and was told not to fork may ship as its own
+ES module, loaded by a second `<script type="module">` tag whose only job is
+handing its exports to a `window.*` global — full contract in
+`EXTERNAL-FILES.md` rule 1. That tag carries no game logic; it fails outright
+on `file://`, and that's by design (rule 2 there) — the classic script, and
+so the game itself, is untouched either way.
 
 ⛔ **External runtime files are optional enhancements, never required.** Load as
-classic `<script src>` — never `fetch()` or `import` (both fail on `file://`).
+classic `<script src>` — never `fetch()` or `import` (both fail on `file://`) —
+*except* the module-script exception directly above, which is exactly the
+inverse trade (it fails on `file://` by design so it can be a real ES module).
 Wrap the load so failure is caught; absence is the *normal* fallback path. If
-voice audio doesn't load, the game plays silently-voiced. **Log every one in
+voice audio doesn't load, the game plays silently-voiced; if the leaderboard
+module doesn't load, the game plays with no leaderboard. **Log every one in
 `EXTERNAL-FILES.md` before it ships.**
 
 ⛔ **Tuning constants at the top, grouped by system** (`GARBAGE_*`, `CHAIN_*`,
@@ -336,6 +346,10 @@ the slots screen opens or a save/load fires (GDD §2.22).
 field needs **no key rename and no migration shim** — a saved value for a deleted
 field orphans harmlessly, which is the whole point of the rule.
 
+⛔ **CS033 adds no sixth key.** `player_id` is an additive field on each roster
+entry already inside `afd_profiles_v1` (`Profiles.roster[i].playerId`), not a
+new store. See "Profiles (CS031)" below for the mint/backfill contract.
+
 ### Profiles (CS031)
 
 ⛔ **`Profiles.keyFor(base)` is the one route from a store's base name to the
@@ -349,6 +363,49 @@ shipped defaults BEFORE it loads the incoming profile — never load alone.**
 and assume the runtime already holds defaults; skipping the reset step bleeds
 the outgoing profile's settings, bindings, or lifetime achievements onto the
 incoming one. See GDD §2.21 for the full contract.
+
+⛔ **`Profiles.roster[i].playerId` (CS033) is minted once, the first time a
+profile is actually activated — at `Profiles.init()` (this boot's profile) or
+`Profiles.activate(id)` (a switch), never at `add()`.** It is never
+regenerated once set — `Profiles.ensurePlayerId(id)` is a mint-if-missing,
+no-op-otherwise call, and it is the ONLY writer. A profile created before this
+field existed is backfilled the same lazy way, the first time it is next
+activated. `player_id` is never rendered anywhere; `display_name` (the
+existing `name` field) is the only user-facing identity.
+
+### Leaderboard (CS033)
+
+⛔ **`Leaderboard` (search the build for `const Leaderboard = {`) is the one
+call surface for `window.KitLeaderboard`.** Nothing else in the build reads
+that global directly except the rename flow's `NAME_CHANGE_NOTICE` lookup
+(`menuProfiles`'s RENAME branch) and the ES-module bridge tag itself. Every
+`Leaderboard.*` entry point is safe to call with the module absent.
+
+⛔ **`Leaderboard.eligible()` (`!game.debugRun && !game.resumedRun`) gates
+every `submit()` call — the identical gate `HighScores`' own top-10 check
+already uses at the same "dying"→"gameover" seam**, and for the same reason:
+a resumed run's score can't be separated from the score it loaded in with, and
+a debug run was never a fair one. Extend both gates together if either ever
+changes.
+
+⛔ **`quitToTitle()` submits `outcome: 'quit'` only when `game.state ===
+"playing"` at the moment it's called, checked BEFORE that function overwrites
+`game.state`.** The same function is also gameover's own "Quit to Title" row
+— an already-ended, already-submitted (or already-ineligible) run — and must
+never submit a second time for it.
+
+⚠ **SETTLED — `'completed'` has no call site.** The module's outcome enum is
+`'died' | 'completed' | 'quit'`; this game has no win condition (escalating
+waves forever — `DIFFICULTY-LEVERS.md`), so only the first and third are ever
+submitted. Don't invent a "completed" trigger to fill the enum.
+
+⛔ **`stats` keys are `wave_reached` / `canisters_delivered` only — no more,
+by design, not by omission.** Those are the two names the module's own
+`lib/docs/kit-leaderboard-client-api.md` uses in its worked example for THIS
+game; nothing else about the Worker's `statsFields` registry is visible from
+this repo, and the doc is explicit that a key mismatch only sets a flag, never
+a rejection, so nothing else was guessed. If the real registry's field list is
+ever available, extending the object is a one-line change at `Leaderboard.submit()`.
 
 ### Two traps that have each burned twice
 

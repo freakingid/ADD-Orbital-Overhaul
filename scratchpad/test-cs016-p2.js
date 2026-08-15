@@ -112,7 +112,8 @@ const RETURN = [
   "drawTitleMenu", "drawMenu", "DEBUG_CODE", "DebugCode", "bindings", "GP", "keys", "AudioSys",
   "DEBUG_VARS",   // CS018 P2: section (I) derives the debug panel's first selectable row from the registry
   "Profiles",     // CS031 P5: section (K) reads the Profile row's own name-display contract off it
-  "SaveSlots"     // CS032 P4: section (K) asks the REAL store whether the Load row should be dim
+  "SaveSlots",    // CS032 P4: section (K) asks the REAL store whether the Load row should be dim
+  "leaderboardModuleAvailable"   // CS033 P2: section (K) asks whether the Leaderboard row should be dim
 ];
 
 // `audio: true` gives the real keydown listener a live AudioSys (it calls AudioSys.init() up front);
@@ -169,11 +170,11 @@ function build({ audio = true } = {}) {
   const A = build();
   // CS031 P5 inserted "Profile" as the second row — pinned to its current post-P5 shape, the same
   // "re-runs against the current build" precedent MENU_ROOT_PLAY's own comment below already follows.
-  // REPOINTED BY CS031 P5 ("Profile") and CS032 P4 ("Load Saved Game", inserted beside "Start Game"),
-  // both of which this phase's own claim — the title menu is the sole parent of Achievements and High
-  // Scores — is indifferent to. The literal is re-pinned rather than loosened so a row appearing or
-  // disappearing unnoticed still fails here.
-  const TITLE_ROWS = ["Start Game", "Load Saved Game", "Profile", "Achievements", "High Scores", "Options"];
+  // REPOINTED BY CS031 P5 ("Profile"), CS032 P4 ("Load Saved Game", inserted beside "Start Game") and
+  // CS033 P2 ("Leaderboard", inserted beside "High Scores") — all of which this phase's own claim — the
+  // title menu is the sole parent of Achievements and High Scores — is indifferent to. The literal is
+  // re-pinned rather than loosened so a row appearing or disappearing unnoticed still fails here.
+  const TITLE_ROWS = ["Start Game", "Load Saved Game", "Profile", "Achievements", "High Scores", "Leaderboard", "Options"];
   assert(eqJSON(A.MENU_TITLE, TITLE_ROWS),
     `A: MENU_TITLE === ${JSON.stringify(TITLE_ROWS)}; got ${JSON.stringify(A.MENU_TITLE)}`);
   assert(eqJSON(A.MENU_OPTIONS, ["Sound / Music", "Controls", "Difficulty", "Back"]),
@@ -609,8 +610,10 @@ function build({ audio = true } = {}) {
   // REPOINTED BY CS032 P4: N went 5 -> 6 ("Load Saved Game"). Y is unmoved at 324 — the block stays
   // centred in the band — and STEP shrank 33 -> 26.4, which is the self-healing FORK-G bought and the
   // reason this phase needed no TITLE_MENU_* knob edit.
-  assert(A.TITLE_MENU_Y === 324, "K: TITLE_MENU_Y is 324 at the current 6-row MENU_TITLE (derived, CS031 P5)");
-  assert(A.TITLE_MENU_STEP === 26.4, `K: TITLE_MENU_STEP is 26.4px at the current 6-row MENU_TITLE (got ${A.TITLE_MENU_STEP})`);
+  // REPOINTED AGAIN BY CS033 P2: N went 6 -> 7 ("Leaderboard"). Y still unmoved at 324; STEP shrank
+  // again, 26.4 -> 22, same self-healing, same reason.
+  assert(A.TITLE_MENU_Y === 324, "K: TITLE_MENU_Y is 324 at the current 7-row MENU_TITLE (derived, CS031 P5)");
+  assert(A.TITLE_MENU_STEP === 22, `K: TITLE_MENU_STEP is 22px at the current 7-row MENU_TITLE (got ${A.TITLE_MENU_STEP})`);
   assert(A.TITLE_MENU_SIZE === 24, "K: TITLE_MENU_SIZE is 24 (matches drawRootMenu's rows)");
   assert(A.TITLE_MENU_HINT_Y === A.VIEW_H / 2 + 170, "K: TITLE_MENU_HINT_Y is VIEW_H/2 + 170 (530 at 720)");
 
@@ -634,7 +637,11 @@ function build({ audio = true } = {}) {
     // active profile has zero occupied slots, which is this build's state (asked through the REAL
     // SaveSlots, not assumed). scratchpad/test-cs032-p4.js §E owns that rule in both directions; here
     // the row is only excluded from the plain selected/idle convention.
-    const dim = label === "Load Saved Game" && A.SaveSlots.count() === 0;
+    // CS033 P2: "Leaderboard" joins the same idiom — COLOR.dim while window.KitLeaderboard is absent,
+    // which is every headless build (the module is loaded by a <script type="module"> tag this harness
+    // never evaluates). scratchpad/test-cs033-p2.js owns that rule; here it's the same exclusion.
+    const dim = (label === "Load Saved Game" && A.SaveSlots.count() === 0) ||
+                (label === "Leaderboard" && !A.leaderboardModuleAvailable());
     const want = dim ? A.COLOR.dim : (sel ? A.COLOR.text : A.COLOR.menuIdle);
     assert(rows[0].color === want,
       `K: "${label}" draws in ${dim ? "COLOR.dim" : sel ? "COLOR.text" : "COLOR.menuIdle"}`);

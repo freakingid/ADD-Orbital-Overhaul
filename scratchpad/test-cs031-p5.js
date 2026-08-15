@@ -108,7 +108,8 @@ function recordFillText(X, drawFn) {
   eq(X.TITLE_MENU_STEP, live.step, "B: TITLE_MENU_STEP === titleMenuLayout(N).step for the live MENU_TITLE");
   // REPOINTED BY CS032 P4: N=6 stopped being hypothetical — "Load Saved Game" shipped, and it cost no
   // TITLE_MENU_* edit, which is exactly what this section predicted a changeset early.
-  eq(X.MENU_TITLE.length, 6, "B: (setup) the live row count is 6 (CS032 P4's row landed)");
+  // REPOINTED AGAIN BY CS033 P2: N=7 — "Leaderboard" shipped, same no-edit outcome.
+  eq(X.MENU_TITLE.length, 7, "B: (setup) the live row count is 7 (CS033 P2's row landed)");
 
   // The two boundaries the block must never cross (the title art above, the flavour line below).
   const TOP = X.VIEW_H / 2 - 60, BOTTOM = X.VIEW_H / 2 + 120;
