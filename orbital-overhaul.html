@@ -364,7 +364,7 @@ const HUNTER_LAST_STAND_TURN  = 0.5;   // rad/s — well below HUNTER_TURN_CEIL[
 // PLAYTEST KNOB (v3.4 P1): canisters per Hunter KILL, by tier — was a flat HUNTER_GARBAGE=3 for
 // both large/medium plus a separate HUNTER_SMALL_GARBAGE=6 for the small tier; now one per-tier
 // table shaped like HUNTER_RADII/HUNTER_SCORE/HUNTER_DAMAGE.
-const HUNTER_GARBAGE       = { 3: 3, 2: 2, 1: 1 };
+const HUNTER_GARBAGE       = { 3: 0, 2: 0, 1: 1 };
 const HUNTER_SMALL_MASS    = 0.5; // small-tier canister(s) stay LOW-mass scrap (tows easier — a valuable bonus for finishing a Hunter line)
 
 // Health, damage & knockback (F2) — a single HP pool replaces discrete lives
@@ -7623,9 +7623,11 @@ function destroyHunter(h, awardScore = true) {
     Achievements.lifetime.hunterKills++;
   }
   boom(h.x, h.y, h.size, COLOR.satellite);
-  // v3.3 P4 (9b, reverses v3.2 P3's FORK-B/B1): EVERY Hunter drops garbage at its tier counts,
-  // regardless of origin. This reopens the 12-in/66-out amplifier a coalesced lineage represents —
-  // deliberately: 9a's single-decay is now the governor holding the field, not emission suppression.
+  // CS034 (Paul's call, FORK-C -> b): large/medium Hunters no longer emit Debris on death — only
+  // the small tier's pile survives, because that tier spawns no children and the Debris IS its
+  // whole payload. 9a's single-decay remains the field governor. A full 13-body lineage now yields
+  // 9 pieces (down from 18): the large/medium loops below still read HUNTER_GARBAGE, which is data,
+  // not deleted — they simply run zero times at {3:0, 2:0}.
   if (h.size === 1) {
     // Final tier: an easy-to-tow bonus pile of low-mass canisters (mass 0.5, paler tint).
     for (let i = 0; i < HUNTER_GARBAGE[h.size]; i++) {

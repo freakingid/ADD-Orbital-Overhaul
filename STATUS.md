@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS034 · Phase: P2 · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P3 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS034
 
@@ -31,10 +31,17 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P2 · Registry: 87 · Levers: 18
   130/130 on a full clone (one pre-existing test's stale-wording assertion updated to match the new
   Waste Not text).
 
+- P3 — `HUNTER_GARBAGE` per `PLANNED-FEATURES-CS034.md` §2 is now `{3:0, 2:0, 1:1}`: large/medium
+  Hunter Satellites emit no Debris on death (still 3-way split, large core still drops its
+  powerup), the small tier's one low-mass piece is unchanged since that tier spawns no children.
+  The stale v3.3 P4 comment above the emission block in `destroyHunter()` is replaced, not
+  appended to. A full 13-body lineage now yields 9 pieces, down from 18. Suite: 131/131 on a full
+  clone (`test-cs034-p3.js`, new this phase).
+
 ## Working / verified
 
-- Full suite on a full clone: **130 files, 130 passed, 0 failed, 0 skipped, 0 timed out.** (129 →
-  130: `test-cs033-p3.js`, new this phase.)
+- Full suite on a full clone: **131 files, 131 passed, 0 failed, 0 skipped, 0 timed out.** (130 →
+  131: `test-cs034-p3.js`, new this phase.)
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
 - `player_id` mint/backfill/never-regenerate verified directly (`test-cs033-p1.js`): a profile
   loaded from a pre-CS033 blob is backfilled on boot, and a second boot from that same store reuses
@@ -113,3 +120,8 @@ None open.
   same status as the shield-bounce equivalents. Measured consequence: a rail satellite sweeping
   into a parked free one throws it up to 511.5 px/s off the outer fast ring — nearly double the
   255.7 px/s cap CS023 P4's drift derives from.
+- **Hunter Debris supply halved (from CS034 P3)** — `HUNTER_GARBAGE` large/medium tiers dropped
+  to 0 (`PLANNED-FEATURES-CS034.md` §2.5). A full lineage now yields 9 pieces, down from 18. Late
+  waves where `largeHunterCap` runs several lineages at once may thin delivery-combo achievements
+  (`heavy_hauler` at 12, `max_haul` at `CARGO_CAP_MAX` 24) more than intended — a gate question,
+  not pre-emptively compensated; nothing about junk spawn rates changed this phase.
