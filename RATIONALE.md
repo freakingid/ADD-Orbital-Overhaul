@@ -536,7 +536,7 @@ Relocated from the old "Implementation practices":
 
 > - **`SCOOP_WIDTH[0] !== 0 || SCOOP_DEPTH[0] !== 0` throws at load time — this
 >   is a deliberate invariant guard, not test scaffolding.** It's what makes
->   `inScoopBox` return `false` at `scoopLevel` 0, which is what keeps garbage
+>   `inScoopBox` return `false` at `scoopLevel` 0, which is what keeps Debris
 >   pickup byte-identical to the pre-scoop build. Don't delete it on a
 >   "cleanup" pass; if it ever fires, `SCOOP_CONFIG`/`buildScoopSteps` broke the
 >   invariant, not the assertion (GDD §2.14.1).
@@ -626,22 +626,22 @@ achievement players have already earned or are partway through.
 a read-order skeleton. The annotations below were the old map's inline commentary
 and are kept because several carry a decision rather than a description.
 
-> - `junkSplit` (CS026 P2) is the 18th lever — the debris split count, ↳-carried
->   by `junkCount`: 2-way through L10, 3-way from L11 on.
+> - `junkSplit` (CS026 P2) is the 18th lever — the Garbage Satellite split count,
+>   ↳-carried by `junkCount`: 2-way through L10, 3-way from L11 on.
 > - `WORLD_SIZE_EARLY` + `DEBUG.earlyWorldLevels` (CS026 P3) re-arm the
 >   world-size seam: levels 1..5 at 1920x1080, L6+ unchanged, exactly one resize
 >   per run.
 > - `DELIVERY_FLOAT_DY` (CS026 P6) is the delivery floaters' fixed offset above
 >   the SHIP — **deliberately a frozen constant, not a knob.**
 > - `GARBAGE_SOFT_MAX`/`HARD_MAX` (CS024 P3) is the density ceiling that replaced
->   garbage decay; `ENGINE_BURN_SECONDS`/`ENGINE_MASS_MULT` + the count budgets
+>   Debris decay; `ENGINE_BURN_SECONDS`/`ENGINE_MASS_MULT` + the count budgets
 >   (`RAPID_SHOTS` etc.) are the whole of powerup expiry (CS024 P6).
 > - `spawnFieldSatellites` is **the ONLY spawn path** as of CS024 P1 — no
 >   archetype branch.
 > - `magnetPulling` (CS025 P1) is **a FUNCTION, not a local**:
 >   `powerActive("magnet") && magnetHoldT <= 0`, the full-cargo suppression
 >   predicate.
-> - `magnetPushBurst` (CS025 P2) sits at the END of the garbage cluster — the
+> - `magnetPushBurst` (CS025 P2) sits at the END of the Debris cluster — the
 >   full-cargo repulsion kick + `coalesceDelay` re-arm; a PRODUCER of
 >   `coalesceDelay` writes, not a consumer change.
 > - `cullGarbage`/`betterCullVictim` are the density ceiling — **there is no
@@ -692,7 +692,7 @@ Relocated from the old "Design instruments (`tools/`)":
 >
 > - **`tools/scoop-lab.html`** — the Scoop capture-mouth sizing instrument
 >   (§2.14.1 of the GDD). Live sliders over `SCOOP_CONFIG`, a level stepper,
->   and draggable garbage canisters highlighted by the real `inScoopBox` math;
+>   and draggable Debris pieces highlighted by the real `inScoopBox` math;
 >   answers "how big does this look," not "how does this play."
 > - **`tools/music-lab.html`** — the music-track composition/audition
 >   instrument and the porting source for every `MUSIC_TRACKS` entry (GDD

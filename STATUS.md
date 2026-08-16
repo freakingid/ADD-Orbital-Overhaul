@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS034 · Phase: P1 · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P2 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS034
 
@@ -15,6 +15,21 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P1 · Registry: 87 · Levers: 18
   (real overlap the old metric couldn't see), not the 0.0px previously on record. Zero changes to
   `orbital-overhaul.html` or any other `tools/` file. GATE A is open; P8 (the build port) blocks on
   Paul's slider answers.
+
+- P2 — Vocabulary glossary and doc sweep per `PLANNED-FEATURES-CS034.md` §1/§0.2. `CLAUDE.md` gains
+  a **Vocabulary** section (the four canonical terms + the code inversion map + both required ⛔
+  markers). Prose swept to canonical terms in `ORBITAL-OVERHAUL-GDD.md`, `DIFFICULTY-LEVERS.md`,
+  `RATIONALE.md` (`EXTERNAL-FILES.md`/`DECISIONS.md`/`STATUS.md` had no matches); code symbols
+  untouched throughout. Player-facing strings: 3 achievement descs reworded per spec
+  (`satellite_buster`, `field_sweeper`, `waste_not`), every "canister(s)" desc reworded to "Debris"
+  (count preserved), 4 `DEBUG_VARS` labels reworded (`garbageAttractRadius/Force`,
+  `garbageSoftMax/HardMax`). **One spec'd label reverted:** `debrisBounceRestitution`'s
+  "Garbage Satellite bounce restitution" is 36 chars against the debug panel's hard 32-char
+  no-wrap/no-truncate column budget (`test-cs024-p6c.js` §G) — left as shipped ("Satellite bounce
+  restitution") rather than widening the column, which would be a layout change outside this
+  phase's strings-only scope. See Known issues. Achievement ids byte-identical to parent. Suite:
+  130/130 on a full clone (one pre-existing test's stale-wording assertion updated to match the new
+  Waste Not text).
 
 ## Working / verified
 
@@ -38,6 +53,13 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P1 · Registry: 87 · Levers: 18
 
 ## Known issues
 
+- **FLAG-CS034-e — `debrisBounceRestitution`'s spec'd label overflows the debug panel's label
+  column.** `PLANNED-FEATURES-CS034.md` §1.3 calls for "Garbage Satellite bounce restitution" (36
+  chars); `test-cs024-p6c.js` §G enforces a hard 32-monospace-char budget (`drawDebug` neither
+  wraps nor truncates). Shipped this phase as the unchanged "Satellite bounce restitution" instead.
+  A fix needs either a shorter label that still reads as canonical (gate question — abbreviation
+  wording is a design call) or a column-width change (a layout/behaviour change, out of a
+  strings-only phase's scope). Not blocking; flagged for the closing phase or a gate.
 - **⛔ FLAG-CS032-a — `drawTitleMenu()` calls `SaveSlots.count()` every frame**, a
   `localStorage.getItem` + `JSON.parse` per title-screen frame at 60fps. Deliberate, per spec
   §4.3 (a profile switch or delete changes the answer, so it can't be cached) — the build's first

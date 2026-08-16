@@ -163,7 +163,7 @@ with the level, on purpose.
 | **Large-Hunter speed** | Frozen `HUNTER_SPEED_CEIL[3] × HUNTER_FLOOR_FRAC` = 40.6 px/s | Large Hunters do not pursue, so there is nothing for a speed ramp to mean. Only medium and small are levered. |
 | `hunterCapMax` / `hunterCapLevelsPerStep` / `heldClumpMax` | Flat knobs (6 / 2 / 4) | See §5 — a **ceiling**, and a ceiling on concurrent threats is a stability guarantee, not a difficulty axis. The player should never feel it move. |
 | `magnetResumeDelay` / `magnetPushKick` / `magnetPushSpread` | Flat knobs (250 ms / 120 px/s / 45°), CS025 P1/P2, **POWERUPS** section | **Knobs on a POWERUP'S BEHAVIOUR, not difficulty axes.** They tune how the Magnet behaves when the tow chain is full — how long the pull stays suppressed after a slot opens, and how hard/wide the full-cargo repulsion burst throws the gathered cloud. None of them describes a quantity that should get harder as the player gets deeper: the Magnet is the player's own tool, and scaling its recovery by level would make a powerup **worse the further you get**, which is backwards. All three are flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and none has a shipped constant behind its default (a resume delay has no meaning outside the knob), so the registry entry *is* the source of truth, the `chainGuardIntercepts` idiom. |
-| `deliveryFloatRise` / `deliveryFloatLife` | Flat knobs (160 px/s / 1.2 s), CS026 P4 shape + P6 tuning, **DELIVERY** section | **A floater's speed and fade are look-calls on a REWARD, not pressure axes.** They tune how the per-canister `"+pts"` column at the dock reads; nothing about how hard the level plays. Scaling them by level would be backwards twice over — the delivery payoff is the player's own reward, and a deeper level pays *more*, so a level-scaled fade would make the biggest numbers the hardest to read. Both flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and both knob-only, with no shipped constant behind them (the `magnetResumeDelay` idiom, not the `debrisBounceRestitution` one). `DELIVERY_FLOAT_DY` (22 px, the floaters' offset above the ship) is a **frozen constant and not even a knob**: it is a fixed nudge clear of the hull. ⛔ `DOCK_OFFLOAD_INTERVAL` (0.05 s) is likewise NOT a knob and was deliberately left alone at the CS026 gate — see §6. |
+| `deliveryFloatRise` / `deliveryFloatLife` | Flat knobs (160 px/s / 1.2 s), CS026 P4 shape + P6 tuning, **DELIVERY** section | **A floater's speed and fade are look-calls on a REWARD, not pressure axes.** They tune how the per-Debris `"+pts"` column at the dock reads; nothing about how hard the level plays. Scaling them by level would be backwards twice over — the delivery payoff is the player's own reward, and a deeper level pays *more*, so a level-scaled fade would make the biggest numbers the hardest to read. Both flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and both knob-only, with no shipped constant behind them (the `magnetResumeDelay` idiom, not the `debrisBounceRestitution` one). `DELIVERY_FLOAT_DY` (22 px, the floaters' offset above the ship) is a **frozen constant and not even a knob**: it is a fixed nudge clear of the hull. ⛔ `DOCK_OFFLOAD_INTERVAL` (0.05 s) is likewise NOT a knob and was deliberately left alone at the CS026 gate — see §6. |
 | `earlyWorldLevels` | Flat knob (5), CS026 P3, **GLOBAL** section | **A world SIZE boundary, not a difficulty ramp.** It says how many levels run in the small 1920×1080 torus before the 2560×1440 one takes over — one resize per run, at the 5→6 seam. It is not levered because it is not a quantity that should scale: it names a fixed early-game window, and there is nothing for "more of it per level" to mean. 0 turns the feature off entirely for a same-session A/B, which is the other reason it must stay a plain knob. **No combat number depends on it** — see §5's note on why it changes no ceiling. |
 | `levelBannerTime` / `levelBannerFade` / `levelBannerSize` / `levelBannerY` | Flat knobs (2.2 s / 0.5 s / 72 px / 24 px), CS025 P5 constants promoted to knobs CS026 P5, **GLOBAL** section | **A banner's size and duration are look-calls, not pressure axes.** They tune how the centre-screen "Level N" announcement looks and how long it holds — nothing about how hard the level plays. Scaling any of them by level would be meaningless: the banner reads the same at level 1 as at level 90. All four are flat by construction — **no floor/ceil/steps triple, no `▼`/`↳`, no `carriesTo`, no `LEVERS` entry** — and each stays anchored to its own shipped constant as the row's `def` (`LEVEL_BANNER_TIME`/`FADE`/`SIZE`/`Y`), the `debrisBounceRestitution` idiom, not the knob-only one directly above. |
 
@@ -187,9 +187,9 @@ here, in the same commit that can grow it.**
   saturated 12-piece clump at a full cap **holds** rather than vanishing; past
   this many held clumps the destroy behaviour returns. Sized against
   `GARBAGE_SOFT_MAX`: unbounded holding would let ~18 clumps consume the whole
-  garbage budget and starve the field.
+  Debris budget and starve the field.
 - **`GARBAGE_SOFT_MAX` (220) / `GARBAGE_HARD_MAX` (300)** — the density ceiling
-  that makes permanent garbage tractable. Above the soft max one piece is culled
+  that makes permanent Debris tractable. Above the soft max one piece is culled
   per frame (oldest, never a clump while a single exists, never a held clump);
   above the hard max the field drains back to the soft max in one pass. Both
   deterministic, both silent by design. The binding cost is
@@ -201,13 +201,13 @@ here, in the same commit that can grow it.**
   P2's split lever moved the shed volume by roughly half at every level, so a
   ceiling tuned against the old volume had to be re-read against the new one in
   the same session or neither reading meant anything. It was, and Paul reported
-  *"garbage density is fine"* with no canister ever seen to vanish. **Both
+  *"garbage density is fine"* with no Debris ever seen to vanish. **Both
   numbers stand at 220 / 300, now playtested against the post-split volume
   rather than the pre-split one.** They have not moved since CS024 and
   FLAG-CS024-c is discharged.
 - **⛔ THE EARLY-WORLD SHRINK (CS026 P3) CHANGES NO CEILING, and that is worth
   stating rather than leaving to inference.** Levels 1–5 run in a 1920×1080
-  torus (56% of the 2560×1440 area), which raises garbage *density* per unit
+  torus (56% of the 2560×1440 area), which raises Debris *density* per unit
   area without raising any *count*: `GARBAGE_SOFT_MAX`/`HARD_MAX` are absolute
   piece counts, not areal densities, so the O(n²) pair-walk budget above is
   unchanged. Nothing here grew a new unbounded quantity.
@@ -228,11 +228,12 @@ here, in the same commit that can grow it.**
   which is this changeset's central bet confirmed and the `junkSplit` lever
   (§3, row 5) validated at its shipped 2/3 shape; **Q2** the smaller early world
   *"is fine"*; **Q3** the score curve *"is fine"*, which is the answer that
-  clears FORK-CS026-C's accepted risk (halving the debris score curve also
-  halves how often the fixed 10,000-point `REPAIR_MILESTONE` repairs the hull —
-  the one place this changeset could have made the early game *harder*, and it
-  did not); **Q4** garbage density fine (see §5 — re-checked against the new
-  volume and held at 220/300); **Q6** the incidental delivery fine; **Q7** the
+  clears FORK-CS026-C's accepted risk (halving the Garbage Satellite score
+  curve also halves how often the fixed 10,000-point `REPAIR_MILESTONE` repairs
+  the hull — the one place this changeset could have made the early game
+  *harder*, and it did not); **Q4** Debris density fine (see §5 — re-checked
+  against the new volume and held at 220/300); **Q6** the incidental delivery
+  fine; **Q7** the
   level banner *"looks great"*, so all four of its knobs stand unmoved at their
   CS025 first guesses, now playtested.
   **`LEVERS` and `leverState` are pinned byte-identical at every level 1..200
@@ -249,7 +250,7 @@ here, in the same commit that can grow it.**
   floater separation purely `rise × DOCK_OFFLOAD_INTERVAL`, so the tighter rise
   costs separation (8 px nominal, ~10.7 px on screen after frame quantisation,
   against 15 px nominal before), and buying it back meant slowing the offload
-  cadence to 0.10 s and doubling a 24-canister dock visit to 2.4 s. **He chose
+  cadence to 0.10 s and doubling a 24-Debris dock visit to 2.4 s. **He chose
   to hold delivery pacing and accept the tighter column, so the registry did not
   grow at all this phase** — no new knob, the count holds at 85. **Q8** returned
   four named Achievements-screen layout defects, fixed at look-call constants;

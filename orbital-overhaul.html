@@ -42,7 +42,7 @@
    hits deal source-specific damage, shove the ship away (knockback), and grant
    ~1s of hit-stun i-frames; 0 HP is a permanent game over (no respawn). Score
    milestones now repair the hull instead of granting extra lives.
-   v1.4: Asteroids redesigned as Debris Satellites — a broken-satellite silhouette
+   v1.4: Asteroids redesigned as Garbage Satellites — a broken-satellite silhouette
    with 3-way splits at large/medium (small tier is destroyed). Every tier's
    destruction emits exactly 3 garbage canisters (replacing the old probabilistic
    single drop), so the field carries far more salvage — garbage decay (since
@@ -3524,9 +3524,9 @@ const DEBUG_VARS = [
   // _PULL are frozen constants, Gate A Q1's answer) and stay plain flat knobs, unchanged in shape from
   // every prior changeset. garbageAttractDelay is GONE — the inert delay is now the coalescePause lever,
   // under HUNTER below (it drives the HUNTER chain, spec §2.4), not a standalone GARBAGE knob.
-  { id: "garbageAttractRadius", label: "Garbage attraction radius", unit: "px",
+  { id: "garbageAttractRadius", label: "Debris attraction radius", unit: "px",
     def: GARBAGE_MAGNET_RANGE, min: 0, max: 600, step: 10 },
-  { id: "garbageAttractForce", label: "Garbage attraction force", unit: "px/s²",
+  { id: "garbageAttractForce", label: "Debris attraction force", unit: "px/s²",
     def: GARBAGE_MAGNET_PULL, min: 0, max: 200, step: 5 },
   // CS024 P3 (spec §1.4/§3.1/§5): `garbageLifetime` STOOD HERE and is removed with the decay clock.
   // The two knobs replacing it govern the DENSITY CEILING that took over as the governor. Both are
@@ -3534,9 +3534,9 @@ const DEBUG_VARS = [
   // takes effect on the very next frame. The panel does NOT enforce soft <= hard — no registry entry
   // has ever validated against a sibling, and cullGarbage() is written so an inverted pair simply
   // culls nothing rather than misbehaving.
-  { id: "garbageSoftMax", label: "Garbage soft max", unit: "",
+  { id: "garbageSoftMax", label: "Debris soft max", unit: "",
     def: GARBAGE_SOFT_MAX, min: 20, max: 1000, step: 10 },
-  { id: "garbageHardMax", label: "Garbage hard max", unit: "",
+  { id: "garbageHardMax", label: "Debris hard max", unit: "",
     def: GARBAGE_HARD_MAX, min: 20, max: 1000, step: 10 },
   // CS017 P6 (+ CS019 P1): the chain-guard powerup's knobs. CS024 P6 (spec §3.5) takes them FOUR ->
   // THREE: chainGuardTime was powerDuration("guard") in the retired TIME mode and dies with it.
@@ -5888,7 +5888,7 @@ class Bullet {
 }
 
 // SAT_ART (v3.3 P2; twelve real craft + breakup model, CS028 P1): authored line-art satellite
-// silhouettes for the Debris Satellites. Each entry is ONE real spacecraft, picked so no two
+// silhouettes for the Garbage Satellites. Each entry is ONE real spacecraft, picked so no two
 // silhouettes collide as archetypes, and every one is drawn WRECKED — the accurate outline plus
 // exactly one authored injury (a snapped whisker, a stoved-in drum, a wing torn loose). This is a
 // debris field, not a working constellation.
@@ -6278,7 +6278,7 @@ const SAT_ART = [
   }
 ];
 
-// Debris Satellite (F3): the passive main hazard (formerly Asteroid). Drifts randomly
+// Garbage Satellite (F3): the passive main hazard (formerly Asteroid). Drifts randomly
 // like the old rocks, but reads as wrecked hardware — an authored satellite silhouette
 // (SAT_ART, v3.3 P2) — and splits 3-ways at the large/medium tiers, emitting garbage at
 // every tier.
@@ -6896,7 +6896,7 @@ function resetGameStats() {
     speedRecycler: false,    // first canister delivered within 60s (Speed Recycler)
     pacifistStreak: 0,       // consecutive deliveries with no shot fired between them
     pacifistBest: 0,         // best such streak this game (Pacifist Tow, goal 5)
-    debrisKills: 0,          // Debris Satellites the player destroyed (Satellite Buster)
+    debrisKills: 0,          // Garbage Satellites the player destroyed (Satellite Buster)
     hunterLineageKills: 0,   // kills in the CURRENT Hunter lineage. CS018 P4 (FLAG-i): reset on the
                              // 0 -> 1 large-Hunter transition (noteLargeHunterSpawn), not on every spawn
     hunterLineComplete: false,// wiped a full 13-member Hunter line from one spawn (Hunter's Bane)
@@ -7936,25 +7936,25 @@ const Achievements = {
   // 16 weekly achievements (F9 starter pool + v3.0 P8 Flawless Run, in fixed order — the rotation
   // indexes into this array; poolIndex uses .length so the 5-wide slice self-adjusts to 16).
   WEEKLY: [
-    { id: "scrap_runner",     name: "Scrap Runner",     desc: "Deliver 20 canisters to the dock in one game.",        goal: 20, cur: s => s.delivered },
-    { id: "heavy_hauler",     name: "Heavy Hauler",     desc: "Deliver a full 12-canister chain in one dock visit.",  goal: 1,  cur: s => s.fullChainVisit ? 1 : 0 },
+    { id: "scrap_runner",     name: "Scrap Runner",     desc: "Deliver 20 Debris to the Recycle dock in one game.",   goal: 20, cur: s => s.delivered },
+    { id: "heavy_hauler",     name: "Heavy Hauler",     desc: "Deliver a full 12-Debris chain in one dock visit.",    goal: 1,  cur: s => s.fullChainVisit ? 1 : 0 },
     { id: "glass_cannon",     name: "Glass Cannon",     desc: "Reach wave 5 without picking up a Health powerup.",     goal: 1,  cur: s => (game.wave >= 5 && s.healthPicked === 0) ? 1 : 0 },
-    { id: "satellite_buster", name: "Satellite Buster", desc: "Destroy 15 Debris Satellites in one game.",             goal: 15, cur: s => s.debrisKills },
+    { id: "satellite_buster", name: "Satellite Buster", desc: "Destroy 15 Garbage Satellites in one game.",            goal: 15, cur: s => s.debrisKills },
     { id: "hunters_bane",     name: "Hunter's Bane",    desc: "Wipe out a whole Hunter line (large → mediums → smalls).", goal: 1, cur: s => s.hunterLineComplete ? 1 : 0 },
-    { id: "pacifist_tow",     name: "Pacifist Tow",     desc: "Deliver 5 canisters in a row without firing.",          goal: 5,  cur: s => s.pacifistBest },
+    { id: "pacifist_tow",     name: "Pacifist Tow",     desc: "Deliver 5 Debris in a row without firing.",             goal: 5,  cur: s => s.pacifistBest },
     { id: "close_shave",      name: "Close Shave",      desc: "Survive a Hunter collision with under 10 HP left.",     goal: 1,  cur: s => s.closeShave ? 1 : 0 },
     { id: "shield_surfer",    name: "Shield Surfer",    desc: "Deflect 10 hazards with your shield in one game.",      goal: 10, cur: s => s.deflects },
     { id: "small_ball",       name: "Small Ball",       desc: "Destroy 10 small saucers in one game.",                 goal: 10, cur: s => s.smallSaucerKills },
     { id: "no_scratches",     name: "No Scratches",     desc: "Complete wave 3 without taking any damage.",            goal: 1,  cur: s => s.noScratchWave3 ? 1 : 0 },
     { id: "combo_collector",  name: "Combo Collector",  desc: "Reach a delivery combo of 8+ in one dock visit.",       goal: 8,  cur: s => s.bestCombo },
-    { id: "speed_recycler",   name: "Speed Recycler",   desc: "Deliver your first canister within 60 seconds.",        goal: 1,  cur: s => s.speedRecycler ? 1 : 0 },
+    { id: "speed_recycler",   name: "Speed Recycler",   desc: "Deliver your first Debris within 60 seconds.",          goal: 1,  cur: s => s.speedRecycler ? 1 : 0 },
     { id: "powered_up",       name: "Powered Up",       desc: "Use all four drop powerups in a single game.",          goal: 4,  cur: s => powerTypesUsed(s) },
     { id: "diamond_cutter",   name: "Diamond Cutter",   desc: "Destroy 3 large Hunter cores in one game.",             goal: 3,  cur: s => s.largeHunterKills },
     // v3.2 P3: repurposed IN PLACE (id + pool slot kept, so the weekly rotation math is untouched).
     // Old meaning ("zero canisters expired") auto-unlocked every game once decay was removed; the new
     // meaning — let no neglected scrap coalesce into a Hunter — is a live challenge with the same spirit
     // ("don't let your mess pile up"). Still fits "waste not": you wasted no salvage to the coalescence sink.
-    { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with no Hunters born from neglected scrap.", goal: 1, cur: s => (s.gameEnded && s.hunterCoalesced === 0) ? 1 : 0 },
+    { id: "waste_not",        name: "Waste Not",        desc: "Finish a game with no Hunter Satellites born from neglected Debris.", goal: 1, cur: s => (s.gameEnded && s.hunterCoalesced === 0) ? 1 : 0 },
     // v3.0 P8 (FLAG A-6-b): a genuinely weekly-worthy damage-free clear, gated to a LATE wave so it's
     // distinct from (and harder than) No Scratches (clear wave 3 damage-free). Set in the wave-clear block.
     { id: "flawless_run",     name: "Flawless Run",     desc: "Clear wave 8 or later without taking any damage.",      goal: 1,  cur: s => s.flawlessLateWave ? 1 : 0 }
@@ -7968,29 +7968,29 @@ const Achievements = {
   // A tiered entry carries no `goal`; the viewer shows a tier badge + progress-to-next instead.
   LIFETIME: [
     // --- Tiered (SUM) ---
-    { id: "recycling_magnate", name: "Recycling Magnate", desc: "Deliver canisters to the dock (all-time).",           cur: (s, l) => l.delivered,     tiers: [1000, 5000, 10000, 25000, 50000, 100000] },
+    { id: "recycling_magnate", name: "Recycling Magnate", desc: "Deliver Debris to the Recycle dock (all-time).",      cur: (s, l) => l.delivered,     tiers: [1000, 5000, 10000, 25000, 50000, 100000] },
     { id: "ghost_protocol",    name: "Ghost Protocol",    desc: "Destroy Hunter Satellites (all-time).",               cur: (s, l) => l.hunterKills,   tiers: [50, 250, 1000, 2500, 5000, 10000] },
     { id: "saucer_hunter",     name: "Saucer Hunter",     desc: "Destroy saucers, big and small (all-time).",          cur: (s, l) => l.saucerKills,   tiers: [250, 500, 1000, 2500, 5000, 10000] },
     { id: "perfect_wave",      name: "Perfect Wave",      desc: "Clear a wave with zero damage (all-time).",           cur: (s, l) => l.perfectWaves,  tiers: [5, 10, 50, 100, 250, 500] },
     { id: "iron_hull",         name: "Iron Hull",         desc: "Survive hazard hits (all-time).",                     cur: (s, l) => l.hitsSurvived,  tiers: [100, 500, 1000, 2500, 5000, 10000] },
     // --- Tiered (SUM), new in v3.0 P8 ---
     { id: "sharpshooter",      name: "Sharpshooter",      desc: "Destroy small saucers (all-time).",                   cur: (s, l) => l.smallSaucerKills, tiers: [100, 500, 1000, 2500, 5000, 7500] }, // diamond lowered 10k->7500 (FLAG A-8-a: don't out-grind Saucer Hunter)
-    { id: "freight_baron",     name: "Freight Baron",     desc: "Deliver a 12+ canister haul in one dock visit (all-time).", cur: (s, l) => l.heavyHaulerEvents, tiers: [1, 10, 50, 150, 400, 1000] }, // per-EVENT (FORK A-fork-1): every >=12 visit counts
+    { id: "freight_baron",     name: "Freight Baron",     desc: "Deliver a 12+ Debris haul in one dock visit (all-time).", cur: (s, l) => l.heavyHaulerEvents, tiers: [1, 10, 50, 150, 400, 1000] }, // per-EVENT (FORK A-fork-1): every >=12 visit counts
     { id: "zen_master",        name: "Zen Master",        desc: "Complete a 5-in-a-row no-fire haul (all-time).",      cur: (s, l) => l.pacifistTowEvents, tiers: [1, 10, 50, 150, 400, 1000] }, // per-EVENT: every 5-streak haul counts
     { id: "daredevil",         name: "Daredevil",         desc: "Play a Glass Cannon game — wave 5, no Health (all-time).", cur: (s, l) => l.glassCannonGames, tiers: [1, 5, 20, 50, 125, 300] }, // once/game -> softened ladder (FLAG A-12-a)
     { id: "wave_rider",        name: "Wave Rider",        desc: "Play a Shield Surfer game — 10 deflects (all-time).", cur: (s, l) => l.shieldSurferGames, tiers: [1, 5, 20, 50, 125, 300] }, // once/game -> softened ladder (FLAG A-12-a)
     // --- Tiered (MAX / personal best across games) ---
     { id: "master_field",      name: "Master of the Field", desc: "Reach deep waves in a single game (best).",         cur: (s, l) => l.maxWave,          tiers: [5, 10, 25, 50, 75, 100] },
     { id: "no_powerups",       name: "No Powerups Needed",  desc: "Reach deep waves without ever taking a powerup (best).", cur: (s, l) => l.maxWaveNoPowerup, tiers: [2, 5, 11, 17, 23, 29] },
-    { id: "salvage_king",      name: "Salvage King",      desc: "Most canisters delivered in one game (best).",        cur: (s, l) => l.bestDeliveredGame, tiers: [10, 20, 40, 75, 125, 200] }, // v3.0 P8 (MAX)
-    { id: "field_sweeper",     name: "Field Sweeper",     desc: "Most Debris destroyed in one game (best).",           cur: (s, l) => l.bestDebrisGame,    tiers: [15, 40, 80, 150, 250, 400] }, // v3.0 P8 (MAX)
+    { id: "salvage_king",      name: "Salvage King",      desc: "Most Debris delivered in one game (best).",           cur: (s, l) => l.bestDeliveredGame, tiers: [10, 20, 40, 75, 125, 200] }, // v3.0 P8 (MAX)
+    { id: "field_sweeper",     name: "Field Sweeper",     desc: "Most Garbage Satellites destroyed in one game (best).", cur: (s, l) => l.bestDebrisGame,    tiers: [15, 40, 80, 150, 250, 400] }, // v3.0 P8 (MAX)
     // --- Non-tiered single-goal (unchanged; long_haul reworded to fixed >=12/visit — FLAG A-5-a) ---
     { id: "century_club",      name: "Century Club",      desc: "Reach wave 25 in a single game.",                     goal: 25,    cur: (s, l) => l.maxWave },
     { id: "untouchable",       name: "Untouchable",       desc: "Reach wave 10 without dropping below 50% HP.",        goal: 1,     cur: s => (game.wave >= 10 && !s.everBelowHalf) ? 1 : 0 },
     { id: "ton_of_scrap",      name: "Ton of Scrap",      desc: "Earn 10,000 points from dock deliveries (all-time).", goal: 10000, cur: (s, l) => l.deliveryScore },
-    { id: "long_haul",         name: "The Long Haul",     desc: "Deliver 12+ canisters in one dock visit, 10 times.",  goal: 10,    cur: (s, l) => l.fullChains },
+    { id: "long_haul",         name: "The Long Haul",     desc: "Deliver 12+ Debris in one dock visit, 10 times.",     goal: 10,    cur: (s, l) => l.fullChains },
     // CS012 P3 (FORK-CS012-B a): placeholder id/name/desc — Paul to finalize before ship.
-    { id: "max_haul",          name: "Maxed Out",         desc: "Deliver a full 24-canister chain in one dock visit.", goal: 1,     cur: s => s.maxChainVisit ? 1 : 0 },
+    { id: "max_haul",          name: "Maxed Out",         desc: "Deliver a full 24-Debris chain in one dock visit.",   goal: 1,     cur: s => s.maxChainVisit ? 1 : 0 },
     { id: "marathon_runner",   name: "Marathon Runner",   desc: "Play for 10 hours total.",                            goal: 36000, cur: (s, l) => l.playTime,
       text: (s, l) => (l.playTime / 3600).toFixed(1) + "/10h" }
   ],

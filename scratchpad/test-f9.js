@@ -128,8 +128,8 @@ assert(!!Achievements.byId["flawless_run"] && Achievements.byId["flawless_run"].
 assert("hunterCoalesced" in game.stats, "config: new per-game stat hunterCoalesced exists (Waste Not, v3.2 P3)");
 assert(!("garbageDecayed" in game.stats), "config: the old garbageDecayed stat is gone (v3.2 P3)");
 const wasteNotDef = Achievements.byId["waste_not"];
-assert(!!wasteNotDef && wasteNotDef.pool === "weekly" && /scrap/i.test(wasteNotDef.desc),
-  "config: Waste Not kept as a weekly, repurposed to the neglected-scrap meaning");
+assert(!!wasteNotDef && wasteNotDef.pool === "weekly" && /debris/i.test(wasteNotDef.desc),
+  "config: Waste Not kept as a weekly, repurposed to the neglected-Debris meaning (CS034 P2 vocabulary sweep)");
 assert(Achievements.STORAGE_KEY === "afd_achievements_v2", "config: persistence bumped to afd_achievements_v2");
 // The Long Haul reworded to a fixed >=12/visit (still non-tiered, goal 10).
 const longHaul = Achievements.byId["long_haul"];

@@ -46,6 +46,48 @@ actually looked like at that SHA.
 
 ---
 
+## Vocabulary (CS034 P2)
+
+Four canonical object terms. Use these in prose, docs, and player-facing strings.
+
+| Term | What it is |
+|---|---|
+| **Garbage Satellite** | The satellite the player shoots for cleanup. Splits into smaller Garbage Satellites when hit; the smallest tier is destroyed outright. Sheds **Debris** on destruction. |
+| **Debris** | The towable object the player scoops, chains, and delivers to the Recycle dock. Coalesces into a **Hunter Satellite** if neglected. |
+| **Hunter Satellite** | Actively homing enemy born from coalesced Debris. Splits 3-way on each hit down to the small tier. |
+| **Recycle dock** | Where Debris is delivered for points. |
+
+### ⛔ The build's names for two of these are INVERTED — do not rename code to match
+
+| Canonical term | What the build calls it |
+|---|---|
+| **Garbage Satellite** (shoot it, it splits) | `DebrisSatellite` / `DEBRIS_*` / `game.debris` / `destroyDebris` / `debrisKills` |
+| **Debris** (tow it to the dock) | `Garbage` / `GARBAGE_*` / `game.garbage` / `coalesceGarbage` / `"canister"` |
+| Hunter Satellite | `HunterSatellite` / `HUNTER_*` — already correct |
+| Recycle dock | `Dock` / `DOCK_*`, renders `"RECYCLE"` — already correct |
+
+This is documentation, not a defect. **Code identifiers are never renamed to match
+the canonical terms** — the inversion is load-bearing history, not a cleanup target.
+A future session that "fixes" `game.debris` would be touching ~278 sites for zero
+behavioural gain. Read `game.debris` as "the Garbage Satellite array" and
+`game.garbage` as "the Debris array," and move on.
+
+⛔ **Achievement `id` values are SAVE DATA and are never renamed**, regardless of how
+inverted or dated their spelling looks. They are keys inside `afd_achievements_v2`'s
+`lifetimeUnlocked` / `weeklyUnlocked` / `lifetimeTiers`. Renaming one silently drops
+that achievement's unlock for every existing player.
+
+The Worker's `debris_destroyed` stats key (`coinless-kit`, the online leaderboard) is
+old vocabulary under this table too — it counts Garbage Satellite kills — and is
+frozen in already-submitted rows. Deliberately not renamed; see the Leaderboard
+section below.
+
+Names were used inconsistently before CS034. Any doc or comment predating it may use
+either term for either object — that's not a miss to fix on sight, just the state of
+things before this table existed.
+
+---
+
 ## Session rules
 
 1. **Read `STATUS.md` first.** Update it at the end of the session.
