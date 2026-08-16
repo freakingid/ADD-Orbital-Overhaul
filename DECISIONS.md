@@ -67,3 +67,18 @@ planning doc — every decision below is a place that prompt didn't specify.
   "playing"` at entry, which is false for the gameover caller (the run already
   ended and was already handled at the death seam). Keeps the existing
   single-function shape intact.
+
+- **`stats` payload extended to four keys (P3); the two new names are
+  unconfirmed guesses.** `saucer_kills` (game.stats.saucerKills, both saucer
+  sizes) and `garbage_satellite_kills` (game.stats.debrisKills) join the two
+  P2 keys. Unlike those two, these names are not sourced from the module's
+  worked example — the Worker's real `statsFields` registry for this game
+  isn't readable from this repo, so both are best guesses at what a
+  human-readable field name would be. Per the module doc, an unrecognized key
+  only sets a flag server-side and never rejects the submission, so a wrong
+  guess here is cosmetic, not breaking. If the real names ever surface, the
+  fix is a rename at the single `Leaderboard.submit()` call site. `durationS`
+  was deliberately NOT duplicated into `stats` — it's already a top-level
+  field on every board entry per FORK-A. Hunter kills were explicitly
+  declined: no per-game counter exists for player-only Hunter-core kills
+  distinct from `Achievements.lifetime`, and none was added to serve this.

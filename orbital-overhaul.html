@@ -6901,6 +6901,9 @@ function resetGameStats() {
                              // 0 -> 1 large-Hunter transition (noteLargeHunterSpawn), not on every spawn
     hunterLineComplete: false,// wiped a full 13-member Hunter line from one spawn (Hunter's Bane)
     largeHunterKills: 0,     // large Hunter cores destroyed this game (Diamond Cutter)
+    saucerKills: 0,          // saucers of BOTH sizes destroyed this game (leaderboard payload;
+                             // distinct from smallSaucerKills, which Small Ball reads, and from
+                             // Achievements.lifetime.saucerKills, which is cross-game)
     smallSaucerKills: 0,     // small (aimed) saucers destroyed this game (Small Ball)
     deflects: 0,             // hazards/bullets absorbed by the shield this game (Shield Surfer)
     healthPicked: 0,         // Health powerups picked up this game (Glass Cannon)
@@ -7670,6 +7673,7 @@ function destroySaucer(s, awardScore = true) {
   if (awardScore) {
     addScore(SAUCER_SCORE[s.small ? "small" : "big"]);
     Achievements.lifetime.saucerKills++;                 // Saucer Hunter (F9)
+    game.stats.saucerKills++;                             // CS033 P3: both sizes, leaderboard payload
     if (s.small) { game.stats.smallSaucerKills++; Achievements.lifetime.smallSaucerKills++; } // Small Ball (F9) + Sharpshooter (lifetime, P8)
   }
   boom(s.x, s.y, 2, COLOR.saucer);
@@ -8280,9 +8284,11 @@ HighScores.load();
 //
 // player_id/display_name come from Profiles (CS033 P1) via getPlayer() — a function, per the module's
 // own contract, so a mid-session profile switch or rename is picked up without recreating the
-// instance. stats keys (wave_reached, canisters_delivered) are the two names the module's own doc
-// uses in its worked example for THIS game; nothing else about the Worker's statsFields registry is
-// visible from this repo, so nothing else is guessed — see STATUS.md.
+// instance. stats keys: two (wave_reached, canisters_delivered) are the exact names the module's own
+// doc uses in its worked example for THIS game; the other two (saucer_kills, garbage_satellite_kills,
+// CS033 P3) are unconfirmed best guesses against the Worker's statsFields registry, which is not
+// visible from this repo. Per the module doc, an unrecognized key only sets a server-side flag, never
+// a rejection, so a wrong guess here cannot break submission — see DECISIONS.md.
 const LEADERBOARD_ENDPOINT = "https://scores.coinlessgames.com";
 const LEADERBOARD_WINDOWS = ["24h", "7d", "all"];   // the subset of the module's windows the board screen cycles
 const LEADERBOARD_WINDOW_LABEL = { "24h": "LAST 24 HOURS", "7d": "LAST 7 DAYS", all: "ALL TIME" };
@@ -8334,7 +8340,12 @@ const Leaderboard = {
       metric: game.score,
       durationS: Math.round(game.stats.gameTime),
       outcome,
-      stats: { wave_reached: game.wave, canisters_delivered: game.stats.delivered },
+      stats: {
+        wave_reached: game.wave,
+        canisters_delivered: game.stats.delivered,
+        saucer_kills: game.stats.saucerKills,
+        garbage_satellite_kills: game.stats.debrisKills,
+      },
     });
   },
   queueLength() {

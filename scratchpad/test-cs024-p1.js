@@ -776,9 +776,21 @@ function atWave(X, w) {
     assert(/destroyHunter\(h, false\); else destroyDebris\(h, false\)/.test(now),
       "F: ...including its awardScore=false contract");
   }
-  eq(bodyOf(scriptSrc, "function destroySaucer(s, awardScore = true) {"),
-     bodyOf(hSrc, "function destroySaucer(s, awardScore = true) {"),
-    "F: TRAP 2 — destroySaucer is BYTE-UNCHANGED");
+  // NARROWED BY CS033 P3, stated positively per this same TRAP's own precedent below: destroySaucer()
+  // gained exactly one new line, game.stats.saucerKills++ (a leaderboard per-game counter, awardScore
+  // block, both sizes — CS033 P3 spec step 2), immediately beside the pre-existing
+  // Achievements.lifetime.saucerKills++ line. Stripped out before the comparison so the rest of the
+  // function — including the mutual-damage-adjacent code this TRAP actually exists to protect — is
+  // still asserted BYTE-UNCHANGED since CS024 P1's parent.
+  {
+    const NEW_LINE = "game.stats.saucerKills++;";
+    const stripNewLine = s => s.split("\n").filter(l => !l.trim().startsWith(NEW_LINE)).join("\n");
+    const now = stripNewLine(bodyOf(scriptSrc, "function destroySaucer(s, awardScore = true) {"));
+    const was = bodyOf(hSrc, "function destroySaucer(s, awardScore = true) {");
+    eq(now, was, "F: TRAP 2 — destroySaucer is BYTE-UNCHANGED except the CS033 P3 stats line");
+    assert(bodyOf(scriptSrc, "function destroySaucer(s, awardScore = true) {").includes(NEW_LINE),
+      "F: ...and that line really is there");
+  }
   // The saucer-body-contact arm of the same block is mutual damage too, and is equally out of scope.
   {
     const grab = src => {

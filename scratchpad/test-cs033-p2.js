@@ -100,6 +100,10 @@ function fakeKitLeaderboard(calls) {
   eq(s.metric, 4200, "E: metric is game.score");
   eq(s.stats.wave_reached, 3, "E: stats.wave_reached is game.wave");
   eq(s.stats.canisters_delivered, 7, "E: stats.canisters_delivered is game.stats.delivered");
+  eq(s.stats.saucer_kills, X.game.stats.saucerKills, "E: stats.saucer_kills reads through game.stats.saucerKills");
+  eq(s.stats.garbage_satellite_kills, X.game.stats.debrisKills, "E: stats.garbage_satellite_kills reads through game.stats.debrisKills");
+  assert(!("duration" in s.stats) && !Object.keys(s.stats).some(k => k.toLowerCase().includes("duration")),
+    "E: stats carries no duration-ish key — durationS stays top-level, not duplicated in");
   eq(s.durationS, 61, "E: durationS is game.stats.gameTime, rounded");
 })();
 
