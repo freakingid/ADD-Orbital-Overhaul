@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS034 · Phase: P3 · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P4 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS034
 
@@ -38,10 +38,22 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P3 · Registry: 87 · Levers: 18
   appended to. A full 13-body lineage now yields 9 pieces, down from 18. Suite: 131/131 on a full
   clone (`test-cs034-p3.js`, new this phase).
 
+- P4 — `Leaderboard.submit()`'s `stats` key `garbage_satellite_kills` renamed to
+  `debris_destroyed` per `PLANNED-FEATURES-CS034.md` §7.1/§0.1: that key was never registered in
+  the Worker's `statsFields` (confirmed readable from `coinless-kit`, correcting CLAUDE.md's prior
+  "not visible from this repo" claim), so every score posted since CS033 P3 has been showing
+  flagged on the public board. Value source unchanged (`game.stats.debrisKills`); `hunter_kills`
+  stays deliberately unsent, reason rewritten in `CLAUDE.md`. Added `fmtDuration()` beside
+  `fmtCommas()` (`h:mm:ss` at/above an hour, else `m:ss`, `"-"` on bad input) — written once here,
+  P7 reuses it. `drawLeaderboard()` gains a `TIME` column between LEVEL and DELIVERED reading
+  `e.durationS`, falling back to `"-"`; all six column x-offsets re-derived from `cx` in one edit.
+  One pre-existing test (`test-cs033-p2.js` §E) had a stale assertion on the old key name, updated
+  to match. Suite: 132/132 on a full clone (`test-cs034-p4.js`, new this phase).
+
 ## Working / verified
 
-- Full suite on a full clone: **131 files, 131 passed, 0 failed, 0 skipped, 0 timed out.** (130 →
-  131: `test-cs034-p3.js`, new this phase.)
+- Full suite on a full clone: **132 files, 132 passed, 0 failed, 0 skipped, 0 timed out.** (131 →
+  132: `test-cs034-p4.js`, new this phase.)
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
 - `player_id` mint/backfill/never-regenerate verified directly (`test-cs033-p1.js`): a profile
   loaded from a pre-CS033 blob is backfilled on boot, and a second boot from that same store reuses
@@ -60,6 +72,9 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P3 · Registry: 87 · Levers: 18
 
 ## Known issues
 
+- **Every score posted between CS033 P3 and CS034 P4 stays flagged on the public leaderboard.**
+  The key fix (P4) only changes what future submissions send — nothing client-side can retroactively
+  unflag an already-submitted row. A `coinless-kit` data question, not a game one (spec §7.1).
 - **FLAG-CS034-e — `debrisBounceRestitution`'s spec'd label overflows the debug panel's label
   column.** `PLANNED-FEATURES-CS034.md` §1.3 calls for "Garbage Satellite bounce restitution" (36
   chars); `test-cs024-p6c.js` §G enforces a hard 32-monospace-char budget (`drawDebug` neither

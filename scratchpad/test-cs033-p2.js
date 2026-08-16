@@ -101,7 +101,7 @@ function fakeKitLeaderboard(calls) {
   eq(s.stats.wave_reached, 3, "E: stats.wave_reached is game.wave");
   eq(s.stats.canisters_delivered, 7, "E: stats.canisters_delivered is game.stats.delivered");
   eq(s.stats.saucer_kills, X.game.stats.saucerKills, "E: stats.saucer_kills reads through game.stats.saucerKills");
-  eq(s.stats.garbage_satellite_kills, X.game.stats.debrisKills, "E: stats.garbage_satellite_kills reads through game.stats.debrisKills");
+  eq(s.stats.debris_destroyed, X.game.stats.debrisKills, "E: stats.debris_destroyed reads through game.stats.debrisKills (CS034 P4 renamed this key)");
   assert(!("duration" in s.stats) && !Object.keys(s.stats).some(k => k.toLowerCase().includes("duration")),
     "E: stats carries no duration-ish key — durationS stays top-level, not duplicated in");
   eq(s.durationS, 61, "E: durationS is game.stats.gameTime, rounded");

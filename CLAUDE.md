@@ -442,15 +442,19 @@ waves forever — `DIFFICULTY-LEVERS.md`), so only the first and third are ever
 submitted. Don't invent a "completed" trigger to fill the enum.
 
 ⛔ **`stats` is a fixed four keys: `wave_reached`, `canisters_delivered`, `saucer_kills`,
-`garbage_satellite_kills` — not by omission, extend deliberately.** The first two are the
-exact names `lib/docs/kit-leaderboard-client-api.md` uses in its own worked example for
-THIS game; the other two are best-guess names against the Worker's `statsFields` registry,
-which is not visible from this repo (see `log/CS033.md` P3). Hunter kills are deliberately
-NOT sent — no per-game counter for player-only Hunter-core kills exists, and none was added
-to serve this. `durationS` is NOT duplicated into `stats` — it's already a top-level field
-on every board entry per the module's own contract. A key mismatch only sets a flag
-server-side, never a rejection, so extending this object again is always a one-line change
-at `Leaderboard.submit()` — but it's still a deliberate edit, not filler.
+`debris_destroyed` — not by omission, extend deliberately.** All four are the Worker's
+registered `statsFields` for `orbital-overhaul` — the registry **is** readable from this
+machine, at `github.com/freakingid/coinless-kit`'s `services/leaderboard/src/registry.js`
+(CS034 P4/§0.1; the prior claim that it "is not visible from this repo" was wrong — CS033
+shipped `garbage_satellite_kills`, an unregistered key, flagging every row it posted, fixed
+this changeset). `hunter_kills` is also registered and is deliberately NOT sent — no
+per-game, player-only Hunter-kill counter exists (`hunterLineageKills` resets per lineage,
+`Achievements.lifetime.hunterKills` is cross-game), and none was added to serve this.
+`durationS` is NOT duplicated into `stats` — it's already a top-level field on every board
+entry per the module's own contract. A key mismatch only sets a flag server-side, never a
+rejection, so extending this object again is always a one-line change at
+`Leaderboard.submit()` — but it's still a deliberate edit, not filler. See the Vocabulary
+section above for `debris_destroyed`'s own legacy-naming note.
 
 ### Two traps that have each burned twice
 

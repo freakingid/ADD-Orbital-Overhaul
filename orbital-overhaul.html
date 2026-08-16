@@ -8286,11 +8286,14 @@ HighScores.load();
 //
 // player_id/display_name come from Profiles (CS033 P1) via getPlayer() — a function, per the module's
 // own contract, so a mid-session profile switch or rename is picked up without recreating the
-// instance. stats keys: two (wave_reached, canisters_delivered) are the exact names the module's own
-// doc uses in its worked example for THIS game; the other two (saucer_kills, garbage_satellite_kills,
-// CS033 P3) are unconfirmed best guesses against the Worker's statsFields registry, which is not
-// visible from this repo. Per the module doc, an unrecognized key only sets a server-side flag, never
-// a rejection, so a wrong guess here cannot break submission — see DECISIONS.md.
+// instance. stats keys: all four (wave_reached, canisters_delivered, saucer_kills, debris_destroyed)
+// are the Worker's registered statsFields for orbital-overhaul (coinless-kit's
+// services/leaderboard/src/registry.js — readable from that repo, CS034 P4/§0.1). hunter_kills is
+// also registered but deliberately unsent: no per-game player-only Hunter-kill counter exists
+// (hunterLineageKills resets per lineage, Achievements.lifetime.hunterKills is cross-game), and none
+// was added to serve this. Per the module doc, an unrecognized key only sets a server-side flag, never
+// a rejection — CS033 shipped with an unregistered key here for one changeset and every one of
+// those rows is showing flagged on the public board; fixed in CS034 P4 (§0.1).
 const LEADERBOARD_ENDPOINT = "https://scores.coinlessgames.com";
 const LEADERBOARD_WINDOWS = ["24h", "7d", "all"];   // the subset of the module's windows the board screen cycles
 const LEADERBOARD_WINDOW_LABEL = { "24h": "LAST 24 HOURS", "7d": "LAST 7 DAYS", all: "ALL TIME" };
@@ -8342,11 +8345,14 @@ const Leaderboard = {
       metric: game.score,
       durationS: Math.round(game.stats.gameTime),
       outcome,
+      // debris_destroyed counts what CS034 vocabulary calls Garbage Satellites (the thing you shoot,
+      // not the thing you tow) — old vocabulary, frozen in already-submitted rows, deliberately not
+      // renamed server-side (CS034 §7.1/§0.1). Value source is unchanged: game.stats.debrisKills.
       stats: {
         wave_reached: game.wave,
         canisters_delivered: game.stats.delivered,
         saucer_kills: game.stats.saucerKills,
-        garbage_satellite_kills: game.stats.debrisKills,
+        debris_destroyed: game.stats.debrisKills,
       },
     });
   },
@@ -10737,6 +10743,16 @@ function drawAchievements() {
 // Thousands-grouped integer, locale-independent (deterministic across environments/tests).
 function fmtCommas(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 
+// Seconds -> "h:mm:ss" at/above an hour, else "m:ss". Non-numeric/negative/non-finite -> "-"
+// (a fetched leaderboard entry, or a pre-CS034 local save record, may not carry durationS at all).
+function fmtDuration(s) {
+  if (typeof s !== "number" || !isFinite(s) || s < 0) return "-";
+  const total = Math.floor(s);
+  const hh = Math.floor(total / 3600), mm = Math.floor((total % 3600) / 60), ss = total % 60;
+  const pad2 = n => String(n).padStart(2, "0");
+  return hh > 0 ? (hh + ":" + pad2(mm) + ":" + pad2(ss)) : (mm + ":" + pad2(ss));
+}
+
 // One achievement row: name, status, and description on three stacked lines.
 // Tiered lifetime rows show a tier badge + progress-to-next in the tier's colour (v3.0 P7);
 // single-goal rows keep the F9 look — a ✓ when earned (gold) or a cur/goal readout when not.
@@ -10856,13 +10872,14 @@ function drawLeaderboard() {
     drawText("NO SCORES YET — BE THE FIRST", VIEW_W / 2, topY + 80, 18, COLOR.dim);
   } else {
     const cx = VIEW_W / 2, scale = 1.5;
-    const colRank = cx - 260 * scale, colName = cx - 190 * scale, colScore = cx + 70 * scale,
-          colWave = cx + 170 * scale, colDeliv = cx + 270 * scale;
+    const colRank = cx - 260 * scale, colName = cx - 190 * scale, colScore = cx + 60 * scale,
+          colWave = cx + 140 * scale, colTime = cx + 220 * scale, colDeliv = cx + 300 * scale;
     const fontHeader = 13 * scale, fontRow = 13 * scale, rowPitch = 20 * scale, headerOffset = 22 * scale;
     drawText("#", colRank, topY, fontHeader, COLOR.dim, "left");
     drawText("NAME", colName, topY, fontHeader, COLOR.dim, "left");
     drawText(Leaderboard.uiMetricLabel.toUpperCase(), colScore, topY, fontHeader, COLOR.dim, "right");
     drawText("LEVEL", colWave, topY, fontHeader, COLOR.dim, "right");
+    drawText("TIME", colTime, topY, fontHeader, COLOR.dim, "right");
     drawText("DELIVERED", colDeliv, topY, fontHeader, COLOR.dim, "right");
     Leaderboard.uiEntries.forEach((e, i) => {
       const ry = topY + headerOffset + i * rowPitch, col = COLOR.text;
@@ -10872,6 +10889,7 @@ function drawLeaderboard() {
       drawText((e.displayName || "?") + (e.flagged ? " ⚑" : ""), colName, ry, fontRow, e.flagged ? COLOR.lowhp : col, "left");
       drawText(fmtCommas(e.metric), colScore, ry, fontRow, col, "right");
       drawText(wave, colWave, ry, fontRow, col, "right");
+      drawText(fmtDuration(e.durationS), colTime, ry, fontRow, col, "right");
       drawText(delivered, colDeliv, ry, fontRow, col, "right");
     });
   }
