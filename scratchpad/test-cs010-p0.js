@@ -7,7 +7,9 @@
 //
 // Checks:
 //  (A) GAME_VERSION === "1.0.0.33" (unprefixed).
-//  (B) a fresh HighScores.add() stamps build === "1.0.0.33".
+//  (B) a fresh run's record carries build === "1.0.0.33". ⚠ CS034 P7 moved WHERE that stamp is
+//      applied: HighScores.add() may no longer read a game global (spec §6.6), so makeRunResult() —
+//      the one assembler — puts GAME_VERSION on the record and add() stores what it is handed.
 //  (C) an existing record carrying build "3.6" survives an afd_scores_v1 load/save round-trip
 //      unchanged (no migration of old records).
 
@@ -58,13 +60,13 @@ global.localStorage = {
   removeItem: k => { delete lsStore[k]; }
 };
 
-const returnList = ["GAME_VERSION", "HighScores", "AudioSys"];
+const returnList = ["GAME_VERSION", "HighScores", "AudioSys", "makeRunResult"];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
   scriptSrc + "\n;return { " + returnList.join(", ") + " };"
 );
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, global.localStorage);
-const { GAME_VERSION, HighScores, AudioSys } = A;
+const { GAME_VERSION, HighScores, AudioSys, makeRunResult } = A;
 
 let passed = 0, failed = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
@@ -79,10 +81,13 @@ AudioSys.init();
 
 // ================= (B) a fresh HighScores.add() stamps the new build ==================
 (function sectionB() {
-  console.log("(B) fresh HighScores.add() stamps build === \"1.0.0.33\"");
+  console.log("(B) a fresh run's record carries build === \"1.0.0.33\"");
   HighScores.entries = [];
-  const rec = HighScores.add({ initials: "AAA", score: 100, wave: 1, delivered: 1 });
+  const rec = HighScores.add(makeRunResult());
   assert(rec.build === "1.0.0.33", "B: new record's build field is \"1.0.0.33\"");
+  // ⚠ CS034 P7: and it came off the RunResult, not out of add() — the version pin has to follow the
+  // stamp, or it goes on passing while nothing stamps anything.
+  assert(makeRunResult().build === "1.0.0.33", "B: makeRunResult() is what stamps it");
 })();
 
 // ================= (C) an old "3.6" record survives a load/save round-trip unchanged ==

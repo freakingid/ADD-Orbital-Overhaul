@@ -102,7 +102,7 @@ function build() {
 
 // ================= (A) the input guard, driven live =====================
 (function sectionA() {
-  console.log("(A) ESC/pause admitted at gameover, still refused at title; !game.entry carried");
+  console.log("(A) ESC/pause admitted at gameover, still refused at title; the exclusive-mode guard holds");
   const X = build();
   const g = X.game;
 
@@ -112,7 +112,7 @@ function build() {
 
   // At GAMEOVER: previously refused, now opens the pause root.
   X.startGame();
-  g.state = "gameover"; g.paused = false; g.menu.screen = null; g.entry = null;
+  g.state = "gameover"; g.paused = false; g.menu.screen = null;
   X.keydown("Escape");
   assert(g.paused === true && g.menu.screen === "root",
     "A: ESC at gameover now opens the pause root (was refused before this phase)");
@@ -131,20 +131,25 @@ function build() {
   assert(g.menu.screen === "options",
     'A: ESC at title still opens Options through the title-menu\'s own route, not this guard (which would open "root")');
 
-  // The !game.entry belt-and-suspenders operand: with an initials entry in progress, ESC must not
-  // open the pause menu out from under it.
+  // ⚠ CS034 P7 REPOINTED THIS CHECK. It read the guard's third operand, `!game.entry` — the belt-and
+  // -suspenders that kept ESC from opening the pause menu out from under a live initials entry. That
+  // entry is deleted (spec §6.1) and so is the operand. The property it protected is unchanged and is
+  // now delivered by the celebration panel's own early return, the surviving exclusive mode armed at
+  // the same "dying" -> "gameover" seam — so the check is aimed at that instead of dropped.
   X.startGame();
-  g.state = "gameover"; g.paused = false; g.menu.screen = null; g.entry = { slot: 0, letters: ["A", "A", "A"] };
+  g.state = "gameover"; g.paused = false; g.menu.screen = null;
+  g.celebration = { items: [{ name: "X", desc: "y" }], scroll: 0, resume: null };
   X.keydown("Escape");
   assert(g.paused === false && g.menu.screen === null,
-    "A: ESC during initials entry (game.entry set) does not open the pause menu");
+    "A: ESC under an exclusive gameover mode does not open the pause menu out from under it");
+  g.celebration = null;
 
   // Source-level pin on the guard line itself, so a future edit that keeps behaviour but drops the
   // documented operand shape is still caught.
   const guardLine = src.split("\n").find(l => l.includes("bindings.pause.keys.includes(k)") && l.includes("openPause()"));
   assert(!!guardLine, "A: (setup) the pause-key guard line exists");
-  assert(guardLine.includes('game.state === "gameover"') && guardLine.includes('game.state === "playing"') && guardLine.includes("!game.entry"),
-    "A: the guard's source reads (playing || gameover) && !game.entry");
+  assert(guardLine.includes('game.state === "gameover"') && guardLine.includes('game.state === "playing"'),
+    "A: the guard's source still reads (playing || gameover)");
 })();
 
 // ================= (B) retired footer literals =====================

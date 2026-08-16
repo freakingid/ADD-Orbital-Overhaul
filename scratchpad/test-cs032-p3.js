@@ -206,9 +206,11 @@ function onSlots(mode, slots = [null, null, null], store = {}) {
   // ⛔ CS016 P3's standing both-places rule: a new game.menu field lands in BOTH the game literal and
   // resetRun()'s own menu reset, or it is undefined for a whole run. Read directly off each literal's
   // own text, not a global substring count (comments describing the fields also say their names).
-  assert(/menu: \{ screen: Profiles\.firstBoot[\s\S]*?slotMode: null, slotMsg: "" \}/.test(stripped),
+  // (⚠ CS034 P7 appended a seventh field, hsFilter, to BOTH literals; the anchors keep naming this
+  // phase's own two rather than widening to a wildcard.)
+  assert(/menu: \{ screen: Profiles\.firstBoot[\s\S]*?slotMode: null, slotMsg: ""[,}]/.test(stripped),
     "H: ⛔ the game literal declares slotMode AND slotMsg");
-  assert(/game\.menu = \{ screen: null[\s\S]{0,200}slotMode: null, slotMsg: "" \};/.test(stripped),
+  assert(/game\.menu = \{ screen: null[\s\S]{0,240}slotMode: null, slotMsg: ""[,}]/.test(stripped),
     "H: ⛔ resetRun()'s own menu reset declares them too");
 
   // gotoScreen() clears a stale slotMsg on every screen change — the achTab precedent, not a special case.

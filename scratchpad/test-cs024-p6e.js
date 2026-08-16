@@ -21,6 +21,9 @@
 //   4. "Reset saved scores" — a second action row, its own openModal wording, clears HighScores.entries
 //      and calls HighScores.save() (never a raw removeItem). Scores ONLY — afd_achievements_v2 is
 //      untouched. game.lastScoreId is cleared so the gameover table can't highlight a dead id.
+//      ⚠ CS034 P7 put a SECOND STAGE behind this row (spec §6.5): the modal now raises a typed-confirm
+//      field, and the wipe fires only once "reset" is committed there. The row, its wording and every
+//      claim above are otherwise unchanged, so §H drives the extra stage rather than dropping.
 //
 // TRAP 1: GAME_VERSION stays "1.0.0.22" (P7 owns the bump).
 // TRAP 2: no gameplay change — no LEVERS edit, no leverState change, no new/reshaped knob.
@@ -105,7 +108,8 @@ const RETURN = [
   "game", "startGame", "nextWave", "update", "killShip",
   "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "DEBUG_OVERRIDE_ID",
   "applyDebug", "rebuildDebug", "resetAllDebug", "resetHighScores", "overridesOn",
-  "menuDebug", "menuModal", "debugSelectedVar", "debugFirstRow",
+  "menuDebug", "menuModal", "menuInput", "debugSelectedVar", "debugFirstRow",
+  "nameEntryKey", "NAME_CELLS", "NAME_GRID_COLS", "ACH_RESET_WORD",
   "saveSettings", "loadSettings",
   "leverState", "liveLevers", "payloadSlots", "worldSizeFor",
   "Achievements", "HighScores", "GAME_VERSION", "LEVERS",
@@ -144,7 +148,7 @@ function buildFrom(src, { audio = true, store = {}, exportNames = RETURN } = {})
 
 // Drive a row's confirm through the real modal machinery: select it, confirm to open the dialog,
 // move to the CONFIRM side (index 0 — CANCEL is the safe default at index 1), confirm again.
-function confirmActionRow(A, label) {
+function confirmActionRow(A, label, typed) {
   const idx = A.DEBUG_ROWS.findIndex(r => r.kind === "action" && r.label === label);
   assert(idx >= 0, `(setup) action row "${label}" exists`);
   A.game.menu.index = idx;
@@ -152,6 +156,15 @@ function confirmActionRow(A, label) {
   assert(!!A.game.menu.modal, `(setup) confirming "${label}" opens a modal`);
   A.game.menu.modal.index = 0; // CONFIRM
   A.menuModal("confirm");
+  // ⚠ CS034 P7: a row whose modal raises a typed-confirm field needs the second stage driven too.
+  if (typed) {
+    assert(A.game.menu.screen === "nameentry", `(setup) "${label}" raised the typed-confirm field`);
+    for (const ch of typed) A.nameEntryKey(ch);
+    const i = A.NAME_CELLS.indexOf("DONE");
+    A.game.menu.row = Math.floor(i / A.NAME_GRID_COLS);
+    A.game.menu.col = i % A.NAME_GRID_COLS;
+    A.menuInput("confirm");
+  }
 }
 
 let X = null, STORE = null;
@@ -403,8 +416,9 @@ const P6E_PARENT_REF = "7c4c6b3f69ab2764629996e1dd280e4896267ba4"; // "Docs for 
   const store = {};
   const A = buildFrom(scriptSrc, { store }).exports;
 
-  A.HighScores.add({ initials: "AAA", score: 500, wave: 3, delivered: 1 });
-  A.HighScores.add({ initials: "BBB", score: 300, wave: 2, delivered: 0 });
+  // ⚠ CS034 P7: add() takes a COMPLETE record assembled by the caller (spec §6.6).
+  A.HighScores.add({ name: "AAA", score: 500, wave: 3, delivered: 1 });
+  A.HighScores.add({ name: "BBB", score: 300, wave: 2, delivered: 0 });
   assert(A.HighScores.entries.length === 2, "H: (setup) two scores recorded");
   assert("afd_scores_v1" in store, "H: (setup) the scores key was written");
   A.game.lastScoreId = A.HighScores.entries[0].id;
@@ -415,7 +429,8 @@ const P6E_PARENT_REF = "7c4c6b3f69ab2764629996e1dd280e4896267ba4"; // "Docs for 
   assert(typeof achievementsBefore === "string" && achievementsBefore.length > 0,
     "H: (setup) the achievements key was written");
 
-  confirmActionRow(A, "Reset saved scores");
+  confirmActionRow(A, "Reset saved scores", A.ACH_RESET_WORD);
+  eq(A.game.menu.screen, "debug", "H: committing the typed word returns to the debug panel it came from");
 
   eq(A.HighScores.entries.length, 0, "H: HighScores.entries is emptied in memory");
   const stored = JSON.parse(store["afd_scores_v1"]);
@@ -433,6 +448,18 @@ const P6E_PARENT_REF = "7c4c6b3f69ab2764629996e1dd280e4896267ba4"; // "Docs for 
   B.game.menu.index = idxScores; B.menuDebug("confirm");
   const textScores = B.game.menu.modal.text;
   assert(textAll !== textScores, "H: the two confirmation dialogs use different wording");
+
+  // ⚠ CS034 P7: ONE STAGE IS NOT ENOUGH. Confirming the modal alone must leave the table intact.
+  const C = buildFrom(scriptSrc).exports;
+  C.HighScores.add({ name: "CCC", score: 700, wave: 4, delivered: 2 });
+  const idxC = C.DEBUG_ROWS.findIndex(r => r.kind === "action" && r.label === "Reset saved scores");
+  C.game.menu.index = idxC; C.menuDebug("confirm");
+  C.game.menu.modal.index = 0; C.menuModal("confirm");
+  eq(C.game.menu.screen, "nameentry", "H: ⛔ the modal raises the typed field, not the wipe");
+  eq(C.HighScores.entries.length, 1, "H: ⛔ ...and nothing is erased until the word is typed");
+  C.menuInput("back");   // back on an empty typed field aborts
+  eq(C.game.menu.screen, "debug", "H: backing out returns to the debug panel");
+  eq(C.HighScores.entries.length, 1, "H: ⛔ ...still unerased");
 })();
 
 // ================= (I) TRAPs =====================

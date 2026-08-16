@@ -289,14 +289,14 @@ function pressCell(X, label) {
   assert(iCode < iName, "F: ⛔ the block sits AFTER the secret-code window — a live window keeps first claim");
   assert(iDebug < iName, "F: ⛔ ...and after the debug numeric-entry hook it is modelled on");
 
-  // The gate itself, read off the source: screen, code window, rebind, modal, entry, repeat, and the
-  // two accepted key shapes.
+  // The gate itself, read off the source: screen, code window, rebind, modal, repeat, and the two
+  // accepted key shapes. (⚠ CS034 P7 removed a sixth operand, `!game.entry`, with the initials entry
+  // it guarded against — spec §6.1. Nothing else about this gate moved.)
   const gate = stripped.slice(stripped.lastIndexOf("if (", iName), iName);
   assert(/game\.menu\.screen === "nameentry"/.test(gate), 'F: ⛔ gated on screen === "nameentry"');
   assert(/!DebugCode\.armed/.test(gate), "F: ⛔ gated on !DebugCode.armed");
   assert(/!game\.menu\.rebinding/.test(gate), "F: gated on !game.menu.rebinding");
   assert(/!game\.menu\.modal/.test(gate), "F: gated on !game.menu.modal");
-  assert(/!game\.entry/.test(gate), "F: gated on !game.entry");
   assert(/!e\.repeat/.test(gate), "F: ⛔ honours e.repeat, like both surrounding handlers");
   assert(/e\.key\.length === 1/.test(gate), "F: accepts single printable characters");
   assert(/e\.key === "Backspace"/.test(gate), "F: ...and Backspace");

@@ -433,10 +433,16 @@ const DEATH_SHAKE_DECAY     = 24;   // px/s linear decay of the shake amplitude 
 const DEATH_FLASH_TIME      = 0.22; // s the white flash takes to fade from full to nothing
 const DEATH_FLASH_ALPHA     = 0.8;  // peak alpha of the frame-one white flash
 
-// v3.6 P6 — top-10 local high scores. SCORES_CHARSET is the initials-entry alphabet (up/down cycles
-// through this one string per slot); SCORES_MAX caps the persisted table. GAME_VERSION is stamped
-// into every record's `build` field (the wire shape's provenance tag — see the HighScores object).
-const SCORES_MAX = 10;
+// v3.6 P6 — local high scores. GAME_VERSION is stamped into every record's `build` field (the wire
+// shape's provenance tag — see the HighScores object).
+// CS034 P7 (§6.3): SCORES_MAX 10 -> 25. The table is still ONE shared machine-wide store; the
+// browsable screen's ALL PROFILES / THIS PROFILE toggle is a VIEW over it (⚠ SETTLED, CS031 FORK-B a).
+const SCORES_MAX = 25;
+// ⛔ CS034 P7 KEPT THIS, and its comment moved: SCORES_CHARSET is no longer the initials-entry
+// alphabet — that entry is deleted (§6.1) — it is THE NAME-ENTRY GRID ALPHABET. NAME_CELLS is
+// `SCORES_CHARSET.split("")` plus the three verb cells, so CS031 P3's profile naming AND CS034 P6's
+// typed confirm are both spelled off this one string. Deleting it takes the only pad-reachable text
+// path in the build with it.
 const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 
 // CS010 P0 — version scheme: Major.Minor.Patch.Changeset (unprefixed — no "v" in the string itself;
@@ -2897,15 +2903,16 @@ window.addEventListener("keydown", e => {
   AudioSys.init(); AudioSys.resume();
 
   // CS015 P4: hidden Debug Options secret code — consulted before the three context branches below, but
-  // ONLY on the Title screen or a paused live game (never mid-play, gameover, a rebind capture, or
-  // initials entry), so its keystrokes can't collide with those exclusive input modes. The backtick ARMS
+  // ONLY on the Title screen or a paused live game (never mid-play, gameover, or a rebind capture), so
+  // its keystrokes can't collide with those exclusive input modes. (CS034 P7: a fourth exclusion, for
+  // the initials-entry field, went with that field itself — §6.1.) The backtick ARMS
   // a capture window and is consumed (return); each later single-char key accretes into DebugCode.buf
   // (raw e.key, so case + shifted symbols like G/3/$ survive; multi-char keys — Shift/Arrow*/Enter/Esc —
   // are dropped). When the buffer's tail matches DEBUG_CODE the panel opens (openDebug from title, else
   // gotoScreen off the paused root). Non-backtick code chars fall through INERT — none are nav/confirm/
   // pause/O keys — so nothing is visible until the code lands. The window self-expires on inactivity in
   // loop(). Backtick keys are NOT preventDefault'd.
-  if (!game.menu.rebinding && !game.entry && (game.state === "title" || (game.paused && game.state === "playing"))) {
+  if (!game.menu.rebinding && (game.state === "title" || (game.paused && game.state === "playing"))) {
     if (e.key === "`") {
       DebugCode.armed = true; DebugCode.buf = ""; DebugCode.last = performance.now();
       AudioSys.secretArm();
@@ -2930,7 +2937,7 @@ window.addEventListener("keydown", e => {
   // block for the same reason. ENTER/ESC are deliberately NOT handled here: they stay on the abstract layer
   // as confirm/back, so gamepad A/B commit and cancel identically. Consumed (preventDefault + return) so
   // Backspace can't navigate the browser back and a digit can't reach branch (2)/(3).
-  if (game.menu.screen === "debug" && !DebugCode.armed && !game.menu.rebinding && !game.entry && !e.repeat &&
+  if (game.menu.screen === "debug" && !DebugCode.armed && !game.menu.rebinding && !e.repeat &&
       debugSelectedVar() && (DEBUG_ENTRY_CHARS.test(e.key) || e.key === "Backspace")) {
     e.preventDefault();
     debugEntryKey(e.key);
@@ -2953,7 +2960,7 @@ window.addEventListener("keydown", e => {
   // A text field that swallowed w/a/s/d as movement could not spell a name; the arrows and the whole pad
   // still navigate, and ESC still backs out.
   if (game.menu.screen === "nameentry" && !DebugCode.armed && !game.menu.rebinding && !game.menu.modal &&
-      !game.entry && !e.repeat && (e.key.length === 1 || e.key === "Backspace")) {
+      !e.repeat && (e.key.length === 1 || e.key === "Backspace")) {
     e.preventDefault();
     nameEntryKey(e.key);
     return;
@@ -2989,16 +2996,16 @@ window.addEventListener("keydown", e => {
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
   keys[k] = true;
 
-  // CS030 P4 (FORK-CS030-C): the achievement celebration panel owns input while it is up. This guard
-  // sits IMMEDIATELY BEFORE the initials-entry block below, and that placement IS what "panel first"
-  // means — both are armed at the same "dying"->"gameover" seam, and the panel's opaque backdrop
-  // covers entry's slots, so nothing about entry's arming or draw needed touching. The `return` is
-  // load-bearing for exactly the reason the entry block's is: without it the confirm that just
-  // dismissed the panel would fall straight through into entryInput() or startGame() in the SAME
-  // keypress. ESC resolves as "dismiss" here rather than "pause" because this returns before the
-  // openPause() guard below — the same confirm->back->pause order handleMenuKey() already uses.
-  // Mirrored in handleGamepadMenu(), at the matching position; the two share celebrationScroll() /
-  // dismissCelebration() so they cannot drift.
+  // CS030 P4 (FORK-CS030-C): the achievement celebration panel owns input while it is up. The `return`
+  // is load-bearing: without it the confirm that just dismissed the panel would fall straight through
+  // into the startGame() check below in the SAME keypress. ESC resolves as "dismiss" here rather than
+  // "pause" because this returns before the openPause() guard below — the same confirm->back->pause
+  // order handleMenuKey() already uses. Mirrored in handleGamepadMenu(), at the matching position; the
+  // two share celebrationScroll() / dismissCelebration() so they cannot drift.
+  // CS034 P7: the initials-entry block STOOD IMMEDIATELY BELOW THIS ONE, and this guard's placement
+  // ahead of it was what delivered "panel first" at the shared "dying"->"gameover" seam. The entry is
+  // deleted (§6.1); the panel is now the only thing that owns gameover input, and the ordering
+  // argument survives only as this note.
   if (game.celebration) {
     if (!e.repeat) {
       if (k === "arrowup" || k === "w") celebrationScroll(-1);
@@ -3008,24 +3015,11 @@ window.addEventListener("keydown", e => {
     return;
   }
 
-  // v3.6 P6: high-score initials entry (live only on "gameover", armed at the "dying"->"gameover"
-  // seam) intercepts nav/confirm here — and returns, so a confirm that just committed the entry
-  // (clearing game.entry) can't fall through to the startGame() check below in the SAME keypress.
-  // e.repeat guard matches the v3.5 P1 menu-nav fix (a held key must not spin the letter).
-  if (game.entry) {
-    if (!e.repeat) {
-      if (k === "arrowup" || k === "w") entryInput("up");
-      else if (k === "arrowdown" || k === "s") entryInput("down");
-      else if (k === "arrowleft" || k === "a") entryInput("left");
-      else if (k === "arrowright" || k === "d") entryInput("right");
-      else if (bindings.confirm.keys.includes(k)) entryInput("confirm");
-    }
-    return;
-  }
-
-  // THE LOAD-BEARING GUARD (v3.6 P6, §10): without `&& !game.entry`, confirm would restart the run
-  // instead of committing the initials — belt-and-suspenders alongside the early return above, in
-  // case entry-handling is ever restructured.
+  // CS034 P7 (§6.1): THE INITIALS-ENTRY INTERCEPTION BLOCK STOOD HERE, together with v3.6 P6's
+  // "load-bearing guard" — a fourth operand on each of the three lines below, which kept a confirm that
+  // had just committed the initials from restarting the run in the same keypress. There is nothing left
+  // to commit: a qualifying run's record is written outright at the "dying" -> "gameover" seam, so
+  // confirm at gameover means what it says on the footer, "play again".
   //
   // CS016 P2: these three lines are now unreachable at the TITLE — the title menu satisfies
   // menuActive(), so branch (2) intercepts and routes to menuTitle (which handles confirm/"o"/ESC/Start
@@ -3034,15 +3028,14 @@ window.addEventListener("keydown", e => {
   // deliberately left in place rather than trimmed: gameover -> pause -> Quit to Title and boot both
   // arrive at the title with a menu armed, but nothing guarantees a future state won't reach the title
   // with a null screen, and the fallback costs nothing.
-  if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover") && !game.entry) startGame();
-  if (bindings.pause.keys.includes(k) && (game.state === "playing" || game.state === "gameover") && !game.entry) openPause();
+  if (bindings.confirm.keys.includes(k) && (game.state === "title" || game.state === "gameover")) startGame();
+  if (bindings.pause.keys.includes(k) && (game.state === "playing" || game.state === "gameover")) openPause();
   // "O" opens OPTIONS directly from title/gameover (v3.0 P4 replaced the old P->options path; CS012 P4
   // FORK-CS012-C → a replaced the Options/Achievements system-menu root with Options itself). No game to
   // pause here — openPause() routes to the Options screen off game.state.
-  // Guarded off during initials entry so O can't pop the menu mid-entry.
   // CS016 P2: the title case now goes through handleMenuKey's "o" -> menuInput("options") -> menuTitle
   // instead (see there); this line still serves gameover.
-  if (k === "o" && (game.state === "title" || game.state === "gameover") && !game.entry) openPause();
+  if (k === "o" && (game.state === "title" || game.state === "gameover")) openPause();
 });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
@@ -3081,33 +3074,19 @@ function handleGamepadMenu() {
   }
 
   // (2.4) CS030 P4: the celebration panel — the MANDATORY mirror of the keydown guard. Without this
-  // half a controller player blows straight through the panel with Start and never sees it. It sits
-  // BEFORE the initials-entry block below for the same reason its keyboard twin does: both are armed
-  // at the same seam, and "panel first" (FORK-CS030-C) is delivered by input priority, so entry must
-  // not be reachable until the panel is dismissed. Edge-detected throughout (menuNavEdges is strictly
-  // edge-detected, gpPressed already excludes held-button repeats), so a held stick can't spin the
-  // scroll. Start is SWALLOWED, not acted on — same convention as the entry block below, and it is
-  // what stops Start reaching the startGame() chain at (3). Scroll/dismiss go through the same two
-  // functions the keyboard path calls.
+  // half a controller player blows straight through the panel with Start and never sees it.
+  // Edge-detected throughout (menuNavEdges is strictly edge-detected, gpPressed already excludes
+  // held-button repeats), so a held stick can't spin the scroll. Start is SWALLOWED, not acted on,
+  // which is what stops Start reaching the startGame() chain at (3). Scroll/dismiss go through the
+  // same two functions the keyboard path calls.
+  // CS034 P7 (§6.1): the initials entry's own edge-detected block STOOD AT (2.5), directly below —
+  // deleted with the entry. This guard's "sits BEFORE (2.5)" ordering argument (FORK-CS030-C, panel
+  // first) has nothing left to sit before, and survives only as this note.
   if (game.celebration) {
     const nav = menuNavEdges();
     if (nav.up)   celebrationScroll(-1);
     if (nav.down) celebrationScroll(1);
     if (pressedConfirm || pressedBack) dismissCelebration();
-    return;
-  }
-
-  // (2.5) v3.6 P6: high-score initials entry — same edge-detected latch as real menu nav
-  // (menuNavEdges is already strictly edge-detected; gpPressed(confirm) already excludes held-button
-  // repeats), so a held stick/button can't spin the letter or double-commit. Swallows Start/B too —
-  // nothing should interrupt entry — mirroring the keyboard path's early guard on "o".
-  if (game.entry) {
-    const nav = menuNavEdges();
-    if (nav.up)    entryInput("up");
-    if (nav.down)  entryInput("down");
-    if (nav.left)  entryInput("left");
-    if (nav.right) entryInput("right");
-    if (pressedConfirm) entryInput("confirm");
     return;
   }
 
@@ -3288,9 +3267,29 @@ const ACH_HINT = "↑↓ scroll    ◄► switch tab    ENTER / A  reset    ESC 
 // TRIMMED AND LOWER-CASED, so a pad player typing RESET off the uppercase-only NAME_CELLS grid and a
 // keyboard player typing "reset" clear the same gate.
 const ACH_RESET_VERB  = "RESET";                    // stage 1: the modal's confirm label
+// ⚠ CS034 P7: the three consts below now serve TWO destructive flows — the achievements reset (P6)
+// and the high-score reset (§6.5). Their `ACH_` prefix is therefore historical: the heading, the word
+// and the error belong to the TYPED-CONFIRM GATE, not to the achievements viewer. Deliberately NOT
+// renamed here — P6 owns that code this changeset, and one shared spelling of "reset" behind a legacy
+// prefix beats two copies that can drift. Proposed as an opportunistic rename in STATUS.md.
 const ACH_RESET_TITLE = "TYPE RESET TO CONFIRM";    // stage 2: the typed field's panel heading
 const ACH_RESET_WORD  = "reset";
 const ACH_RESET_ERR   = 'Type "reset" to confirm';
+// --- CS034 P7 (spec §6.3/§6.5): the browsable High Scores screen ---
+// The filter is a VIEW over the one shared machine-wide table, never a second store. `HS_FILTERS` is
+// the cycle order ◄/► walks; HS_FILTER_DEFAULT is up here (not with the renderer's geometry) for
+// ACH_TAB_DEFAULT's reason exactly — game.menu's object literals are evaluated long before the
+// renderer's consts, and a `const` referenced ahead of its definition is a TDZ throw at load.
+const HS_FILTERS = ["all", "profile"];
+const HS_FILTER_DEFAULT = "all";
+const HS_FILTER_LABEL = { all: "ALL PROFILES", profile: "THIS PROFILE" };
+// ⚠ ENTER NO LONGER LEAVES THIS SCREEN either — same shape as FLAG-CS034-a on the achievements
+// viewer, and for the same reason: the screen has no row cursor (up/down are a continuous scroll,
+// ◄► the filter), so `confirm` is the only verb a reset row could be reached by.
+const HS_HINT = "↑↓ scroll    ◄► filter    ENTER / A  reset    ESC / B  return";
+const HS_RESET_VERB   = "ERASE";   // stage 1's confirm label — the debug panel's own shipped wording
+const HS_RESET_PROMPT = "Erase every saved score? This cannot be undone.";
+const HS_RESET_LABEL  = "ENTER  Reset Saved Scores";   // the on-screen affordance (achResetLabel's sibling)
 // CS015 P1: the root/PAUSED panel's control hint, at MENU_HINT_SIZE 16, no longer fits the fixed
 // 360px panel width — hoisted to a const so drawRootMenu's width measurement and its drawMenuHint
 // call can't drift apart. ROOT_MENU_HINT_MARGIN is the side padding added to the measured text
@@ -3319,8 +3318,8 @@ const MODAL_LINE_PITCH   = 26;        // CS033 P2: extra baseline-to-baseline sp
                                        // line beyond the first (NAME_CHANGE_NOTICE is two lines) —
                                        // every other consumer's text has no "\n" and is unaffected
 // --- CS031 P3: the name-entry screen's grid (FORK-CS031-D → b, spec §4.4) ---
-// The cell list is DERIVED, never a typed-out table: every character of SCORES_CHARSET (the
-// initials-entry alphabet the build already ships, L440) followed by the three verb cells. The row
+// The cell list is DERIVED, never a typed-out table: every character of SCORES_CHARSET (the name-entry
+// grid alphabet — CS034 P7 repointed that const's own comment) followed by the three verb cells. The row
 // count follows from the cell count, so widening the charset re-flows the grid instead of overflowing
 // the panel — drawRootMenu's self-healing precedent. At 37 characters + 3 verbs over 10 columns that
 // is exactly 4 full rows today.
@@ -4411,14 +4410,37 @@ function openAchReset() {
     });
 }
 
-// High Scores viewer: read-only top-10 table. One entry point -> one back-destination, no
-// return-context tracker (like Achievements). CS016 P2 (§2, FORK-CS016-A) moves that one parent from
-// Options (where CS010 P4 §8b nested it specifically to be reachable from pause) to the TITLE MENU —
-// a deliberate reversal, signed off: the gameover screen already renders the top-10 table inline with
-// the fresh entry highlighted, which covers the end-of-run case this gives up.
+// High Scores viewer. One entry point -> one back-destination, no return-context tracker (like
+// Achievements). CS016 P2 (§2, FORK-CS016-A) moves that one parent from Options (where CS010 P4 §8b
+// nested it specifically to be reachable from pause) to the TITLE MENU — a deliberate reversal, signed
+// off: the gameover screen already renders the table inline with the fresh entry highlighted, which
+// covers the end-of-run case this gives up. Being title-only is also what makes the reset below safe
+// to reach: HighScores.save() has no debugRun/resumedRun gate to trip, and no run is live here anyway.
+// ⚠ CS034 P7: NO LONGER READ-ONLY, and `confirm` NO LONGER EXITS — the same shape FLAG-CS034-a took on
+// the achievements viewer one phase earlier, for the same structural reason. Up/down are a continuous
+// scroll and ◄► the filter, so the screen has no row cursor a reset row could be reached by; rather
+// than invent one, `confirm` becomes the verb. HS_HINT is the only warning a returning player gets and
+// was rewritten in the same edit.
 function menuHighScores(a) {
   if (a === "pause") closePause();
-  else if (a === "confirm" || a === "back") gotoScreen("titlemenu", MENU_TITLE.indexOf("High Scores"));
+  else if (a === "left")  cycleScoreFilter(-1);
+  else if (a === "right") cycleScoreFilter(1);
+  // Clamped against the SAME scoresMaxScroll() drawHighScores() renders with, so input and render can
+  // never disagree about the ceiling — achMaxScroll()'s standing contract, and its exact idiom.
+  else if (a === "up")   game.menu.scroll = Math.max(0, game.menu.scroll - ACH_SCROLL_STEP);
+  else if (a === "down") game.menu.scroll = Math.min(scoresMaxScroll(), game.menu.scroll + ACH_SCROLL_STEP);
+  else if (a === "confirm") openScoresReset("highscores", 0);
+  else if (a === "back") gotoScreen("titlemenu", MENU_TITLE.indexOf("High Scores"));
+}
+// CS034 P7 (§6.3): ◄/► through HS_FILTERS, wrapping in both directions — drawLeaderboard's window
+// cycling, and setAchTab's wrap. The scroll ALWAYS zeroes with the filter for setAchTab's reason
+// exactly: the two views are different heights, so carrying an ALL PROFILES offset into a one-row
+// THIS PROFILE view would open it scrolled into empty space.
+function cycleScoreFilter(dir) {
+  const n = HS_FILTERS.length, i = HS_FILTERS.indexOf(game.menu.hsFilter);
+  game.menu.hsFilter = HS_FILTERS[(((i < 0 ? 0 : i) + dir) % n + n) % n];
+  game.menu.scroll = 0;
+  AudioSys.ui(false);
 }
 
 // CS033 P2: the online board screen. left/right cycles the time window (LEADERBOARD_WINDOWS) and
@@ -4588,8 +4610,10 @@ function menuDebug(a) {
       if (r.label === "Dump difficulty log") dumpDifficultyLog();
       else if (r.label === "Reset all debug knobs to defaults")
         openModal("Reset all debug knobs to defaults?", "RESET", () => { resetAllDebug(); saveSettings(); });
-      else if (r.label === "Reset saved scores")
-        openModal("Erase every saved score? This cannot be undone.", "ERASE", resetHighScores);
+      // CS034 P7 (§6.5): the row STAYS and its wording is unchanged — it now routes through the same
+      // two-stage flow the High Scores screen raises, so the erase is behind a typed word from here too.
+      // backIndex is this row's own index, so cancelling or committing lands the cursor back on it.
+      else if (r.label === "Reset saved scores") openScoresReset("debug", m.index);
     }
     else if (r && r.kind === "back") debugReturn();
   }
@@ -4610,10 +4634,32 @@ function menuDebug(a) {
 // qualifies() cannot answer from stale data before a reload. Scores ONLY — afd_achievements_v2 is a
 // separate key/store and this function never touches it. Also drops any stale gameover-table highlight,
 // since the id it points at no longer exists in entries.
+// ⛔ CS034 P7: that contract is UNCHANGED. What changed is who can reach it — two callers now, both
+// behind openScoresReset()'s two stages (spec §6.5).
 function resetHighScores() {
   HighScores.entries = [];
   HighScores.save();
   game.lastScoreId = null;
+}
+// CS034 P7 (spec §6.5): the two-stage confirmation, the same one P6 built for the achievements viewer.
+//   Stage 1 — the shared modal. ⛔ openModal's `index: 1` CANCEL-by-default is untouched: that is the
+//             safety property for every destructive dialog in the build, not a tidy-up target.
+//   Stage 2 — the generalized "nameentry" typed field, under the SAME word/heading/error consts the
+//             achievements reset uses (see their block for why the ACH_ prefix is now historical).
+//             ⛔ A GAMEPAD CANNOT TYPE anywhere else in this build; generalizing that one grid is why
+//             this is a second consumer rather than a second screen.
+// `back`/`backIndex` are the caller's own return address — the debug panel restores its cursor to the
+// row the player was standing on, the High Scores screen has no cursor and passes 0.
+function openScoresReset(back, backIndex) {
+  openModal(HS_RESET_PROMPT, HS_RESET_VERB, () => {
+    // menuModal() cleared the modal BEFORE invoking this — its own documented rule, and precisely what
+    // makes it safe for the callback to navigate. openNameEntry() navigates.
+    openNameEntry({
+      mode: "confirm", back, backIndex, title: ACH_RESET_TITLE,
+      validate: buf => (String(buf == null ? "" : buf).trim().toLowerCase() === ACH_RESET_WORD ? "" : ACH_RESET_ERR),
+      onCommit: resetHighScores
+    });
+  });
 }
 function debugReturn() {
   if (game.state === "playing" || game.state === "gameover") gotoScreen("root", rootItems().indexOf("Options"));
@@ -6983,8 +7029,9 @@ const game = {
   paused: false,    // true iff a pause-menu screen is open (F8)
   deathT: 0,        // v3.6 P5: seconds left in the "dying" spectacle (DEATH_DURATION → 0 → "gameover")
   shake: 0,         // v3.6 P5: current screen-shake amplitude (px), decayed in updateDeath()
-  entry: null,      // v3.6 P6: { initials:[i,i,i], idx } while the initials-entry UI is live on "gameover"
-  lastScoreId: null,// v3.6 P6: id of the just-committed HighScores record, for the table highlight
+  // CS034 P7 (§6.1): v3.6 P6's live initials-entry state STOOD HERE. Deleted from BOTH this literal and
+  // resetRun(), per the standing "both places or neither" rule.
+  lastScoreId: null,// v3.6 P6: id of the just-written HighScores record, for the table highlight
   stats: resetGameStats(), // per-game achievement counters/flags (F9)
   toasts: [],       // active achievement-unlock toasts { name, life } (F9)
   pendingAch: [],   // CS030 P1: unlocks banked since the last celebration-panel flush
@@ -7000,7 +7047,7 @@ const game = {
   // show on a "Profile: —" title row and nothing to play as. An upgrading player (legacy data migrated
   // into p0) has firstBoot false and boots normally, exactly as before this phase.
   menu: { screen: Profiles.firstBoot ? "profiles" : "titlemenu", index: 0, row: 0, col: 0, rebinding: null, scroll: 0, modal: null, achTab: ACH_TAB_DEFAULT,
-          nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "" }, // scroll: CS013 P3, Achievements-viewer vertical offset; modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id; nameBuf/nameCtx/nameErr: CS031 P3, the name-entry screen (typed buffer / what commit does / inline validation message); slotMode/slotMsg: CS032 P3, the slots screen (caller-set save/load mode / inline write-failure message)
+          nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "", hsFilter: HS_FILTER_DEFAULT }, // scroll: CS013 P3, Achievements-viewer vertical offset (CS034 P7: the High Scores screen scrolls on the same field); modal: CS016 P3, the open confirmation dialog (null = none); achTab: CS016 P5, the viewer's active tab id; nameBuf/nameCtx/nameErr: CS031 P3, the name-entry screen (typed buffer / what commit does / inline validation message); slotMode/slotMsg: CS032 P3, the slots screen (caller-set save/load mode / inline write-failure message); hsFilter: CS034 P7, the High Scores screen's ALL PROFILES / THIS PROFILE view
   ship: new Ship(),
   camera: { x: WORLD_W / 2, y: WORLD_H / 2 }, // world point at the center of the viewport
   // CS022 P1: the world size the sim is CURRENTLY running at (WORLD_SIZE_FIELD | WORLD_SIZE_ORBIT).
@@ -7301,7 +7348,7 @@ function resetRun(wave, debugRun) {
   game.state = "playing";
   game.paused = false;
   game.deathT = 0; game.shake = 0;   // v3.6 P5: a fresh run never carries death-spectacle state over
-  game.entry = null; game.lastScoreId = null; // v3.6 P6: nor any stale initials-entry/highlight state
+  game.lastScoreId = null;           // v3.6 P6: nor any stale gameover-table highlight (CS034 P7 deleted its initials-entry sibling from both places at once)
   // CS016 P2: screen back to null — in play there is no menu (the title menu belongs to the title).
   // Confirmed correct as-is; the only entry point that now reaches here from a menu is menuTitle's
   // "Start Game", and this reset already clears it.
@@ -7311,9 +7358,9 @@ function resetRun(wave, debugRun) {
   // follows the same rule (achTabIndex() defends against a bad id anyway, but the field should never
   // BE undefined in the first place).
   // CS031 P3: nameBuf/nameCtx/nameErr are here AND in the game literal, same standing rule.
-  // CS032 P3: slotMode/slotMsg follow it too.
+  // CS032 P3: slotMode/slotMsg follow it too. CS034 P7: and hsFilter.
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null, achTab: ACH_TAB_DEFAULT,
-                nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "" }; // ensure no menu carries in
+                nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "", hsFilter: HS_FILTER_DEFAULT }; // ensure no menu carries in
   DiffLog.rows = []; // CS017 P2: dev log is per-run, never carries into a fresh game
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
@@ -8308,14 +8355,24 @@ function resetAchievements(pool) {
   Achievements.save();
 }
 
-// ---------- High Scores (v3.6 P6) ----------
-// Local top-10 table, its own localStorage key. The two other keys — settings' STORAGE_KEY
+// ---------- High Scores (v3.6 P6; reshaped for extraction CS034 P7) ----------
+// Local top-SCORES_MAX table, its own localStorage key. The two other keys — settings' STORAGE_KEY
 // ("afd_settings_v1") and Achievements.STORAGE_KEY ("afd_achievements_v2") — are FROZEN and this
 // system never reads or writes either; it reuses only the shared guarded storageOK() helper. Each
 // record is a WIRE shape a future remote leaderboard can accept verbatim, no migration: `id` is a
-// stable client-generated dedupe key, `v` versions the record independently of the store's own `v`,
-// and a `playerId`/`name` field is purely additive whenever login lands. Add fields later; never
-// rename or repurpose one.
+// stable client-generated dedupe key, `v` versions the record independently of the store's own `v`.
+// Add fields later; never rename or repurpose one.
+//
+// ⛔ CS034 P7 (spec §6.6) — THIS OBJECT READS NO GAME GLOBALS. Not `game`, not `GAME_VERSION`, not
+// `Profiles`. Its whole surface is qualifies() / add() / save() / load() / filtered(); it owns
+// sorting, capping, persistence and querying, and NOTHING else. Rendering stays in the game, on the
+// same seam kit-leaderboard already draws ("never reaches into game state, never touches the DOM,
+// never renders anything") — which is what makes a later `kit-scores` extraction a mechanical move.
+// The caller assembles a complete record (makeRunResult(), the ONE place the run's numbers are read)
+// and hands the very same object to Leaderboard.submit() as well, so the two can no longer drift.
+// ⛔ STORAGE_KEY "afd_scores_v1" is FROZEN. An extraction carries the key; it never renames it. It is
+// also NOT routed through Profiles.keyFor() — the table is one shared machine-wide store (⚠ SETTLED,
+// CS031 FORK-B a); `profileId` on a record is a stamp, and filtered() is a VIEW over the one table.
 const HighScores = {
   STORAGE_KEY: "afd_scores_v1",
   entries: [],
@@ -8332,19 +8389,30 @@ const HighScores = {
     if (score <= 0) return false;
     return this.entries.length < SCORES_MAX || score > this.entries[SCORES_MAX - 1].score;
   },
-  // Build + insert the wire-shape record for a just-committed run, then persist. Returns the record
-  // so the caller can remember its id (the gameover table's fresh-entry highlight).
-  add({ initials, score, wave, delivered }) {
-    // CS031 P1 (FORK-B a): the table stays ONE shared machine-wide store — `afd_scores_v1` is NOT
-    // routed through Profiles.keyFor(). The two stamps below are purely ADDITIVE, exactly the future
-    // playerId/name fields this module's header already reserves: append, never rename or repurpose.
-    const rec = { v: 1, id: this.makeId(), initials, score, wave, delivered, ts: Date.now(), build: GAME_VERSION,
-      profileId: Profiles.activeId, profileName: Profiles.nameOf(Profiles.activeId) };
+  // Insert a finished run's record, re-sort, cap, persist. Returns the stored record so the caller can
+  // remember its id (the gameover table's fresh-entry highlight).
+  //
+  // ⛔ CS034 P7: `record` ARRIVES COMPLETE. Every game-derived field — score, wave, the stat set, the
+  // profile stamps, the build — is assembled by makeRunResult() at the caller, because this object may
+  // not read a game global (see the header). The only three fields stamped here are the STORE's own
+  // bookkeeping, and not one of them reads anything the game owns: `v` (the record's wire version),
+  // `id` (the sync dedupe key, from this module's own makeId) and `ts`.
+  // ⛔ Assembled into a FRESH object, never onto the caller's: the same RunResult is handed to
+  // Leaderboard.submit(), and it must not pick up this store's fields on the way past.
+  add(record) {
+    const rec = Object.assign({ v: 1, id: this.makeId(), ts: Date.now() }, record);
     this.entries.push(rec);
     this.entries.sort((a, b) => b.score - a.score);
     this.entries.length = Math.min(this.entries.length, SCORES_MAX);
     this.save();
     return rec;
+  },
+  // CS034 P7 (§6.3): the browsable screen's THIS PROFILE view. A VIEW, never a store — qualifies() and
+  // add() always work the unfiltered table, so a record can't qualify differently depending on which
+  // screen was last open. A pre-CS031 record carries no profileId and therefore appears under NO
+  // profile, which is correct: it predates profiles and belongs to nobody in particular.
+  filtered(profileId) {
+    return this.entries.filter(r => r && r.profileId != null && r.profileId === profileId);
   },
 
   // --- Persistence (own key; same guarded pattern as Settings/Achievements — never crash on storage
@@ -8360,8 +8428,13 @@ const HighScores = {
       const raw = ls.getItem(this.STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
+      // ⛔ CS034 P7: the filter requires ONLY a numeric score. It used to additionally demand
+      // `typeof r.initials === "string"`, which post-P7 would have thrown away every record this build
+      // writes (new records carry `name` and no `initials`) on the very next boot — the single worst
+      // failure mode available in this phase. Legacy records keep their `initials` and still load; the
+      // renderer reads `r.name || r.initials || "—"`, so both shapes display forever.
       if (data && Array.isArray(data.entries)) {
-        this.entries = data.entries.filter(r => r && typeof r.score === "number" && typeof r.initials === "string");
+        this.entries = data.entries.filter(r => r && typeof r.score === "number");
         this.entries.sort((a, b) => b.score - a.score);
         this.entries.length = Math.min(this.entries.length, SCORES_MAX);
       }
@@ -8432,21 +8505,28 @@ const Leaderboard = {
   eligible() { return !game.debugRun && !game.resumedRun; },
   // outcome: 'died' | 'completed' | 'quit'. This game has no win condition (escalating waves forever,
   // per DIFFICULTY-LEVERS.md), so 'completed' has no call site — see STATUS.md.
-  submit(outcome) {
+  //
+  // CS034 P7 (spec §6.6): `run` is the RunResult the local table is given at the same instant, so both
+  // stores read ONE object instead of reaching into game.stats twice. It DEFAULTS to makeRunResult()
+  // rather than being required — that is not a second read path, it is the same single assembler, and
+  // it keeps quitToTitle()'s one-argument call (which has no local record to write) honest.
+  // ⛔ The four `stats` keys are the Worker's registered statsFields and are NOT changed here — only
+  // where their values come from. debris_destroyed counts what CS034 vocabulary calls Garbage
+  // Satellites; old vocabulary, frozen in already-submitted rows, deliberately not renamed server-side
+  // (CS034 §7.1/§0.1). Its value source is unchanged (game.stats.debrisKills, now via run.satelliteKills).
+  submit(outcome, run) {
     const b = this.instance();
     if (!b || !this.eligible()) return;
+    const r = run || makeRunResult();
     b.submit({
-      metric: game.score,
-      durationS: Math.round(game.stats.gameTime),
+      metric: r.score,
+      durationS: r.durationS,
       outcome,
-      // debris_destroyed counts what CS034 vocabulary calls Garbage Satellites (the thing you shoot,
-      // not the thing you tow) — old vocabulary, frozen in already-submitted rows, deliberately not
-      // renamed server-side (CS034 §7.1/§0.1). Value source is unchanged: game.stats.debrisKills.
       stats: {
-        wave_reached: game.wave,
-        canisters_delivered: game.stats.delivered,
-        saucer_kills: game.stats.saucerKills,
-        debris_destroyed: game.stats.debrisKills,
+        wave_reached: r.wave,
+        canisters_delivered: r.delivered,
+        saucer_kills: r.saucerKills,
+        debris_destroyed: r.satelliteKills,
       },
     });
   },
@@ -8481,27 +8561,37 @@ const Leaderboard = {
   },
 };
 
-// Shared dispatcher for BOTH input paths (keyboard's normal branch + gamepad's edge-detected nav)
-// driving the initials entry live on "gameover" (game.entry). Deliberately not routed through
-// menuInput/menuActive — this isn't a paused menu screen, the field keeps rendering behind it.
-function entryInput(action) {
-  const e = game.entry;
-  if (!e) return;
-  if (action === "left")       { e.idx = (e.idx + 2) % 3; AudioSys.ui(false); }
-  else if (action === "right") { e.idx = (e.idx + 1) % 3; AudioSys.ui(false); }
-  else if (action === "up")    { e.initials[e.idx] = (e.initials[e.idx] + 1) % SCORES_CHARSET.length; AudioSys.ui(false); }
-  else if (action === "down")  { e.initials[e.idx] = (e.initials[e.idx] + SCORES_CHARSET.length - 1) % SCORES_CHARSET.length; AudioSys.ui(false); }
-  else if (action === "confirm") commitEntry();
-}
-// Turn the entry's charset indices into the 3-letter record and hand it to HighScores, then clear
-// game.entry so the gameover screen falls through to the (now highlighted) table.
-function commitEntry() {
-  const e = game.entry;
-  const initials = e.initials.map(i => SCORES_CHARSET[i]).join("");
-  const rec = HighScores.add({ initials, score: game.score, wave: game.wave, delivered: game.stats.delivered });
-  game.lastScoreId = rec.id;
-  game.entry = null;
-  AudioSys.ui(true);
+// CS034 P7 (spec §6.6): THE ONE PLACE A FINISHED RUN'S NUMBERS ARE READ. The initials entry's shared
+// input dispatcher and its commit function STOOD HERE and are deleted with the field itself (§6.1).
+//
+// ⛔ ONE OBJECT, TWO CONSUMERS. The result goes to BOTH HighScores.add() (which may not read a game
+// global at all) and Leaderboard.submit(). Before this phase those two sites each reached into
+// game.stats independently and could silently drift apart; now there is a single read. Every field is
+// a plain value, so the object survives being handed across a module boundary unchanged — that is the
+// seam a future `kit-scores` extracts along.
+//
+// ⚠ `satelliteKills` is the ONE canonical CS034 identifier this codebase introduces (spec §6.2): the
+// counter it reads, `game.stats.debrisKills`, counts GARBAGE SATELLITES under the inverted build
+// vocabulary CLAUDE.md documents. The new field takes the canonical name because nothing persisted
+// uses it yet; the runtime counter keeps its own. NOT a typo, and NOT a rename to propagate.
+// ⚠ `name` and `profileName` genuinely coincide on a new record and both are spec'd. They answer
+// different questions: `name` is the DISPLAY field (it is what replaced `initials`, and the renderer
+// reads it), `profileName` is CS031's ownership stamp beside `profileId`. Both are snapshots — ⛔ a
+// later profile rename NEVER rewrites an existing record.
+function makeRunResult() {
+  const who = Profiles.nameOf(Profiles.activeId);
+  return {
+    name: who,
+    score: game.score,
+    wave: game.wave,
+    delivered: game.stats.delivered,
+    durationS: Math.round(game.stats.gameTime),
+    saucerKills: game.stats.saucerKills,
+    satelliteKills: game.stats.debrisKills,
+    build: GAME_VERSION,
+    profileId: Profiles.activeId,
+    profileName: who,
+  };
 }
 
 // Count of the four drop-powerup types used this game (Powered Up).
@@ -9356,18 +9446,24 @@ function updateDeath(dt) {
   if (game.deathT <= 0) {
     game.deathT = 0;
     game.state = "gameover";
-    Leaderboard.submit("died");   // CS033 P2: same seam as the local HighScores eligibility check below
-    // v3.6 P6: the "dying" -> "gameover" seam. Arm initials entry iff the run earned a top-10 slot;
-    // otherwise the gameover screen goes straight to the (unhighlighted) table.
-    // CS024 P6d: a debug run (game.debugRun) never offers initials entry, qualifying score or not —
-    // HighScores.add() is only ever reachable through commitEntry(), so gating the entry here is what
-    // suppresses that persistence point ("no high-score entry" — the standing suppression contract).
-    // CS032 P2 (spec §2.7, FORK-F): !game.resumedRun joins the gate as one more clause, same shape and
-    // same contract — a resumed run's final score can never be separated from the score it loaded in
-    // with, so it never enters. The HUD's "RESUMED RUN" tag is what stops the absence reading as a bug.
+    // CS034 P7 (spec §6.1/§6.6): ONE RunResult, assembled once, handed to both stores at this seam.
+    const run = makeRunResult();
+    Leaderboard.submit("died", run);   // CS033 P2: same seam as the local HighScores gate directly below
+    // The "dying" -> "gameover" seam. v3.6 P6 armed a 3-slot initials entry here; CS034 P7 deletes it
+    // and WRITES THE RECORD OUTRIGHT, named from the active profile. game.lastScoreId still marks it
+    // for the gameover table's highlight, exactly as the deleted commit function used to.
+    // ⛔ THE ELIGIBILITY GATE IS UNCHANGED — the identical pair of flags Leaderboard.eligible() reads,
+    // and CLAUDE.md requires the two be extended together. CS024 P6d: a debug run never records, its
+    // qualifying score notwithstanding (the standing suppression contract). CS032 P2 (spec §2.7,
+    // FORK-F): nor a resumed run, whose final score can never be separated from the score it loaded in
+    // with — the HUD's "RESUMED RUN" tag is what stops the absence reading as a bug.
     game.lastScoreId = null;
-    game.entry = (!game.debugRun && !game.resumedRun && HighScores.qualifies(game.score)) ? { initials: [0, 0, 0], idx: 0 } : null;
-    if (game.entry) resetMenuNav(); // a stick held through the spectacle mustn't fire a phantom first move
+    if (!game.debugRun && !game.resumedRun && HighScores.qualifies(run.score)) {
+      game.lastScoreId = HighScores.add(run).id;
+    }
+    // ⚠ v3.6 P6's resetMenuNav() STOOD HERE, for the held-stick-into-entry case. With no entry to hold
+    // a stick into, it has no consumer at this site. The celebration panel's own call, below, is a
+    // DIFFERENT call for a different reason and stays.
     // CS030 P4 (§4.4): the achievement celebration panel opens at this SAME seam. killShip()'s final
     // Achievements.evaluate() ran on the frame the ship died, so by here the bucket is complete —
     // this is a flush, never a filter. The entry arming above is deliberately untouched: with both
@@ -10909,70 +11005,150 @@ function drawAchRow(ach, x, ry, w) {
   drawText(ach.desc, x, ry + ACH_DESC_DY, 10 * ACH_SCALE, COLOR.menuIdle, "left");
 }
 
-// ---------- High Scores rendering (v3.6 P6) ----------
-// Shared top-10 table renderer — used by both the gameover screen (fresh entry highlighted in
-// COLOR.ach) and the browsable system-menu "High Scores" screen (highlightId null, nothing lit).
-// Crash-free on an empty, partial, or full HighScores.entries: a missing row just shows a bare dim
-// rank number instead of a record.
+// ---------- High Scores rendering (v3.6 P6; CS034 P7) ----------
+// THE GAMEOVER TABLE. Its five columns are UNCHANGED (spec §6.4) — only INITIALS became NAME. It shows
+// the top ten rows of a now-25-deep table (SCORES_MAX moved 10 -> 25 this phase and this renderer
+// deliberately did not follow: its layout is already tight against the GAMEOVER_HINT footer below it
+// (CS029 P2), and re-flowing that screen is a separate, un-scoped job — see STATUS.md).
+// Crash-free on an empty, partial, or full HighScores.entries: a missing row just shows a bare dim rank
+// number instead of a record.
+// ⛔ `r.name || r.initials || "—"` — a CS034 record carries `name` and no `initials`; a pre-CS034 one
+// carries `initials` and no `name`, and displays those initials forever. No migration, ever.
 // `scale` (CS010 P5, §8a) multiplies every font size, the row pitch/header offset, AND the column
-// x-offsets (bigger glyphs need wider columns). Defaults to 1 (the gameover caller, unchanged: its
-// layout is already tight against the GAMEOVER_HINT footer below it (CS029 P2), and the fresh
-// entry is already highlighted gold there, so it doesn't need the bigger type to stand out). The
-// browsable screen (drawHighScores) passes 1.8 — don't unify the two callers, the gameover table
-// has no room to grow without re-flowing that screen (a separate, un-scoped job — see STATUS.md).
+// x-offsets (bigger glyphs need wider columns). CS034 P7 leaves it in place with ONE caller passing 1:
+// the browsable screen has its own eight-column renderer now and no longer shares this one.
+const HS_GAMEOVER_ROWS = 10;   // rows the gameover table shows, independent of SCORES_MAX
+function scoreName(r) { return r && (r.name || r.initials) ? (r.name || r.initials) : "—"; }
 function drawScoreTable(cx, topY, highlightId, scale = 1) {
-  const colRank = cx - 230 * scale, colInit = cx - 170 * scale, colScore = cx + 10 * scale,
+  const colRank = cx - 230 * scale, colName = cx - 170 * scale, colScore = cx + 10 * scale,
         colWave = cx + 130 * scale, colDeliv = cx + 230 * scale;
   const fontHeader = 13 * scale, fontRow = 13 * scale, rowPitch = 18 * scale, headerOffset = 22 * scale;
   drawText("#", colRank, topY, fontHeader, COLOR.dim, "left");
-  drawText("INITIALS", colInit, topY, fontHeader, COLOR.dim, "left");
+  drawText("NAME", colName, topY, fontHeader, COLOR.dim, "left");
   drawText("SCORE", colScore, topY, fontHeader, COLOR.dim, "right");
   drawText("LEVEL", colWave, topY, fontHeader, COLOR.dim, "right");
   drawText("DELIVERED", colDeliv, topY, fontHeader, COLOR.dim, "right");
-  for (let i = 0; i < SCORES_MAX; i++) {
+  for (let i = 0; i < HS_GAMEOVER_ROWS; i++) {
     const r = HighScores.entries[i], ry = topY + headerOffset + i * rowPitch;
     if (!r) { drawText((i + 1) + ".", colRank, ry, fontRow, COLOR.dim, "left"); continue; }
     const col = r.id === highlightId ? COLOR.ach : COLOR.text;
     drawText((i + 1) + ".", colRank, ry, fontRow, col, "left");
-    drawText(r.initials, colInit, ry, fontRow, col, "left");
+    drawText(scoreName(r), colName, ry, fontRow, col, "left");
     drawText(fmtCommas(r.score), colScore, ry, fontRow, col, "right");
     drawText(String(r.wave), colWave, ry, fontRow, col, "right");
     drawText(String(r.delivered), colDeliv, ry, fontRow, col, "right");
   }
 }
 
-// Three-slot arcade initials entry, live only while game.entry is set (a top-10-qualifying run at
-// the "dying"->"gameover" seam). Deliberately not a menu screen — game.paused stays false, so the
-// field keeps rendering behind it like the rest of the (unpaused) gameover screen.
-function drawEntrySlots(cy) {
-  drawText("NEW HIGH SCORE — ENTER YOUR INITIALS", VIEW_W / 2, cy - 46, 20, COLOR.ach);
-  const e = game.entry, slotW = 70, x0 = VIEW_W / 2 - slotW;
-  for (let i = 0; i < 3; i++) {
-    const sx = x0 + i * slotW, sel = e.idx === i;
-    const ch = SCORES_CHARSET[e.initials[i]];
-    if (sel) {
-      ctx.strokeStyle = COLOR.shield; ctx.lineWidth = 2;
-      ctx.strokeRect(sx - 24, cy - 30, 48, 56);
-    }
-    drawText(ch === " " ? "_" : ch, sx, cy + 14, 40, sel ? COLOR.text : COLOR.dim);
-  }
-  drawText("↑↓ letter    ←→ move    ENTER confirm", VIEW_W / 2, cy + 60, 12, COLOR.dim);
-}
+// CS034 P7 (§6.1): the three-slot arcade initials field's renderer STOOD HERE and is deleted with the
+// field's state. The name comes from the active profile now, so there is nothing left to type.
 
-// Browsable top-10 table, nested under Options (CS010 P4 §8b) — reachable from both the system menu
-// (title/gameover -> Options -> High Scores) and the pause menu mid-game. Read-only, like
-// drawAchievements — reuses drawScoreTable with no highlight.
-// CS010 P5 (§8a): rendered at HS_TABLE_SCALE (180%) — this screen, unlike the gameover table, has no
-// competing content below it, so the panel grows to fit rather than shrinking the type. Panel/offsets
-// below are hand-computed for the 1.8 scale (header 22*1.8=39.6, pitch 18*1.8=32.4, 10 rows -> last
-// row baseline at topY+331.2); if HS_TABLE_SCALE ever changes, re-derive topY/footer/panel h by hand.
-const HS_TABLE_SCALE = 1.8;
-function drawHighScores() {
-  const { y } = menuPanel(1000, 560, "HIGH SCORES");
-  const topY = y + 120;
-  drawScoreTable(VIEW_W / 2, topY, null, HS_TABLE_SCALE);
-  drawText("ESC / B / ENTER  return", VIEW_W / 2, y + 497, 12, COLOR.dim);
+// --- The browsable "High Scores" screen (its own renderer as of CS034 P7, spec §6.4) ---
+// ⚠ FLAG-CS034-b, a DESIGN CALL SHIPPED AS THE SPEC'S BEST GUESS. This screen used to reuse
+// drawScoreTable at HS_TABLE_SCALE 1.8, whose header warned that its offsets were hand-computed for
+// that scale. Eight columns at 1.8 do not fit 1000px, so the browsable screen drops to 1.4 and every
+// number below is re-derived by hand, exactly as that warning instructs. If 1.4 reads too small at the
+// gate, the alternative is widening the panel — see STATUS.md Playtest asks.
+// ⛔ Geometry is hoisted to top-level consts (not locals) for achMaxScroll()'s reason: scoresMaxScroll()
+// is called from menuHighScores(), which has no drawing context, and MUST derive the exact numbers this
+// renderer draws with. Panel position is deterministic, so no second menuPanel() call is needed.
+const HS_TABLE_SCALE = 1.4;
+const HS_PANEL_W = 1000, HS_PANEL_H = 560;
+const HS_PANEL_X = (VIEW_W - HS_PANEL_W) / 2;      // menuPanel's own maths, mirrored (cf. ACH_PANEL_X)
+const HS_PANEL_Y = (VIEW_H - HS_PANEL_H) / 2;
+const HS_FILTER_Y = HS_PANEL_Y + 82;               // the ◄ FILTER ► line, drawLeaderboard's own position
+const HS_HEADER_Y = HS_PANEL_Y + 120;              // column-header baseline
+const HS_ROW_FONT = 13 * HS_TABLE_SCALE;           // 18.2
+const HS_ROW_PITCH = 18 * HS_TABLE_SCALE;          // 25.2
+const HS_ROW0_Y = HS_HEADER_Y + 22 * HS_TABLE_SCALE;  // first row's baseline (header offset 30.8)
+const HS_ROW_DESCENT = HS_ROW_FONT * 0.3;          // ink below a row's baseline — the descender allowance
+const HS_ROW_CLIP_TOP = HS_ROW0_Y - 22;            // headroom above row 0's ink, below the header's descent
+const HS_ROW_CLIP_BOTTOM = HS_PANEL_Y + 430;       // headroom above the ▼ cue, the reset row and the footer
+const HS_ROW_VISIBLE_H = HS_ROW_CLIP_BOTTOM - HS_ROW_CLIP_TOP;   // ~11 rows of the 25
+const HS_RESET_Y = HS_PANEL_Y + 468;               // reset-row baseline (ACH_RESET_Y's sibling)
+const HS_RESET_SIZE = 18;
+const HS_FOOTER_Y = HS_PANEL_Y + 497;              // unchanged — the leaderboard screen's own footer line
+// The rows the screen is currently showing: the whole shared table, or just the active profile's.
+// ⛔ A VIEW. qualifies()/add() never see it (spec §6.3).
+function scoreRows() {
+  return game.menu.hsFilter === "profile" ? HighScores.filtered(Profiles.activeId) : HighScores.entries;
 }
+// The screen's ONE scroll ceiling — drawHighScores() clamps with it and so does menuHighScores(), so the
+// renderer must never grow its own copy of this maths (achMaxScroll()'s standing contract).
+//
+// ⚠ MEASURED FROM THE CLIP TOP, not from row 0's baseline — celebrationMaxScroll()'s header records why:
+// achMaxScroll() measures from the baseline and so falls its own headroom short. That is invisible there
+// (16px of headroom against a 15px line); here the headroom is 22px against an 18.2px line, so at full
+// scroll the last row would sit a fifth of a line under its clip. Measured from the clip top, full
+// scroll lands the last row's lowest ink exactly on the clip bottom.
+function scoresMaxScroll() {
+  const n = scoreRows().length;
+  if (n === 0) return 0;
+  const contentH = (HS_ROW0_Y - HS_ROW_CLIP_TOP) + (n - 1) * HS_ROW_PITCH + HS_ROW_DESCENT;
+  return Math.max(0, contentH - HS_ROW_VISIBLE_H);
+}
+// Eight columns, all offsets from cx and all scaled together, so a change to HS_TABLE_SCALE re-flows
+// rather than overlapping. Widest ink per column at 1.4 (≈10.9px/char): NAME 12 chars (PROFILE_NAME_MAX),
+// SCORE 9 ("1,234,567"), TIME 7 ("1:23:45"); every other column's header out-measures its values.
+function drawHighScores() {
+  menuPanel(HS_PANEL_W, HS_PANEL_H, "HIGH SCORES");   // its {x,y} is mirrored by HS_PANEL_X/Y above
+  const cx = VIEW_W / 2, scale = HS_TABLE_SCALE;
+  drawText("◄  " + (HS_FILTER_LABEL[game.menu.hsFilter] || HS_FILTER_LABEL[HS_FILTER_DEFAULT]) + "  ►",
+    cx, HS_FILTER_Y, 16, COLOR.text);
+  const colRank = cx - 330 * scale, colName = cx - 290 * scale, colScore = cx - 100 * scale,
+        colWave = cx - 20 * scale, colTime = cx + 80 * scale, colDeliv = cx + 165 * scale,
+        colSaucers = cx + 245 * scale, colSats = cx + 335 * scale;
+  drawText("#", colRank, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "left");
+  drawText("NAME", colName, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "left");
+  drawText("SCORE", colScore, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "right");
+  drawText("LEVEL", colWave, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "right");
+  drawText("TIME", colTime, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "right");
+  drawText("DEBRIS", colDeliv, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "right");
+  drawText("SAUCERS", colSaucers, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "right");
+  drawText("SATELLITES", colSats, HS_HEADER_Y, HS_ROW_FONT, COLOR.dim, "right");
+
+  const rows = scoreRows();
+  if (!rows.length) {
+    // The THIS PROFILE view of a brand-new profile is legitimately empty, and 25 dim rank numbers read
+    // as a broken table rather than an honest "nothing here yet" — drawLeaderboard's own empty state.
+    drawText("NO SCORES YET", cx, HS_ROW0_Y + 60, 18, COLOR.dim);
+  } else {
+    // Clamp against the same ceiling menuHighScores() uses, then clip the row region so scrolled rows
+    // can never spill past the header or the chrome below (drawAchievements' idiom exactly).
+    const maxScroll = scoresMaxScroll();
+    game.menu.scroll = Math.max(0, Math.min(maxScroll, game.menu.scroll));
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(HS_PANEL_X, HS_ROW_CLIP_TOP, HS_PANEL_W, HS_ROW_VISIBLE_H);
+    ctx.clip();   // not a fill — GDD §3.2's no-fills rule gains no new exception here
+    rows.forEach((r, i) => {
+      const ry = HS_ROW0_Y + i * HS_ROW_PITCH - game.menu.scroll, col = COLOR.text;
+      // Rank is the row's position IN THE CURRENT VIEW: under ALL PROFILES that is its place in the
+      // shared table; under THIS PROFILE it is that profile's own 1..n.
+      drawText((i + 1) + ".", colRank, ry, HS_ROW_FONT, col, "left");
+      drawText(scoreName(r), colName, ry, HS_ROW_FONT, col, "left");
+      drawText(fmtCommas(r.score), colScore, ry, HS_ROW_FONT, col, "right");
+      drawText(hsCell(r.wave), colWave, ry, HS_ROW_FONT, col, "right");
+      drawText(fmtDuration(r.durationS), colTime, ry, HS_ROW_FONT, col, "right");
+      drawText(hsCell(r.delivered), colDeliv, ry, HS_ROW_FONT, col, "right");
+      drawText(hsCell(r.saucerKills), colSaucers, ry, HS_ROW_FONT, col, "right");
+      drawText(hsCell(r.satelliteKills), colSats, ry, HS_ROW_FONT, col, "right");
+    });
+    ctx.restore();
+    // Scroll affordance, drawn OUTSIDE the clip like the rest of the chrome — drawAchievements' rule.
+    if (maxScroll > 0) {
+      if (game.menu.scroll > 0)         drawText("▲", cx, HS_ROW_CLIP_TOP - 4, 16, COLOR.menuIdle, "center");
+      if (game.menu.scroll < maxScroll) drawText("▼", cx, HS_ROW_CLIP_BOTTOM + 10, 16, COLOR.menuIdle, "center");
+    }
+  }
+  // The reset affordance: ONE row, outside the clip, carrying no cursor (this screen has none) — so it
+  // renders lit rather than in the selected/idle pair. Same shape as the achievements viewer's.
+  drawText(HS_RESET_LABEL, cx, HS_RESET_Y, HS_RESET_SIZE, COLOR.text);
+  drawText(HS_HINT, cx, HS_FOOTER_Y, 12, COLOR.dim);
+}
+// A stat cell: the number, or "—" when the record predates the field (⛔ additive-only, spec §6.2 —
+// never assume the shape). fmtDuration() has its own "-" fallback and needs no wrapper.
+function hsCell(v) { return typeof v === "number" ? String(v) : "—"; }
 
 // CS033 P2: the online counterpart of drawHighScores/drawScoreTable above — same panel size and
 // footer position, so the two "scores" screens read as siblings. Crash-free the same way
@@ -11376,20 +11552,15 @@ function draw() {
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
     drawText("FINAL SCORE  " + game.score, VIEW_W/2, VIEW_H/2 + 36, 26);
-    // v3.6 P6: a qualifying run shows the 3-slot initials entry first; once committed (or immediately,
-    // for a non-qualifying run) the top-10 table takes over, fresh entry highlighted.
-    // CS030 P7 (gate G6): entry stays ARMED but its slots must not RENDER while the celebration
-    // panel is up — the panel's backdrop covers this whole block either way, so the entry branch
-    // simply waits for game.celebration to clear rather than drawing underneath it.
-    if (game.entry && !game.celebration) {
-      drawEntrySlots(VIEW_H/2 + 110);
-    } else if (!game.entry) {
-      drawScoreTable(VIEW_W/2, VIEW_H/2 + 60, game.lastScoreId);
-      // CS029 P2 (§3.2): the CS016 P2 move, applied to the one screen that never got it — the old
-      // blinking 22px play-again line and the dim 14px O-menu hint are gone, replaced by one
-      // drawMenuHint footer at GAMEOVER_HINT_SIZE (see the const block for why it's 20, not 16).
-      drawMenuHint(GAMEOVER_HINT, VIEW_W/2, GAMEOVER_HINT_Y, GAMEOVER_HINT_SIZE);
-    }
+    // CS034 P7 (§6.1): the table, UNCONDITIONALLY. v3.6 P6's two-branch "slots first, then the table"
+    // condition — and CS030 P7's gate-G6 refinement of it (`&& !game.celebration`, so the slots did not
+    // render under the panel's backdrop) — both went with the initials entry. A qualifying run's record
+    // is already written by the time this draws, so the fresh entry is simply highlighted.
+    drawScoreTable(VIEW_W/2, VIEW_H/2 + 60, game.lastScoreId);
+    // CS029 P2 (§3.2): the CS016 P2 move, applied to the one screen that never got it — the old
+    // blinking 22px play-again line and the dim 14px O-menu hint are gone, replaced by one
+    // drawMenuHint footer at GAMEOVER_HINT_SIZE (see the const block for why it's 20, not 16).
+    drawMenuHint(GAMEOVER_HINT, VIEW_W/2, GAMEOVER_HINT_Y, GAMEOVER_HINT_SIZE);
   }
 
   // CS030 P4 (§2.5/§2.7): the achievement celebration panel, an OVERLAY sharing drawMenu()'s tail

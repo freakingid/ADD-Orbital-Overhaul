@@ -135,7 +135,7 @@ const RETURN = [
   "ACH_ROW_CLIP_TOP", "ACH_ROW_CLIP_BOTTOM", "ACH_ROW_VISIBLE_H", "ACH_SCALE", "ACH_COL_X",
   "ACH_COL_W", "ACH_PANEL_Y", "ACH_LEADER_DOT", "ACH_LEADER_SIZE", "ACH_LEADER_PAD",
   "ACH_LEADER_MIN", "ACH_LEADER_MAX",
-  "Achievements", "HighScores", "COLOR", "TIER_COLOR", "FloatText",
+  "Achievements", "HighScores", "makeRunResult", "COLOR", "TIER_COLOR", "FloatText",
   "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "applyDebug", "DEBUG_OVERRIDE_ID",
   "DOCK_OFFLOAD_INTERVAL", "DELIVERY_FLOAT_ANCHOR_FRAC", "DOCK_BASE_SCORE", "DOCK_BONUS_STEP",
   "DOCK_RADIUS", "CARGO_CAP_MAX", "CHAIN_LINK", "SHIP_MAX_HP", "LEVERS", "leverState", "GAME_VERSION", "AudioSys",
@@ -182,8 +182,10 @@ const build = opts => buildFrom(scriptSrc, opts);
     "A: CS024 P7's \".23 is skipped\" tombstone comment is still at the constant");
 
   // The second consumer of the constant — a fresh high-score record stamps the new build.
-  const rec = X.HighScores.add(12345, "ABC");
-  assert(!rec || rec.build === X.GAME_VERSION, "A: a fresh HighScores.add() stamps build === GAME_VERSION, whatever it currently is");
+  // ⚠ CS034 P7 moved the stamp off add() and onto makeRunResult() — the one place a finished run's
+  // numbers are read (spec §6.6). The pin follows the stamp.
+  const rec = X.HighScores.add(X.makeRunResult());
+  assert(!rec || rec.build === X.GAME_VERSION, "A: a fresh run's record stamps build === GAME_VERSION, whatever it currently is");
 })();
 
 // ================= (B) the Q5 retune at the registry =====================

@@ -282,12 +282,13 @@ function build({ audio = true } = {}) {
   const g = A.game;
 
   // ⚠ CS034 P6 (FLAG-CS034-a): `confirm` NO LONGER EXITS THE ACHIEVEMENTS VIEWER — it opens the
-  // achievement-reset flow, so the two actions were split apart in menuAchievements(). High Scores is
-  // untouched and still leaves on either. The list below carries the exit actions PER SCREEN rather
-  // than a shared pair; Achievements' own confirm behaviour is asserted directly after this loop.
+  // achievement-reset flow, so the two actions were split apart in menuAchievements(). ⚠ CS034 P7 does
+  // the same to High Scores (spec §6.5), so BOTH screens now leave on `back` alone; each one's confirm
+  // behaviour is asserted directly after this loop. The list carries the exit actions PER SCREEN rather
+  // than a shared pair, which is what let the second screen change without re-shaping this section.
   for (const [label, screen, handler, exits] of [
     ["Achievements", "achievements", A.menuAchievements, ["back"]],
-    ["High Scores", "highscores", A.menuHighScores, ["back", "confirm"]]
+    ["High Scores", "highscores", A.menuHighScores, ["back"]]
   ]) {
     for (const action of exits) {
       A.quitToTitle();
@@ -318,6 +319,20 @@ function build({ audio = true } = {}) {
   assert(g.menu.screen === "achievements" && !g.menu.modal, "D: ...and back dismisses it without leaving");
   A.menuInput("back");
   assert(g.menu.screen === "titlemenu", "D: ...a second back still exits to the title menu");
+
+  // ⚠ CS034 P7: the same, on High Scores.
+  A.quitToTitle();
+  g.menu.index = A.MENU_TITLE.indexOf("High Scores");
+  A.menuInput("confirm");
+  assert(g.menu.screen === "highscores", "D: (setup) on the High Scores screen");
+  A.menuInput("confirm");
+  assert(g.menu.screen === "highscores" && !!g.menu.modal,
+    "D: ⚠ CS034 P7 — confirm on High Scores STAYS and opens the erase modal (it used to exit)");
+  A.menuInput("back");
+  assert(g.menu.screen === "highscores" && !g.menu.modal, "D: ...and back dismisses it without leaving");
+  A.menuInput("back");
+  assert(g.menu.screen === "titlemenu" && A.MENU_TITLE[g.menu.index] === "High Scores",
+    "D: ...a second back still exits to the title menu, cursor on its own row");
 
   // The scroll offset resets on every entry (gotoScreen does it) — a stale offset must not survive.
   A.quitToTitle();

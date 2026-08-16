@@ -222,9 +222,12 @@ function seededRun(X, wave = 12) {
   assert(store2[key2] !== undefined, "E: (teeth) ...while a normal run's save DOES reach storage");
 })();
 
-// ================= (F) ⛔ no initials entry at game over after a resume =============================
+// ================= (F) ⛔ no high-score record at game over after a resume ==========================
 (function sectionF() {
-  console.log("(F) ⛔ a resumed run never arms the initials-entry screen, qualifying score or not");
+  // ⚠ CS034 P7 deleted the initials-entry screen this gate used to arm (spec §6.1). The GATE is
+  // byte-unchanged and so is the contract; what it now suppresses is the record write itself, which is
+  // one indirection fewer and exactly what "no high-score entry" always meant.
+  console.log("(F) ⛔ a resumed run never enters the high-score table, qualifying score or not");
   const X = buildGame({ store: {} });
   seededRun(X);
   X.resumeFromSave(X.buildSaveEntry());
@@ -236,7 +239,8 @@ function seededRun(X, wave = 12) {
   eq(X.game.state, "dying", "F: (setup) killShip() entered the dying spectacle");
   for (let i = 0; i < 2000 && X.game.state !== "gameover"; i++) X.update(0.05);
   eq(X.game.state, "gameover", "F: (setup) the run reached gameover");
-  eq(X.game.entry, null, "F: ⛔ game.entry is null — a resumed run cannot enter the high-score table");
+  eq(X.HighScores.entries.length, 0, "F: ⛔ the table is empty — a resumed run cannot enter it");
+  eq(X.game.lastScoreId, null, "F: ⛔ ...and nothing is marked for the gameover table's highlight");
 
   // TEETH — the same score on a run that was never resumed DOES arm it.
   const Y = buildGame({ store: {} });
@@ -245,7 +249,7 @@ function seededRun(X, wave = 12) {
   Y.killShip();
   for (let i = 0; i < 2000 && Y.game.state !== "gameover"; i++) Y.update(0.05);
   eq(Y.game.state, "gameover", "F: (teeth setup) reached gameover");
-  assert(Y.game.entry !== null, "F: (teeth) ...and a non-resumed run with the same score DOES arm entry");
+  eq(Y.HighScores.entries.length, 1, "F: (teeth) ...and a non-resumed run with the same score DOES enter");
 })();
 
 // ================= (G) the HUD tell ================================================================
@@ -411,8 +415,10 @@ function seededRun(X, wave = 12) {
   assert(stripped.includes("if (game.debugRun || game.resumedRun) return;"),
     "M: ⛔ Achievements.save() gates on both flags");
   eq(countOf(stripped, "if (game.debugRun) return;"), 0, "M: ...and the single-flag form is gone");
-  assert(stripped.includes("!game.debugRun && !game.resumedRun && HighScores.qualifies(game.score)"),
-    "M: ⛔ the initials-entry arm gates on both flags");
+  // ⚠ CS034 P7: the gate is byte-identical apart from reading the RunResult's own score instead of
+  // game.score — the record is written outright at this seam now, with no entry screen in between.
+  assert(stripped.includes("!game.debugRun && !game.resumedRun && HighScores.qualifies(run.score)"),
+    "M: ⛔ the high-score write gates on both flags");
 
   // The HUD tell — an else-if on the existing tag's own line, mutually exclusive by construction.
   assert(/if \(game\.debugRun\) drawText\("DEBUG RUN", VIEW_W \/ 2, 18, 14, COLOR\.dim, "center"\);\s*else if \(game\.resumedRun\) drawText\("RESUMED RUN", VIEW_W \/ 2, 18, 14, COLOR\.dim, "center"\);/.test(stripped),

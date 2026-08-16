@@ -128,7 +128,7 @@ function makeCtxStub() {
 }
 
 const RETURN = ["game", "startGame", "update", "draw", "nextWave", "drawLevelBanner", "drawCaption",
-  "VoiceSys", "AudioSys", "settings", "Capture", "HighScores",
+  "VoiceSys", "AudioSys", "settings", "Capture", "HighScores", "makeRunResult",
   "VOICE_CRITICAL", "VOICE_STILL_TRUE", "VOICE_QUEUE_MAX", "VOICE_PRIORITY",
   "LEVEL_BANNER_TIME", "LEVEL_BANNER_FADE", "LEVEL_BANNER_SIZE", "LEVEL_BANNER_Y",
   "DEBUG", "DEBUG_ENTRIES", "LEVERS", "leverState", "GAME_VERSION", "VIEW_W", "VIEW_H",
@@ -194,9 +194,11 @@ function quiet(X) {
 
   // A fresh high-score record stamps the new build (the second consumer of the constant).
   if (X.HighScores && typeof X.HighScores.add === "function") {
-    const rec = X.HighScores.add(12345, "ABC");
+    // ⚠ CS034 P7 moved the stamp: HighScores.add() may no longer read a game global (spec §6.6), so
+    // makeRunResult() — the one assembler — puts GAME_VERSION on the record and add() stores it.
+    const rec = X.HighScores.add(X.makeRunResult());
     // Same flip: the CLAIM is that the stamp FOLLOWS the constant, not that it holds any one literal.
-    assert(!rec || rec.build === X.GAME_VERSION, "A: a fresh HighScores.add() stamps build === GAME_VERSION, whatever it currently is");
+    assert(!rec || rec.build === X.GAME_VERSION, "A: a fresh run's record stamps build === GAME_VERSION, whatever it currently is");
   } else {
     assert(true, "A: (HighScores.add not exported here — test-cs010-p0.js owns that pin)");
   }

@@ -14,8 +14,9 @@
 //      exactly DEBUG.startLevel) and sets a STICKY game.debugRun = DEBUG.startLevel > 1, read once at
 //      that instant and never again for the rest of the run.
 //   3. Three persistence points are gated on game.debugRun, in-memory counters untouched:
-//        - HighScores: the initials-entry screen (game.entry) never arms on a debug run, so
-//          HighScores.add() — reachable only through commitEntry() — is never called.
+//        - HighScores: the "dying" -> "gameover" seam's eligibility gate refuses a debug run, so
+//          HighScores.add() is never called (⚠ CS034 P7 deleted the initials-entry screen that gate
+//          used to arm; the gate itself is byte-unchanged and the record is now written outright).
 //        - Achievements.save(): a single choke point (onUnlock's commit AND tick's periodic
 //          lifetime-stats flush both funnel through it) no-ops on a debug run.
 //   4. startLevel === 1 is byte-identical to HEAD in every respect (TRAP 2).
@@ -197,15 +198,18 @@ let X = null, STORE = null, CALLS = null;
   A.startGame();
   assert(A.game.debugRun, "D: (setup) debug run armed");
 
-  // High score entry: force a huge qualifying score, kill the ship through the real killShip() (which
-  // enters the "dying" spectacle), then drive updateDeath() via update() to "gameover", and assert
-  // game.entry never arms.
+  // High score: force a huge qualifying score, kill the ship through the real killShip() (which enters
+  // the "dying" spectacle), then drive updateDeath() via update() to "gameover", and assert no record
+  // was written. ⚠ CS034 P7: the observable moved from "the entry screen never armed" to "the table
+  // never grew" — same gate, one fewer indirection.
+  A.HighScores.entries = [];
   A.game.score = 999999999;
   A.killShip();
   eq(A.game.state, "dying", "D: (setup) killShip() entered the dying spectacle");
   for (let i = 0; i < 2000 && A.game.state !== "gameover"; i++) A.update(0.05);
   eq(A.game.state, "gameover", "D: (setup) the run actually reached gameover");
-  eq(A.game.entry, null, "D: a qualifying score on a debug run never arms the initials-entry screen");
+  eq(A.HighScores.entries.length, 0, "D: a qualifying score on a debug run never enters the local table");
+  eq(A.game.lastScoreId, null, "D: ...and nothing is marked for the gameover table's highlight");
 
   // Achievement unlock + lifetime-stats save: force an unlock-worthy state and evaluate, then assert
   // nothing landed in the stub localStorage under Achievements' key.
@@ -229,12 +233,14 @@ let X = null, STORE = null, CALLS = null;
   A.startGame();
   assert(!A.game.debugRun, "E: (setup) not a debug run");
 
+  A.HighScores.entries = [];
   A.game.score = 999999999;
   A.killShip();
   eq(A.game.state, "dying", "E: (setup) killShip() entered the dying spectacle");
   for (let i = 0; i < 2000 && A.game.state !== "gameover"; i++) A.update(0.05);
   eq(A.game.state, "gameover", "E: (setup) the run actually reached gameover");
-  assert(A.game.entry !== null, "E: a qualifying score on a real run DOES arm the initials-entry screen");
+  eq(A.HighScores.entries.length, 1, "E: a qualifying score on a real run DOES enter the local table");
+  assert(A.game.lastScoreId === A.HighScores.entries[0].id, "E: ...and is marked for the gameover highlight");
 
   built.setCalls.length = 0;
   A.Achievements.lifetime.hunterKills = 999999;

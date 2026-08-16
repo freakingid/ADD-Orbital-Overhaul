@@ -340,14 +340,21 @@ const roster = (lastUsed, ids, seq) => JSON.stringify({
     profiles: [{ id: "p5", name: "E" }] }) } });
   eq(lowSeq.Profiles.seq, 6, "F: ⛔ a stored seq below what the roster already uses is raised, never trusted down");
 
-  // The score record carries the active profile, additively.
+  // The score record carries the active profile, additively. ⚠ CS034 P7 moved WHERE the two stamps are
+  // applied — HighScores.add() may no longer read Profiles at all (spec §6.6), so makeRunResult()
+  // assembles them and add() stores what it is handed. The CLAIM is unchanged: a record carries the
+  // active profile, and every pre-existing field survives.
   const H = buildGame({ store: { afd_profiles_v1: roster("p1", ["p0", "p1"], 2) } });
-  const rec = H.HighScores.add({ initials: "ABC", score: 100, wave: 2, delivered: 3 });
+  const rec = H.HighScores.add(H.makeRunResult());
   eq(rec.profileId, "p1", "F: a high-score record stamps the active profile id");
   eq(rec.profileName, "PLAYER 2", "F: ...and its name");
-  for (const f of ["v", "id", "initials", "score", "wave", "delivered", "ts", "build"]) {
+  for (const f of ["v", "id", "score", "wave", "delivered", "ts", "build"]) {
     assert(f in rec, `F: ⛔ the pre-existing field '${f}' survives — the stamp is purely additive`);
   }
+  // ⚠ `initials` is deliberately NOT in that list any more: CS034 P7 replaced it with `name` on new
+  // records and left it untouched on old ones (spec §6.2), which is the opposite of a rename.
+  assert(!("initials" in rec) && "name" in rec,
+    "F: ⚠ CS034 P7 — a NEW record carries `name`, not `initials`");
 })();
 
 // ================= (G) scope pin ================================================================

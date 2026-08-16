@@ -780,7 +780,9 @@ let X = null;
     // NARROWED AGAIN BY CS032 P3 — the slots screen adds two more CS016-P3-rule fields to the SAME
     // wrapped line (`slotMode` / `slotMsg`), so the pattern is widened to still anchor on every field
     // by name rather than loosened into a wildcard — a sixth field would still fail this trap.
-    const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "" \};/, " };");
+    // NARROWED AGAIN BY CS034 P7 — `hsFilter`, the High Scores screen's view state, is a seventh field
+    // on that same line. Same treatment: anchored by name, so an eighth still fails.
+    const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "", hsFilter: HS_FILTER_DEFAULT \};/, " };");
     // ⛔ REPOINTED BY CS032 P2 — THE RESET LIST MOVED, WHOLE AND UNEDITED, out of startGame() and into a
     // new shared `resetRun(wave, debugRun)` that resumeFromSave() calls too (CS032 spec Risk 5: ONE
     // reset list, never a hand-copied second, because a duplicated list is a drift generator). What this
@@ -793,13 +795,18 @@ let X = null;
     //   2. the two `DEBUG.startLevel` seeds became the parameters. startGame() hands back the identical
     //      two expressions, so nothing is lost — test-cs032-p2.js §M pins that call literally;
     //   3. `nextWave()` left the list for the two callers — also pinned, literally, in that same §M.
+    // NARROWED AGAIN BY CS034 P7 — the initials entry is DELETED (spec §6.1), so its reset leaves this
+    // list. That is a REMOVAL from an existing line rather than an added one, which DROPPED_LINES cannot
+    // express either; restore it by name, exactly as foldMenuReset restores an edited line. Any other
+    // change to that line still fails this trap.
     const foldResetRun = t => t
+      .replace(/^  game\.lastScoreId = null;\s*$/m, "  game.entry = null; game.lastScoreId = null;")
       .replace("function resetRun(wave, debugRun) {", "function startGame() {")
       .replace("  game.debugRun = debugRun;", "  game.debugRun = DEBUG.startLevel > 1;")
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, and CS033 P2's Leaderboard.beginRun() call");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, and CS034 P7's deleted initials-entry reset + hsFilter menu field");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

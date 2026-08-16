@@ -25,8 +25,11 @@
 //  (H) title-path regression: openPause() from title still lands directly on "options" (no PAUSE root
 //      involved) — unchanged. CS016 P2: Back from there now returns to the title's OWN menu (screen
 //      "titlemenu", game.paused cleared) instead of nulling the screen.
-//  (I) entry-guard: with game.entry live at gameover, the "o" keydown opener is a no-op (the existing
-//      !game.entry guard already covers the new root path — no code change needed, asserted here).
+//  (I) exclusive-mode guard: with the celebration panel up at gameover, the "o" keydown opener is a
+//      no-op. ⚠ CS034 P7 REPOINTED THIS SECTION. It was written against the initials entry
+//      (FLAG-CS013-1a), which is deleted; the panel is the surviving exclusive mode armed at the same
+//      "dying" -> "gameover" seam, its guard returns from the same place, and the trap is identical —
+//      the new root path must not be reachable out from under it.
 //  (J) headless no-crash: AudioSys.ctx null -> startGame()/update(1/60) plus a full gameover
 //      open/Options/Play-Again and open/Quit-to-Title cycle never throw.
 
@@ -77,8 +80,8 @@ const RETURN = [
 
 // Returns the eval'd instance PLUS a `keydown(key, repeat)` test helper wired to the real
 // window.addEventListener("keydown", ...) listener — needed for section (I), which exercises the
-// actual "o"-opener guard (`!game.entry`), not just the openPause()/menuInput() call surface the other
-// sections drive directly.
+// actual "o"-opener guard, not just the openPause()/menuInput() call surface the other sections drive
+// directly.
 function buildInstance(lsStore) {
   lsStore = lsStore || {};
   const listeners = {};
@@ -173,7 +176,9 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(A.game.state === "playing", "E: Play Again moves game.state to \"playing\"");
   assert(A.game.paused === false && A.game.menu.screen === null, "E: the overlay is closed after Play Again");
   assert(A.game.score === 0, "E: Play Again is a real startGame() — score reset to 0, not just closed");
-  assert(A.game.entry === null, "E: no stale initials-entry state carries into the fresh run");
+  // ⚠ CS034 P7: the initials-entry field this line used to check is deleted; game.lastScoreId is its
+  // surviving sibling on the same reset line, and a stale one would light a row of the fresh table.
+  assert(A.game.lastScoreId === null, "E: no stale gameover-table highlight carries into the fresh run");
 })();
 
 // ================= (F) gameover: Options -> Back -> root -> Back -> close =====================
@@ -229,18 +234,18 @@ const eqJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(A.game.state === "title", "H: closing returns to the underlying title screen");
 })();
 
-// ================= (I) entry-guard: the "o" opener is a no-op during initials entry =====================
+// ================= (I) exclusive-mode guard: the "o" opener is a no-op under the panel ==============
 (function () {
-  console.log("(I) FLAG-CS013-1a: game.entry live at gameover -> \"o\" keydown does NOT open the new root");
+  console.log("(I) FLAG-CS013-1a, repointed: the celebration panel up at gameover -> \"o\" does NOT open the root");
   const A = buildInstance();
   A.startGame(); A.game.state = "gameover"; A.game.paused = false;
-  A.game.entry = { initials: [0, 0, 0], idx: 0 }; // simulate a qualifying run mid-initials-entry
+  A.game.celebration = { items: [{ name: "X", desc: "y" }], scroll: 0, resume: null }; // the panel's own open shape
   A.keydown("o");
-  assert(A.game.paused === false, "I: the \"o\" opener is a no-op while game.entry is live (!game.entry guard, unchanged by CS013 P1)");
-  assert(A.game.menu.screen === null, "I: no menu screen opened during entry");
-  A.game.entry = null; // clear entry the normal way (commit), THEN the same key should open the root
+  assert(A.game.paused === false, "I: the \"o\" opener is a no-op while an exclusive gameover mode owns input");
+  assert(A.game.menu.screen === null, "I: no menu screen opened underneath it");
+  A.game.celebration = null; // dismissed the normal way, THEN the same key should open the root
   A.keydown("o");
-  assert(A.game.paused === true && A.game.menu.screen === "root", "I: once entry clears, \"o\" opens the gameover root normally");
+  assert(A.game.paused === true && A.game.menu.screen === "root", "I: once it clears, \"o\" opens the gameover root normally");
 })();
 
 // ================= (J) headless no-crash with AudioSys.ctx null =====================

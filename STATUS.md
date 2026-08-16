@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS034 · Phase: P6 · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P7 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS034
 
@@ -73,10 +73,28 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P6 · Registry: 87 · Levers: 18
   shared confirm/back branch and were updated: `test-cs016-p2.js` §D and `test-cs016-p5.js` §H. Suite:
   134/134 on a full clone (`test-cs034-p6.js`, new this phase).
 
+- P7 — Local high scores reworked per `PLANNED-FEATURES-CS034.md` §6. **The 3-slot initials entry is
+  DELETED** (`game.entry` from both places, its dispatcher/commit/renderer, both input handlers' blocks,
+  all seven guards); a qualifying run's record is written outright at the "dying"→"gameover" seam, named
+  from `Profiles.nameOf(activeId)`, `game.lastScoreId` unchanged in role, eligibility gate byte-unchanged.
+  `SCORES_CHARSET` KEPT (`NAME_CELLS` derives from it), comment repointed. Records are additive: new ones
+  carry `name` + `durationS`/`saucerKills`/`satelliteKills` and no `initials`; `load()`'s filter dropped
+  its `initials` clause (numeric score only) so legacy and new rows both survive. `HighScores` reads **no
+  game global** — `add(record)` takes a complete plain object and stamps only `v`/`id`/`ts`; one
+  `makeRunResult()` feeds both it and `Leaderboard.submit(outcome, run)`. `SCORES_MAX` 10 → 25; the
+  browsable screen gains an ALL PROFILES / THIS PROFILE ◄► view over the still-shared table
+  (`HighScores.filtered()`; `qualifies()`/`add()` never see it), its own eight-column renderer at
+  `HS_TABLE_SCALE` **1.4** (⚠ FLAG-CS034-b) and `ACH_SCROLL_STEP` scrolling clamped by one
+  `scoresMaxScroll()` measured from the clip top. `resetHighScores()` now sits behind P6's two-stage
+  confirm (`openScoresReset()`), reached from the screen's ENTER and from the unchanged debug row —
+  ⚠ so ENTER no longer leaves that screen, the shape FLAG-CS034-a took one phase earlier. Suite: 135/135
+  on a full clone (`test-cs034-p7.js`, new this phase); 17 pre-existing files carried stale assertions
+  about the deleted subsystem and were updated (see Known issues).
+
 ## Working / verified
 
-- Full suite on a full clone: **134 files, 134 passed, 0 failed, 0 skipped, 0 timed out.** (133 →
-  134: `test-cs034-p6.js`, new this phase.)
+- Full suite on a full clone: **135 files, 135 passed, 0 failed, 0 skipped, 0 timed out.** (134 →
+  135: `test-cs034-p7.js`, new this phase.)
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
 - `player_id` mint/backfill/never-regenerate verified directly (`test-cs033-p1.js`): a profile
   loaded from a pre-CS033 blob is backfilled on boot, and a second boot from that same store reuses
@@ -95,6 +113,23 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P6 · Registry: 87 · Levers: 18
 
 ## Known issues
 
+- **Seventeen pre-existing suite files were updated for CS034 P7's deletions**, all of them asserting the
+  initials entry or `add()`'s old partial-record signature: `test-cs010-p0`, `test-cs010-p5`,
+  `test-cs013-p1`, `test-cs016-p2`, `test-cs024-p6d`, `test-cs024-p6e`, `test-cs025-p5`, `test-cs026-p3`,
+  `test-cs026-p6`, `test-cs029-p2`, `test-cs030-p4`, `test-cs031-p1`, `test-cs031-p3`, `test-cs032-p2`,
+  `test-cs032-p3`, `test-v36-scores`, `test-v36-death`. Three were **repointed rather than deleted**,
+  each named in place: `test-cs013-p1` §I and `test-cs029-p2` §A now aim their exclusive-mode guard at
+  the celebration panel (the surviving mode armed at the same seam), and `test-cs030-p4` §G's gameover
+  byte-identity pin became a "every surviving parent line, in order, and nothing added" pin — a
+  byte-identity claim cannot survive an instructed deletion that re-indents the block.
+- **`openAchReset()` (P6) and `openScoresReset()` (P7) are near-identical two-stage openers.**
+  P7 deliberately did NOT extract the shared opener: the phase prompt's DO NOT list says achievements
+  are P6's, and CLAUDE.md rule 7 says propose a refactor rather than take it. The one thing that could
+  really drift — the typed word, its heading and its error message — is already shared
+  (`ACH_RESET_WORD`/`_TITLE`/`_ERR`), so what is duplicated is the five-line openModal→openNameEntry
+  chain. **Proposed:** extract `openTypedReset(prompt, verb, back, backIndex, onReset)` and rename those
+  three consts to `CONFIRM_RESET_*` (their `ACH_` prefix is now historical — they serve both flows).
+  Costs three identifier updates in `test-cs034-p6.js`.
 - **`blankLegacyStores()` calls `Achievements.save()` unguarded — the same latent hole CS034 P6's reset
   had to design around, and it is NOT fixed this changeset** (spec §5.2). `save()` early-returns on
   `game.debugRun || game.resumedRun`, so a call made during a resumed run clears memory and never
@@ -152,6 +187,19 @@ None.
 
 ## Playtest asks (open only — answered ones move to the log)
 
+- **⚠ FLAG-CS034-b (GATE B) — the browsable High Scores screen dropped to `HS_TABLE_SCALE` 1.4.**
+  Eight columns (`# NAME SCORE LEVEL TIME DEBRIS SAUCERS SATELLITES`) do not fit 1000 px at the shipped
+  1.8, and that const's header warns its offsets are hand-computed for whatever scale it holds. Shipped
+  as the spec's own best guess: 1.4, with every column offset, the clip band, the reset row and the
+  footer re-derived by hand. **Does 1.4 read too small in the browser?** The alternative is widening the
+  panel past 1000×560, which would stop it reading as the leaderboard screen's sibling. Worth looking at
+  in the same pass: the ~11-of-25 visible rows and whether the ▲/▼ cues are enough to advertise the
+  scroll; the `NO SCORES YET` empty state under THIS PROFILE on a fresh profile; and whether ranks
+  numbered 1..n *within* the filtered view (rather than their place in the shared table) read right.
+  **Second, same screen:** ENTER now raises the erase confirmation instead of returning — the same
+  change FLAG-CS034-a made on the Achievements viewer, and it has the same shipped-muscle-memory cost.
+  `HS_HINT` is the only warning. If one of the two screens should keep ENTER-to-return, they should
+  probably both keep it.
 - **⚠ FLAG-CS034-a (GATE B) — ENTER no longer leaves the Achievements viewer.** `menuAchievements()`
   handled `confirm` and `back` in one shared branch from CS012 P4 until CS034 P6; both left the screen,
   so ENTER-to-return is shipped muscle memory. The screen has **no row cursor** (up/down are a

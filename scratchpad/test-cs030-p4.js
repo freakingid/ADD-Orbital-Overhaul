@@ -13,7 +13,7 @@
 // (B) the seam: N banked unlocks open the panel with N items at scroll 0; zero unlocks open
 // nothing. (C) scroll, clamped against celebrationMaxScroll(), on BOTH handlers, with the repeat/
 // edge guards. (D) confirm and back dismiss at ANY scroll position, on BOTH handlers. (E) input
-// priority: a confirm reaches neither startGame() nor entryInput() while the panel is up, on BOTH
+// priority: a confirm does not reach startGame() while the panel is up, on BOTH
 // handlers — and entry becomes reachable after dismissal. (F) game.menu.scroll is neither read nor
 // written by any celebration path (behavioural + source). (G) TRAPs: the gameover draw block is
 // byte-identical to the parent's; scope pin.
@@ -222,7 +222,7 @@ function fakeItems(n) {
   // the final clamp is a real clamp rather than an exact landing).
   const X = build();
   freshRun(X);
-  X.game.state = "gameover"; X.game.entry = null;
+  X.game.state = "gameover";
   X.game.celebration = { items: fakeItems(12), scroll: 0 };
   const max = X.celebrationMaxScroll();
   assert(max > step, `C: (setup) 12 rows overflow the clip region — maxScroll ${max} > one step ${step}`);
@@ -284,7 +284,7 @@ function fakeItems(n) {
   // Gamepad mirror: D-Pad up/down, edge-detected.
   const Y = build();
   freshRun(Y);
-  Y.game.state = "gameover"; Y.game.entry = null;
+  Y.game.state = "gameover";
   Y.game.celebration = { items: fakeItems(12), scroll: 0 };
   Y.padPress(Y.GP.DPAD_DOWN);
   eq(Y.game.celebration.scroll, step, "C: ⛔ gamepad D-Pad ↓ scrolls down one step");
@@ -310,7 +310,7 @@ function fakeItems(n) {
   for (const key of ["Enter", "Escape"]) {
     const X = build();
     freshRun(X);
-    X.game.state = "gameover"; X.game.entry = null;
+    X.game.state = "gameover";
     for (const pos of positions(X)) {
       X.game.celebration = { items: fakeItems(12), scroll: pos };
       X.keydown(key);
@@ -322,7 +322,7 @@ function fakeItems(n) {
   for (const btn of ["A", "B"]) {
     const X = build();
     freshRun(X);
-    X.game.state = "gameover"; X.game.entry = null;
+    X.game.state = "gameover";
     for (const pos of positions(X)) {
       X.game.celebration = { items: fakeItems(12), scroll: pos };
       X.padPress(X.GP[btn]);
@@ -332,34 +332,34 @@ function fakeItems(n) {
   }
 })();
 
-// ================= (E) input priority: neither startGame() nor entryInput() is reachable ==========
+// ================= (E) input priority: startGame() is not reachable while the panel is up =========
 (function sectionE() {
-  console.log("(E) FORK-CS030-C: while the panel is up, a confirm reaches neither startGame() nor entryInput()");
+  console.log("(E) FORK-CS030-C: while the panel is up, a confirm does not reach startGame()");
+  // ⚠ CS034 P7 NARROWED THIS SECTION. It used to prove the panel outranked TWO things at this seam —
+  // startGame() and the initials entry's own dispatcher. The entry is deleted (spec §6.1) and its
+  // record is written outright before this screen ever draws, so what is left to outrank is
+  // startGame(). The sequence lost one step (dismiss, THEN play again) and nothing else.
 
-  // Keyboard. A qualifying run arms game.entry at the same seam, so both are live on frame one.
+  // Keyboard.
   const X = build();
   freshRun(X, 12345);
   for (const k of Object.keys(X.game.stats)) if (typeof X.game.stats[k] === "number") X.game.stats[k] = 1e6;
   X.killShip();
   toGameover(X);
   assert(X.game.celebration !== null, "E: (setup) the panel is up");
-  assert(X.game.entry !== null, "E: ⛔ a qualifying run STILL arms game.entry — the panel does not suppress it");
-  const entryRef = X.game.entry;
-  const initialsBefore = entryRef.initials.join(",");
+  // ⚠ CS034 P7: the record is ALREADY banked by the time the panel opens — both happen at the same
+  // seam, and the write no longer waits on any input.
+  assert(X.game.lastScoreId !== null, "E: ⛔ a qualifying run's record is already written at the seam");
+  const bankedId = X.game.lastScoreId, bankedRows = X.HighScores.entries.length;
 
   X.keydown("Enter");
   assert(X.game.celebration === null, "E: the confirm dismissed the panel");
   eq(X.game.state, "gameover", "E: ⛔ ...and did NOT reach startGame() (state is still gameover)");
-  assert(X.game.entry === entryRef, "E: ⛔ ...and did NOT reach entryInput() (game.entry is the same, uncommitted object)");
-  eq(X.game.entry ? X.game.entry.initials.join(",") : null, initialsBefore, "E: ...with its initials untouched");
-  eq(X.game.lastScoreId, null, "E: ...and no high-score record was committed");
+  eq(X.game.lastScoreId, bankedId, "E: ⛔ ...and committed nothing further — there is nothing left to commit");
+  eq(X.HighScores.entries.length, bankedRows, "E: ...the table did not grow on a dismissal");
 
-  X.keydown("Enter");   // now that the panel is gone, THIS one belongs to the entry
-  assert(X.game.entry === null, "E: ⛔ entry becomes reachable once the panel is dismissed — the next confirm commits it");
-  assert(X.game.lastScoreId !== null, "E: ...and the record landed");
-  eq(X.game.state, "gameover", "E: ...still not a new game");
   X.keydown("Enter");   // and only now does confirm mean "play again"
-  eq(X.game.state, "playing", "E: ...a third confirm finally starts a new game");
+  eq(X.game.state, "playing", "E: ...a second confirm finally starts a new game");
 
   // Gamepad. Same sequence through handleGamepadMenu(), including Start, which the panel swallows.
   const Y = build();
@@ -367,22 +367,16 @@ function fakeItems(n) {
   for (const k of Object.keys(Y.game.stats)) if (typeof Y.game.stats[k] === "number") Y.game.stats[k] = 1e6;
   Y.killShip();
   toGameover(Y);
-  assert(Y.game.celebration !== null && Y.game.entry !== null, "E: (setup) pad run has both panel and entry armed");
-  const padEntryRef = Y.game.entry;
+  assert(Y.game.celebration !== null, "E: (setup) the pad run's panel is up");
 
   Y.padPress(Y.GP.START);
   eq(Y.game.state, "gameover", "E: ⛔ Start is SWALLOWED by the panel — it does not reach startGame()");
   assert(Y.game.celebration !== null, "E: ...and does not dismiss the panel either");
-  assert(Y.game.entry === padEntryRef, "E: ...nor reach entryInput()");
 
   Y.padPress(Y.GP.A);
   assert(Y.game.celebration === null, "E: the pad confirm dismissed the panel");
   eq(Y.game.state, "gameover", "E: ⛔ ...and did NOT reach startGame()");
-  assert(Y.game.entry === padEntryRef, "E: ⛔ ...and did NOT reach entryInput()");
 
-  Y.padPress(Y.GP.A);
-  assert(Y.game.entry === null, "E: ⛔ the pad reaches entry only after dismissal");
-  eq(Y.game.state, "gameover", "E: ...still not a new game");
   Y.padPress(Y.GP.START);
   eq(Y.game.state, "playing", "E: ...Start after that finally starts a new game");
 })();
@@ -393,7 +387,7 @@ function fakeItems(n) {
   const SENTINEL = 4242;
   const X = build();
   freshRun(X);
-  X.game.state = "gameover"; X.game.entry = null;
+  X.game.state = "gameover";
   X.game.menu.scroll = SENTINEL;
   X.game.celebration = { items: fakeItems(12), scroll: 0 };
   X.draw();
@@ -463,29 +457,39 @@ function fakeItems(n) {
   const mine = gameoverBlock(src);
   assert(mine !== null, "G: (setup) HEAD's gameover draw block brace-matched");
   // Non-vacuous: it is still the CS029 P2 screen, footer knob and all.
-  for (const lit of ["GAME OVER", "FINAL SCORE", "drawEntrySlots", "drawScoreTable", "GAMEOVER_HINT"]) {
+  for (const lit of ["GAME OVER", "FINAL SCORE", "drawScoreTable", "GAMEOVER_HINT"]) {
     assert(mine.includes(lit), `G: (setup) the block still contains \`${lit}\``);
   }
   const ps = parentSource(PARENT_SHA);
   if (ps === null) {
-    skip("G: gameover draw block byte-identity against the parent (no git history)");
+    skip("G: gameover draw block against the parent (no git history)");
   } else {
     const theirs = gameoverBlock(ps);
     assert(theirs !== null, "G: (setup) the parent's gameover draw block brace-matched");
-    // REPOINTED BY CS030 P7 (gate G6): "hide entry entirely until dismissal" changed exactly the
-    // if/else-if condition pair guarding drawEntrySlots()/drawScoreTable() — a later phase's named,
-    // gate-mandated edit, not a re-litigation of P4's own byte-identity claim. Apply that one known
-    // substitution to the parent text, then require IDENTITY on everything else.
-    const theirsWithG6 = theirs
-      .replace(
-        'highlighted.\n    if (game.entry) {\n      drawEntrySlots',
-        'highlighted.\n    // CS030 P7 (gate G6): entry stays ARMED but its slots must not RENDER while the celebration\n' +
-        '    // panel is up — the panel\'s backdrop covers this whole block either way, so the entry branch\n' +
-        '    // simply waits for game.celebration to clear rather than drawing underneath it.\n' +
-        '    if (game.entry && !game.celebration) {\n      drawEntrySlots')
-      .replace('} else {\n      drawScoreTable', '} else if (!game.entry) {\n      drawScoreTable');
-    eq(mine, theirsWithG6,
-      "G: ⛔ the gameover draw block matches the parent except CS030 P7's gate-G6 entry/table condition — no OTHER edit");
+    // ⚠ REPOINTED TWICE, AND THE SECOND REPOINT CHANGED THE CLAIM'S SHAPE.
+    //   CS030 P7 (gate G6) edited exactly the if/else-if condition pair, and this pin absorbed that as
+    //   one known substitution applied to the parent text, keeping BYTE identity on everything else.
+    //   CS034 P7 (spec §6.1) DELETED the initials-entry branch outright and dedented the surviving one.
+    //   A substitution cannot express that, and a byte-identity claim over a re-indented block is not
+    //   a pin, it is a diff. So the claim becomes: HEAD's block no longer mentions the entry at all,
+    //   and EVERY OTHER executable line of the parent's block survives verbatim, in order, with none
+    //   added. That still catches the thing this trap exists for — a stray edit riding along in the
+    //   gameover screen — without pretending an instructed deletion never happened.
+    const codeLines = t => t.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("//"));
+    assert(!/game\.entry|drawEntrySlots/.test(mine),
+      "G: ⛔ HEAD's gameover block has no trace of the initials entry left");
+    // The parent's lines less the entry branch and every brace-only line (the deletion unbalanced them).
+    const parentKept = codeLines(theirs).filter(l => !/game\.entry|drawEntrySlots/.test(l) && !/^\}/.test(l));
+    const mineKept = codeLines(mine).filter(l => !/^\}/.test(l));
+    let j = 0, missing = null;
+    for (const l of parentKept) {
+      const k = mineKept.indexOf(l, j);
+      if (k < 0) { missing = l; break; }
+      j = k + 1;
+    }
+    eq(missing, null, `G: ⛔ every surviving parent line is still in HEAD's block, in order (missing: ${missing})`);
+    eq(mineKept.length, parentKept.length,
+      "G: ⛔ ...and NOTHING was added — the deletion is the whole of this phase's edit to the block");
   }
 
   const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);
