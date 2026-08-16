@@ -27,9 +27,9 @@
   .btnRow { display: flex; gap: 6px; flex-wrap: wrap; }
   .off { opacity: 0.35; }
   #readout { background: #0a1220; border: 1px solid #223347; padding: 8px; }
-  #colVal { font-size: 26px; font-variant-numeric: tabular-nums; color: #70ffa0; }
-  #colVal.bad, #sepVal.bad { color: #ff4040; }
-  #sepUnit { color: #3a5a80; font-size: 12px; }
+  #clearVal { font-size: 26px; font-variant-numeric: tabular-nums; color: #70ffa0; }
+  #clearVal.bad, #colVal.bad, #sepVal.bad { color: #ff4040; }
+  #clearUnit { color: #3a5a80; font-size: 12px; }
   .stat { display: flex; justify-content: space-between; color: #6f92bd; font-size: 12px;
     margin-top: 3px; font-variant-numeric: tabular-nums; }
   pre#configOut { background: #0a1220; border: 1px solid #223347; padding: 8px; font-size: 11px;
@@ -72,9 +72,25 @@
     <div class="row"><input type="range" id="rise" min="30" max="600" step="10">
       <span class="val" id="riseVal"></span></div>
   </label>
-  <label>life (s) — DEBUG.deliveryFloatLife
-    <div class="row"><input type="range" id="life" min="0.2" max="2.0" step="0.05">
-      <span class="val" id="lifeVal"></span></div>
+  <label>size (px) — DEBUG.deliveryFloatSize
+    <div class="row"><input type="range" id="size" min="12" max="64" step="1">
+      <span class="val" id="sizeVal"></span></div>
+  </label>
+  <label>sizeStep (px/piece) — DEBUG.deliveryFloatSizeStep
+    <div class="row"><input type="range" id="sizeStep" min="0" max="6" step="0.5">
+      <span class="val" id="sizeStepVal"></span></div>
+  </label>
+  <label>sizeMax (px) — DEBUG.deliveryFloatSizeMax
+    <div class="row"><input type="range" id="sizeMax" min="16" max="96" step="1">
+      <span class="val" id="sizeMaxVal"></span></div>
+  </label>
+  <label>hold (s) — DEBUG.deliveryFloatHold
+    <div class="row"><input type="range" id="hold" min="0" max="3.0" step="0.05">
+      <span class="val" id="holdVal"></span></div>
+  </label>
+  <label>fade (s) — DEBUG.deliveryFloatFade
+    <div class="row"><input type="range" id="fade" min="0.1" max="3.0" step="0.05">
+      <span class="val" id="fadeVal"></span></div>
   </label>
   <label id="minGapLbl">minGap (px, model B only)
     <div class="row"><input type="range" id="minGap" min="8" max="40" step="1">
@@ -111,16 +127,21 @@
     <button id="stepBtn">Step</button>
   </div>
 
-  <h2>Minimum separation this run</h2>
+  <h2>Milestone clearance — the gate number</h2>
   <div id="readout">
-    <div><span id="colVal">—</span> <span id="sepUnit">px · delivery column · red below the 16px glyph</span></div>
+    <div><span id="clearVal">—</span> <span id="clearUnit">px · ticker ink vs milestone ink · red at &le; 0</span></div>
+    <div class="stat"><span>delivery column separation (model comparison)</span><span id="colVal">—</span></div>
     <div class="stat"><span>all live floaters (milestones included)</span><span id="sepVal">—</span></div>
     <div class="stat"><span>live floaters</span><span id="liveVal">0</span></div>
     <div class="stat"><span>rise &times; interval (ideal)</span><span id="arithVal">—</span></div>
     <div class="stat"><span>&hellip; quantised to whole frames @60Hz</span><span id="quantVal">—</span></div>
     <div class="stat"><span>run</span><span id="phaseVal">—</span></div>
   </div>
-  <p class="hint">Both numbers are run-minimums of the vertical gap between two live floaters,
+  <p class="hint">The headline number is run-minimum ink clearance: the gap between the delivery
+  ticker's rendered glyph box and the two milestone floaters' glyph boxes, accounting for each
+  one's OWN font size (so growing the ticker with sizeStep makes this number worse, exactly as
+  it should). &le; 0 means the glyphs actually overlap. The two numbers below it are run-minimums
+  of the vertical gap between two live floaters,
   measured in y only — so in ship mode two floaters far apart in x still count as close. That is
   deliberate: a column that only separates because the ship wandered is not separated.</p>
   <p class="hint"><b>Why two numbers.</b> The specced "any two live floaters" figure is the second
@@ -198,11 +219,13 @@ function drawText(str, x, y, size, color = COLOR.text, align = "center") {
 
 // FloatText, plus two lab-only fields: `pinned` (model C's ticker holds at the anchor and does not
 // age until it is released at the last canister) and `kind` (which of the two separation
-// run-minimums this floater feeds).
+// run-minimums this floater feeds). `fade` (CS034 P1) mirrors the build's own trailing-optional
+// addition: defaults to `life`, so every un-passed call site (the two milestone floaters) is
+// byte-identical to before.
 class Floater {
-  constructor(text, x, y, color, size = 16, rise = 30, life = 1.1) {
+  constructor(text, x, y, color, size = 16, rise = 30, life = 1.1, fade = life) {
     this.text = text; this.x = x; this.y = y; this.color = color; this.size = size;
-    this.rise = rise; this.life = life; this.life0 = life; this.dead = false;
+    this.rise = rise; this.life = life; this.fade = fade; this.dead = false;
     this.pinned = false; this.kind = "delivery";
   }
   update(dt) {
@@ -212,14 +235,17 @@ class Floater {
     if (this.life <= 0) this.dead = true;
   }
   draw() {
-    ctx.globalAlpha = Math.max(0, this.life / this.life0);
+    ctx.globalAlpha = Math.max(0, Math.min(1, this.life / this.fade));
     drawText(this.text, this.x, this.y, this.size, this.color);
     ctx.globalAlpha = 1;
   }
 }
 // ---- end copied game math ----
 
-const GLYPH_H = 16;              // the delivery floater's size — the overlap threshold
+const GLYPH_H = 16;              // the delivery floater's size — the overlap threshold (legacy metric)
+const INK_CAP_FRAC = 0.72;       // glyph ink height above the baseline, as a fraction of font size —
+                                  // every string here ("+n", "SALVAGE BONUS", "MAX HAUL") is all-caps
+                                  // or a bare "+"/digits, so there are no descenders to account for
 const SHIP_ORBIT_R = 60;         // mock ship's path radius in ship-anchor mode (inside radius + 10)
 
 const cv = document.getElementById("cv");
@@ -238,7 +264,11 @@ const cfg = {
   anchor: "dock",
   anchorFrac: 0.5,
   rise: 160,
-  life: 1.2,
+  size: 16,
+  sizeStep: 0,
+  sizeMax: 48,
+  hold: 0,
+  fade: 1.2,
   minGap: 20,
   interval: DOCK_OFFLOAD_INTERVAL,
   canisterCount: CARGO_CAP_MAX,
@@ -266,8 +296,9 @@ let nextIndex = 0;      // canisters already peeled off
 let offloadTimer = 0;   // first canister pops immediately, as the game's offloadTimer=0 does
 let elapsed = 0;
 let shipTh = -TAU / 4;
-let minSep = Infinity;      // the specced figure: any two live floaters
-let minSepCol = Infinity;   // delivery floaters only — the one that tells A / B / C apart
+let minSep = Infinity;       // the specced figure: any two live floaters
+let minSepCol = Infinity;    // delivery floaters only — the one that tells A / B / C apart
+let minClearance = Infinity; // ink-aware: delivery floater box vs milestone floater box
 let paused = false;
 
 const ship = { x: 0, y: 0, angle: 0 };
@@ -282,6 +313,7 @@ function resetRun() {
   shipTh = -TAU / 4;
   minSep = Infinity;
   minSepCol = Infinity;
+  minClearance = Infinity;
   placeShip();
 }
 function placeShip() {
@@ -331,19 +363,24 @@ function offload() {
   const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (n - 1);
   visitTotal += pts;
   const ax = anchorX(), ay = anchorY();
+  // hold + fade IS the floater's total life — see the Floater class header. A pinned ticker's life
+  // clock does not run until release, so this is safe to recompute on every piece of the visit.
+  const life = cfg.hold + cfg.fade;
+  const size = Math.min(cfg.sizeMax, cfg.size + cfg.sizeStep * (n - 1));
 
   if (cfg.model === "C") {
     if (!ticker) {
-      ticker = new Floater("+" + visitTotal, ax, ay, COLOR.dock, 16, cfg.rise, cfg.life);
+      ticker = new Floater("+" + visitTotal, ax, ay, COLOR.dock, size, cfg.rise, life, cfg.fade);
       ticker.pinned = true;
       floaters.push(ticker);
     } else {
       ticker.text = "+" + visitTotal;
+      ticker.size = size;
     }
     if (n >= cfg.canisterCount) { ticker.pinned = false; ticker = null; }
   } else {
     const y = cfg.model === "B" ? slotY(ay) : ay;
-    floaters.push(new Floater("+" + pts, ax, y, COLOR.dock, 16, cfg.rise, cfg.life));
+    floaters.push(new Floater("+" + pts, ax, y, COLOR.dock, size, cfg.rise, life, cfg.fade));
   }
 
   // The two dock-anchored milestone floaters, at their real dock.y - 22 and with FloatText's
@@ -379,10 +416,19 @@ function sim(dt) {
 
   for (let i = 0; i < floaters.length; i++) {
     for (let j = i + 1; j < floaters.length; j++) {
-      const d = Math.abs(floaters[i].y - floaters[j].y);
+      const a = floaters[i], b = floaters[j];
+      const d = Math.abs(a.y - b.y);
       if (d < minSep) minSep = d;
-      if (floaters[i].kind === "delivery" && floaters[j].kind === "delivery" && d < minSepCol) {
+      if (a.kind === "delivery" && b.kind === "delivery" && d < minSepCol) {
         minSepCol = d;
+      }
+      if (a.kind !== b.kind) {
+        // Ink box per floater: baseline at .y, ink rising INK_CAP_FRAC * size above it (no
+        // descenders in any string drawn here). Interval-gap formula: positive when the boxes
+        // are clear of each other, negative (== overlap depth) when they intersect.
+        const topA = a.y - a.size * INK_CAP_FRAC, topB = b.y - b.size * INK_CAP_FRAC;
+        const clearance = Math.max(topB - a.y, topA - b.y);
+        if (clearance < minClearance) minClearance = clearance;
       }
     }
   }
@@ -419,12 +465,14 @@ function loop(ts) {
   if (!paused) sim(dt * cfg.timeScale);
   render();
   syncReadout();
+  syncConfigOut();   // A8 mirrors the live minClearance measurement, not just the sliders
   requestAnimationFrame(loop);
 }
 let lastTs = performance.now();
 
 // ---- controls ----
-const sliders = ["anchorFrac", "rise", "life", "minGap", "interval", "canisterCount", "shipDrift", "timeScale"];
+const sliders = ["anchorFrac", "rise", "size", "sizeStep", "sizeMax", "hold", "fade", "minGap",
+  "interval", "canisterCount", "shipDrift", "timeScale"];
 for (const id of sliders) {
   const el = document.getElementById(id);
   el.value = cfg[id];
@@ -435,7 +483,8 @@ for (const id of sliders) {
     syncConfigOut();
   });
 }
-const DECIMALS = { anchorFrac: 2, rise: 0, life: 2, minGap: 0, interval: 2, canisterCount: 0, shipDrift: 0, timeScale: 2 };
+const DECIMALS = { anchorFrac: 2, rise: 0, size: 0, sizeStep: 1, sizeMax: 0, hold: 2, fade: 2,
+  minGap: 0, interval: 2, canisterCount: 0, shipDrift: 0, timeScale: 2 };
 function syncLabels() {
   for (const id of sliders) {
     document.getElementById(id + "Val").textContent = cfg[id].toFixed(DECIMALS[id]);
@@ -489,6 +538,9 @@ document.getElementById("stepBtn").addEventListener("click", () => {
 });
 
 function syncReadout() {
+  const clear = document.getElementById("clearVal");
+  clear.textContent = minClearance === Infinity ? "—" : minClearance.toFixed(1);
+  clear.classList.toggle("bad", minClearance <= 0);
   const col = document.getElementById("colVal");
   col.textContent = minSepCol === Infinity ? "—" : minSepCol.toFixed(1);
   col.classList.toggle("bad", minSepCol < GLYPH_H);
@@ -520,10 +572,23 @@ function syncConfigOut() {
 const DELIVERY_FLOAT_ANCHOR_FRAC = ${cfg.anchorFrac.toFixed(2)};  // y = dock.y - DOCK_RADIUS * frac
 const DELIVERY_FLOAT_MIN_GAP     = ${cfg.minGap.toFixed(0)};    // px, model B only
 const DOCK_OFFLOAD_INTERVAL      = ${cfg.interval.toFixed(2)};
-DEBUG.deliveryFloatRise = ${cfg.rise.toFixed(0)};   // px/s
-DEBUG.deliveryFloatLife = ${cfg.life.toFixed(2)};  // s
 
-// GATE: G1=${cfg.model} G2=${cfg.anchorFrac.toFixed(2)} G3=${cfg.rise.toFixed(0)}px/s,${cfg.life.toFixed(2)}s G4=${g4} G5=${cfg.interval.toFixed(2)}`;
+// DEBUG_VARS rows (DELIVERY section) — five new, deliveryFloatLife retired
+{ id: "deliveryFloatRise", label: "Delivery floater rise", unit: "px/s",
+  def: ${cfg.rise.toFixed(0)}, min: 30, max: 600, step: 10 },
+{ id: "deliveryFloatSize", label: "Delivery floater size", unit: "px",
+  def: ${cfg.size.toFixed(0)}, min: 12, max: 64, step: 1 },
+{ id: "deliveryFloatSizeStep", label: "Delivery floater size/piece", unit: "px",
+  def: ${cfg.sizeStep.toFixed(1)}, min: 0, max: 6, step: 0.5 },
+{ id: "deliveryFloatSizeMax", label: "Delivery floater size cap", unit: "px",
+  def: ${cfg.sizeMax.toFixed(0)}, min: 16, max: 96, step: 1 },
+{ id: "deliveryFloatHold", label: "Delivery floater hold", unit: "s",
+  def: ${cfg.hold.toFixed(2)}, min: 0, max: 3.0, step: 0.05 },
+{ id: "deliveryFloatFade", label: "Delivery floater fade", unit: "s",
+  def: ${cfg.fade.toFixed(2)}, min: 0.1, max: 3.0, step: 0.05 },
+
+// GATE: G1=${cfg.model} G2=${cfg.anchorFrac.toFixed(2)} G3=${cfg.rise.toFixed(0)}px/s G4=${g4} G5=${cfg.interval.toFixed(2)}
+// GATE A: A1=${cfg.size.toFixed(0)} A2=${cfg.sizeStep.toFixed(1)} A3=${cfg.sizeMax.toFixed(0)} A4=${cfg.hold.toFixed(2)} A5=${cfg.fade.toFixed(2)} A6=${cfg.rise.toFixed(0)} A7=${cfg.anchorFrac.toFixed(2)} A8=${minClearance === Infinity ? "n/a" : minClearance.toFixed(1)}`;
 }
 
 const copyBtn = document.getElementById("copyBtn");

@@ -1,32 +1,20 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS033 (closed) · Phase: P5 (closing) · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P1 · Registry: 87 · Levers: 18
 
-## Phase ledger — CS033
+## Phase ledger — CS034
 
-- **CS033 was run off-cycle, directly from chat prompts — no `PLANNED-FEATURES-CS033.md` /
-  `IMPLEMENTATION-PHASES-CS033.md` exists, and none will be authored retroactively.** Judgment calls
-  that would normally be settled by a plan doc were instead recorded live in `DECISIONS.md`, then
-  retired into `log/CS033.md` at P4. Full P1–P5 record: `log/CS033.md`.
-- P1 — `player_id`: a `crypto.randomUUID()` field on each `Profiles` roster entry, minted once on
-  first activation (never at `add()`), never regenerated, backfilled lazily for profiles that
-  predate it. Never displayed; `display_name` stays the existing `name` field.
-- P2 — `lib/kit-leaderboard.js` (coinless-kit v0.1.0) integrated: an ES-module bridge
-  (`EXTERNAL-FILES.md` rule 1 exception, confirmed with Paul), `beginRun()`/`submit()` wired at run
-  start and at both real outcomes (`died` at the death seam, `quit` from a live run only —
-  `completed` has no call site, see `log/CS033.md`), a "Leaderboard" title-menu board screen
-  (`fetchBoard()`, flagged-entry marker, time-window cycling), `NAME_CHANGE_NOTICE` gating the
-  profile rename flow, and a queue-pending indicator on the title screen. The local High Scores
-  table is untouched and has no network dependency either way.
-- P3 — per-game saucer counter (`game.stats.saucerKills`, both sizes, distinct from
-  `smallSaucerKills`/`Achievements.lifetime.saucerKills`) plus a `garbage_satellite_kills` key off
-  the pre-existing `debrisKills` counter, extending `Leaderboard.submit()`'s `stats` payload to four
-  keys. The two new keys are best-guess names against the Worker's real `statsFields` registry,
-  which isn't visible from this repo — cosmetic risk only, per the module's own mismatch contract.
-- P4 — off-cycle decision entries retired from `DECISIONS.md` into `log/CS033.md`; confirmed no
-  retroactive planning docs would be authored for this changeset.
-- P5 — closing phase: version bump to 1.0.0.33, CLAUDE.md's `stats`-keys invariant corrected to the
-  real four-key set (was stale after P3), 13/13 browser-QA items confirmed by Paul, CS032's spent
-  planning docs archived. Zero game-logic changes.
+- P1 — `tools/dock-float-lab.html` extended per `PLANNED-FEATURES-CS034.md` §3: five new sliders
+  (size/sizeStep/sizeMax/hold/fade, replacing the retired `life` knob) feeding the build symbols
+  `DEBUG.deliveryFloatSize`/`SizeStep`/`SizeMax`/`Hold`/`Fade`; per-piece size growth on the
+  simulated ticker; a hold-then-fade opacity curve (`min(1, life/fade)`, pinned floaters don't age
+  so a long visit never eats the hold); and a new ink-aware minimum-clearance readout (delivery
+  ticker glyph box vs. the two milestone floaters' glyph boxes, each at its own font size, red at
+  &le;0px) replacing the old raw-centerline approximation that reported the misleadingly-exact
+  0.0px. At shipped defaults (size 16, sizeStep 0, hold 0, fade 1.2) the sim is behaviourally
+  identical to today — verified: measured ink clearance at those defaults is actually **-11.4px**
+  (real overlap the old metric couldn't see), not the 0.0px previously on record. Zero changes to
+  `orbital-overhaul.html` or any other `tools/` file. GATE A is open; P8 (the build port) blocks on
+  Paul's slider answers.
 
 ## Working / verified
 
