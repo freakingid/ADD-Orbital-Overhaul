@@ -602,6 +602,13 @@ Two call sites, one shared panel.
 - **Fanfare.** A single `AudioSys.achievement()` call fires when the panel first opens (game over or
   level end) — the same call `onUnlock()` already makes at unlock time, routed through no new sound.
   Confirmed at the P6 gate as the shipping behaviour (G5 = once on open).
+- **Two headers, one panel (CS034 P5).** `drawCelebration()` derives its title and sub-line from
+  `game.celebration.resume` — the field that already answers "why did this panel open," not from
+  `game.state` (which happens to agree today but answers a different question). At the level-end
+  site (`resume === "wave"`): `"LEVEL N COMPLETE"` / `"During level N you earned:"`. At the game-over
+  seam (`resume === null`): unchanged — `"ACHIEVEMENTS UNLOCKED"` / `"N NEW UNLOCK(S)"`. `N` reads
+  live off `game.wave`, which is still the just-completed wave for the level-end panel's entire
+  lifetime (`nextWave()` is deferred to dismissal, above) — no new field on `game.celebration`.
 
 > New constants: `CELEB_PANEL_W/H`, `CELEB_PANEL_X/Y`, `CELEB_SUB_Y`, `CELEB_ROW_X`, `CELEB_ROW0_Y`,
 > `CELEB_ROW_STEP`, `CELEB_DESC_DY`, `CELEB_NAME_SIZE`, `CELEB_DESC_SIZE`, `CELEB_EMBLEM_DY/GAP`,

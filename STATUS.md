@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS034 · Phase: P4 · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P5 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS034
 
@@ -50,10 +50,19 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P4 · Registry: 87 · Levers: 18
   One pre-existing test (`test-cs033-p2.js` §E) had a stale assertion on the old key name, updated
   to match. Suite: 132/132 on a full clone (`test-cs034-p4.js`, new this phase).
 
+- P5 — `drawCelebration()` now derives its title/sub-line from `game.celebration.resume` per
+  `PLANNED-FEATURES-CS034.md` §4: level-end (`resume === "wave"`) reads `"LEVEL N COMPLETE"` /
+  `"During level N you earned:"`, off live `game.wave` (still the just-completed wave —
+  `nextWave()` stays deferred to dismissal, no new field added). Game-over (`resume === null`) is
+  unchanged. Two pre-existing `test-cs030-p5.js` assertions were stale against this legitimate
+  change and updated: §B's rendered-title check, and §H's byte-identity pin, which now excludes
+  `drawCelebration(` from its untouched-functions list (the other three stay pinned). Suite:
+  133/133 on a full clone (`test-cs034-p5.js`, new this phase).
+
 ## Working / verified
 
-- Full suite on a full clone: **132 files, 132 passed, 0 failed, 0 skipped, 0 timed out.** (131 →
-  132: `test-cs034-p4.js`, new this phase.)
+- Full suite on a full clone: **133 files, 133 passed, 0 failed, 0 skipped, 0 timed out.** (132 →
+  133: `test-cs034-p5.js`, new this phase.)
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
 - `player_id` mint/backfill/never-regenerate verified directly (`test-cs033-p1.js`): a profile
   loaded from a pre-CS033 blob is backfilled on boot, and a second boot from that same store reuses

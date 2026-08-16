@@ -214,7 +214,10 @@ function watchLevelVoice(X) {
   eq(X.game.state, "playing", "B: the run is still 'playing' — this is not a menu and not a state change");
   eq(X.game.paused, false, "B: ⛔ game.paused is FALSE");
   eq(X.menuActive(), false, "B: ⛔ ...and menuActive() is FALSE — no menu chrome path was pulled in");
-  assert(X.render(() => X.draw()).some(r => r.c === "fillText" && r.str === "ACHIEVEMENTS UNLOCKED"),
+  // CS034 P5: the level-end panel's title is now "LEVEL N COMPLETE", not the game-over panel's
+  // "ACHIEVEMENTS UNLOCKED" — updated to match; this section's own point (no new draw wiring, the
+  // existing draw() call site) is untouched.
+  assert(X.render(() => X.draw()).some(r => r.c === "fillText" && r.str === "LEVEL " + waveBefore + " COMPLETE"),
     "B: the panel renders over the frozen field from the existing draw() call site — no new draw wiring");
 
   // ⛔ Dying ON the crossing frame must not open a level-end panel: killShip() sets "dying" mid-frame
@@ -494,7 +497,9 @@ function watchLevelVoice(X) {
     const pStripped = execSource(ps);
     // "A SECOND CALL SITE, NOT A SECOND IMPLEMENTATION": every render/scroll function is the
     // parent's, byte for byte. dismissCelebration() is the ONE that may differ, and must.
-    for (const fn of ["function drawCelebration(", "function drawCelebrationRow(",
+    // CS034 P5 legitimately changed drawCelebration() itself (the level-end header, spec §4), so
+    // it is dropped from this byte-identity list; the other three stay untouched by that phase too.
+    for (const fn of ["function drawCelebrationRow(",
                       "function celebrationMaxScroll(", "function celebrationScroll("]) {
       const mine = blockAt(src, src.indexOf(fn));
       const theirs = blockAt(ps, ps.indexOf(fn));

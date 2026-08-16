@@ -11027,9 +11027,15 @@ function drawCelebrationRow(item, x, ry) {
 function drawCelebration() {
   const c = game.celebration;
   if (!c) return;
-  const { x } = menuPanel(CELEB_PANEL_W, CELEB_PANEL_H, "ACHIEVEMENTS UNLOCKED");
+  // CS034 P5 (§4): the level-end open (resume === "wave") gets its own header — derived from
+  // `resume`, never `game.state` (see dismissCelebration()'s header for why). game.wave is still
+  // the just-completed wave here (nextWave() is deferred to dismissal), so it needs no new field.
+  const isWave = c.resume === "wave";
+  const { x } = menuPanel(CELEB_PANEL_W, CELEB_PANEL_H, isWave ? "LEVEL " + game.wave + " COMPLETE" : "ACHIEVEMENTS UNLOCKED");
   const n = c.items.length;
-  drawText(n === 1 ? "1 NEW UNLOCK" : n + " NEW UNLOCKS", VIEW_W / 2, CELEB_SUB_Y, 14, COLOR.dim);
+  const sub = isWave ? "During level " + game.wave + " you earned:"
+                      : (n === 1 ? "1 NEW UNLOCK" : n + " NEW UNLOCKS");
+  drawText(sub, VIEW_W / 2, CELEB_SUB_Y, 14, COLOR.dim);
 
   // Clamp against the same ceiling both input handlers clamp against, then clip the row region so a
   // scrolled row can never spill past the panel or under the header/footer — drawAchievements()'s
