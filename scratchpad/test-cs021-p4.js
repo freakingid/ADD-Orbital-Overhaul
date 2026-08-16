@@ -211,7 +211,7 @@ const hudBody = (() => {
   eq(HUD_FX_BASE_Y, 640, "A: HUD_FX_BASE_Y (powerup stack floor) unmoved");
   eq(HUD_FX_ROW_H, 40, "A: HUD_FX_ROW_H unmoved");
 
-  eq(GAME_VERSION, "1.0.0.32", "A: GAME_VERSION is HEAD's — a live pin, re-pointed by each changeset's closing phase");
+  eq(GAME_VERSION, "1.0.0.33", "A: GAME_VERSION is HEAD's — a live pin, re-pointed by each changeset's closing phase");
 })();
 
 // ================= (B) the CS020 P1b 8/1100 scenario — driven for real, readout ABSENT throughout =====

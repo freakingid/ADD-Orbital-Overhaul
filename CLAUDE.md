@@ -399,13 +399,16 @@ never submit a second time for it.
 waves forever — `DIFFICULTY-LEVERS.md`), so only the first and third are ever
 submitted. Don't invent a "completed" trigger to fill the enum.
 
-⛔ **`stats` keys are `wave_reached` / `canisters_delivered` only — no more,
-by design, not by omission.** Those are the two names the module's own
-`lib/docs/kit-leaderboard-client-api.md` uses in its worked example for THIS
-game; nothing else about the Worker's `statsFields` registry is visible from
-this repo, and the doc is explicit that a key mismatch only sets a flag, never
-a rejection, so nothing else was guessed. If the real registry's field list is
-ever available, extending the object is a one-line change at `Leaderboard.submit()`.
+⛔ **`stats` is a fixed four keys: `wave_reached`, `canisters_delivered`, `saucer_kills`,
+`garbage_satellite_kills` — not by omission, extend deliberately.** The first two are the
+exact names `lib/docs/kit-leaderboard-client-api.md` uses in its own worked example for
+THIS game; the other two are best-guess names against the Worker's `statsFields` registry,
+which is not visible from this repo (see `log/CS033.md` P3). Hunter kills are deliberately
+NOT sent — no per-game counter for player-only Hunter-core kills exists, and none was added
+to serve this. `durationS` is NOT duplicated into `stats` — it's already a top-level field
+on every board entry per the module's own contract. A key mismatch only sets a flag
+server-side, never a rejection, so extending this object again is always a one-line change
+at `Leaderboard.submit()` — but it's still a deliberate edit, not filler.
 
 ### Two traps that have each burned twice
 

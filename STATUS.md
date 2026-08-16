@@ -1,27 +1,37 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.32 · Changeset: CS033 · Phase: P2 (no closing phase run) · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS033 (closed) · Phase: P5 (closing) · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS033
 
-- **CS033 was run off-cycle, directly from a chat prompt — no `PLANNED-FEATURES-CS033.md` /
-  `IMPLEMENTATION-PHASES-CS033.md` exists.** Judgment calls that would normally be settled by a plan
-  doc are instead recorded in `DECISIONS.md`. Only P1 and P2 (as the prompt itself named them) ran;
-  there was no closing phase, so the version was **not** bumped and this changeset is not closed.
+- **CS033 was run off-cycle, directly from chat prompts — no `PLANNED-FEATURES-CS033.md` /
+  `IMPLEMENTATION-PHASES-CS033.md` exists, and none will be authored retroactively.** Judgment calls
+  that would normally be settled by a plan doc were instead recorded live in `DECISIONS.md`, then
+  retired into `log/CS033.md` at P4. Full P1–P5 record: `log/CS033.md`.
 - P1 — `player_id`: a `crypto.randomUUID()` field on each `Profiles` roster entry, minted once on
   first activation (never at `add()`), never regenerated, backfilled lazily for profiles that
   predate it. Never displayed; `display_name` stays the existing `name` field.
 - P2 — `lib/kit-leaderboard.js` (coinless-kit v0.1.0) integrated: an ES-module bridge
   (`EXTERNAL-FILES.md` rule 1 exception, confirmed with Paul), `beginRun()`/`submit()` wired at run
   start and at both real outcomes (`died` at the death seam, `quit` from a live run only —
-  `completed` has no call site, see `DECISIONS.md`), a "Leaderboard" title-menu board screen
+  `completed` has no call site, see `log/CS033.md`), a "Leaderboard" title-menu board screen
   (`fetchBoard()`, flagged-entry marker, time-window cycling), `NAME_CHANGE_NOTICE` gating the
   profile rename flow, and a queue-pending indicator on the title screen. The local High Scores
   table is untouched and has no network dependency either way.
+- P3 — per-game saucer counter (`game.stats.saucerKills`, both sizes, distinct from
+  `smallSaucerKills`/`Achievements.lifetime.saucerKills`) plus a `garbage_satellite_kills` key off
+  the pre-existing `debrisKills` counter, extending `Leaderboard.submit()`'s `stats` payload to four
+  keys. The two new keys are best-guess names against the Worker's real `statsFields` registry,
+  which isn't visible from this repo — cosmetic risk only, per the module's own mismatch contract.
+- P4 — off-cycle decision entries retired from `DECISIONS.md` into `log/CS033.md`; confirmed no
+  retroactive planning docs would be authored for this changeset.
+- P5 — closing phase: version bump to 1.0.0.33, CLAUDE.md's `stats`-keys invariant corrected to the
+  real four-key set (was stale after P3), 13/13 browser-QA items confirmed by Paul, CS032's spent
+  planning docs archived. Zero game-logic changes.
 
 ## Working / verified
 
-- Full suite on a full clone: **129 files, 129 passed, 0 failed, 0 skipped, 0 timed out.** (127 →
-  129: `test-cs033-p1.js` and `test-cs033-p2.js`, both new this changeset.)
+- Full suite on a full clone: **130 files, 130 passed, 0 failed, 0 skipped, 0 timed out.** (129 →
+  130: `test-cs033-p3.js`, new this phase.)
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
 - `player_id` mint/backfill/never-regenerate verified directly (`test-cs033-p1.js`): a profile
   loaded from a pre-CS033 blob is backfilled on boot, and a second boot from that same store reuses
@@ -32,10 +42,11 @@ Version: 1.0.0.32 · Changeset: CS033 · Phase: P2 (no closing phase run) · Reg
   call sites (including that gameover's own "Quit to Title" does NOT double-submit), the title row's
   dim/inert-with-no-module state, and the rename modal showing `NAME_CHANGE_NOTICE` verbatim before
   applying.
-- **Not yet verified in a live browser.** Every check above is headless (Node, module-tag
-  unevaluated). The board screen's layout/columns, the two-line modal's rendering, and the ES-module
-  bridge actually loading over a real local server have not been visually confirmed. See Playtest
-  asks below.
+- **All 13 browser-QA items passed (Paul, live browser).** Module bridge served over a local server
+  and absent cleanly on `file://`; board screen layout at 1000×560; the two-line
+  `NAME_CHANGE_NOTICE` modal; the "⚑" flagged-entry glyph; submit eligibility; both real outcomes
+  (`died`/`quit`), including no double-post on gameover's "Quit to Title"; and the per-game saucer
+  counter.
 
 ## Known issues
 
@@ -72,15 +83,6 @@ None.
 
 ## Next up
 
-- **CS033 has no closing phase yet.** If it continues: a version bump, a browser playtest (see
-  below), and — since this ran off-cycle — deciding whether to author
-  `PLANNED-FEATURES-CS033.md`/`IMPLEMENTATION-PHASES-CS033.md` retroactively so the changeset has a
-  normal record, or fold it into `log/CS033.md` directly from `DECISIONS.md` + this file.
-- **The real Worker `statsFields` list for `orbital-overhaul` is not visible from this repo.**
-  `Leaderboard.submit()` sends only `wave_reached`/`canisters_delivered` (the two names the module's
-  own doc uses in its worked example for this game). Non-blocking — a mismatch only sets a flag,
-  never a rejection — but if Paul has the real field list, extending the `stats` object is a
-  one-line change. See `DECISIONS.md`.
 - **FLAG-CS027-c (opportunistic, non-blocking) — 8 test files hardcode world dimensions**
   instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
 - **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
@@ -88,14 +90,7 @@ None.
 
 ## Playtest asks (open only — answered ones move to the log)
 
-- **CS033 P2 has not been exercised in a real browser.** Specifically: the board screen's layout at
-  1000×560 (does the 5-column table read cleanly at `scale = 1.5`?), the two-line
-  `NAME_CHANGE_NOTICE` modal's sizing (the new `MODAL_LINE_PITCH` math), the "⚑" flagged-entry glyph
-  rendering in a real canvas monospace font, and — most load-bearing — that the ES-module bridge
-  actually loads `window.KitLeaderboard` over a real local server (`python -m http.server` /
-  `npx serve`) and that the game still opens cleanly via plain `file://` double-click with the
-  module absent. All of this is headless-verified only (`test-cs033-p2.js`); none of it is
-  browser-verified.
+None open.
 
 ## Balance notes
 
