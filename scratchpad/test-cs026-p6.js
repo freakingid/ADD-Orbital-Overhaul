@@ -196,13 +196,14 @@ let X = null;
   const byId = Object.fromEntries(X.DEBUG_VARS.filter(v => v.id).map(v => [v.id, v]));
 
   // -- the two P4 knobs, retuned --
-  eq(byId.deliveryFloatRise.def, 160, "B: deliveryFloatRise.def is 160 (was 300) — \"travel upwards more slowly\"");
-  eq(byId.deliveryFloatLife.def, 1.2, "B: deliveryFloatLife.def is 1.2 (was 0.55) — \"fade more slowly\"");
-  eq(X.DEBUG.deliveryFloatRise, 160, "B: ...and the live value seeds from the def");
-  eq(X.DEBUG.deliveryFloatLife, 1.2, "B: ...both of them");
-  // The ranges must still CONTAIN the new defaults, or the panel opens on an out-of-range row.
-  assert(byId.deliveryFloatRise.min <= 160 && 160 <= byId.deliveryFloatRise.max, "B: 160 is inside deliveryFloatRise's range");
-  assert(byId.deliveryFloatLife.min <= 1.2 && 1.2 <= byId.deliveryFloatLife.max, "B: 1.2 is inside deliveryFloatLife's range");
+  // REPOINTED BY CS034 P8 (GATE A): rise moved again, 160 -> 200, against the larger P8 ticker.
+  // deliveryFloatLife is retired outright — its own def/range claims no longer have a subject;
+  // its replacement (deliveryFloatHold/deliveryFloatFade) is test-cs034-p8.js's, not P6's.
+  eq(byId.deliveryFloatRise.def, 200, "B: deliveryFloatRise.def is 200 (P4 300, P6 160 \"travel upwards more slowly\", CS034 P8's GATE A 200)");
+  eq(X.DEBUG.deliveryFloatRise, 200, "B: ...and the live value seeds from the def");
+  assert(!byId.deliveryFloatLife, "B: ⛔ deliveryFloatLife (P6's other retuned row) no longer exists — retired by CS034 P8");
+  // The range must still CONTAIN the new default, or the panel opens on an out-of-range row.
+  assert(byId.deliveryFloatRise.min <= 200 && 200 <= byId.deliveryFloatRise.max, "B: 200 is inside deliveryFloatRise's range");
 
   // -- ⛔ THE KNOB PAUL DECLINED. The three-knob option would have added a `dockOffloadInterval` row
   //    and moved DOCK_OFFLOAD_INTERVAL to 0.10, buying back the separation a single origin costs.
@@ -217,30 +218,27 @@ let X = null;
 
   // -- the registry count HOLDS: this gate answer added no knob at all — measured in §G's TRAP 2 --
 
-  // -- the two retuned rows are still adjacent, still in DELIVERY, still ordinary knobs --
-  const ids = X.DEBUG_ENTRIES.map(v => v.id);
-  eq(ids.indexOf("deliveryFloatLife") - ids.indexOf("deliveryFloatRise"), 1,
-    "B: deliveryFloatLife still follows deliveryFloatRise");
+  // -- the retuned row is still in DELIVERY, still an ordinary knob --
+  // REPOINTED BY CS034 P8: deliveryFloatLife (P6's other retuned row) is retired, so the adjacency
+  // claim has no second row to check against; the DELIVERY-section claim survives for rise alone.
   let section = null; const sectionOf = {};
   for (const r of X.DEBUG_VARS) { if (r.header) section = r.header; else sectionOf[r.id] = section; }
   eq(sectionOf.deliveryFloatRise, "DELIVERY", "B: deliveryFloatRise is in the DELIVERY section");
-  eq(sectionOf.deliveryFloatLife, "DELIVERY", "B: ...beside deliveryFloatLife");
 
   // -- applyDebug round-trip on a retuned row: the NEW def is what "overrides off" falls back to --
   X.applyDebug("deliveryFloatRise", 420);
   eq(X.DEBUG.deliveryFloatRise, 420, "B: applyDebug moves the live rise");
   X.applyDebug(X.DEBUG_OVERRIDE_ID, 0);
-  eq(X.DEBUG.deliveryFloatRise, 160, "B: ⛔ with overrides OFF the consumer sees the NEW shipped default, 160");
+  eq(X.DEBUG.deliveryFloatRise, 200, "B: ⛔ with overrides OFF the consumer sees the current shipped default, 200 (CS034 P8's GATE A)");
   X.applyDebug(X.DEBUG_OVERRIDE_ID, 1);
   eq(X.DEBUG.deliveryFloatRise, 420, "B: with overrides ON it sees the knob again");
-  X.applyDebug("deliveryFloatRise", 160);
+  X.applyDebug("deliveryFloatRise", 200);
   X.applyDebug(X.DEBUG_OVERRIDE_ID, 0);
 
-  // -- neither retuned row is a lever --
-  for (const id of ["deliveryFloatRise", "deliveryFloatLife"]) {
-    assert(!X.LEVERS.some(l => l.id === id), `B: ${id} is not a lever`);
-    assert(!("floor" in byId[id]) && !("ceil" in byId[id]) && !("steps" in byId[id]), `B: ...${id} carries no lever triple`);
-  }
+  // -- the retuned row is not a lever --
+  assert(!X.LEVERS.some(l => l.id === "deliveryFloatRise"), "B: deliveryFloatRise is not a lever");
+  assert(!("floor" in byId.deliveryFloatRise) && !("ceil" in byId.deliveryFloatRise) && !("steps" in byId.deliveryFloatRise),
+    "B: ...deliveryFloatRise carries no lever triple");
 
   // -- REPOINTED BY CS029 P4 (§0.3): DELIVERY_FLOAT_DY (a fixed nudge above the ship) is retired.
   //    CS026 P6's own gate reading — "closer to the ship" — was a misinterpretation; Paul's actual
@@ -648,11 +646,20 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // REPOINTED BY CS030 P3: +2 more (celebrationScrollStep, celebrationEmblemSize) — a later phase's
     // rows, named rather than wildcarded. TRAP 2's claim is "P6 itself added no knob", which stays
     // provable by excluding the later phase's named rows before comparing.
-    const laterIds = new Set(["celebrationScrollStep", "celebrationEmblemSize"]);
-    const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIds.has(id));
-    eq(xIdsSansLater.length - OLD.DEBUG_ENTRIES.length, 0,
-      "G: ⛔ TRAP 2 — the registry did not grow at all (bar CS030 P3's later rows), measured not counted");
-    eq(xIdsSansLater.join(","), OLD.DEBUG_ENTRIES.map(v => v.id).join(","),
+    // REPOINTED BY CS034 P8: unlike every prior later-phase repoint here, P8 doesn't just ADD rows —
+    // it RETIRES deliveryFloatLife and replaces it in place with five new ones. A purely additive
+    // exclusion (drop the new ids from X) can't restore byte-equality on its own, because OLD still
+    // carries deliveryFloatLife and X no longer does. Both sides now exclude their own later-phase-only
+    // ids before comparing — X drops P8's five new rows, OLD drops the row P8 retired — so the
+    // comparison is still "every row P6 shipped, in the same order," not weakened.
+    const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
+      "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade"]);
+    const laterIdsOld = new Set(["deliveryFloatLife"]);
+    const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
+    const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));
+    eq(xIdsSansLater.length - oldIdsSansLater.length, 0,
+      "G: ⛔ TRAP 2 — the registry did not grow at all (bar CS030 P3's/CS034 P8's later rows), measured not counted");
+    eq(xIdsSansLater.join(","), oldIdsSansLater.join(","),
       "G: ⛔ TRAP 2 — the same rows, in the same order (a swap would net to zero and hide here otherwise)");
 
     // TRAP 1, INVERTED FOR THIS PHASE — the closing phase is the one that MUST move the version.

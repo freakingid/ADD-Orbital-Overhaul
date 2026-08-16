@@ -352,7 +352,9 @@ function compareBuilds(L, R, tag) {
     eq(OLD.GAME_VERSION, "1.0.0.26", "E: parentSource() output builds, and cs-27 p1 moved no game code");
     // REPOINTED BY CS030 P3: the registry held steady at 85 from cs-27 p1 through CS030 P2, but P3
     // added its two CELEBRATION knobs — a later phase's rows, named rather than re-litigated.
-    eq(OLD.DEBUG_ENTRIES.length + 2, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two later rows)");
+    // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added in
+    // its place) — same idiom, named rather than re-litigated.
+    eq(OLD.DEBUG_ENTRIES.length + 2 + 4, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two and CS034 P8's net four later rows)");
     assert(Object.keys(OLD).length > 500, "E: ...and the harvest re-ran against the parent's own symbol set");
   }
 })();

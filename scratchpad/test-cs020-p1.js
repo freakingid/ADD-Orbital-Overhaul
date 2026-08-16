@@ -416,8 +416,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // misinterpretation — Paul's intent was a static dock anchor, shared with the towed branch via
   // `deliveryAnchorX`/`deliveryAnchorY`. FLAG-CS020-d's actual claim ("an incidental keeps its
   // FloatText") is what this asserts and it still holds; only the look and the position have moved
-  // under it, three times now, across three gate answers.
-  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)\);/.test(scriptSrc),
+  // under it, three times now, across three gate answers. RE-REPOINTED AGAIN BY CS034 P8 (spec §3.5):
+  // the single `deliveryFloatLife` knob split into `deliveryFloatHold + deliveryFloatFade` (life) and
+  // `deliveryFloatFade` (fade) — same knob-driven separation, one more argument.
+  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\)\);/.test(scriptSrc),
     "A: an incidental keeps its FloatText (FLAG-CS020-d), quieted per CS026 P4 and re-homed to the dock anchor per CS029 P4");
   assert(scriptSrc.includes("AudioSys.deliver(1);"),
     "A: an incidental calls AudioSys.deliver(1) — flat, not combo-pitched (FLAG-CS020-e)");

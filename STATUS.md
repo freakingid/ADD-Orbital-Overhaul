@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS034 · Phase: P7 · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P8 · Registry: 91 · Levers: 18
 
 ## Phase ledger — CS034
 
@@ -91,11 +91,25 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P7 · Registry: 87 · Levers: 18
   on a full clone (`test-cs034-p7.js`, new this phase); 17 pre-existing files carried stale assertions
   about the deleted subsystem and were updated (see Known issues).
 
+- P8 — Delivery-ticker port per `PLANNED-FEATURES-CS034.md` §3.5, GATE A: size 18, sizeStep 0.0,
+  sizeMax 36, hold 0.25s, fade 0.75s, rise 200px/s (was 160), `DELIVERY_FLOAT_ANCHOR_FRAC` 0.75 (was
+  0.50). `FloatText` gains one trailing optional `fade` field (defaults to `life`); `draw()`'s alpha
+  is `max(0, min(1, life/fade))`, byte-identical to the old `max(0, life/life0)` when `fade === life0`.
+  The delivery ticker's size now grows per piece (`deliveryFloatSize + deliveryFloatSizeStep *
+  (deliveryCount-1)`, clamped at `deliveryFloatSizeMax`) and its life splits into
+  `deliveryFloatHold + deliveryFloatFade`; the incidental floater reads the same hold/fade pair.
+  Registry 87 → 91: five new DELIVERY rows added, `deliveryFloatLife` retired (no migration — orphans
+  harmlessly per the standing rule). GATE A9: measured clearance at these values is positive (no
+  overlap) — Part 4 (SALVAGE BONUS/MAX HAUL birth y) is unchanged; supersedes the CS029-era 0.0px /
+  CS034 P1's measured -11.4px overlap notes below. Suite: 136/136 on a full clone (`test-cs034-p8.js`,
+  new this phase); 14 pre-existing files (registry-count pins plus source-regex pins on the two
+  delivery push sites) were repointed — same cost class as CS026 P4/CS034 P4/P7's registry bumps.
+
 ## Working / verified
 
-- Full suite on a full clone: **135 files, 135 passed, 0 failed, 0 skipped, 0 timed out.** (134 →
-  135: `test-cs034-p7.js`, new this phase.)
-- Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
+- Full suite on a full clone: **136 files, 136 passed, 0 failed, 0 skipped, 0 timed out.** (135 →
+  136: `test-cs034-p8.js`, new this phase.)
+- Registry confirmed at **91** (was 87; P8's net +4), `LEVERS` at **18** — unmoved this changeset.
 - `player_id` mint/backfill/never-regenerate verified directly (`test-cs033-p1.js`): a profile
   loaded from a pre-CS033 blob is backfilled on boot, and a second boot from that same store reuses
   the identical id.
@@ -170,9 +184,10 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P7 · Registry: 87 · Levers: 18
   same shape as CS026 P1/P2's conversions. See `log/CS026.md`.
 - **Satellite-vs-satellite elastic bounce and mutual collision damage were never playtested (from
   CS023).** Both are live in the game today; no gate since has asked about them. See `log/CS023.md`.
-- **The milestone floaters can still touch the dock anchor at the picked gate value (from
-  CS029).** `SALVAGE BONUS`/`MAX HAUL` measured at 0.0px clearance from the delivery ticker at
-  `anchorFrac` 0.50 — zero crossing, but no air either. Paul picked 0.50 anyway.
+- **RESOLVED by CS034 P8's GATE A.** The milestone-floater/delivery-ticker overlap first recorded at
+  CS029 (0.0px at `anchorFrac` 0.50) and re-measured with an ink-aware metric at CS034 P1 (actually
+  -11.4px overlap at the same value) is cleared at the values GATE A settled on: `anchorFrac` 0.75,
+  deliveryFloatSize 18. GATE A9 reported positive clearance — no floater reposition was needed.
 
 ## Open questions (blocking)
 

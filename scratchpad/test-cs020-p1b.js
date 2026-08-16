@@ -495,7 +495,12 @@ const dockBlockCode = stripComments(dockBlockSrc);
   assert(/game\.chain\.length = 0;\s*\n\s*game\.deliveryCount = 0;/.test(codeSrc),
     "A: scatterChain still zeroes the counter");
   // No clamp was added anywhere — the bound is structural, which is the whole point.
-  assert(!/Math\.min\([^)]*deliveryCount/.test(codeSrc) && !/deliveryCount[^\n]*Math\.min/.test(codeSrc),
+  // REPOINTED BY CS034 P8: the regex used to be a blanket `Math.min(...deliveryCount` scan, which
+  // false-positives on P8's unrelated `game.deliveryTicker.size = Math.min(deliveryFloatSizeMax,
+  // ... * (game.deliveryCount - 1))` — a floater-size formula that READS deliveryCount, not a clamp
+  // ON it. Narrowed to what this test actually claims: nothing ever ASSIGNS a Math.min/max of
+  // deliveryCount back onto itself.
+  assert(!/game\.deliveryCount\s*=\s*Math\.(min|max)\(/.test(codeSrc),
     "A: no deliveryCount clamp was added — the cap is a consequence of the hook reset, not a guard");
 })();
 

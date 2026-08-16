@@ -808,12 +808,16 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // junkSplit* rows are that phase's, not P1's. CS026 P4 widens it again with its own two, and CS026 P5
     // widens it a fifth time with its own four: the list stays explicit rather than a wildcard so a row
     // arriving with no changeset behind it still fails.
+    // CS034 P8 repoint: deliveryFloatLife is retired and replaced by five new DELIVERY rows
+    // (deliveryFloatSize/SizeStep/SizeMax/Hold/Fade) — still not P1's, so the allowance widens again
+    // rather than the retired id lingering as a dead clause.
     assert(added.includes("magnetResumeDelay"), "G: P1's one id, magnetResumeDelay, was added");
     const notP1 = added.filter(id => id !== "magnetResumeDelay");
     const LATER = id => id.startsWith("magnetPush")            // CS025 P2
       || /^junkSplit(Floor|Ceil|Steps)$/.test(id)             // CS026 P2
       || id === "earlyWorldLevels"                            // CS026 P3
-      || id === "deliveryFloatRise" || id === "deliveryFloatLife" // CS026 P4
+      || id === "deliveryFloatRise"                           // CS026 P4
+      || id.startsWith("deliveryFloatSize") || id === "deliveryFloatHold" || id === "deliveryFloatFade" // CS034 P8
       || id.startsWith("levelBanner")                         // CS026 P5
       || id.startsWith("celebration");                        // CS030 P3
     for (const id of notP1)

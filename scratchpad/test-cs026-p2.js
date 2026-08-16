@@ -648,8 +648,10 @@ let X = null;
     // were added" is a statement about the working tree rather than about P2. P2's own claim — its three
     // junkSplit rows, in that order — is what is checked; later phases are NAMED, never wildcarded, so a
     // row arriving with no changeset behind it still fails.
+    // CS034 P8 repoint: deliveryFloatLife is retired and replaced by five new DELIVERY rows.
     const LATER_ROWS = id => id === "earlyWorldLevels"     // CS026 P3
       || id === "deliveryFloatRise" || id === "deliveryFloatLife"    // CS026 P4
+      || id.startsWith("deliveryFloatSize") || id === "deliveryFloatHold" || id === "deliveryFloatFade" // CS034 P8
       || id.startsWith("levelBanner")                                 // CS026 P5
       || id.startsWith("celebration");                                // CS030 P3
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",

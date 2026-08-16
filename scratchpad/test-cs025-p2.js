@@ -1155,15 +1155,18 @@ function stepProbe(X, p, dt = 1 / 60) {
     // ids were added" is a statement about the working tree rather than about P2. P2's own claim — that
     // it added exactly magnetPushKick and magnetPushSpread, in that order — is what is checked here; the
     // order pin below (the real append-only claim) is untouched. Later phases are named, not wildcarded.
+    // CS034 P8 repoint: deliveryFloatLife is retired and replaced by five new DELIVERY rows — still
+    // not P2's, so the allowance widens rather than the retired id lingering as a dead clause.
     const LATER = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id)    // CS026 P2
       || id === "earlyWorldLevels"                                  // CS026 P3
-      || id === "deliveryFloatRise" || id === "deliveryFloatLife"   // CS026 P4
+      || id === "deliveryFloatRise"                                 // CS026 P4
+      || id.startsWith("deliveryFloatSize") || id === "deliveryFloatHold" || id === "deliveryFloatFade" // CS034 P8
       || id.startsWith("levelBanner")                                // CS026 P5
       || id.startsWith("celebration");                               // CS030 P3
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))
-      assert(true, `K: ...and ${id} is a later phase's (CS026 P2's junkSplit lever knobs, CS026 P3's earlyWorldLevels, CS026 P4's delivery floater knobs, CS026 P5's level banner knobs, or CS030 P3's celebration knobs)`);
+      assert(true, `K: ...and ${id} is a later phase's (CS026 P2's junkSplit lever knobs, CS026 P3's earlyWorldLevels, CS026 P4/CS034 P8's delivery floater knobs, CS026 P5's level banner knobs, or CS030 P3's celebration knobs)`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
     eq(removed.length, 0, "K: ...and none was removed");
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldIds.has(id)).join(","),

@@ -109,7 +109,8 @@ const { assert, eq } = A;
   const X = buildGame({ exports: ["DEBUG_ENTRIES", "LEVERS", "GAME_VERSION"] });
   // REPOINTED BY CS030 P3: the registry held from the CS027 start point through CS030 P2, but P3
   // added its two CELEBRATION knobs — a later phase's rows, named rather than re-litigated.
-  eq(OLD.DEBUG_ENTRIES.length + 2, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two later rows) — no OTHER phase added a knob");
+  // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added).
+  eq(OLD.DEBUG_ENTRIES.length + 2 + 4, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two and CS034 P8's net four later rows) — no OTHER phase added a knob");
   eq(X.DEBUG_ENTRIES.length, COUNTS.registryEntries, "B: ...and it's test-registry.js's own count (the only file allowed to name it)");
   eq(OLD.LEVERS.length, X.LEVERS.length, "B: ⛔ LEVERS unchanged from the CS027 start point — no phase moved a lever");
   eq(X.LEVERS.length, COUNTS.levers, "B: ...and it's test-registry.js's own count too");

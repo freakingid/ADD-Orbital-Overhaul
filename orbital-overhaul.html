@@ -660,11 +660,14 @@ const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of 
 // STATIC anchor at the dock, which is fixed for the whole visit (`Dock.update()` only advances
 // `spin`). DELIVERY_FLOAT_DY is retired; both delivery branches now share ONE origin,
 // `dock.y - DOCK_RADIUS * DELIVERY_FLOAT_ANCHOR_FRAC`, gated via tools/dock-float-lab.html (CS029
-// P3/P4, gate G2). 0.5 sits the anchor halfway between the dock's centre and its rim — high enough
-// that SALVAGE BONUS/MAX HAUL's own dock.y-22 climb (they use FloatText's un-passed 30px/s·1.1s
-// defaults) doesn't cross it. Not a knob: like DELIVERY_FLOAT_DY before it, this is a fixed
-// placement decision, not a playtest dial.
-const DELIVERY_FLOAT_ANCHOR_FRAC = 0.50;
+// P3/P4, gate G2; re-gated CS034 P1/GATE A against the larger CS034 P8 ticker). 0.75 sits the
+// anchor three-quarters of the way from the dock's centre to its rim — high enough that SALVAGE
+// BONUS/MAX HAUL's own dock.y-22 climb (they use FloatText's un-passed 30px/s·1.1s defaults)
+// doesn't cross it, confirmed clear at CS034's GATE A (was 0.50 through CS029; measured -11.4px
+// overlap at that value once the ticker's ink-aware clearance was actually measured — CS034 P1).
+// Not a knob: like DELIVERY_FLOAT_DY before it, this is a fixed placement decision, not a playtest
+// dial.
+const DELIVERY_FLOAT_ANCHOR_FRAC = 0.75;
 
 // Larger world & scrolling camera (v1.2)
 const CULL_MARGIN = 100;        // px beyond the viewport edge still worth drawing
@@ -3593,9 +3596,23 @@ const DEBUG_VARS = [
   // rises and fades after that release. DOCK_OFFLOAD_INTERVAL stayed at 0.05 (gate G5) because C
   // dissolves the trade it used to control, not because the trade was re-won.
   { id: "deliveryFloatRise", label: "Delivery floater rise", unit: "px/s",
-    def: 160, min: 30, max: 600, step: 10 },
-  { id: "deliveryFloatLife", label: "Delivery floater life", unit: "s",
-    def: 1.2, min: 0.2, max: 2.0, step: 0.05 },
+    def: 200, min: 30, max: 600, step: 10 },
+  // CS034 P8 (spec §3.5, GATE A): the old single delivery-floater life knob is retired — its two
+  // readers (the delivery ticker's construction and the incidental floater's push) both move to the
+  // hold/fade pair below. `fade` is what FloatText's new `fade` field reads; `hold` is folded into
+  // `life` at each call site as `hold + fade`, so the floater holds full opacity for `hold` seconds
+  // after release, then fades linearly over `fade`. Size grows per piece: `deliveryFloatSize +
+  // deliveryFloatSizeStep * (deliveryCount - 1)`, clamped at `deliveryFloatSizeMax`.
+  { id: "deliveryFloatSize", label: "Delivery floater size", unit: "px",
+    def: 18, min: 12, max: 64, step: 1 },
+  { id: "deliveryFloatSizeStep", label: "Delivery floater size/piece", unit: "px",
+    def: 0.0, min: 0, max: 6, step: 0.5 },
+  { id: "deliveryFloatSizeMax", label: "Delivery floater size cap", unit: "px",
+    def: 36, min: 16, max: 96, step: 1 },
+  { id: "deliveryFloatHold", label: "Delivery floater hold", unit: "s",
+    def: 0.25, min: 0, max: 3.0, step: 0.05 },
+  { id: "deliveryFloatFade", label: "Delivery floater fade", unit: "s",
+    def: 0.75, min: 0.1, max: 3.0, step: 0.05 },
   // CS024 P5/P6c (spec §2.4/§2.6/§4.5/§5): the JUNK chain, THREE knobs per lever (floor, ceil, steps) —
   // see leverKnob() above, which also derives the ▼ / ↳ / (inv) markers straight off LEVERS. junkCount
   // is the driver (sawtooths every 10 levels, so it wears ▼); the three sizes are fully independent (no
@@ -6918,9 +6935,13 @@ class FloatText {
   // so update() falls straight through to the original two lines, byte-identical. It exists for the
   // model-C delivery ticker (tools/dock-float-lab.html, gate G1): a pinned floater holds its position
   // and life at birth, unaffected by time, until something un-pins it (releaseDeliveryTicker()).
-  constructor(text, x, y, color, size = 16, rise = 30, life = 1.1) {
+  // CS034 P8 (spec §3.5): `fade` is optional, defaults to `life` — every pre-existing call site omits
+  // it and stays byte-identical, since life never exceeds life0 so life/fade never exceeds 1 when
+  // fade === life0. With fade < life0 the floater holds full opacity while life > fade, then fades
+  // linearly over the final `fade` seconds.
+  constructor(text, x, y, color, size = 16, rise = 30, life = 1.1, fade = life) {
     this.text = text; this.x = x; this.y = y; this.color = color; this.size = size;
-    this.rise = rise; this.life = life; this.life0 = life; this.dead = false;
+    this.rise = rise; this.life = life; this.life0 = life; this.fade = fade; this.dead = false;
     this.pinned = false;
   }
   update(dt) {
@@ -6930,7 +6951,7 @@ class FloatText {
     if (this.life <= 0) this.dead = true;
   }
   draw() {
-    ctx.globalAlpha = Math.max(0, this.life / this.life0);
+    ctx.globalAlpha = Math.max(0, Math.min(1, this.life / this.fade));
     drawText(this.text, this.x, this.y, this.size, this.color);
     ctx.globalAlpha = 1;
   }
@@ -9892,21 +9913,28 @@ function update(dt) {
           if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
           Achievements.lifetime.delivered++;
           Achievements.lifetime.deliveryScore += pts;
-          // CS026 P4 (spec §3.3a/§3.4): rise/life read from the DELIVERY registry knobs. CS029 P4
+          // CS026 P4 (spec §3.3a/§3.4): rise read from the DELIVERY registry knobs. CS029 P4
           // (model C, gate G1/§6.3): the towed branch no longer spawns a new floater per canister — one
           // ticker lives for the whole visit, pinned at the dock anchor, its text rewritten to the
           // running visit total as each canister lands. It is released (unpinned, becomes an ordinary
           // rising/fading floater) at the visit's last canister, below. The running total is carried on
           // the ticker itself — there is nowhere else that needs it.
+          // CS034 P8 (spec §3.5): size grows per piece (deliveryFloatSize/SizeStep/SizeMax) and life
+          // splits into a hold (full opacity after release) plus a fade (the linear falloff) — the
+          // old single-life knob is retired.
           if (!game.deliveryTicker) {
             game.deliveryTicker = new FloatText("+" + pts, deliveryAnchorX, deliveryAnchorY,
-              COLOR.dock, 16, DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife);
+              COLOR.dock, DEBUG.deliveryFloatSize, DEBUG.deliveryFloatRise,
+              DEBUG.deliveryFloatHold + DEBUG.deliveryFloatFade, DEBUG.deliveryFloatFade);
             game.deliveryTicker.pinned = true;
             game.deliveryTicker.total = pts;
             game.floaters.push(game.deliveryTicker);
           } else {
             game.deliveryTicker.total += pts;
             game.deliveryTicker.text = "+" + game.deliveryTicker.total;
+            // CS034 P8 (spec §3.5): size grows one step per piece, clamped at the ceiling.
+            game.deliveryTicker.size = Math.min(DEBUG.deliveryFloatSizeMax,
+              DEBUG.deliveryFloatSize + DEBUG.deliveryFloatSizeStep * (game.deliveryCount - 1));
           }
           AudioSys.deliver(game.deliveryCount);
           // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
@@ -9925,8 +9953,9 @@ function update(dt) {
           // Delivery). Fixing it AT THE COUNTER is what keeps those correct without a second guard.
           // AudioSys.deliver(1) deliberately, not the combo pitch: audible, but flat.
           // CS026 P4 (spec §3.5/FORK-CS026-G): QUIETED, not folded in — same text, but COLOR.dim + size
-          // 12 so it never reads as, or shares a tally with, the towed branch's floater. Same rise/life
-          // knobs so a Magnet-parked run of incidentals separates too, not just towed hauls.
+          // 12 so it never reads as, or shares a tally with, the towed branch's floater. Same
+          // rise/hold/fade knobs (CS034 P8) so a Magnet-parked run of incidentals separates too, not
+          // just towed hauls.
           // CS026 P6 (gate Q5) / CS029 P4 (§6.1): born at the dock anchor, like the towed branch — ONE
           // shared origin for both, so a Magnet-fed run of incidentals reads in the same place as a real
           // haul. §6.3: this branch stays an ORDINARY floater and must never be folded into the model-C
@@ -9935,7 +9964,8 @@ function update(dt) {
           // them, it is the colour and size.
           addScore(DOCK_BASE_SCORE);
           game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,
-            COLOR.dim, 12, DEBUG.deliveryFloatRise, DEBUG.deliveryFloatLife));
+            COLOR.dim, 12, DEBUG.deliveryFloatRise,
+            DEBUG.deliveryFloatHold + DEBUG.deliveryFloatFade, DEBUG.deliveryFloatFade));
           AudioSys.deliver(1);
         }
         game.offloadTimer = DOCK_OFFLOAD_INTERVAL;

@@ -611,7 +611,10 @@ function evalSlice(literal) {
       .replace(/,earlyWorldLevels$/, "")
       // CS026 P4 repoint: and deliveryFloatRise/deliveryFloatLife (DELIVERY, inserted right after
       // dockComboGrace) — CS026 P4's rows, not P6b's. Same reasoning a seventh time.
-      .replace(/,deliveryFloatRise,deliveryFloatLife/, "");
+      // RE-REPOINTED BY CS034 P8: deliveryFloatLife is retired and replaced in place by five new
+      // DELIVERY rows (deliveryFloatSize/SizeStep/SizeMax/Hold/Fade) — still CS026 P4/CS034 P8's
+      // territory, not P6b's, so the strip widens to match rather than gaining an eighth clause.
+      .replace(/,deliveryFloatRise,deliveryFloatSize,deliveryFloatSizeStep,deliveryFloatSizeMax,deliveryFloatHold,deliveryFloatFade/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it

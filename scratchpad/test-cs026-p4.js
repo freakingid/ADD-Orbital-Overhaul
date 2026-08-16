@@ -139,29 +139,39 @@ let X = null;
   if (!X) { console.error("ABORT: build failed"); process.exit(1); }
 
   // -- the constructor: trailing, optional, defaulted to today's values --
-  assert(/constructor\(text, x, y, color, size = 16, rise = 30, life = 1\.1\) \{/.test(scriptSrc),
+  // REPOINTED BY CS034 P8 (spec §3.5): a further trailing optional `fade = life` was added after
+  // this phase's own rise/life pair. P4's claim (rise/life trailing+optional) still holds; the
+  // signature now carries one more param, same pattern.
+  assert(/constructor\(text, x, y, color, size = 16, rise = 30, life = 1\.1, fade = life\) \{/.test(scriptSrc),
     "A: FloatText's constructor signature adds rise=30, life=1.1, both trailing and optional");
   const ftBody = scriptSrc.slice(scriptSrc.indexOf("class FloatText {"), scriptSrc.indexOf("class Dock {"));
   assert(/this\.rise = rise; this\.life = life; this\.life0 = life;/.test(ftBody),
     "A: the constructed life is ALSO stored as this.life0 — the trap in item 1 is about what draw() divides by");
   assert(/this\.y -= this\.rise \* dt;/.test(ftBody), "A: update() reads this.rise, not a hardcoded 30");
   assert(!/this\.y -= 30 \* dt;/.test(ftBody), "A: ⛔ ...and the old hardcoded `30 * dt` is gone");
-  assert(/Math\.max\(0, this\.life \/ this\.life0\)/.test(ftBody),
-    "A: ⛔ THE TRAP — draw()'s alpha divides by this.life0 (the constructed value), not a literal");
+  // REPOINTED BY CS034 P8 (spec §3.5): draw()'s alpha formula changed from `max(0, life/life0)` to
+  // `max(0, min(1, life/fade))` — byte-identical when fade === life0 (P4's own trap still holds,
+  // restated against `fade` instead of `life0`), with a new min(1, ...) clamp for fade < life0.
+  assert(/Math\.max\(0, Math\.min\(1, this\.life \/ this\.fade\)\)/.test(ftBody),
+    "A: ⛔ THE TRAP — draw()'s alpha divides by this.fade (defaults to the constructed life), not a literal");
   assert(!/this\.life \/ 1\.1/.test(ftBody), "A: ...and the old literal 1.1 divisor is gone");
 
-  // -- the two delivery push sites read the new DEBUG knobs --
-  eq((codeSrc.match(/DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife/g) || []).length, 2,
-    "A: exactly TWO push sites read DEBUG.deliveryFloatRise/deliveryFloatLife — the towed and incidental branches");
-  // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS029 P4 (§0.3/§6.1/§6.3, model C). The origin
-  // moved from `node.x, node.y` (the popped node) to the ship (P6), then to a static dock anchor
-  // (P4) shared as `deliveryAnchorX`/`deliveryAnchorY`. The incidental branch's own claims here
-  // (COLOR.dim, size 12, reads the two live knobs, stays a plain non-ticker push) are UNCHANGED. The
-  // towed branch's push site itself changed shape — it now creates the model-C ticker on the FIRST
-  // towed canister of a visit; that shape is asserted in test-cs029-p4.js, not here.
-  assert(/game\.deliveryTicker = new FloatText\("\+" \+ pts, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, 16, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\);/.test(scriptSrc),
-    "A: the TOWED branch's ticker keeps COLOR.dock, size 16 (unchanged), reads the two live knobs, and is born at the dock anchor");
-  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise, DEBUG\.deliveryFloatLife\)/.test(scriptSrc),
+  // -- the two delivery push sites read the live DEBUG knobs --
+  // REPOINTED BY CS034 P8 (spec §3.5): deliveryFloatLife is retired; both sites now read
+  // deliveryFloatRise plus the hold+fade pair. The "exactly two sites" claim moves to that shape.
+  eq((codeSrc.match(/DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade/g) || []).length, 2,
+    "A: exactly TWO push sites read DEBUG.deliveryFloatRise plus the hold+fade pair — the towed and incidental branches");
+  // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS029 P4 (§0.3/§6.1/§6.3, model C), THEN AGAIN BY
+  // CS034 P8 (spec §3.5). The origin moved from `node.x, node.y` (the popped node) to the ship (P6),
+  // then to a static dock anchor (P4) shared as `deliveryAnchorX`/`deliveryAnchorY`. P8 replaced the
+  // single deliveryFloatLife arg with the hold+fade pair and, on the towed branch, the hardcoded size
+  // 16 with the live deliveryFloatSize knob. The incidental branch's colour/size claims (COLOR.dim,
+  // size 12) are UNCHANGED. The towed branch's push site itself changed shape — it now creates the
+  // model-C ticker on the FIRST towed canister of a visit; that shape is asserted in
+  // test-cs029-p4.js/test-cs034-p8.js, not here.
+  assert(/game\.deliveryTicker = new FloatText\("\+" \+ pts, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, DEBUG\.deliveryFloatSize, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\);/.test(scriptSrc),
+    "A: the TOWED branch's ticker reads deliveryFloatSize (P8) and the live rise/hold/fade knobs, and is born at the dock anchor");
+  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\)/.test(scriptSrc),
     "A: ⛔ the INCIDENTAL branch is QUIETED (COLOR.dim, size 12), not folded into the towed tally/colour — same dock anchor origin");
 
   // -- every other FloatText call site is untouched: total call sites vs. sites naming the new knobs --
@@ -174,47 +184,43 @@ let X = null;
 
 // ================= (B) the registry =====================
 (function sectionB() {
-  console.log("(B) deliveryFloatRise / deliveryFloatLife: registry order, ranges, live values");
+  console.log("(B) deliveryFloatRise: registry order, ranges, live values (deliveryFloatLife retired by CS034 P8)");
   const iGrace = X.DEBUG_VARS.findIndex(v => v.id === "dockComboGrace");
   const iRise = X.DEBUG_VARS.findIndex(v => v.id === "deliveryFloatRise");
-  const iLife = X.DEBUG_VARS.findIndex(v => v.id === "deliveryFloatLife");
-  assert(iGrace >= 0 && iRise === iGrace + 1 && iLife === iRise + 1,
-    "B: deliveryFloatRise immediately follows dockComboGrace, and deliveryFloatLife immediately follows it");
+  assert(iGrace >= 0 && iRise === iGrace + 1,
+    "B: deliveryFloatRise immediately follows dockComboGrace");
 
-  const rise = X.DEBUG_VARS[iRise], life = X.DEBUG_VARS[iLife];
+  const rise = X.DEBUG_VARS[iRise];
   eq(rise.label, "Delivery floater rise", "B: deliveryFloatRise label");
   eq(rise.unit, "px/s", "B: deliveryFloatRise unit");
-  // ⛔ REPOINTED BY CS026 P6 (gate Q5). P4 SHIPPED THESE AS FIRST GUESSES SPECIFICALLY SO THE GATE
-  // COULD SETTLE THEM — its own comment said so — so the gate moving them is this phase working as
-  // designed, not a regression. Paul: "the score numbers need to fade more slowly, and they need to
-  // travel upwards more slowly."
-  eq(rise.def, 160, "B: deliveryFloatRise def 160 (P4 shipped 300; the gate settled it)");
+  // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS034 P8 (GATE A). P4 SHIPPED THESE AS FIRST
+  // GUESSES SPECIFICALLY SO THE GATE COULD SETTLE THEM — its own comment said so — so the gate
+  // moving them is this phase working as designed, not a regression. P6: "the score numbers need to
+  // fade more slowly, and they need to travel upwards more slowly" (300 -> 160). P8's GATE A
+  // re-settled rise to 200 against the larger, growing ticker.
+  eq(rise.def, 200, "B: deliveryFloatRise def 200 (P4 shipped 300, P6 settled 160; CS034 P8's GATE A re-settled it)");
   eq(rise.min, 30, "B: deliveryFloatRise min 30");
   eq(rise.max, 600, "B: deliveryFloatRise max 600");
   eq(rise.step, 10, "B: deliveryFloatRise step 10");
   assert(!rise.toNative, "B: no toNative hook — shown value is native");
 
-  eq(life.label, "Delivery floater life", "B: deliveryFloatLife label");
-  eq(life.unit, "s", "B: deliveryFloatLife unit");
-  eq(life.def, 1.2, "B: deliveryFloatLife def 1.2 (P4 shipped 0.55; the gate settled it)");
-  eq(life.min, 0.2, "B: deliveryFloatLife min 0.2");
-  eq(life.max, 2.0, "B: deliveryFloatLife max 2.0");
-  eq(life.step, 0.05, "B: deliveryFloatLife step 0.05");
-  assert(!life.toNative, "B: no toNative hook — shown value is native");
+  // REPOINTED BY CS034 P8 (spec §3.5): deliveryFloatLife is retired outright — its two readers moved
+  // to the deliveryFloatHold/deliveryFloatFade pair, tested in test-cs034-p8.js. P4's own claim about
+  // it shipping alongside rise no longer has a subject; assert the retirement instead.
+  assert(!X.DEBUG_VARS.some(v => v.id === "deliveryFloatLife"),
+    "B: ⛔ deliveryFloatLife (P4's own row) no longer exists — retired by CS034 P8");
+  eq(X.DEBUG.deliveryFloatLife, undefined, "B: ...and DEBUG.deliveryFloatLife is undefined");
 
-  eq(X.DEBUG.deliveryFloatRise, 160, "B: the live value seeds from def (rise)");
-  eq(X.DEBUG.deliveryFloatLife, 1.2, "B: ...and (life)");
+  eq(X.DEBUG.deliveryFloatRise, 200, "B: the live value seeds from def (rise)");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4,
     "B: DEBUG_ROWS is still registry + Dump + Reset All + Reset Scores + Back");
 
   // Live through the real panel path.
   const A = build();
   A.applyDebug("deliveryFloatRise", 500);
-  A.applyDebug("deliveryFloatLife", 1.0);
   eq(A.DEBUG.deliveryFloatRise, 500, "B: applyDebug writes deliveryFloatRise live");
-  eq(A.DEBUG.deliveryFloatLife, 1.0, "B: ...and deliveryFloatLife live");
   A.applyDebug(A.DEBUG_OVERRIDE_ID, 0);
-  eq(A.DEBUG.deliveryFloatRise, 160, "B: overrides OFF derives from def, like every other row");
+  eq(A.DEBUG.deliveryFloatRise, 200, "B: overrides OFF derives from def, like every other row");
   eq(A.debugShown.deliveryFloatRise, 500, "B: ...without discarding the edit");
 })();
 
@@ -348,7 +354,10 @@ let X = null;
   // in test-cs029-p4.js against the real offload block, the same way this section already does for
   // score/stats/latches. What survives here is what P4/P6 actually claimed about IDENTITY: colour,
   // size and the live rise/life knobs, on whatever gets pushed.
-  const towedFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === 16 && p.obj.text.startsWith("+"));
+  // REPOINTED BY CS034 P8 (spec §3.5): the towed branch's size is now the live deliveryFloatSize knob
+  // (18 shipped, was the hardcoded 16) — at the shipped deliveryFloatSizeStep 0.0 the ticker never
+  // grows mid-visit, so filtering on the live knob is stable here exactly like the hardcoded 16 was.
+  const towedFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === A.DEBUG.deliveryFloatSize && p.obj.text.startsWith("+"));
   const incidentalFloaters = pushes.filter(p => p.obj.color === A.COLOR.dim && p.obj.size === 12);
   eq(towedFloaters.length, 1, "E: ⛔ the towed visit pushes exactly ONE floater — the ticker, born on canister 1 — not one per canister");
   eq(incidentalFloaters.length, 1, "E: exactly 1 incidental floater was pushed");
@@ -357,9 +366,12 @@ let X = null;
     "E: ⛔ the incidental floater does NOT share the towed branch's colour");
   assert(incidentalFloaters[0].obj.size !== towedFloaters[0].obj.size,
     "E: ⛔ ...nor its size — it must not read as part of the same tally");
+  // REPOINTED BY CS034 P8: life0/fade split off the retired single deliveryFloatLife knob into
+  // deliveryFloatHold + deliveryFloatFade (life0) and deliveryFloatFade (fade).
   for (const p of [...towedFloaters, ...incidentalFloaters]) {
     eq(p.obj.rise, A.DEBUG.deliveryFloatRise, "E: every delivery floater's rise is the live knob");
-    eq(p.obj.life0, A.DEBUG.deliveryFloatLife, "E: ...and every one's life0 is the live knob");
+    eq(p.obj.life0, A.DEBUG.deliveryFloatHold + A.DEBUG.deliveryFloatFade, "E: ...and every one's life0 is hold+fade");
+    eq(p.obj.fade, A.DEBUG.deliveryFloatFade, "E: ...and every one's fade is the live fade knob");
   }
 
   // -- the ticker's own lifecycle: born at the first canister's own points, ends up holding the FULL

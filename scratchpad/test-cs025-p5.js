@@ -505,9 +505,12 @@ function quiet(X) {
     // the count comparison becomes "the parent's rows are all still there", with later phases' rows
     // named. An ADDED lever/row passes; a moved, renamed or deleted one still fails.
     const ADDED_CARRIES = { junkCount: ["junkSplit"] };            // CS026 P2
+    // CS034 P8 repoint: deliveryFloatLife is retired (harmless dead clause below, kept for the
+    // narrative) and replaced by five new DELIVERY rows — still not P5's, so the allowance widens.
     const LATER_ROWS = id => /^junkSplit(Floor|Ceil|Steps)$/.test(id)    // CS026 P2
       || id === "earlyWorldLevels"                                       // CS026 P3
       || id === "deliveryFloatRise" || id === "deliveryFloatLife"        // CS026 P4
+      || id.startsWith("deliveryFloatSize") || id === "deliveryFloatHold" || id === "deliveryFloatFade" // CS034 P8
       || id.startsWith("levelBanner")                                    // CS026 P5
       || id.startsWith("celebration");                                   // CS030 P3
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
