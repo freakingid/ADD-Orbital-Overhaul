@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.33 · Changeset: CS034 · Phase: P5 · Registry: 87 · Levers: 18
+Version: 1.0.0.33 · Changeset: CS034 · Phase: P6 · Registry: 87 · Levers: 18
 
 ## Phase ledger — CS034
 
@@ -59,10 +59,24 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P5 · Registry: 87 · Levers: 18
   `drawCelebration(` from its untouched-functions list (the other three stay pinned). Suite:
   133/133 on a full clone (`test-cs034-p5.js`, new this phase).
 
+- P6 — Achievement reset per `PLANNED-FEATURES-CS034.md` §5. New `resetAchievements(pool)` owns clear +
+  persist for the ACTIVE PROFILE only (`"lifetime"` zeroes every counter and empties
+  `lifetimeUnlocked`/`lifetimeTiers`; `"weekly"` empties `weeklyUnlocked`; then `Achievements.save()` —
+  never `init()`, which would reload what was just cleared). `weekKey`/`activeIds` untouched; no new
+  `localStorage` key. Reached from the Achievements viewer behind two stages: the shared modal (naming
+  pool + profile, `index: 1` CANCEL default untouched) then a typed `reset`. ⚠ **FLAG-CS034-a shipped as
+  spec'd** — `menuAchievements()`'s `confirm` is split off from `back`, so ENTER now resets the shown
+  tab instead of leaving; `ACH_HINT` rewritten in the same edit. `openNameEntry()`'s `ctx` gained
+  optional `title`/`validate`, resolved for the live AND commit paths through one new
+  `nameEntryValidate()`; `nameEntryError()` is untouched and becomes the default. `ACH_ROW_CLIP_BOTTOM`
+  620 → 572 to seat the reset row (Weekly tab still ceiling 0). Two pre-existing tests asserted the old
+  shared confirm/back branch and were updated: `test-cs016-p2.js` §D and `test-cs016-p5.js` §H. Suite:
+  134/134 on a full clone (`test-cs034-p6.js`, new this phase).
+
 ## Working / verified
 
-- Full suite on a full clone: **133 files, 133 passed, 0 failed, 0 skipped, 0 timed out.** (132 →
-  133: `test-cs034-p5.js`, new this phase.)
+- Full suite on a full clone: **134 files, 134 passed, 0 failed, 0 skipped, 0 timed out.** (133 →
+  134: `test-cs034-p6.js`, new this phase.)
 - Registry confirmed at **87**, `LEVERS` at **18** — unmoved this changeset.
 - `player_id` mint/backfill/never-regenerate verified directly (`test-cs033-p1.js`): a profile
   loaded from a pre-CS033 blob is backfilled on boot, and a second boot from that same store reuses
@@ -81,6 +95,13 @@ Version: 1.0.0.33 · Changeset: CS034 · Phase: P5 · Registry: 87 · Levers: 18
 
 ## Known issues
 
+- **`blankLegacyStores()` calls `Achievements.save()` unguarded — the same latent hole CS034 P6's reset
+  had to design around, and it is NOT fixed this changeset** (spec §5.2). `save()` early-returns on
+  `game.debugRun || game.resumedRun`, so a call made during a resumed run clears memory and never
+  persists. Harmless today for the same structural reason the new reset is safe: `blankLegacyStores()`
+  is only reachable from profile delete, which is title-only, where neither flag can be set. **A future
+  changeset that makes the profiles screen — or the achievements viewer — reachable mid-run must fix
+  both, not one.** Recorded, deliberately unfixed.
 - **Every score posted between CS033 P3 and CS034 P4 stays flagged on the public leaderboard.**
   The key fix (P4) only changes what future submissions send — nothing client-side can retroactively
   unflag an already-submitted row. A `coinless-kit` data question, not a game one (spec §7.1).
@@ -131,7 +152,20 @@ None.
 
 ## Playtest asks (open only — answered ones move to the log)
 
-None open.
+- **⚠ FLAG-CS034-a (GATE B) — ENTER no longer leaves the Achievements viewer.** `menuAchievements()`
+  handled `confirm` and `back` in one shared branch from CS012 P4 until CS034 P6; both left the screen,
+  so ENTER-to-return is shipped muscle memory. The screen has **no row cursor** (up/down are a
+  continuous scroll), so rather than invent one, `confirm` became the reset verb and acts on whichever
+  pool the active tab shows. `ACH_HINT` was rewritten in the same edit — it is the only warning a
+  returning player gets. **Does ENTER-resets-the-shown-tab read right in the browser, or does it want a
+  real cursor / a different key?** Also worth a look at the gate: the new reset row's placement
+  (`ACH_RESET_Y` 616, 18 px) now that the row region lost 48 px (`ACH_ROW_CLIP_BOTTOM` 620 → 572), and
+  whether the two-stage confirmation reads as deliberate rather than tedious.
+  **One consequence to look at specifically:** leaving the typed field — committed or cancelled — goes
+  back through `gotoScreen("achievements")`, which resets the tab to Weekly by the standing CS016 P5
+  rule. So resetting Lifetime returns the player to the *Weekly* tab, where nothing visibly changed.
+  Not fixed here (that rule is deliberate and shipped); if it reads as "did that work?", the fix is a
+  return-to-tab argument, which is a design call.
 
 ## Balance notes
 

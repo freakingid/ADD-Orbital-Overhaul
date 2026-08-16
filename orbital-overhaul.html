@@ -3279,7 +3279,18 @@ const DEBUG_ENTRY_MAXLEN = 8;     // characters a typed numeric entry may accret
 // long before the viewer's consts — need it, and a `const` referenced ahead of its definition is a
 // TDZ throw at load, not an undefined. ACH_TABS[0].id reads this, so the two can't drift apart.
 const ACH_TAB_DEFAULT = "weekly";
-const ACH_HINT = "↑↓ scroll    ◄► switch tab    ESC / B / ENTER  return";
+// ⚠ CS034 P6 (FLAG-CS034-a): ENTER NO LONGER LEAVES THIS SCREEN — it fires the reset for the tab on
+// show. This footer is updated in the SAME edit that split `confirm` off from `back` in
+// menuAchievements(), because "ESC / B / ENTER return" is shipped muscle memory and the footer is the
+// only warning a returning player gets. If the split is ever reverted, revert this line with it.
+const ACH_HINT = "↑↓ scroll    ◄► switch tab    ENTER / A  reset    ESC / B  return";
+// CS034 P6 (spec §5.4/§5.5): the achievements-reset flow's strings. The typed word is compared
+// TRIMMED AND LOWER-CASED, so a pad player typing RESET off the uppercase-only NAME_CELLS grid and a
+// keyboard player typing "reset" clear the same gate.
+const ACH_RESET_VERB  = "RESET";                    // stage 1: the modal's confirm label
+const ACH_RESET_TITLE = "TYPE RESET TO CONFIRM";    // stage 2: the typed field's panel heading
+const ACH_RESET_WORD  = "reset";
+const ACH_RESET_ERR   = 'Type "reset" to confirm';
 // CS015 P1: the root/PAUSED panel's control hint, at MENU_HINT_SIZE 16, no longer fits the fixed
 // 360px panel width — hoisted to a const so drawRootMenu's width measurement and its drawMenuHint
 // call can't drift apart. ROOT_MENU_HINT_MARGIN is the side padding added to the measured text
@@ -4360,12 +4371,44 @@ function menuAchievements(a) {
   // drawAchievements() renders with, so input and render never disagree about the scroll ceiling.
   else if (a === "up")   game.menu.scroll = Math.max(0, game.menu.scroll - ACH_SCROLL_STEP);
   else if (a === "down") game.menu.scroll = Math.min(achMaxScroll(), game.menu.scroll + ACH_SCROLL_STEP);
+  // ⚠ CS034 P6 / FLAG-CS034-a (spec §5.3): `confirm` IS SPLIT OFF FROM `back`. Until this phase the two
+  // shared one branch and both left the screen. This viewer drives up/down as CONTINUOUS scroll with no
+  // row selection, so there is no cursor a reset row could be reached by — rather than invent one, the
+  // already-present `confirm` action becomes the verb, and it acts on whichever pool the ACTIVE TAB is
+  // showing. One row, one verb, no cursor, and the tab you are looking at is the pool you reset.
+  // ⛔ ACH_HINT was rewritten in the same edit — ENTER-to-return was shipped behaviour.
+  else if (a === "confirm") openAchReset();
   // CS012 P4: Achievements has exactly ONE parent, so Back is a hardcoded destination with the cursor
   // restored to its own row — no achReturn tracker. CS016 P2 (§2, FORK-CS016-A) repoints that single
   // parent from Options to the TITLE MENU; still one parent, still no return-context machinery, only
   // the screen it names changed. Accepted cost: the viewer is now unreachable mid-run and at gameover
-  // (unlock toasts during play remain the in-run feedback).
-  else if (a === "confirm" || a === "back") gotoScreen("titlemenu", MENU_TITLE.indexOf("Achievements"));
+  // (unlock toasts during play remain the in-run feedback) — and as of CS034 P6 that is also what makes
+  // the reset below safe to persist; see resetAchievements().
+  else if (a === "back") gotoScreen("titlemenu", MENU_TITLE.indexOf("Achievements"));
+}
+
+// CS034 P6 (spec §5.4): the two-stage confirmation, raised by the viewer's `confirm`.
+//   Stage 1 — the shared modal, naming BOTH the pool and the profile, because a reset is per-profile
+//             and the viewer never says whose progress it is showing. ⛔ openModal's `index: 1`
+//             CANCEL-by-default is untouched: that is the safety property, not a tidy-up target.
+//   Stage 2 — the generalized "nameentry" screen. ⛔ A GAMEPAD CANNOT TYPE, and that grid is the only
+//             pad-reachable text path in the build, which is why this is a generalization of the
+//             existing screen and not a second one (spec §5.5).
+// `pool` is captured from the tab that was active when stage 1 opened, so a reset can never be applied
+// to a different pool than the question the player answered.
+function openAchReset() {
+  const tab = achActiveTab(), pool = tab.id;
+  const who = Profiles.nameOf(Profiles.activeId) || "THIS PROFILE";
+  openModal("Reset " + tab.label + " achievements for " + who + "?\nThis cannot be undone.",
+    ACH_RESET_VERB, () => {
+      // menuModal() cleared the modal BEFORE invoking this — its own documented rule, and precisely
+      // what makes it safe for the callback to navigate. openNameEntry() navigates.
+      openNameEntry({
+        mode: "confirm", back: "achievements", title: ACH_RESET_TITLE,
+        validate: buf => (String(buf == null ? "" : buf).trim().toLowerCase() === ACH_RESET_WORD ? "" : ACH_RESET_ERR),
+        onCommit: () => resetAchievements(pool)
+      });
+    });
 }
 
 // High Scores viewer: read-only top-10 table. One entry point -> one back-destination, no
@@ -4996,12 +5039,22 @@ function nameEntryError(buf, ctx) {
   if (Profiles.nameTaken(n, ctx && ctx.mode === "rename" ? ctx.id : undefined)) return NAME_ERR_TAKEN;
   return "";
 }
+// CS034 P6 (spec §5.5): resolve the validator for a ctx — the caller's `validate` when it supplied one,
+// else the shipped name rules above. ⛔ nameEntryError() IS NOT DELETED OR INLINED: it stays THE ONE
+// PLACE THE NAME RULES LIVE and simply becomes the default. Both the live path (nameEntryRevalidate)
+// and the commit path (nameEntryCommit) ask through here, so a supplied validator can no more disagree
+// with itself across those two than the default one could — that is nameEntryError's whole contract,
+// widened by one indirection rather than duplicated.
+function nameEntryValidate(buf, ctx) {
+  const v = ctx && ctx.validate;
+  return typeof v === "function" ? v(buf) : nameEntryError(buf, ctx);
+}
 // Live re-validation after every buffer edit. An EMPTY buffer shows nothing rather than "Enter a name":
 // a field nobody has typed into yet is not a mistake, and the message is still raised the moment DONE is
 // pressed on it. Every other state (whitespace-only included) reports immediately.
 function nameEntryRevalidate() {
   const m = game.menu;
-  m.nameErr = m.nameBuf.length === 0 ? "" : nameEntryError(m.nameBuf, m.nameCtx);
+  m.nameErr = m.nameBuf.length === 0 ? "" : nameEntryValidate(m.nameBuf, m.nameCtx);
 }
 // One character in or out, whichever path asked. The cap DROPS the keystroke rather than truncating,
 // and an empty-buffer Backspace is inert — both are debugEntryKey()'s conventions, blip included.
@@ -5022,6 +5075,10 @@ function nameEntryKey(key) {
 // screen that raised this one (gotoScreen's own two arguments); `onCommit(name)` receives the validated
 // string. onCommit is openModal's onConfirm closure precedent — a caller wires the screen in one call
 // with no per-screen state, and the roster op stays entirely on the caller's side.
+// CS034 P6 adds two OPTIONAL ctx fields, so this is a general typed field rather than a name-only one:
+//   `title`         — the panel heading. Absent -> the mode's own NAME_TITLE_ADD / NAME_TITLE_RENAME.
+//   `validate(buf)` — "" when clean, else the inline message. Absent -> nameEntryError(buf, ctx).
+// Both existing callers (profile add, profile rename) pass neither and are behaviourally untouched.
 // ⛔ THIS IS THE ONLY WAY IN, and it re-initialises all three fields — which is why no other menu
 // teardown has to clear them. They are inert unless game.menu.screen === "nameentry", and both the
 // literal and resetRun() seed them, so they are never `undefined` for a handler to trip on.
@@ -5044,7 +5101,9 @@ function nameEntryCommit() {
   const m = game.menu;
   // ⛔ RE-VALIDATED HERE, never trusted from nameErr: nameCtx is supplied from outside and nameBuf can
   // be prefilled (a rename opens on the current name), so the live path may never have run at all.
-  const err = nameEntryError(m.nameBuf, m.nameCtx);
+  // ⛔ Through nameEntryValidate(), i.e. the SAME resolved validator the live path used — a supplied
+  // ctx.validate is re-run here for exactly the reason the default one is (CS034 P6).
+  const err = nameEntryValidate(m.nameBuf, m.nameCtx);
   if (err) { m.nameErr = err; AudioSys.ui(false); return; }
   const run = m.nameCtx && m.nameCtx.onCommit;
   const name = m.nameBuf.trim();
@@ -8214,6 +8273,41 @@ const Achievements = {
   }
 };
 
+// ---------- CS034 P6: the achievement reset (spec §5.1 / §5.2 / §5.6) ----------
+// ⛔ THE ONE FUNCTION THAT OWNS WHAT "RESET" MEANS — clear plus persist, for the ACTIVE PROFILE ONLY,
+// exactly like every other per-profile store (Achievements.save() writes through Profiles.keyFor(), so
+// no other profile's blob is even addressable from here). A future online-achievements module wires its
+// own call beside this one site rather than re-deriving the definition (spec §5.6).
+//
+// ⛔ IT DOES NOT CALL Achievements.init() TO REBUILD. init() RELOADS FROM STORAGE, which would restore
+// precisely what was just cleared. The collections are emptied in place and then saved — the same shape
+// blankLegacyStores() already uses a few hundred lines up.
+//
+// ⛔ weekKey AND activeIds ARE NOT RESET. They are calendar-derived, not progress: the player gets this
+// week's same five weekly challenges back, all locked again. afd_scores_v1 is likewise untouched — the
+// high-score table is its own store with its own reset.
+//
+// ⛔ THE PERSISTENCE GATE IS SATISFIED STRUCTURALLY, NOT BY A GUARD HERE. Achievements.save() early-
+// returns on `game.debugRun || game.resumedRun`, so a reset fired during a resumed run would clear
+// memory and never reach storage — the player would see a reset that silently didn't take, or one that
+// took later than they expected. The achievements viewer, this function's only caller, has been
+// TITLE-MENU-ONLY since CS016 P2 (FORK-CS016-A) — unreachable mid-run and at gameover — where neither
+// flag can be set. That is why there is no runtime guard here and why save()'s gate is not relaxed.
+// A future changeset that makes the viewer reachable mid-run inherits this problem; it does not get to
+// delete this comment.
+function resetAchievements(pool) {
+  if (pool === "lifetime") {
+    for (const k in Achievements.lifetime) Achievements.lifetime[k] = 0;
+    Achievements.lifetimeUnlocked = new Set();
+    Achievements.lifetimeTiers = {};
+  } else if (pool === "weekly") {
+    Achievements.weeklyUnlocked = new Set();
+  } else {
+    return;   // unknown pool: change nothing, and above all do not write a save for it
+  }
+  Achievements.save();
+}
+
 // ---------- High Scores (v3.6 P6) ----------
 // Local top-10 table, its own localStorage key. The two other keys — settings' STORAGE_KEY
 // ("afd_settings_v1") and Achievements.STORAGE_KEY ("afd_achievements_v2") — are FROZEN and this
@@ -10454,7 +10548,10 @@ function drawControlsMenu() {
 function drawNameEntry() {
   const m = game.menu;
   const mode = m.nameCtx && m.nameCtx.mode;
-  const { y } = menuPanel(NAME_PANEL_W, NAME_PANEL_H, mode === "rename" ? NAME_TITLE_RENAME : NAME_TITLE_ADD);
+  // CS034 P6: ctx.title wins when a caller supplied one; absent, the mode's own heading — so both
+  // profile callers render exactly the string they always did.
+  const title = (m.nameCtx && m.nameCtx.title) || (mode === "rename" ? NAME_TITLE_RENAME : NAME_TITLE_ADD);
+  const { y } = menuPanel(NAME_PANEL_W, NAME_PANEL_H, title);
   const fx = VIEW_W / 2 - NAME_FIELD_W / 2, fy = y + NAME_FIELD_Y;
   ctx.strokeStyle = COLOR.shield; ctx.lineWidth = 1;
   ctx.strokeRect(fx, fy - NAME_FIELD_H + 10, NAME_FIELD_W, NAME_FIELD_H);
@@ -10614,7 +10711,12 @@ const ACH_STATUS_DY = 0;                             // status sits on the row's
 const ACH_DESC_DY = 30;                              // description line's y-offset below the row's name baseline
 const ACH_ROW_STEP = 48 * ACH_SCALE;                 // row-to-row baseline spacing (was 40*ACH_SCALE pre-CS015-P2; three stacked lines need more headroom)
 const ACH_ROW_CLIP_TOP = ACH_ROW0_Y - 16;             // headroom above row 0, below the tab header (baseline y+ACH_TAB_Y)
-const ACH_ROW_CLIP_BOTTOM = ACH_PANEL_Y + 620;        // headroom above the footer (drawn at ACH_PANEL_Y+644)
+// CS034 P6: 620 -> 572. The reset row needed a band above the footer, and THE ROW REGION GAVE IT UP
+// rather than the panel growing — ACH_PANEL_H is already 660 of a 720-tall view. Nothing else moves:
+// ACH_ROW_VISIBLE_H is derived from this pair and achMaxScroll() from that, so the Lifetime tab simply
+// scrolls 48px further. The Weekly tab's five rows still fit outright (ceiling 0), which is the
+// property CS016 P5 recorded and this change deliberately preserves.
+const ACH_ROW_CLIP_BOTTOM = ACH_PANEL_Y + 572;        // headroom above the reset row + footer
 const ACH_ROW_VISIBLE_H = ACH_ROW_CLIP_BOTTOM - ACH_ROW_CLIP_TOP;
 // CS026 P6 (gate Q8.4): the dotted leader run that ties a row's name (left) to its status (right).
 // Paul's report was that ACH_COL_W's 1140px of clear air between the two made it hard to tell which
@@ -10627,14 +10729,22 @@ const ACH_LEADER_SIZE = 10 * ACH_SCALE;              // smaller than the name: a
 const ACH_LEADER_PAD  = 12;                          // px of clear air at each end, off name and status
 const ACH_LEADER_MIN  = 24;                          // px: a span shorter than this draws nothing at all
 const ACH_LEADER_MAX  = 200;                         // hard cap on dots — see the guard in achLeader()
+// CS034 P6: the reset affordance's own band, between the ▼ scroll cue (ACH_ROW_CLIP_BOTTOM + 10 = 582)
+// and the footer (644). Playtest knobs, like every other number in this cluster.
+const ACH_RESET_Y     = 616;                         // reset-row baseline, relative to the panel top
+const ACH_RESET_SIZE  = 18;
 
 // CS016 P5: the two tabs are DATA. `rows` is a thunk, not a snapshot — activeWeekly() re-derives from
 // the live weekly rotation every frame, and a test that swaps Achievements.LIFETIME still sees the swap.
 // achTabIndex()/achRows()/achMaxScroll()/drawAchievements() all read this one table, so a third tab
 // would be one more entry here and no new branch anywhere.
+// CS034 P6 adds `resetWord` — the tab's name as the reset row says it, in sentence case. It lives on
+// the table for the same reason `label` and `rows` do: a third tab stays one more entry here and no new
+// branch anywhere. ⛔ A TAB'S `id` IS ALSO ITS POOL NAME — resetAchievements(tab.id) is not a coincidence
+// to be tidied into a lookup; Achievements' own `pool` field uses these very two strings.
 const ACH_TABS = [
-  { id: ACH_TAB_DEFAULT, label: "WEEKLY",   rows: () => Achievements.activeWeekly() },
-  { id: "lifetime",      label: "LIFETIME", rows: () => Achievements.LIFETIME }
+  { id: ACH_TAB_DEFAULT, label: "WEEKLY",   resetWord: "Weekly",   rows: () => Achievements.activeWeekly() },
+  { id: "lifetime",      label: "LIFETIME", resetWord: "Lifetime", rows: () => Achievements.LIFETIME }
 ];
 // Resolves game.menu.achTab to a table position, defaulting to tab 0 for any unknown/undefined id —
 // so a stale or missing field degrades to "show Weekly", never to a crash or a blank screen.
@@ -10643,6 +10753,11 @@ function achTabIndex() {
   return i < 0 ? 0 : i;
 }
 function achRows() { return ACH_TABS[achTabIndex()].rows(); }
+// CS034 P6: the whole active row, for the two consumers that need more of it than its rows — the reset
+// affordance's label and the reset flow's pool (menuAchievements -> openAchReset).
+function achActiveTab() { return ACH_TABS[achTabIndex()]; }
+// "ENTER  Reset Weekly Achievements" / "...Lifetime...". Built from the tab table, never a typed pair.
+function achResetLabel() { return "ENTER  Reset " + achActiveTab().resetWord + " Achievements"; }
 // Switching tabs ALWAYS zeroes the scroll: the two tabs are very different heights (5 weekly rows vs.
 // 20 lifetime ones), so carrying a Lifetime offset onto the Weekly tab would open it scrolled into
 // empty space. `i` wraps in both directions (see menuAchievements).
@@ -10734,6 +10849,12 @@ function drawAchievements() {
     if (game.menu.scroll > 0)         drawText("▲", VIEW_W / 2, ACH_ROW_CLIP_TOP - 4, 16, COLOR.menuIdle, "center");
     if (game.menu.scroll < maxScroll) drawText("▼", VIEW_W / 2, ACH_ROW_CLIP_BOTTOM + 10, 16, COLOR.menuIdle, "center");
   }
+
+  // CS034 P6 (FLAG-CS034-a): the reset affordance — ONE row, drawn OUTSIDE the clip like the rest of the
+  // chrome, labelled off the ACTIVE TAB so what ENTER resets is what the player is looking at. It carries
+  // no cursor (this screen has none — up/down are the scroll), so it renders lit rather than in the
+  // selected/idle pair: it is the only thing on the screen ENTER can do.
+  drawText(achResetLabel(), VIEW_W / 2, y + ACH_RESET_Y, ACH_RESET_SIZE, COLOR.text);
 
   // CS016 P5: the hint gains the ◄► tab control and drops the stale "to Options" destination — CS016
   // P2 repointed this viewer's one parent to the title menu, which this footer had never caught up with.

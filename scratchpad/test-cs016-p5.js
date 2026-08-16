@@ -515,8 +515,11 @@ function openTab(id) {
 
 // ================= (H) Back -> titlemenu with the cursor restored =================
 (function sectionH() {
-  console.log("(H) back/confirm from the viewer -> \"titlemenu\", cursor on the Achievements row");
-  for (const action of ["back", "confirm"]) {
+  console.log("(H) back from the viewer -> \"titlemenu\", cursor on the Achievements row");
+  // ⚠ CS034 P6 (FLAG-CS034-a): `confirm` no longer exits — menuAchievements() split it off from `back`
+  // and it now raises the achievement-reset flow. Only `back` leaves; its behaviour here (independent of
+  // the active tab and the scroll offset) is what this section was always about and is unchanged.
+  for (const action of ["back"]) {
     quitToTitle();
     game.menu.index = MENU_TITLE.indexOf("Achievements");
     menuInput("confirm");
