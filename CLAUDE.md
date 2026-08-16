@@ -589,6 +589,9 @@ bad *build*.
 
 - **`tools/scoop-lab.html`** — Scoop capture-mouth sizing (GDD §2.14.1).
 - **`tools/sat-art-lab.html`** — the twelve satellite craft's `SAT_ART` / `SAT_SCRAP` polylines.
+- **`tools/emblem-lab.html`** — the Achievements celebration panel's `ACH_EMBLEM` polylines: six tier
+  rungs (Bronze…Diamond) plus the weekly/lifetime pool marks, same `SAT_ART` contract, pasted into
+  `drawEmblem()` verbatim (GDD §2.20).
 - **`tools/dock-float-lab.html`** — the delivery "+pts" floater column: anchor, cadence, and the
   three placement models (CS029 P3). Its `slotY()` header records why the model-B rule as first
   written does not hold.

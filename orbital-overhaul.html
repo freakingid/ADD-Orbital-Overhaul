@@ -459,7 +459,8 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // CS030 P7: "1.0.0.29" -> "1.0.0.30". Still tracking the changeset number.
 // CS031 P7: "1.0.0.30" -> "1.0.0.31". Still tracking the changeset number.
 // CS032 P7: "1.0.0.31" -> "1.0.0.32". Still tracking the changeset number.
-const GAME_VERSION = "1.0.0.33";
+// CS034 P9: "1.0.0.33" -> "1.0.0.34". Still tracking the changeset number.
+const GAME_VERSION = "1.0.0.34";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -9960,11 +9961,13 @@ function update(dt) {
           // shared origin for both, so a Magnet-fed run of incidentals reads in the same place as a real
           // haul. §6.3: this branch stays an ORDINARY floater and must never be folded into the model-C
           // ticker — CS020 separated the two on purpose so an incidental never shares a tally with a
-          // towed canister. The quieting is untouched: it was never the position that distinguished
-          // them, it is the colour and size.
+          // towed canister. CS034 P9 (GATE B, B2): COLOR.dim read as too dim to read at the dock anchor's
+          // distance — swapped for COLOR.dock, the same colour the towed ticker uses. Size (12, still
+          // smaller than the ticker's grown size) is the one thing still distinguishing an incidental from
+          // a real haul; fade/hold were already shared via the DEBUG knobs below.
           addScore(DOCK_BASE_SCORE);
           game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,
-            COLOR.dim, 12, DEBUG.deliveryFloatRise,
+            COLOR.dock, 12, DEBUG.deliveryFloatRise,
             DEBUG.deliveryFloatHold + DEBUG.deliveryFloatFade, DEBUG.deliveryFloatFade));
           AudioSys.deliver(1);
         }

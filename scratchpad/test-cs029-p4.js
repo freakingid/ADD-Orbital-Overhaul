@@ -268,7 +268,7 @@ function stageVisit(X, canisterCount) {
 
 // ================= (E) the incidental branch: unchanged, never folded into the ticker =====================
 (function sectionE() {
-  console.log("(E) incidentals: own size/colour/text, dock-anchored, never touch or join the ticker");
+  console.log("(E) incidentals: own size/text, dock-anchored, never touch or join the ticker");
   const X = buildGame();
   const g = stageVisit(X, 0);
   // Two incidentals: hooked while already parked, so towed = false on both.
@@ -280,10 +280,13 @@ function stageVisit(X, canisterCount) {
   eq(g.deliveryCount, 0, "E: incidentals never touch the tally");
   eq(g.deliveryTicker, null, "E: ...and never create a ticker at all");
 
-  const incidentals = g.floaters.filter(f => f.color === X.COLOR.dim);
+  // REPOINTED BY CS034 P9 (GATE B, B2): COLOR.dim read too dim to see, brightened to COLOR.dock (the
+  // same colour the towed ticker uses) — size 12 is what's left distinguishing an incidental.
+  const incidentals = g.floaters.filter(f => f.size === 12);
   eq(incidentals.length, 2, "E: ⛔ each incidental gets its OWN ordinary floater — not folded into any ticker");
   for (const f of incidentals) {
     eq(f.text, "+" + X.DOCK_BASE_SCORE, "E: an incidental's text is the flat DOCK_BASE_SCORE, never accumulated");
+    eq(f.color, X.COLOR.dock, "E: an incidental floater is COLOR.dock (CS034 P9 GATE B — was COLOR.dim)");
     eq(f.size, 12, "E: an incidental floater is size 12");
     eq(f.pinned, false, "E: an incidental floater is never pinned");
     close(f.x, g.dock.x, "E: an incidental is born at the dock anchor, same as the towed branch");

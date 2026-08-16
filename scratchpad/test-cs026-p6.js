@@ -346,7 +346,9 @@ let X = null;
   assert(g.stats.fullChainVisit, "C: Heavy Hauler's 12-in-one-visit latch still fires");
   assert(g.stats.maxChainVisit, "C: Maxed Out's CARGO_CAP_MAX latch still fires");
 
-  // -- the incidental branch shares the SAME anchor (same origin, different colour/size) --
+  // -- the incidental branch shares the SAME anchor (same origin, size still distinguishes it) --
+  // REPOINTED BY CS034 P9 (GATE B, B2): the incidental's colour was brightened off COLOR.dim to
+  // COLOR.dock (too dim to read), so this section now finds it by size, not colour.
   const X3 = build();
   X3.startGame();
   const h = X3.game;
@@ -356,10 +358,11 @@ let X = null;
   h.chain.push({ x: h.dock.x + 120, y: h.dock.y + 90, px: 0, py: 0, mass: 1, towed: false });
   h.floaters.length = 0;
   for (let i = 0; i < 60 && h.chain.length > 0; i++) X3.update(dt);
-  const inc = h.floaters.find(f => f.color === X3.COLOR.dim);
+  const inc = h.floaters.find(f => f.size === 12);
   assert(!!inc, "C: (setup) the incidental floater fired");
   close(inc.x, h.dock.x, "C: the incidental floater is born at the DOCK anchor too — one shared origin, both branches");
-  eq(inc.size, 12, "C: ...still size 12 (FORK-G's quieting is untouched)");
+  eq(inc.color, X3.COLOR.dock, "C: ...now COLOR.dock, brightened per CS034 P9 GATE B (was COLOR.dim)");
+  eq(inc.size, 12, "C: ...still size 12 (FORK-G's quieting-by-size is untouched)");
   eq(h.deliveryCount, 0, "C: ...and an incidental still touches no tally");
 })();
 

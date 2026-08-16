@@ -6,8 +6,8 @@
 //   node scratchpad/test-cs010-p0.js
 //
 // Checks:
-//  (A) GAME_VERSION === "1.0.0.33" (unprefixed).
-//  (B) a fresh run's record carries build === "1.0.0.33". ⚠ CS034 P7 moved WHERE that stamp is
+//  (A) GAME_VERSION === "1.0.0.34" (unprefixed).
+//  (B) a fresh run's record carries build === "1.0.0.34". ⚠ CS034 P7 moved WHERE that stamp is
 //      applied: HighScores.add() may no longer read a game global (spec §6.6), so makeRunResult() —
 //      the one assembler — puts GAME_VERSION on the record and add() stores what it is handed.
 //  (C) an existing record carrying build "3.6" survives an afd_scores_v1 load/save round-trip
@@ -75,19 +75,19 @@ AudioSys.init();
 
 // ================= (A) GAME_VERSION is the new unprefixed scheme =====================
 (function sectionA() {
-  console.log("(A) GAME_VERSION === \"1.0.0.33\"");
-  assert(GAME_VERSION === "1.0.0.33", "A: GAME_VERSION is exactly \"1.0.0.33\" (unprefixed)");
+  console.log("(A) GAME_VERSION === \"1.0.0.34\"");
+  assert(GAME_VERSION === "1.0.0.34", "A: GAME_VERSION is exactly \"1.0.0.34\" (unprefixed)");
 })();
 
 // ================= (B) a fresh HighScores.add() stamps the new build ==================
 (function sectionB() {
-  console.log("(B) a fresh run's record carries build === \"1.0.0.33\"");
+  console.log("(B) a fresh run's record carries build === \"1.0.0.34\"");
   HighScores.entries = [];
   const rec = HighScores.add(makeRunResult());
-  assert(rec.build === "1.0.0.33", "B: new record's build field is \"1.0.0.33\"");
+  assert(rec.build === "1.0.0.34", "B: new record's build field is \"1.0.0.34\"");
   // ⚠ CS034 P7: and it came off the RunResult, not out of add() — the version pin has to follow the
   // stamp, or it goes on passing while nothing stamps anything.
-  assert(makeRunResult().build === "1.0.0.33", "B: makeRunResult() is what stamps it");
+  assert(makeRunResult().build === "1.0.0.34", "B: makeRunResult() is what stamps it");
 })();
 
 // ================= (C) an old "3.6" record survives a load/save round-trip unchanged ==

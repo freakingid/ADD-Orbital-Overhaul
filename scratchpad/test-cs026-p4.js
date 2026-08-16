@@ -162,17 +162,18 @@ let X = null;
   eq((codeSrc.match(/DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade/g) || []).length, 2,
     "A: exactly TWO push sites read DEBUG.deliveryFloatRise plus the hold+fade pair — the towed and incidental branches");
   // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS029 P4 (§0.3/§6.1/§6.3, model C), THEN AGAIN BY
-  // CS034 P8 (spec §3.5). The origin moved from `node.x, node.y` (the popped node) to the ship (P6),
-  // then to a static dock anchor (P4) shared as `deliveryAnchorX`/`deliveryAnchorY`. P8 replaced the
-  // single deliveryFloatLife arg with the hold+fade pair and, on the towed branch, the hardcoded size
-  // 16 with the live deliveryFloatSize knob. The incidental branch's colour/size claims (COLOR.dim,
-  // size 12) are UNCHANGED. The towed branch's push site itself changed shape — it now creates the
-  // model-C ticker on the FIRST towed canister of a visit; that shape is asserted in
-  // test-cs029-p4.js/test-cs034-p8.js, not here.
+  // CS034 P8 (spec §3.5), THEN AGAIN BY CS034 P9 (GATE B, B2). The origin moved from `node.x, node.y`
+  // (the popped node) to the ship (P6), then to a static dock anchor (P4) shared as
+  // `deliveryAnchorX`/`deliveryAnchorY`. P8 replaced the single deliveryFloatLife arg with the
+  // hold+fade pair and, on the towed branch, the hardcoded size 16 with the live deliveryFloatSize
+  // knob. P9 brightened the incidental branch from COLOR.dim to COLOR.dock (it read as too dim to see)
+  // — size 12 is the one thing still distinguishing it from the towed tally. The towed branch's push
+  // site itself changed shape — it now creates the model-C ticker on the FIRST towed canister of a
+  // visit; that shape is asserted in test-cs029-p4.js/test-cs034-p8.js, not here.
   assert(/game\.deliveryTicker = new FloatText\("\+" \+ pts, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, DEBUG\.deliveryFloatSize, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\);/.test(scriptSrc),
     "A: the TOWED branch's ticker reads deliveryFloatSize (P8) and the live rise/hold/fade knobs, and is born at the dock anchor");
-  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dim, 12, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\)/.test(scriptSrc),
-    "A: ⛔ the INCIDENTAL branch is QUIETED (COLOR.dim, size 12), not folded into the towed tally/colour — same dock anchor origin");
+  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, 12, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\)/.test(scriptSrc),
+    "A: ⛔ the INCIDENTAL branch is quieted by SIZE only (12) — COLOR.dock (CS034 P9) matches the towed branch's brightness — same dock anchor origin");
 
   // -- every other FloatText call site is untouched: total call sites vs. sites naming the new knobs --
   const totalSites = (codeSrc.match(/new FloatText\(/g) || []).length;
@@ -357,15 +358,17 @@ let X = null;
   // REPOINTED BY CS034 P8 (spec §3.5): the towed branch's size is now the live deliveryFloatSize knob
   // (18 shipped, was the hardcoded 16) — at the shipped deliveryFloatSizeStep 0.0 the ticker never
   // grows mid-visit, so filtering on the live knob is stable here exactly like the hardcoded 16 was.
+  // REPOINTED BY CS034 P9 (GATE B, B2): both branches now share COLOR.dock, so the incidental filter
+  // can no longer key on colour — size 12 is the only thing left distinguishing it from the ticker.
   const towedFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === A.DEBUG.deliveryFloatSize && p.obj.text.startsWith("+"));
-  const incidentalFloaters = pushes.filter(p => p.obj.color === A.COLOR.dim && p.obj.size === 12);
+  const incidentalFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === 12);
   eq(towedFloaters.length, 1, "E: ⛔ the towed visit pushes exactly ONE floater — the ticker, born on canister 1 — not one per canister");
   eq(incidentalFloaters.length, 1, "E: exactly 1 incidental floater was pushed");
   eq(incidentalFloaters[0].obj.text, "+" + A.DOCK_BASE_SCORE, "E: the incidental floater's text is unchanged (+DOCK_BASE_SCORE)");
-  assert(incidentalFloaters[0].obj.color !== towedFloaters[0].obj.color,
-    "E: ⛔ the incidental floater does NOT share the towed branch's colour");
+  assert(incidentalFloaters[0].obj.color === towedFloaters[0].obj.color,
+    "E: ⛔ CS034 P9 (GATE B): the incidental floater now SHARES the towed branch's colour (brightened off COLOR.dim)");
   assert(incidentalFloaters[0].obj.size !== towedFloaters[0].obj.size,
-    "E: ⛔ ...nor its size — it must not read as part of the same tally");
+    "E: ⛔ ...but not its size — it must not read as part of the same tally");
   // REPOINTED BY CS034 P8: life0/fade split off the retired single deliveryFloatLife knob into
   // deliveryFloatHold + deliveryFloatFade (life0) and deliveryFloatFade (fade).
   for (const p of [...towedFloaters, ...incidentalFloaters]) {

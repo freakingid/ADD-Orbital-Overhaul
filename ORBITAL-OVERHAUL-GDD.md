@@ -883,6 +883,61 @@ of the run's score-relevant state.
 > `"slots"` screen) sit near the rest of the menu-screen functions, alongside `menuTitle`/
 > `drawTitleMenu`/`menuProfiles`/`drawProfiles`.
 
+### 2.23 Online Leaderboard (CS033; stats key + TIME column CS034)
+
+A public, worldwide high-score board, layered on top of the local High Scores table (§2.18) rather
+than replacing it — the local table has no network dependency either way and keeps working with the
+module absent.
+
+- **The module bridge.** `lib/kit-leaderboard.js` (coinless-kit's client module, unmodified) loads
+  via a second `<script type="module">` tag whose only job is handing its exports to
+  `window.KitLeaderboard` — the one narrow exception to "classic script only" (`EXTERNAL-FILES.md`
+  rule 1). It fails outright on `file://` by design; the classic script, and so the game itself, is
+  untouched either way. `Leaderboard` (in the main script) is the one call surface for that global —
+  every method is a safely-defaulted no-op when it's absent, so a blocked load (offline, `file://`, an
+  ad blocker) degrades the game to "no leaderboard," never breaks it. The title's "Leaderboard" row
+  renders dim/inert under the same unavailable-row idiom §2.16 already established.
+- **`beginRun()` / `submit()` — the two seams.** `Leaderboard.beginRun()` fires once per `resetRun()`
+  (so a resumed run mints a run id too, harmlessly — `eligible()` gates it out at submit). `submit(
+  outcome, run)` fires at exactly two real call sites: the "dying"→"gameover" seam (`outcome:
+  "died"`), and `quitToTitle()` when called with `game.state === "playing"` (`outcome: "quit"`),
+  checked before that function overwrites `game.state` — the same function is also gameover's own
+  "Quit to Title" row, which must never submit a second time for an already-ended run. `run` is the
+  `RunResult` object `makeRunResult()` assembles once and hands to both `Leaderboard.submit()` and the
+  local `HighScores.add()` — one read of `game.stats`, not two that could drift apart. This game has
+  no win condition (escalating waves forever, per `DIFFICULTY-LEVERS.md`), so the module's third
+  outcome, `'completed'`, has no call site.
+- **Eligibility — `Leaderboard.eligible()`.** `!game.debugRun && !game.resumedRun`, gating every
+  `submit()` call — the identical gate `HighScores`' own top-10 check uses at the same seam, for the
+  same reason: a resumed run's score can't be separated from the score it loaded in with, and a debug
+  run was never a fair one.
+- **What gets sent.** `metric` (score), `durationS`, `outcome`, and a fixed four-key `stats` object:
+  `wave_reached`, `canisters_delivered`, `saucer_kills`, `debris_destroyed` — the Worker's registered
+  `statsFields` for `orbital-overhaul`. **`debris_destroyed`'s value source is `game.stats.debrisKills`
+  — a count of Garbage Satellite kills under the Vocabulary table's inversion, not of Debris** (the
+  key name is old vocabulary, frozen in already-submitted rows; see the Vocabulary section of
+  `CLAUDE.md`). `hunter_kills` is also registered but deliberately unsent — no per-game, player-only
+  Hunter-kill counter exists to serve it. **CS034 correction:** CS033 shipped this key as
+  `garbage_satellite_kills`, unregistered with the Worker, so every row posted between CS033 P3 and
+  CS034 P4 shows flagged (⚑) on the public board; the fix only changes what future submissions send,
+  nothing client-side can retroactively unflag an already-posted row.
+- **The board screen — `drawLeaderboard()` / `menuLeaderboard()`.** A 1000×560 panel (`menuPanel`),
+  cycling `["24h", "7d", "all"]` via ◄/►, defaulting to `"all"`. Six columns: `#`, `NAME`, the metric
+  label (`SCORE`), `LEVEL` (`stats.wave_reached`), `TIME`, `DELIVERED` (`stats.canisters_delivered`) —
+  missing stats fall back to `"-"`. **`TIME` (CS034 P4)** reads `e.durationS` through the shared
+  `fmtDuration()` helper (`h:mm:ss` at/above an hour, else `m:ss`, `"-"` on bad input) — the same
+  formatter `HighScores`' own browsable screen uses (§2.18). A flagged entry (`e.flagged`) renders its
+  name in `COLOR.lowhp` with a trailing `" ⚑"`. Three states besides a populated table: `LOADING…`,
+  a network-failure message, and `NO SCORES YET — BE THE FIRST`. A stale, slow fetch can never clobber
+  a newer one — `uiToken` is bumped per request and a response is applied only if its token still
+  matches.
+- **`NAME_CHANGE_NOTICE`.** The module's own two-line warning text, shown in a confirm modal before a
+  profile rename actually applies (`menuProfiles`'s RENAME branch) — the module bridge and this one
+  lookup are the only places outside `Leaderboard` itself that read `window.KitLeaderboard` directly.
+- **The queue indicator.** A small, dim corner readout — `"N SCORE(S) QUEUED"` — mirroring the version
+  stamp's own corner treatment on the opposite side of the title screen, driven by
+  `Leaderboard.queueLength()` (an in-memory array length, no storage read).
+
 ---
 
 ## 3. Code Architecture Map
