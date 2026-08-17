@@ -475,7 +475,11 @@ have been conflated twice already; don't do it a third time (GDD §2.14).
 - ⛔ `POWERUP_DROP_WEIGHTS` has a **conditional** entry: `"guard"` enters the roll
   only while `game.chain.length >= DEBUG.chainGuardMinTow`. An ineligible key must
   be skipped in **both** the running total and the walk, or a dead slot silently
-  drops nothing.
+  drops nothing. ⛔ As of CS035 P6 `"guard"`'s **weight is also dynamic** — its
+  literal in the table is a placeholder, overwritten at roll time by
+  `guardDropWeight()`. Both the total and the walk read it through the same
+  `weightOf(k)` indirection; the gate and the weight **compose**, they do not
+  replace each other.
 
 ### Difficulty levers
 

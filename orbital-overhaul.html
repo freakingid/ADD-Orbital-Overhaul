@@ -460,7 +460,8 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // CS031 P7: "1.0.0.30" -> "1.0.0.31". Still tracking the changeset number.
 // CS032 P7: "1.0.0.31" -> "1.0.0.32". Still tracking the changeset number.
 // CS034 P9: "1.0.0.33" -> "1.0.0.34". Still tracking the changeset number.
-const GAME_VERSION = "1.0.0.34";
+// CS035 P7: "1.0.0.34" -> "1.0.0.35". Still tracking the changeset number.
+const GAME_VERSION = "1.0.0.35";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -3617,8 +3618,10 @@ const DEBUG_VARS = [
   // floater per visit, text rewritten per canister, released as an ordinary floater only at the last
   // canister. There is no delivery COLUMN under C, so there is nothing for DOCK_OFFLOAD_INTERVAL or a
   // bigger rise to space apart — the instruction above is obsolete, not wrong for what it described.
-  // rise/life now govern exactly two things: how the released ticker (and every incidental floater)
-  // rises and fades after that release. DOCK_OFFLOAD_INTERVAL stayed at 0.05 (gate G5) because C
+  // rise/life now govern exactly two things: how the released ticker rises and fades after that
+  // release. (It said "and every incidental floater" through CS034; CS035 P2 deleted the incidental
+  // category outright, so the ticker is the only delivery floater there is.)
+  // DOCK_OFFLOAD_INTERVAL stayed at 0.05 (gate G5) because C
   // dissolves the trade it used to control, not because the trade was re-won.
   { id: "deliveryFloatRise", label: "Delivery floater rise", unit: "px/s",
     def: 150, min: 30, max: 600, step: 10 },
@@ -3698,12 +3701,19 @@ const DEBUG_VARS = [
   // (spec §4.5, note in DIFFICULTY-LEVERS.md): a flat rule at every wave, same spirit as the CS018 P4
   // frozen turn rates. Grow/shrink are deliberately ASYMMETRIC — fast growth, slow shrink — because a
   // symmetric oscillation reads as breathing, and this needs to read as pumping.
+  //   CS035 P7 (GATE G15/G16): three of the five `def`s moved off P4's proposals after the playtest.
+  // hunterVolatileAge 30 -> 60 (a large now gets a full minute of grace before it can be split by
+  // something the player did not do), and the pulse envelope widens 92/115 -> 87/125 because at the
+  // narrow one the heartbeat was legible but did not read as ALARMING (G18). Grow/shrink came back
+  // unchanged at 55/28, so the cycle stretches with the envelope: ~0.69 s out, ~1.36 s back, ~2.05 s
+  // per beat against P4's ~1.24 s. G18 also asked for a COLOUR change on top of the motion — that is a
+  // design decision spec §6 explicitly excluded, so it is DEFERRED, not taken here (see STATUS.md).
   { id: "hunterVolatileAge", label: "Hunter volatile age", unit: "s",
-    def: 30, min: 0, max: 120, step: 1 },
+    def: 60, min: 0, max: 120, step: 1 },
   { id: "hunterPulseMin", label: "Hunter pulse min", unit: "%",
-    def: 92, min: 50, max: 100, step: 1 },
+    def: 87, min: 50, max: 100, step: 1 },
   { id: "hunterPulseMax", label: "Hunter pulse max", unit: "%",
-    def: 115, min: 100, max: 200, step: 1 },
+    def: 125, min: 100, max: 200, step: 1 },
   { id: "hunterPulseGrow", label: "Hunter pulse grow rate", unit: "%/s",
     def: 55, min: 5, max: 300, step: 5 },
   { id: "hunterPulseShrink", label: "Hunter pulse shrink rate", unit: "%/s",
@@ -10100,8 +10110,10 @@ function update(dt) {
     // of the offload branch, or it would not run while the ship is actively delivering. Re-arming
     // happens at the RING (dock.radius + DOCK_NEIGHBORHOOD_PAD), not the +10 offload radius — once
     // back inside the neighborhood the run is safe indefinitely and the player can take their time
-    // closing the last 30px. Loitering there is harmless: pickups in here are incidentals, so nothing
-    // advances. Ship-dead is excluded from the DECAY arm so a corpse's run can never be timed out
+    // closing the last 30px. Loitering there is harmless — through CS034 because pickups in here were
+    // INCIDENTALS and so advanced nothing, and since CS035 P2 for the stronger reason that there are no
+    // pickups in here at all: the lockout uses this same ring, so the reset simply cannot be reached
+    // from inside it. Ship-dead is excluded from the DECAY arm so a corpse's run can never be timed out
     // mid-death (scatterChain has already zeroed the counter anyway, which is why the dead ship
     // falling into the re-arm branch is a harmless no-op rather than a second rule).
     // Replaces the old distance-based reset that lived in the offload

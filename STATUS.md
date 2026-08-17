@@ -1,257 +1,154 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.34 · Changeset: CS035 · Phase: P6 · Registry: 106 · Levers: 18
+Version: 1.0.0.35 · Changeset: CS035 · Phase: P7 (closed) · Registry: 106 · Levers: 18
 
 ## Phase ledger — CS035
 
-- P1 — delivery ticker re-tune: applied a later dock-float-lab session's seven values as the shipped
-  defaults, superseding CS034 P8's GATE A numbers — anchor frac 0.75→0.50, rise 200→150, size
-  18→16/step 0.0→1.0 (per-piece growth live for the first time)/cap 36→48, hold 0.25→0.00, fade
-  0.75→1.20. Deleted the "SALVAGE BONUS" (8-piece) and "MAX HAUL" (24-piece) floaters — the lab
-  measured −15.7px ink overlap against the re-tuned ticker — keeping their powerup award,
-  `maxChainVisit`, and `cargoFlash` side effects intact. FLAG-CS035-a (open, not this phase's to
-  resolve): the 24-haul's text celebration is gone, carried instead by the ticker, the HUD cargo
-  flash, and the `dock_24` voice line — gate asks whether that still lands. Eight older suite files
-  that pinned CS034's now-superseded numbers or the deleted floaters were repointed in this commit,
-  same convention as their own prior "REPOINTED BY" comments (test-cs012-p3, test-cs018-p8,
-  test-cs020-p1, test-cs024-p6b, test-cs026-p4, test-cs026-p6, test-cs029-p4, test-p6).
+- P1 — delivery ticker re-tune: a later dock-float-lab session's seven values shipped as the new
+  defaults, superseding CS034 P8's GATE A numbers; `sizeStep` 0.0→1.0 turns per-piece growth on for the
+  first time. The "SALVAGE BONUS" and "MAX HAUL" floaters deleted (−15.7 px measured ink overlap),
+  every side effect kept.
 
-- P2 — dock scoop lockout: the capture gate now leads with `!inRing`, so nothing can be hooked while
-  the ship is inside the dock's neighbourhood ring, at any chain length including zero. A piece that
-  reaches the capture region (base circle OR scoop mouth) instead has its velocity SET — never added —
-  to the new `dockBounceSpeed` knob (DELIVERY, def 90, 20–300/10) directly away from the ship, with
-  `AudioSys.shieldPing()` as the tell and the ship completely unaffected; `debrisBounce()` is
-  deliberately not called. The magnet's pull is suppressed in the ring through `pulling` (the two
-  budget spend sites still read the raw `magnet`, unchanged), so nothing churns against that push.
-  That makes the incidental category **empty by construction**, so CS020's `towed: !inRing` tag, the
-  `node.towed !== false` read and the whole incidental branch (flat `DOCK_BASE_SCORE`, its size-12
-  floater, `AudioSys.deliver(1)`) are deleted — the actual fix for §0.2's LIFO queue jump, which was
-  never a counter reset. `inRing` survives, hoisted above the garbage loop, still guarding the pickup
-  gate and the `deliveryCount = 0` reset. Registry 91→92; no lever moved. Twenty suite files repointed
-  in this commit, nineteen phase tests plus `test-registry.js`'s count.
+- P2 — dock scoop lockout: nothing can be hooked inside the dock's neighbourhood ring, at any chain
+  length; a piece reaching the capture region is pushed out at `dockBounceSpeed` (new knob, def 90).
+  That empties the incidental category by construction, so the `towed` tag and the whole flat-pay
+  branch were deleted — the real fix for the LIFO queue-jump stall. Registry 91→92.
 
-- P3 — level-end invincibility: a protection window now spans the level-end seam. `game.levelEndSafe`
-  opens on the frame the last Garbage Satellite dies (a `waveClearTimer === 0` latch in the wave-clear
-  branch), holds through `levelEndHold`, the celebration panel, `nextWave()` and the "Level N" banner,
-  and closes when the post-banner grace — armed as a one-shot on the banner's expiry **crossing** —
-  reaches exactly 0. The `2.5` hold literal is REPLACED by `DEBUG.levelEndHold` (5.0s total, not 7.5).
-  Five spec gate sites became four literal edits: `&& !game.levelEndSafe` on the two
-  `ship.invuln <= 0` conditions, and a new guard on each of the two chain blocks — **guarded, not
-  absorbed**, so `breakChain()` is never entered and no chain-guard charge is spent. `ship.invuln`,
-  `shieldDeflect`/`shieldBounce`, `SHIELD_HIT_COST`, `dmgThisWave` and the Perfect Wave latch are all
-  untouched. The tell is a triangle wave on ship alpha (1.0 → 0.2 → 1.0, phase accumulated in
-  HALF-CYCLES) that REPLACES the hit-stun blink for the window's duration and accelerates across the
-  grace. Registry 92→96 (CELEBRATION); no lever moved. Seventeen suite files repointed in this commit
-  plus `test-registry.js`'s count.
+- P3 — level-end invincibility: `game.levelEndSafe` spans wave clear → `levelEndHold` → celebration
+  panel → `nextWave()` → banner → grace. Four gate sites; the two chain blocks are **guarded, not
+  absorbed**. Tell is an accelerating alpha pulse replacing the hit-stun blink. Registry 92→96.
 
-- P4 — Hunter volatility, the clock and the tell only (spec §4.1-§4.3; damage sources are P5's).
-  `HunterSatellite.age` accrues from construction, unconditionally, every tier, every `update(dt)` —
-  construction is the only spawn event a large core has (`static spawnCore()` died in CS024 P3).
-  `volatile()` is `size === 3 && age >= DEBUG.hunterVolatileAge`; mediums/smalls age but never read it.
-  While volatile, `pulseScale` (init 100) grows at `hunterPulseGrow`%/s and shrinks at
-  `hunterPulseShrink`%/s — asymmetric, fast up / slow down, so it reads as pumping, not breathing —
-  clamped at `hunterPulseMin`/`hunterPulseMax` with a flip on each clamp. `draw()` scales a FRESH
-  vertex array by `pulseScale/100` per frame; `this.shape`/`this.inner`/`this.radius` are never
-  touched, so the collision hitbox stays honest against animation phase. Five new HUNTER-section
-  knobs (92→96 was P3's; this phase is 96→101), none a lever — `DIFFICULTY-LEVERS.md` gained a
-  not-a-lever row, `LEVERS` stays 18. Twelve older suite files pinning the registry's order/count
-  against a fixed parent SHA were repointed for the five new rows, same "REPOINTED BY"/"Same
-  reasoning an Nth time" convention every prior phase's registry growth has used.
+- P4 — Hunter volatility clock and heartbeat: age from construction, every tier; `volatile()` is
+  `size === 3 && age >= hunterVolatileAge`; draw-only pulse on a fresh vertex array. Five HUNTER
+  knobs, none a lever. Registry 96→101.
 
-- P5 — Hunter volatility damage sources (spec §4.4): a VOLATILE large Hunter is now destructible by
-  three new sources, all via `destroyHunter(h, false)` — no score, no achievement counters, 3-way split
-  unchanged. **Hunter↔Hunter**: a new pair-walk over `game.hunters`, same slot in the collision order as
-  the debris-vs-debris pass — both must be volatile larges or nothing happens; both die if so.
-  **Hostile bullet**: a new `game.hunters` loop in the hostile-bullet branch, volatile larges only, bullet
-  dies on contact — a SIBLING of the `!game.levelEndSafe`-guarded chain block, not covered by that guard
-  (a UFO shot still pops a volatile large during the level-end window). **Saucer body**: the UFO-vs-debris
-  pass gains a Hunter arm — unlike the debris arm, BOTH die, no bounce. Non-volatile larges, mediums, and
-  smalls are unaffected by all three; player bullets are unchanged (regression-tested). No registry rows
-  this phase. Two pre-existing phase-local pins broke as a *direct, expected* consequence and were
-  repointed, same convention as prior registry-growth repoints: `test-cs023-p2.js` §A's "only closing
-  braces between the debris pass and whichever runs next" now checks for the new Hunter↔Hunter pass first;
-  `test-cs023-p3.js` §A's `destroySaucer(s, false)` call-site count moved 2→3 for the new saucer arm.
+- P5 — Hunter volatility damage sources: a volatile large dies to another volatile large, a hostile
+  bullet, or a saucer body — all `destroyHunter(h, false)`, 3-way split unchanged. The hostile-bullet
+  arm is a sibling of the `levelEndSafe`-guarded chain block, deliberately not under it.
 
-- P6 — powerup rebalance (spec §5): two independent fixes. `POWERUP_DROP_WEIGHTS` ×10 (every non-guard
-  ratio byte-identical, just scaled); `guard`'s own entry is now a placeholder overwritten at roll time
-  by `guardDropWeight()` — `min(chainGuardDropMax, chainGuardDropBase + chainGuardDropPity *
-  game.stats.cargoDamageEvents)`, three new CHAIN GUARD knobs (def 4/8/40). `cargoDamageEvents` increments
-  in `breakChain()`'s sever path only (a guarded absorb and `scatterChain()` don't count), resets to 0 the
-  instant `dropPowerup()` selects `"guard"` (not on pickup), and carries across waves within a run (reset
-  in `startGame()`'s `resetGameStats()`, not `nextWave()`). `dropPowerup()`'s `weightOf(k)` indirection
-  composes the dynamic guard weight with the existing `chainGuardMinTow` eligibility gate — an ineligible
-  key still skips in both the total and the walk. `POWERUP_DROP_TYPES` (the budgeted-effect list) is
-  untouched, per the standing trap. Second fix: the Super Mega Delivery flood shrinks — `guard` leaves the
-  guaranteed set (6→5 types), re-added explicitly (flat, ungated) to the per-piece sweep pool so it stays
-  reachable during a sweep; two POWERUPS knobs replace frozen consts, `sweepPowerupCap` (was
-  `SWEEP_POWERUP_CAP` 48, now def 24) and `dockPowerupSpeed` (was `DOCK_POWERUP_SPEED` 120, now def 180,
-  two call sites — the SMD guaranteed set and the 8/12/16/20 reward-tier drops). Registry 101→106; no
-  lever moved. New `scratchpad/test-cs035-p6.js`. Twenty older suite files pinning weight ratios, the
-  guaranteed-set size, `DOCK_POWERUP_SPEED`/`SWEEP_POWERUP_CAP` call sites, or the registry's
-  count/order against a fixed parent SHA were repointed in this commit, same "REPOINTED BY"/"same
-  reasoning an Nth time" convention every prior phase's registry growth or behaviour change has used
-  (test-cs017-p6, test-cs018-p8, test-cs018-p9, test-cs019-p1, test-cs023-p3, test-cs024-p6/p6b/p6c,
-  test-cs025-p1/p2/p5, test-cs026-p2/p5/p6, test-cs027-p2/p6, test-cs029-p4, test-cs030-p1, test-p6,
-  test-v33-p3).
+- P6 — powerup rebalance: `POWERUP_DROP_WEIGHTS` ×10 with `guard`'s entry a placeholder overwritten by
+  `guardDropWeight()` (three CHAIN GUARD knobs, 4/8/40, driven by unguarded chain severs); `guard` out
+  of the Super Mega Delivery guaranteed set (6→5) and back into the sweep pool explicitly;
+  `sweepPowerupCap` 24 and `dockPowerupSpeed` 180 replace two frozen consts. Registry 101→106.
+
+- P7 — closing: gate folded in (three `def` edits — `hunterVolatileAge` 30→60, `hunterPulseMin` 92→87,
+  `hunterPulseMax` 115→125; fourteen answers matched shipped values and are recorded as no-ops; two
+  design asks deferred, below). `GAME_VERSION` 1.0.0.34→1.0.0.35, seven live pins re-pointed and
+  `test-cs034-p9.js`'s phase-local pin flipped to its mirror. GDD §2.5/§2.7/§2.10/§2.14/§2.14.2 swept
+  and a new §2.20.1 written for the level-end window; §3.1's pass order updated;
+  `DIFFICULTY-LEVERS.md` and `CLAUDE.md` corrected. `log/CS035.md` written, both planning docs
+  archived.
 
 ## Working / verified
 
-- Full suite on a full clone: **143 files, 139-140 passed, 3 pre-existing failures + `test-cs035-p3`'s
-  ~1-in-5 flake, 0 skipped** (`test-cs035-p6.js` is this phase's addition to the file count). `test-f2`,
-  `test-v36-death`, and `test-cs023-p3`'s TRAP 3 pin (against a fixed historical SHA) are the same three
-  P5 already carried — unaffected by this phase's diff. Twenty older suite files needed repointing —
-  see the P6 ledger entry — for the weight table's ×10 scale, the guaranteed-set size (6→5), the
-  `DOCK_POWERUP_SPEED`/`SWEEP_POWERUP_CAP` constants' call sites moving to `DEBUG.*`, and the
-  registry's count/order against fixed parent SHAs; none of the repoints weakened a claim, each named
-  the later phase and excluded only its own rows, same convention every prior registry-growth repoint
-  in this project has used.
-- **`test-cs035-p3.js` is flaky, ~1-in-5 runs, independent of P5 and P6.** Reconfirmed against P4's own
-  HEAD with P5's diff stashed: same ~20% failure rate on
-  its §F assertion either way. Not investigated further, out of P5's scope; worth a future phase's
-  attention since it isn't seed-related (P3 didn't add `installSeed`).
-- P5 legitimately broke two pre-existing phase-local pins by adding real code where they asserted
-  none existed — repointed, not redesigned, same convention as every prior registry-growth repoint:
-  `test-cs023-p2.js` §A's "only closing braces between the debris-vs-debris pass and whichever pass
-  runs next" now checks for P5's Hunter↔Hunter pass first (it legitimately landed in that slot); and
-  `test-cs023-p3.js` §A's `destroySaucer(s, false)` call-site count moved 2→3 (P5's saucer-vs-Hunter
-  arm is a third, additive site, same "no score for either" shape as the two it already counted).
-- New `scratchpad/test-cs035-p5.js` drives the real collision passes end to end via `update()`: two
-  overlapping volatile larges both die with a 6-medium yield; two non-volatile larges and a
-  volatile-large-vs-medium pairing both do nothing; a hostile bullet kills a volatile large and itself
-  (and does nothing to a non-volatile large), including with `game.levelEndSafe` true (the sibling-not-
-  guarded invariant); a saucer body kills both itself and a volatile large; a player bullet on a
-  non-volatile large is the unchanged full-credit path (regression); and every no-credit case checks
-  `game.score`, `hunterLineageKills`, `largeHunterKills`, AND `Achievements.lifetime.hunterKills`
-  together. Trap staged for: `game.debris.length === 0` arms a large core's "last-stand" steer-toward-
-  ship drift in its own `update()`, which would move a "stationary" large off its staged overlap before
-  collisions run — every scenario keeps one inert sentinel Debris object in the field (same idiom as
-  `test-cs035-p4.js`'s `quiet()`) so that branch never arms; and world size at level 1 is the small
-  early-level world (1920x1080), not the 2560x1440 default, so hand-placed positions are read off
-  `worldDims(X)` live rather than a literal — a literal past the live width would wrap clean around.
-- New `scratchpad/test-cs035-p4.js` drives the real `HunterSatellite` class directly: a fresh large
-  Hunter's age/pulseScale/pulseUp at construction; pulseScale moving off 100 the frame age crosses
-  `hunterVolatileAge` and staying at 100 one frame short of it; a medium and a small aged well past
-  the threshold never pulsing; pulseScale never escaping `[hunterPulseMin, hunterPulseMax]` across a
-  long run, with non-vacuity checks that it actually reaches both ends and reverses direction;
-  `this.radius` unmoved before/after volatility begins; and `this.shape`/`this.inner`'s own array
-  contents byte-identical (via `JSON.stringify`, not object identity) after many frames of real
-  `update()` + `draw()` calls — the don't-mutate invariant.
-- New `scratchpad/test-cs035-p3.js` drives the real paths end to end: a bullet killing the last
-  satellite opens the window in that same `update()`; the hold is the knob (nothing at 2.6s, the wave at
-  5.0s, and a retuned 1.0s hold moves the seam); a hostile bullet and a Hunter on the hull do nothing;
-  a Hunter and a hostile bullet on a settled six-node chain sever nothing and spend no guard charge
-  (with a window-shut control that does both); the panel still opens and still defers `nextWave()`;
-  the banner's crossing arms exactly `levelEndGrace` and the window shuts on the frame it hits 0; a
-  fresh `startGame()` is never protected for a single frame; `nextWave()` mid-window moves none of the
-  three; and the alpha pulse is read off `ctx.stroke()` through the real `Ship.draw()` — 1.0 at phase 0,
-  0.2 at phase 1, restored to 1 before the shield block, and the blink skipped while the window is open.
-- New `scratchpad/test-cs035-p2.js` drives the real pickup/push/offload paths: the lockout either side
-  of the ring boundary (and exactly on it, which is outside), the push's exact `dockBounceSpeed`
-  magnitude/direction and its no-accumulation-on-a-second-frame property, the ship taking no recoil or
-  damage, the scoop mouth being covered too, the lockout at `chain.length === 0`, the magnet
-  suppression with an outside-the-ring non-vacuity control, the knob's shape/section — and §0.2's bug
-  asserted directly: a 24-piece haul delivered while loose pieces keep landing on the hull climbs
-  1..24 with no gap and pays the escalating share on every pop.
-- The nineteen repointed phase tests all keep their scenarios and invert what they assert (the park
-  now pays 0 rather than a flat 30,000; a +39 capture is refused rather than tagged) — CS020's claim
-  survives strictly strengthened, so no section was deleted.
-- New `scratchpad/test-cs035-p1.js` drives the real dock-offload path: the anchor frac, all five
-  registry rows' `def`/`min`/`max`/`step`, no SALVAGE/MAX HAUL floater at deliveries 8/24 while the
-  powerup/`maxChainVisit`/`cargoFlash` side effects still fire, and the ticker's per-piece size
-  formula (`min(48, 16 + 1.0 * (N-1))`).
-- Registry at **92** (P2's `dockBounceSpeed`), `LEVERS` unmoved at **18**.
+- Full suite on a full clone: **143 files, 140 passed, 3 failed, 0 skipped, 0 timed out** — identical
+  to the pre-P7 baseline on `ffd4e73`. Zero skips, as a closing phase requires. The three failures are
+  pre-existing and untouched by this changeset's diff (see Known issues).
+
+- Counts verified live off the built game, not read off the source: registry **106**, section headers
+  **10**, `LEVERS` **18**, `POWERUP_DROP_TYPES` **5**, `GAME_VERSION` `"1.0.0.35"`, and the three
+  retuned knobs reading 60 / 87 / 125. `node --check` on the extracted script passes.
+
+- Six new phase tests ship with the changeset (`test-cs035-p1` … `p6`), each driving the real code:
+  the delivery ticker's size formula and the absent milestone floaters; the lockout either side of the
+  ring boundary (and exactly on it, which is outside) plus §0.2's stall asserted directly as a 1..24
+  climb with no gap; the level-end window's hold, grace, four gate sites and alpha pulse read off real
+  `Ship.draw()`; the volatility clock's boundary, the clamp's non-vacuity, and the don't-mutate
+  invariant on `this.shape`/`this.inner`; the three new damage sources with every no-credit case
+  checking score, `hunterLineageKills`, `largeHunterKills` and `Achievements.lifetime.hunterKills`
+  together; and the guard pity curve, the ×10 weights, and the shrunk SMD.
+
+- No `towed` reference or incidental branch survives in the build except deliberate tombstones and
+  towed-*mass* (a different quantity) — grepped, not assumed.
 
 ## Known issues
 
+- **⛔ NEW, UNRESOLVED — Paul reports the level-end window (P3) appears to do nothing in play.** From
+  the gate: "The levelEndHold did not seem to do anything. When the level ends, for some reason we are
+  immediately given the Achievements screen. It seems like the levelEndGrace items are not in effect,
+  either. I don't really see any difference visibly during gameplay at level end / Achievement panel
+  display / Level start." G9–G14 were therefore not answered. **Not reproducible headlessly and not
+  explained.** The shipped code was re-read against spec §3 line for line and matches; `test-cs035-p3`
+  (112 assertions through the real `update()`/`Ship.draw()`) passes on this commit, including that
+  nothing happens at 2.6 s, the wave advances at 5.0 s, a retuned 1.0 s hold moves the seam, and ship
+  alpha is 1.0 at phase 0 / 0.2 at phase 1. **Next session should establish the environment first** —
+  whether the browser was serving a cached `orbital-overhaul.html`, and what `DEBUG.levelEndHold` and
+  `game.levelEndSafe` actually read in DevTools at a live level end — before touching any code. No fix
+  was attempted in the closing phase.
+
+- **⛔ NEW — G18 asks for a red Hunter while volatile; DEFERRED, not built.** The heartbeat does not
+  read as "about to go off" on its own. A colour change is exactly what `PLANNED-FEATURES-CS035.md` §6
+  excluded ("No Hunter colour change for volatility. Motion is the tell."), so it is a design reversal
+  and belongs in a plan doc, not a closing phase. `hunterVolatileAge` 30→60 is the only part of that
+  answer applied.
+
+- **NEW — Debris sometimes not bouncing away at the dock (G5's note).** Paul: "Sometimes when player
+  ship is in the dock, and hits a piece of debris, the debris is not bouncing away, which causes
+  numerous rapid collisions between ship and debris, until the player actually flies the ship out of
+  the way." `dockBounceSpeed` came back at the shipped 90, so nothing was retuned. The push's
+  magnitude, direction, set-not-add and no-accumulation properties are pinned in `test-cs035-p2` §B and
+  pass. The "numerous rapid collisions" reading is consistent with the ping issue directly below.
+
+- **NEW — `AudioSys.shieldPing()` fires once per pushed piece per frame.** With several pieces on the
+  hull the tell stacks. No rate limit was added: spec §2.3 asked for the shipped ping and no new audio
+  method, and a cooldown is a design call.
+
 - **NEW — a wave cleared while the PREVIOUS level's banner is still live arms the grace early.** The
-  banner-expiry one-shot fires on any crossing with `levelEndSafe` true, and it cannot tell the level-1
-  banner it was written to exclude (handled by the `levelEndSafe` clause) from a level-N banner that has
-  simply not expired yet. Clear a wave inside `DEBUG.levelBannerTime` (2.2s) of that level starting and
-  the grace arms off the OLD banner, so the window shuts around the moment `nextWave()` fires and the new
-  banner's own crossing finds `levelEndSafe` already false — protection through the hold, none through
-  the banner. Unreachable in play at the shipped 2.2s (a level-1 clear is ~39 kills), but the
-  `levelBannerTime` knob goes to 8s, which puts it in reach from the debug panel. Spec §3.4's arm is
-  written exactly as shipped; narrowing it (e.g. also requiring `waveClearTimer > 0`) is a design call,
-  not wiring, so it was flagged rather than taken.
-- **NEW — spec §3.6's five gate sites are four `if`s in the shipped build.** Sites 2 ("hazards vs ship")
-  and 3 ("Hunter knockback / i-frame block") are the SAME condition: the Hunter arm — `damageShip()` plus
-  CS023 P3's mutual kill — lives inside the hazards-vs-ship block, and the comment at that arm already
-  names the block's own `invuln <= 0` gate as its rate limiter. One guard covers both rows; there is no
-  separate Hunter block, and `game.ship.invuln` has exactly two read sites in the collision passes.
-- **NEW — `nextWave()` had no "reset block comment" to append to.** The prompt describes a comment there
-  listing what the function zeroes, naming `sweepPause`/`deliveryCount`; that text is actually
-  `buildSaveEntry()`'s "Deliberately absent" note. `nextWave()` zeroes only `waveTime` and
-  `stats.dmgThisWave`. The required ⛔ note was written fresh above those two rather than grafted onto
-  the wrong function's comment. The three fields' reset went into `resetRun()`, not `startGame()` —
-  the standing CS016 P3 both-places rule, and what the prompt's "startGame() ONLY" means today, since a
-  field added to `startGame()`'s thin body would be missed by every resumed run.
-- **NEW — the GDD has no shipped-behaviour prose for the level-end window yet, and P3 did not write
-  any.** Same convention P1/P2 followed: `ORBITAL-OVERHAUL-GDD.md` §2 is the closing phase's doc sweep.
-  Worth folding in with the §2.10 stale text below: the sequence, the three fields, the five gate sites,
-  and ⛔ that `levelEndSafe` is never merged into `ship.invuln`.
-- **⛔ NEW — the GDD's shipped-behaviour prose for the towed/incidental split is now stale, and P2 did
-  not sweep it.** `ORBITAL-OVERHAUL-GDD.md` §2.10 still documents `towed: !inRing`, the LIFO tagging
-  rationale, the incidental's flat `DOCK_BASE_SCORE`/size-12 floater and "loitering at the dock to mop
-  up stragglers is still worth doing" — all deleted or reversed by this phase. Left for the CS035
-  closing phase's doc sweep, the same convention P1 followed (it moved seven `def`s and touched no
-  GDD). Five paragraphs under "A delivery run is ONE EFFORT" plus the "incidental delivery is quieted"
-  bullet are the affected text.
+  banner-expiry one-shot fires on any crossing with `levelEndSafe` true and cannot tell the level-1
+  banner it was written to exclude from a level-N banner that has simply not expired yet. Result:
+  protection through the hold, none through the banner. Unreachable at the shipped 2.2 s
+  `levelBannerTime` (a level-1 clear is ~39 kills), but that knob goes to 8 s from the debug panel.
+  Narrowing the arm is a design call, so it was flagged rather than taken.
+
 - **NEW — parking at the dock no longer cleans up, and that is a real behaviour change.** A parked
   ship cannot mop up the loose pieces around it any more; they stay in the field, pushed clear of the
   hull, bounded only by the CS024 P3 density ceiling. Measured in `test-cs020-p1b` §I: a 60-second
-  magnet-style park leaves ~220 pieces in the field where CS020 recycled all 600. Coalescence keeps
-  running on that cloud, so a neglected dock apron can still breed a Hunter — arguably the intended
-  pressure (the dock is for delivering, not gathering), but it is new and nobody has played it yet.
-- **NEW — `AudioSys.shieldPing()` fires once per pushed piece per frame.** With several pieces on the
-  hull at once the tell stacks. No rate limit was added: §2.3 asked for the shipped ping and no new
-  audio method, and a cooldown is a design call. Worth listening for at the gate.
-- **NEW — the push's degenerate direction was a phase decision, not a spec line.** A piece resting
-  exactly on the ship's centre has no ship→piece vector; the house `|| 0.0001` idiom would hand it a
-  velocity of ZERO and pin it on the hull with coalescence still running. It falls back to the ship's
-  own facing, so the magnitude is always `dockBounceSpeed`. Staged in `test-cs035-p2` §B.
+  magnet-style park leaves ~220 pieces where CS020 recycled all 600. Coalescence keeps running on that
+  cloud, so a neglected dock apron can still breed a Hunter — arguably the intended pressure, but new,
+  and G6/G7 did not ask about it directly.
 
-- **Delivery-ticker origin — Gate B asked for a ship-relative anchor; not built.** CS026 P6 already
-  tried this and CS029 reverted it, measured: "a ship-relative origin smears the delivery column as
-  the ship drifts DURING a visit." Paul confirmed keeping the dock anchor this session rather than
-  re-attempt a change already tried and found worse, deferring a real ship-anchor attempt to a
-  future changeset with its own gate/playtest. See `log/CS034.md` (P9).
+- **NEW — `test-cs035-p3.js` flaked ~1-in-5 runs during P3–P6** and did not reproduce across repeated
+  runs at P7. Carried forward unresolved rather than declared fixed; it is not seed-related (P3 adds no
+  `installSeed`).
+
+- **Three pre-existing suite failures, none this changeset's.** `test-cs023-p3.js` (a TRAP 3 pin
+  against a fixed historical SHA); `test-f2.js` (§g "shield deflection consumed energy" fails
+  deterministically, distinct from FLAG-CS031-c's celebration flake living in the same file);
+  `test-v36-death.js` (3 `Achievements.save` call-count assertions around `killShip`). All three are
+  present on CS035's own baseline `42cecae` and were not investigated.
+
 - **⛔ FLAG-CS032-a — `drawTitleMenu()` calls `SaveSlots.count()` every frame**, a
-  `localStorage.getItem` + `JSON.parse` per title-screen frame at 60fps. Deliberate, per spec
-  §4.3 (a profile switch or delete changes the answer, so it can't be cached) — the build's first
-  **unconditional** per-frame storage read. If it ever measures, the fix is a cache invalidated at
-  the three sites that can change the answer, not a moved question. See `log/CS032.md`.
-- **Back from the slots screen in LOAD mode lands the title cursor on `"Options"`, not on
-  `"Load Saved Game"`.** `returnToTitleMenu()` hardcodes `MENU_TITLE.indexOf("Options")`, correct
-  for its other callers, slightly off here. Shipped in P3, player-reachable since P4. Not fixed —
-  changing it is a `returnToTitleMenu()` signature question, which is design, not wiring. Save mode
-  is unaffected. See `log/CS032.md`.
+  `localStorage.getItem` + `JSON.parse` per title-screen frame at 60 fps. Deliberate per CS032 §4.3 (a
+  profile switch or delete changes the answer, so it can't be cached) — the build's first
+  **unconditional** per-frame storage read. If it ever measures, the fix is a cache invalidated at the
+  three sites that can change the answer. See `log/CS032.md`.
+
+- **Back from the slots screen in LOAD mode lands the title cursor on `"Options"`**, not on `"Load
+  Saved Game"`. `returnToTitleMenu()` hardcodes `MENU_TITLE.indexOf("Options")`, correct for its other
+  callers. Changing it is a signature question, which is design, not wiring. See `log/CS032.md`.
+
 - **FLAG-CS031-c — `test-f2.js` flakes ~3% of runs** (CS030's celebration-panel `game.celebration`
-  leaking across sections in `resetShip()`; pre-existing, not this changeset's). One-line fix
-  identified: `game.celebration = null;` in `resetShip()`. 29 suite files reach a death/gameover
-  and never mention `game.celebration` — the class is latent beyond `test-f2`.
+  leaking across sections in `resetShip()`). One-line fix identified: `game.celebration = null;` in
+  `resetShip()`. 29 suite files reach a death/gameover and never mention `game.celebration`.
+
 - **`test-registry.js`'s `FLAG-CS027-d`** — twelve suite files grep a comment-stripped copy of the
   source missing the same 80 lines `execSource()` fixed. Latent, not live.
-- **Piece-distinctness concern, deliberately unresolved (CS028).** Hubble's pieces 1/2 and
-  Skylab's 0/2 share a polyline vertex-count signature; Juno's folded blade is a third member.
-  Paul's gate call: leave as is.
-- **Thirteen suite files hard-fail, not skip, on a shallow clone (measured fresh, CS034 P9;
-  corrects a stale "ten" carried since CS026).** `test-cs017-p6`, `test-cs019-p1`, `test-cs020-p1`,
-  `test-cs020-p1b`, `test-cs023-p2`, `test-cs023-p3`, `test-cs024-p1`, `test-cs024-p2`,
-  `test-cs024-p4`, `test-cs024-p6b`, `test-cs024-p6f`, `test-cs026-p1`, `test-cs029-p1`. Mechanical
-  fix, same shape as CS026 P1/P2's conversions. See `log/CS026.md`, `log/CS034.md`.
-- **Satellite-vs-satellite elastic bounce and mutual collision damage were never playtested (from
-  CS023).** Both are live in the game today; no gate since has asked about them. See `log/CS023.md`.
-- **P6's `blankLegacyStores()` calls `Achievements.save()` unguarded** — the same latent hole P6's
-  own achievement reset had to design around. Harmless today: only reachable from profile delete
-  (title-only, where neither `debugRun` nor `resumedRun` can be set). A future changeset that makes
-  the profiles or achievements screen reachable mid-run must fix both, not just the reset. See
-  `log/CS034.md`.
-- **NEW — `test-f2.js`'s §g assertion ("shield deflection consumed energy") fails deterministically**,
-  on every run, on this phase's own parent commit — distinct from the documented FLAG-CS031-c
-  celebration flake living in the same file. Not investigated; discovered incidentally while running
-  the suite for CS035 P1, out of that phase's scope to fix.
-- **NEW — `test-v36-death.js` fails on 3 assertions (`Achievements.save` call-count around
-  `killShip`)**, also present on this phase's own parent commit and previously undocumented. Not
-  investigated; same as above, out of CS035 P1's scope.
+
+- **Piece-distinctness concern, deliberately unresolved (CS028).** Hubble's pieces 1/2 and Skylab's
+  0/2 share a polyline vertex-count signature; Juno's folded blade is a third member. Paul's gate call:
+  leave as is.
+
+- **Thirteen suite files hard-fail, not skip, on a shallow clone** (measured fresh, CS034 P9).
+  `test-cs017-p6`, `test-cs019-p1`, `test-cs020-p1`, `test-cs020-p1b`, `test-cs023-p2`,
+  `test-cs023-p3`, `test-cs024-p1`, `test-cs024-p2`, `test-cs024-p4`, `test-cs024-p6b`,
+  `test-cs024-p6f`, `test-cs026-p1`, `test-cs029-p1`. Mechanical fix, same shape as CS026 P1/P2's
+  conversions.
+
+- **Satellite-vs-satellite elastic bounce and mutual collision damage were never playtested (CS023).**
+  Both are live in the game today; no gate since has asked about them.
+
+- **`blankLegacyStores()` calls `Achievements.save()` unguarded (CS034 P6)** — harmless today, only
+  reachable from profile delete (title-only). A future changeset that makes the profiles or
+  achievements screen reachable mid-run must fix both it and the achievement reset.
 
 ## Open questions (blocking)
 
@@ -259,71 +156,64 @@ None.
 
 ## Next up
 
-- **The blocking playtest GATE is next**, per `IMPLEMENTATION-PHASES-CS035.md` — P6 is CS035's last
-  build phase; P7 (closing: fold in the gate, version bump, doc sweep, log, archive) waits on it.
-- **`test-cs035-p3.js` flakes ~1-in-5 runs, pre-existing, not P5's or P6's** — see "Working / verified".
-  Worth a look whenever a phase is next in that file's neighborhood; it isn't seeded.
+- **The level-end window's non-appearance is the first thing to settle** — it blocks G9–G14, which
+  means four shipped knobs have never been tuned by anyone. See the first known issue for what to
+  check before touching code.
+
+- **A volatile-Hunter colour treatment (G18)** wants its own plan doc — spec §6 excluded it and the
+  gate reversed that.
+
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
-  closing-phase guess, given CS029 already measured the naive version as worse. See "Known issues."
-- **Celebration header treatment (Gate B, B8) — reads clearly enough to ship, but the abrupt
-  full-stop-of-action when the panel opens still feels jarring.** Paul flagged wanting a different
-  treatment "later" — not a defect, a future design idea. See `log/CS034.md`.
-- **FLAG-CS034-e — `debrisBounceRestitution`'s canonical-vocabulary label still doesn't fit the
-  debug panel's 32-char column** ("Garbage Satellite bounce restitution" is 36 chars; shipped as the
-  unchanged "Satellite bounce restitution"). Needs either a shorter canonical-reading label or a
-  column-width change — a gate question or a small dedicated phase, not folded into this closing
-  phase. See `log/CS034.md` (P2).
+  closing-phase guess: CS026 P6 tried it and CS029 measured it worse ("a ship-relative origin smears
+  the delivery column as the ship drifts DURING a visit"). Declined a third time at CS034 P9.
+
+- **Celebration header treatment (CS034 Gate B, B8)** — reads clearly enough to ship, but the abrupt
+  full-stop-of-action when the panel opens still feels jarring. A future design idea, not a defect.
+
+- **FLAG-CS034-e — `debrisBounceRestitution`'s canonical-vocabulary label still doesn't fit the debug
+  panel's 32-char column** ("Garbage Satellite bounce restitution" is 36). Needs a shorter label or a
+  column-width change.
+
 - **Deferred to `coinless-kit`, not this repo** — `game_version` in the board SELECT, a per-player
-  query, and client-module support for both, ahead of a future GAME changeset that renders a Version
-  column and a worldwide/just-me scope toggle. Full shape recorded in `log/CS034.md`.
-- **FLAG-CS027-c (opportunistic, non-blocking) — 8 test files hardcode world dimensions**
-  instead of reading `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
-- **FLAG-CS027-d (opportunistic, non-blocking) — 12 suite files' stale comment-stripped copies**
-  could migrate to `execSource()` whenever one of them is next open for other reasons.
+  query, and client-module support for both, ahead of a future GAME changeset rendering a Version
+  column and a worldwide/just-me scope toggle. Shape recorded in `log/CS034.md`.
+
+- **FLAG-CS027-c (opportunistic) — 8 test files hardcode world dimensions** instead of reading
+  `worldDims(X)` from `_harness.js`. See `log/CS027.md`.
+
+- **FLAG-CS027-d (opportunistic) — 12 suite files' stale comment-stripped copies** could migrate to
+  `execSource()` whenever one is next open for other reasons.
 
 ## Playtest asks (open only — answered ones move to the log)
 
-- **FLAG-CS035-c (from P3) — is the 10.2-second window right, and does the pulse read as protection
-  rather than as damage?** Shipped total is 5.0s hold + 2.2s banner + 3.0s grace. Three things to feel
-  for: whether 5s of full-control invincibility over an already-cleared field is a breather or dead air;
-  whether the accelerating tail (0.25s → 0.08s one-way) actually reads as "this is running out" without a
-  countdown; and whether the 20% alpha floor is distinguishable at a glance from the hit-stun blink it
-  replaces, given both now mean "you are not being hit". If the hold drags, `levelEndHold` is the knob —
-  the pulse floor/ceiling deliberately are not.
+- **G9–G14 are still open** — `levelEndHold` / `levelEndGrace` / `levelEndFade` /
+  `levelEndGracePulseEnd` are shipped at 5.00 / 3.00 / 0.25 / 0.08 and have never been assessed,
+  because the window did not appear to be running. Also unanswered: whether the alpha pulse reads
+  instantly as "invincible" and distinctly from the hit-stun blink, and whether the 0.2 alpha floor is
+  too faint to fly at.
 
-- **FLAG-CS035-b (from spec §2.6) — is the ring boundary FELT, or merely suffered?** A player who
-  parks just outside the ring to grab one more piece still loses their run to the towed-hook reset,
-  and the lockout makes that boundary matter more than it used to. There is no visual tell for the
-  ring. If the answer is "suffered", the follow-up is a dock-ring render — deliberately out of scope
-  here. Also worth checking at the same time: whether 90 px/s reads as a firm shove or a nudge, and
-  whether losing dock-apron cleanup (Known issues) is felt as pressure or as litter.
-
-- **FLAG-CS035-a — does a Super Mega Delivery (24-haul) still land without its text celebration?**
-  After P1, it announces itself with: a size-39+ ticker showing a four-figure number, the HUD cargo
-  flash, the `dock_24` voice line, and — **as of P6, fewer powerups than when this flag was written**
-  (P6 shrinks the flood: guaranteed set 6→5 types, sweep cap default 48→24) — assess against the current
-  numbers, not "roughly thirty." Assessed as sufficient pre-P6; the fix if not is a re-introduced "MAX
-  HAUL" at a y-offset clear of the ticker, not a restore in place. See `PLANNED-FEATURES-CS035.md` §1.3.
-
-- **FLAG-CS035-e (from P6, spec §5.5) — `sweepPowerupCap` (def 24) and `dockPowerupSpeed` (def 180) are
-  proposed, not measured.** Gate answers are numbers, not yes/no. Also worth checking at the same gate:
-  whether the guard drop-weight pity curve (base 4/pity 8/cap 40, ~3.8%→~29% of a 100 non-guard total)
-  makes chain armour feel rare-but-earned rather than absent, and whether a shrunk, faster-flung SMD
-  sweep still reads as a payoff moment rather than a fizzle. See `PLANNED-FEATURES-CS035.md` §5.
+- **Does the dock apron read as pressure or as litter?** P2's lockout means a parked ship no longer
+  cleans up around itself. Nobody has played a long session against that yet, and coalescence still
+  runs on the cloud that accumulates.
 
 ## Balance notes
 
 - **`COMBO n/N`'s denominator is still unrepresented (from CS026)** since the HUD row was dropped
   (accepted risk). Recorded so a future "the cargo cap is invisible" report is recognised as this.
-- **The UFO difficulty chain goes fully flat past level 65 (from CS024/CS025)** — junk saturates
-  at L41, hunters at L33, so past 65 all three UFO sub-chains are pure sawtooth with nothing
-  escalating underneath. Fix if wanted is a step-count increase, no mechanism change.
-- **`DEBRIS_BOUNCE_RESTITUTION`/`_MIN` are both first-pass and browser-unverified (from CS023),**
-  same status as the shield-bounce equivalents. Measured consequence: a rail satellite sweeping
-  into a parked free one throws it up to 511.5 px/s off the outer fast ring — nearly double the
-  255.7 px/s cap CS023 P4's drift derives from.
-- **Hunter Debris supply halved (from CS034 P3), confirmed right-sized at a wave-12 playtest (Gate
-  B, B5–B7).** `HUNTER_GARBAGE` large/medium tiers dropped to 0; a full lineage now yields 9 pieces,
-  down from 18. Delivery-combo achievements (`heavy_hauler` at 12, `max_haul` at `CARGO_CAP_MAX` 24)
-  stayed reachable at that wave. Not verified past wave 12 — a much later, hunter-lineage-saturated
-  wave could still read differently; no further action unless it's reported.
+
+- **The UFO difficulty chain goes fully flat past level 65 (CS024/CS025)** — junk saturates at L41,
+  hunters at L33, so past 65 all three UFO sub-chains are pure sawtooth with nothing escalating
+  underneath. Fix if wanted is a step-count increase, no mechanism change.
+
+- **`DEBRIS_BOUNCE_RESTITUTION`/`_MIN` are both first-pass and browser-unverified (CS023).** Measured
+  consequence: a rail satellite sweeping into a parked free one throws it up to 511.5 px/s off the
+  outer fast ring — nearly double the 255.7 px/s cap CS023 P4's drift derives from.
+
+- **Hunter Debris supply halved (CS034 P3), confirmed right-sized at a wave-12 playtest.**
+  `HUNTER_GARBAGE` large/medium tiers dropped to 0; a full lineage yields 9 pieces, down from 18. Not
+  verified past wave 12.
+
+- **G20 says the game is no longer too easy.** CS035's answer to that complaint was §4's Hunter
+  volatility (a passively-drifting large now becomes three homing mediums without the player choosing
+  it), and G19 says a late-wave saucer pass through aged larges is not too much — assessed at
+  `hunterVolatileAge` 60, the gate's own number, not P4's shipped 30.

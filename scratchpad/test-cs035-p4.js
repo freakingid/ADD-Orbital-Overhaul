@@ -35,9 +35,12 @@ function quiet(X) {
 (function sectionA() {
   console.log("(A) the five HUNTER-section registry rows exist with their spec'd bounds");
   const X = buildGame();
-  hasKnob(X, "hunterVolatileAge", { def: 30, min: 0, max: 120, step: 1, unit: "s" }, A);
-  hasKnob(X, "hunterPulseMin", { def: 92, min: 50, max: 100, step: 1, unit: "%" }, A);
-  hasKnob(X, "hunterPulseMax", { def: 115, min: 100, max: 200, step: 1, unit: "%" }, A);
+  // REPOINTED BY CS035 P7 (GATE G15/G16): three `def`s moved at the playtest — hunterVolatileAge
+  // 30 -> 60, and the pulse envelope 92/115 -> 87/125. Bounds, step, unit and section are unchanged,
+  // and every section below reads DEBUG live rather than a literal, so only this row list moves.
+  hasKnob(X, "hunterVolatileAge", { def: 60, min: 0, max: 120, step: 1, unit: "s" }, A);
+  hasKnob(X, "hunterPulseMin", { def: 87, min: 50, max: 100, step: 1, unit: "%" }, A);
+  hasKnob(X, "hunterPulseMax", { def: 125, min: 100, max: 200, step: 1, unit: "%" }, A);
   hasKnob(X, "hunterPulseGrow", { def: 55, min: 5, max: 300, step: 5, unit: "%/s" }, A);
   hasKnob(X, "hunterPulseShrink", { def: 28, min: 5, max: 300, step: 1, unit: "%/s" }, A);
   const ids = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
@@ -56,7 +59,7 @@ function quiet(X) {
   eq(h.age, 0, "B: age starts at 0");
   eq(h.pulseScale, 100, "B: pulseScale starts at 100");
   eq(h.pulseUp, true, "B: pulseUp starts true");
-  assert(!h.volatile(), "B: not yet volatile at age 0 with the default 30s threshold");
+  assert(!h.volatile(), "B: not yet volatile at age 0 with the default threshold");
 })();
 
 // ================= (C) after hunterVolatileAge seconds, pulseScale moves off 100 =================

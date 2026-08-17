@@ -15,9 +15,13 @@ const A = mkAssert();
 const { assert, eq, close } = A;
 
 (function sectionA() {
-  console.log("(A) GAME_VERSION bumped to 1.0.0.34");
+  // FLIPPED BY CS035 P7 — the standing mirror image, not a re-point. This is a PHASE-LOCAL pin: it
+  // asserts the bump CS034 P9 itself owned, so once a later changeset bumps again the only claim it
+  // can still make is that the version has MOVED OFF what this phase shipped. Permanently true from
+  // here; the live pins that genuinely track HEAD are a separate, deliberate set of seven files.
+  console.log("(A) GAME_VERSION has moved off the 1.0.0.34 this phase shipped");
   const X = buildGame();
-  eq(X.GAME_VERSION, "1.0.0.34", "A: GAME_VERSION is 1.0.0.34");
+  assert(X.GAME_VERSION !== "1.0.0.34", "A: GAME_VERSION has moved past what CS034 P9 shipped (1.0.0.34)");
 })();
 
 (function sectionB() {
