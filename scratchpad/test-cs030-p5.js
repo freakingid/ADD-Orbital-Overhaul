@@ -260,10 +260,11 @@ function watchLevelVoice(X) {
   eq(X.game.state, "playing", "B: the run is still 'playing' — this is not a menu and not a state change");
   eq(X.game.paused, false, "B: ⛔ game.paused is FALSE");
   eq(X.menuActive(), false, "B: ⛔ ...and menuActive() is FALSE — no menu chrome path was pulled in");
-  // CS034 P5: the level-end panel's title is now "LEVEL N COMPLETE", not the game-over panel's
-  // "ACHIEVEMENTS UNLOCKED" — updated to match; this section's own point (no new draw wiring, the
-  // existing draw() call site) is untouched.
-  assert(X.render(() => X.draw()).some(r => r.c === "fillText" && r.str === "LEVEL " + waveBefore + " COMPLETE"),
+  // CS034 P5 made this title "LEVEL N COMPLETE"; ⛔ CS036 P3 (FORK-CS036-F -> F2) REVERTED IT to the
+  // game-over panel's own "ACHIEVEMENTS UNLOCKED" in both branches, because the full-screen announcement
+  // CS036 P2 added says "Level N Complete" two seconds earlier. Updated to match, twice now; this
+  // section's own point (no new draw wiring, the existing draw() call site) is untouched by either move.
+  assert(X.render(() => X.draw()).some(r => r.c === "fillText" && r.str === "ACHIEVEMENTS UNLOCKED"),
     "B: the panel renders over the frozen field from the existing draw() call site — no new draw wiring");
 
   // ⛔ Dying ON the clearing frame must not open a level-end panel: killShip() sets "dying" mid-frame
@@ -358,6 +359,11 @@ function watchLevelVoice(X) {
   // ZEROED it as it fired; the arm latch leaves it counting (that is what stops it re-arming). Pulling
   // it out of the row keeps the other seven pinned across the seam instead of losing all eight to the
   // one that legitimately moved — and the divergence itself is asserted below rather than waved away.
+  //   ⛔ REPOINTED AGAIN BY CS036 P3: the confirm no longer lifts the freeze — it now runs on through
+  // nextWave() until the "Level N+1" banner starts fading out, ~1.7 s of frames later, and the nine
+  // frames after the clear would all be frozen where the parent's are live. The tail is CS036 P3's own
+  // subject and is pinned in test-cs036-p3.js; here it is lifted by hand on the confirming frame, which
+  // is exactly the seam this trace has always measured (the empty-bucket fork, not the ceremony).
   function trace(X, frames) {
     const out = [], timers = [];
     freshPlay(X);
@@ -366,7 +372,7 @@ function watchLevelVoice(X) {
     for (let i = 0; i < frames; i++) {
       X.game.pendingAch.length = 0;
       X.update(0.1);
-      if (live && X.levelDoneActive()) X.dismissLevelDone();
+      if (live && X.levelDoneActive()) { X.dismissLevelDone(); X.game.levelEndFreeze = false; }
       out.push([X.game.wave, X.game.state, X.game.debris.length,
                 X.game.ship.x.toFixed(6), X.game.ship.y.toFixed(6), X.game.score,
                 X.game.levelBanner.text].join("|"));
@@ -453,12 +459,23 @@ function watchLevelVoice(X) {
   eq(X.game.paused, false, "E: ⛔ pad Start is swallowed — it cannot pause a frozen field");
   assert(X.game.celebration !== null, "E: ...and does not dismiss the panel either (P4's convention)");
 
-  // The resume: dismissal hands the field straight back, moving again, on the very next frame.
+  // The resume: dismissal ends THE PANEL'S freeze — the one this section is about — and hands the field
+  // back to whatever else is holding it.
+  // ⛔ REPOINTED BY CS036 P3: since that phase something else IS, for ~1.7 s. The panel opens inside the
+  // level-end ceremony's own freeze, dismissCelebration() runs the deferred nextWave(), and the field
+  // stays stopped under the new "Level N+1" banner until it starts fading out (FORK-CS036-B). So the
+  // claim splits in two: the panel's own freeze is gone (its term is off update()'s early-return), and
+  // the tail is what still holds the field — pinned as such here, then lifted by hand, because the tail
+  // itself belongs to test-cs036-p3.js.
   X.keydown("Enter");
   assert(X.game.celebration === null, "E: (setup) dismissed");
+  eq(X.game.levelEndFreeze, true, "E: ⛔ ...but the CEREMONY's freeze outlives the panel — P3's tail has it now");
   const rx = X.game.ship.x;
   X.update(1 / 60);
-  assert(ticks > 0, "E: ⛔ entity update() bodies run again the moment the panel is gone");
+  eq(ticks, 0, "E: ⛔ so no entity body runs on the frame after the panel either — the field is still frozen");
+  X.game.levelEndFreeze = false;
+  X.update(1 / 60);
+  assert(ticks > 0, "E: ⛔ entity update() bodies run again the moment NOTHING is freezing the field");
   assert(X.game.ship.x !== rx, "E: ...and the ship resumes carrying its velocity");
   eq(X.game.wave, snap.wave + 1, "E: ...into the next wave");
 })();

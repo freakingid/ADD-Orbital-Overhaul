@@ -397,9 +397,14 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
       // clear FREEZES the field behind "Level N Complete" until the player confirms. So the loop is short
       // and unconditional again: one frame to arm the ceremony, the confirm, one frame to settle. The
       // claim (garbage carries ACROSS a transition) is untouched.
+      // AND AGAIN BY CS036 P3: the confirm no longer lifts the freeze — it runs on through nextWave()
+      // until the "Level N+1" banner starts fading out, ~1.7 s later, and a frozen frame resolves no
+      // wave clear at all, so the next iteration would never arm and the loop would stall at wave 2.
+      // Lifted by hand the moment the confirm has reached nextWave(); the tail belongs to
+      // test-cs036-p3.js, not to a garbage-density pin.
       for (let f = 0; f < 3; f++) {
         g.pendingAch.length = 0;
-        if (X.levelDoneActive()) X.dismissLevelDone();
+        if (X.levelDoneActive()) { X.dismissLevelDone(); g.levelEndFreeze = false; }
         X.update(1 / 60);
       }
     }

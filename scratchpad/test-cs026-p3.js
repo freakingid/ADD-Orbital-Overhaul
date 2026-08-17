@@ -889,7 +889,12 @@ let X = null;
       // REPOINTED BY CS036 P2: a clear now FREEZES the field behind a "Level N Complete" announcement
       // that ends on player input, not on a timer — so this run needs a confirm to keep advancing, and
       // this line is that player. Without it the sim parks on the first clear and never reaches 5 -> 6.
-      if (A.levelDoneActive()) A.dismissLevelDone();
+      // ⛔ AND AGAIN BY CS036 P3, which extended the freeze PAST the confirm to the next banner's
+      // fade-out: this loop empties the field on a fixed 90-frame cadence, so it would empty it DURING
+      // those frozen frames — where the wave-clear latch cannot re-arm, because waveClearTimer never
+      // returns to 0 without a live frame that has debris in it. The run would park at level 4. The tail
+      // is test-cs036-p3.js's subject; here it is lifted by hand at the confirm.
+      if (A.levelDoneActive()) { A.dismissLevelDone(); A.game.levelEndFreeze = false; }
       A.update(1 / 60);
       if (i % 200 === 0) A.draw();
       sizes.add(A.game.worldSize);

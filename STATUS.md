@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.35 · Changeset: CS036 · Phase: P2 · Registry: 105 · Levers: 18
+Version: 1.0.0.35 · Changeset: CS036 · Phase: P3 · Registry: 105 · Levers: 18
 
 ## Phase ledger — CS036
 
@@ -26,11 +26,51 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P2 · Registry: 105 · Levers: 1
   additive `listeners`/`pads` hooks so the real keydown listener and real gamepad can be driven without
   a second sandbox.
 
+- P3 — the freeze TAIL, the pulse restriction, the panel header. The freeze now survives
+  `dismissLevelDone()` (that line is deleted) and the whole of `nextWave()`, and lifts inside
+  `updateLevelEndFreeze()` at `levelBanner.life <= DEBUG.levelBannerFade` — written as the `else` of the
+  announcement's `age` tick, so `game.levelDone` is what tells the HOLD from the TAIL. A plain `<=`, no
+  crossing one-shot: `fade >= time` and `time === 0` both thaw on the first tail frame instead of hanging.
+  The alpha pulse moved to `game.levelEndGraceT > 0` at both sites (accumulator + `Ship.draw()`'s new
+  `pulsing`), while the blink suppression stays on `levelEndSafe` — two questions, two reads; both knobs
+  retained, registry unmoved at 105. `levelEndSafe` keeps its full extent (C2), recorded in a ⛔ comment at
+  its declaration so the redundancy is not read as an oversight. `menuPanel()`'s `isWave` ternary is gone
+  (`isWave` itself stays — the sub-line still forks). ⚠ **P1's caption question, handed here by P2, is
+  answered YES**: `game.caption.life -= dt` joins the reduced sim, because the freeze keeps the
+  announcement channel running and `sayLevel()` now fires inside it. The pause and the panel still hold
+  the caption — untouched.
+
 ## Working / verified
 
-- Full suite on a full clone: **145 files, 142 passed, 3 failed, 0 skipped, 0 timed out** — the three
-  failures are the standing pre-existing set (see Known issues), unchanged from P1's 144/141/3.
+- Full suite on a full clone: **146 files, 143 passed, 3 failed, 0 skipped, 0 timed out** — the three
+  failures are the standing pre-existing set (see Known issues), unchanged from P2's 145/142/3.
   `node --check` on the extracted script passes.
+
+- New `scratchpad/test-cs036-p3.js` (121 assertions, seeded): the confirm reaches `nextWave()` and 30
+  frames later the newly spawned field has not moved a pixel, on the panel fork as well as the inline one;
+  the tail lifts on exactly the frame `levelBanner.life` crosses `levelBannerFade` (asserted from both
+  sides, with the ship pinned still throughout and moving on the next frame); all three degenerate knob
+  pairs (`fade >= time`, `time === 0`, both at 0) thaw on the FIRST tail frame and a second full ceremony
+  still runs after them; the pulse is 0 across the hold, the tail and the banner, starts at the grace and
+  ramps `dt/levelEndFade` → `dt/levelEndGracePulseEnd` with every frame's advance larger than the last;
+  the alpha is read off `ctx.stroke()` through the real `Ship.draw()` at four phases with and without the
+  grace; the blink is still skipped while `levelEndSafe` with no grace running; `levelEndSafe` is true at
+  the clear, 5 s into the hold, under the panel, across the tail and the banner, and closes on the frame
+  `levelEndGraceT` hits exactly 0; and both panels render "ACHIEVEMENTS UNLOCKED". **Twelve mutations of
+  the shipped code** (the unfreeze deleted, ungated, made a crossing one-shot, moved above the banner
+  tick; each pulse condition reverted; the blink coupled to it; the restore mis-guarded; the dismissal's
+  clear re-added; the header ternary restored; a damage gate narrowed; the caption tick deleted and added
+  to the pause path) were each confirmed to fail it.
+
+- **Seven suite files repointed, all named in-commit.** `test-cs036-p1` stages the freeze the way the game
+  arms it (flag **and** announcement — the bare flag now reads as a tail past its crossing and thaws), and
+  its writer-set pin swaps the dismissal's line for the tail's. `test-cs036-p2` §D/§E flip to their mirror
+  image: the confirm ends the announcement, not the freeze. `test-cs035-p3` §A pins a hand-seeded phase
+  instead of an accumulating one, and §I arms the grace before measuring the pulse at all. `test-cs034-p5`
+  §A is rewritten as F2's mirror image — the header reverted, the sub-line's fork surviving.
+  `test-cs030-p5` §B takes the new header, §D's parent trace and §E's resume lift the tail by hand (§E
+  first pinning that the ceremony's freeze outlives the panel). `test-cs024-p3` and `test-cs026-p3` drive
+  runs that clear the field on a fixed cadence, so both lift the freeze at the confirm.
 
 - New `scratchpad/test-cs036-p2.js` (127 assertions, seeded) drives the real `update()`, the real
   keydown listener and the real `handleGamepadMenu()`: a real bullet kills the last size-1 Garbage
@@ -75,13 +115,16 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P2 · Registry: 105 · Levers: 1
 
 ## Known issues
 
-- **P1's caption issue is now REACHABLE, and P2 deliberately did not widen the reduced sim.** A voice
-  caption raised during the freeze (a parked critical draining) sits at full alpha for the whole hold,
-  because `updateLevelEndFreeze()` runs `VoiceSys.update()` but not `game.caption.life -= dt`. P2's
-  answer: **no** — spec §0.3's table is the contract for what a frozen frame runs, the only clock this
-  phase added is the announcement's own `levelDone.age`, and the caption is arguably *right* to hold
-  while the field does. ⚠ **P3 owns the call**, and has the better view: it sees the whole span,
-  including the frames after `nextWave()`. If it says yes, the line goes beside the `age` tick.
+- **⛔ RESOLVED (P3) — the caption clock now runs during the freeze.** P1 raised it, P2 declined it and
+  handed the call to P3; P3's answer is **yes**, one line in `updateLevelEndFreeze()`. What decided it is
+  visible only from here: `nextWave()` fires INSIDE the freeze, so `VoiceSys.sayLevel()` raises a caption
+  at the head of the tail on **every** level transition, and the level banner it is the twin of (same
+  call, same string) is ticking down beside it — a stopped caption clock would hold that line at full
+  alpha for the whole 1.7 s tail while its own audio, on the audio clock, finished seconds earlier. The
+  freeze stops the SIM and deliberately keeps the ANNOUNCEMENT CHANNEL running; a caption is that
+  channel's visual half. ⛔ **The pause and the celebration panel still hold the caption** (CS011 P2's
+  rule, untouched) — they run no announcement channel at all. Pinned both ways in `test-cs036-p3` §H.
+  It is one line if Paul wants it back out.
 
 - **NEW (P2) — a wave that spawns ZERO Garbage Satellites now soft-locks the level.** Unreachable in
   shipped play (`junkCount` floors at 3), reachable from the debug panel, whose `junkCountFloor`/`Ceil`
@@ -114,12 +157,33 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P2 · Registry: 105 · Levers: 1
   hull the tell stacks. No rate limit was added: spec §2.3 asked for the shipped ping and no new audio
   method, and a cooldown is a design call.
 
-- **CS035 — a wave cleared while the PREVIOUS level's banner is still live arms the grace early.** The
-  banner-expiry one-shot fires on any crossing with `levelEndSafe` true and cannot tell the level-1
-  banner it was written to exclude from a level-N banner that has simply not expired yet. Result:
-  protection through the hold, none through the banner. Unreachable at the shipped 2.2 s
-  `levelBannerTime` (a level-1 clear is ~39 kills), but that knob goes to 8 s from the debug panel.
-  Narrowing the arm is a design call, so it was flagged rather than taken.
+- **⛔ RE-DERIVED (P3), and the CS035 flag's symptom is GONE — what is left is a knob inequality.** The
+  old flag read: "a wave cleared while the PREVIOUS level's banner is still live arms the grace early →
+  protection through the hold, none through the banner." Measured under the freeze, in four staged
+  scenarios, it now goes three ways:
+  - **The old banner expires during the hold.** The one-shot still fires and still arms the grace early
+    — but `levelEndGraceT` only counts down in `update()`'s playing body, which the freeze replaces, so
+    it is **parked at its full value** for the rest of the hold and the whole tail. It then ticks for
+    exactly `levelBannerFade` seconds (the live frames between the unfreeze and the new banner's own
+    expiry) before that crossing **re-arms it to full**. Measured: armed at t=0.98, still 3.000 at the
+    unfreeze at t=11.53, re-armed 3.000 at t=12.03, closed at t=15.05 — i.e. exactly `levelEndGrace`
+    after the new banner expired, which is the intended sequence. **Nothing is lost.**
+  - **The player confirms before the old banner expires.** `nextWave()` reassigns `game.levelBanner`
+    wholesale, so the premature crossing never happens at all. The case simply does not occur.
+  - **The residue: `levelEndGrace <= levelBannerFade`.** Only then can the parked grace run out inside
+    that fade window, and the crossing that would re-arm it is refused (the one-shot reads `levelEndSafe`,
+    now false). Measured at grace 0.25 / fade 1.0: protection closes 0.7 s into the banner and there is no
+    post-banner grace. Both are debug-panel knobs; shipped is 3.0 vs 0.5, a 6× margin.
+  It is also **harder to reach than it was**: the clear must land inside the previous banner's life, and
+  the first 1.7 s of every banner is now frozen, so only its last `levelBannerFade` seconds are live play.
+  Not fixed — narrowing the arm is the same design call CS035 declined, and the shipped knobs are nowhere
+  near the inequality.
+
+- **NEW (P3, cosmetic, debug-knobs-only) — the two announcements can overprint.** In the case above the
+  still-live "Level N" banner and "Level N Complete" draw at the same `levelBannerY` and
+  `levelBannerSize`, on top of each other, for the rest of the hold. Reachable only by raising
+  `levelBannerTime` far enough that a wave clears under a live banner. Not fixed: which one yields is a
+  design call the spec does not cover.
 
 - **CS035 — parking at the dock no longer cleans up, and that is a real behaviour change.** A parked
   ship cannot mop up the loose pieces around it any more; they stay in the field, pushed clear of the
@@ -178,22 +242,25 @@ None.
 
 ## Next up
 
-- **CS036 P3 — the freeze tail**: the unfreeze at `levelBanner.life <= levelBannerFade` with both
-  degenerate cases (`fade >= time`, `time === 0`) degrading to "unfreeze immediately"; the alpha pulse
-  restricted to the grace; the panel header reverted. ⛔ It also owns re-deriving CS035's
-  banner-crossing edge (Known issues above) under the freeze — the answer is not known yet.
-  - The line it moves is `game.levelEndFreeze = false;` in `dismissLevelDone()`, which is P2's answer
-    and not the feature's; the comment above it says so. Everything else about the confirm stays.
-  - ⚠ Under the freeze, a wave cleared while the PREVIOUS level's banner is still live now behaves
-    differently again: the banner keeps ticking during the freeze (`tickLevelBanner()` runs in both
-    paths), so its expiry — and the grace arm that rides on it — can land in the middle of a
-    player-paced hold. That is the edge P3 is asked to re-derive; P2 changed its shape and did not
-    resolve it.
+- **CS036 P4 — the Hunter heartbeat punch** (spec §2): bounds + defaults, independent of the ceremony.
+  Then P5 (dock ping cooldown + FLAG-CS034-e, registry 105 → **106**) and P6 (suite triage). ⛔ The
+  ceremony is complete as of P3; P1–P3 land nothing further.
 
-- **P7's doc sweep still owns every `levelEndHold` mention in prose.** The build's remaining ones are
-  deliberate tombstones (the registry comment, the wave-clear branch, `dismissLevelDone()`'s header) and
-  are not misses. `ORBITAL-OVERHAUL-GDD.md` §2.7/§2.20.1's three references, on the other hand, now
-  describe a knob that does not exist.
+- **P7's doc sweep — five GDD passages now describe a build that no longer exists.** None is a code
+  defect; the GDD is §2 = shipped only, so all five are the sweep's. The build's own remaining
+  `levelEndHold` mentions are deliberate tombstones (the registry comment, the wave-clear branch,
+  `dismissLevelDone()`'s header) and are not misses.
+  - `ORBITAL-OVERHAUL-GDD.md` §2.7 (twice): the next wave starts `DEBUG.levelEndHold` after the field is
+    clear. It starts when the player confirms; the knob is retired.
+  - §2.20's "Two headers, one panel (CS034 P5)": the level-end title is `"LEVEL N COMPLETE"`. Reverted by
+    P3 (FORK-F → F2) — one header, `"ACHIEVEMENTS UNLOCKED"`; only the sub-line still forks.
+  - §2.20.1's "The sequence": step 2 is a `levelEndHold` wait, "the player keeps full control
+    throughout", steps 2/4/5 are ordinary gameplay frames, "Total at the defaults: **10.2 s**". All four
+    clauses are gone — the field freezes at the clear, step 2 is player-paced and untimed, and the total
+    has no fixed value any more.
+  - §2.20.1's "The tell": the pulse "running continuously for the whole window". P3 confined it to the
+    grace (FORK-D → D1); both knobs are retained and still shape that ramp.
+  - §2.20.1's closing "⚠ Known edge": superseded outright by the re-derivation in Known issues above.
 
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess: CS026 P6 tried it and CS029 measured it worse ("a ship-relative origin smears
@@ -223,6 +290,18 @@ None.
   only runs across the grace from P3 on, so the old questions (does it read instantly as "invincible",
   is the 0.2 floor too faint to fly at) should be re-asked at the CS036 gate against the new sequence,
   not the CS035 one. §8's H6/H10/H11 are how they come back; ⛔ do not resurrect G9–G14 themselves.
+
+- **H4 and H6 are P3's, and both are about the hand-back to live play.** H4: the freeze lifts 1.7 s into
+  the 2.2 s "Level N+1" label, so the last 0.5 s of that label is live play with the field already moving
+  — does that read as a hand-back, or as the label overstaying? (The knobs to answer with are
+  `levelBannerTime`/`levelBannerFade`, and the answer moves the unfreeze with them.) H6: with the pulse
+  now confined to the 3 s grace, is "you are still safe, and it is running out" still legible — or does
+  the pulse now arrive so late that it reads as a new event rather than a tail?
+
+- **New, P3's, and worth one look: does the caption expiring mid-freeze read right?** With captions on,
+  Dan's "Level N" caption now ages during the frozen tail instead of holding — so it can vanish while the
+  field is still stopped. Argued from the freeze's own contract (Known issues above) and one line to
+  revert either way.
 
 - **H2 and H3 are P2's, and both need a controller as well as a keyboard.** H2 (can a held fire button
   skip the announcement?) is argued structurally and pinned headlessly in `test-cs036-p2.js` §F — the

@@ -7,6 +7,14 @@
 // const, so X.ctx is the exact object drawCelebration()'s closures already write through.
 // This phase owns exactly: the two open sites' title/sub-line, keyed off `resume`, and that no
 // `wave` field is added to game.celebration. No global counts (test-registry.js's job).
+//
+// ⛔ SECTION A REWRITTEN BY CS036 P3 AS ITS OWN MIRROR IMAGE (spec §1.2, FORK-CS036-F -> F2). The TITLE
+// half of this phase is REVERSED: CS036 P2 put a full-screen "Level N Complete" announcement two seconds
+// ahead of this panel, so a "LEVEL N COMPLETE" header said it a second time to a player who had just
+// pressed a button to dismiss the first one. Both branches read "ACHIEVEMENTS UNLOCKED" again. The
+// SUB-LINE half is untouched and still forks on `resume` — which is the whole reason this is a rewrite
+// and not a deletion: the `isWave` binding survives, and §A is what would catch it being deleted with
+// the ternary it used to feed.
 
 "use strict";
 const { mkAssert, buildGame } = require("./_harness.js");
@@ -27,15 +35,19 @@ function watchFillText(X) {
 }
 
 (function sectionA() {
-  console.log("(A) resume === \"wave\": LEVEL N COMPLETE header + sub-line");
+  console.log("(A) resume === \"wave\": ⛔ REVERTED header, and the sub-line that still forks");
   const X = buildGame({ store: {} });
   X.startGame();
   X.game.wave = 7;
   X.game.celebration = { items: fakeItems(3), scroll: 0, resume: "wave" };
   const calls = watchFillText(X);
   X.drawCelebration();
-  assert(calls.some(s => s === "LEVEL 7 COMPLETE"), "A: title reads LEVEL 7 COMPLETE");
-  assert(calls.some(s => s === "During level 7 you earned:"), "A: sub-line reads During level 7 you earned:");
+  assert(calls.some(s => s === "ACHIEVEMENTS UNLOCKED"),
+    "A: ⛔ the wave branch's title reads ACHIEVEMENTS UNLOCKED — the header no longer forks (F2)");
+  assert(!calls.some(s => String(s).includes("COMPLETE")),
+    "A: ⛔ ...and nothing on this panel says COMPLETE; the announcement two seconds earlier said it");
+  assert(calls.some(s => s === "During level 7 you earned:"),
+    "A: the SUB-LINE still forks on resume — `isWave` survived the ternary's deletion");
 })();
 
 (function sectionB() {

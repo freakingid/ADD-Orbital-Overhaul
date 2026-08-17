@@ -176,6 +176,11 @@ function clear(X) {
 })();
 
 // ================= (D) confirm ends it — panel when one is pending, nextWave() when none =================
+// ⛔ REPOINTED BY CS036 P3 (FORK-CS036-B): the confirm ends the ANNOUNCEMENT and nothing else. P2 cleared
+// game.levelEndFreeze on the same line and said so in dismissLevelDone()'s header — that was this phase's
+// own answer, not the feature's, and P3 deleted it: the freeze now runs on through the panel and through
+// nextWave() until the "Level N+1" label starts fading out. So the pin flips to its mirror image here and
+// in §E, and the tail's own crossing is pinned in test-cs036-p3.js.
 (function sectionD() {
   console.log("(D) ENTER and ESC both end the hold: nextWave() with an empty bucket, the panel with a full one");
   for (const key of ["Enter", "Escape"]) {
@@ -184,7 +189,7 @@ function clear(X) {
     const w = g.wave;
     X.keydown(key);
     eq(g.levelDone, null, `D: ${key} cleared the announcement`);
-    eq(g.levelEndFreeze, false, `D: ⛔ ...and the freeze with it`);
+    eq(g.levelEndFreeze, true, `D: ⛔ ...and the freeze SURVIVES it — P3 carries it to the banner's fade-out`);
     eq(g.wave, w + 1, `D: ⛔ ${key} reached the deferred nextWave() — exactly one wave`);
     eq(g.levelBanner.text, "Level " + g.wave, `D: ...which seeded the "Level N+1" banner`);
     assert(g.debris.length > 0, `D: ...and spawned the new wave's field`);
@@ -217,7 +222,7 @@ function clear(X) {
     const w = g.wave;
     X.padPress(X.GP[btn]);
     eq(g.levelDone, null, `E: pad ${btn} cleared the announcement`);
-    eq(g.levelEndFreeze, false, `E: ⛔ ...and the freeze`);
+    eq(g.levelEndFreeze, true, `E: ⛔ ...and leaves the freeze standing, exactly as the keyboard does (§D)`);
     eq(g.wave, w + 1, `E: ⛔ pad ${btn} reached the deferred nextWave()`);
   }
 
@@ -301,7 +306,7 @@ function clear(X) {
     frames(X, 300);
     eq(X.Achievements.lifetime.perfectWaves, 10, "G: ⛔ 300 frozen frames later it is STILL 10 — once per clear");
     X.keydown("Enter");
-    frames(X, 60);
+    frames(X, 200);   // CS036 P3: past the freeze's tail, so these are live frames again, not frozen ones
     eq(X.Achievements.lifetime.perfectWaves, 10, "G: ...and the confirm did not fire it a second time either");
   }
   // Wave 8 clears the late-wave latch too; damage taken clears none of them.

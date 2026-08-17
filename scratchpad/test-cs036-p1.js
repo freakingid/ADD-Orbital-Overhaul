@@ -46,6 +46,19 @@ function quiet(X) {
 function settle(X, secs = 4) { for (let i = 0; i < Math.round(secs / DT); i++) X.update(DT); }
 function frames(X, n) { for (let i = 0; i < n; i++) X.update(DT); }
 
+// ⛔ REPOINTED THROUGHOUT BY CS036 P3 — THE BARE FLAG IS NO LONGER A FREEZE, and that is the feature.
+// P3 gave the freeze a TAIL (the frozen frames after the player's confirm, which end when the "Level N+1"
+// label starts fading out) and tells the two halves apart by game.levelDone: non-null is the HOLD, ended
+// only by input; null is the TAIL, ended at levelBanner.life <= levelBannerFade. So setting the flag
+// alone — no announcement, and a banner this file settled out four seconds ago, i.e. long past any fade
+// threshold — now reads as a tail already past its crossing and thaws on the first frame. Every section
+// below therefore freezes the way the wave-clear latch itself does, both fields together.
+//   ⛔ THIS FILE'S SUBJECT IS UNCHANGED BY THAT. What it measures is what a FROZEN FRAME runs, and a hold
+// frame and a tail frame run the identical reduced sim — the only difference is which line of the if/else
+// at the end of updateLevelEndFreeze() they take. The tail's own crossing belongs to test-cs036-p3.js.
+function freeze(g) { g.levelEndFreeze = true; g.levelDone = { text: "Level 1 Complete", age: 0 }; }
+function thaw(g) { g.levelEndFreeze = false; g.levelDone = null; }
+
 // Five bodies of five kinds, all clear of the ship and of each other, each with real motion in it.
 // The loose piece of Debris goes to the ship's ANTIPODE — the farthest point on the torus — which also
 // puts it clear of the dock, whose CS035 P2 lockout would otherwise push it.
@@ -108,7 +121,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   const b = populate(X, g);
   holdInput(X);
 
-  g.levelEndFreeze = true;
+  freeze(g);
   const before = snapshot(X, g, b);
   frames(X, 120);                            // 2.0 s — longer than BULLET_LIFE (1.05)
   eq(snapshot(X, g, b), before, "A: ⛔ every measured field is byte-identical after 120 frozen frames");
@@ -134,7 +147,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   eq(g.levelEndSafe, false, "B: (setup) CS035's protection window is shut — this section measures the FREEZE");
   const hp = g.ship.hp, dmg = g.stats.dmgThisWave;
 
-  g.levelEndFreeze = true;
+  freeze(g);
   frames(X, 120);
   eq(g.ship.hp, hp, "B: ⛔ the hull is untouched across 120 frozen frames");
   eq(g.ship.invuln, 0, "B: ⛔ ...no hit-stun was opened — the collision pass never ran at all");
@@ -143,7 +156,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   eq(g.ship.vx, 0, "B: ...and no knockback was applied");
 
   // Non-vacuity: the identical staging, one UNFROZEN frame.
-  g.levelEndFreeze = false;
+  thaw(g);
   X.update(DT);
   assert(g.ship.hp < hp, `B: (non-vacuity) one thawed frame and the same Hunter lands its hit (hp ${hp} -> ${g.ship.hp})`);
   assert(g.stats.dmgThisWave > dmg, "B: (non-vacuity) ...and dmgThisWave moved");
@@ -157,7 +170,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   populate(X, g);
   g.levelBanner = { text: "Level 2", life: 0.5 };
 
-  g.levelEndFreeze = true;
+  freeze(g);
   const start = g.levelBanner.life;
   X.update(DT);
   close(g.levelBanner.life, start - DT, "C: ⛔ ONE dt per frozen frame — not zero (a hang) and not two (a double-tick)", 1e-12);
@@ -165,7 +178,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   assert(g.levelBanner.life <= 0, `C: ⛔ the banner EXPIRED under the freeze (life ${g.levelBanner.life})`);
 
   // ...and the unfrozen path still ticks exactly once too — the extraction moved the body, not the rate.
-  g.levelEndFreeze = false;
+  thaw(g);
   g.levelBanner = { text: "Level 3", life: 1.0 };
   const live = g.levelBanner.life;
   X.update(DT);
@@ -196,7 +209,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
 
   // The blocking line ends. Under a naive freeze this queue would sit here for the whole hold.
   ctx.currentTime = 51;
-  g.levelEndFreeze = true;
+  freeze(g);
   let calls = 0;
   const realUpdate = X.VoiceSys.update.bind(X.VoiceSys);
   X.VoiceSys.update = function () { calls++; return realUpdate(); };
@@ -224,7 +237,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   const ARMED = DT / 2;                      // under one frame's dt: a single LIVE frame would fire it
   g.beatTimer = ARMED;
   const interval = g.beatInterval;
-  g.levelEndFreeze = true;
+  freeze(g);
   frames(X, 120);
   eq(evals, 0, "E: ⛔ Achievements.evaluate() ran ZERO times across 120 frozen frames");
   eq(beats, 0, "E: ⛔ the heartbeat never fired");
@@ -232,7 +245,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   eq(g.beatInterval, interval, "E: ...nor was the interval recomputed");
 
   // Non-vacuity: one thawed frame does both.
-  g.levelEndFreeze = false;
+  thaw(g);
   X.update(DT);
   eq(evals, 1, "E: (non-vacuity) the first thawed frame evaluates achievements again");
   eq(beats, 1, "E: (non-vacuity) ...and the heartbeat fires");
@@ -253,7 +266,7 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
 
   X.AudioSys.thrust(true);
   assert(X.AudioSys.thrustNode !== null, "F: (setup) the thrust loop is running");
-  g.levelEndFreeze = true;
+  freeze(g);
   X.update(DT);
   eq(X.AudioSys.thrustNode, null, "F: ⛔ the first frozen frame tore the thrust loop down");
   frames(X, 60);
@@ -281,14 +294,14 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   const chainSettled = JSON.stringify(g.chain.map(n => [n.x, n.y]));
 
   // --- frozen ---
-  g.levelEndFreeze = true;
+  freeze(g);
   const frozen = snapshot(X, g, b);
   frames(X, 120);
   eq(snapshot(X, g, b), frozen, "G: ⛔ 120 frozen frames in the middle changed nothing");
   eq(JSON.stringify(g.chain.map(n => [n.x, n.y])), chainSettled, "G: ⛔ ...the chain did not settle a single px further");
 
   // --- live, after ---
-  g.levelEndFreeze = false;
+  thaw(g);
   frames(X, 30);
   assert(snapshot(X, g, b) !== frozen, "G: ⛔ clearing the flag resumed the world on the next frame");
   assert(b.sat.x !== moved.sat[0] || b.sat.y !== moved.sat[1], "G: the Garbage Satellite is moving again");
@@ -311,12 +324,12 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   eq(g.levelEndFreeze, false, "H: a fresh run is not frozen");
 
   // resetRun() is the ONE reset site — reached here through startGame(), as both run paths do.
-  g.levelEndFreeze = true;
+  freeze(g);
   X.startGame();
   eq(g.levelEndFreeze, false, "H: ⛔ resetRun() clears it");
 
   // ...and nextWave(), which runs INSIDE the freeze, must not (spec §1.5 trap 2).
-  g.levelEndFreeze = true;
+  freeze(g);
   X.nextWave();
   eq(g.levelEndFreeze, true, "H: ⛔ nextWave() leaves it ALONE — the freeze must survive the wave boundary");
   eq(g.waveTime, 0, "H: (non-vacuity) nextWave() still zeroes what it always zeroed");
@@ -328,12 +341,18 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   // else in the build touches this flag. Written as a set of writer lines rather than a count, so a
   // sixth writer appearing anywhere fails here — the standing "settled: a pin at a version bump flips
   // rather than re-points" convention, applied to a flag instead of a version.
+  //   ⛔ REPOINTED AGAIN BY CS036 P3, and the count did not move because ONE LINE SWAPPED FOR ANOTHER:
+  // that phase DELETED dismissLevelDone()'s clear (the freeze now outlives the player's confirm and runs
+  // on through nextWave()) and added the tail's own unfreeze inside updateLevelEndFreeze(). The set form
+  // pays for itself here — a re-added clear at the confirm would read as a SECOND bare
+  // `game.levelEndFreeze = false;`, identical in text to resetRun()'s, and a count of four would have
+  // sailed straight past it where this fails.
   const src = execSource(scriptSource());
   const writes = src.split("\n").map(l => l.trim()).filter(l => /levelEndFreeze\s*[:=][^=]/.test(l));
   eq(writes.sort().join(" | "),
     ["levelEndFreeze: false,", "game.levelEndFreeze = false;", "game.levelEndFreeze = true;",
-     "game.levelEndFreeze = false;"].sort().join(" | "),
-    "H: ⛔ the ONLY writers are the two declarations (false), CS036 P2's arm (true) and its dismissal (false)");
+     "else if (game.levelBanner.life <= DEBUG.levelBannerFade) game.levelEndFreeze = false;"].sort().join(" | "),
+    "H: ⛔ the ONLY writers are the two declarations (false), CS036 P2's arm (true) and CS036 P3's tail (false)");
   eq(writes.filter(l => /true/.test(l)).length, 1, "H: ⛔ ...exactly ONE of them arms the freeze — the wave-clear latch");
 
   eq(typeof X.updateLevelEndFreeze, "function", "H: updateLevelEndFreeze() exists");

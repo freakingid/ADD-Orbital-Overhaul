@@ -92,12 +92,17 @@ function arm(X) {
   // REPOINTED BY CS036 P2: the same frame armed the freeze too, and the pulse phase lives in update()'s
   // playing body — 30 FROZEN frames would advance nothing and this claim would read as a failure. Lift
   // it, as arm() does and for the same reason; the latch under test is levelEndSafe's, not the freeze's.
+  // ⛔ REPOINTED AGAIN BY CS036 P3 (FORK-CS036-D -> D1): the phase accumulates during the GRACE ONLY now,
+  // and the grace is three steps away from here, so "it kept accumulating" is no longer a way to see the
+  // latch at all. A hand-seeded sentinel makes the same point without depending on the pulse's condition:
+  // a second arm would run `game.levelEndPulseT = 0` on its own second line and wipe it.
   eq(g.levelEndFreeze, true, "A: ⛔ ...and CS036 P2's ceremony armed on the SAME latch, in the same frame");
   eq(g.levelDone.text, "Level " + g.wave + " Complete", "A: ...seeding the completed wave's announcement");
   g.levelEndFreeze = false; g.levelDone = null;
+  g.levelEndPulseT = 7;
   for (let i = 0; i < 30; i++) X.update(DT);
   eq(g.levelEndSafe, true, "A: still open half a second later");
-  assert(g.levelEndPulseT > 0, "A: ⛔ the phase kept accumulating — the `waveClearTimer === 0` latch did not re-arm and re-zero it");
+  eq(g.levelEndPulseT, 7, "A: ⛔ the sentinel phase is untouched — the `waveClearTimer === 0` latch did not re-arm and re-zero it");
 })();
 
 // ================= (B) ⛔ the hold is RETIRED — no timer advances the wave at all =================
@@ -335,14 +340,23 @@ function arm(X) {
   console.log("(I) the alpha pulse — phase in HALF-CYCLES, 1.0 -> 0.2 -> 1.0, and it replaces the blink");
   const X = buildGame(); X.startGame(); settle(X);
   const g = arm(X);
-  // At rest (no grace running) one half-cycle takes exactly DEBUG.levelEndFade seconds.
+  // ⛔ REPOINTED BY CS036 P3 (FORK-CS036-D -> D1): the pulse runs during the GRACE ONLY, so the "at rest,
+  // no grace running" reading this section opened with no longer exists — there is no resting phase. What
+  // survives is the UNITS claim, and levelEndFade is still what it always was: the one-way time at the TOP
+  // of the grace, where the ramp to levelEndGracePulseEnd has not started. One frame rather than thirty,
+  // because the one-way time shortens as the grace runs down; the ramp itself is pinned in
+  // test-cs036-p3.js, which owns the new condition.
+  g.levelEndGraceT = X.DEBUG.levelEndGrace;
   const p0 = g.levelEndPulseT;
-  const n = 30;
-  for (let i = 0; i < n; i++) X.update(DT);
-  close(g.levelEndPulseT - p0, (n * DT) / X.DEBUG.levelEndFade,
-    "I: ⛔ the phase advances dt / levelEndFade per frame — HALF-CYCLES, not seconds", 1e-9);
+  X.update(DT);
+  close(g.levelEndPulseT - p0, DT / X.DEBUG.levelEndFade,
+    "I: ⛔ the phase advances dt / levelEndFade per frame — HALF-CYCLES, not seconds", 1e-3);
 
   // The ship's own draw, through the real Ship.draw(), watched at ctx.stroke().
+  // ⛔ CS036 P3: the alpha is read off game.levelEndGraceT > 0 now, not levelEndSafe, so the grace has to
+  // be live for any of these to measure the pulse at all. Set outright — check() drives Ship.draw()
+  // directly and never runs update(), so nothing counts it down underneath.
+  g.levelEndGraceT = X.DEBUG.levelEndGrace;
   const seen = [];
   X.ctx.stroke = () => seen.push(X.ctx.globalAlpha);
   g.scoopLevel = 1;                      // so the scoop-V strokes too, and is covered by the wrapper
