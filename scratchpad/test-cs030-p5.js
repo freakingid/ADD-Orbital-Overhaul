@@ -9,6 +9,13 @@
 // TRAP the phase exists around (spec §0.1): the 2.5s wave-clear window is LIVE GAMEPLAY, not a
 // pause. This phase adds one, so the assertions that matter most are the freeze (E) and the
 // one-panel-per-clear pin (G) — a panel over a running field kills a player who cannot see it.
+//
+// ⛔ REPOINTED THROUGHOUT BY CS036 P2. The panel is byte-identical and every claim below still holds;
+// what moved is HOW it is reached. The wave-clear branch's timed fork — hold, then panel-or-nextWave()
+// — is retired: the clear now freezes the field behind a "Level N Complete" announcement, and the SAME
+// fork runs from dismissLevelDone() when the player confirms. clearFrame() therefore clears AND
+// confirms, §A looks for the fork in its new home, and §D's parent trace gains its one legitimate
+// divergence (the arm latch leaves waveClearTimer running where the retired crossing zeroed it).
 // SECOND TRAP: killShip() flips the state to "dying" MID-FRAME and update() runs on to the
 // wave-clear branch anyway, so dying on the crossing frame must NOT open a level-end panel whose
 // dismissal would then fire nextWave() at game over (B's last block).
@@ -41,6 +48,20 @@ const { assert, eq, skip } = A;
 
 const src = scriptSource();
 const stripped = execSource(src);
+
+// CS036 P2: brace-matched body of a top-level function, by its opening line. §H carries its own copy of
+// this (blockAt) with a different signature; this one takes the text and the opener, which is what §A
+// needs now that the fork it pins lives in a function rather than inside update().
+function blockOf(text, opener) {
+  const from = text.indexOf(opener);
+  if (from < 0) return "";
+  let depth = 0;
+  for (let i = text.indexOf("{", from); i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}" && --depth === 0) return text.slice(from, i + 1);
+  }
+  return "";
+}
 
 // ---- the test-cs030-p4 factory: buildGame()'s window stub swallows addEventListener, and this
 // ---- file has to DRIVE the listener. Takes a source so the parent build gets the same treatment.
@@ -133,21 +154,23 @@ function freshPlay(X) {
   X.game.pendingAch.length = 0;
   X.game.levelBanner = { text: "", life: 0 };
 }
-// ONE real frame that crosses the 2.5s threshold: park the timer just under it and run update().
-// Everything the branch does — the perfect-wave block, the panel, nextWave() — runs for real.
-// REPOINTED BY CS035 P3: the wave-clear threshold is DEBUG.levelEndHold now, not the 2.5 literal this
-// helper's 2.45 was sized against. Read off the knob rather than re-pinned to 4.95, so a retune of the
-// hold cannot leave every section here stepping short of the branch and passing on nothing.
-// ⛔ Seeding waveClearTimer non-zero also steps OVER CS035 P3's `waveClearTimer === 0` arm latch, so the
-// level-end protection window never opens in this file. That is correct for it: every claim here is
-// about the PANEL — its open, its deferral, its freeze — and none is about the window.
-// ⛔ Each BUILD's own hold, not this build's — section D traces a parent build alongside the live one,
-// and the parent's threshold is the 2.5 literal CS035 P3 replaced. A parent has no levelEndHold knob, so
-// the fallback IS that parent's real hold, correctly pinned as history.
+// A real clear, all the way to the panel. Everything the game does at a level end — the perfect-wave
+// block, the freeze, the announcement, the panel, nextWave() — runs for real.
+//
+// ⛔ REPOINTED BY CS036 P2 — IT IS TWO STEPS NOW, BECAUSE THE GAME IS. The helper used to park the
+// timer just under DEBUG.levelEndHold and run ONE frame, because the branch itself decided everything
+// on the crossing. That hold is retired: the clear ARMS the ceremony (which is why the timer starts at
+// 0 here — the `waveClearTimer === 0` latch is what fires it), and the panel opens from
+// dismissLevelDone() when the player presses on. So: one frame to clear, then the confirm. Every
+// section below reads exactly as it did, because what it is about — the panel's open, its deferral,
+// its freeze — is unchanged by which side of the announcement it happens on.
+// ⛔ Section D traces a CS030 P4 PARENT build alongside the live one, and that build has neither a
+// ceremony nor a levelEndHold knob; holdOf() stays for it alone, pinning its own 2.5 literal as history.
 function holdOf(X) { return X.DEBUG.levelEndHold === undefined ? 2.5 : X.DEBUG.levelEndHold; }
 function clearFrame(X, dt) {
-  X.game.waveClearTimer = holdOf(X) - 0.05;
+  X.game.waveClearTimer = 0;
   X.update(dt === undefined ? 0.1 : dt);
+  X.dismissLevelDone();
 }
 // Rows in the shape onUnlock() banks (tiered and untiered both present).
 function fakeItems(n) {
@@ -182,19 +205,29 @@ function watchLevelVoice(X) {
   assert(!/game\.paused\s*=\s*true/.test(upd),
     "A: ⛔ ...and nothing in update() sets game.paused to do it (that would satisfy menuActive())");
 
-  // Order inside the wave-clear branch: perfect-wave block, then the panel, then the return, then
-  // the fall-through nextWave(). Sliced out of the branch itself so a later edit can't drift it.
-  const wc = stripped.indexOf("game.waveClearTimer += dt;");
+  // ⛔ REPOINTED BY CS036 P2 — THE FORK MOVED HOUSE, WHOLE. It used to sit inside update()'s wave-clear
+  // branch behind a levelEndHold crossing; that crossing is retired and the fork now runs from
+  // dismissLevelDone(), reached by the player's confirm. So the ORDER pins move with it, unchanged in
+  // substance: the panel still opens after the perfect-wave block (which stayed behind, at the arm),
+  // still returns BEFORE nextWave(), and is still gated on the run being live.
+  const wc = stripped.indexOf("game.waveClearTimer === 0");
   const branch = stripped.slice(wc, stripped.indexOf("Achievements.evaluate();", wc));
   const iFlawless = branch.indexOf("flawlessLateWave");
-  const iOpen = branch.indexOf("game.celebration = { items: game.pendingAch");
-  const iReturn = branch.indexOf("return;", iOpen);
-  const iNext = branch.indexOf("nextWave();");
-  assert(iFlawless >= 0 && iOpen >= 0 && iReturn >= 0 && iNext >= 0, "A: (setup) the branch has all four landmarks");
-  assert(iFlawless < iOpen, "A: the panel opens AFTER the perfectWaves / noScratchWave3 / flawlessLateWave block");
+  assert(iFlawless >= 0, "A: (setup) the perfect-wave block is in the wave-clear branch, at the arm");
+  assert(branch.indexOf("game.celebration = { items: game.pendingAch") < 0,
+    "A: ⛔ ...and the panel does NOT open from update() any more — CS036 P2 moved that fork out");
+  assert(branch.indexOf("nextWave();") < 0, "A: ⛔ ...nor does the branch call nextWave() on any timer");
+  assert(/game\.levelEndFreeze = true/.test(branch) && /game\.levelDone = \{/.test(branch),
+    "A: ⛔ what it does instead is ARM the ceremony — the freeze and the completion announcement");
+
+  const dis = blockOf(stripped, "function dismissLevelDone() {");
+  const iOpen = dis.indexOf("game.celebration = { items: game.pendingAch");
+  const iReturn = dis.indexOf("return;", iOpen);
+  const iNext = dis.indexOf("nextWave();");
+  assert(iOpen >= 0 && iReturn >= 0 && iNext >= 0, "A: (setup) dismissLevelDone() has all three landmarks");
   assert(iOpen < iReturn && iReturn < iNext, "A: ⛔ ...and returns BEFORE nextWave() — the return IS the deferral");
-  assert(branch.indexOf("nextWave();", iNext + 1) < 0, "A: exactly one nextWave() call in the branch");
-  assert(/game\.state === "playing" && game\.pendingAch\.length/.test(branch),
+  assert(dis.indexOf("nextWave();", iNext + 1) < 0, "A: exactly one nextWave() call in it");
+  assert(/game\.state === "playing" && game\.pendingAch\.length/.test(dis),
     "A: ⛔ the open is gated on the run still being live (killShip() flips the state mid-frame)");
 
   // The deferred half is genuinely inside nextWave(), which is why deferring it defers them.
@@ -233,24 +266,36 @@ function watchLevelVoice(X) {
   assert(X.render(() => X.draw()).some(r => r.c === "fillText" && r.str === "LEVEL " + waveBefore + " COMPLETE"),
     "B: the panel renders over the frozen field from the existing draw() call site — no new draw wiring");
 
-  // ⛔ Dying ON the crossing frame must not open a level-end panel: killShip() sets "dying" mid-frame
+  // ⛔ Dying ON the clearing frame must not open a level-end panel: killShip() sets "dying" mid-frame
   // and update() runs on to this branch, so its dismissal would fire nextWave() at GAME OVER.
   // The real trigger is a collision pass a few dozen lines above the branch; the faithful stand-in
   // is a one-shot hook on the ship's own update(), which runs at the TOP of the same frame — calling
   // killShip() from before the call (so `dying` is set on entry) would take update()'s death branch
   // and never reach the wave clear at all, which is the case this pin is NOT about.
+  //   ⛔ REPOINTED BY CS036 P2, AND THE HAZARD GREW A SECOND HALF. The arm is unconditional, so a death
+  // on the clearing frame now leaves an ORPHANED announcement behind: game.levelDone is seeded while
+  // the state is already "dying". The claim that mattered is unchanged and is checked twice over — no
+  // panel opens, and the wave does NOT advance — and the new half is that the orphan is inert:
+  // levelDoneActive() is false the moment the state leaves "playing", so it never draws over the death
+  // spectacle and, more to the point, a confirm at GAME OVER cannot reach dismissLevelDone()'s
+  // nextWave(). (It is cleared by resetRun() at the next run, exactly as levelEndSafe's own arm is.)
   const Y = build();
   freshPlay(Y);
   const wY = Y.game.wave;
   Y.game.pendingAch = fakeItems(2);
-  Y.game.waveClearTimer = holdOf(Y) - 0.05;   // CS035 P3 repoint: the hold is a knob now
+  Y.game.waveClearTimer = 0;                  // CS036 P2 repoint: the arm latch, not a hold threshold
   const shipUpdate = Y.game.ship.update.bind(Y.game.ship);
   Y.game.ship.update = dt => { shipUpdate(dt); Y.killShip(); };
   Y.update(0.1);
-  eq(Y.game.state, "dying", "B: (setup) the run is in the death spectacle on the crossing frame");
+  eq(Y.game.state, "dying", "B: (setup) the run is in the death spectacle on the clearing frame");
   assert(Y.game.celebration === null, "B: ⛔ NO level-end panel opens on the frame the ship dies");
-  eq(Y.game.wave, wY + 1, "B: ...and the clear falls through to the plain nextWave(), as the pre-CS030 build does");
+  eq(Y.game.wave, wY, "B: ⛔ ...and the wave does NOT advance out from under a dying run");
   assert(Y.game.pendingAch.length >= 2, "B: ...the bucket is untouched, so the GAME-OVER seam still gets it");
+  assert(Y.game.levelDone !== null, "B: (setup) the arm is unconditional, so an orphaned announcement IS seeded");
+  eq(Y.levelDoneActive(), false, "B: ⛔ ...and it is INERT the moment the state leaves \"playing\"");
+  Y.game.state = "gameover";
+  Y.keydown("Enter");
+  eq(Y.game.wave, wY, "B: ⛔ a confirm at GAME OVER cannot reach the orphan's nextWave()");
 })();
 
 // ================= (C) dismissal advances exactly one wave — both handlers ======================
@@ -306,29 +351,40 @@ function watchLevelVoice(X) {
   console.log("(D) the common case: an empty bucket calls nextWave() inline, traced against the parent build");
   // The traced state per frame. pendingAch is emptied every frame in BOTH builds — that is what
   // makes this the empty-bucket path, and it is applied identically on both sides.
+  // ⛔ REPOINTED BY CS036 P2. A live build reaches nextWave() through the player's confirm now, so the
+  // trace drives one — right after update() and before the row is recorded, which is where the retired
+  // crossing did its work inside the frame. A parent build has no ceremony and keeps its own hold.
+  //   ⛔ ONE FIELD IS EXPECTED TO DIVERGE AND IS TRACED SEPARATELY: waveClearTimer. The retired crossing
+  // ZEROED it as it fired; the arm latch leaves it counting (that is what stops it re-arming). Pulling
+  // it out of the row keeps the other seven pinned across the seam instead of losing all eight to the
+  // one that legitimately moved — and the divergence itself is asserted below rather than waved away.
   function trace(X, frames) {
-    const out = [];
+    const out = [], timers = [];
     freshPlay(X);
-    X.game.waveClearTimer = holdOf(X) - 0.05;   // CS035 P3 repoint: EACH build's own hold
+    const live = typeof X.dismissLevelDone === "function";
+    X.game.waveClearTimer = live ? 0 : holdOf(X) - 0.05;
     for (let i = 0; i < frames; i++) {
       X.game.pendingAch.length = 0;
       X.update(0.1);
-      out.push([X.game.wave, X.game.state, X.game.waveClearTimer.toFixed(6), X.game.debris.length,
+      if (live && X.levelDoneActive()) X.dismissLevelDone();
+      out.push([X.game.wave, X.game.state, X.game.debris.length,
                 X.game.ship.x.toFixed(6), X.game.ship.y.toFixed(6), X.game.score,
                 X.game.levelBanner.text].join("|"));
+      timers.push(X.game.waveClearTimer.toFixed(6));
     }
-    return out;
+    return { rows: out, timers };
   }
   let r = installSeed(SEED);
   const mine = trace(build(), 10);
   r();
-  assert(mine[0].startsWith("2|playing"), "D: ⛔ an empty bucket advances the wave on the crossing frame itself");
-  assert(mine[0].includes("Level 2"), "D: ...banner and all, with no panel in between");
+  assert(mine.rows[0].startsWith("2|playing"), "D: ⛔ an empty bucket advances the wave on the confirming frame itself");
+  assert(mine.rows[0].includes("Level 2"), "D: ...banner and all, with no panel in between");
 
   const M = build();
   freshPlay(M);
-  M.game.waveClearTimer = holdOf(M) - 0.05;   // CS035 P3 repoint
+  M.game.waveClearTimer = 0;                  // CS036 P2 repoint: the arm latch
   M.update(0.1);
+  M.dismissLevelDone();
   assert(M.game.celebration === null, "D: ⛔ ...and opens NO panel");
   assert(!M.render(() => M.draw()).some(x => x.c === "fillText" && x.str === "ACHIEVEMENTS UNLOCKED"),
     "D: ...nothing of the panel renders either");
@@ -340,8 +396,14 @@ function watchLevelVoice(X) {
     r = installSeed(SEED);
     const theirs = trace(build(ps), 10);
     r();
-    eq(mine.join("\n"), theirs.join("\n"),
+    eq(mine.rows.join("\n"), theirs.rows.join("\n"),
       "D: ⛔ ten frames across the clear are IDENTICAL to the parent build's — the common path is untouched");
+    // The one expected divergence, stated rather than hidden: the parent ZEROED the timer as the
+    // crossing fired; CS036 P2's arm latch leaves it running, and every later frame agrees again.
+    eq(theirs.timers[0], "0.000000", "D: (setup) the parent zeroed waveClearTimer at its crossing");
+    assert(Number(mine.timers[0]) > 0, `D: ⛔ ...where the arm latch leaves it counting (${mine.timers[0]})`);
+    eq(mine.timers.slice(1).join(","), theirs.timers.slice(1).join(","),
+      "D: ...and from the very next frame the two agree again — the else-branch zeroing is the same code");
   }
 })();
 
@@ -382,7 +444,7 @@ function watchLevelVoice(X) {
   eq(X.game.stats.gameTime, snap.gameTime, "E: ...so is the per-game clock");
   eq(X.Achievements.lifetime.playTime, snap.play, "E: ...and Achievements.tick() never ran");
   eq(X.game.wave, snap.wave, "E: ⛔ the wave never advanced behind the panel");
-  eq(X.game.waveClearTimer, snap.timer, "E: ...and the wave-clear timer stayed where the branch zeroed it");
+  eq(X.game.waveClearTimer, snap.timer, "E: ...and the wave-clear timer stayed where CS036 P2's arm left it");
   eq(X.game.paused, false, "E: ⛔ game.paused stayed FALSE for all 90 frames");
   eq(X.menuActive(), false, "E: ⛔ ...and menuActive() never became true");
 
@@ -465,7 +527,10 @@ function watchLevelVoice(X) {
   assert(X.game.celebration === panel, "G: ⛔ 120 frames later it is the SAME panel object — never re-opened");
   eq(X.game.celebration.items.length, 2, "G: ...still the two items it flushed");
   eq(X.game.pendingAch.length, 4, "G: ...and the newly banked four are still waiting their turn");
-  eq(X.game.waveClearTimer, 0, "G: ⛔ the timer stays at the zero the branch left — it cannot re-cross");
+  // REPOINTED BY CS036 P2: the timer is left RUNNING by the arm rather than zeroed by a crossing, and
+  // that is precisely what stops a second panel — a non-zero timer can never satisfy the `=== 0` latch,
+  // and only the else branch (a field with Garbage Satellites in it) ever zeroes it again.
+  assert(X.game.waveClearTimer > 0, `G: ⛔ the timer is non-zero, so the arm latch cannot fire twice on one clear (${X.game.waveClearTimer})`);
 
   // Dismissal advances ONE wave, and the still-full bucket does not immediately re-open the panel:
   // the new wave has debris, so the 2.5s window has to be earned again.

@@ -130,6 +130,9 @@ function makeCtxStub() {
 }
 const RETURN = [
   "game", "startGame", "nextWave", "update", "draw",
+  // REPOINTED BY CS036 P2: §H's smoke run needs the completion hold's two functions — the field now
+  // freezes at every clear until a player confirms, and §H is that player.
+  "levelDoneActive", "dismissLevelDone",
   "worldDims", "worldSizeFor", "resizeWorld", "applyWorldSize",
   "WORLD_SIZE_EARLY", "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT", "WORLD_SIZE_MAX",
   "VIEW_W", "VIEW_H", "CULL_MARGIN", "DEBRIS_RADII",
@@ -768,7 +771,10 @@ let X = null;
     // nextWave() runs inside the window and must not touch them. Same treatment, filtered out by name.
     // NARROWED AGAIN BY CS036 P1 — `levelEndFreeze`, the level-end ceremony's freeze flag, is a FOURTH
     // field of that same window and lands at that same site for that same reason (it spans nextWave()).
-    // Same treatment, filtered out by name; a fifth would still fail this trap.
+    // Same treatment, filtered out by name.
+    // NARROWED AGAIN BY CS036 P2 — `levelDone`, the completion announcement, is the FIFTH and last field
+    // of that window, reset at the same site for the same reason. Same treatment, by name; a sixth would
+    // still fail this trap.
     const DROPPED_LINES = new Set([
       "game.deliveryTicker = null;",
       "game.pendingAch = [];",
@@ -779,6 +785,7 @@ let X = null;
       "game.levelEndGraceT = 0;",
       "game.levelEndPulseT = 0;",
       "game.levelEndFreeze = false;",
+      "game.levelDone = null;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
@@ -816,7 +823,7 @@ let X = null;
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, and CS036 P1's levelEndFreeze");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze and CS036 P2's levelDone");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),
@@ -879,6 +886,10 @@ let X = null;
       // panel at a clear and freezes the field until dismissal, which would park this run short of
       // the 5 -> 6 boundary. The world resize, not the panel, is what it is crossing to reach.
       A.game.pendingAch.length = 0;
+      // REPOINTED BY CS036 P2: a clear now FREEZES the field behind a "Level N Complete" announcement
+      // that ends on player input, not on a timer — so this run needs a confirm to keep advancing, and
+      // this line is that player. Without it the sim parks on the first clear and never reaches 5 -> 6.
+      if (A.levelDoneActive()) A.dismissLevelDone();
       A.update(1 / 60);
       if (i % 200 === 0) A.draw();
       sizes.add(A.game.worldSize);

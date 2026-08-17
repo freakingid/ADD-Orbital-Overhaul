@@ -596,7 +596,9 @@ function evalSlice(literal) {
       // GracePulseEnd, CELEBRATION, appended after celebrationEmblemSize) — CS035 P3's rows, not P6b's.
       // ⛔ THIS CHAIN IS TAIL-ORDERED and every clause in it is `$`-anchored: each strip must run while
       // its own rows ARE the tail, so a newer section's strip goes ABOVE an older one's, never below.
-      .replace(/,levelEndHold,levelEndGrace,levelEndFade,levelEndGracePulseEnd$/, "")
+      // CS036 P2 repoint: levelEndHold is RETIRED, so the window's tail is three rows, not four. The
+      // strip is narrowed rather than dropped — the three that remain are still CS035 P3's rows, not P6b's.
+      .replace(/,levelEndGrace,levelEndFade,levelEndGracePulseEnd$/, "")
       .replace(/,CELEBRATION,celebrationScrollStep,celebrationEmblemSize$/, "")
       .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
       .replace(/,startLevel$/, "")

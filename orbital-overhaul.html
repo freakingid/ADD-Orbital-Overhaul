@@ -2415,6 +2415,17 @@ const CAPTION_LINGER = 1.5, CAPTION_FADE = 0.4, CAPTION_Y = 64, CAPTION_SIZE = 2
 //          centres the glyph box, since drawText positions by baseline, not by box centre.
 const LEVEL_BANNER_TIME = 2.2, LEVEL_BANNER_FADE = 0.5, LEVEL_BANNER_SIZE = 72, LEVEL_BANNER_Y = 24;
 
+// CS036 P2 (spec §1.3) — the COMPLETION ANNOUNCEMENT's two look-calls, the "Level N Complete" twins of
+// the four above. Everything else it draws with is the banner's own: DEBUG.levelBannerSize / ...Y /
+// ...Fade and COLOR.text, read live, so the two announcements can never drift apart on a slider drag.
+//   HINT:  the prompt line under it, in CELEB_HINT's idiom — the ACTUAL bindings named, not a physical
+//          button ("ENTER / A"). ESC / B dismiss too (the same confirm-or-back pair the celebration
+//          panel takes), and are left off the line deliberately: it is a two-key hint at a moment with
+//          exactly one thing to do, not a control reference. ⚠ Wording is a CS036 gate question (H3).
+//   HINT_DY: px DOWN from the announcement's own baseline to the hint's. Clears the descenders of a
+//          72px line with air to spare, and stays clear up to the size knob's 160 ceiling.
+const LEVEL_DONE_HINT = "ENTER / A  continue", LEVEL_DONE_HINT_DY = 44;
+
 // VoiceSys — Dan's speech. A SEPARATE module alongside AudioSys/MusicSys (NOT folded into AudioSys, a
 // flat bag of one-shots): it owns a small sequencer + a radio-processing chain that feeds AudioSys.voice
 // (the volume bus). Every entry point no-ops when AudioSys.ctx is null (the headless-safe guard idiom).
@@ -3013,6 +3024,24 @@ window.addEventListener("keydown", e => {
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
   keys[k] = true;
 
+  // CS036 P2 (spec §1.4): the "Level N Complete" announcement owns input while it is up — and it sits
+  // IMMEDIATELY ABOVE the celebration panel's branch so input priority matches the visual order:
+  // announcement -> panel -> play. ⛔ THIS BRANCH MIRRORS THAT ONE; it does not invent a contract. Same
+  // confirm-or-back pair, same `!e.repeat` edge, same unconditional `return`, and the same two functions
+  // shared with the gamepad path so neither handler carries its own copy of the fork.
+  //   The `return` is load-bearing twice over here: without it the confirm that just dismissed the
+  // announcement would fall through into the panel branch below and dismiss the panel it JUST opened, in
+  // one keypress — and ESC (which is `back` AND `pause`) would dismiss and then open the pause menu.
+  //   ⛔ A HELD BUTTON CANNOT SKIP THE ANNOUNCEMENT, structurally, which is why no minimum-hold timer
+  // was added (spec §1.4): the keydown that fired the killing shot arrived BEFORE the freeze armed, and
+  // every keydown after it carries e.repeat. Fire is " " and confirm is "enter", so the key the player is
+  // most likely holding at a wave clear is not even a candidate. ⚠ Gate question H2 verifies this in the
+  // hand.
+  if (levelDoneActive()) {
+    if (!e.repeat && (bindings.confirm.keys.includes(k) || bindings.back.keys.includes(k))) dismissLevelDone();
+    return;
+  }
+
   // CS030 P4 (FORK-CS030-C): the achievement celebration panel owns input while it is up. The `return`
   // is load-bearing: without it the confirm that just dismissed the panel would fall straight through
   // into the startGame() check below in the SAME keypress. ESC resolves as "dismiss" here rather than
@@ -3087,6 +3116,19 @@ function handleGamepadMenu() {
     if (pressedConfirm) menuInput("confirm");
     if (pressedBack)    menuInput("back");
     if (pressedStart)   menuInput("pause");   // Start fully resumes from any menu screen
+    return;
+  }
+
+  // (2.3) CS036 P2 (spec §1.4): the "Level N Complete" announcement — the MANDATORY mirror of the keydown
+  // branch above, sitting ahead of the panel's (2.4) for the same priority reason it does there
+  // (announcement -> panel -> play). ⛔ BOTH HANDLERS OR NEITHER (CLAUDE.md's standing CS030 P4 rule): a
+  // guard added to one and not the other lets a controller player blow straight through with Start and
+  // never see the announcement. Start is SWALLOWED, not acted on — exactly as at (2.4), and that is what
+  // stops it reaching the startGame()/openPause() chain at (3). gpPressed() is a rising edge, so A held
+  // through the killing shot cannot dismiss this either; nothing here reads a direction, so the arm's
+  // resetMenuNav() has no consumer in this branch and is there for whatever takes input next.
+  if (levelDoneActive()) {
+    if (pressedConfirm || pressedBack) dismissLevelDone();
     return;
   }
 
@@ -3866,19 +3908,21 @@ const DEBUG_VARS = [
     def: 60, min: 10, max: 200, step: 10 },
   { id: "celebrationEmblemSize", label: "Celebration emblem size", unit: "px",
     def: 32, min: 12, max: 64, step: 2 },
-  // CS035 P3 (spec §3.2): the LEVEL-END PROTECTION WINDOW's four knobs. They live under CELEBRATION
+  // CS035 P3 (spec §3.2): the LEVEL-END PROTECTION WINDOW's knobs. They live under CELEBRATION
   // because the window exists to wrap the celebration-panel seam — wave clear -> hold -> panel (if any)
   // -> "Level N" banner -> grace -> vulnerable. NOT LEVERS: no floor/ceil/steps triple, no carriesTo, no
   // LEVERS row. A protection window is a look-and-feel call, not a pressure axis (DIFFICULTY-LEVERS.md §4).
-  //   ⛔ levelEndHold REPLACED the wave-clear branch's `2.5` literal — it is the WHOLE pre-nextWave() hold,
-  // not an addition to it. See update()'s wave-clear branch.
+  //   ⛔ CS036 P2 (spec §1.2, FORK-CS036-E) RETIRED `levelEndHold` — the fourth row, which stood at the
+  // top of this group and timed the pre-nextWave() pause (5.00 s, min 0 / max 15 / step 0.25). The hold
+  // it timed is now PLAYER-PACED: the completion announcement holds until confirm or back, so there is
+  // nothing left for a duration knob to time. Registry 106 -> 105. ⛔ NO MIGRATION SHIM AND NONE IS
+  // WANTED — a saved `debug.levelEndHold` in afd_settings_v1 orphans harmlessly under loadSettings'
+  // known-value-else-default rule, which is the whole point of that rule (CLAUDE.md, Save data).
   //   ⛔ BOTH TIME KNOBS BELOW ARE ONE-WAY TRANSITION TIMES — "how long does 100% -> 20% take". The full
   // pulse PERIOD is 2x each of them (0.5 s at rest, 0.16 s at the end of the grace). They are in the same
   // units as each other deliberately: levelEndGracePulseEnd was offered in conversation as a 0.15 s
   // PERIOD, and a mixed-units pair sitting two rows apart would eventually be read against each other and
   // be wrong by a factor of two. Do not "fix" one of them into a period.
-  { id: "levelEndHold", label: "Level-end hold", unit: "s",
-    def: 5.00, min: 0, max: 15, step: 0.25 },
   { id: "levelEndGrace", label: "Level-end grace", unit: "s",
     def: 3.00, min: 0, max: 10, step: 0.25 },
   { id: "levelEndFade", label: "Level-end fade time", unit: "s",
@@ -7379,9 +7423,18 @@ const game = {
   //
   // ⛔ NOT RESET BY nextWave(), which runs INSIDE the freeze. See the note in nextWave().
   //
-  // ⛔ INERT AS OF CS036 P1 — nothing sets it true. P1 owns the primitive and proves what a frozen frame
-  // may still run; P2 arms it at the wave clear and takes the input that lifts it.
-  levelEndFreeze: false
+  // CS036 P1 owned the primitive and proved what a frozen frame may still run; CS036 P2 ARMS it, at the
+  // wave clear, and takes the input that lifts it (dismissLevelDone()).
+  levelEndFreeze: false,
+  // CS036 P2 (spec §1.3) — THE COMPLETION ANNOUNCEMENT: null, or { text, age } while "Level N Complete"
+  // is up. Seeded at the wave-clear arm beside levelEndFreeze and cleared by dismissLevelDone(), so it is
+  // the FREEZE's visible half and never outlives it. Reassigned wholesale, exactly like game.levelBanner
+  // and game.caption, and reset in resetRun() with the other four level-end fields.
+  //   `text` is seeded, not derived at draw time, for the same reason game.levelBanner's is: one string,
+  // built once, from the wave that was actually completed. `age` counts UP in seconds (the fade-in's
+  // clock) rather than down like levelBanner.life, because this announcement has no duration at all —
+  // FORK-CS036-E made it player-paced, so there is nothing for a countdown to count (spec §0.4).
+  levelDone: null
 };
 
 // ---------- CS022 P1: per-archetype world size (PLANNED-FEATURES-CS022 §4.1/§4.2/§4.3) ----------
@@ -7633,10 +7686,13 @@ function resetRun(wave, debugRun) {
   //   CS036 P1 (spec §1.5 trap 2): game.levelEndFreeze joins them here, at the SAME site and for the same
   // reason — the freeze arms at the wave clear and lifts partway through the NEXT level's banner, so it is
   // in-flight state that must survive a wave boundary, not per-level state.
+  //   CS036 P2: game.levelDone (the freeze's visible half) joins them, at the same site and for the same
+  // reason — it is seeded at a wave clear and lives across everything the freeze spans.
   game.levelEndSafe = false;
   game.levelEndGraceT = 0;
   game.levelEndPulseT = 0;
   game.levelEndFreeze = false;
+  game.levelDone = null;
   VoiceSys.reset();
   // CS033 P2: the run-start hook, in the ONE reset both a fresh run and a resumed run share — a
   // resumed run mints a runId too, harmlessly, since Leaderboard.eligible() gates it out at submit.
@@ -7766,14 +7822,18 @@ function nextWave() {
   // game.waveTime above, and game.stats.dmgThisWave below (the perfect-wave window). Loose garbage, the
   // tow chain, the Hunters and the powerup budgets all survive by design (CS024 P3) — this has never been
   // a "clear the field" function.
-  //   game.levelEndSafe / levelEndGraceT / levelEndPulseT / levelEndFreeze are the OPPOSITE of per-level
-  // state and MUST NOT BE ADDED HERE. nextWave() is called from INSIDE the level-end protection window
-  // (spec §3.1 step 4: clear -> hold -> panel -> THIS -> banner -> grace), so zeroing any of the four here
-  // would end the protection at the exact instant the "Level N" banner appears — the middle of the window,
-  // not its end. CS036 P1 (spec §1.5 trap 2) adds the fourth for the same reason one step further out: the
-  // FREEZE spans this call and is lifted partway through the banner this function seeds, so zeroing it here
-  // would unfreeze the field on the banner's very first frame. They are reset in resetRun() and nowhere
-  // else. A future tidy-up pass that "notices" the omission is reading this comment for a reason.
+  //   game.levelEndSafe / levelEndGraceT / levelEndPulseT / levelEndFreeze / levelDone are the OPPOSITE
+  // of per-level state and MUST NOT BE ADDED HERE. nextWave() is called from INSIDE the level-end
+  // protection window (spec §3.1 step 4: clear -> hold -> panel -> THIS -> banner -> grace), so zeroing
+  // any of the five here would end the protection at the exact instant the "Level N" banner appears —
+  // the middle of the window, not its end. CS036 P1 (spec §1.5 trap 2) adds the fourth for the same
+  // reason one step further out: the FREEZE spans this call and is lifted partway through the banner
+  // this function seeds, so zeroing it here would unfreeze the field on the banner's very first frame.
+  // CS036 P2's game.levelDone is the fifth, and
+  // is the one case where a reset here would be merely REDUNDANT rather than wrong — dismissLevelDone()
+  // has already cleared it on the frame it calls this — which is exactly the shape a tidy-up pass adds
+  // "harmlessly" and then P3 has to unpick. They are reset in resetRun() and nowhere else. A future
+  // tidy-up pass that "notices" the omission is reading this comment for a reason.
   VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
   // CS025 P5 (gate Q6) — the VISUAL half of the level announcement, and the half that cannot be lost.
   // Same string sayLevel() speaks, but set unconditionally: no AudioSys.ctx guard (this is a render field,
@@ -9767,6 +9827,12 @@ function tickLevelBanner(dt) {
 //   3. ⛔ VoiceSys.update() — the critical-line queue drain. Parked lines live on the AUDIO clock and
 //      have no TTL by design (CLAUDE.md), so a queue frozen for the length of a player-paced hold would
 //      simply stop speaking. Last here, as it is last in the playing body.
+//   4. CS036 P2: game.levelDone.age — the completion announcement's fade-in clock, and the ONLY clock
+//      this build advances that is not also advanced by the playing body. It belongs here rather than
+//      there because the announcement exists only inside the freeze: it is seeded at the wave-clear arm
+//      (at the END of the last live frame, so it correctly ages 0 on the frame it appears) and cleared
+//      by dismissLevelDone() on the frame the player confirms. The `if` is not defensive padding — P3
+//      extends the freeze PAST that clear, so frozen frames with no announcement up are the norm there.
 //
 // ⛔ WHAT IS DELIBERATELY LEFT STOPPED, AND WHY IT IS NOT AN OMISSION: Achievements.evaluate() and the
 // heartbeat. The celebration panel's own freeze already stops both, and the wave-clear branch's `return`
@@ -9775,12 +9841,13 @@ function tickLevelBanner(dt) {
 // way. The completion hold is the same seam one step earlier, so running them here would change
 // achievement timing that has been stable since CS030 for no gain. Leave them stopped.
 //
-// ⛔ INERT AS OF CS036 P1: nothing sets game.levelEndFreeze, so this function is unreachable in play this
-// phase. P2 arms it. That is deliberate — the risky question (what a frozen frame may still run) is
-// settled and tested before anything depends on the answer.
+// ⛔ ARMED AS OF CS036 P2: update()'s wave-clear latch sets game.levelEndFreeze, and dismissLevelDone()
+// — confirm or back, from either input handler — is the only thing that clears it. Nothing in here ends
+// the freeze; there is no timer, by design (FORK-CS036-E).
 function updateLevelEndFreeze(dt) {
   AudioSys.thrust(false);
   tickLevelBanner(dt);
+  if (game.levelDone) game.levelDone.age += dt;
   VoiceSys.update();
 }
 
@@ -10657,51 +10724,44 @@ function update(dt) {
     // four places — the else branch below zeroes waveClearTimer on every frame Debris exists, so this
     // re-arms on every clear and fires once per clear. levelEndPulseT restarts with it so the pulse
     // always opens at full brightness rather than wherever the previous window left it.
-    if (game.waveClearTimer === 0) { game.levelEndSafe = true; game.levelEndPulseT = 0; }
-    game.waveClearTimer += dt;
-    // CS035 P3 (spec §3.4, FORK-I → replace): the `2.5` literal that stood here IS this knob now — the
-    // hold is the whole pre-nextWave() pause, not an addition to a hidden 2.5 underneath it.
-    if (game.waveClearTimer > DEBUG.levelEndHold) {
-      game.waveClearTimer = 0;
+    //   CS036 P2 (spec §1.1 steps 1-2, FORK-CS036-A/E) — THE CEREMONY ARMS ON THAT SAME LATCH, and the
+    // whole of what used to sit below it (a levelEndHold-long wait, then the panel-or-nextWave() fork) is
+    // gone: the fork moved to dismissLevelDone(), which the player reaches by pressing confirm. From the
+    // NEXT frame on, updateLevelEndFreeze() replaces the whole of this function until they do.
+    //   ⛔ THE ARM IS AT THE END OF A NORMAL FRAME, NOT INSTEAD OF ONE. This frame keeps running to its
+    // own end (Achievements.evaluate(), the heartbeat, the voice drain all still fire below), exactly as
+    // it did before; the freeze starts one frame later. That is what makes the clear's own unlocks bank
+    // before anything freezes.
+    //   ⛔ resetMenuNav(), exactly as the celebration panel's open does and for the reason its own comment
+    // gives: the player is mid-flight and may well be holding the stick when the field stops. Nothing the
+    // announcement itself reads is directional (its two input branches take confirm/back only) and the
+    // panel re-arms the latch at its own open, so this is belt-and-braces — deliberately, because the
+    // alternative is a phantom first move landing in whichever screen takes input next.
+    if (game.waveClearTimer === 0) {
+      game.levelEndSafe = true; game.levelEndPulseT = 0;
+      game.levelEndFreeze = true;
+      game.levelDone = { text: "Level " + game.wave + " Complete", age: 0 };
+      resetMenuNav();
       // Achievements (F9): a wave completed with zero damage taken -> Perfect Wave (lifetime, 10×)
       // and, if it was wave 3, No Scratches (weekly). game.wave is still the completed wave here
       // (nextWave increments it), so read it before advancing.
+      //   ⛔ CS036 P2 MOVED THIS BLOCK HERE (spec §1.5 trap 3) from the retired levelEndHold crossing, a
+      // few seconds later in the same window. It is behaviourally identical and that is provable rather
+      // than hopeful: levelEndSafe is set on the line above, so damageShip() cannot touch the ship
+      // between the two points and game.stats.dmgThisWave cannot change; game.wave is still the
+      // COMPLETED wave at both, since nextWave() is deferred past both. It is a real move all the same,
+      // and it is said out loud here so a future reader does not read it as always having lived at the
+      // latch. It fires ONCE PER CLEAR because the latch does — see the `=== 0` idiom above.
       if (game.stats.dmgThisWave === 0) {
         Achievements.lifetime.perfectWaves++;
         if (game.wave === 3) game.stats.noScratchWave3 = true;
         // Flawless Run (weekly, P8 / FLAG A-6-b): a damage-free clear of wave 8 or later — a real feat
         // once the Hunter family + saucers + Debris density are all mid-ramp. game.wave is still the
-        // completed wave here (nextWave increments it below).
+        // completed wave here (nextWave increments it, later, from dismissLevelDone()).
         if (game.wave >= 8) game.stats.flawlessLateWave = true;
       }
-      // CS030 P5 (§4.4, FORK-CS030-A = both): the celebration panel at LEVEL END. Everything banked
-      // since the last flush is shown BEFORE the next wave starts, so nextWave() — and with it
-      // game.levelBanner AND VoiceSys.sayLevel(), which both fire from inside it — is DEFERRED to
-      // dismissCelebration(). "Level 8" announces after the celebration, never underneath it.
-      // ⛔ THE `return` IS THE DEFERRAL. Do not "tidy" it into an if/else that still falls through.
-      // It also drops this frame's remaining passes (Achievements.evaluate(), the heartbeat, the
-      // voice drain) — deliberate, and they resume on the first unfrozen frame after dismissal: an
-      // unlock raised by THIS clear would otherwise toast on top of the panel (drawToasts() draws
-      // last) and still not appear IN it, since evaluate() runs after this flush either way (§0.4).
-      // ⛔ `game.state === "playing"` IS NOT REDUNDANT. killShip() flips the state to "dying" MID-FRAME
-      // and update() runs on to here regardless, so the player dying on the exact frame the timer
-      // crosses could otherwise open a level-end panel over the death spectacle — and its dismissal
-      // would then fire nextWave() at GAME OVER. On that frame this falls through to the plain
-      // nextWave() below, exactly as the pre-CS030 build does.
-      // waveClearTimer was zeroed at the top of this branch and update() freezes on game.celebration
-      // from the very next frame, so the branch cannot be re-entered to fire a second panel on one
-      // clear. resetMenuNav()/AudioSys.achievement() mirror the game-over seam's open (in
-      // updateDeath()) exactly — the nav latch matters MORE here, where the player is mid-flight and
-      // may well be holding the stick when the panel arrives.
-      if (game.state === "playing" && game.pendingAch.length) {
-        game.celebration = { items: game.pendingAch, scroll: 0, resume: "wave" };
-        game.pendingAch = [];
-        resetMenuNav();
-        AudioSys.achievement();
-        return;
-      }
-      nextWave();
     }
+    game.waveClearTimer += dt;
   } else {
     game.waveClearTimer = 0;
   }
@@ -10778,6 +10838,94 @@ function drawLevelBanner() {
     drawText(game.levelBanner.text, VIEW_W/2, VIEW_H/2 + DEBUG.levelBannerY, DEBUG.levelBannerSize, COLOR.text, "center");
     ctx.globalAlpha = 1;
   }
+}
+
+// ---------- CS036 P2: the level-end COMPLETION ANNOUNCEMENT (spec §1.3/§1.4) ----------
+// "Level N Complete", held on a frozen field until the player presses on. The three functions below are
+// the whole of it — one predicate, one verb, one renderer — and they sit together for the reason
+// celebrationScroll()/dismissCelebration()/drawCelebration() do: two input handlers and one draw() call
+// site read them, so none of the three may grow a private copy of any part.
+//
+// ⛔ ONE PREDICATE, THREE READERS. drawLevelDone() and BOTH input branches ask this and nothing else, so
+// "is the announcement up?" cannot be answered differently by the renderer and the keyboard. The three
+// terms are drawCaption()'s and drawLevelBanner()'s, exactly — this is in-play chrome, never over a
+// menu, a gameover or the title.
+//   ⛔ THE `game.state === "playing"` TERM IS LOAD-BEARING, not copied furniture. killShip() flips the
+// state to "dying" MID-FRAME and update() runs on to the wave-clear branch regardless, so a player who
+// dies on the very frame the last Garbage Satellite dies arms this announcement while already dying. The
+// freeze itself already refuses to run in that state (see update()'s branch), and this is what stops the
+// orphaned announcement from ALSO drawing over the death spectacle or eating the gameover screen's
+// confirm — which, without the term, would call nextWave() at game over. The orphan is cleared by
+// resetRun() at the next run, exactly as game.levelEndSafe's own arm on that frame is.
+//   No `!game.celebration` term, deliberately: the two can never both be live, because the only thing
+// that opens the panel is dismissLevelDone(), which nulls this first.
+function levelDoneActive() {
+  return game.state === "playing" && !game.paused && !!game.levelDone;
+}
+
+// The announcement's ONE verb, and the dismissCelebration() analogue: BOTH input handlers call THIS, so
+// the fork below cannot drift between them (the CS030 P4 both-handlers rule, made structural).
+//
+// ⛔ THE FORK IS NOT NEW CODE. It is CS030 P5's wave-clear fork (§4.4, FORK-CS030-A = both), moved here
+// whole by CS036 P2 together with its reasoning, because the levelEndHold crossing that used to run it
+// is retired: the player's confirm is what reaches it now. Everything it says still holds at this site
+// bar one clause, which the move made obsolete rather than false — the old site's `return` also DROPPED
+// the rest of that update() frame (Achievements.evaluate(), the heartbeat, the voice drain), which was
+// half of why an unlock raised by this clear could not toast on top of the panel. This is not inside
+// update() at all, and the frozen frames that precede it already run neither of the first two (see
+// updateLevelEndFreeze()), so that outcome is now structural rather than incidental:
+//   ⛔ THE `return` IS THE DEFERRAL. Do not "tidy" it into an if/else that still falls through.
+// nextWave() — and with it game.levelBanner AND VoiceSys.sayLevel(), which both fire from inside it —
+// waits for dismissCelebration(). "Level 8" announces after the celebration, never underneath it.
+//   ⛔ `game.state === "playing"` came with the block and stays. At THIS site levelDoneActive() has
+// already established it (both handlers gate on it), so it is belt-and-braces rather than the sole
+// guard it was in update() — kept because the fork moved verbatim, and because it is the one line
+// standing between a stray future caller and a nextWave() at game over.
+//   The re-entry that the old site's "waveClearTimer was zeroed / update() freezes on game.celebration"
+// note ruled out is ruled out differently here, and just as completely: game.levelDone is nulled on the
+// first line, so the second confirm of a double-tap finds levelDoneActive() false and never arrives.
+//   ⛔ CLEARING game.levelEndFreeze IS THIS PHASE'S ANSWER, NOT THE FEATURE'S. P2's freeze ends when the
+// player confirms; P3 (FORK-CS036-B) extends it through nextWave() to the "Level N+1" banner's fade-out
+// crossing, and this line is precisely what that phase moves. Until then the panel's own freeze (the
+// game.celebration term on update()'s early-return) covers the panel branch, so the field stays stopped
+// across both paths either way.
+function dismissLevelDone() {
+  game.levelDone = null;
+  game.levelEndFreeze = false;
+  if (game.state === "playing" && game.pendingAch.length) {
+    game.celebration = { items: game.pendingAch, scroll: 0, resume: "wave" };
+    game.pendingAch = [];
+    resetMenuNav();
+    AudioSys.achievement();
+    return;
+  }
+  nextWave();
+}
+
+// The announcement itself (spec §1.3): the shipped "Level N" banner's style, exactly — same size knob,
+// same y knob, same COLOR.text, same centred drawText, same ctx.globalAlpha fade mechanism. It is NOT a
+// panel and NOT a card, and it adds no new visual vocabulary; the prompt line under it is drawMenuHint(),
+// the shared footer look every menu already uses.
+// ⛔ A SIBLING of drawHUD() in draw(), not inside it, and NOT gated by Capture's H toggle — the rule
+// drawLevelBanner()'s own header states, for the same reason: a transient announcement is the same
+// category as the achievement toast and the game-over text.
+// ⛔ FADE IN ONLY (spec §1.3). It ramps over DEBUG.levelBannerFade — the banner's own knob, so the two
+// announcements ramp alike — and then holds at full for as long as the player leaves it there. There is
+// no fade-out because there is nothing to fade out into: the celebration panel or the "Level N+1" banner
+// replaces it on the confirming frame.
+//   The `fade > 0` test is not a style choice. levelBannerFade's slider goes down to 0, and age/0 is
+// Infinity — or NaN on the arm frame, where age is 0 too, and a NaN globalAlpha is silently ignored by
+// the canvas, which would leave the announcement drawing at whatever alpha the previous pass left set.
+// Written as a positive test for the same reason achLeader()'s guards are (CLAUDE.md, Rendering).
+function drawLevelDone() {
+  if (!levelDoneActive()) return;
+  const fade = DEBUG.levelBannerFade;
+  const a = fade > 0 ? Math.min(1, game.levelDone.age / fade) : 1;
+  const y = VIEW_H/2 + DEBUG.levelBannerY;
+  ctx.globalAlpha = a;
+  drawText(game.levelDone.text, VIEW_W/2, y, DEBUG.levelBannerSize, COLOR.text, "center");
+  drawMenuHint(LEVEL_DONE_HINT, VIEW_W/2, y + LEVEL_DONE_HINT_DY);
+  ctx.globalAlpha = 1;
 }
 
 // ---------- Pause menu / Options / Controls rendering (F8) ----------
@@ -12002,6 +12150,7 @@ function draw() {
   if (Capture.hudVisible) drawHUD();
   drawCaption(); // CS011 P2: sibling of drawHUD (NOT inside it) — captions show regardless of the H toggle
   drawLevelBanner(); // CS025 P5: likewise a sibling — the transient "Level N", drawn over the HUD, self-gated
+  drawLevelDone(); // CS036 P2: a third sibling — "Level N Complete" over the frozen field, self-gated
 
   if (game.state === "gameover") {
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);

@@ -147,7 +147,12 @@ function tickDock(times) {
     // of the max-haul path specifically.
     game.powerups = [];
     game.ship.x = game.dock.x; game.ship.y = game.dock.y; game.ship.vx = 0; game.ship.vy = 0;
-    game.waveClearTimer = 0; // keep the empty field from advancing the wave mid-test
+    // REPOINTED BY CS036 P2: an empty game.debris IS a wave clear, and CS036 P2 FREEZES the field on the
+    // frame it becomes true — "Level N Complete" holds until the player CONFIRMS, so every update() after
+    // that one is a frozen frame and nothing below would run at all. Parking the timer far below zero is
+    // CS035 P3's own suppression (test-f2.js / test-f5.js clearField()): it can never equal 0 again, so
+    // the `waveClearTimer === 0` arm latch never passes. This staging is a parked dock, not a level end.
+    game.waveClearTimer = -1e9;
     update(0.13); // > DOCK_OFFLOAD_INTERVAL (0.05s); one canister peels off per update() call
   }
 }

@@ -114,7 +114,8 @@ const { assert, eq } = A;
   // REPOINTED BY CS035 P3: +4 more (the level-end protection window's CELEBRATION rows).
   // REPOINTED BY CS035 P4: +5 more (the Hunter volatility clock/heartbeat's HUNTER rows).
   // REPOINTED BY CS035 P6: +5 more (the powerup rebalance's CHAIN GUARD/POWERUPS rows).
-  eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five later rows) — no OTHER phase added a knob");
+  // REPOINTED BY CS036 P2: −1 — levelEndHold RETIRED (the pre-nextWave() hold is player-paced now).
+  eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five and CS036 P2's one retirement later) — no OTHER phase added a knob");
   eq(X.DEBUG_ENTRIES.length, COUNTS.registryEntries, "B: ...and it's test-registry.js's own count (the only file allowed to name it)");
   eq(OLD.LEVERS.length, X.LEVERS.length, "B: ⛔ LEVERS unchanged from the CS027 start point — no phase moved a lever");
   eq(X.LEVERS.length, COUNTS.levers, "B: ...and it's test-registry.js's own count too");

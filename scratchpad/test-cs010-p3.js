@@ -98,6 +98,13 @@ function prepPlaying(inst, hp) {
   for (const arr of ["debris", "hunters", "saucers", "garbage", "bullets", "powerups", "floaters"]) {
     if (inst.game[arr]) inst.game[arr].length = 0;
   }
+  // REPOINTED BY CS036 P2: an empty game.debris IS a wave clear, and CS036 P2 FREEZES the field on the
+  // frame it becomes true — "Level N Complete" holds until the player CONFIRMS, so every update() after
+  // that one is a frozen frame and nothing below would run at all. Parking the timer far below zero is
+  // CS035 P3's own suppression (test-f2.js / test-f5.js clearField()): it can never equal 0 again, so
+  // the `waveClearTimer === 0` arm latch never passes. The field is empty for isolation here, not
+  // because a level ended.
+  inst.game.waveClearTimer = -1e9;
   Object.assign(inst.game.ship, { dead: false, x: inst.game.ship.x, y: inst.game.ship.y, vx: 0, vy: 0 });
   inst.game.ship.hp = hp;
 }

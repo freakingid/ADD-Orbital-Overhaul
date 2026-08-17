@@ -196,7 +196,8 @@ const src = scriptSource();
     // REPOINTED BY CS035 P3: +4 more (the level-end protection window's CELEBRATION rows).
     // REPOINTED BY CS035 P4: +5 more (the Hunter volatility clock/heartbeat's HUNTER rows).
     // REPOINTED BY CS035 P6: +5 more (the powerup rebalance's CHAIN GUARD/POWERUPS rows).
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five later rows — a data-only collector adds no knob");
+    // REPOINTED BY CS036 P2: −1 — levelEndHold RETIRED (the pre-nextWave() hold is player-paced now).
+    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five and CS036 P2's one retirement later — a data-only collector adds no knob");
     eq(X.LEVERS.length, OLD.LEVERS.length, "G: ⛔ LEVERS.length unchanged");
   }
 

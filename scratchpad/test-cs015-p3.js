@@ -73,6 +73,8 @@ const localStorageStub = {
 // CS022 P1 idiom test-v31-world.js already uses; nothing about this file's subject changed.
 const RETURN = [
   "startGame", "update", "nextWave", "game", "dist2", "inScoopBox",
+  // REPOINTED BY CS036 P2: §B drives a REAL clear, which now holds until the player confirms.
+  "levelDoneActive", "dismissLevelDone",
   "HunterSatellite", "Garbage", "Powerup",
   "SHIP_RADIUS", "SCOOP_WIDTH", "SCOOP_DEPTH", "WORLD_W", "WORLD_H", "worldDims"
 ];
@@ -82,7 +84,7 @@ const factory = new Function(
 );
 const A = factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, localStorageStub);
 const {
-  startGame, update, nextWave, game, dist2, inScoopBox,
+  startGame, update, nextWave, game, dist2, inScoopBox, levelDoneActive, dismissLevelDone,
   HunterSatellite, Garbage, Powerup,
   SHIP_RADIUS, SCOOP_WIDTH, SCOOP_DEPTH, WORLD_W, WORLD_H, worldDims
 } = A;
@@ -123,10 +125,14 @@ const liveDims = () => worldDims(game.worldSize);
   assert(dist2(hunter, ship) > 1000 * 1000, "B: sanity — the test Hunter starts far outside any collision range of the ship");
   assert(!hunter.dead && !garbage.dead, "B: sanity — the test Hunter and garbage start alive");
 
+  // REPOINTED BY CS036 P2: the clear no longer runs out onto nextWave() on a timer — it FREEZES the
+  // field behind "Level N Complete" until the player confirms (levelEndHold is retired). The confirm is
+  // driven here, before update(), in the real frame order. The CLAIM is unchanged and is the whole point
+  // of the section: what the clear carries over, and what it adds on top.
   let guard = 0;
-  while (game.wave === waveBefore && guard++ < 200) update(0.1);
+  while (game.wave === waveBefore && guard++ < 200) { if (levelDoneActive()) dismissLevelDone(); update(0.1); }
 
-  assert(guard < 200, "B: nextWave fired within the guard window (wave-clear timer > 2.5s of debris-empty)");
+  assert(guard < 200, "B: nextWave fired within the guard window (a debris-empty clear, then the player's confirm)");
   assert(game.wave === waveBefore + 1, `B: wave advanced by exactly 1 on debris-empty (got ${game.wave})`);
   assert(game.hunters.includes(hunter), "B: the live Hunter carried over into the new wave (nextWave does not clear game.hunters)");
   assert(!hunter.dead, "B: the carried Hunter was not incidentally destroyed along the way");

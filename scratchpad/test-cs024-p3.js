@@ -148,6 +148,8 @@ function makeCtxStub(log) {
 
 const RETURN = [
   "game", "startGame", "nextWave", "update", "draw", "settings",
+  // REPOINTED BY CS036 P2: §B's five real wave transitions need a player at the completion hold.
+  "levelDoneActive", "dismissLevelDone",
   "Garbage", "HunterSatellite", "DebrisSatellite", "Bullet",
   "coalesceGarbage", "cullGarbage", "betterCullVictim", "largeHunterCount", "noteLargeHunterSpawn",
   "destroyHunter", "destroyDebris", "shatterClump", "addScore",
@@ -389,11 +391,17 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
       // CS030 P5: keep the unlock bucket empty. A banked unlock now opens the level-end celebration
       // panel at the clear and freezes the field until it is dismissed, and this pin is about
       // garbage carrying ACROSS a transition, not about the panel.
-      // REPOINTED BY CS035 P3: the pre-nextWave() hold is DEBUG.levelEndHold now (5.0s), not the 2.5s
-      // literal this loop's flat 200 frames was sized for. Derived from the knob rather than re-pinned to
-      // a new literal, so a retune of the hold cannot silently make this pass vacuously again.
-      const frames = Math.ceil((X.DEBUG.levelEndHold + 1) * 60);
-      for (let f = 0; f < frames; f++) { g.pendingAch.length = 0; X.update(1 / 60); }
+      // REPOINTED BY CS035 P3: the pre-nextWave() hold was DEBUG.levelEndHold (5.0s), not the 2.5s
+      // literal this loop's flat 200 frames was sized for, so the frame count was derived from the knob.
+      // REPOINTED AGAIN BY CS036 P2: that knob is RETIRED and there is no duration to derive from — the
+      // clear FREEZES the field behind "Level N Complete" until the player confirms. So the loop is short
+      // and unconditional again: one frame to arm the ceremony, the confirm, one frame to settle. The
+      // claim (garbage carries ACROSS a transition) is untouched.
+      for (let f = 0; f < 3; f++) {
+        g.pendingAch.length = 0;
+        if (X.levelDoneActive()) X.dismissLevelDone();
+        X.update(1 / 60);
+      }
     }
     assert(g.wave >= waveBefore + 5, `B: five real wave transitions happened (wave ${waveBefore} -> ${g.wave})`);
     const survivors = carried.filter(p => !p.dead && g.garbage.includes(p));

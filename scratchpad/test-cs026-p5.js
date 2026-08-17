@@ -144,7 +144,8 @@ let X = null;
   // longer literally the last row in DEBUG_VARS — narrowed to "nothing else was appended to GLOBAL".
   // REPOINTED BY CS035 P3: CELEBRATION gained four more rows (the level-end protection window), so the
   // tail grows from 3 to 7. The claim itself is unchanged — nothing was appended to GLOBAL.
-  eq(iY, X.DEBUG_VARS.length - 1 - 7, "A: levelBannerY is the last row of GLOBAL — only CS030 P3's CELEBRATION header + its 2 rows + CS035 P3's 4 trail it");
+  // REPOINTED BY CS036 P2: levelEndHold retired out of that section, so the tail is back to 6. Same claim.
+  eq(iY, X.DEBUG_VARS.length - 1 - 6, "A: levelBannerY is the last row of GLOBAL — only CS030 P3's CELEBRATION header + its 2 rows + CS035 P3's 3 surviving rows trail it");
 
   const rTime = X.DEBUG_VARS[iTime], rFade = X.DEBUG_VARS[iFade], rSize = X.DEBUG_VARS[iSize], rY = X.DEBUG_VARS[iY];
   eq(rTime.label, "Level banner hold", "A: levelBannerTime label");
@@ -355,7 +356,10 @@ let X = null;
     // than wildcarded.
     // REPOINTED BY CS035 P6: +5 more (chainGuardDropBase/Pity/Max, sweepPowerupCap, dockPowerupSpeed —
     // the powerup rebalance's pity and volume knobs) — same idiom again, named rather than wildcarded.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 25, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five (measured, not counted)");
+    // REPOINTED BY CS036 P2: −1 — levelEndHold RETIRED (the pre-nextWave() hold is player-paced now).
+    // The first REMOVAL this pin has taken, and it is the same idiom in the other direction: a later
+    // phase's row, named. This phase's own claim (its four rows, once) is untouched by it.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 24, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five, less CS036 P2's one retirement (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

@@ -7,6 +7,12 @@
 // REPLACING the wave-clear branch's 2.5 literal; five damage gates (three on the ship, two on the tow
 // chain); and the alpha pulse that replaces the hit-stun blink while the window is open.
 //
+// ⛔ REPOINTED THROUGHOUT BY CS036 P2. Two of those things are gone and the rest are untouched:
+// levelEndHold is RETIRED (the pre-nextWave() pause is player-paced now — §B is its mirror-image pin),
+// and the clear FREEZES the field, so every section that stages the window by clearing the field has to
+// lift the freeze by hand or it measures a stopped world and passes vacuously. arm() does that lifting
+// in one place, and says why there. The freeze itself belongs to test-cs036-p1/p2.js, not here.
+//
 // Traps worth knowing: levelEndSafe is NOT ship.invuln and never merges with it; the chain gates are
 // GUARDED, not absorbed, so breakChain() — and with it a chain-guard charge — must not be reached at all;
 // the grace is armed by a ONE-SHOT on the banner's expiry crossing, gated on levelEndSafe so a fresh
@@ -49,9 +55,16 @@ function settle(X, secs = 4) {
   for (let i = 0; i < Math.round(secs / DT); i++) X.update(DT);
 }
 // Open the window through the real code path: an empty field, one frame.
+// ⛔ REPOINTED BY CS036 P2: that same frame now also arms the CEREMONY — game.levelEndFreeze plus the
+// "Level N Complete" announcement — and a frozen frame updates no entity and resolves no collision at
+// all. Every damage-gate section below would then pass VACUOUSLY, measuring a stopped world instead of
+// a protected one. So the freeze is lifted by hand here, which is exactly what the player's confirm
+// does in play and what CS036 P3's own unfreeze will do at the banner: levelEndSafe / levelEndGraceT /
+// levelEndPulseT — this file's actual subject — are left exactly as the real arm set them.
 function arm(X) {
   const g = quiet(X);
   X.update(DT);
+  g.levelEndFreeze = false; g.levelDone = null;
   return g;
 }
 
@@ -76,36 +89,37 @@ function arm(X) {
   assert(g.waveClearTimer > 0, "A: the hold is running");
 
   // The arm is a once-per-clear latch, not a per-frame write: a pulse mid-window is never rewound.
+  // REPOINTED BY CS036 P2: the same frame armed the freeze too, and the pulse phase lives in update()'s
+  // playing body — 30 FROZEN frames would advance nothing and this claim would read as a failure. Lift
+  // it, as arm() does and for the same reason; the latch under test is levelEndSafe's, not the freeze's.
+  eq(g.levelEndFreeze, true, "A: ⛔ ...and CS036 P2's ceremony armed on the SAME latch, in the same frame");
+  eq(g.levelDone.text, "Level " + g.wave + " Complete", "A: ...seeding the completed wave's announcement");
+  g.levelEndFreeze = false; g.levelDone = null;
   for (let i = 0; i < 30; i++) X.update(DT);
   eq(g.levelEndSafe, true, "A: still open half a second later");
   assert(g.levelEndPulseT > 0, "A: ⛔ the phase kept accumulating — the `waveClearTimer === 0` latch did not re-arm and re-zero it");
 })();
 
-// ================= (B) the hold is DEBUG.levelEndHold — the 2.5 literal is gone =================
+// ================= (B) ⛔ the hold is RETIRED — no timer advances the wave at all =================
+// ⛔ REWRITTEN BY CS036 P2 AS ITS OWN MIRROR IMAGE, not re-pointed to a new duration. This section
+// pinned "the pre-nextWave() hold is DEBUG.levelEndHold (5.0 s), REPLACING the 2.5 literal" — and
+// CS036 P2 (spec §1.2, FORK-CS036-E) retired that knob outright, because the pause it timed is
+// player-paced now: "Level N Complete" holds until confirm or back. What survives is the half of the
+// claim that is still checkable here — the 2.5 literal is gone, and so is everything that replaced it,
+// so NO amount of elapsed time advances the wave. That the player's confirm does is CS036 P2's own
+// claim and is pinned in test-cs036-p2.js; this file does not restate it.
 (function sectionB() {
-  console.log("(B) the pre-nextWave() hold is DEBUG.levelEndHold, REPLACING 2.5 (not added to it)");
-  {
-    const X = buildGame(); X.startGame(); settle(X);
-    const g = arm(X);
-    const w = g.wave;
-    eq(X.DEBUG.levelEndHold, 5, "B: (setup) the shipped hold is 5.0s");
-    settle(X, 2.6 - DT);                       // past the retired 2.5 literal
-    eq(g.wave, w, "B: ⛔ at 2.6s the wave has NOT advanced — the 2.5 literal is genuinely gone");
-    eq(g.levelEndSafe, true, "B: ...and the window is still open");
-    settle(X, 2.5);                            // now past 5.0s in total
-    eq(g.wave, w + 1, "B: the wave advances once past DEBUG.levelEndHold");
-  }
-  {
-    // The knob really drives it: a retuned hold moves the seam, and nothing else does.
-    const X = buildGame(); X.startGame(); settle(X);
-    X.DEBUG.levelEndHold = 1;
-    const g = arm(X);
-    const w = g.wave;
-    settle(X, 0.9);
-    eq(g.wave, w, "B: at a 1.0s hold, 0.9s is not enough");
-    settle(X, 0.2);
-    eq(g.wave, w + 1, "B: ...and 1.1s is — the threshold reads the knob at the point of use");
-  }
+  console.log("(B) ⛔ RETIRED: no timer advances the wave — not 2.5s, not 5.0s, not thirty seconds");
+  const X = buildGame(); X.startGame(); settle(X);
+  const g = arm(X);
+  const w = g.wave;
+  assert(!("levelEndHold" in X.DEBUG), "B: ⛔ DEBUG.levelEndHold does not exist — the knob is retired, not retuned");
+  settle(X, 2.6 - DT);                       // past the retired 2.5 literal
+  eq(g.wave, w, "B: ⛔ at 2.6s the wave has NOT advanced — the 2.5 literal is genuinely gone");
+  eq(g.levelEndSafe, true, "B: ...and the window is still open");
+  settle(X, 27.4);                           // 30s in total: six times the retired 5.0s hold
+  eq(g.wave, w, "B: ⛔ nor at THIRTY seconds — nothing left in this branch is timed");
+  eq(g.levelEndSafe, true, "B: ...the window simply stays open, waiting on the player");
 })();
 
 // ================= (C) hostile bullet vs the ship during the window =================
@@ -200,13 +214,19 @@ function arm(X) {
 
 // ================= (E) the celebration panel still fires, and still defers nextWave() =================
 (function sectionE() {
-  console.log("(E) the celebration branch is untouched — it opens at the hold's end and defers nextWave()");
+  console.log("(E) the celebration branch is untouched — it opens at the confirm and defers nextWave()");
   const X = buildGame(); X.startGame(); settle(X);
-  const g = arm(X);
+  // ⛔ REPOINTED BY CS036 P2: NOT arm() here — this section needs the ceremony left standing, because
+  // the panel now opens from dismissLevelDone() (the fork moved there with the retired hold) rather
+  // than from a timer inside update(). Everything below is unchanged: what the panel carries, that it
+  // defers nextWave(), and that the protection window survives all of it.
+  const g = quiet(X);
+  X.update(DT);
   g.pendingAch.push({ id: "t", name: "Test", desc: "d", tierIdx: 0, pool: "lifetime" });
   const w = g.wave;
-  settle(X, X.DEBUG.levelEndHold + 0.2);
-  assert(g.celebration !== null, "E: the panel opened at the end of the hold");
+  eq(g.levelDone !== null, true, "E: (setup) the completion announcement is up");
+  X.dismissLevelDone();                        // the player presses on
+  assert(g.celebration !== null, "E: the panel opened at the confirm");
   eq(g.celebration.resume, "wave", "E: ...carrying resume: \"wave\"");
   eq(g.wave, w, "E: ⛔ and nextWave() was DEFERRED — the wave has not advanced");
   eq(g.pendingAch.length, 0, "E: the bucket was flushed into the panel");
@@ -227,8 +247,11 @@ function arm(X) {
   const X = buildGame(); X.startGame(); settle(X);
   const g = arm(X);
   const w = g.wave;
-  settle(X, X.DEBUG.levelEndHold + 0.1);
-  eq(g.wave, w + 1, "F: (setup) no panel pending, so the hold ran straight into nextWave()");
+  // REPOINTED BY CS036 P2: the hold that used to run out into nextWave() is retired — the player's
+  // confirm is what reaches it. With no panel pending, dismissLevelDone() calls nextWave() inline,
+  // which is the same seam this section always started from.
+  X.dismissLevelDone();
+  eq(g.wave, w + 1, "F: (setup) no panel pending, so the confirm ran straight into nextWave()");
   assert(g.levelBanner.life > 0, "F: (setup) the banner is up");
   eq(g.levelEndGraceT, 0, "F: the grace is still unarmed while the banner runs");
   eq(g.levelEndSafe, true, "F: ...and the window is open the whole time");
@@ -293,8 +316,8 @@ function arm(X) {
   console.log("(H) nextWave() called mid-window leaves levelEndSafe / levelEndGraceT / levelEndPulseT alone");
   const X = buildGame(); X.startGame(); settle(X);
   const g = arm(X);
-  settle(X, X.DEBUG.levelEndHold + 0.1);      // through nextWave(), into the banner
-  settle(X, X.DEBUG.levelBannerTime + 0.1);   // past the crossing, so the grace is live too
+  X.dismissLevelDone();                       // CS036 P2: the confirm, not a hold, is what reaches nextWave()
+  settle(X, X.DEBUG.levelBannerTime + 0.1);   // past the banner's crossing, so the grace is live too
   assert(g.levelEndSafe && g.levelEndGraceT > 0 && g.levelEndPulseT > 0,
     "H: (setup) all three fields carry live mid-window values");
   const before = [g.levelEndSafe, g.levelEndGraceT, g.levelEndPulseT];
@@ -366,16 +389,21 @@ function arm(X) {
   eq(seen2.length, 0, "I: (non-vacuity) the hit-stun blink is untouched and still blanks the ship when it owns the frame");
 })();
 
-// ================= (J) the four knobs =================
+// ================= (J) the knobs =================
+// ⛔ NARROWED BY CS036 P2: levelEndHold is RETIRED (spec §1.2, FORK-CS036-E), so this section drops its
+// row and asserts its ABSENCE instead — the mirror image, the same treatment §B took. The other three
+// are untouched by that phase and are pinned exactly as CS035 P3 wrote them. The registry COUNT is
+// still test-registry.js's job, not this file's.
 (function sectionJ() {
-  console.log("(J) levelEndHold / levelEndGrace / levelEndFade / levelEndGracePulseEnd, in CELEBRATION");
+  console.log("(J) levelEndGrace / levelEndFade / levelEndGracePulseEnd, in CELEBRATION (levelEndHold retired)");
   const X = buildGame();
-  hasKnob(X, "levelEndHold", { def: 5.00, min: 0, max: 15, step: 0.25, unit: "s" }, A);
+  eq(X.DEBUG_ENTRIES.filter(e => e.id === "levelEndHold").length, 0,
+    "J: ⛔ levelEndHold has NO registry row — CS036 P2 retired it, and a shim was neither needed nor written");
+  assert(!("levelEndHold" in X.DEBUG), "J: ...and no live value either");
   hasKnob(X, "levelEndGrace", { def: 3.00, min: 0, max: 10, step: 0.25, unit: "s" }, A);
   hasKnob(X, "levelEndFade", { def: 0.25, min: 0.05, max: 1.50, step: 0.05, unit: "s" }, A);
   hasKnob(X, "levelEndGracePulseEnd", { def: 0.08, min: 0.02, max: 0.50, step: 0.02, unit: "s" }, A);
-  eq(X.DEBUG.levelEndHold, 5, "J: the live values seed from the defs (hold)");
-  eq(X.DEBUG.levelEndGrace, 3, "J: ...(grace)");
+  eq(X.DEBUG.levelEndGrace, 3, "J: the live values seed from the defs (grace)");
   eq(X.DEBUG.levelEndFade, 0.25, "J: ...(fade)");
   eq(X.DEBUG.levelEndGracePulseEnd, 0.08, "J: ...(grace pulse end)");
   assert(X.DEBUG.levelEndGracePulseEnd < X.DEBUG.levelEndFade,
@@ -385,14 +413,14 @@ function arm(X) {
   const rows = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
   const iCeleb = rows.indexOf("#CELEBRATION");
   assert(iCeleb >= 0, "J: the CELEBRATION header exists");
-  for (const id of ["levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"]) {
+  for (const id of ["levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"]) {
     const i = rows.indexOf(id);
     assert(i > iCeleb, `J: ${id} sits after the CELEBRATION header`);
     assert(!rows.slice(iCeleb + 1, i).some(r => r.startsWith("#")),
       `J: ...with no other section header in between`);
   }
   // The panel's label column is 32 chars wide (FLAG-CS034-e); none of these overruns it.
-  for (const id of ["levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"]) {
+  for (const id of ["levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"]) {
     const row = X.DEBUG_ENTRIES.find(e => e.id === id);
     assert(row.label.length <= 32, `J: "${row.label}" fits the panel's 32-char label column`);
   }

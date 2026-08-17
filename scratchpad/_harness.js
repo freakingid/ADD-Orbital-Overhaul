@@ -229,6 +229,13 @@ function topLevelNames(src) {
 //                 nothing has set ctx.font
 //   store         backing object for the localStorage stub, so a test can seed or inspect it
 //   strip         evaluate execSource(source) instead of source (default false; see the header)
+//   listeners     an object the window stub RECORDS addEventListener callbacks into, keyed by event
+//                 type ({ keydown: [fn, ...] }). Default null = swallowed, exactly as before. Added by
+//                 CS036 P2: driving the real keydown listener is the only way to test an input contract,
+//                 and the alternative was a second hand-rolled sandbox (which test-cs030-p5.js already
+//                 is, for exactly this reason). Purely additive — a caller that passes nothing gets the
+//                 byte-identical stub every existing suite file has always built against.
+//   pads          () => the array navigator.getGamepads() returns. Default null = () => [], as before.
 //
 // Two probes ride along with the harvested list and are absent from an explicit `exports`:
 //   probe(name)   "does this identifier exist at all?" without the return statement throwing
@@ -287,6 +294,7 @@ function buildGame(opts = {}) {
   const {
     source = null, exports: exportList = null, extraExports = [],
     audio = true, measureText = null, store = null, strip = false,
+    listeners = null, pads = null,
   } = opts;
 
   const raw = source === null ? scriptSource() : source;
@@ -297,7 +305,10 @@ function buildGame(opts = {}) {
   const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => ctx };
   const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
   const windowStub = {
-    addEventListener: () => {}, innerWidth: 1280, innerHeight: 720,
+    addEventListener: listeners
+      ? (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }
+      : () => {},
+    innerWidth: 1280, innerHeight: 720,
     AudioContext: audio ? FakeAudioContext : undefined,
     webkitAudioContext: audio ? FakeAudioContext : undefined,
   };
@@ -312,7 +323,7 @@ function buildGame(opts = {}) {
     "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
     src + "\n;return { " + names.join(", ") + " };");
   return factory(windowStub, documentStub, { now: () => 100000 }, () => 0,
-    { getGamepads: () => [] }, localStorageStub);
+    { getGamepads: pads || (() => []) }, localStorageStub);
 }
 
 // ------------------------------------------------------------------------------------------

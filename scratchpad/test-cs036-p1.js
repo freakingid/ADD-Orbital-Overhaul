@@ -299,9 +299,9 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   releaseInput(X);
 })();
 
-// ================= (H) the field itself: both places, resetRun only, and INERT =================
+// ================= (H) the field itself: both places, resetRun only, and its writers =================
 (function sectionH() {
-  console.log("(H) declared in both places, reset in resetRun() and NOT nextWave(), and nothing sets it true");
+  console.log("(H) declared in both places, reset in resetRun() and NOT nextWave(); the writers are the ceremony's");
   const X = buildGame();
   assert("levelEndFreeze" in X.game, "H: ⛔ declared in the game literal (the CS016 P3 both-places rule)");
   eq(X.game.levelEndFreeze, false, "H: ...false before any run starts");
@@ -321,11 +321,20 @@ function releaseInput(X) { for (const k of Object.keys(X.keys)) delete X.keys[k]
   eq(g.levelEndFreeze, true, "H: ⛔ nextWave() leaves it ALONE — the freeze must survive the wave boundary");
   eq(g.waveTime, 0, "H: (non-vacuity) nextWave() still zeroes what it always zeroed");
 
-  // Inert this phase: the only two writers in live code are the two declarations, both `false`.
+  // ⛔ REPOINTED BY CS036 P2 — THE INERTNESS PIN FLIPS TO ITS MIRROR IMAGE, and is not re-pointed to a
+  // new count. P1's claim was "the only two writers are the two declarations, and both write false";
+  // P2 arms the freeze at the wave clear and clears it at dismissLevelDone(), so the claim that survives
+  // is the one that was always the point: the writers are DECLARATIONS AND THE CEREMONY, and nothing
+  // else in the build touches this flag. Written as a set of writer lines rather than a count, so a
+  // sixth writer appearing anywhere fails here — the standing "settled: a pin at a version bump flips
+  // rather than re-points" convention, applied to a flag instead of a version.
   const src = execSource(scriptSource());
   const writes = src.split("\n").map(l => l.trim()).filter(l => /levelEndFreeze\s*[:=][^=]/.test(l));
-  eq(writes.length, 2, `H: exactly two writers of levelEndFreeze in live code (got ${JSON.stringify(writes)})`);
-  assert(writes.every(l => /false/.test(l)), "H: ⛔ ...and BOTH write false — nothing arms the freeze this phase (P2 does)");
+  eq(writes.sort().join(" | "),
+    ["levelEndFreeze: false,", "game.levelEndFreeze = false;", "game.levelEndFreeze = true;",
+     "game.levelEndFreeze = false;"].sort().join(" | "),
+    "H: ⛔ the ONLY writers are the two declarations (false), CS036 P2's arm (true) and its dismissal (false)");
+  eq(writes.filter(l => /true/.test(l)).length, 1, "H: ⛔ ...exactly ONE of them arms the freeze — the wave-clear latch");
 
   eq(typeof X.updateLevelEndFreeze, "function", "H: updateLevelEndFreeze() exists");
   eq(typeof X.tickLevelBanner, "function", "H: tickLevelBanner() exists");

@@ -115,6 +115,13 @@ function countVolleys(seconds, { rapid = 0, triple = 0 } = {}) {
     // (its rate rides on the shared Math.random sequence, so any unrelated change that consumes
     // RNG differently shifts it). Isolating the ship keeps section D deterministic.
     game.debris.length = 0; game.hunters.length = 0; game.saucers.length = 0;
+    // REPOINTED BY CS036 P2: an empty game.debris IS a wave clear, and CS036 P2 FREEZES the field on the
+    // frame it becomes true — "Level N Complete" holds until the player CONFIRMS, so every update() after
+    // that one is a frozen frame and nothing below would run at all. Parking the timer far below zero is
+    // CS035 P3's own suppression (test-f2.js / test-f5.js clearField()): it can never equal 0 again, so
+    // the `waveClearTimer === 0` arm latch never passes. The field is empty for isolation here, not
+    // because a level ended.
+    game.waveClearTimer = -1e9;
     update(dt);
     if (game.bullets.length > 0) volleys++;
   }

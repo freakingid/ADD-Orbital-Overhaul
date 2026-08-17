@@ -101,6 +101,13 @@ function clearField() {
   game.debris.length = 0; game.hunters.length = 0; game.saucers.length = 0;
   game.bullets.length = 0; game.chain.length = 0; game.garbage.length = 0;
   game.particles.length = 0; game.floaters.length = 0; game.powerups.length = 0;
+  // REPOINTED BY CS036 P2: an empty game.debris IS a wave clear, and CS036 P2 FREEZES the field on the
+  // frame it becomes true — "Level N Complete" holds until the player CONFIRMS, so every update() after
+  // that one is a frozen frame and nothing below would run at all. Parking the timer far below zero is
+  // CS035 P3's own suppression (test-f2.js / test-f5.js clearField()): it can never equal 0 again, so
+  // the `waveClearTimer === 0` arm latch never passes. The staging says what it always meant — the field
+  // is empty for convenience; this is not a level ending.
+  game.waveClearTimer = -1e9;
 }
 function resetShip(over = {}) {
   Object.assign(game.ship, {

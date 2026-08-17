@@ -639,7 +639,9 @@ let X = null;
   // CS035 P6 repoint: +5 more (chainGuardDropBase/Pity/Max, CHAIN GUARD — the guard drop-weight pity
   // curve; sweepPowerupCap, dockPowerupSpeed, POWERUPS — the Super Mega Delivery's volume). Not levers,
   // spec §5: playtest-knob numbers with no chain, no floor/ceil/steps triple. Same reasoning an eleventh time.
-  eq(nonLever.length, 52, "G: 52 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6's registry");
+  // CS036 P2 repoint: −1 (levelEndHold RETIRED — the pre-nextWave() hold is player-paced now, so there
+  // is nothing left for a duration knob to time). The first removal this pin has taken; same idiom.
+  eq(nonLever.length, 51, "G: 51 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

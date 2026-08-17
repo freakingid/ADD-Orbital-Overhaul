@@ -68,7 +68,10 @@ const returnList = [
   "startGame", "update", "updateToasts", "nextWave", "game", "AudioSys", "Achievements",
   "destroyDebris", "destroyHunter", "applyPowerup", "damageShip", "killShip",
   "DebrisSatellite", "HunterSatellite", "Saucer", "Garbage", "Dock",
-  "SHIP_MAX_HP", "HUNTER_DAMAGE", "DOCK_RADIUS", "TIER_NAMES", "TIER_COLOR", "drawAchievements"
+  "SHIP_MAX_HP", "HUNTER_DAMAGE", "DOCK_RADIUS", "TIER_NAMES", "TIER_COLOR", "drawAchievements",
+  // REPOINTED BY CS036 P2: C6/C9 drive a REAL wave clear, which now holds on "Level N Complete" until
+  // the player confirms. These two are that player.
+  "levelDoneActive", "dismissLevelDone"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -79,7 +82,8 @@ const {
   startGame, update, updateToasts, nextWave, game, AudioSys, Achievements,
   destroyDebris, destroyHunter, applyPowerup, damageShip, killShip,
   DebrisSatellite, HunterSatellite, Saucer, Garbage, Dock,
-  SHIP_MAX_HP, HUNTER_DAMAGE, DOCK_RADIUS, TIER_NAMES, TIER_COLOR, drawAchievements
+  SHIP_MAX_HP, HUNTER_DAMAGE, DOCK_RADIUS, TIER_NAMES, TIER_COLOR, drawAchievements,
+  levelDoneActive, dismissLevelDone
 } = A;
 
 let passed = 0, failed = 0;
@@ -269,7 +273,12 @@ function fillChain(n) {
 function tickDock(times) {
   for (let i = 0; i < times; i++) {
     game.ship.x = game.dock.x; game.ship.y = game.dock.y; game.ship.vx = 0; game.ship.vy = 0;
-    game.waveClearTimer = 0; // keep the empty field from advancing the wave mid-test
+    // REPOINTED BY CS036 P2: an empty game.debris IS a wave clear, and CS036 P2 FREEZES the field on the
+    // frame it becomes true — "Level N Complete" holds until the player CONFIRMS, so every update() after
+    // that one is a frozen frame and nothing below would run at all. Parking the timer far below zero is
+    // CS035 P3's own suppression (test-f2.js / test-f5.js clearField()): it can never equal 0 again, so
+    // the `waveClearTimer === 0` arm latch never passes. This staging is a parked dock, not a level end.
+    game.waveClearTimer = -1e9;
     update(0.13);            // > DOCK_OFFLOAD_INTERVAL (0.05s, v3.4 P1); the offload gate is a single
                               // if-check per update() call, so exactly one canister peels off per call
   }
@@ -362,7 +371,12 @@ let guard = 0;
 // panel at the clear and FREEZES the field until it is dismissed — this run is about the wave clear,
 // not the panel, so it drives the (majority) empty-bucket path. The unlocks themselves still fire;
 // only the panel's copy is dropped, and every assertion below reads Achievements, not the bucket.
-while (game.wave === 3 && guard++ < 200) { game.pendingAch.length = 0; update(0.1); } // past 2.5s -> nextWave
+// REPOINTED BY CS036 P2: a clear no longer advances the wave on a timer — it FREEZES the field behind
+// "Level N Complete" until the player confirms (levelEndHold is retired). dismissLevelDone() is that
+// confirm, and it runs BEFORE update() in the loop body — the real frame order (input, then update),
+// and the order that keeps the flush above it meaningful: the bucket has to be empty at the confirm,
+// or this run takes the panel path instead of the plain nextWave() it is written for.
+while (game.wave === 3 && guard++ < 200) { game.pendingAch.length = 0; if (levelDoneActive()) dismissLevelDone(); update(0.1); }
 assert(game.wave === 4, "C6: the empty wave 3 cleared into wave 4");
 assert(game.stats.noScratchWave3 && wUnlocked("no_scratches"), "C6: damage-free wave 3 -> No Scratches");
 // Perfect Wave is now TIERED [5,10,50,100,250,500]: the 10th perfect wave reaches Silver (tier 1).
@@ -516,13 +530,18 @@ game.saucerTimer = 1e9; game.hunterTimer = 1e9; game.healthTimer = 1e9;
 game.ship.invuln = 1e9; game.stats.dmgThisWave = 0; game.waveClearTimer = 0;
 // CS030 P5: bucket emptied per frame, same reason as (C6) above — the level-end panel would
 // otherwise freeze the field at the clear and this loop would time out on its guard.
-let g9 = 0; while (game.wave === 7 && g9++ < 200) { game.pendingAch.length = 0; update(0.1); }
+// REPOINTED BY CS036 P2: a clear no longer advances the wave on a timer — it FREEZES the field behind
+// "Level N Complete" until the player confirms (levelEndHold is retired). dismissLevelDone() is that
+// confirm, and it runs BEFORE update() in the loop body — the real frame order (input, then update),
+// and the order that keeps the flush above it meaningful: the bucket has to be empty at the confirm,
+// or this run takes the panel path instead of the plain nextWave() it is written for.
+let g9 = 0; while (game.wave === 7 && g9++ < 200) { game.pendingAch.length = 0; if (levelDoneActive()) dismissLevelDone(); update(0.1); }
 assert(game.wave === 8, "C9: empty wave 7 cleared into wave 8");
 assert(!game.stats.flawlessLateWave && !wUnlocked("flawless_run"), "C9: a damage-free wave-7 clear does NOT arm Flawless Run (floor is 8)");
 // nextWave repopulated the field for wave 8 — clear it again so the wave-8 clear can trip.
 game.debris = []; game.hunters = []; game.saucers = []; game.bullets = [];
 game.stats.dmgThisWave = 0; game.waveClearTimer = 0;
-let g9b = 0; while (game.wave === 8 && g9b++ < 200) { game.pendingAch.length = 0; update(0.1); } // CS030 P5, as above
+let g9b = 0; while (game.wave === 8 && g9b++ < 200) { game.pendingAch.length = 0; if (levelDoneActive()) dismissLevelDone(); update(0.1); } // CS030 P5 + CS036 P2, as above
 assert(game.wave === 9, "C9: empty wave 8 cleared into wave 9");
 assert(game.stats.flawlessLateWave && wUnlocked("flawless_run"), "C9: a damage-free wave-8 clear -> Flawless Run");
 

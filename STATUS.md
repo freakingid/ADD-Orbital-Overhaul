@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.35 · Changeset: CS036 · Phase: P1 · Registry: 106 · Levers: 18
+Version: 1.0.0.35 · Changeset: CS036 · Phase: P2 · Registry: 105 · Levers: 18
 
 ## Phase ledger — CS036
 
@@ -13,11 +13,50 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P1 · Registry: 106 · Levers: 1
   `tickLevelBanner(dt)` called from both paths — without it the freeze is a hard hang. Nothing sets the
   flag; P2 arms it. Registry unmoved at 106.
 
+- P2 — the level-end completion hold. The wave-clear `waveClearTimer === 0` latch now ARMS the ceremony
+  beside `levelEndSafe`: `levelEndFreeze = true`, a new `game.levelDone = { text, age }` ("Level N
+  Complete", N = the completed wave), and `resetMenuNav()`. `levelEndHold` is RETIRED with its threshold
+  (registry **106 → 105**, `COUNTS` updated; no shim, by rule). The Perfect Wave block (`perfectWaves++`
+  / `noScratchWave3` / `flawlessLateWave`) MOVED to the arm — behaviourally identical, since
+  `levelEndSafe` is set on the line above it and gates every damage site. The panel-or-`nextWave()` fork
+  moved WHOLE into new `dismissLevelDone()`, reached by confirm/back from BOTH input handlers, each
+  branch sitting immediately before its `game.celebration` branch and gated by the shared
+  `levelDoneActive()`. New `drawLevelDone()` — a third sibling of `drawHUD()`, fading in over
+  `levelBannerFade` and holding, with `LEVEL_DONE_HINT = "ENTER / A  continue"`. `_harness.js` gained
+  additive `listeners`/`pads` hooks so the real keydown listener and real gamepad can be driven without
+  a second sandbox.
+
 ## Working / verified
 
-- Full suite on a full clone: **144 files, 141 passed, 3 failed, 0 skipped, 0 timed out** — the three
-  failures are the standing pre-existing set (see Known issues), unchanged from the CS036 baseline's
-  143/140/3. `node --check` on the extracted script passes.
+- Full suite on a full clone: **145 files, 142 passed, 3 failed, 0 skipped, 0 timed out** — the three
+  failures are the standing pre-existing set (see Known issues), unchanged from P1's 144/141/3.
+  `node --check` on the extracted script passes.
+
+- New `scratchpad/test-cs036-p2.js` (127 assertions, seeded) drives the real `update()`, the real
+  keydown listener and the real `handleGamepadMenu()`: a real bullet kills the last size-1 Garbage
+  Satellite and the field is frozen with the announcement seeded **in that same frame**; 20 s of frames
+  later the wave has not advanced and the ship has not moved a pixel (only `levelDone.age` ticks);
+  ENTER/ESC and pad A/B each end it, reaching `nextWave()` with an empty bucket and the panel with a
+  banked one; an `e.repeat` keydown, a held pad button across the arm, fire and the pause key all do
+  nothing; the Perfect Wave bookkeeping fires once per clear at the arm with `game.wave` reading the
+  completed wave, and not at all when damage was taken; a fresh `startGame()` is unfrozen for 120
+  frames; the announcement's alpha ramps 0 → ½ → 1 and is still 1 thirty seconds later (no fade-out),
+  draws with the HUD hidden, and never draws paused or at gameover; and the knob is gone from
+  `DEBUG_ENTRIES`/`DEBUG`/`debugShown`, with a save file carrying `debug.levelEndHold` loading fine and
+  orphaning it.
+
+- **Sixteen suite files repointed, all named in-commit.** Five registry-delta pins (`test-cs027-p2/-p6`,
+  `test-cs029-p4`, `test-cs030-p1`, `test-cs026-p5`) and two list pins (`test-cs024-p6b/-p6c`) take a
+  −1. `test-cs026-p3`'s TRAP 5 gains `game.levelDone` by name. The rest are the freeze's fallout: a
+  test that empties `game.debris` for quiet now clears a wave and stops the world, so nine files either
+  park `waveClearTimer` far below zero (CS035 P3's own suppression, from `test-f2`/`test-f5`) or drive
+  the confirm. `test-cs035-p3` §B is rewritten as the retired knob's mirror image and its `arm()` lifts
+  the freeze by hand so the damage gates are not measured against a stopped field; `test-cs030-p5`'s
+  `clearFrame()` clears *and* confirms, §A finds the fork in its new home, and §D's parent trace still
+  matches byte-for-byte on seven fields with `waveClearTimer` traced separately as the one legitimate
+  divergence. `test-cs036-p1` §H's inertness pin flips to its mirror image (the writers are the
+  ceremony's). `test-cs025-p4` §A's `git diff HEAD` pin moved onto CS025 P4's own commit via
+  `_phase-ref.js` — it could not survive any later phase editing the file it watches.
 
 - New `scratchpad/test-cs036-p1.js` (52 assertions, seeded) drives the real `update()` with the flag set
   by hand: a Hunter Satellite, a Garbage Satellite, a saucer, a bullet and a loose piece of Debris all
@@ -36,12 +75,21 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P1 · Registry: 106 · Levers: 1
 
 ## Known issues
 
-- **NEW (P1) — a voice caption raised DURING the freeze holds until the freeze lifts.** The freeze runs
-  `VoiceSys.update()` (so a parked critical can speak) but not `game.caption.life -= dt` (which lives in
-  the frozen playing body), so a line drained mid-freeze captions and then sits at full alpha for the
-  length of the hold. Unreachable today — nothing arms the freeze — and it cannot happen behind the
-  celebration panel, whose freeze runs neither. **P2/P3 should decide** whether the caption clock joins
-  the reduced sim; spec §0.3's table does not list it, so P1 left it stopped rather than widen scope.
+- **P1's caption issue is now REACHABLE, and P2 deliberately did not widen the reduced sim.** A voice
+  caption raised during the freeze (a parked critical draining) sits at full alpha for the whole hold,
+  because `updateLevelEndFreeze()` runs `VoiceSys.update()` but not `game.caption.life -= dt`. P2's
+  answer: **no** — spec §0.3's table is the contract for what a frozen frame runs, the only clock this
+  phase added is the announcement's own `levelDone.age`, and the caption is arguably *right* to hold
+  while the field does. ⚠ **P3 owns the call**, and has the better view: it sees the whole span,
+  including the frames after `nextWave()`. If it says yes, the line goes beside the `age` tick.
+
+- **NEW (P2) — a wave that spawns ZERO Garbage Satellites now soft-locks the level.** Unreachable in
+  shipped play (`junkCount` floors at 3), reachable from the debug panel, whose `junkCountFloor`/`Ceil`
+  knobs both go to 0: `nextWave()` spawns nothing, the field is empty on the next frame, and the
+  `waveClearTimer === 0` latch cannot re-arm (the timer is still counting from the previous clear), so
+  no further ceremony fires and the level never ends. The shipped build advanced a wave every
+  `levelEndHold` seconds instead — equally degenerate, differently. Flagged, not fixed: narrowing the
+  arm condition is a design call the spec does not cover.
 
 - **⛔ RESOLVED BY SPEC, not by code — the level-end window (CS035 P3) "appears to do nothing in play."**
   `PLANNED-FEATURES-CS036.md` §0.1: the window *runs*; what it does not do is announce itself, because
@@ -130,15 +178,22 @@ None.
 
 ## Next up
 
-- **CS036 P2 — arm the freeze**: the wave-clear latch sets it, the "Level N Complete" announcement and
-  its prompt draw, both input handlers take confirm/back immediately ahead of the `game.celebration`
-  branch, `levelEndHold` retires (registry 106 → **105**) and the Perfect Wave bookkeeping moves to the
-  arm. P1 left the primitive inert and tested; nothing else in the build reads it yet.
-
 - **CS036 P3 — the freeze tail**: the unfreeze at `levelBanner.life <= levelBannerFade` with both
   degenerate cases (`fade >= time`, `time === 0`) degrading to "unfreeze immediately"; the alpha pulse
   restricted to the grace; the panel header reverted. ⛔ It also owns re-deriving CS035's
   banner-crossing edge (Known issues above) under the freeze — the answer is not known yet.
+  - The line it moves is `game.levelEndFreeze = false;` in `dismissLevelDone()`, which is P2's answer
+    and not the feature's; the comment above it says so. Everything else about the confirm stays.
+  - ⚠ Under the freeze, a wave cleared while the PREVIOUS level's banner is still live now behaves
+    differently again: the banner keeps ticking during the freeze (`tickLevelBanner()` runs in both
+    paths), so its expiry — and the grace arm that rides on it — can land in the middle of a
+    player-paced hold. That is the edge P3 is asked to re-derive; P2 changed its shape and did not
+    resolve it.
+
+- **P7's doc sweep still owns every `levelEndHold` mention in prose.** The build's remaining ones are
+  deliberate tombstones (the registry comment, the wave-clear branch, `dismissLevelDone()`'s header) and
+  are not misses. `ORBITAL-OVERHAUL-GDD.md` §2.7/§2.20.1's three references, on the other hand, now
+  describe a knob that does not exist.
 
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess: CS026 P6 tried it and CS029 measured it worse ("a ship-relative origin smears
@@ -163,13 +218,20 @@ None.
 
 ## Playtest asks (open only — answered ones move to the log)
 
-- **G9–G14 are still open, but three of the four knobs are about to change hands.** `levelEndHold`
-  retires at P2; `levelEndGrace` / `levelEndFade` / `levelEndGracePulseEnd` stay at 3.00 / 0.25 / 0.08
-  and are still unassessed — and the pulse they shape only runs across the grace from P3 on, so the old
-  questions (does it read instantly as "invincible", is the 0.2 floor too faint to fly at) should be
-  re-asked at the CS036 gate against the new sequence, not the CS035 one.
+- **G9–G14: `levelEndHold` is gone as of P2, so G9 is void.** `levelEndGrace` / `levelEndFade` /
+  `levelEndGracePulseEnd` stay at 3.00 / 0.25 / 0.08 and are still unassessed — and the pulse they shape
+  only runs across the grace from P3 on, so the old questions (does it read instantly as "invincible",
+  is the 0.2 floor too faint to fly at) should be re-asked at the CS036 gate against the new sequence,
+  not the CS035 one. §8's H6/H10/H11 are how they come back; ⛔ do not resurrect G9–G14 themselves.
 
-- **Does the dock apron read as pressure or as litter?** P2's lockout means a parked ship no longer
+- **H2 and H3 are P2's, and both need a controller as well as a keyboard.** H2 (can a held fire button
+  skip the announcement?) is argued structurally and pinned headlessly in `test-cs036-p2.js` §F — the
+  keydown that fired the killing shot lands before the arm, auto-repeat carries `e.repeat`, `gpPressed()`
+  is a rising edge, and fire is neither `confirm` nor `back` on either device. It has never been tried in
+  a hand. H3 is the wording of `LEVEL_DONE_HINT` ("ENTER / A  continue"): it names the two bindings that
+  work and omits ESC / B, which also work.
+
+- **Does the dock apron read as pressure or as litter?** CS035 P2's lockout means a parked ship no longer
   cleans up around itself. Nobody has played a long session against that yet, and coalescence still
   runs on the cloud that accumulates.
 

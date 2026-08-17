@@ -615,9 +615,16 @@ function pieceSpeed(piece) { return Math.hypot(piece.vx, piece.vy); }
     // pass would destroy it and filter it out of game.saucers before this function ever reads it,
     // reporting null instead of true/false. Clear debris/hunters too, so the probe measures ONLY the
     // spawn decision, undisturbed by physics this section was never testing.
+    // REPOINTED BY CS036 P2: an empty game.debris IS a wave clear, and CS036 P2 FREEZES the field on the
+    // frame it becomes true ("Level N Complete", ended by player input) — a frozen update() spawns no
+    // saucer at all, so the probe would read null for every level. Parking the timer far below zero steps
+    // over the `waveClearTimer === 0` arm latch (CS035 P3's own suppression, test-f2/test-f5), and the two
+    // fields are cleared with it so a freeze armed anywhere earlier in the file cannot leak in either.
+    // Same spirit as the debris/hunters clear directly above: this probe measures the spawn decision only.
     const probe = (A, p) => {
       A.game.saucers.length = 0; A.game.saucerTimer = -1;
       A.game.debris.length = 0; A.game.hunters.length = 0;
+      A.game.waveClearTimer = -1e9; A.game.levelEndFreeze = false; A.game.levelDone = null;
       A.game.state = "playing"; A.game.paused = false;
       withPinnedRandom(p, () => A.update(0));
       return A.game.saucers.length === 1 ? A.game.saucers[0].small : null;

@@ -38,6 +38,13 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+// REPOINTED BY CS036 P2 — see §A: the "unmodified" pin below moved off `git diff HEAD` and onto this
+// phase's own commit, which is what it always meant and what CLAUDE.md's #pins rule requires.
+const { ownCommits, changedFiles, SKIP_TAG } = require("./_phase-ref.js");
+// ⛔ CS025 P4's OWN PARENT, PINNED AS A LITERAL — "cs-25 p3: scoop strokes magnet-blue while the pull
+// is live". Its own commit (fa9a543) is resolved BY SUBJECT inside PARENT_SHA..HEAD, never hardcoded.
+const PARENT_SHA = "4d720ab";
+const PHASE_SUBJECT = "cs-25 p4:";
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
@@ -79,7 +86,9 @@ const documentStub = { getElementById: () => canvasStub, createElement: () => ca
 
 const RETURN = ["VoiceSys", "AudioSys", "game", "startGame", "update", "killShip", "settings",
   "SHIP_MAX_HP", "LOW_HP_THRESHOLD", "VOICE_COOLDOWN", "VOICE_PRIORITY", "VOICE_LINES", "VOICE_CRITICAL",
-  "VOICE_QUEUE_MAX", "VOICE_STILL_TRUE", "DEBUG_ENTRIES", "GAME_VERSION", "voiceEnabled"];
+  "VOICE_QUEUE_MAX", "VOICE_STILL_TRUE", "DEBUG_ENTRIES", "GAME_VERSION", "voiceEnabled",
+  // REPOINTED BY CS036 P2: §G's 600 frames now need a player at the completion hold — see there.
+  "levelDoneActive", "dismissLevelDone"];
 
 // Names that exist in BOTH HEAD and the current build — used for the byte-identity traps (K).
 const RETURN_BOTH = ["VoiceSys", "buildUtterance", "buildPitch", "parsePhonTokens", "PH", "VOICE_STYLES",
@@ -104,7 +113,7 @@ function build(src, names, lsStore) {
 }
 const buildInstance = lsStore => build(currentSrc, RETURN, lsStore);
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
 
 // A live instance with real audio, in live play, hazards cleared, at a chosen HP.
@@ -132,11 +141,23 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
     catch (e) { err = (e.stdout ? e.stdout.toString() : "") + (e.stderr ? e.stderr.toString() : ""); }
     assert(err === null, `${f} exits 0 after the queue change; ${err}`);
     assert(out && /0 failed/.test(out), `${f} reports 0 failed`);
-    // Unmodified relative to HEAD: the point of the prediction is that the CODE changed and these did NOT.
-    let dirty = false;
-    try { execSync(`git diff --quiet HEAD -- scratchpad/${f}`, { cwd: repoRoot, stdio: "pipe" }); }
-    catch (e) { dirty = true; }
-    assert(!dirty, `${f} is UNMODIFIED (a later phase must not "fix" the test instead of the code)`);
+    // ⛔ REPOINTED BY CS036 P2 — THE PIN WAS `git diff --quiet HEAD -- scratchpad/<f>`, i.e. "the working
+    // tree has no uncommitted edit to this file". That expressed the claim only during CS025 P4's own
+    // session; committed, it is permanently true, and it fails for any LATER phase that legitimately
+    // edits either file for its own reasons — which CS036 P2 does (a wave clear now freezes the field,
+    // so the quiet-field staging in test-cs010-p9.js had to say so). The claim itself is historical and
+    // has not changed: CS025 P4 did not touch these two. It is measured that way now — against CS025
+    // P4's OWN COMMIT, resolved by subject inside a bounded range — which is CLAUDE.md's #pins rule and
+    // cannot rot again.
+    const shas = ownCommits(PARENT_SHA, PHASE_SUBJECT);
+    const changed = shas && shas.length === 1 ? changedFiles(PARENT_SHA, shas[0]) : null;
+    if (changed === null) {
+      skipped++;
+      console.log(`  ${SKIP_TAG}: ${f} untouched by CS025 P4's own commit`);
+    } else {
+      assert(!changed.includes(`scratchpad/${f}`),
+        `${f} is UNTOUCHED BY CS025 P4's OWN COMMIT (a phase must not "fix" the test instead of the code)`);
+    }
   }
   // and their drop-not-queue sections are still there to break
   for (const f of ["test-cs010-p9.js", "test-cs011-p2.js"]) {
@@ -403,7 +424,16 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
 
   let maxDepth = 0, threw = null;
   try {
-    for (let i = 0; i < 600; i++) { A.update(1 / 60); maxDepth = Math.max(maxDepth, A.VoiceSys.queue.length); }
+    // REPOINTED BY CS036 P2: the wave clear that makes this section non-vacuous no longer reaches
+    // nextWave() by itself — CS036 P2 freezes the field on "Level N Complete" until the player confirms,
+    // and the level announcement that parks on the queue fires from inside nextWave(). The confirm is
+    // driven here, before update(), in the real frame order. Nothing else about the section changes:
+    // the drain is still measured across 600 frames against a permanently-busy channel.
+    for (let i = 0; i < 600; i++) {
+      if (A.levelDoneActive()) A.dismissLevelDone();
+      A.update(1 / 60);
+      maxDepth = Math.max(maxDepth, A.VoiceSys.queue.length);
+    }
   } catch (e) { threw = e && e.message; }
   assert(threw === null, "600 real frames with a full queue and a busy channel throw nothing; " + threw);
   assert(maxDepth <= A.VOICE_QUEUE_MAX, `queue depth never exceeds VOICE_QUEUE_MAX; peaked at ${maxDepth}`);
@@ -543,5 +573,7 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
   assert(C.VoiceSys._emit.length === 2, `_emit's third parameter is optional (declared arity stays 2); got ${C.VoiceSys._emit.length}`);
 })();
 
-console.log(`\n${passed} passed, ${failed} failed`);
+// CS036 P2: the skip counter joins the summary line — a git-dependent pin that could not ask has to be
+// VISIBLE (the standing FORK-CS026-H rule), not silently absorbed into the pass count.
+console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);
