@@ -350,7 +350,10 @@ let X = null;
     // again, a later phase's row named rather than wildcarded.
     // REPOINTED BY CS035 P3: +4 more (levelEndHold/Grace/Fade/GracePulseEnd, the level-end protection
     // window) — same idiom again, a later phase's rows named rather than wildcarded.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 15, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one and CS035 P3's four (measured, not counted)");
+    // REPOINTED BY CS035 P4: +5 more (hunterVolatileAge, hunterPulseMin/Max, hunterPulseGrow/Shrink,
+    // the Hunter volatility clock/heartbeat) — same idiom again, a later phase's rows named rather
+    // than wildcarded.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 20, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four and CS035 P4's five (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

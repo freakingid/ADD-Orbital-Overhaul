@@ -514,7 +514,8 @@ function quiet(X) {
       || id.startsWith("levelBanner")                                    // CS026 P5
       || id.startsWith("celebration")                                    // CS030 P3
       || id === "dockBounceSpeed"                                         // CS035 P2
-      || id.startsWith("levelEnd");                                       // CS035 P3
+      || id.startsWith("levelEnd")                                        // CS035 P3
+      || id === "hunterVolatileAge" || id.startsWith("hunterPulse");       // CS035 P4
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

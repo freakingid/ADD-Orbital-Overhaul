@@ -659,10 +659,13 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // a later phase's row, named rather than wildcarded, exactly as every repoint above.
     // REPOINTED BY CS035 P3: the level-end protection window's four CELEBRATION rows join the excluded
     // set — later phase's rows, named rather than wildcarded, exactly as every repoint above.
+    // REPOINTED BY CS035 P4: the Hunter volatility clock/heartbeat's five HUNTER rows join the excluded
+    // set — later phase's rows, named rather than wildcarded, exactly as every repoint above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
       "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade",
       "dockBounceSpeed",
-      "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"]);
+      "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",
+      "hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink"]);
     const laterIdsOld = new Set(["deliveryFloatLife"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));

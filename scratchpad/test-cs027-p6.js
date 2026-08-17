@@ -112,7 +112,7 @@ const { assert, eq } = A;
   // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added).
   // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed).
   // REPOINTED BY CS035 P3: +4 more (the level-end protection window's CELEBRATION rows).
-  eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one and CS035 P3's four later rows) — no OTHER phase added a knob");
+  eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four and CS035 P4's five later rows) — no OTHER phase added a knob");
   eq(X.DEBUG_ENTRIES.length, COUNTS.registryEntries, "B: ...and it's test-registry.js's own count (the only file allowed to name it)");
   eq(OLD.LEVERS.length, X.LEVERS.length, "B: ⛔ LEVERS unchanged from the CS027 start point — no phase moved a lever");
   eq(X.LEVERS.length, COUNTS.levers, "B: ...and it's test-registry.js's own count too");

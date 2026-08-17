@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.34 · Changeset: CS035 · Phase: P3 · Registry: 96 · Levers: 18
+Version: 1.0.0.34 · Changeset: CS035 · Phase: P4 · Registry: 101 · Levers: 18
 
 ## Phase ledger — CS035
 
@@ -43,10 +43,37 @@ Version: 1.0.0.34 · Changeset: CS035 · Phase: P3 · Registry: 96 · Levers: 18
   grace. Registry 92→96 (CELEBRATION); no lever moved. Seventeen suite files repointed in this commit
   plus `test-registry.js`'s count.
 
+- P4 — Hunter volatility, the clock and the tell only (spec §4.1-§4.3; damage sources are P5's).
+  `HunterSatellite.age` accrues from construction, unconditionally, every tier, every `update(dt)` —
+  construction is the only spawn event a large core has (`static spawnCore()` died in CS024 P3).
+  `volatile()` is `size === 3 && age >= DEBUG.hunterVolatileAge`; mediums/smalls age but never read it.
+  While volatile, `pulseScale` (init 100) grows at `hunterPulseGrow`%/s and shrinks at
+  `hunterPulseShrink`%/s — asymmetric, fast up / slow down, so it reads as pumping, not breathing —
+  clamped at `hunterPulseMin`/`hunterPulseMax` with a flip on each clamp. `draw()` scales a FRESH
+  vertex array by `pulseScale/100` per frame; `this.shape`/`this.inner`/`this.radius` are never
+  touched, so the collision hitbox stays honest against animation phase. Five new HUNTER-section
+  knobs (92→96 was P3's; this phase is 96→101), none a lever — `DIFFICULTY-LEVERS.md` gained a
+  not-a-lever row, `LEVERS` stays 18. Twelve older suite files pinning the registry's order/count
+  against a fixed parent SHA were repointed for the five new rows, same "REPOINTED BY"/"Same
+  reasoning an Nth time" convention every prior phase's registry growth has used.
+
 ## Working / verified
 
-- Full suite on a full clone: **140 files, 138 passed, 2 pre-existing failures, 0 skipped** — the
-  same two files (`test-f2`, `test-v36-death`) that were already red on this phase's parent.
+- Full suite on a full clone: **141 files, 138 passed, 3 pre-existing failures, 0 skipped**.
+  `test-f2` and `test-v36-death` are the two this phase's parent already carried. **NEW finding,
+  not caused by this phase** — `test-cs023-p3` also fails on this phase's own parent (verified by
+  stashing this phase's diff and re-running): its TRAP 3 pin against a fixed historical SHA
+  (`assert(b0.includes(OLD_OPEN), ...)`) fails independently of anything P4 touched. STATUS.md's
+  prior "same two files" claim was already stale before this phase; not investigated further, out
+  of P4's scope (§4.1-§4.3 only).
+- New `scratchpad/test-cs035-p4.js` drives the real `HunterSatellite` class directly: a fresh large
+  Hunter's age/pulseScale/pulseUp at construction; pulseScale moving off 100 the frame age crosses
+  `hunterVolatileAge` and staying at 100 one frame short of it; a medium and a small aged well past
+  the threshold never pulsing; pulseScale never escaping `[hunterPulseMin, hunterPulseMax]` across a
+  long run, with non-vacuity checks that it actually reaches both ends and reverses direction;
+  `this.radius` unmoved before/after volatility begins; and `this.shape`/`this.inner`'s own array
+  contents byte-identical (via `JSON.stringify`, not object identity) after many frames of real
+  `update()` + `draw()` calls — the don't-mutate invariant.
 - New `scratchpad/test-cs035-p3.js` drives the real paths end to end: a bullet killing the last
   satellite opens the window in that same `update()`; the hold is the knob (nothing at 2.6s, the wave at
   5.0s, and a retuned 1.0s hold moves the seam); a hostile bullet and a Hunter on the hull do nothing;
@@ -171,10 +198,12 @@ None.
 
 ## Next up
 
-- **CS035 P4–P6 are next**, per `IMPLEMENTATION-PHASES-CS035.md`: Hunter volatility (age/heartbeat,
-  then damage sources), and a powerup rebalance. ⛔ P4's note already flags that P3 added a
-  `!game.levelEndSafe` guard to the hostile-bullet-vs-chain block — any new hunter loop cutting the
-  chain needs the same guard, for the same guarded-not-absorbed reason.
+- **CS035 P5–P6 are next**, per `IMPLEMENTATION-PHASES-CS035.md`: Hunter volatility's damage sources
+  (§4.4 — Hunter↔Hunter, hostile bullet, saucer body, all via `destroyHunter(h, false)`, 3-way split
+  unchanged), then a powerup rebalance. ⛔ P3 already added a `!game.levelEndSafe` guard to the
+  hostile-bullet-vs-chain block — any new hunter loop cutting the chain needs the same guard, for the
+  same guarded-not-absorbed reason. P4 left `volatile()` as a method (not a stored flag) specifically
+  so P5's three new damage sites can call it directly.
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess, given CS029 already measured the naive version as worse. See "Known issues."
 - **Celebration header treatment (Gate B, B8) — reads clearly enough to ship, but the abrupt

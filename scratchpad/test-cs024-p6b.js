@@ -622,7 +622,11 @@ function evalSlice(literal) {
       .replace(/,deliveryFloatRise,deliveryFloatSize,deliveryFloatSizeStep,deliveryFloatSizeMax,deliveryFloatHold,deliveryFloatFade/, "")
       // CS035 P2 repoint: and dockBounceSpeed (DELIVERY, appended after the floater rows) — the dock
       // lockout's push speed, CS035 P2's row, not P6b's. Same reasoning an eighth time.
-      .replace(/,dockBounceSpeed/, "");
+      .replace(/,dockBounceSpeed/, "")
+      // CS035 P4 repoint: and the Hunter volatility clock/heartbeat's five knobs (hunterVolatileAge,
+      // hunterPulseMin, hunterPulseMax, hunterPulseGrow, hunterPulseShrink; HUNTER, appended after
+      // heldClumpMax) — CS035 P4's rows, not P6b's. Same reasoning a ninth time.
+      .replace(/,hunterVolatileAge,hunterPulseMin,hunterPulseMax,hunterPulseGrow,hunterPulseShrink/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it

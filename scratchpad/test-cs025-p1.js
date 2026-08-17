@@ -825,7 +825,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id.startsWith("levelBanner")                         // CS026 P5
       || id.startsWith("celebration")                         // CS030 P3
       || id === "dockBounceSpeed"                             // CS035 P2
-      || id.startsWith("levelEnd");                           // CS035 P3
+      || id.startsWith("levelEnd")                            // CS035 P3
+      || id === "hunterVolatileAge" || id.startsWith("hunterPulse");  // CS035 P4
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

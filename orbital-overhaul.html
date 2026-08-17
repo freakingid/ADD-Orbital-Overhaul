@@ -3674,6 +3674,21 @@ const DEBUG_VARS = [
   // would let ~18 clumps consume the whole garbage budget and starve the field.
   { id: "heldClumpMax", label: "Held clump max", unit: "",
     def: 4, min: 1, max: 20, step: 1, clampShown: v => Math.round(v) },
+  // CS035 P4 (spec §4.2/§4.3): Hunter volatility — a large core (size 3) that has lived
+  // `hunterVolatileAge` seconds starts a visible size heartbeat (pulseScale, draw-only). NOT A LEVER
+  // (spec §4.5, note in DIFFICULTY-LEVERS.md): a flat rule at every wave, same spirit as the CS018 P4
+  // frozen turn rates. Grow/shrink are deliberately ASYMMETRIC — fast growth, slow shrink — because a
+  // symmetric oscillation reads as breathing, and this needs to read as pumping.
+  { id: "hunterVolatileAge", label: "Hunter volatile age", unit: "s",
+    def: 30, min: 0, max: 120, step: 1 },
+  { id: "hunterPulseMin", label: "Hunter pulse min", unit: "%",
+    def: 92, min: 50, max: 100, step: 1 },
+  { id: "hunterPulseMax", label: "Hunter pulse max", unit: "%",
+    def: 115, min: 100, max: 200, step: 1 },
+  { id: "hunterPulseGrow", label: "Hunter pulse grow rate", unit: "%/s",
+    def: 55, min: 5, max: 300, step: 5 },
+  { id: "hunterPulseShrink", label: "Hunter pulse shrink rate", unit: "%/s",
+    def: 28, min: 5, max: 300, step: 1 },
   // CS024 P5 (spec §2.4/§4.5/§4.6): the UFO chain, the deepest in the odometer (a two-generation carry,
   // FLAG-CS024-d) and the one where §4.6 splits every quantity by saucer size. ufoAppearFreq (INVERTED)
   // is the ONE driver — there is exactly one appearance timer, which size spawns is the flat
@@ -6578,6 +6593,12 @@ class HunterSatellite {
     // The homing tiers are the pathological case this exists for: a medium/small that loses contact
     // re-acquires and comes straight back, so without a cooldown one attack could bill several times.
     this.guardT = 0;
+    // CS035 P4 (spec §4.2/§4.3): age from construction — the only spawn event a large core has
+    // (static spawnCore() was deleted in CS024 P3). pulseScale/pulseUp drive the volatility
+    // heartbeat once age crosses DEBUG.hunterVolatileAge; see volatile() and update()/draw() below.
+    this.age = 0;
+    this.pulseScale = 100;
+    this.pulseUp = true;
     // v3.3 P4 (9b, FORK-5): the `bornOfScrap` flag is GONE. Every Hunter of every origin now drops
     // garbage at its tier counts — the v3.2 P3 suppression is reversed. 9a's single-decay is the new
     // governor for the 12-in/66-out amplifier that flag used to close.
@@ -6625,6 +6646,11 @@ class HunterSatellite {
       ? [[r * 0.5, 0], [0, -r * 0.4], [-r * 0.4, 0], [0, r * 0.4]]
       : null;
   }
+  // CS035 P4 (spec §4.2): only a large core (size 3) ages into volatility. Mediums/smalls accrue
+  // `age` too (cheap, and leaves the field available to a later changeset) but never read it.
+  volatile() {
+    return this.size === 3 && this.age >= DEBUG.hunterVolatileAge;
+  }
   // CS024 P3 (spec §1.3/§4.3): `static spawnCore()` STOOD HERE — the AMBIENT producer's factory, which
   // slid a fresh large core in from just beyond a random viewport edge on a rand(20, 32) timer. It is
   // deleted along with game.hunterTimer and update()'s spawn block. HUNTERS NOW ARISE FROM EXACTLY ONE
@@ -6633,6 +6659,18 @@ class HunterSatellite {
   // thing that becomes a hunter — and it is only survivable because §1.4 made loose garbage permanent.
   // Children are still created directly at the parent's position in destroyHunter.
   update(dt) {
+    this.age += dt;   // CS035 P4 (spec §4.2): unconditional, every tier — construction is the origin
+    if (this.volatile()) {
+      // CS035 P4 (spec §4.3): draw-only heartbeat. Asymmetric — fast growth, slow shrink — reads as
+      // pumping rather than breathing. Never touches this.radius/shape/inner; see draw().
+      if (this.pulseUp) {
+        this.pulseScale += DEBUG.hunterPulseGrow * dt;
+        if (this.pulseScale >= DEBUG.hunterPulseMax) { this.pulseScale = DEBUG.hunterPulseMax; this.pulseUp = false; }
+      } else {
+        this.pulseScale -= DEBUG.hunterPulseShrink * dt;
+        if (this.pulseScale <= DEBUG.hunterPulseMin) { this.pulseScale = DEBUG.hunterPulseMin; this.pulseUp = true; }
+      }
+    }
     if (this.homing) {
       if (this.scatter > 0) {
         this.scatter -= dt;
@@ -6677,10 +6715,15 @@ class HunterSatellite {
   }
   draw() {
     const ang = this.homing ? this.heading : this.angle;
-    drawPoly(this.shape, this.x, this.y, ang, COLOR.satellite);
+    // CS035 P4 (spec §4.3): draw-only scale. this.shape/this.inner are baked at construction and
+    // never mutated — scaling into a fresh array each frame, never in place, keeps the hitbox honest.
+    const s = this.pulseScale / 100;
+    const shape = s === 1 ? this.shape : this.shape.map(p => [p[0] * s, p[1] * s]);
+    drawPoly(shape, this.x, this.y, ang, COLOR.satellite);
     if (this.inner) {
       // homers: inner tracks the nose; core: counter-rotate for a faceted shimmer
-      drawPoly(this.inner, this.x, this.y, this.homing ? ang : -this.angle * 1.5, COLOR.satellite);
+      const inner = s === 1 ? this.inner : this.inner.map(p => [p[0] * s, p[1] * s]);
+      drawPoly(inner, this.x, this.y, this.homing ? ang : -this.angle * 1.5, COLOR.satellite);
     }
   }
 }

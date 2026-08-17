@@ -18,7 +18,7 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 96,    // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 101,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
   sectionHeaders: 10,     // DEBUG_VARS.filter(v => v.header).length
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only
