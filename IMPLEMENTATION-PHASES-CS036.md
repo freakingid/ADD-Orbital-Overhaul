@@ -14,16 +14,16 @@ from a **full clone**, never `--depth 1`.
 
 ## Phase order
 
-| Phase | What | Model | Registry | Blocks on |
-|---|---|---|---|---|
-| **P1** | The freeze primitive — `updateLevelEndFreeze()`, inert | **opus** | +0 → 106 | — |
-| **P2** | The completion hold — arm, announce, confirm; retire `levelEndHold` | **opus** | −1 → **105** | P1 |
-| **P3** | The freeze tail, the pulse restriction, the panel header | **opus** | +0 → 105 | P2 |
-| **P4** | Hunter heartbeat punch — bounds + defaults | sonnet | +0 → 105 | — |
-| **P5** | Dock ping cooldown + FLAG-CS034-e label | sonnet | +1 → **106** | — |
-| **P6** | Suite triage — the three red files + FLAG-CS031-c | **opus** | +0 → 106 | — |
-| **GATE** | Blocking playtest | — | — | P1–P5 |
-| **P7** | Closing: gate fold-in, version bump, doc sweep, log, archive | sonnet | — | GATE |
+| Phase | What | Model | Effort | Registry | Blocks on |
+|---|---|---|---|---|---|
+| **P1** | The freeze primitive — `updateLevelEndFreeze()`, inert | **opus** | **xhigh** | +0 → 106 | — |
+| **P2** | The completion hold — arm, announce, confirm; retire `levelEndHold` | **opus** | **xhigh** | −1 → **105** | P1 |
+| **P3** | The freeze tail, the pulse restriction, the panel header | **opus** | **xhigh** | +0 → 105 | P2 |
+| **P4** | Hunter heartbeat punch — bounds + defaults | sonnet | medium | +0 → 105 | — |
+| **P5** | Dock ping cooldown + FLAG-CS034-e label | sonnet | medium | +1 → **106** | — |
+| **P6** | Suite triage — the three red files + FLAG-CS031-c | **opus** | **max** | +0 → 106 | — |
+| **GATE** | Blocking playtest | — | — | — | P1–P5 |
+| **P7** | Closing: gate fold-in, version bump, doc sweep, log, archive | sonnet | high | — | GATE |
 
 **Why this order.** P1–P3 are one feature cut into three testable pieces, and all three touch
 `update()`'s control flow, which is the most load-bearing code in the build — they get Opus and their
@@ -38,12 +38,47 @@ the closing phase can assert a **fully green** suite for the first time since CS
 `dockPingCooldown` (105 → 106). A phase between them that asserts 106 is wrong. The count lives only in
 `scratchpad/test-registry.js`'s `COUNTS`, and P2 and P5 each update it.
 
+## Reasoning effort
+
+Five levels — **low · medium · high · xhigh · max** — set for the session, independent of the model.
+Separately, ⛔ **`ultrathink` must appear inside the message text itself**; it is a per-turn lever, not
+a session setting (CLAUDE.md, Model guidance), and every phase prompt below already carries it. Set
+both.
+
+**The rule of thumb this table uses:** effort buys *depth of reasoning*, not diligence. Raise it when
+the phase has to work something out; a phase that is broad but fully specified needs care and a
+checklist, not more thinking.
+
+- **medium (P4, P5)** — the work is decided and written down. P4 picks numbers inside stated bounds;
+  P5 adds one knob and changes one string. Both have real traps (the don't-mutate invariant, the
+  both-places reset rule), but the traps are *named in the prompt*, so the phase has to follow rather
+  than derive.
+- **high (P7)** — broad and mechanical. Fold in numbers, bump a version, sweep five documents, write a
+  log, reset STATUS. Lots of surface, little to work out — except deciding which gate answers are
+  design decisions to defer rather than values to apply, which is the one judgement call in it.
+- **xhigh (P1, P2, P3)** — all three cut into `update()`'s control flow, the most load-bearing code in
+  the build, and each has to *reason* rather than follow. P1 decides what a frozen frame may still
+  run and defends the choice against a shipped comment that says the opposite for a neighbouring
+  state. P2 retires a registry row and moves achievement bookkeeping, then has to find every suite
+  file pinning either. P3 is the subtlest in the changeset: two degenerate cases on knobs a player can
+  drag, and ⛔ a re-derivation of CS035's banner-crossing edge whose answer nobody knows yet. **If you
+  only raise effort on one of the three, make it P3.**
+- **max (P6)** — the only phase whose *answer* is unknown at the start. Three tests have failed since
+  CS035 P1 and nobody knows whether any of them is a real build defect; `test-v36-death`'s is a
+  save-write question. Diagnosis with an open hypothesis space is exactly what the top of the range is
+  for, and it is a cheap place to spend it — the phase touches no gameplay code.
+
+**If you want to spend less:** P4, P5 and P7 will very likely be fine a notch lower (low / low /
+medium). ⛔ Do not drop P1–P3 or P6 below the table — those four are where a wrong answer is expensive
+and where a cheap session costs more in re-work than it saves.
+
 ---
 
 # P1 — The freeze primitive
 
 ```
 claude --model opus
+# reasoning effort: xhigh
 ```
 
 ```
@@ -129,6 +164,7 @@ Do not push.
 
 ```
 claude --model opus
+# reasoning effort: xhigh
 ```
 
 ```
@@ -230,6 +266,7 @@ Do not push.
 
 ```
 claude --model opus
+# reasoning effort: xhigh   <- if you raise effort on only one phase, make it this one
 ```
 
 ```
@@ -307,6 +344,7 @@ Do not push.
 
 ```
 claude --model sonnet
+# reasoning effort: medium
 ```
 
 ```
@@ -378,6 +416,7 @@ Do not push.
 
 ```
 claude --model sonnet
+# reasoning effort: medium
 ```
 
 ```
@@ -444,6 +483,7 @@ Do not push.
 
 ```
 claude --model opus
+# reasoning effort: max   <- the only phase whose ANSWER is unknown at the start
 ```
 
 ```
@@ -548,6 +588,7 @@ questions are re-framed as H6/H10/H11.
 
 ```
 claude --model sonnet
+# reasoning effort: high
 ```
 
 ```
