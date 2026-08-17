@@ -1,28 +1,31 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.34 · Changeset: CS034 · Phase: P9 · Registry: 91 · Levers: 18
+Version: 1.0.0.34 · Changeset: CS035 · Phase: P1 · Registry: 91 · Levers: 18
 
-## Phase ledger — CS034
+## Phase ledger — CS035
 
-- CS034 is closed. See `log/CS034.md` for the full P1–P9 build log and the GDD version-history
-  entry. Vocabulary glossary (four canonical terms, the build's deliberate code-name inversion
-  documented but not touched), Hunter Debris yield halved at the large/medium tiers, a leaderboard
-  stats-key fix (every public score since CS033 P3 had been showing flagged), a level-end
-  celebration header, a two-stage achievement/high-score reset flow, the 3-slot initials entry
-  deleted outright in favor of a single `makeRunResult()` seam, and a delivery-ticker readability
-  pass (GATE A tuned the size/hold/fade/anchor values; Gate B, this closing phase, brightened the
-  incidental-delivery floater to match and declined a second requested change — moving the ticker's
-  anchor to the ship — as a repeat of a CS029 experiment already measured and reverted). P9 applied
-  that one Gate B fix, corrected three stale docs, bumped the version, and archived both of CS034's
-  planning docs.
+- P1 — delivery ticker re-tune: applied a later dock-float-lab session's seven values as the shipped
+  defaults, superseding CS034 P8's GATE A numbers — anchor frac 0.75→0.50, rise 200→150, size
+  18→16/step 0.0→1.0 (per-piece growth live for the first time)/cap 36→48, hold 0.25→0.00, fade
+  0.75→1.20. Deleted the "SALVAGE BONUS" (8-piece) and "MAX HAUL" (24-piece) floaters — the lab
+  measured −15.7px ink overlap against the re-tuned ticker — keeping their powerup award,
+  `maxChainVisit`, and `cargoFlash` side effects intact. FLAG-CS035-a (open, not this phase's to
+  resolve): the 24-haul's text celebration is gone, carried instead by the ticker, the HUD cargo
+  flash, and the `dock_24` voice line — gate asks whether that still lands. Eight older suite files
+  that pinned CS034's now-superseded numbers or the deleted floaters were repointed in this commit,
+  same convention as their own prior "REPOINTED BY" comments (test-cs012-p3, test-cs018-p8,
+  test-cs020-p1, test-cs024-p6b, test-cs026-p4, test-cs026-p6, test-cs029-p4, test-p6).
 
 ## Working / verified
 
-- Full suite on a full clone: **137 files, 137 passed, 0 failed, 0 skipped, 0 timed out.**
-- Registry confirmed at **91**, `LEVERS` at **18** — unmoved since P8's own bump from 87.
-- The leaderboard stats-key fix (P4) confirmed live: a real posted score's row showed no ⚑ flag
-  (Gate B, B18).
-- The incidental (non-chain) delivery floater now reads `COLOR.dock`, matching the towed ticker's
-  brightness; size (12, vs. the ticker's grown 18–36) is the one remaining thing distinguishing it.
+- Full suite on a full clone: **138 files, 136 passed, 2 pre-existing failures, 0 skipped.** Both
+  failures reproduce identically on this phase's own parent commit (before CS035 touched anything) —
+  see the two new Known issues entries below.
+- New `scratchpad/test-cs035-p1.js` drives the real dock-offload path: the anchor frac, all five
+  registry rows' `def`/`min`/`max`/`step`, no SALVAGE/MAX HAUL floater at deliveries 8/24 while the
+  powerup/`maxChainVisit`/`cargoFlash` side effects still fire, and the ticker's per-piece size
+  formula (`min(48, 16 + 1.0 * (N-1))`).
+- Registry unmoved at **91**, `LEVERS` at **18** — this phase is a `def` change and one constant,
+  no rows added or retired.
 
 ## Known issues
 
@@ -57,13 +60,18 @@ Version: 1.0.0.34 · Changeset: CS034 · Phase: P9 · Registry: 91 · Levers: 18
   fix, same shape as CS026 P1/P2's conversions. See `log/CS026.md`, `log/CS034.md`.
 - **Satellite-vs-satellite elastic bounce and mutual collision damage were never playtested (from
   CS023).** Both are live in the game today; no gate since has asked about them. See `log/CS023.md`.
-- **The milestone floaters overlap the delivery ticker at the shipped CS034 values — confirmed
-  acceptable (Gate B, B4: "overlapping (fine)").** Not a defect; Paul's explicit call.
 - **P6's `blankLegacyStores()` calls `Achievements.save()` unguarded** — the same latent hole P6's
   own achievement reset had to design around. Harmless today: only reachable from profile delete
   (title-only, where neither `debugRun` nor `resumedRun` can be set). A future changeset that makes
   the profiles or achievements screen reachable mid-run must fix both, not just the reset. See
   `log/CS034.md`.
+- **NEW — `test-f2.js`'s §g assertion ("shield deflection consumed energy") fails deterministically**,
+  on every run, on this phase's own parent commit — distinct from the documented FLAG-CS031-c
+  celebration flake living in the same file. Not investigated; discovered incidentally while running
+  the suite for CS035 P1, out of that phase's scope to fix.
+- **NEW — `test-v36-death.js` fails on 3 assertions (`Achievements.save` call-count around
+  `killShip`)**, also present on this phase's own parent commit and previously undocumented. Not
+  investigated; same as above, out of CS035 P1's scope.
 
 ## Open questions (blocking)
 
@@ -71,7 +79,8 @@ None.
 
 ## Next up
 
-- **No changeset planned yet.** CS034 closed with no `PLANNED-FEATURES-CS035.md` in flight.
+- **CS035 P2–P6 are next**, per `IMPLEMENTATION-PHASES-CS035.md`: dock scoop lockout, level-end
+  invincibility, Hunter volatility (age/heartbeat, then damage sources), and a powerup rebalance.
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess, given CS029 already measured the naive version as worse. See "Known issues."
 - **Celebration header treatment (Gate B, B8) — reads clearly enough to ship, but the abrupt
@@ -92,7 +101,11 @@ None.
 
 ## Playtest asks (open only — answered ones move to the log)
 
-None open. Gate B's full set of answers (B1–B19) is recorded in `log/CS034.md` (P9).
+- **FLAG-CS035-a — does a Super Mega Delivery (24-haul) still land without its text celebration?**
+  After P1, it announces itself with: a size-39+ ticker showing a four-figure number, the HUD cargo
+  flash, the `dock_24` voice line, and roughly thirty powerups erupting from the dock. Assessed as
+  sufficient; the fix if not is a re-introduced "MAX HAUL" at a y-offset clear of the ticker, not a
+  restore in place. See `PLANNED-FEATURES-CS035.md` §1.3.
 
 ## Balance notes
 

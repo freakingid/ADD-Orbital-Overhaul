@@ -217,32 +217,28 @@ function tickDock(times) {
   assert(Achievements.lifetimeUnlocked.has("max_haul"), "D: max_haul stays unlocked after resetGameStats()+save()/load() (lifetime persistence)");
 })();
 
-// ================= (E) celebration: floater + cargoFlash on the 24th delivery only ==============
+// ================= (E) celebration: cargoFlash on the 24th delivery only ==============
+// REPOINTED BY CS035 P1 (§1.3): the "MAX HAUL" floater this section used to check is deleted (ink
+// overlap against the re-tuned delivery ticker) — cargoFlash is now this section's whole claim.
 (function sectionE() {
-  console.log("(E) celebration fires only on the 24th delivery: MAX HAUL floater + cargoFlash armed");
+  console.log("(E) celebration fires only on the 24th delivery: cargoFlash armed");
 
-  // --- 12-haul: no MAX HAUL floater, no cargoFlash from this path ---
+  // --- 12-haul: no cargoFlash from this path ---
   startGame(); resetAch(); parkOnDock();
   fillChain(12); game.deliveryCount = 0; game.offloadTimer = 0; game.cargoFlash = 0;
   tickDock(14);
-  const maxHaulAt12 = game.floaters.some(f => f.text === "MAX HAUL");
-  assert(!maxHaulAt12, "E: a 12-haul pushes no MAX HAUL floater");
+  assert(game.cargoFlash === 0, "E: a 12-haul does not arm cargoFlash");
 
-  // --- 23-haul: no MAX HAUL floater ---
+  // --- 23-haul: no cargoFlash ---
   startGame(); resetAch(); parkOnDock();
   fillChain(23); game.deliveryCount = 0; game.offloadTimer = 0; game.cargoFlash = 0;
   tickDock(25);
-  const maxHaulAt23 = game.floaters.some(f => f.text === "MAX HAUL");
-  assert(!maxHaulAt23, "E: a 23-haul pushes no MAX HAUL floater");
+  assert(game.cargoFlash === 0, "E: a 23-haul does not arm cargoFlash");
 
-  // --- 24-haul: exactly one MAX HAUL floater, gold-colored, larger size; cargoFlash armed ---
+  // --- 24-haul: cargoFlash armed ---
   startGame(); resetAch(); parkOnDock();
   fillChain(24); game.deliveryCount = 0; game.offloadTimer = 0; game.cargoFlash = 0;
   tickDock(26);
-  const maxHaulFloaters = game.floaters.filter(f => f.text === "MAX HAUL");
-  assert(maxHaulFloaters.length === 1, "E: exactly one MAX HAUL floater on the 24th delivery (got " + maxHaulFloaters.length + ")");
-  assert(maxHaulFloaters[0].color === COLOR.ach, "E: MAX HAUL floater uses COLOR.ach (gold)");
-  assert(maxHaulFloaters[0].size > 16, "E: MAX HAUL floater uses a larger-than-default size (got " + maxHaulFloaters[0].size + ")");
   assert(game.cargoFlash > 0, "E: cargoFlash is armed (>0) right after the 24th delivery");
   assert(game.cargoFlash <= HUD_CAP_FLASH, "E: cargoFlash does not exceed HUD_CAP_FLASH");
 })();

@@ -197,13 +197,14 @@ let X = null;
 
   // -- the two P4 knobs, retuned --
   // REPOINTED BY CS034 P8 (GATE A): rise moved again, 160 -> 200, against the larger P8 ticker.
+  // REPOINTED BY CS035 P1 (§1.1): a later dock-float-lab session re-settled it again, 200 -> 150.
   // deliveryFloatLife is retired outright — its own def/range claims no longer have a subject;
   // its replacement (deliveryFloatHold/deliveryFloatFade) is test-cs034-p8.js's, not P6's.
-  eq(byId.deliveryFloatRise.def, 200, "B: deliveryFloatRise.def is 200 (P4 300, P6 160 \"travel upwards more slowly\", CS034 P8's GATE A 200)");
-  eq(X.DEBUG.deliveryFloatRise, 200, "B: ...and the live value seeds from the def");
+  eq(byId.deliveryFloatRise.def, 150, "B: deliveryFloatRise.def is 150 (P4 300, P6 160, CS034 P8's GATE A 200, CS035 P1 150)");
+  eq(X.DEBUG.deliveryFloatRise, 150, "B: ...and the live value seeds from the def");
   assert(!byId.deliveryFloatLife, "B: ⛔ deliveryFloatLife (P6's other retuned row) no longer exists — retired by CS034 P8");
   // The range must still CONTAIN the new default, or the panel opens on an out-of-range row.
-  assert(byId.deliveryFloatRise.min <= 200 && 200 <= byId.deliveryFloatRise.max, "B: 200 is inside deliveryFloatRise's range");
+  assert(byId.deliveryFloatRise.min <= 150 && 150 <= byId.deliveryFloatRise.max, "B: 150 is inside deliveryFloatRise's range");
 
   // -- ⛔ THE KNOB PAUL DECLINED. The three-knob option would have added a `dockOffloadInterval` row
   //    and moved DOCK_OFFLOAD_INTERVAL to 0.10, buying back the separation a single origin costs.
@@ -229,10 +230,10 @@ let X = null;
   X.applyDebug("deliveryFloatRise", 420);
   eq(X.DEBUG.deliveryFloatRise, 420, "B: applyDebug moves the live rise");
   X.applyDebug(X.DEBUG_OVERRIDE_ID, 0);
-  eq(X.DEBUG.deliveryFloatRise, 200, "B: ⛔ with overrides OFF the consumer sees the current shipped default, 200 (CS034 P8's GATE A)");
+  eq(X.DEBUG.deliveryFloatRise, 150, "B: ⛔ with overrides OFF the consumer sees the current shipped default, 150 (CS035 P1)");
   X.applyDebug(X.DEBUG_OVERRIDE_ID, 1);
   eq(X.DEBUG.deliveryFloatRise, 420, "B: with overrides ON it sees the knob again");
-  X.applyDebug("deliveryFloatRise", 200);
+  X.applyDebug("deliveryFloatRise", 150);
   X.applyDebug(X.DEBUG_OVERRIDE_ID, 0);
 
   // -- the retuned row is not a lever --
@@ -328,16 +329,12 @@ let X = null;
   close(towed[0].bx, towed[0].dx, "C: ⛔ the ticker is born at the DOCK's x, not the ship's or the popped node's");
   close(towed[0].by, wantAnchorY, "C: ⛔ ...and at dock.y - DOCK_RADIUS x DELIVERY_FLOAT_ANCHOR_FRAC, not ship.y - DELIVERY_FLOAT_DY");
 
-  // -- the milestone floaters stay at the DOCK on the OLD defaults (spec §3.6 deconfliction) --
+  // -- the milestone floaters: REPOINTED BY CS035 P1 (§1.3) — deleted outright (ink overlap against
+  //    the re-tuned delivery ticker), so this section now asserts neither ever fires. --
   const salvage = born.find(b => b.f.text === "SALVAGE BONUS");
   const maxhaul = born.find(b => b.f.text === "MAX HAUL");
-  assert(!!salvage, "C: (setup) SALVAGE BONUS fired at 8");
-  assert(!!maxhaul, "C: (setup) MAX HAUL fired at CARGO_CAP_MAX");
-  close(salvage.bx, g.dock.x, "C: ⛔ SALVAGE BONUS still anchors at the DOCK, not the ship");
-  close(maxhaul.bx, g.dock.x, "C: ⛔ MAX HAUL too");
-  close(salvage.f.rise, 30, "C: ⛔ ...and keeps the OLD default rise (30), untouched by the Q5 retune");
-  close(salvage.f.life0, 1.1, "C: ⛔ ...and the OLD default life (1.1)");
-  close(maxhaul.f.rise, 30, "C: ⛔ MAX HAUL likewise");
+  assert(!salvage, "C: the SALVAGE BONUS floater no longer fires (CS035 P1, retired)");
+  assert(!maxhaul, "C: the MAX HAUL floater no longer fires (CS035 P1, retired)");
 
   // -- WHAT A DELIVERY PAYS IS UNCHANGED: this gate answer moved the LOOK, not the economics --
   let expected = 0;

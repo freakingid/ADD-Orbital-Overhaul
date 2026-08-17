@@ -65,9 +65,10 @@ const src = scriptSource();
   assert(!/\bDELIVERY_FLOAT_DY\b/.test(src.replace(/\/\/[^\n]*/g, "")),
     "A: ⛔ DELIVERY_FLOAT_DY does not appear anywhere in executable source (comments may still name it historically)");
   // REPOINTED BY CS034 P8 (GATE A): the constant moved 0.50 -> 0.75, re-gated against the larger P8
-  // ticker. Still a plain constant, not a registry knob — that half of the claim is unaffected.
-  assert(/const DELIVERY_FLOAT_ANCHOR_FRAC = 0\.75;/.test(src),
-    "A: DELIVERY_FLOAT_ANCHOR_FRAC is declared as a plain constant, 0.75 (CS034 P8's GATE A) — not a registry knob");
+  // ticker. REPOINTED BY CS035 P1 (§1.1): a later dock-float-lab session moved it back to 0.50.
+  // Still a plain constant, not a registry knob — that half of the claim is unaffected.
+  assert(/const DELIVERY_FLOAT_ANCHOR_FRAC = 0\.50;/.test(src),
+    "A: DELIVERY_FLOAT_ANCHOR_FRAC is declared as a plain constant, 0.50 (CS035 P1) — not a registry knob");
 
   // FloatText's `pinned` field: optional, defaults false, every pre-existing call site untouched.
   const ftBody = src.slice(src.indexOf("class FloatText {"), src.indexOf("class Dock {"));
@@ -99,7 +100,8 @@ const src = scriptSource();
   close(X.DOCK_OFFLOAD_INTERVAL, 0.05, "B: DOCK_OFFLOAD_INTERVAL is unmoved at 0.05 (gate G5)");
   // REPOINTED BY CS034 P8 (GATE A): rise moved 160 -> 200; deliveryFloatLife is retired outright, its
   // two readers replaced by deliveryFloatHold/deliveryFloatFade (test-cs034-p8.js's territory now).
-  eq(X.DEBUG.deliveryFloatRise, 200, "B: deliveryFloatRise's live value is 200 (CS034 P8's GATE A)");
+  // REPOINTED BY CS035 P1 (§1.1): rise moved again, 200 -> 150.
+  eq(X.DEBUG.deliveryFloatRise, 150, "B: deliveryFloatRise's live value is 150 (CS035 P1)");
   eq(X.DEBUG.deliveryFloatLife, undefined, "B: ⛔ deliveryFloatLife no longer exists — retired by CS034 P8");
 })();
 
@@ -162,8 +164,12 @@ function stageVisit(X, canisterCount) {
   assert(maxPinnedAtOnce <= 1, `C: ⛔ never more than one PINNED floater is alive at once (max observed ${maxPinnedAtOnce})`);
 
   // REPOINTED BY CS034 P8: the towed ticker's birth size is now the live deliveryFloatSize knob (18
-  // shipped, was the hardcoded 16); at the shipped deliveryFloatSizeStep 0.0 it never grows mid-visit.
-  const towed = pushes.filter(p => p.obj.color === X.COLOR.dock && p.obj.size === X.DEBUG.deliveryFloatSize && /^\+\d+$/.test(p.obj.text));
+  // shipped, was the hardcoded 16); at the shipped deliveryFloatSizeStep 0.0 it never grew mid-visit.
+  // REPOINTED BY CS035 P1 (§1.1): deliveryFloatSizeStep moves off 0.0, so the ticker's `size` is
+  // mutated in place as canisters land — filtering on a snapshot size no longer finds it once the
+  // loop has run. `/^\+\d+$/` (its accumulating "+N" text) plus COLOR.dock is enough on its own —
+  // no other push in this staged visit shares both.
+  const towed = pushes.filter(p => p.obj.color === X.COLOR.dock && /^\+\d+$/.test(p.obj.text));
   eq(towed.length, 1, "C: ⛔ exactly ONE towed push for the whole visit — the ticker, born on canister 1");
   const ticker = towed[0].obj;
   close(ticker.x, wantX, "C: ⛔ the ticker is born at the dock's x, not the ship's");

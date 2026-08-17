@@ -419,8 +419,9 @@ assert(drops8.length === 1, `G: an 8-canister visit emits exactly one hub poweru
 assert(near(drops8[0].x, cx) && near(drops8[0].y, cy), "G: the hub powerup launches from the dock's position");
 assert(near(Math.hypot(drops8[0].vx, drops8[0].vy), DOCK_POWERUP_SPEED, 1e-6),
   `G: the hub powerup launches at DOCK_POWERUP_SPEED (got ${Math.hypot(drops8[0].vx, drops8[0].vy).toFixed(2)})`);
-assert(game.floaters.some(f => (f.text || "").length > 0 && f.x === cx && f.y === cy - 22),
-  "G: a floater marks the first (8-piece) hub emission at the dock");
+// REPOINTED BY CS035 P1 (§1.3): the "SALVAGE BONUS" floater that used to mark the first hub
+// emission is deleted (ink overlap against the re-tuned delivery ticker) — the powerup drop
+// itself, asserted above, is this phase's own claim and is unaffected.
 
 const drops11 = deliverN(11);
 assert(drops11.length === 1, `G: an 11-canister visit still emits only one hub powerup (got ${drops11.length})`);

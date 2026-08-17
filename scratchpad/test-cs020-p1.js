@@ -843,8 +843,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     // 4 tier powerups (8/12/16/20) + the SMD's guaranteed one-of-each-droppable set. The set's size is
     // read off the live build rather than hardcoded, so a future drop-table change does not fail this.
     assert(pw.out.length >= 4, `G2: the 8/12/16/20 reward tiers still pay (got ${pw.out.length} powerups in total)`);
-    eq(fl.out.filter(f => f.text === "SALVAGE BONUS").length, 1, "G2: the SALVAGE BONUS floater still fires, once");
-    eq(fl.out.filter(f => f.text === "MAX HAUL").length, 1, "G2: the MAX HAUL celebration still fires, once");
+    // REPOINTED BY CS035 P1 (§1.3): both floaters are deleted (ink overlap against the re-tuned
+    // delivery ticker) — the cap-flash celebration below is what's left to assert.
+    eq(fl.out.filter(f => f.text === "SALVAGE BONUS").length, 0, "G2: no SALVAGE BONUS floater (retired)");
+    eq(fl.out.filter(f => f.text === "MAX HAUL").length, 0, "G2: no MAX HAUL floater (retired)");
     assert(X.game.cargoFlash > 0, "G2: the cap-flash celebration still arms");
   }
 

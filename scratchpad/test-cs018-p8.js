@@ -175,17 +175,14 @@ function deliverN(X, n) {
   assert(dirs.size > 1, "C: the four awards in one visit do not all launch on the identical vector");
 })();
 
-// ================= (D) SALVAGE BONUS floater fires once =====================
+// ================= (D) SALVAGE BONUS floater =====================
+// REPOINTED BY CS035 P1 (§1.3): the "SALVAGE BONUS" floater is deleted (ink overlap against the
+// re-tuned delivery ticker) — this section now asserts it never fires, at any award count.
 (function sectionD() {
-  console.log('(D) "SALVAGE BONUS" floater fires only on the first award (8), not again at 12/16/20');
+  console.log('(D) no "SALVAGE BONUS" floater fires, on a 20-canister visit or a short one');
   const X = build();
   const { floaters } = deliverN(X, 20);
-  const bonusFloaters = floaters.filter(f => f.text === "SALVAGE BONUS");
-  eq(bonusFloaters.length, 1, `D: exactly one "SALVAGE BONUS" floater across a 20-canister visit (got ${bonusFloaters.length})`);
-  if (bonusFloaters.length === 1) {
-    assert(near(bonusFloaters[0].x, X.game.dock.x) && near(bonusFloaters[0].y, X.game.dock.y - 22),
-      "D: the SALVAGE BONUS floater sits at the dock");
-  }
+  eq(floaters.filter(f => f.text === "SALVAGE BONUS").length, 0, "D: a 20-canister visit shows no SALVAGE BONUS floater");
 
   // A visit that never reaches 8 gets no floater and no powerup.
   const Y = build();

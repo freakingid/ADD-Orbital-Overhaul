@@ -176,11 +176,14 @@ let X = null;
     "A: ⛔ the INCIDENTAL branch is quieted by SIZE only (12) — COLOR.dock (CS034 P9) matches the towed branch's brightness — same dock anchor origin");
 
   // -- every other FloatText call site is untouched: total call sites vs. sites naming the new knobs --
+  // REPOINTED BY CS035 P1 (§1.3): the SALVAGE BONUS and MAX HAUL call sites are deleted outright
+  // (ink overlap against the re-tuned delivery ticker), dropping the total from ten to eight. This
+  // phase's own claim — two sites touched, the rest untouched — is otherwise unaffected.
   const totalSites = (codeSrc.match(/new FloatText\(/g) || []).length;
   const knobSites = (codeSrc.match(/DEBUG\.deliveryFloatRise/g) || []).length;
-  eq(totalSites, 10, "A: (setup) ten FloatText call sites exist in the source");
+  eq(totalSites, 8, "A: (setup) eight FloatText call sites exist in the source (CS035 P1 removed two)");
   eq(knobSites, 2, "A: ...exactly two of them were touched by this phase");
-  eq(totalSites - knobSites, 8, "A: ⛔ ...and the other eight are byte-identical to the parent (CS012 P3's own trailing-optional precedent)");
+  eq(totalSites - knobSites, 6, "A: ⛔ ...and the other six are byte-identical to the parent (CS012 P3's own trailing-optional precedent)");
 })();
 
 // ================= (B) the registry =====================
@@ -194,12 +197,13 @@ let X = null;
   const rise = X.DEBUG_VARS[iRise];
   eq(rise.label, "Delivery floater rise", "B: deliveryFloatRise label");
   eq(rise.unit, "px/s", "B: deliveryFloatRise unit");
-  // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS034 P8 (GATE A). P4 SHIPPED THESE AS FIRST
-  // GUESSES SPECIFICALLY SO THE GATE COULD SETTLE THEM — its own comment said so — so the gate
-  // moving them is this phase working as designed, not a regression. P6: "the score numbers need to
-  // fade more slowly, and they need to travel upwards more slowly" (300 -> 160). P8's GATE A
-  // re-settled rise to 200 against the larger, growing ticker.
-  eq(rise.def, 200, "B: deliveryFloatRise def 200 (P4 shipped 300, P6 settled 160; CS034 P8's GATE A re-settled it)");
+  // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS034 P8 (GATE A), THEN AGAIN BY CS035 P1
+  // (§1.1). P4 SHIPPED THESE AS FIRST GUESSES SPECIFICALLY SO THE GATE COULD SETTLE THEM — its own
+  // comment said so — so the gate moving them is this phase working as designed, not a regression.
+  // P6: "the score numbers need to fade more slowly, and they need to travel upwards more slowly"
+  // (300 -> 160). P8's GATE A re-settled rise to 200 against the larger, growing ticker. CS035 P1
+  // applied a later dock-float-lab session's numbers, 200 -> 150.
+  eq(rise.def, 150, "B: deliveryFloatRise def 150 (P4 300, P6 160, CS034 P8's GATE A 200, CS035 P1 150)");
   eq(rise.min, 30, "B: deliveryFloatRise min 30");
   eq(rise.max, 600, "B: deliveryFloatRise max 600");
   eq(rise.step, 10, "B: deliveryFloatRise step 10");
@@ -212,7 +216,7 @@ let X = null;
     "B: ⛔ deliveryFloatLife (P4's own row) no longer exists — retired by CS034 P8");
   eq(X.DEBUG.deliveryFloatLife, undefined, "B: ...and DEBUG.deliveryFloatLife is undefined");
 
-  eq(X.DEBUG.deliveryFloatRise, 200, "B: the live value seeds from def (rise)");
+  eq(X.DEBUG.deliveryFloatRise, 150, "B: the live value seeds from def (rise)");
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4,
     "B: DEBUG_ROWS is still registry + Dump + Reset All + Reset Scores + Back");
 
@@ -221,7 +225,7 @@ let X = null;
   A.applyDebug("deliveryFloatRise", 500);
   eq(A.DEBUG.deliveryFloatRise, 500, "B: applyDebug writes deliveryFloatRise live");
   A.applyDebug(A.DEBUG_OVERRIDE_ID, 0);
-  eq(A.DEBUG.deliveryFloatRise, 200, "B: overrides OFF derives from def, like every other row");
+  eq(A.DEBUG.deliveryFloatRise, 150, "B: overrides OFF derives from def, like every other row");
   eq(A.debugShown.deliveryFloatRise, 500, "B: ...without discarding the edit");
 })();
 
@@ -357,10 +361,14 @@ let X = null;
   // size and the live rise/life knobs, on whatever gets pushed.
   // REPOINTED BY CS034 P8 (spec §3.5): the towed branch's size is now the live deliveryFloatSize knob
   // (18 shipped, was the hardcoded 16) — at the shipped deliveryFloatSizeStep 0.0 the ticker never
-  // grows mid-visit, so filtering on the live knob is stable here exactly like the hardcoded 16 was.
+  // grows mid-visit, so filtering on the live knob was stable here exactly like the hardcoded 16 was.
   // REPOINTED BY CS034 P9 (GATE B, B2): both branches now share COLOR.dock, so the incidental filter
   // can no longer key on colour — size 12 is the only thing left distinguishing it from the ticker.
-  const towedFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === A.DEBUG.deliveryFloatSize && p.obj.text.startsWith("+"));
+  // REPOINTED BY CS035 P1 (§1.1): deliveryFloatSizeStep moves off 0.0, so the ticker's `size` is
+  // mutated in place as canisters land — `pushes` holds a live reference, so filtering the towed
+  // push on a snapshot size no longer works. The stable identity is "not size 12" (the incidental's
+  // fixed sentinel size); a growing ticker never coincides with that value in this build's ranges.
+  const towedFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size !== 12 && p.obj.text.startsWith("+"));
   const incidentalFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === 12);
   eq(towedFloaters.length, 1, "E: ⛔ the towed visit pushes exactly ONE floater — the ticker, born on canister 1 — not one per canister");
   eq(incidentalFloaters.length, 1, "E: exactly 1 incidental floater was pushed");
@@ -386,19 +394,14 @@ let X = null;
   eq(ticker.pinned, false, "E: ⛔ the ticker is released (un-pinned) once the visit's last canister lands");
   eq(g.deliveryTicker, null, "E: and the live reference is cleared — the next visit starts a fresh ticker");
 
-  // -- deconfliction (spec §3.6): SALVAGE BONUS / MAX HAUL are UNTOUCHED — still default rise/life,
-  //    still at dock.y - 22, never moved and never given the new knobs. --
+  // -- deconfliction (spec §3.6): SALVAGE BONUS / MAX HAUL were UNTOUCHED by this phase. --
+  // REPOINTED BY CS035 P1 (§1.3): both floaters are deleted outright (ink overlap against the
+  // re-tuned delivery ticker) — this section now asserts neither fires, in the same 24-canister
+  // visit that used to prove both did.
   const bonus = pushes.find(p => p.obj.text === "SALVAGE BONUS");
   const maxHaul = pushes.find(p => p.obj.text === "MAX HAUL");
-  assert(!!bonus, "E: (setup) the SALVAGE BONUS floater fired (8-delivered tier)");
-  assert(!!maxHaul, "E: (setup) the MAX HAUL floater fired (24-delivered tier)");
-  eq(bonus.obj.rise, 30, "E: ⛔ SALVAGE BONUS keeps the OLD default rise — this phase must not touch it");
-  eq(bonus.obj.life0, 1.1, "E: ⛔ ...and the old default life");
-  eq(maxHaul.obj.rise, 30, "E: ⛔ MAX HAUL likewise keeps the old default rise");
-  eq(maxHaul.obj.life0, 1.1, "E: ⛔ ...and the old default life");
-  eq(maxHaul.obj.size, 24, "E: ⛔ ...and its own size (24) is untouched");
-  eq(bonus.obj.x, g.dock.x, "E: SALVAGE BONUS is still anchored at the dock, not the node (unmoved by this phase)");
-  eq(maxHaul.obj.x, g.dock.x, "E: MAX HAUL likewise");
+  assert(!bonus, "E: the SALVAGE BONUS floater no longer fires (CS035 P1, retired)");
+  assert(!maxHaul, "E: the MAX HAUL floater no longer fires (CS035 P1, retired)");
 })();
 
 // ================= (F) TRAPs =====================
