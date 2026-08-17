@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.34 · Changeset: CS035 · Phase: P4 · Registry: 101 · Levers: 18
+Version: 1.0.0.34 · Changeset: CS035 · Phase: P5 · Registry: 101 · Levers: 18
 
 ## Phase ledger — CS035
 
@@ -57,15 +57,50 @@ Version: 1.0.0.34 · Changeset: CS035 · Phase: P4 · Registry: 101 · Levers: 1
   against a fixed parent SHA were repointed for the five new rows, same "REPOINTED BY"/"Same
   reasoning an Nth time" convention every prior phase's registry growth has used.
 
+- P5 — Hunter volatility damage sources (spec §4.4): a VOLATILE large Hunter is now destructible by
+  three new sources, all via `destroyHunter(h, false)` — no score, no achievement counters, 3-way split
+  unchanged. **Hunter↔Hunter**: a new pair-walk over `game.hunters`, same slot in the collision order as
+  the debris-vs-debris pass — both must be volatile larges or nothing happens; both die if so.
+  **Hostile bullet**: a new `game.hunters` loop in the hostile-bullet branch, volatile larges only, bullet
+  dies on contact — a SIBLING of the `!game.levelEndSafe`-guarded chain block, not covered by that guard
+  (a UFO shot still pops a volatile large during the level-end window). **Saucer body**: the UFO-vs-debris
+  pass gains a Hunter arm — unlike the debris arm, BOTH die, no bounce. Non-volatile larges, mediums, and
+  smalls are unaffected by all three; player bullets are unchanged (regression-tested). No registry rows
+  this phase. Two pre-existing phase-local pins broke as a *direct, expected* consequence and were
+  repointed, same convention as prior registry-growth repoints: `test-cs023-p2.js` §A's "only closing
+  braces between the debris pass and whichever runs next" now checks for the new Hunter↔Hunter pass first;
+  `test-cs023-p3.js` §A's `destroySaucer(s, false)` call-site count moved 2→3 for the new saucer arm.
+
 ## Working / verified
 
-- Full suite on a full clone: **141 files, 138 passed, 3 pre-existing failures, 0 skipped**.
-  `test-f2` and `test-v36-death` are the two this phase's parent already carried. **NEW finding,
-  not caused by this phase** — `test-cs023-p3` also fails on this phase's own parent (verified by
-  stashing this phase's diff and re-running): its TRAP 3 pin against a fixed historical SHA
-  (`assert(b0.includes(OLD_OPEN), ...)`) fails independently of anything P4 touched. STATUS.md's
-  prior "same two files" claim was already stale before this phase; not investigated further, out
-  of P4's scope (§4.1-§4.3 only).
+- Full suite on a full clone: **142 files, 139 passed, 3 pre-existing failures, 0 skipped**
+  (`test-cs035-p5.js` is this phase's addition to the file count). `test-f2`, `test-v36-death`, and
+  `test-cs023-p3`'s TRAP 3 pin (against a fixed historical SHA) are the three this phase's parent
+  already carried — reconfirmed by stashing this phase's diff and re-running against P4's own HEAD,
+  same failure both ways.
+- **NEW finding, not caused by this phase — `test-cs035-p3.js` is flaky, ~1-in-5 runs, independent of
+  P5.** Reconfirmed against P4's own HEAD with this phase's diff stashed: same ~20% failure rate on
+  its §F assertion either way. Not investigated further, out of P5's scope; worth a future phase's
+  attention since it isn't seed-related (P3 didn't add `installSeed`).
+- P5 legitimately broke two pre-existing phase-local pins by adding real code where they asserted
+  none existed — repointed, not redesigned, same convention as every prior registry-growth repoint:
+  `test-cs023-p2.js` §A's "only closing braces between the debris-vs-debris pass and whichever pass
+  runs next" now checks for P5's Hunter↔Hunter pass first (it legitimately landed in that slot); and
+  `test-cs023-p3.js` §A's `destroySaucer(s, false)` call-site count moved 2→3 (P5's saucer-vs-Hunter
+  arm is a third, additive site, same "no score for either" shape as the two it already counted).
+- New `scratchpad/test-cs035-p5.js` drives the real collision passes end to end via `update()`: two
+  overlapping volatile larges both die with a 6-medium yield; two non-volatile larges and a
+  volatile-large-vs-medium pairing both do nothing; a hostile bullet kills a volatile large and itself
+  (and does nothing to a non-volatile large), including with `game.levelEndSafe` true (the sibling-not-
+  guarded invariant); a saucer body kills both itself and a volatile large; a player bullet on a
+  non-volatile large is the unchanged full-credit path (regression); and every no-credit case checks
+  `game.score`, `hunterLineageKills`, `largeHunterKills`, AND `Achievements.lifetime.hunterKills`
+  together. Trap staged for: `game.debris.length === 0` arms a large core's "last-stand" steer-toward-
+  ship drift in its own `update()`, which would move a "stationary" large off its staged overlap before
+  collisions run — every scenario keeps one inert sentinel Debris object in the field (same idiom as
+  `test-cs035-p4.js`'s `quiet()`) so that branch never arms; and world size at level 1 is the small
+  early-level world (1920x1080), not the 2560x1440 default, so hand-placed positions are read off
+  `worldDims(X)` live rather than a literal — a literal past the live width would wrap clean around.
 - New `scratchpad/test-cs035-p4.js` drives the real `HunterSatellite` class directly: a fresh large
   Hunter's age/pulseScale/pulseUp at construction; pulseScale moving off 100 the frame age crosses
   `hunterVolatileAge` and staying at 100 one frame short of it; a medium and a small aged well past
@@ -198,12 +233,12 @@ None.
 
 ## Next up
 
-- **CS035 P5–P6 are next**, per `IMPLEMENTATION-PHASES-CS035.md`: Hunter volatility's damage sources
-  (§4.4 — Hunter↔Hunter, hostile bullet, saucer body, all via `destroyHunter(h, false)`, 3-way split
-  unchanged), then a powerup rebalance. ⛔ P3 already added a `!game.levelEndSafe` guard to the
-  hostile-bullet-vs-chain block — any new hunter loop cutting the chain needs the same guard, for the
-  same guarded-not-absorbed reason. P4 left `volatile()` as a method (not a stored flag) specifically
-  so P5's three new damage sites can call it directly.
+- **CS035 P6 is next**, per `IMPLEMENTATION-PHASES-CS035.md`: the powerup rebalance (spec §5) —
+  `POWERUP_DROP_WEIGHTS` ×10, `guard`'s weight going dynamic (pity-counter driven off
+  `game.stats.cargoDamageEvents`, incremented in `breakChain()` on the unguarded-sever path only), and
+  shrinking the Super Mega Delivery flood.
+- **`test-cs035-p3.js` flakes ~1-in-5 runs, pre-existing, not P5's** — see "Working / verified". Worth
+  a look whenever a phase is next in that file's neighborhood; it isn't seeded.
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess, given CS029 already measured the naive version as worse. See "Known issues."
 - **Celebration header treatment (Gate B, B8) — reads clearly enough to ship, but the abrupt

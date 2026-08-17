@@ -535,8 +535,11 @@ function saucerAt(X, x, y, small) {
   // The two pre-existing callers are BYTE-UNCHANGED — single argument, exactly as before.
   eq((codeOnly.match(/destroySaucer\(s\);/g) || []).length, 2,
     "A: TRAP 5 — exactly two call sites still pass destroySaucer a single argument (bullet kill, shield kill)");
-  eq((codeOnly.match(/destroySaucer\(s, false\);/g) || []).length, 2,
-    "A: exactly two NEW call sites pass awardScore=false (ship ram, UFO-vs-debris)");
+  // REPOINTED BY CS035 P5: a third `destroySaucer(s, false)` site landed — the saucer-vs-volatile-Hunter
+  // arm (spec §4.4 site 3), added alongside the UFO-vs-debris arm this pin already counts, same "no score
+  // for either" shape. The original two (ship ram, UFO-vs-debris) are unchanged; this is additive.
+  eq((codeOnly.match(/destroySaucer\(s, false\);/g) || []).length, 3,
+    "A: exactly three call sites pass awardScore=false (ship ram, UFO-vs-debris, UFO-vs-Hunter)");
 
   // --- the ship<->hazard mutual-damage sites ---
   assert(/if \(h instanceof HunterSatellite\) destroyHunter\(h, false\); else destroyDebris\(h, false\);/.test(codeOnly),

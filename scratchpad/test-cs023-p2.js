@@ -384,8 +384,13 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
     // now checks, is that NOTHING but this loop's own closing braces sits between P2's pass and WHICHEVER
     // comes next — P3's pass if it's present, Cleanup otherwise — so a later phase inserting its own pass
     // here in turn will need the identical repoint, not a redesign.
-    const iNext = codeOnly.indexOf("for (const s of game.saucers) {\n    if (s.dead) continue;\n    for (const a of game.debris) {", iPass);
-    const boundary = iNext > 0 ? iNext : iCleanup;
+    // REPOINTED BY CS035 P5, same convention: the Hunter<->Hunter pass (spec §4.4 site 1) landed in the
+    // identical slot, between this pass and P3's UFO<->debris pass. "Whichever comes next" now checks for
+    // it FIRST — P5's pass if present, then P3's, then Cleanup.
+    const iHunterPass = codeOnly.indexOf("for (let i = 0; i < game.hunters.length; i++) {\n    const a = game.hunters[i];", iPass);
+    const iUfoPass = codeOnly.indexOf("for (const s of game.saucers) {\n    if (s.dead) continue;\n    for (const a of game.debris) {", iPass);
+    const candidates = [iHunterPass, iUfoPass, iCleanup].filter(x => x > 0);
+    const boundary = Math.min(...candidates);
     const between = codeOnly.slice(codeOnly.indexOf("\n", iPass), boundary);
     assert(between.replace(/[}\s]/g, "") === "", "A: ...IMMEDIATELY before it — only the loop's closing braces in between");
   }

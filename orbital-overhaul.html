@@ -10272,6 +10272,18 @@ function update(dt) {
           }
         }
       }
+      // hostile bullet vs a volatile large Hunter (CS035 P5, spec §4.4 site 2 / §0.3)
+      // New wiring — this branch previously never tested game.hunters at all. A SIBLING of the tow-chain
+      // block above, not an extension of it: deliberately NOT gated on !game.levelEndSafe, so a UFO shot
+      // still pops a volatile large during the level-end window. Non-volatile larges, mediums and smalls
+      // are untouched — h.volatile() is size===3 && aged past DEBUG.hunterVolatileAge (see HunterSatellite).
+      if (!b.dead) {
+        for (const h of game.hunters) {
+          if (!h.dead && h.volatile() && dist2(b, h) < (h.radius + 3) * (h.radius + 3)) {
+            b.dead = true; destroyHunter(h, false); break;
+          }
+        }
+      }
     }
   }
 
@@ -10411,6 +10423,26 @@ function update(dt) {
     }
   }
 
+  // --- Collisions: Hunter vs Hunter (CS035 P5, spec §4.4 site 1 / §0.4) ---
+  // New wiring — game.hunters is a separate array from game.debris and previously appeared in no
+  // collision pass, elastic or damaging. Same pair-walk idiom and same position in the collision order
+  // as the debris-vs-debris pass directly above: `dead` checked explicitly on both sides, runs before the
+  // end-of-frame dead-filter. BOTH bodies must be volatile larges (h.volatile(): size===3, aged past
+  // DEBUG.hunterVolatileAge) for either to die; a volatile large touching a medium/small does nothing to
+  // either — no bounce, no damage, unlike debrisBounce's elastic exchange. Both die via
+  // destroyHunter(h, false): mutual detonation is not the player's kill, so no score or achievement
+  // counters move (the split still runs 3-way — destroyHunter() is not levered).
+  for (let i = 0; i < game.hunters.length; i++) {
+    const a = game.hunters[i];
+    if (a.dead || !a.volatile()) continue;
+    for (let j = i + 1; j < game.hunters.length; j++) {
+      const b = game.hunters[j];
+      if (b.dead || !b.volatile()) continue;
+      const r = a.radius + b.radius;
+      if (dist2(a, b) < r * r) { destroyHunter(a, false); destroyHunter(b, false); break; }
+    }
+  }
+
   // --- Collisions: UFO vs debris (CS023 P3, spec §1.1/§4.6) ---
   // A saucer that flies into a satellite destroys the saucer, no score (C13/FORK-CS023-E) — and the
   // satellite bounces off it, disarmed, if it was free; a rail-borne satellite is untouched, exactly the
@@ -10425,6 +10457,16 @@ function update(dt) {
       if (a.dead) continue;
       const r = s.radius + a.radius;
       if (dist2(s, a) < r * r) { destroySaucer(s, false); debrisBounce(a, s); break; }
+    }
+    if (s.dead) continue;
+    // CS035 P5 (spec §4.4 site 3): a Hunter arm alongside the debris arm above, volatile larges only.
+    // Unlike the debris arm, BOTH bodies die here — no debrisBounce, the saucer isn't left standing.
+    // Same "no score for either" shape as the saucer-vs-satellite case: destroySaucer(s, false),
+    // destroyHunter(h, false). Mediums/smalls and non-volatile larges pass through a saucer untouched.
+    for (const h of game.hunters) {
+      if (h.dead || !h.volatile()) continue;
+      const r = s.radius + h.radius;
+      if (dist2(s, h) < r * r) { destroySaucer(s, false); destroyHunter(h, false); break; }
     }
   }
 
