@@ -359,7 +359,9 @@ let X = null;
     // REPOINTED BY CS036 P2: −1 — levelEndHold RETIRED (the pre-nextWave() hold is player-paced now).
     // The first REMOVAL this pin has taken, and it is the same idiom in the other direction: a later
     // phase's row, named. This phase's own claim (its four rows, once) is untouched by it.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 24, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five, less CS036 P2's one retirement (measured, not counted)");
+    // REPOINTED BY CS036 P5: +1 more (dockPingCooldown, the dock push's audio rate limit) — same idiom
+    // again, a later phase's row named rather than wildcarded.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 25, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five, less CS036 P2's one retirement, plus CS036 P5's one addition (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

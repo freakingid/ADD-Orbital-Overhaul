@@ -660,7 +660,8 @@ let X = null;
       || id.startsWith("levelEnd")                                     // CS035 P3
       || id === "hunterVolatileAge" || id.startsWith("hunterPulse")     // CS035 P4
       || id.startsWith("chainGuardDrop")                                // CS035 P6
-      || id === "sweepPowerupCap" || id === "dockPowerupSpeed";         // CS035 P6
+      || id === "sweepPowerupCap" || id === "dockPowerupSpeed"          // CS035 P6
+      || id === "dockPingCooldown";                                     // CS036 P5
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",
       `J: exactly THREE rows were added by THIS phase, in that order (all added since: ${added.join(", ")})`);
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRows.includes(id)).join(","), oldRows.join(","),

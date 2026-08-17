@@ -664,9 +664,11 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // REPOINTED BY CS035 P6: the powerup rebalance's five rows join the excluded set too — the guard
     // drop-weight pity knobs (CHAIN GUARD) and the SMD volume knobs (POWERUPS), named rather than
     // wildcarded, exactly as every repoint above.
+    // REPOINTED BY CS036 P5: dockPingCooldown joins the excluded set — the dock push's audio rate
+    // limit, a later phase's row, named rather than wildcarded, exactly as every repoint above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
       "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade",
-      "dockBounceSpeed",
+      "dockBounceSpeed", "dockPingCooldown",
       "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",
       "hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink",
       "chainGuardDropBase", "chainGuardDropPity", "chainGuardDropMax", "sweepPowerupCap", "dockPowerupSpeed"]);

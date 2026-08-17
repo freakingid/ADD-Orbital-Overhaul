@@ -1173,7 +1173,8 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id.startsWith("levelEnd")                                   // CS035 P3
       || id === "hunterVolatileAge" || id.startsWith("hunterPulse")  // CS035 P4
       || id.startsWith("chainGuardDrop")                             // CS035 P6
-      || id === "sweepPowerupCap" || id === "dockPowerupSpeed";      // CS035 P6
+      || id === "sweepPowerupCap" || id === "dockPowerupSpeed"       // CS035 P6
+      || id === "dockPingCooldown";                                  // CS036 P5
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))

@@ -18,9 +18,9 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 105,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 106,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
                           // 106 -> 105: CS036 P2 retired levelEndHold (CELEBRATION), the pre-nextWave()
-                          // hold, now player-paced. CS036 P5 adds dockPingCooldown and takes it back to 106.
+                          // hold, now player-paced. 105 -> 106: CS036 P5 adds dockPingCooldown (DELIVERY).
   sectionHeaders: 10,     // DEBUG_VARS.filter(v => v.header).length
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only

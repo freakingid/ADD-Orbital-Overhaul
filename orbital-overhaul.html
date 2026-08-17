@@ -3692,6 +3692,14 @@ const DEBUG_VARS = [
   // reads as "how fast it leaves", not "how hard it was hit".
   { id: "dockBounceSpeed", label: "Dock bounce speed", unit: "px/s",
     def: 90, min: 20, max: 300, step: 10 },
+  // CS036 P5 (spec §3.1, FORK-CS036-K): a rate limit on the push's shieldPing(), not on the push
+  // itself. Several pieces of Debris landing on the hull in one frame used to fire one ping each,
+  // stacking into a stutter. `game.dockPingTimer` counts down beside cargoFlash/hpReliefFlash; the
+  // push site pings only at 0, then re-arms to this def. ⛔ At 0 the feature is OFF and every push
+  // pings, exactly as shipped before this knob existed — the clean A/B, same property
+  // magnetResumeDelay's own 0 has, and why min is 0 and not 0.05.
+  { id: "dockPingCooldown", label: "Dock push ping cooldown", unit: "s",
+    def: 0.50, min: 0, max: 3.0, step: 0.05 },
   // CS024 P5/P6c (spec §2.4/§2.6/§4.5/§5): the JUNK chain, THREE knobs per lever (floor, ceil, steps) —
   // see leverKnob() above, which also derives the ▼ / ↳ / (inv) markers straight off LEVERS. junkCount
   // is the driver (sawtooths every 10 levels, so it wears ▼); the three sizes are fully independent (no
@@ -3865,7 +3873,13 @@ const DEBUG_VARS = [
   // CS023 P2's satellite-vs-satellite bounce restitution — archetype-independent, stays (spec §0).
   // CS024 P5 gives it its proper GLOBAL-trailing home in this rebuild (it previously trailed the ORBIT
   // block as a layout artefact of that block's CS024 P1 removal, not a scoping claim).
-  { id: "debrisBounceRestitution", label: "Satellite bounce restitution", unit: "",
+  // CS036 P5 (FLAG-CS034-e, spec §3.3): label only, "Satellite bounce restitution" -> "Garbage Sat
+  // bounce restitution" — the non-canonical "Satellite" read as the wrong object under CLAUDE.md's
+  // Vocabulary table (this is the GARBAGE SATELLITE'S own bounce). ⛔ `id` is UNCHANGED — it is a
+  // debugShown persistence key inside afd_settings_v1.debug, and renaming it would orphan every
+  // player's saved tuning for this row. "Garbage Sat", not the full "Garbage Satellite", to stay
+  // inside drawDebug's hard 32-char column (drawDebug neither wraps nor truncates).
+  { id: "debrisBounceRestitution", label: "Garbage Sat bounce restitution", unit: "",
     def: DEBRIS_BOUNCE_RESTITUTION, min: 0, max: 1.5, step: 0.05 },
   // CS026 P3 (spec §2.2): how many levels run in the small 1920x1080 world (WORLD_SIZE_EARLY) before the
   // game settles into the 2560x1440 field world for good. worldSizeFor(level) reads this LIVE at every
@@ -7395,6 +7409,12 @@ const game = {
   // guard stops a cheerful pop firing at the moment of death). Decayed in update() beside cargoFlash;
   // zeroed at every direct siren teardown (pause/quit/start/death) so no stale exhale survives.
   hpReliefFlash: 0,
+  // CS036 P5 (spec §3.1): >0 suppresses the dock lockout's push shieldPing() — an audio rate limit,
+  // not a physics one (the push itself is unconditional; see the push site). Counted down beside
+  // cargoFlash/hpReliefFlash for the same Capture.hudVisible-independence reason. Declared in BOTH
+  // this literal and resetRun() per the standing CS016 P3 rule — a startGame()-only field is missed
+  // by every resumed run.
+  dockPingTimer: 0,
   // CS011 P2: the on-screen caption of Dan's current line — the voice channel's VISIBLE echo. text = the
   // line text; dur = its utterance length (from buildUtterance); life = seconds left to display, set to
   // 0.10 + dur + CAPTION_LINGER by showCaption() and decayed in update()'s playing body. drawCaption()
@@ -7699,6 +7719,8 @@ function resetRun(wave, debugRun) {
   game.lowHpSiren = false; AudioSys.lowhp(false); // fresh run never carries the siren over (v3.4 P5)
   game.lowHpPhase = 0;      // CS010 P3: the pulse accumulator starts a fresh run at 0
   game.hpReliefFlash = 0;   // CS010 P3: no stale relief exhale carries into a fresh run
+  game.dockPingTimer = 0;   // CS036 P5: no stale ping cooldown carries into a fresh run (the CS016 P3
+                             // both-places rule — this is the ONLY reset site; startGame() calls this)
   // CS010 P9: Dan's latches. lowHpVoiced false (not yet at low HP); hpFullVoice TRUE (spawns full — no
   // "brand new ship" at wave start); powerVoiced all false. reset() clears any in-flight line + cooldown.
   game.lowHpVoiced = false;
@@ -9970,6 +9992,10 @@ function update(dt) {
   // Capture.hudVisible reason as hudHull/cargoFlash above: a decay that only ran while drawn would freeze
   // while the HUD is hidden with H and pop back on re-show.
   if (game.hpReliefFlash > 0) game.hpReliefFlash = Math.max(0, game.hpReliefFlash - dt);
+  // CS036 P5 (spec §3.1): the dock lockout push's ping cooldown — lives here for the same
+  // Capture.hudVisible-independence reason as cargoFlash/hpReliefFlash above, even though this one is
+  // audio, not HUD: it must decay whether or not anything is drawn.
+  if (game.dockPingTimer > 0) game.dockPingTimer = Math.max(0, game.dockPingTimer - dt);
   // CS035 P3 (spec §3.4/§3.5) — the level-end protection window's per-frame half: the grace countdown that
   // CLOSES the window, and the phase accumulator that drives Ship.draw()'s alpha pulse.
   //   PLACEMENT IS LOAD-BEARING IN ONE DIRECTION: this must stay ABOVE the level-banner tick further down,
@@ -10191,7 +10217,16 @@ function update(dt) {
       if (d < 1e-6) { ux = Math.cos(game.ship.angle); uy = Math.sin(game.ship.angle); d = 1; }
       g.vx = (ux / d) * DEBUG.dockBounceSpeed;
       g.vy = (uy / d) * DEBUG.dockBounceSpeed;
-      AudioSys.shieldPing();
+      // CS036 P5 (spec §3.1): an AUDIO rate limit only — the push above runs unconditionally, every
+      // piece, every frame. Several pieces landing on the hull in the same frame used to fire one ping
+      // each, stacking into a stutter; now the loop still pings the FIRST one it reaches this frame,
+      // arms the cooldown, and every other piece this frame (and every push until the cooldown drains)
+      // pushes silently. At DEBUG.dockPingCooldown === 0 the timer never arms above 0, so every push
+      // pings — the shipped, pre-knob behaviour.
+      if (game.dockPingTimer === 0) {
+        AudioSys.shieldPing();
+        game.dockPingTimer = DEBUG.dockPingCooldown;
+      }
     }
     if (!inRing && game.chain.length < game.cargoMax && inCapture) {
       // CS024 P3 (spec §1.2/§4.2): CS017 P5's ONE-SHOT BONUS PAYOUT STOOD HERE — an

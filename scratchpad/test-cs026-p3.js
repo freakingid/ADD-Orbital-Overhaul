@@ -775,6 +775,9 @@ let X = null;
     // NARROWED AGAIN BY CS036 P2 — `levelDone`, the completion announcement, is the FIFTH and last field
     // of that window, reset at the same site for the same reason. Same treatment, by name; a sixth would
     // still fail this trap.
+    // NARROWED AGAIN BY CS036 P5 — `dockPingTimer`, the dock push's ping cooldown, is a NEW CS016-P3-rule
+    // field, unrelated to the level-end window (it lives beside hpReliefFlash, not that group). Same
+    // treatment: filtered out by name.
     const DROPPED_LINES = new Set([
       "game.deliveryTicker = null;",
       "game.pendingAch = [];",
@@ -786,6 +789,7 @@ let X = null;
       "game.levelEndPulseT = 0;",
       "game.levelEndFreeze = false;",
       "game.levelDone = null;",
+      "game.dockPingTimer = 0;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu

@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.35 · Changeset: CS036 · Phase: P4 · Registry: 105 · Levers: 18
+Version: 1.0.0.35 · Changeset: CS036 · Phase: P5 · Registry: 106 · Levers: 18
 
 ## Phase ledger — CS036
 
@@ -42,9 +42,17 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P4 · Registry: 105 · Levers: 1
 
 ## Working / verified
 
-- Full suite on a full clone: **147 files, 143 passed, 3 failed, 0 skipped, 0 timed out** — the three
-  failures are the standing pre-existing set (see Known issues), unchanged from P3's 143/3.
+- Full suite on a full clone: **148 files, 145 passed, 3 failed, 0 skipped, 0 timed out** — the three
+  failures are the standing pre-existing set (see Known issues), unchanged from P4's 143/3 (net +2
+  passing files: P5's own new test plus the registry-count shift no longer breaking anything).
   `node --check` on the extracted script passes.
+
+- **Thirteen suite files repointed for the registry count moving 105 → 106, all named in-commit.**
+  Five formula pins (`test-cs027-p2/-p6`, `test-cs029-p4`, `test-cs030-p1`, `test-cs026-p5`) take a
+  `+1`. Five "later phase" allowlists (`test-cs025-p1/-p2/-p5`, `test-cs026-p2/-p6`) gain
+  `dockPingCooldown` as a named exception, same idiom every prior registry-growing phase used.
+  `test-cs024-p6b`'s collapsed-order strip and `test-cs024-p6c`'s non-lever count (51 → 52) take the
+  new row. `test-cs026-p3`'s TRAP 5 `DROPPED_LINES` gains `game.dockPingTimer = 0;` by name.
 
 - New `scratchpad/test-cs036-p4.js` (52 assertions): the raised `hunterPulseGrow` bound and all four
   retuned defs read from the registry itself; re-runs of CS035 P4's own don't-mutate (§G) and
@@ -94,6 +102,21 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P4 · Registry: 105 · Levers: 1
   retune argued for moving either. **⛔ G18's colour ask stays reversed** — `COLOR.satellite` unchanged,
   `lerpColor()` stays deleted; the punch is motion-only, per Paul's explicit re-decision this session.
   `DIFFICULTY-LEVERS.md`'s not-a-lever row and GDD §2's volatility bullet both take the new numbers.
+
+- P5 — dock ping cooldown + FLAG-CS034-e (spec §3.1/§3.3). Two small, unrelated fixes. New knob
+  `dockPingCooldown` (DELIVERY, def 0.50/min 0/max 3.0/step 0.05/s), registry 105 → **106**. New
+  `game.dockPingTimer` counts down beside `cargoFlash`/`hpReliefFlash`; the dock lockout's push site
+  pings only at 0, then re-arms to the cooldown. **⛔ The push itself is unchanged** — velocity still
+  SET not added, same magnitude/direction/facing-fallback, every piece pushed every frame regardless
+  of whether that frame pings. **⛔ At 0 the feature is off** and every push pings, matching shipped
+  behaviour before this knob existed — the clean A/B. Reset in `resetRun()` (not only `startGame()`,
+  which calls it) per the standing CS016 P3 both-places rule. Second fix: `debrisBounceRestitution`'s
+  label → `"Garbage Sat bounce restitution"` (was the non-canonical `"Satellite bounce restitution"`),
+  **id unchanged** (it's a `debugShown` persistence key in `afd_settings_v1.debug`). Thirteen suite
+  files repointed for the registry-count shift, all named in-commit; new `test-cs036-p5.js` (32
+  assertions) confirmed to catch four hand-mutated regressions (no cooldown gate, push velocity added
+  not set, timer not reset in `resetRun()`, label reverted). `test-registry.js`'s `COUNTS` → 106.
+  GDD §2's dock-lockout passage takes the new ping-cooldown behaviour.
 
 - New `scratchpad/test-cs036-p2.js` (127 assertions, seeded) drives the real `update()`, the real
   keydown listener and the real `handleGamepadMenu()`: a real bullet kills the last size-1 Garbage
@@ -265,9 +288,9 @@ None.
 
 ## Next up
 
-- **CS036 P5 — dock ping cooldown + FLAG-CS034-e**, registry 105 → **106**. Then P6 (suite triage). ⛔
-  The ceremony is complete as of P3, and the heartbeat punch is complete as of P4; neither lands
-  anything further.
+- **CS036 P6 — suite triage**: `test-f2.js` §g, `test-v36-death.js` §A, `test-cs023-p3.js` TRAP 3 (§4)
+  plus FLAG-CS031-c's `game.celebration = null;` in `resetShip()`. ⛔ The ceremony is complete as of
+  P3, the heartbeat punch as of P4, and the two small fixes as of P5; none lands anything further.
 
 - **P7's doc sweep — five GDD passages now describe a build that no longer exists.** None is a code
   defect; the GDD is §2 = shipped only, so all five are the sweep's. The build's own remaining

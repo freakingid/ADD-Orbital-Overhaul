@@ -634,7 +634,10 @@ function evalSlice(literal) {
       // dockPowerupSpeed, POWERUPS, appended after engineMassMult) — CS035 P6's rows, not P6b's. Same
       // reasoning a tenth time.
       .replace(/,chainGuardDropBase,chainGuardDropPity,chainGuardDropMax/, "")
-      .replace(/,sweepPowerupCap,dockPowerupSpeed/, "");
+      .replace(/,sweepPowerupCap,dockPowerupSpeed/, "")
+      // CS036 P5 repoint: and dockPingCooldown (DELIVERY, appended right after dockBounceSpeed) — the
+      // dock push's ping cooldown, CS036 P5's row, not P6b's. Same reasoning an eleventh time.
+      .replace(/,dockPingCooldown/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
