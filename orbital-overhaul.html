@@ -630,14 +630,17 @@ const CARGO_TURN = 0.0;         // PLAYTEST KNOB (CS010 §3, the proposed "inert
 const DOCK_RADIUS = 88;
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
 const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
-// CS020: px PAST dock.radius — the dock's "neighborhood". Two readers, and they must be the same
-// number: the towed/incidental tag at capture (a piece hooked INSIDE the neighborhood was never
-// towed in, so it earns no combo) and the CS020 P1b grace window's arm/decay gate (inside the
-// neighborhood a delivery run is safe indefinitely; outside it the run is on a countdown).
-// Deliberately NOT the dock's +10 offload radius, which is a different, smaller number and stays as
-// it is: at +10 a parked player's own magnet grabs would tag `towed` and therefore reset their own
-// combo continuously (the P1b hook reset below). +40 keeps a parked ship's pickups neutral.
-// See GDD 2.10.
+// CS020: px PAST dock.radius — the dock's "neighborhood". Readers, and they must all be the same
+// number: the CS035 P2 DOCK LOCKOUT at the pickup gate (inside the ring the ship cannot hook Debris
+// at all, and a piece that reaches the capture region is pushed back out), the CS020 P1b
+// deliveryCount reset that rides the same gate, and the CS020 P1b grace window's arm/decay gate
+// (inside the neighborhood a delivery run is safe indefinitely; outside it the run is on a
+// countdown). Deliberately NOT the dock's +10 offload radius, which is a different, smaller number
+// and stays as it is: at +10 the lockout would leave a 30px annulus of live pickups around a parked
+// ship — under CS020 that annulus tagged incidentals, and under CS035 it would be the one place the
+// lockout does not reach. +40 makes the incidental category empty by construction.
+// CS035 P2 (§2.4): the third reader named here through CS034 — the towed/incidental tag at capture —
+// is gone with the tag itself. See GDD 2.10.
 const DOCK_NEIGHBORHOOD_PAD = 40;
 // CS020 P1b (FORK-CS020-E): sec a delivery run survives OUTSIDE the dock's neighborhood before
 // game.deliveryCount zeroes. A delivery run is ONE EFFORT — one chain, delivered in one go — and a
@@ -3619,6 +3622,12 @@ const DEBUG_VARS = [
     def: 0.00, min: 0, max: 3.0, step: 0.05 },
   { id: "deliveryFloatFade", label: "Delivery floater fade", unit: "s",
     def: 1.20, min: 0.1, max: 3.0, step: 0.05 },
+  // CS035 P2 (§2.3): the dock lockout's push. Inside the dock's neighborhood ring the ship cannot hook
+  // Debris at all, and a piece that reaches the capture region is shoved straight back out at this
+  // speed instead. The velocity is SET, not added (see the push site in the garbage loop) — a knob that
+  // reads as "how fast it leaves", not "how hard it was hit".
+  { id: "dockBounceSpeed", label: "Dock bounce speed", unit: "px/s",
+    def: 90, min: 20, max: 300, step: 10 },
   // CS024 P5/P6c (spec §2.4/§2.6/§4.5/§5): the JUNK chain, THREE knobs per lever (floor, ceil, steps) —
   // see leverKnob() above, which also derives the ▼ / ↳ / (inv) markers straight off LEVERS. junkCount
   // is the driver (sawtooths every 10 levels, so it wears ▼); the three sizes are fully independent (no
@@ -9670,7 +9679,24 @@ function update(dt) {
   // as the single `magnet` was: the loop itself spends magnet budget, so a per-piece re-read would let
   // the pull switch off partway through the array and make the frame's behaviour depend on array order.
   const magnet = powerActive("magnet");
-  const pulling = magnetPulling();
+  // CS035 P2 (spec §2.1/§2.5): THE DOCK LOCKOUT TEST — the ship inside the dock's NEIGHBORHOOD RING
+  // (dock.radius + DOCK_NEIGHBORHOOD_PAD), not the +10 offload radius and not dock.radius. This is the
+  // same expression the capture gate below used to compute inline; it MOVED up here, it was not added.
+  // Hoisted above the loop with `magnet`/`pulling` because it is a property of the SHIP, not of a
+  // piece — per-piece it would be the same answer N times a frame. Three consumers: the capture gate
+  // (which it shuts), the push (which it arms), and `pulling` (which it suppresses). Its fourth, the
+  // CS020 towed/incidental tag, is GONE — see the tombstone in the dock-offload block below.
+  const dockPad = game.dock ? game.dock.radius + DOCK_NEIGHBORHOOD_PAD : 0;
+  const inRing = !!game.dock && dist2(game.ship, game.dock) < dockPad * dockPad;
+  // CS035 P2 (spec §2.5, FORK-G): the ring suppression rides `pulling`, the SUPPRESSIBLE name — never
+  // `magnet`, the raw one the two spend sites read (that split is the block directly above, and this
+  // phase does not get to relax it). Without this a Magnet running at the dock drags every loose piece
+  // within MAGNET_RANGE onto the ship to be pushed away, pulled back, and pushed away again — a
+  // permanent churn at the exact spot the player is trying to read a score off. pickR follows
+  // `pulling`, so the widened circle collapses to GARBAGE_PICKUP in here too: correct and intended,
+  // the circle is moot when the gate above it is shut, and CS025's "the circle comes back WITH the
+  // pull" rule stays in step.
+  const pulling = magnetPulling() && !inRing;
   const pickR = pulling ? GARBAGE_PICKUP * MAGNET_PICKUP_MULT : GARBAGE_PICKUP;
   for (const g of game.garbage) {
     g.update(dt);
@@ -9692,25 +9718,50 @@ function update(dt) {
     // Capture region = the base GARBAGE_PICKUP circle OR the Scoop mouth (v3.3 P3). MAGNET_PICKUP_MULT
     // multiplies the CIRCLE only, and the box is independent, so there's no double-counting; at
     // scoopLevel 0 inScoopBox is always false, so this is byte-identical to the pre-scoop pickup.
-    if (game.chain.length < game.cargoMax &&
-        (dist2(g, game.ship) < pickR * pickR || inScoopBox(g))) {
+    // CS035 P2: given a NAME because the lockout's push and the capture gate ask the identical
+    // question — the push is exactly "a piece that would have been captured, while the gate is shut".
+    const inCapture = dist2(g, game.ship) < pickR * pickR || inScoopBox(g);
+    // CS035 P2 (spec §2.3, FORK-E): THE PUSH. Inside the ring nothing can be hooked, so a piece that
+    // reaches the ship or the scoop mouth is shoved radially outward rather than loitering on the hull
+    // to be re-tested every frame (and, coalescence being a separate system that keeps running, fusing
+    // into a Hunter at the player's own position while they offload).
+    // ⛔ VELOCITY IS SET, NEVER ADDED. A piece pinned between the ship and the dock is inside the
+    // region on consecutive frames; adding would let it accumulate speed frame over frame.
+    // ⛔ NOT debrisBounce(). That is a mass-aware two-body ELASTIC solver written for satellites, and
+    // its own dispatch comment warns against handing it bodies outside its contract: a canister has
+    // `mass` but no `size`, and the ship is not in its contract at all.
+    // Deliberately NOT gated on chain length — §2.1's rule is "Debris that reaches the ship or the
+    // scoop mouth is pushed away", at every chain length including full and including zero.
+    // THE SHIP IS COMPLETELY UNAFFECTED: no recoil, no velocity change, no damage, no hit-stun.
+    // shieldPing() is the shipped "a contact was deflected" tell, reused as-is — NO new audio method.
+    if (inRing && inCapture) {
+      let [ux, uy] = shortDelta(game.ship.x, game.ship.y, g.x, g.y);    // ship -> piece (wrap-aware)
+      let d = Math.hypot(ux, uy);
+      // A piece resting EXACTLY on the ship's centre has no direction to be pushed along, and the
+      // house `|| 0.0001` guard would hand it a velocity of zero — pinned on the hull, re-tested every
+      // frame, with coalescence still running around it. Fall back to the ship's own facing: the piece
+      // is ON the hull, so every direction is outward, and this one is always defined.
+      if (d < 1e-6) { ux = Math.cos(game.ship.angle); uy = Math.sin(game.ship.angle); d = 1; }
+      g.vx = (ux / d) * DEBUG.dockBounceSpeed;
+      g.vy = (uy / d) * DEBUG.dockBounceSpeed;
+      AudioSys.shieldPing();
+    }
+    if (!inRing && game.chain.length < game.cargoMax && inCapture) {
       // CS024 P3 (spec §1.2/§4.2): CS017 P5's ONE-SHOT BONUS PAYOUT STOOD HERE — an
       // `if (g.bonus) { g.bonus = false; addScore(BONUS_CANISTER_SCORE); ...float... }` above the
       // single/clump branch, whose flag-clear was what made "paid once per clump" true across a partial
       // scoop. Removed with the canister; the capture gate below is otherwise untouched.
-      // CS020: a node is TOWED if it was hooked OUTSIDE the dock's neighborhood, and an INCIDENTAL if
-      // it was hooked inside it. Computed HERE — once, at the moment of capture, above the single/clump
-      // branch so ONE expression covers both push paths (the same placement idiom as the bonus-canister
-      // award directly above). Tagging at capture rather than counting pops at the dock is load-bearing:
-      // the chain is LIFO and both push sites append to the tail the offload pops from, so a piece
-      // hooked while parked JUMPS THE QUEUE and is delivered first — any count-based scheme would spend
-      // the escalation on the in-ring pickups and demote the genuinely towed load. See GDD 2.10.
-      const pad = game.dock ? game.dock.radius + DOCK_NEIGHBORHOOD_PAD : 0;
-      const inRing = !!game.dock && dist2(game.ship, game.dock) < pad * pad;
-      // CS020 P1b: gathering again starts a NEW effort. An INCIDENTAL never does this —
-      // it is neutral to the counter in both directions (FORK-CS020-B).
+      // CS035 P2 (spec §2.4): CS020's TOWED/INCIDENTAL TAG STOOD HERE — a `const pad`/`const inRing`
+      // pair computed at the moment of capture, feeding `towed: !inRing` onto both push sites below.
+      // The ring test itself survives (hoisted above the loop, where the lockout arms off it); only the
+      // tag is gone. Reaching this line now MEANS the ship was outside the ring, so every node this
+      // block creates is a towed one by construction — there is nothing left to tag.
+      // CS020 P1b: gathering again starts a NEW effort.
       // THE `!inRing` GUARD IS LOAD-BEARING: resetting on EVERY hook would mean a magnet grab at the
-      // dock kills a player's own run mid-offload — the exact unfairness this phase exists to remove.
+      // dock kills a player's own run mid-offload — the exact unfairness CS020 P1b exists to remove.
+      // ⛔ CS035 P2 KEEPS IT, and it is not dead code to be tidied even though the gate above now
+      // carries the same `!inRing`: it states the reset's OWN precondition at the reset, which is what
+      // survives if the lockout is ever narrowed to a smaller radius than the ring.
       // This is also what BOUNDS the counter, and the bound is structural rather than policed:
       // between any two resets only nodes already in the chain can be counted, and the pickup gate
       // above bounds the chain at game.cargoMax, therefore deliveryCount <= cargoMax. That is what
@@ -9727,8 +9778,8 @@ function update(dt) {
         g.dead = true;
         game.chain.push({
           x: g.x, y: g.y, px: g.x, py: g.y,
-          spin: g.spin, spinRate: g.spinRate, mass: g.mass,  // carry towing weight onto the node (F5)
-          towed: !inRing                                     // CS020: earns the delivery combo (see above)
+          spin: g.spin, spinRate: g.spinRate, mass: g.mass   // carry towing weight onto the node (F5)
+          // CS035 P2 (§2.4): `towed: !inRing` STOOD HERE. Every node is towed now — see the gate above.
         });
         AudioSys.pickup();
         // Count-based Magnet expiry (B-5): spend one budget per canister HOOKED — counted at the hook,
@@ -9749,9 +9800,8 @@ function update(dt) {
         for (let k = 0; k < take; k++) {
           game.chain.push({
             x: g.x, y: g.y, px: g.x, py: g.y,
-            spin: g.spin, spinRate: g.spinRate, mass: pMass,
-            towed: !inRing         // CS020: one scoop is one capture — every `take` node gets the
-                                   // SAME tag, from the expression computed once above the branch
+            spin: g.spin, spinRate: g.spinRate, mass: pMass
+            // CS035 P2 (§2.4): the clump path's own `towed: !inRing` STOOD HERE, same as the single's.
           });
         }
         AudioSys.pickup();
@@ -9854,128 +9904,111 @@ function update(dt) {
     if (nearDock && game.chain.length > 0) {
       game.offloadTimer -= dt;
       if (game.offloadTimer <= 0) {
-        const node = game.chain.pop(); // canisters peel off from the tail
-        // CS020: TOWED (hooked outside the dock neighborhood, the work of an actual haul) vs INCIDENTAL
-        // (hooked while already parked in it). `!== false` is load-bearing, not style: a node with no
-        // `towed` field at all — which is every chain node any older test seeds by hand — defaults to
-        // TOWED, so absence never silently demotes a delivery. Only an explicit false demotes.
-        const towed = node.towed !== false;   // absent => towed
-        // CS029 P4 (§6.1): the ONE shared origin expression for both delivery branches below — the
-        // dock is static for the whole visit (Dock.update() only advances `spin`), which is the fixed
-        // point the gate asked for. Computed once here so the two branches can't drift apart.
+        game.chain.pop();   // canisters peel off from the tail
+        // CS035 P2 (spec §2.4): CS020's TOWED/INCIDENTAL SPLIT STOOD HERE — `const towed = node.towed
+        // !== false;` and an `if (towed) { ... } else { ... }` wrapped around everything below, whose
+        // else branch paid a flat DOCK_BASE_SCORE, pushed its own size-12 floater and rang
+        // AudioSys.deliver(1). §2 made the incidental category EMPTY BY CONSTRUCTION — the dock lockout
+        // at the pickup gate means no node can be hooked inside the ring at all — so that branch became
+        // unreachable, and it and the tag are both gone. The `!== false` idiom ("absence defaults to
+        // TOWED", written so a hand-seeded chain node with no such field was never silently demoted)
+        // went with it: with no tag anywhere, absence is the only case there is.
+        // ⛔ THE POP ITSELF IS UNCHANGED and still peels from the TAIL. The LIFO order is exactly what
+        // let an incidental jump the queue and land in that dead branch (§0.2 — the real mechanism,
+        // never a counter reset); with none left to jump it, a visit is one unbroken escalating run.
+        // `node` lost its only reader with the tag, so the binding went too — the pop is called for
+        // its side effect on game.chain, which is all it was ever needed for here.
+        // CS029 P4 (§6.1): the delivery ticker's origin — the dock is static for the whole visit
+        // (Dock.update() only advances `spin`), which is the fixed point that gate asked for. It was
+        // computed here so the two delivery branches could not drift apart; CS035 P2 left it in place,
+        // one consumer down, because it still names the anchor once at the top of the pop handler.
         const deliveryAnchorX = game.dock.x, deliveryAnchorY = game.dock.y - DOCK_RADIUS * DELIVERY_FLOAT_ANCHOR_FRAC;
-        if (towed) {
-          game.deliveryCount++;
-          const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
-          addScore(pts);
-          // Achievement stats (F9): per-game delivered count (Scrap Runner) + best combo this visit
-          // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
-          // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
-          game.stats.delivered++;
-          game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
-          // CS018 P8 (PLANNED-FEATURES-CS018.md §4.3, replaces the v3.6 P3 single ===10 emitter):
-          // four independent "passes through N exactly once per visit" latches — same idiom as the
-          // deliveryCount===12 Heavy Hauler / ===CARGO_CAP_MAX Maxed Out latches below — each awarding
-          // ONE powerup. Cumulatively: 1 for 8-11, 2 for 12-15, 3 for 16-19, 4 for 20-23 delivered.
-          // Each launches from the dock's own position on a fresh random vector, exactly as the old
-          // ===10 emitter did.
-          // CS035 P1 (§1.3): the "SALVAGE BONUS" floater that used to fire on the first award (8) is
-          // deleted — the lab measured -15.7px ink overlap against the re-tuned delivery ticker. The
-          // reward-tier powerup award itself is untouched.
-          if (game.deliveryCount === 8 || game.deliveryCount === 12 ||
-              game.deliveryCount === 16 || game.deliveryCount === 20) {
-            const a = rand(0, TAU);
-            dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED);
-          }
-          // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
-          // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.
-          Achievements.lifetime.bestDeliveredGame = Math.max(Achievements.lifetime.bestDeliveredGame, game.stats.delivered);
-          game.stats.pacifistStreak++;
-          game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
-          // Zen Master (lifetime, per-EVENT): each haul whose no-fire delivery streak REACHES 5 counts once.
-          // pacifistStreak passes through 5 exactly once per haul (firing resets it to 0), so === 5 latches
-          // once; a longer haul (6,7,…) doesn't re-fire, and a fresh 5-streak after firing is a new event.
-          if (game.stats.pacifistStreak === 5) Achievements.lifetime.pacifistTowEvents++;
-          if (game.stats.delivered === 1 && game.stats.gameTime <= 60) game.stats.speedRecycler = true;
-          // Heavy Hauler (weekly) + The Long Haul (lifetime fullChains) + Freight Baron (lifetime, per-EVENT):
-          // a FIXED >=12-in-one-visit milestone, deliberately decoupled from the growing game.cargoMax
-          // (FLAG A-5-a / B-8-b) — deliveryCount passes through 12 exactly once per qualifying visit, so all
-          // three latch once per visit.
-          if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; Achievements.lifetime.heavyHaulerEvents++; }
-          // Maxed Out (lifetime, CS012 P3): deliveryCount passes through CARGO_CAP_MAX exactly once per
-          // qualifying visit (same "passes through" latch idiom as the ===12 check above). Celebration
-          // (floater + gold ring pulse) fires at this same instant — no voice line (deferred, FORK-CS012-B b).
-          if (game.deliveryCount === CARGO_CAP_MAX) {
-            game.stats.maxChainVisit = true;
-            // CS035 P1 (§1.3): the "MAX HAUL" floater is deleted — same -15.7px ink overlap against
-            // the re-tuned delivery ticker as SALVAGE BONUS above. The HUD cargo flash below, the
-            // ticker itself, and the dock_24 voice line now carry the moment (FLAG-CS035-a).
-            game.cargoFlash = HUD_CAP_FLASH;
-          }
-          // CS018 P9: a full-cap 24-piece visit ALSO triggers the SUPER MEGA DELIVERY — guaranteed
-          // six-type set + the snapshot hunter sweep + the coalescence pause (see superMegaDelivery()).
-          // Same "passes through CARGO_CAP_MAX exactly once per visit" latch as Maxed Out above, kept
-          // as its OWN block: Maxed Out is an achievement latch, this is a game event — and P10 hooks
-          // the dock_24 voice line HERE, not into VoiceSys.dockDelivery's tier chain. SILENT this phase.
-          if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
-          Achievements.lifetime.delivered++;
-          Achievements.lifetime.deliveryScore += pts;
-          // CS026 P4 (spec §3.3a/§3.4): rise read from the DELIVERY registry knobs. CS029 P4
-          // (model C, gate G1/§6.3): the towed branch no longer spawns a new floater per canister — one
-          // ticker lives for the whole visit, pinned at the dock anchor, its text rewritten to the
-          // running visit total as each canister lands. It is released (unpinned, becomes an ordinary
-          // rising/fading floater) at the visit's last canister, below. The running total is carried on
-          // the ticker itself — there is nowhere else that needs it.
-          // CS034 P8 (spec §3.5): size grows per piece (deliveryFloatSize/SizeStep/SizeMax) and life
-          // splits into a hold (full opacity after release) plus a fade (the linear falloff) — the
-          // old single-life knob is retired.
-          if (!game.deliveryTicker) {
-            game.deliveryTicker = new FloatText("+" + pts, deliveryAnchorX, deliveryAnchorY,
-              COLOR.dock, DEBUG.deliveryFloatSize, DEBUG.deliveryFloatRise,
-              DEBUG.deliveryFloatHold + DEBUG.deliveryFloatFade, DEBUG.deliveryFloatFade);
-            game.deliveryTicker.pinned = true;
-            game.deliveryTicker.total = pts;
-            game.floaters.push(game.deliveryTicker);
-          } else {
-            game.deliveryTicker.total += pts;
-            game.deliveryTicker.text = "+" + game.deliveryTicker.total;
-            // CS034 P8 (spec §3.5): size grows one step per piece, clamped at the ceiling.
-            game.deliveryTicker.size = Math.min(DEBUG.deliveryFloatSizeMax,
-              DEBUG.deliveryFloatSize + DEBUG.deliveryFloatSizeStep * (game.deliveryCount - 1));
-          }
-          AudioSys.deliver(game.deliveryCount);
-          // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
-          // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
-          // THE LATCH, no flag needed) and deliveryCount is intact at this instant. 1–4 pieces says nothing.
-          // breakChain()/scatterChain() also zero deliveryCount but never reach here, so they stay silent.
-          if (game.chain.length === 0) {
-            VoiceSys.dockDelivery(game.deliveryCount);
-            releaseDeliveryTicker(); // §6.3: released as an ordinary floater at the last canister
-          }
+        game.deliveryCount++;
+        const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
+        addScore(pts);
+        // Achievement stats (F9): per-game delivered count (Scrap Runner) + best combo this visit
+        // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
+        // milestone (Heavy Hauler weekly + The Long Haul lifetime); and lifetime delivered/score.
+        game.stats.delivered++;
+        game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
+        // CS018 P8 (PLANNED-FEATURES-CS018.md §4.3, replaces the v3.6 P3 single ===10 emitter):
+        // four independent "passes through N exactly once per visit" latches — same idiom as the
+        // deliveryCount===12 Heavy Hauler / ===CARGO_CAP_MAX Maxed Out latches below — each awarding
+        // ONE powerup. Cumulatively: 1 for 8-11, 2 for 12-15, 3 for 16-19, 4 for 20-23 delivered.
+        // Each launches from the dock's own position on a fresh random vector, exactly as the old
+        // ===10 emitter did.
+        // CS035 P1 (§1.3): the "SALVAGE BONUS" floater that used to fire on the first award (8) is
+        // deleted — the lab measured -15.7px ink overlap against the re-tuned delivery ticker. The
+        // reward-tier powerup award itself is untouched.
+        if (game.deliveryCount === 8 || game.deliveryCount === 12 ||
+            game.deliveryCount === 16 || game.deliveryCount === 20) {
+          const a = rand(0, TAU);
+          dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED);
+        }
+        // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
+        // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.
+        Achievements.lifetime.bestDeliveredGame = Math.max(Achievements.lifetime.bestDeliveredGame, game.stats.delivered);
+        game.stats.pacifistStreak++;
+        game.stats.pacifistBest = Math.max(game.stats.pacifistBest, game.stats.pacifistStreak);
+        // Zen Master (lifetime, per-EVENT): each haul whose no-fire delivery streak REACHES 5 counts once.
+        // pacifistStreak passes through 5 exactly once per haul (firing resets it to 0), so === 5 latches
+        // once; a longer haul (6,7,…) doesn't re-fire, and a fresh 5-streak after firing is a new event.
+        if (game.stats.pacifistStreak === 5) Achievements.lifetime.pacifistTowEvents++;
+        if (game.stats.delivered === 1 && game.stats.gameTime <= 60) game.stats.speedRecycler = true;
+        // Heavy Hauler (weekly) + The Long Haul (lifetime fullChains) + Freight Baron (lifetime, per-EVENT):
+        // a FIXED >=12-in-one-visit milestone, deliberately decoupled from the growing game.cargoMax
+        // (FLAG A-5-a / B-8-b) — deliveryCount passes through 12 exactly once per qualifying visit, so all
+        // three latch once per visit.
+        if (game.deliveryCount === 12) { game.stats.fullChainVisit = true; Achievements.lifetime.fullChains++; Achievements.lifetime.heavyHaulerEvents++; }
+        // Maxed Out (lifetime, CS012 P3): deliveryCount passes through CARGO_CAP_MAX exactly once per
+        // qualifying visit (same "passes through" latch idiom as the ===12 check above). Celebration
+        // (floater + gold ring pulse) fires at this same instant — no voice line (deferred, FORK-CS012-B b).
+        if (game.deliveryCount === CARGO_CAP_MAX) {
+          game.stats.maxChainVisit = true;
+          // CS035 P1 (§1.3): the "MAX HAUL" floater is deleted — same -15.7px ink overlap against
+          // the re-tuned delivery ticker as SALVAGE BONUS above. The HUD cargo flash below, the
+          // ticker itself, and the dock_24 voice line now carry the moment (FLAG-CS035-a).
+          game.cargoFlash = HUD_CAP_FLASH;
+        }
+        // CS018 P9: a full-cap 24-piece visit ALSO triggers the SUPER MEGA DELIVERY — guaranteed
+        // six-type set + the snapshot hunter sweep + the coalescence pause (see superMegaDelivery()).
+        // Same "passes through CARGO_CAP_MAX exactly once per visit" latch as Maxed Out above, kept
+        // as its OWN block: Maxed Out is an achievement latch, this is a game event — and P10 hooks
+        // the dock_24 voice line HERE, not into VoiceSys.dockDelivery's tier chain. SILENT this phase.
+        if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
+        Achievements.lifetime.delivered++;
+        Achievements.lifetime.deliveryScore += pts;
+        // CS026 P4 (spec §3.3a/§3.4): rise read from the DELIVERY registry knobs. CS029 P4
+        // (model C, gate G1/§6.3): the towed branch no longer spawns a new floater per canister — one
+        // ticker lives for the whole visit, pinned at the dock anchor, its text rewritten to the
+        // running visit total as each canister lands. It is released (unpinned, becomes an ordinary
+        // rising/fading floater) at the visit's last canister, below. The running total is carried on
+        // the ticker itself — there is nowhere else that needs it.
+        // CS034 P8 (spec §3.5): size grows per piece (deliveryFloatSize/SizeStep/SizeMax) and life
+        // splits into a hold (full opacity after release) plus a fade (the linear falloff) — the
+        // old single-life knob is retired.
+        if (!game.deliveryTicker) {
+          game.deliveryTicker = new FloatText("+" + pts, deliveryAnchorX, deliveryAnchorY,
+            COLOR.dock, DEBUG.deliveryFloatSize, DEBUG.deliveryFloatRise,
+            DEBUG.deliveryFloatHold + DEBUG.deliveryFloatFade, DEBUG.deliveryFloatFade);
+          game.deliveryTicker.pinned = true;
+          game.deliveryTicker.total = pts;
+          game.floaters.push(game.deliveryTicker);
         } else {
-          // CS020: an incidental. It recycles and it PAYS — a canister is a canister — but it is not part
-          // of the haul, so it earns no combo and touches nothing else: not game.deliveryCount, not the
-          // delivery stats, not the lifetime counters, and therefore none of the deliveryCount-keyed
-          // latches downstream (the 8/12/16/20 reward tiers, Heavy Hauler, Maxed Out, the Super Mega
-          // Delivery). Fixing it AT THE COUNTER is what keeps those correct without a second guard.
-          // AudioSys.deliver(1) deliberately, not the combo pitch: audible, but flat.
-          // CS026 P4 (spec §3.5/FORK-CS026-G): QUIETED, not folded in — same text, but COLOR.dim + size
-          // 12 so it never reads as, or shares a tally with, the towed branch's floater. Same
-          // rise/hold/fade knobs (CS034 P8) so a Magnet-parked run of incidentals separates too, not
-          // just towed hauls.
-          // CS026 P6 (gate Q5) / CS029 P4 (§6.1): born at the dock anchor, like the towed branch — ONE
-          // shared origin for both, so a Magnet-fed run of incidentals reads in the same place as a real
-          // haul. §6.3: this branch stays an ORDINARY floater and must never be folded into the model-C
-          // ticker — CS020 separated the two on purpose so an incidental never shares a tally with a
-          // towed canister. CS034 P9 (GATE B, B2): COLOR.dim read as too dim to read at the dock anchor's
-          // distance — swapped for COLOR.dock, the same colour the towed ticker uses. Size (12, still
-          // smaller than the ticker's grown size) is the one thing still distinguishing an incidental from
-          // a real haul; fade/hold were already shared via the DEBUG knobs below.
-          addScore(DOCK_BASE_SCORE);
-          game.floaters.push(new FloatText("+" + DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,
-            COLOR.dock, 12, DEBUG.deliveryFloatRise,
-            DEBUG.deliveryFloatHold + DEBUG.deliveryFloatFade, DEBUG.deliveryFloatFade));
-          AudioSys.deliver(1);
+          game.deliveryTicker.total += pts;
+          game.deliveryTicker.text = "+" + game.deliveryTicker.total;
+          // CS034 P8 (spec §3.5): size grows one step per piece, clamped at the ceiling.
+          game.deliveryTicker.size = Math.min(DEBUG.deliveryFloatSizeMax,
+            DEBUG.deliveryFloatSize + DEBUG.deliveryFloatSizeStep * (game.deliveryCount - 1));
+        }
+        AudioSys.deliver(game.deliveryCount);
+        // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
+        // block only runs while chain.length > 0, so the emptying pop happens exactly once (THE GATE IS
+        // THE LATCH, no flag needed) and deliveryCount is intact at this instant. 1–4 pieces says nothing.
+        // breakChain()/scatterChain() also zero deliveryCount but never reach here, so they stay silent.
+        if (game.chain.length === 0) {
+          VoiceSys.dockDelivery(game.deliveryCount);
+          releaseDeliveryTicker(); // §6.3: released as an ordinary floater at the last canister
         }
         game.offloadTimer = DOCK_OFFLOAD_INTERVAL;
       }

@@ -242,25 +242,30 @@ const hudBody = (() => {
   eq(comboText(X), null, "B: ⛔ absent even at the moment it used to read \"COMBO 8/8\"");
 })();
 
-// ================= (C) incidentals do not advance the counter; readout stays absent =================
+// ================= (C) a capture attempt at the dock changes nothing; readout stays absent ==========
+// REPOINTED BY CS035 P2 (§2.1/§2.4). This section staged an INCIDENTAL — a piece hooked while parked
+// inside the ring — and checked that it advanced no counter and produced no readout. The dock lockout
+// deletes that category outright: inside the ring the piece is not hooked at all, it is pushed back out.
+// Both cases keep their staging and their baselines; what they assert is the stronger outcome (no hook,
+// no pay, no counter movement), and the readout claim this file actually owns is untouched.
 (function sectionC() {
-  console.log("(C) an incidental at dock.radius + 39 still leaves the counter unchanged; readout absent");
+  console.log("(C) a capture attempt at dock.radius + 39 hooks nothing and leaves the counter alone; readout absent");
 
   // (C1) at a ZERO baseline.
   {
     const X = build();
     X.startGame(); quiet(X);
-    eq(comboText(X), null, "C1: absent before the incidental (control)");
+    eq(comboText(X), null, "C1: absent before the attempt (control)");
     placeShip(X, DOCK_NEIGHBORHOOD_PAD - 1);        // dock.radius + 39 — INSIDE the ring
-    feedCanister(X);
-    hold(X, DOCK_NEIGHBORHOOD_PAD - 1, 1);           // one frame hooks it, tagged incidental
-    eq(X.game.chain.length, 1, "C1: (setup) the piece was hooked, control");
-    eq(X.game.chain[0].towed, false, "C1: (setup) ...and tagged INCIDENTAL, control");
+    const piece = feedCanister(X);
+    hold(X, DOCK_NEIGHBORHOOD_PAD - 1, 1);           // one frame: the lockout refuses it
+    eq(X.game.chain.length, 0, "C1: ⛔ (setup) the piece was NOT hooked — the dock lockout (CS035 P2)");
+    eq(piece.dead, false, "C1: (setup) ...it is still loose in the field, pushed away");
     const s0 = X.game.score;
-    hold(X, -20, 10);                                // into the offload zone; long enough for one pop
-    eq(X.game.deliveryCount, 0, "C1: an incidental does not advance deliveryCount from 0");
-    eq(X.game.score - s0, DOCK_BASE_SCORE, "C1: it still pays the flat incidental rate");
-    eq(comboText(X), null, "C1: readout absent after the incidental");
+    hold(X, -20, 10);                                // into the offload zone; nothing to offload
+    eq(X.game.deliveryCount, 0, "C1: nothing advanced deliveryCount from 0");
+    eq(X.game.score - s0, 0, "C1: ⛔ and it pays nothing at all — the flat incidental rate is gone with the branch");
+    eq(comboText(X), null, "C1: readout still absent");
   }
 
   // (C2) at a NON-ZERO baseline.
@@ -276,12 +281,12 @@ const hudBody = (() => {
     placeShip(X, DOCK_NEIGHBORHOOD_PAD - 1);          // dock.radius + 39 — still inside the ring
     feedCanister(X);
     hold(X, DOCK_NEIGHBORHOOD_PAD - 1, 1);
-    eq(X.game.chain[X.game.chain.length - 1].towed, false, "C2: (setup) the new piece is tagged INCIDENTAL, control");
+    eq(X.game.chain.length, 0, "C2: ⛔ (setup) the new piece was refused, so the chain stays empty");
     const s0 = X.game.score;
     hold(X, -20, 10);
-    eq(X.game.deliveryCount, 3, "C2: the incidental leaves deliveryCount exactly at 3 (not advanced)");
-    eq(X.game.score - s0, DOCK_BASE_SCORE, "C2: it pays the flat incidental rate, not the escalating one");
-    eq(comboText(X), null, "C2: readout stays absent after the incidental too");
+    eq(X.game.deliveryCount, 3, "C2: the counter is left exactly at 3 — the finished run is neither advanced nor reset");
+    eq(X.game.score - s0, 0, "C2: ⛔ and nothing was paid");
+    eq(comboText(X), null, "C2: readout stays absent either way");
   }
 })();
 

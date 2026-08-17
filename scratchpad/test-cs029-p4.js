@@ -79,11 +79,15 @@ const src = scriptSource();
   eq((src.match(/releaseDeliveryTicker\(\);/g) || []).length, 5,
     "A: ⛔ releaseDeliveryTicker() is called at exactly 5 sites — the last-canister release plus the four abnormal-termination resets");
 
-  // Both delivery branches share ONE computed anchor pair — the §6.1 "one origin expression" rule.
+  // The anchor is computed ONCE in the offload block — the §6.1 "one origin expression" rule.
   assert(/const deliveryAnchorX = game\.dock\.x, deliveryAnchorY = game\.dock\.y - DOCK_RADIUS \* DELIVERY_FLOAT_ANCHOR_FRAC;/.test(src),
-    "A: the shared anchor is computed once, in the dock-offload block, before the towed/incidental split");
-  eq((src.match(/deliveryAnchorX, deliveryAnchorY/g) || []).length, 2,
-    "A: ...and read by name at exactly two FloatText call sites (towed ticker birth, incidental push)");
+    "A: the shared anchor is computed once, in the dock-offload block, at the top of the pop handler");
+  // REPOINTED BY CS035 P2 (§2.4): the anchor had TWO readers — the towed ticker's birth and the
+  // incidental branch's push. The dock lockout made the incidental category empty by construction, so
+  // that branch (and its FloatText) is deleted and ONE reader is left. The rule this pinned — one
+  // computed origin, never two that can drift apart — is unaffected, and with one branch cannot fail.
+  eq((src.match(/deliveryAnchorX, deliveryAnchorY/g) || []).length, 1,
+    "A: ...and read by name at the one FloatText call site left, the ticker's birth (CS035 P2 deleted the other)");
 })();
 
 // ================= (B) the registry =====================
@@ -93,7 +97,8 @@ const src = scriptSource();
   // REPOINTED BY CS030 P3: +2 later (celebrationScrollStep, celebrationEmblemSize) — a later phase's
   // rows, named rather than re-litigated. This phase's own claim (G1=C adds nothing) is unaffected.
   // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added).
-  eq(X.DEBUG_ENTRIES.length, 91, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two and CS034 P8's net four later rows) — G1=C carries no new registry row");
+  // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed).
+  eq(X.DEBUG_ENTRIES.length, 92, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four and CS035 P2's one later rows) — G1=C carries no new registry row");
   assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
   assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
     "B: no minGap knob either — that belongs to model B, which was not picked");
@@ -272,31 +277,33 @@ function stageVisit(X, canisterCount) {
   }
 })();
 
-// ================= (E) the incidental branch: unchanged, never folded into the ticker =====================
+// ================= (E) the incidental branch: DELETED BY CS035 P2, and it stays deleted ==========
+// REPOINTED BY CS035 P2 (§2.4). This section owned the incidental branch's own floater — its size,
+// text, colour, unpinned-ness and shared dock anchor. §2's dock lockout makes the incidental category
+// empty BY CONSTRUCTION (a piece cannot be hooked while the ship is inside the ring at all), so the
+// branch was unreachable and was deleted along with the `towed` tag that selected it. The section
+// inverts rather than being dropped: it now pins that a chain node still carrying a stale
+// `towed: false` — which is what every older test seeds by hand — delivers as an ORDINARY towed
+// canister, tally and ticker included, and that nothing pushes a size-12 flat-rate floater any more.
 (function sectionE() {
-  console.log("(E) incidentals: own size/text, dock-anchored, never touch or join the ticker");
+  console.log("(E) the incidental branch is gone: a stale `towed: false` node delivers as a normal towed one");
   const X = buildGame();
   const g = stageVisit(X, 0);
-  // Two incidentals: hooked while already parked, so towed = false on both.
+  // Two nodes tagged the old way. The tag is dead data now; it must not demote anything.
   g.chain.push({ x: g.ship.x + 5, y: g.ship.y, px: g.ship.x, py: g.ship.y, spin: 0, spinRate: 0, mass: 1, towed: false });
   g.chain.push({ x: g.ship.x + 10, y: g.ship.y, px: g.ship.x, py: g.ship.y, spin: 0, spinRate: 0, mass: 1, towed: false });
 
   for (let f = 0; f < 30 && g.chain.length > 0; f++) X.update(1 / 60);
-  eq(g.chain.length, 0, "E: (setup) both incidentals offloaded");
-  eq(g.deliveryCount, 0, "E: incidentals never touch the tally");
-  eq(g.deliveryTicker, null, "E: ...and never create a ticker at all");
-
-  // REPOINTED BY CS034 P9 (GATE B, B2): COLOR.dim read too dim to see, brightened to COLOR.dock (the
-  // same colour the towed ticker uses) — size 12 is what's left distinguishing an incidental.
-  const incidentals = g.floaters.filter(f => f.size === 12);
-  eq(incidentals.length, 2, "E: ⛔ each incidental gets its OWN ordinary floater — not folded into any ticker");
-  for (const f of incidentals) {
-    eq(f.text, "+" + X.DOCK_BASE_SCORE, "E: an incidental's text is the flat DOCK_BASE_SCORE, never accumulated");
-    eq(f.color, X.COLOR.dock, "E: an incidental floater is COLOR.dock (CS034 P9 GATE B — was COLOR.dim)");
-    eq(f.size, 12, "E: an incidental floater is size 12");
-    eq(f.pinned, false, "E: an incidental floater is never pinned");
-    close(f.x, g.dock.x, "E: an incidental is born at the dock anchor, same as the towed branch");
-  }
+  eq(g.chain.length, 0, "E: (setup) both nodes offloaded");
+  eq(g.deliveryCount, 2, "E: ⛔ both counted — a stale `towed: false` demotes nothing, the branch that read it is gone");
+  eq(g.floaters.filter(f => f.size === 12).length, 0,
+    "E: ⛔ NO size-12 flat-rate floater exists any more — the incidental push was deleted with its branch");
+  const tickers = g.floaters.filter(f => /^\+\d+$/.test(f.text));
+  eq(tickers.length, 1, "E: ⛔ one ticker for the visit, the model-C rule, with nothing beside it");
+  eq(tickers[0].text, "+" + (X.DOCK_BASE_SCORE + (X.DOCK_BASE_SCORE + X.DOCK_BONUS_STEP)),
+    "E: ...and it accumulated BOTH pops on the escalating formula, not two flat DOCK_BASE_SCOREs");
+  close(tickers[0].x, g.dock.x, "E: ...born at the dock anchor, the one origin expression left");
+  eq(g.deliveryTicker, null, "E: ...and released at the last canister, so it is an ordinary floater now");
 })();
 
 // ================= (F) TRAPs =====================

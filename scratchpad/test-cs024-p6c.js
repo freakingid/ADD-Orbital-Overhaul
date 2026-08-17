@@ -626,7 +626,10 @@ let X = null;
   // CS034 P8 repoint: -1, +5 net +4 (deliveryFloatLife retired; deliveryFloatSize/SizeStep/SizeMax/
   // Hold/Fade added in its place, DELIVERY — the delivery ticker's size growth and hold/fade split).
   // Same reasoning: legibility tuning on a REWARD, no chain, no floor/ceil/steps triple.
-  eq(nonLever.length, 37, "G: 37 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8's registry");
+  // CS035 P2 repoint: +1 more (dockBounceSpeed, DELIVERY — how fast the dock lockout shoves a piece of
+  // Debris back out of the capture region). Not a lever: a fixed feel number for a rule that is on or
+  // off by position, not a pressure axis that escalates with the level. No chain, no triple.
+  eq(nonLever.length, 38, "G: 38 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

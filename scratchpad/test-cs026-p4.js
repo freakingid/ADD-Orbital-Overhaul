@@ -156,11 +156,15 @@ let X = null;
     "A: ⛔ THE TRAP — draw()'s alpha divides by this.fade (defaults to the constructed life), not a literal");
   assert(!/this\.life \/ 1\.1/.test(ftBody), "A: ...and the old literal 1.1 divisor is gone");
 
-  // -- the two delivery push sites read the live DEBUG knobs --
+  // -- the delivery push site reads the live DEBUG knobs --
   // REPOINTED BY CS034 P8 (spec §3.5): deliveryFloatLife is retired; both sites now read
   // deliveryFloatRise plus the hold+fade pair. The "exactly two sites" claim moves to that shape.
-  eq((codeSrc.match(/DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade/g) || []).length, 2,
-    "A: exactly TWO push sites read DEBUG.deliveryFloatRise plus the hold+fade pair — the towed and incidental branches");
+  // RE-REPOINTED BY CS035 P2 (§2.4): there is only ONE delivery push site now. The dock lockout makes
+  // the incidental category empty by construction, so that branch — and the FloatText push in it —
+  // is deleted. P4's claim (every delivery floater reads the live knobs, none hardcodes) is intact;
+  // it simply has one subject instead of two.
+  eq((codeSrc.match(/DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade/g) || []).length, 1,
+    "A: the ONE surviving push site reads DEBUG.deliveryFloatRise plus the hold+fade pair — the towed ticker (CS035 P2 deleted the incidental branch)");
   // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS029 P4 (§0.3/§6.1/§6.3, model C), THEN AGAIN BY
   // CS034 P8 (spec §3.5), THEN AGAIN BY CS034 P9 (GATE B, B2). The origin moved from `node.x, node.y`
   // (the popped node) to the ship (P6), then to a static dock anchor (P4) shared as
@@ -172,17 +176,23 @@ let X = null;
   // visit; that shape is asserted in test-cs029-p4.js/test-cs034-p8.js, not here.
   assert(/game\.deliveryTicker = new FloatText\("\+" \+ pts, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, DEBUG\.deliveryFloatSize, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\);/.test(scriptSrc),
     "A: the TOWED branch's ticker reads deliveryFloatSize (P8) and the live rise/hold/fade knobs, and is born at the dock anchor");
-  assert(/new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, 12, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\)/.test(scriptSrc),
-    "A: ⛔ the INCIDENTAL branch is quieted by SIZE only (12) — COLOR.dock (CS034 P9) matches the towed branch's brightness — same dock anchor origin");
+  // REPOINTED BY CS035 P2 (§2.4), INVERTED: the incidental branch's push site is deleted with the
+  // branch, so what P4 owned here is now an ABSENCE — nothing pushes a flat DOCK_BASE_SCORE floater
+  // at the dock any more, and no delivery floater is hardcoded at size 12.
+  assert(!/new FloatText\("\+" \+ DOCK_BASE_SCORE/.test(scriptSrc),
+    "A: ⛔ the INCIDENTAL branch's flat-rate floater is GONE (CS035 P2 — the category is empty by construction)");
 
   // -- every other FloatText call site is untouched: total call sites vs. sites naming the new knobs --
   // REPOINTED BY CS035 P1 (§1.3): the SALVAGE BONUS and MAX HAUL call sites are deleted outright
   // (ink overlap against the re-tuned delivery ticker), dropping the total from ten to eight. This
   // phase's own claim — two sites touched, the rest untouched — is otherwise unaffected.
+  // RE-REPOINTED BY CS035 P2 (§2.4): the incidental branch's call site goes with the branch, eight to
+  // seven, and this phase's touched sites two to one. The untouched remainder — the claim that
+  // actually belongs to P4 — is unmoved at six.
   const totalSites = (codeSrc.match(/new FloatText\(/g) || []).length;
   const knobSites = (codeSrc.match(/DEBUG\.deliveryFloatRise/g) || []).length;
-  eq(totalSites, 8, "A: (setup) eight FloatText call sites exist in the source (CS035 P1 removed two)");
-  eq(knobSites, 2, "A: ...exactly two of them were touched by this phase");
+  eq(totalSites, 7, "A: (setup) seven FloatText call sites exist in the source (CS035 P1 removed two, CS035 P2 one more)");
+  eq(knobSites, 1, "A: ...exactly one of them is still one of this phase's (the incidental push is deleted)");
   eq(totalSites - knobSites, 6, "A: ⛔ ...and the other six are byte-identical to the parent (CS012 P3's own trailing-optional precedent)");
 })();
 
@@ -301,8 +311,13 @@ let X = null;
 
   // Twenty-four TOWED nodes, all at the SAME y (colinear behind the ship) so the birth-position gap
   // between two consecutive floaters is due to time alone — isolating the rise separation this phase
-  // exists to create, rather than pre-existing chain sag. Then ONE incidental node on top (pops FIRST,
-  // since it is pushed last and the offload block pops from the array's tail).
+  // exists to create, rather than pre-existing chain sag. Then ONE node on top (pops FIRST, since it
+  // is pushed last and the offload block pops from the array's tail).
+  // REPOINTED BY CS035 P2 (§2.4): that 25th node used to be an INCIDENTAL — `towed: false`, delivered
+  // through a branch that paid a flat DOCK_BASE_SCORE and touched no tally. The dock lockout makes
+  // that category empty by construction, so the branch is deleted and the tag is dead data. The node
+  // KEEPS its stale tag here deliberately: what this section now proves is that such a node delivers
+  // as an ordinary towed canister — the queue jump of §0.2 has nowhere left to land.
   g.chain.length = 0;
   for (let i = 0; i < 24; i++) {
     g.chain.push({ x: g.ship.x - (i + 1) * A.CHAIN_LINK, y: g.ship.y, px: g.ship.x - (i + 1) * A.CHAIN_LINK - 1, py: g.ship.y,
@@ -310,7 +325,7 @@ let X = null;
   }
   g.chain.push({ x: g.ship.x - 25 * A.CHAIN_LINK, y: g.ship.y, px: g.ship.x - 25 * A.CHAIN_LINK, py: g.ship.y,
     spin: 0, spinRate: 0, mass: 1, towed: false });
-  eq(g.chain.length, 25, "E: (setup) 24 towed + 1 incidental, seeded directly as plain objects");
+  eq(g.chain.length, 25, "E: (setup) 24 towed + 1 carrying a stale `towed: false`, seeded directly as plain objects");
 
   let smd = 0;
   A.__spySMD(() => { smd++; });
@@ -336,9 +351,9 @@ let X = null;
     A.update(1 / 60);
   }
   eq(g.chain.length, 0, "E: (setup) the whole chain — all 25 nodes — was offloaded within the frame budget");
-  eq(g.deliveryCount, 24, "E: ⛔ deliveryCount reaches 24 — the incidental never joined the towed tally");
-  eq(g.stats.delivered, 24, "E: ...only the 24 towed pieces counted as delivered");
-  eq(g.stats.bestCombo, 24, "E: ...bestCombo reaches 24");
+  eq(g.deliveryCount, 25, "E: ⛔ deliveryCount reaches 25 — the stale `towed: false` demotes nothing (CS035 P2)");
+  eq(g.stats.delivered, 25, "E: ...all 25 pops counted as delivered");
+  eq(g.stats.bestCombo, 25, "E: ...bestCombo reaches 25");
   eq(g.stats.maxChainVisit, true, "E: ...Maxed Out's per-visit flag latches");
   eq(g.stats.fullChainVisit, true, "E: ...Heavy Hauler's per-visit flag latches (deliveryCount passed through 12)");
   eq(smd, 1, "E: ⛔ the Super Mega Delivery fires exactly once — the trigger is untouched");
@@ -346,9 +361,8 @@ let X = null;
   // The pts formula (unchanged) — checked from the constants, not hardcoded, so a future retune of
   // DOCK_BASE_SCORE/DOCK_BONUS_STEP does not make this pin stale for the wrong reason.
   let expectedGain = 0;
-  for (let n = 1; n <= 24; n++) expectedGain += A.DOCK_BASE_SCORE + A.DOCK_BONUS_STEP * (n - 1);
-  expectedGain += A.DOCK_BASE_SCORE; // the one incidental
-  eq(g.score - score0, expectedGain, "E: ⛔ the score gain matches the UNCHANGED pts formula for 24 towed + 1 incidental");
+  for (let n = 1; n <= 25; n++) expectedGain += A.DOCK_BASE_SCORE + A.DOCK_BONUS_STEP * (n - 1);
+  eq(g.score - score0, expectedGain, "E: ⛔ the score gain matches the UNCHANGED pts formula, now across all 25 pops (CS035 P2)");
 
   // -- the floaters --
   // ⛔ RESHAPED BY CS029 P4 (model C, gate G1/§6.3). P4/P6's claim here was about a per-canister
@@ -368,18 +382,16 @@ let X = null;
   // mutated in place as canisters land — `pushes` holds a live reference, so filtering the towed
   // push on a snapshot size no longer works. The stable identity is "not size 12" (the incidental's
   // fixed sentinel size); a growing ticker never coincides with that value in this build's ranges.
+  // REPOINTED BY CS035 P2 (§2.4): the incidental floater's identity checks (its text, its shared
+  // colour, its distinguishing size) have no subject left — the push site is deleted with its branch.
+  // They invert to one absence: size 12 was that floater's sentinel, and nothing wears it now.
   const towedFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size !== 12 && p.obj.text.startsWith("+"));
   const incidentalFloaters = pushes.filter(p => p.obj.color === A.COLOR.dock && p.obj.size === 12);
   eq(towedFloaters.length, 1, "E: ⛔ the towed visit pushes exactly ONE floater — the ticker, born on canister 1 — not one per canister");
-  eq(incidentalFloaters.length, 1, "E: exactly 1 incidental floater was pushed");
-  eq(incidentalFloaters[0].obj.text, "+" + A.DOCK_BASE_SCORE, "E: the incidental floater's text is unchanged (+DOCK_BASE_SCORE)");
-  assert(incidentalFloaters[0].obj.color === towedFloaters[0].obj.color,
-    "E: ⛔ CS034 P9 (GATE B): the incidental floater now SHARES the towed branch's colour (brightened off COLOR.dim)");
-  assert(incidentalFloaters[0].obj.size !== towedFloaters[0].obj.size,
-    "E: ⛔ ...but not its size — it must not read as part of the same tally");
+  eq(incidentalFloaters.length, 0, "E: ⛔ and NO incidental floater was pushed — that branch is deleted (CS035 P2)");
   // REPOINTED BY CS034 P8: life0/fade split off the retired single deliveryFloatLife knob into
   // deliveryFloatHold + deliveryFloatFade (life0) and deliveryFloatFade (fade).
-  for (const p of [...towedFloaters, ...incidentalFloaters]) {
+  for (const p of towedFloaters) {
     eq(p.obj.rise, A.DEBUG.deliveryFloatRise, "E: every delivery floater's rise is the live knob");
     eq(p.obj.life0, A.DEBUG.deliveryFloatHold + A.DEBUG.deliveryFloatFade, "E: ...and every one's life0 is hold+fade");
     eq(p.obj.fade, A.DEBUG.deliveryFloatFade, "E: ...and every one's fade is the live fade knob");
@@ -389,8 +401,8 @@ let X = null;
   //    visit total, and is released (un-pinned) once the visit is over. --
   const ticker = towedFloaters[0].obj;
   let expectedTotal = 0;
-  for (let n = 1; n <= 24; n++) expectedTotal += A.DOCK_BASE_SCORE + A.DOCK_BONUS_STEP * (n - 1);
-  eq(ticker.text, "+" + expectedTotal, "E: ⛔ the ticker's FINAL text is the visit's full running total (50+75+...+625 = 8100 at these knobs)");
+  for (let n = 1; n <= 25; n++) expectedTotal += A.DOCK_BASE_SCORE + A.DOCK_BONUS_STEP * (n - 1);
+  eq(ticker.text, "+" + expectedTotal, "E: ⛔ the ticker's FINAL text is the visit's full running total — all 25 pops now (CS035 P2)");
   eq(ticker.pinned, false, "E: ⛔ the ticker is released (un-pinned) once the visit's last canister lands");
   eq(g.deliveryTicker, null, "E: and the live reference is cleared — the next visit starts a fresh ticker");
 

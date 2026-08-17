@@ -402,7 +402,13 @@ const dockBlockCode = stripComments(dockBlockSrc);
   const branchIdx = codeSrc.indexOf("if (g.pieces === 1) {");
   assert(inRingIdx > 0 && resetIdx > inRingIdx && branchIdx > resetIdx,
     "A: the reset sits between the inRing derivation and the single/clump branch — one site covers both push paths");
-  eq((codeSrc.match(/towed: !inRing/g) || []).length, 2, "A: P1's tag is still on BOTH push sites");
+  // REPOINTED BY CS035 P2 (§2.4), INVERTED: P1's tag is DELETED — the dock lockout makes the incidental
+  // category empty by construction, so there is nothing left for a tag to distinguish. What P1b itself
+  // owns, the `if (!inRing)` reset asserted directly above, is untouched and still reads the same
+  // single `inRing` const — which is now hoisted above the loop and also arms the lockout.
+  eq((codeSrc.match(/towed: !inRing/g) || []).length, 0, "A: ⛔ P1's tag is gone from both push sites (CS035 P2)");
+  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture\) \{/.test(codeSrc),
+    "A: ...replaced by the LOCKOUT at the gate above the reset — no hook happens inside the ring at all");
 
   // -- the new run state --
   assert(/comboGrace: 0,/.test(codeSrc), "A: `comboGrace: 0` is in the game object literal");
@@ -483,10 +489,12 @@ const dockBlockCode = stripComments(dockBlockSrc);
     "A: the ===12 Heavy Hauler latch is byte-unchanged");
   assert(scriptSrc.includes("const DOCK_OFFLOAD_INTERVAL = 0.05;"),
     "A: DOCK_OFFLOAD_INTERVAL is untouched at 0.05 (FORK-CS020-D)");
-  assert(scriptSrc.includes("if (game.chain.length < game.cargoMax &&"),
-    "A: the pickup gate's cargoMax test is untouched");
-  assert(scriptSrc.includes("const towed = node.towed !== false;"),
-    "A: P1's `!== false` default read is untouched");
+  // REPOINTED BY CS035 P2: the cargoMax clause survives intact but now stands SECOND, behind `!inRing`
+  // (asserted above); P1's `!== false` read went with the tag it read.
+  assert(scriptSrc.includes("game.chain.length < game.cargoMax && inCapture"),
+    "A: the pickup gate's cargoMax test is untouched — it just no longer leads the gate");
+  assert(!codeSrc.includes("const towed = node.towed !== false;"),
+    "A: ⛔ P1's `!== false` default read is gone with the tag (CS035 P2 §2.4)");
   // breakChain / scatterChain both still zero the counter and both are correct.
   eq((codeSrc.match(/game\.deliveryCount = 0;/g) || []).length, 5,
     "A: five `game.deliveryCount = 0` sites total — startGame, breakChain, scatterChain, the hook reset, the grace expiry");
@@ -728,9 +736,10 @@ const dockBlockCode = stripComments(dockBlockSrc);
   hold(X, DOCK_NEIGHBORHOOD_PAD + 1, 1);
   eq(X.game.deliveryCount, 0, "G: a TOWED hook at dock.radius+41 ends the effort — the counter resets");
   eq(X.game.chain.length, 6, "G: (setup) the piece really was hooked (5 left + the new one)");
-  eq(X.game.chain[X.game.chain.length - 1].towed, true, "G: ...and it is tagged TOWED (P1)");
 
-  // The mirror image, 2px away: a hook JUST INSIDE the ring is an incidental and is neutral BOTH ways.
+  // The mirror image, 2px away. REPOINTED BY CS035 P2: a hook just INSIDE the ring is not an incidental
+  // any more — it is not a hook. The reset still does not fire (P1b's rule, and the reason it is
+  // written `if (!inRing)` rather than unconditionally), and now nothing joins the chain either.
   const Y = build();
   Y.startGame(); quiet(Y);
   Y.__spySMD(() => {});
@@ -741,15 +750,14 @@ const dockBlockCode = stripComments(dockBlockSrc);
   feedCanister(Y);
   hold(Y, DOCK_NEIGHBORHOOD_PAD - 1, 1);
   eq(Y.game.deliveryCount, 3,
-    "G: an INCIDENTAL hook at dock.radius+39 does NOT reset — a magnet grab at the dock cannot kill your own run");
-  eq(Y.game.chain.length, 6, "G: (setup) it was hooked all the same");
-  eq(Y.game.chain[Y.game.chain.length - 1].towed, false, "G: ...and it is tagged INCIDENTAL (P1)");
-  // ...and it still counts toward nothing when it pops (P1's rule, unchanged by P1b).
+    "G: a capture attempt at dock.radius+39 does NOT reset — a magnet grab at the dock cannot kill your own run");
+  eq(Y.game.chain.length, 5, "G: ⛔ ...and it was not hooked either: the chain is unchanged at 5 (CS035 P2)");
+  // ...so the run finishes as exactly the load it towed in.
   const before = Y.game.stats.delivered;
   hold(Y, -20, 220);
-  eq(Y.game.deliveryCount, 8, "G: the 5 originals finish the SAME run at 8 — the incidental did not join it");
-  eq(Y.game.stats.delivered - before, 5, "G: ...and only the 5 towed pieces counted as delivered");
-  eq(Y.game.chain.length, 0, "G: ...though all 6 pieces were physically recycled");
+  eq(Y.game.deliveryCount, 8, "G: the 5 originals finish the SAME run at 8 — nothing joined or interrupted it");
+  eq(Y.game.stats.delivered - before, 5, "G: ...and exactly those 5 towed pieces counted as delivered");
+  eq(Y.game.chain.length, 0, "G: ...with the chain emptied");
 })();
 
 // ================= (H) THE 130px FARM IS DEAD =====================
@@ -832,9 +840,19 @@ const dockBlockCode = stripComments(dockBlockSrc);
   eq(X.game.stats.pacifistStreak, 0, "I: ...no pacifist streak (FLAG-CS020-a)");
   eq(smd, 0, "I: ...and NO Super Mega Delivery at level 1");
   eq(voice, 0, "I: Dan stays quiet across the whole park");
-  eq(X.game.score - s0, 37500, "I: the park still pays the P1 figure — 600 x 50 flat, plus three repair milestones");
-  // The one-effort rule must not have made in-ring cleanup stop working: the board still clears.
-  eq(X.game.garbage.length, 0, "I: every incidental was still recycled — the Kessler-loop cleanup still works");
+  // REPOINTED BY CS035 P2: P1's figure was 600 flat awards (30,000) plus three repair milestones. Under
+  // the dock lockout not one of the 600 is hooked, so the park pays exactly nothing — and its converse,
+  // named honestly here rather than left as a surprise: IN-RING CLEANUP NO LONGER HAPPENS. A parked ship
+  // cannot mop up the pieces around it; they stay in the field, pushed clear of the hull. That trade is
+  // §2's whole point (the dock is for delivering, not gathering) and is why the pieces are counted here
+  // rather than the claim being dropped.
+  eq(X.game.score - s0, 0, "I: ⛔ the park now pays NOTHING — the lockout supersedes P1's flat rate (CS035 P2)");
+  // Not `=== fed`: with nothing being recycled, 600 pieces saturate the field and the CS024 P3 density
+  // ceiling (garbageSoftMax / garbageHardMax) starts draining it — which is exactly the mechanism that
+  // is supposed to bound a field nobody is clearing. The claim is that the pieces are still THERE in
+  // quantity, held by the ceiling rather than by the dock.
+  assert(X.game.garbage.length > 100 && X.game.garbage.length <= X.DEBUG.garbageHardMax,
+    `I: ⛔ ...and the pieces are still in the field, held only by the density ceiling (${X.game.garbage.length} of ${fed}, ceiling ${X.DEBUG.garbageHardMax}): parking no longer cleans up`);
 })();
 
 // ================= (J) SHIP DEATH =====================

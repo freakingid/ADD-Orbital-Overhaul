@@ -192,7 +192,8 @@ const src = scriptSource();
     // REPOINTED BY CS030 P3: +2 later (celebrationScrollStep, celebrationEmblemSize) — a later phase's
     // rows, named rather than re-litigated. P1's own claim (a data-only collector adds no knob) holds.
     // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added).
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two and CS034 P8's net four later rows — a data-only collector adds no knob");
+    // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed).
+    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four and CS035 P2's one later rows — a data-only collector adds no knob");
     eq(X.LEVERS.length, OLD.LEVERS.length, "G: ⛔ LEVERS.length unchanged");
   }
 

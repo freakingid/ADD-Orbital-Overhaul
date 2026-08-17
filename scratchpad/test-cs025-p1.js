@@ -490,7 +490,11 @@ function fullAndHolding(X, { level = 1 } = {}) {
     const block = scriptSrc.slice(at, scriptSrc.indexOf("--- Powerups: field pickups", at));
     const code = block.split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
     assert(/const magnet = powerActive\("magnet"\);/.test(code), "C4: `magnet` is still the RAW powerActive read");
-    assert(/const pulling = magnetPulling\(\);/.test(code), "C4: `pulling` is the suppressible read");
+    // REPOINTED BY CS035 P2 (spec §2.5): `pulling` took the dock-lockout suppression — inside the dock
+    // ring the pull is off, so a Magnet at the dock cannot churn pieces against the lockout's push. It
+    // rides `pulling` PRECISELY BECAUSE of this split: `magnet` stays raw for the two spend sites
+    // below, which the read-count assertion at the end of this section still holds at three.
+    assert(/const pulling = magnetPulling\(\) && !inRing;/.test(code), "C4: `pulling` is the suppressible read");
     assert(/const pickR = pulling \?/.test(code), "C4: pickR follows `pulling` — the widened circle comes back WITH the pull");
     assert(/if \(pulling\) \{/.test(code), "C4: the attraction branch follows `pulling`");
     assert(/if \(magnet && game\.powerBudget\.magnet > 0\) game\.powerBudget\.magnet--;/.test(code),
@@ -819,7 +823,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "deliveryFloatRise"                           // CS026 P4
       || id.startsWith("deliveryFloatSize") || id === "deliveryFloatHold" || id === "deliveryFloatFade" // CS034 P8
       || id.startsWith("levelBanner")                         // CS026 P5
-      || id.startsWith("celebration");                        // CS030 P3
+      || id.startsWith("celebration")                         // CS030 P3
+      || id === "dockBounceSpeed";                            // CS035 P2
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

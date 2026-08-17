@@ -344,7 +344,9 @@ let X = null;
     // rows, named rather than wildcarded, same idiom as every other TRAP in this suite.
     // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added in
     // its place) — same idiom again, named rather than wildcarded.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 10, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, and CS034 P8's net four (measured, not counted)");
+    // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed) — same idiom
+    // again, a later phase's row named rather than wildcarded.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 11, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four and CS035 P2's one (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

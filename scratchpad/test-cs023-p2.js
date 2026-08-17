@@ -437,9 +437,12 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // silently-restored drift knob is exactly what it exists to catch. CS024 P6's engineMassMult joins
   // the matched set only because /mass/i catches it — it is a POWERUP knob, nothing to do with the
   // drift — so the expectation grows by that one id rather than the regex being narrowed to hide it.
+  // CS035 P2 repoint, same reason: dockBounceSpeed is caught by /bounce/ and is the dock lockout's
+  // push speed — a DELIVERY knob, nothing to do with the drift or with debrisBounce()'s elastic
+  // solver (which it deliberately does not call). It sits first because DELIVERY precedes POWERUPS.
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
-    "engineMassMult,debrisBounceRestitution",
-    "A: REPOINTED BY CS024 P1/P6 — debrisBounceRestitution is still the ONLY survivor of CS023 P4's two knobs (debrisDriftAccel gone); engineMassMult is CS024 P6's new POWERUPS knob");
+    "dockBounceSpeed,engineMassMult,debrisBounceRestitution",
+    "A: REPOINTED BY CS024 P1/P6 + CS035 P2 — debrisBounceRestitution is still the ONLY survivor of CS023 P4's two knobs (debrisDriftAccel gone); engineMassMult is CS024 P6's POWERUPS knob, dockBounceSpeed CS035 P2's DELIVERY one");
   assert(!/\bdrifting\b/.test(codeOnly),
     "A: REPOINTED BY CS024 P1 (inverted) — the `drifting` field appears NOWHERE in executable source");
   eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 0,

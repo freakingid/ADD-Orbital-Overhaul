@@ -17,6 +17,17 @@
 // flat DOCK_BASE_SCORE and touches nothing else. Everything keyed on deliveryCount is then correct
 // with no further edit, because incidentals never advance it.
 //
+// ⛔ REPOINTED THROUGHOUT BY CS035 P2 (PLANNED-FEATURES-CS035.md §2). The TAG IS GONE. §2 closes the
+// dock-parking hole one layer further down: the ship cannot hook Debris AT ALL while it is inside the
+// dock's neighborhood ring, and a piece that reaches the capture region is pushed back out at
+// DEBUG.dockBounceSpeed. That makes the INCIDENTAL CATEGORY EMPTY BY CONSTRUCTION, so `towed: !inRing`,
+// `node.towed !== false` and the whole incidental branch (flat DOCK_BASE_SCORE, its own floater,
+// AudioSys.deliver(1)) were deleted. This file keeps every one of its scenarios and re-points what they
+// assert: where a section proved "the park pays a FLAT rate", it now proves "the park pays NOTHING,
+// because nothing can be hooked"; where it proved "this hook is tagged incidental", it now proves "this
+// hook does not happen". CS020's own claim — the exploit is closed and normal play is untouched —
+// survives strictly strengthened, which is why the sections are re-aimed rather than deleted.
+//
 // Two implementation choices are load-bearing and each has its own section here:
 //   * the radius is the COMBO-RESET one (+40), not the OFFLOAD one (+10) — see (D). At +10 there is a
 //     farmable annulus: hover 20px out, hook pieces tagged `towed` (outside +10) while never travelling
@@ -78,6 +89,8 @@ function assert(cond, msg) { if (cond) passed++; else { failed++; console.error(
 function eq(got, want, msg) { assert(got === want, `${msg} (got ${JSON.stringify(got)}, want ${JSON.stringify(want)})`); }
 function noThrow(fn, msg) { try { fn(); passed++; } catch (e) { failed++; console.error("  FAIL: " + msg + " threw: " + e.stack); } }
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
+// CS035 P2: the lockout's push is measured in px/s, so its assertions need a tolerance, not `===`.
+function close(got, want, msg, eps = 1e-6) { assert(Math.abs(got - want) < eps, `${msg} (got ${got}, want ${want})`); }
 
 // ================= (A, part 1) syntax =====================
 (function sectionA_syntax() {
@@ -313,6 +326,7 @@ function park(X, { level = 1, seconds = 60, feedEvery = 6 } = {}) {
   }
   return {
     fed, smdCalls, voiceCalls,
+    chainLen: X.game.chain.length,     // CS035 P2: the park cannot hook at all, so this is the claim now
     score: X.game.score,
     deliveryCount: X.game.deliveryCount,
     delivered: X.game.stats.delivered,
@@ -358,54 +372,58 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   eq((scriptSrc.match(/game\.dock\.radius \+ 10/g) || []).length, 2,
     "A: the +10 offload radius appears exactly twice (the squared distance test), unchanged");
 
-  // -- the tag, computed once above the single/clump branch --
-  assert(/const pad = game\.dock \? game\.dock\.radius \+ DOCK_NEIGHBORHOOD_PAD : 0;/.test(scriptSrc),
-    "A: the tag's pad expression is dock-null-safe");
-  assert(/const inRing = !!game\.dock && dist2\(game\.ship, game\.dock\) < pad \* pad;/.test(scriptSrc),
+  // -- the ring test. REPOINTED BY CS035 P2: it was computed inside the capture gate (as `pad`/`inRing`)
+  //    to tag the node being hooked; it is now HOISTED above the garbage loop (as `dockPad`/`inRing`),
+  //    because the lockout is a property of the SHIP and is asked once per frame, not once per piece.
+  //    Same expression, same null-safety, same wrap-aware dist2 — a different consumer. --
+  assert(/const dockPad = game\.dock \? game\.dock\.radius \+ DOCK_NEIGHBORHOOD_PAD : 0;/.test(scriptSrc),
+    "A: the ring test's pad expression is dock-null-safe");
+  assert(/const inRing = !!game\.dock && dist2\(game\.ship, game\.dock\) < dockPad \* dockPad;/.test(scriptSrc),
     "A: inRing measures the SHIP against the dock, wrap-aware via dist2");
+  // CS035 P2: the deletions left TOMBSTONE COMMENTS naming `towed: !inRing` and `node.towed !== false`
+  // (the standing house idiom for a removed mechanism), so an inverted pin has to read comment-stripped
+  // source or it scores the tombstone as the thing it says is gone.
+  const execOnly = scriptSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\n]*$/gm, "");
   const tagIdx = scriptSrc.indexOf("const inRing = !!game.dock");
   const branchIdx = scriptSrc.indexOf("if (g.pieces === 1) {");
   assert(tagIdx > 0 && branchIdx > tagIdx,
-    "A: the tag is computed ABOVE the pieces===1 / clump branch, so one expression covers both push paths");
+    "A: the ring test is computed ABOVE the pieces===1 / clump branch — now above the loop entirely");
 
-  // -- BOTH push sites carry the tag --
+  // -- REPOINTED BY CS035 P2, INVERTED: NEITHER push site carries a tag, because there is nothing left
+  //    to distinguish. Reaching a push means the ship was outside the ring; the gate below says so. --
   const pushes = (scriptSrc.match(/game\.chain\.push\(\{/g) || []).length;
   eq(pushes, 2, "A: there are exactly two game.chain.push sites (single + clump scoop)");
-  eq((scriptSrc.match(/towed: !inRing/g) || []).length, 2,
-    "A: BOTH push sites carry `towed: !inRing` — the clump-scoop path is not left untagged");
-  // The clump tag must be OUTSIDE the take loop (computed once), which the shared `inRing` binding
-  // above the branch already guarantees; pin that nothing re-derives it per node.
+  eq((execOnly.match(/towed: !inRing/g) || []).length, 0,
+    "A: ⛔ NEITHER push site carries `towed: !inRing` any more — the tag is deleted (CS035 P2 §2.4)");
   eq((scriptSrc.match(/const inRing =/g) || []).length, 1,
-    "A: inRing is derived exactly once, not re-evaluated per node inside the clump loop");
+    "A: inRing is derived exactly once, not re-evaluated per piece inside the loop");
+  // What replaced the tag: the gate itself refuses the hook. Unconditional — no chain-length clause in
+  // front of it, so it holds at an empty chain exactly as at a full one (§2.2, FORK-F).
+  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture\) \{/.test(scriptSrc),
+    "A: ⛔ the capture gate leads with `!inRing` — the LOCKOUT, which is what makes the tag unnecessary");
 
-  // -- the read, and its default --
-  assert(scriptSrc.includes("const towed = node.towed !== false;"),
-    "A: the offload read is the `!== false` form (absent => towed), not a truthiness test");
-  assert(!/node\.towed\s*\)/.test(scriptSrc) && !/if \(node\.towed/.test(scriptSrc),
-    "A: no bare truthiness test on node.towed anywhere");
+  // -- REPOINTED BY CS035 P2, INVERTED: the `!== false` read went with the tag it read. --
+  assert(!execOnly.includes("const towed = node.towed !== false;"),
+    "A: ⛔ the offload's `!== false` read is GONE — with no tag anywhere, absence is the only case");
+  assert(!/node\.towed/.test(execOnly),
+    "A: ⛔ nothing reads node.towed at all any more, truthily or otherwise");
 
-  // -- VoiceSys.dockDelivery lives INSIDE the towed branch --
-  const popIdx = scriptSrc.indexOf("const node = game.chain.pop();");
-  const towedIdx = scriptSrc.indexOf("const towed = node.towed !== false;");
-  // CS029 P4: the towed branch grew its own inner if/else (the model-C ticker create-vs-update split,
-  // §6.3), so the towed/incidental split's "} else {" is no longer the FIRST one after towedIdx —
-  // anchor the search past AudioSys.deliver(game.deliveryCount), which sits after both.
-  const elseIdx = scriptSrc.indexOf("} else {", scriptSrc.indexOf("AudioSys.deliver(game.deliveryCount);"));
+  // -- REPOINTED BY CS035 P2: with the split deleted there is no "inside the towed branch" left to be
+  //    in. The claim becomes the ordering it was really protecting: the pop, then the delivery voice,
+  //    then the timer re-arm, all in one unbranched handler. --
+  const popIdx = scriptSrc.indexOf("game.chain.pop();   // canisters peel off from the tail");
   const voiceIdx = scriptSrc.indexOf("VoiceSys.dockDelivery(game.deliveryCount);");
-  assert(popIdx > 0 && towedIdx > popIdx, "A: the towed read comes straight after the pop");
-  assert(voiceIdx > towedIdx && voiceIdx < elseIdx,
-    "A: VoiceSys.dockDelivery sits INSIDE the towed branch, above the else");
-
-  // -- offloadTimer is re-armed for BOTH branches --
   const timerIdx = scriptSrc.indexOf("game.offloadTimer = DOCK_OFFLOAD_INTERVAL;");
-  const elseCloseIdx = scriptSrc.indexOf("\n        }\n", elseIdx);
-  assert(timerIdx > elseIdx && timerIdx > elseCloseIdx,
-    "A: game.offloadTimer = DOCK_OFFLOAD_INTERVAL runs AFTER the if/else, for both branches");
+  assert(popIdx > 0, "A: the pop is still the first statement of the offload handler");
+  assert(voiceIdx > popIdx, "A: VoiceSys.dockDelivery sits in the one delivery path there now is");
+  assert(timerIdx > voiceIdx,
+    "A: game.offloadTimer = DOCK_OFFLOAD_INTERVAL is re-armed after the whole handler, as it always was");
   eq((scriptSrc.match(/game\.offloadTimer = DOCK_OFFLOAD_INTERVAL;/g) || []).length, 1,
-    "A: it is armed in exactly one place, not duplicated into both branches");
+    "A: it is armed in exactly one place — there is no second branch to duplicate it into");
 
-  // -- the incidental branch, in full --
-  assert(scriptSrc.includes("addScore(DOCK_BASE_SCORE);"), "A: an incidental pays a flat DOCK_BASE_SCORE");
+  // -- REPOINTED BY CS035 P2, INVERTED: the incidental branch, in full, is DELETED. --
+  assert(!execOnly.includes("addScore(DOCK_BASE_SCORE);"),
+    "A: ⛔ nothing pays a flat DOCK_BASE_SCORE any more — every pop runs the escalating formula");
   // REPOINTED BY CS026 P4 (spec §3.5/§3.6): the incidental floater is QUIETED, not removed — COLOR.dim +
   // size 12 (was COLOR.dock, default size) plus the new deliveryFloatRise/Life knobs, so it separates
   // too but never shares the towed branch's tally or colour (FLAG-CS020-d's "an incidental keeps its
@@ -422,10 +440,15 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // CS034 P9 (GATE B, B2): COLOR.dim read as too dim to read at the dock anchor's distance — swapped
   // for COLOR.dock, the same colour the towed ticker uses. Size 12 is the one thing still
   // distinguishing an incidental from a real haul.
-  assert(/game\.floaters\.push\(new FloatText\("\+" \+ DOCK_BASE_SCORE, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, 12, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\)\);/.test(scriptSrc),
-    "A: an incidental keeps its FloatText (FLAG-CS020-d), quieted per CS026 P4, re-homed to the dock anchor per CS029 P4, brightened to COLOR.dock per CS034 P9 GATE B");
-  assert(scriptSrc.includes("AudioSys.deliver(1);"),
-    "A: an incidental calls AudioSys.deliver(1) — flat, not combo-pitched (FLAG-CS020-e)");
+  assert(!/new FloatText\("\+" \+ DOCK_BASE_SCORE/.test(execOnly),
+    "A: ⛔ FLAG-CS020-d's incidental floater is gone with its branch — the ticker is the only delivery floater");
+  assert(!execOnly.includes("AudioSys.deliver(1);"),
+    "A: ⛔ FLAG-CS020-e's flat deliver(1) is gone too — the pitch climb is unbroken for a whole visit");
+  // And the push that replaced all of it: the piece is shoved back out instead of hooked (§2.3).
+  assert(/g\.vx = \(ux \/ d\) \* DEBUG\.dockBounceSpeed;/.test(execOnly),
+    "A: ⛔ the lockout's push SETS velocity from DEBUG.dockBounceSpeed (never adds — §2.3)");
+  assert(!/debrisBounce\(game\.ship/.test(execOnly),
+    "A: ⛔ and it does NOT hand the ship to debrisBounce(), which was never written for it");
   assert(!/DOCK_INCIDENTAL_SCORE/.test(scriptSrc),
     "A: no DOCK_INCIDENTAL_SCORE constant was invented (FORK-CS020-C: it is DOCK_BASE_SCORE)");
 
@@ -438,8 +461,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     "A: the SMD trigger is byte-unchanged — it is NOT separately gated");
   assert(scriptSrc.includes("const DOCK_OFFLOAD_INTERVAL = 0.05;"),
     "A: DOCK_OFFLOAD_INTERVAL is untouched at 0.05 (FORK-CS020-D)");
-  assert(scriptSrc.includes("if (game.chain.length < game.cargoMax &&"),
-    "A: the pickup gate's cargoMax test is untouched — in-ring pickups still get hooked");
+  // REPOINTED BY CS035 P2: the cargoMax clause is intact, but it no longer stands alone — `!inRing`
+  // leads it (asserted above), and in-ring pickups do NOT get hooked any more. That is the phase.
+  assert(execOnly.includes("game.chain.length < game.cargoMax && inCapture"),
+    "A: the pickup gate's cargoMax test is untouched — it is now the SECOND clause, behind the lockout");
   assert(/static fromNode\(n\) \{[\s\S]{0,240}?new Garbage\(n\.x, n\.y,[\s\S]{0,120}?n\.mass\)/.test(scriptSrc),
     "A: Garbage.fromNode still reads only x/y/mass — a severed node carries no stale tag back");
   assert(!/towed/.test(scriptSrc.slice(scriptSrc.indexOf("static fromNode(n)"), scriptSrc.indexOf("static fromNode(n)") + 300)),
@@ -466,6 +491,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   const X = build();
   const r = park(X, { level: 1, seconds: 60, feedEvery: 6 });
   eq(r.fed, 600, "B1: (setup) 600 canisters were fed across 3600 real frames");
+  // REPOINTED BY CS035 P2: under CS020 all 600 were HOOKED and paid a flat 50 each. Under the dock
+  // lockout none of them is hooked at all — each is pushed back out of the capture region — so the
+  // park's entire income is zero and the chain never holds anything. Strictly stronger than the tag.
+  eq(r.chainLen, 0, "B1: ⛔ nothing is on the chain — a parked ship cannot hook, at all (CS035 P2 §2.1)");
   eq(r.cargoMax, 8, "B1: (setup) level 1's payload cap really is 8 — a 24-piece tow is impossible here");
   eq(r.deliveryCount, 0, "B1: 60 seconds parked advances the combo counter not at all");
   eq(r.delivered, 0, "B1: 60 seconds parked adds nothing to stats.delivered");
@@ -480,10 +509,11 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // touch — FLAG-CS020-c). Bound it from below by the flat pay and from above by an order of magnitude
   // under the pre-fix figure, then pin the exact number so a silent change to either has to explain
   // itself.
-  const flat = 600 * DOCK_BASE_SCORE;
-  assert(r.score >= flat, `B1: the park still pays the flat rate (${r.score} >= ${flat})`);
+  // REPOINTED BY CS035 P2: the flat 30,000 + 7,500 repair-milestone figure was CS020's. With no hook
+  // possible there is no delivery, no flat pay and therefore no repair milestone either — the park is
+  // worth exactly nothing. FLAG-CS020-c's repair-bonus interaction has no subject here any more.
   assert(r.score < 100000, `B1: the park is bounded — nothing like the pre-fix 5,650,000 (got ${r.score})`);
-  eq(r.score, 37500, "B1: the fixed park pays exactly 30,000 flat + 7,500 in pre-existing repair-milestone bonus");
+  eq(r.score, 0, "B1: ⛔ the park now pays NOTHING — the lockout is a stronger bound than the flat rate was");
   console.log(`    fixed build: score=${r.score}  deliveryCount=${r.deliveryCount}  delivered=${r.delivered}  SMD=${r.smdCalls}  voice=${r.voiceCalls}`);
 
   // -- B2: the PRE-FIX build at a pinned SHA. A permanent red control: if this ever stops reproducing
@@ -499,7 +529,9 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   eq(p.smdCalls, 1, "B2: the pre-fix build FIRED the Super Mega Delivery at level 1, cargoMax 8");
   eq(p.voiceCalls, 600, "B2: the pre-fix build had Dan size up a haul 600 times in 60 seconds");
   console.log(`    pre-fix ${PRE_FIX_REF}: score=${p.score}  deliveryCount=${p.deliveryCount}  delivered=${p.delivered}  SMD=${p.smdCalls}  voice=${p.voiceCalls}`);
-  assert(p.score / r.score > 100, `B2: the fix cut the park's yield by more than 100x (${(p.score / r.score).toFixed(0)}x)`);
+  // REPOINTED BY CS035 P2: a ratio needs a non-zero denominator, and the post-lockout park scores 0.
+  assert(p.score > 0 && r.score === 0,
+    `B2: the pre-fix park scored ${p.score} where the current build scores exactly 0 — the hole is not narrowed, it is gone`);
 
   // -- B3: the shorter parks from §1.3, so the whole measured curve is pinned, not just its end --
   for (const [secs, preScore] of [[10, 168750], [30, 1513750]]) {
@@ -509,7 +541,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     const Y = build();
     const y = park(Y, { level: 1, seconds: secs, feedEvery: 6 });
     eq(y.deliveryCount, 0, `B3: fixed, ${secs}s parked leaves deliveryCount at 0`);
-    assert(y.score < preScore / 10, `B3: fixed, ${secs}s parked scores an order of magnitude less (${y.score} vs ${preScore})`);
+    eq(y.score, 0, `B3: fixed, ${secs}s parked scores 0 (CS035 P2 — was a flat ${secs * 10 * DOCK_BASE_SCORE} under CS020)`);
   }
 
   // -- B4: the park's level made no difference pre-fix; it makes none post-fix either --
@@ -518,30 +550,38 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   eq(z.cargoMax, CARGO_CAP_MAX, "B4: (setup) level 12 really does grant the full 24-slot payload");
   eq(z.deliveryCount, 0, "B4: parking at level 12 advances the combo counter not at all either");
   eq(z.smdCalls, 0, "B4: no SMD from a level-12 park — a 24-piece TOW is what earns it");
-  eq(z.score, 37500, "B4: the parked yield is level-independent, and now bounded at both levels");
+  eq(z.score, 0, "B4: the parked yield is level-independent, and is now ZERO at both levels (CS035 P2)");
 })();
 
-// ================= (C) THE TAG =====================
+// ================= (C) THE LOCKOUT (was: THE TAG) =====================
+// REPOINTED THROUGHOUT BY CS035 P2 (§2.1/§2.2/§2.3). Every case here staged a capture either side of the
+// ring boundary and read the resulting node's tag. There is no tag: inside the ring the capture does not
+// happen at all, and the piece is pushed away instead. Each case keeps its staging and its boundary and
+// asserts the new outcome — hooked / not hooked — which is the same question one layer earlier.
 (function sectionC() {
-  console.log("(C) THE TAG — the ship's distance to the dock at the moment of capture, both push paths");
+  console.log("(C) THE LOCKOUT — the ship's distance to the dock decides whether a capture happens at all");
 
   // -- C1: the single-piece push, either side of the boundary. The test is `dist2 < pad*pad`, strictly,
-  //        so a ship exactly ON the boundary is OUTSIDE the neighborhood and its hook is TOWED — the
-  //        same convention the combo reset already used, since both now read the same expression. --
-  for (const [pad, wantTowed, label] of [[41, true, "outside"], [39, false, "inside"], [DOCK_NEIGHBORHOOD_PAD, true, "exactly on"]]) {
+  //        so a ship exactly ON the boundary is OUTSIDE the neighborhood and its hook still lands — the
+  //        same convention the grace gate uses, since both read the same expression. --
+  for (const [pad, wantHook, label] of [[41, true, "outside"], [39, false, "inside"], [DOCK_NEIGHBORHOOD_PAD, true, "exactly on"]]) {
     const X = build();
     X.startGame(); quiet(X);
     X.game.cargoMax = 24;
     placeShip(X, pad);
-    feedCanister(X);
+    const piece = feedCanister(X);
     X.update(1 / 60);
-    eq(X.game.chain.length, 1, `C1: (setup) a piece hooked at dock.radius + ${pad}`);
-    eq(X.game.chain[0].towed, wantTowed,
-      `C1: hooked ${label} the neighborhood (dock.radius + ${pad}) => towed ${wantTowed}`);
+    eq(X.game.chain.length, wantHook ? 1 : 0,
+      `C1: a capture ${label} the neighborhood (dock.radius + ${pad}) => ${wantHook ? "HOOKED" : "REFUSED"}`);
+    if (!wantHook) {
+      eq(piece.dead, false, `C1: ...the refused piece survives, loose in the field`);
+      close(Math.hypot(piece.vx, piece.vy), X.DEBUG.dockBounceSpeed,
+        `C1: ...and leaves at DEBUG.dockBounceSpeed, pushed straight back out (§2.3)`);
+    }
   }
 
-  // -- C2: the clump-scoop push tags EVERY take node, identically --
-  for (const [pad, wantTowed] of [[41, true], [39, false]]) {
+  // -- C2: the clump-scoop path obeys the same lockout, whole --
+  for (const [pad, wantTake] of [[41, 6], [39, 0]]) {
     const X = build();
     X.startGame(); quiet(X);
     X.game.cargoMax = 24;
@@ -549,25 +589,32 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     const g = feedCanister(X, 6);
     g.pieces = 6; g.radius = 7 * Math.sqrt(6);     // the shape coalesceGarbage() gives a 6-piece clump
     X.update(1 / 60);
-    eq(X.game.chain.length, 6, `C2: (setup) a 6-piece clump scooped at dock.radius + ${pad} became 6 nodes`);
-    eq(X.game.chain.filter(n => n.towed === wantTowed).length, 6,
-      `C2: ALL six clump-scoop nodes are towed=${wantTowed} — the tag is not dropped from the clump path`);
-    eq(new Set(X.game.chain.map(n => n.towed)).size, 1,
-      "C2: one scoop is one capture — every node in it carries the identical tag");
+    eq(X.game.chain.length, wantTake,
+      `C2: a 6-piece clump at dock.radius + ${pad} yields ${wantTake} nodes — the clump path is not left un-locked`);
+    if (wantTake === 0) eq(g.pieces, 6, "C2: ...and the clump is intact — a refused scoop takes nothing, not some");
   }
 
-  // -- C3: a PARTIAL clump scoop (chain nearly full) tags its `take` nodes the same way --
+  // -- C3: a PARTIAL clump scoop still works OUTSIDE the ring, and does not happen at all inside it --
   {
     const X = build();
     X.startGame(); quiet(X);
     X.game.cargoMax = 4;
-    placeShip(X, 39);
+    placeShip(X, 41);
     const g = feedCanister(X, 6);
     g.pieces = 6; g.radius = 7 * Math.sqrt(6);
     X.update(1 / 60);
-    eq(X.game.chain.length, 4, "C3: (setup) only 4 of the 6 fit");
-    eq(X.game.chain.every(n => n.towed === false), true, "C3: all four taken nodes are incidentals");
+    eq(X.game.chain.length, 4, "C3: (setup) outside the ring, only 4 of the 6 fit");
     assert(X.game.garbage.some(p => !p.dead && p.pieces === 2), "C3: (setup) the 2-piece leftover floated off");
+
+    const Y = build();
+    Y.startGame(); quiet(Y);
+    Y.game.cargoMax = 4;
+    placeShip(Y, 39);
+    const h = feedCanister(Y, 6);
+    h.pieces = 6; h.radius = 7 * Math.sqrt(6);
+    Y.update(1 / 60);
+    eq(Y.game.chain.length, 0, "C3: ⛔ inside the ring the same partial scoop takes nothing at all");
+    eq(h.pieces, 6, "C3: ...and the clump keeps all six pieces");
   }
 
   // -- C4: the SHIP's distance is what is measured, not the piece's. Ship inside, piece well outside. --
@@ -589,9 +636,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     assert(Math.hypot(g.x - X.game.ship.x, g.y - X.game.ship.y) > GARBAGE_PICKUP,
       "C4: (setup) the piece is beyond the base pickup circle, so the scoop mouth is what captures it");
     X.update(1 / 60);
-    eq(X.game.chain.length, 1, "C4: (setup) the scoop mouth captured it");
-    eq(X.game.chain[0].towed, false,
-      "C4: a scoop-mouth capture is INCIDENTAL when the SHIP is in the neighborhood, however far out the piece is");
+    eq(X.game.chain.length, 0,
+      "C4: ⛔ a scoop-mouth capture is REFUSED when the SHIP is in the neighborhood, however far out the piece is");
+    close(Math.hypot(g.vx, g.vy), X.DEBUG.dockBounceSpeed,
+      "C4: ...and the mouth pushes it away too — the push covers the box, not just the circle (§2.3)");
   }
 
   // -- C5: the mirror. Ship just outside, piece inside — still TOWED. --
@@ -607,13 +655,14 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     assert(pieceDist < X.game.dock.radius + DOCK_NEIGHBORHOOD_PAD,
       `C5: (setup) the PIECE is inside the neighborhood (${pieceDist.toFixed(1)})`);
     X.update(1 / 60);
-    eq(X.game.chain.length, 1, "C5: (setup) hooked");
-    eq(X.game.chain[0].towed, true,
-      "C5: a capture is TOWED when the SHIP is outside the neighborhood, however far in the piece is");
+    eq(X.game.chain.length, 1,
+      "C5: a capture LANDS when the SHIP is outside the neighborhood, however far in the piece is");
   }
 
-  // -- C6: a magnet-assisted hook tags exactly like a plain one --
-  for (const [pad, wantTowed] of [[41, true], [39, false]]) {
+  // -- C6: a magnet-assisted hook obeys the lockout exactly like a plain one. Inside the ring the pull
+  //        itself is suppressed (§2.5) AND the widened circle collapses with it, so the piece staged
+  //        outside the unboosted circle is not even reached, let alone hooked. --
+  for (const [pad, wantHook] of [[41, true], [39, false]]) {
     const X = build();
     X.startGame(); quiet(X);
     X.game.cargoMax = 24;
@@ -625,8 +674,8 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     assert(Math.hypot(g.x - X.game.ship.x, g.y - X.game.ship.y) > GARBAGE_PICKUP,
       `C6: (setup) at dock.radius + ${pad} the piece is outside the UNBOOSTED pickup circle`);
     X.update(1 / 60);
-    eq(X.game.chain.length, 1, `C6: (setup) the magnet's boosted radius hooked it at dock.radius + ${pad}`);
-    eq(X.game.chain[0].towed, wantTowed, `C6: a magnet hook at dock.radius + ${pad} tags towed=${wantTowed}, same as a plain hook`);
+    eq(X.game.chain.length, wantHook ? 1 : 0,
+      `C6: a magnet-assisted capture at dock.radius + ${pad} => ${wantHook ? "HOOKED" : "REFUSED"}, same as a plain one`);
   }
 
   // -- C7: no dock (between waves / before one exists) never crashes and never demotes --
@@ -639,8 +688,8 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     X.game.dock = null;
     feedCanister(X);
     noThrow(() => X.update(1 / 60), "C7: a capture with no dock present does not throw");
-    eq(X.game.chain.length, 1, "C7: (setup) it still hooked");
-    eq(X.game.chain[0].towed, true, "C7: with no dock there is no neighborhood, so the node is TOWED");
+    eq(X.game.chain.length, 1,
+      "C7: with no dock there is no neighborhood and no lockout — the hook lands (CS035 P2: the null-safe ring test)");
   }
 })();
 
@@ -658,21 +707,25 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   const r = X.game.dock.radius;
   assert(20 > 10, "D: (setup) +20 is outside the offload radius — the ship is not delivering while it farms");
   assert(20 < DOCK_NEIGHBORHOOD_PAD, "D: (setup) +20 is inside the neighborhood — the combo would never reset here");
+  // REPOINTED BY CS035 P2: the annulus was closed by TAGGING what it produced; it is now closed by
+  // producing nothing. +20 is inside the ring, so the twenty feeds are refused outright and pushed back
+  // out — there is no farm to drift in and offload.
   const before = X.game.score;
-  for (let i = 0; i < 20; i++) { feedCanister(X); X.update(1 / 60); }
-  eq(X.game.chain.length, 20, "D: (setup) 20 pieces hooked from the annulus");
+  const fed = [];
+  for (let i = 0; i < 20; i++) { fed.push(feedCanister(X)); X.update(1 / 60); }
+  eq(X.game.chain.length, 0, "D: ⛔ NOT ONE of the 20 pieces was hooked — the annulus is inside the lockout");
   eq(X.game.deliveryCount, 0, "D: (setup) nothing was offloaded while hovering at +20");
-  eq(X.game.chain.filter(n => n.towed === false).length, 20,
-    "D: all 20 pieces hooked at dock.radius + 20 are tagged INCIDENTAL — the annulus is inside the tag radius");
+  eq(fed.filter(p => p.dead).length, 0, "D: ...every piece survives, loose in the field");
+  eq(fed.filter(p => Math.abs(Math.hypot(p.vx, p.vy) - X.DEBUG.dockBounceSpeed) < 1e-6).length, 20,
+    "D: ...each one leaving at DEBUG.dockBounceSpeed on the frame it reached the ship");
 
-  // Drift in and offload the farm.
+  // Drift in: there is nothing to offload.
   placeShip(X, 9);
   for (let i = 0; i < 20 && X.game.chain.length > 0; i++) { X.game.offloadTimer = 0; X.update(1 / 60); }
-  eq(X.game.chain.length, 0, "D: (setup) the whole farm was offloaded");
+  eq(X.game.chain.length, 0, "D: (setup) the chain is still empty");
   eq(X.game.deliveryCount, 0, "D: deliveryCount ends at 0 — the farm earned no combo at all");
   eq(X.game.stats.delivered, 0, "D: the farm credited nothing to stats.delivered");
-  eq(X.game.score - before, 20 * DOCK_BASE_SCORE,
-    `D: the farm paid exactly 20 x ${DOCK_BASE_SCORE} = ${20 * DOCK_BASE_SCORE}, flat`);
+  eq(X.game.score - before, 0, "D: ⛔ the farm paid ZERO — not even the flat rate CS020 left it (CS035 P2)");
   eq(smdCalls, 0, "D: no Super Mega Delivery out of a 20-piece farm");
   // The number that would have come out of the pre-fix build, stated so the size of the hole is on record.
   let comboSum = 0; for (let n = 1; n <= 20; n++) comboSum += DOCK_BASE_SCORE + DOCK_BONUS_STEP * (n - 1);
@@ -681,8 +734,14 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
 })();
 
 // ================= (E) THE LIFO ORDERING PROPERTY =====================
+// REPOINTED BY CS035 P2 (§0.2/§2.1). This section owned the mechanism CS035 actually exists to fix: the
+// chain is LIFO, both push sites append to the tail the offload pops from, so a piece hooked while
+// parked JUMPED THE QUEUE and was delivered next — into the branch that paid a flat 50 and advanced
+// nothing. CS020 made that outcome correct-but-jarring; CS035 P2 removes the queue jump at its source
+// by refusing the hook. The staging is unchanged and the claim becomes: the interloper never joins the
+// chain, and the visit's pitch/ticker/escalation run unbroken from 1 to 12.
 (function sectionE() {
-  console.log("(E) THE LIFO PROPERTY — an incidental hooked mid-offload pops FIRST and takes flat 50");
+  console.log("(E) THE LIFO PROPERTY — a piece fed mid-offload is REFUSED, so nothing jumps the queue");
   const X = build();
   X.startGame(); quiet(X);
   X.game.cargoMax = 24;
@@ -691,18 +750,18 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   placeShip(X, 400);
   for (let i = 0; i < 12; i++) { feedCanister(X); X.update(1 / 60); }
   eq(X.game.chain.length, 12, "E: (setup) 12 pieces hooked outside the neighborhood");
-  eq(X.game.chain.every(n => n.towed === true), true, "E: (setup) all 12 are towed");
 
   placeShip(X, 9);
   const track = floaterTracker(X);
   const before = X.game.score;
 
-  // One incidental hooked DURING the offload window: it lands on the tail the offload pops from.
-  feedCanister(X);
+  // One piece fed DURING the offload window — the exact interloper of §0.2.
+  const jumper = feedCanister(X);
   X.game.offloadTimer = 0;
   X.update(1 / 60);
   track.sweep();
-  eq(X.game.chain.length, 12, "E: (setup) the incidental was hooked (13) and one node popped (12)");
+  eq(X.game.chain.length, 11, "E: ⛔ the interloper was REFUSED, so the frame's pop just shortened the haul (12 -> 11)");
+  eq(jumper.dead, false, "E: ...it is still loose in the field, pushed away rather than hooked");
 
   let tickerRef = null;
   for (let i = 0; i < 12 && X.game.chain.length > 0; i++) {
@@ -723,25 +782,29 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // no longer produces a parallel per-canister floater sequence to read it off of. The running total
   // is checked instead, off the ticker's own reference, once it is released at the last canister.
   const pays = track.out.filter(f => /^\+\d+$/.test(f.text)).map(f => Number(f.text.slice(1)));
-  eq(pays.join(","), [DOCK_BASE_SCORE, DOCK_BASE_SCORE].join(","),
-    "E: exactly two floaters are ever CREATED — the incidental (flat 50) and the ticker's birth (also 50)");
+  eq(pays.join(","), String(DOCK_BASE_SCORE),
+    "E: ⛔ exactly ONE floater is ever created — the ticker's birth. No flat-50 interruption (CS035 P2)");
   eq(X.game.deliveryTicker, null, "E: the ticker reference is released once the visit ends");
   assert(tickerRef && tickerRef.pinned === false, "E: the released ticker un-pins and ages like any other floater");
   eq(tickerRef && tickerRef.text, "+" + wantTowedSeq.reduce((a, b) => a + b, 0),
     "E: the released ticker's text is the visit's full running total, 50+75+...+325");
   eq(X.game.deliveryCount, 12, "E: the combo counted the 12 towed nodes and only those");
   eq(X.game.stats.delivered, 12, "E: stats.delivered counted 12, not 13");
-  eq(X.game.stats.bestCombo, 12, "E: bestCombo is 12 — the incidental did not inflate it");
-  const wantScore = DOCK_BASE_SCORE + wantTowedSeq.reduce((a, b) => a + b, 0);
+  eq(X.game.stats.bestCombo, 12, "E: bestCombo is 12 — the refused piece could not inflate it");
+  const wantScore = wantTowedSeq.reduce((a, b) => a + b, 0);
   eq(X.game.score - before, wantScore,
-    `E: total paid is ${wantScore} — the incidental's flat 50 plus the towed load's own escalation, undisturbed`);
+    `E: ⛔ total paid is ${wantScore} — the towed load's own escalation and NOTHING ELSE (no flat 50 in the middle)`);
   eq(X.Achievements.lifetime.deliveryScore, wantTowedSeq.reduce((a, b) => a + b, 0),
     "E: only the towed awards entered lifetime.deliveryScore (FLAG-CS020-b)");
 })();
 
 // ================= (F) THE DEFAULT =====================
+// REPOINTED BY CS035 P2 (§2.4): the `!== false` idiom is deleted with the tag it defended, so EVERY one
+// of these values — `false` included — now delivers as an ordinary canister. The table is kept exactly
+// as it was: it is the seeding surface of two dozen older files, and what it proves now is that a stale
+// tag left behind in any of them cannot demote a delivery.
 (function sectionF() {
-  console.log("(F) THE DEFAULT — absent / undefined / null / 0 all deliver as TOWED; only false demotes");
+  console.log("(F) THE DEFAULT — every seeded shape, stale `towed: false` included, delivers as a full canister");
 
   // The 22-file seeding surface, exactly as those files write it: a bare literal with no `towed`.
   const cases = [
@@ -751,7 +814,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     [{ towed: 0 }, true, "towed: 0 (falsy, but not false)"],
     [{ towed: "" }, true, 'towed: "" (falsy, but not false)'],
     [{ towed: true }, true, "towed: true"],
-    [{ towed: false }, false, "towed: false — the only value that demotes"],
+    [{ towed: false }, true, "towed: false — DEAD DATA since CS035 P2; it demotes nothing"],
   ];
   for (const [extra, wantTowed, label] of cases) {
     const X = build();
@@ -763,7 +826,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     X.game.offloadTimer = 0;
     X.update(1 / 60);
     eq(X.game.chain.length, 0, `F: (setup) ${label} was delivered`);
-    eq(X.game.deliveryCount, wantTowed ? 1 : 0, `F: ${label} => ${wantTowed ? "TOWED" : "INCIDENTAL"} (deliveryCount)`);
+    eq(X.game.deliveryCount, wantTowed ? 1 : 0, `F: ${label} => counted (deliveryCount)`);
     eq(X.game.stats.delivered, wantTowed ? 1 : 0, `F: ${label} => stats.delivered ${wantTowed ? 1 : 0}`);
     eq(X.game.score - before, DOCK_BASE_SCORE, `F: ${label} pays 50 either way on the first canister`);
   }
@@ -782,8 +845,11 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
 })();
 
 // ================= (G) THE LATCHES =====================
+// REPOINTED BY CS035 P2: "40 incidentals" is now "40 feeds a parked ship cannot hook at all", which is
+// why nothing latches. G2 (a genuine 24-piece tow) is untouched by the phase and still fires everything;
+// G3's mixed visit can no longer be built — the dock half of it is refused — which is the point.
 (function sectionG() {
-  console.log("(G) THE LATCHES — 40 incidentals fire nothing; a real 24-piece towed visit still fires everything");
+  console.log("(G) THE LATCHES — 40 refused feeds fire nothing; a real 24-piece towed visit still fires everything");
 
   // -- G1: the park --
   {
@@ -799,8 +865,9 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
       X.update(1 / 60);
       pw.sweep();
     }
-    eq(X.game.deliveryCount, 0, "G1: 40 incidentals leave deliveryCount at 0");
-    eq(pw.out.length, 0, "G1: 40 incidentals fire ZERO CS018 P8 reward powerups (the 8/12/16/20 tiers)");
+    eq(X.game.chain.length, 0, "G1: ⛔ 40 feeds at the dock hook NOTHING (CS035 P2 — was 40 incidentals)");
+    eq(X.game.deliveryCount, 0, "G1: ...so deliveryCount stays 0");
+    eq(pw.out.length, 0, "G1: ...and ZERO CS018 P8 reward powerups fire (the 8/12/16/20 tiers)");
     eq(X.game.stats.fullChainVisit, false, "G1: no Heavy Hauler");
     eq(X.Achievements.lifetime.fullChains, 0, "G1: no Long Haul");
     eq(X.Achievements.lifetime.heavyHaulerEvents, 0, "G1: no Freight Baron event");
@@ -822,8 +889,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     // Hook 24 well outside the neighborhood — a genuine tow — then bring it in.
     placeShip(X, 400);
     for (let i = 0; i < 24; i++) { feedCanister(X); X.update(1 / 60); }
-    eq(X.game.chain.length, 24, "G2: (setup) a real 24-piece tow");
-    eq(X.game.chain.every(n => n.towed === true), true, "G2: (setup) every node of it is towed");
+    eq(X.game.chain.length, 24, "G2: (setup) a real 24-piece tow, every node hooked outside the ring");
 
     placeShip(X, 9);
     const pw = powerupTracker(X);
@@ -850,7 +916,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     assert(X.game.cargoFlash > 0, "G2: the cap-flash celebration still arms");
   }
 
-  // -- G3: the mixed visit. 24 pieces at the dock, but only 12 of them towed in => no SMD, no Maxed Out. --
+  // -- G3: the mixed visit — REPOINTED BY CS035 P2, and it is the phase in one case. The second half of
+  //        the staging (12 more picked up while parked inside the ring) simply does not happen now, so
+  //        the visit is 12 nodes rather than 24: same conclusion (no SMD, no Maxed Out, Heavy Hauler
+  //        yes), reached because the dock pickups were refused rather than tagged. --
   {
     const X = build();
     X.startGame();
@@ -861,11 +930,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     for (let i = 0; i < 12; i++) { feedCanister(X); X.update(1 / 60); }
     placeShip(X, 20);                       // inside the neighborhood, outside the offload radius
     for (let i = 0; i < 12; i++) { feedCanister(X); X.update(1 / 60); }
-    eq(X.game.chain.length, 24, "G3: (setup) 24 nodes on the chain — 12 towed, 12 picked up at the dock");
-    eq(X.game.chain.filter(n => n.towed === true).length, 12, "G3: (setup) exactly 12 are towed");
+    eq(X.game.chain.length, 12, "G3: ⛔ the chain is 12, not 24 — the twelve dock pickups were all refused");
     placeShip(X, 9);
     for (let i = 0; i < 24 && X.game.chain.length > 0; i++) { X.game.offloadTimer = 0; X.update(1 / 60); }
-    eq(X.game.deliveryCount, 12, "G3: a 24-node visit built half from incidentals counts 12");
+    eq(X.game.deliveryCount, 12, "G3: the visit counts the 12 it actually towed in");
     eq(X.game.stats.maxChainVisit, false, "G3: it does NOT reach Maxed Out");
     eq(smdCalls, 0, "G3: it does NOT fire the Super Mega Delivery — the payload curve is load-bearing again");
     eq(X.game.stats.fullChainVisit, true, "G3: it DOES reach Heavy Hauler, on the 12 it actually towed");
@@ -873,6 +941,9 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
 })();
 
 // ================= (H) THE STATS =====================
+// REPOINTED BY CS035 P2: every "byte-unchanged across 40 incidentals" claim holds a fortiori — the 40
+// feeds are refused outright, so there are no deliveries to touch a field. The two claims that DID move
+// are the score delta (was 40 x DOCK_BASE_SCORE, now 0) and FLAG-CS020-d's incidental floater (gone).
 (function sectionH() {
   console.log("(H) THE STATS — every field FORK-CS020-B / FLAG-a / FLAG-b names, one at a time");
   const X = build();
@@ -909,15 +980,16 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
 
   // deliveryCount and cargoFlash hang off game; the rest off game.stats.
   const onGame = new Set(["deliveryCount", "cargoFlash"]);
-  for (const k of Object.keys(g0)) eq(g1[k], g0[k], `H: game.${onGame.has(k) ? k : "stats." + k} is byte-unchanged across ${N} incidentals`);
-  for (const k of Object.keys(l0)) eq(l1[k], l0[k], `H: Achievements.lifetime.${k} is byte-unchanged across ${N} incidentals`);
-  eq(X.game.score - s0, N * DOCK_BASE_SCORE,
-    `H: game.score moved by exactly ${N} x ${DOCK_BASE_SCORE} = ${N * DOCK_BASE_SCORE}, and by nothing else`);
-  eq(X.game.floaters.filter(f => f.text === "+" + DOCK_BASE_SCORE).length > 0, true,
-    "H: incidentals still show their FloatText (FLAG-CS020-d — kept deliberately)");
+  for (const k of Object.keys(g0)) eq(g1[k], g0[k], `H: game.${onGame.has(k) ? k : "stats." + k} is byte-unchanged across ${N} refused feeds`);
+  for (const k of Object.keys(l0)) eq(l1[k], l0[k], `H: Achievements.lifetime.${k} is byte-unchanged across ${N} refused feeds`);
+  eq(X.game.score - s0, 0,
+    `H: ⛔ game.score did not move AT ALL — CS035 P2 refuses the hooks CS020 merely paid a flat rate for`);
+  eq(X.game.floaters.filter(f => f.text === "+" + DOCK_BASE_SCORE).length, 0,
+    "H: ⛔ FLAG-CS020-d's incidental floater is gone with the branch that pushed it (CS035 P2)");
+  eq(X.game.chain.length, 0, "H: (setup, non-vacuity) nothing was hooked in the first place");
 
-  // FLAG-CS020-a, both halves: an incidental neither advances the pacifist streak nor breaks it.
-  eq(g1.pacifistStreak, 0, "H: FLAG-CS020-a — an incidental does not ADVANCE pacifistStreak");
+  // FLAG-CS020-a, both halves: a dock feed neither advances the pacifist streak nor breaks it.
+  eq(g1.pacifistStreak, 0, "H: FLAG-CS020-a — a refused dock feed does not ADVANCE pacifistStreak");
   {
     const Y = build();
     Y.startGame(); quiet(Y);
@@ -929,16 +1001,16 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     eq(Y.game.stats.pacifistStreak, 5, "H: (setup) a real 5-canister tow builds the streak to 5");
     const streak = Y.game.stats.pacifistStreak, events = Y.Achievements.lifetime.pacifistTowEvents;
     for (let i = 0; i < 10; i++) { feedCanister(Y); Y.game.offloadTimer = 0; Y.update(1 / 60); }
-    eq(Y.game.stats.pacifistStreak, streak, "H: FLAG-CS020-a — ten incidentals afterwards do not BREAK the streak either");
+    eq(Y.game.stats.pacifistStreak, streak, "H: FLAG-CS020-a — ten refused feeds afterwards do not BREAK the streak either");
     eq(Y.Achievements.lifetime.pacifistTowEvents, events, "H: ...and fire no extra Zen Master event");
   }
 
   // FLAG-CS020-b, stated as its own claim: the 50s never reach lifetime.deliveryScore.
-  eq(l1.deliveryScore, 0, "H: FLAG-CS020-b — incidental points never enter lifetime.deliveryScore");
+  eq(l1.deliveryScore, 0, "H: FLAG-CS020-b — a park banks nothing into lifetime.deliveryScore");
 
-  // Speed Recycler's own latch: 40 incidentals inside the first 60 seconds must not set it.
+  // Speed Recycler's own latch: 40 refused feeds inside the first 60 seconds must not set it.
   assert(X.game.stats.gameTime <= 60, "H: (setup) the whole run happened inside the first 60 seconds");
-  eq(X.game.stats.speedRecycler, false, "H: Speed Recycler does not latch off an incidental");
+  eq(X.game.stats.speedRecycler, false, "H: Speed Recycler does not latch off a park");
 })();
 
 // ================= (I) DAN STAYS QUIET =====================
@@ -952,7 +1024,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     X.__spyVoice(n => { calls++; args.push(n); });
     placeShip(X, 9);
     for (let i = 0; i < 40; i++) { feedCanister(X); X.game.offloadTimer = 0; X.update(1 / 60); }
-    eq(calls, 0, "I: 40 incidental pops — each of which empties the chain — produce ZERO dockDelivery calls");
+    eq(calls, 0, "I: 40 feeds at the dock, none of them hooked, produce ZERO dockDelivery calls");
   }
   {
     const X = build();
@@ -967,7 +1039,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     eq(calls, 1, "I: a real 8-canister haul produces exactly one dockDelivery call");
     eq(args[0], 8, "I: ...on the pop that empties the chain, with the full count intact");
   }
-  // And the mixed case: the incidental pops first, emptying nothing; the line still fires once, at the end.
+  // And the mixed case: the dock feed is refused, so the haul is untouched and the line fires once, at the end.
   {
     const X = build();
     X.startGame(); quiet(X);
@@ -977,9 +1049,9 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     placeShip(X, 400);
     for (let i = 0; i < 8; i++) { feedCanister(X); X.update(1 / 60); }
     placeShip(X, 9);
-    feedCanister(X);                                    // one incidental joins the tail
+    feedCanister(X);                                    // refused — it never reaches the tail
     for (let i = 0; i < 10 && X.game.chain.length > 0; i++) { X.game.offloadTimer = 0; X.update(1 / 60); }
-    eq(calls, 1, "I: a haul with one incidental in it still produces exactly one line");
+    eq(calls, 1, "I: a haul with a refused dock feed alongside it still produces exactly one line");
     eq(args[0], 8, "I: ...reporting the towed count, 8, not 9");
   }
 
@@ -995,8 +1067,8 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     placeShip(X, 9);
     feedCanister(X);
     for (let i = 0; i < 4 && X.game.chain.length > 0; i++) { X.game.offloadTimer = 0; X.update(1 / 60); }
-    eq(heard.join(","), "1,1,2,3",
-      "I: FLAG-CS020-e — the incidental sounds a flat deliver(1) and the towed run still climbs 1,2,3");
+    eq(heard.join(","), "1,2,3",
+      "I: ⛔ FLAG-CS020-e INVERTED (CS035 P2) — no flat deliver(1) interrupts the climb; the visit is 1,2,3 clean");
   }
 })();
 
@@ -1086,8 +1158,12 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   assert(fixed.floaters !== pre.floaters,
     "J: (non-vacuity) the positions DID change — this is the CS026 P6 origin move, not a silent no-op");
 
-  // And the tag really was live throughout: this is a control, not a run where nothing was tagged.
-  assert(/towed: !inRing/.test(scriptSrc), "J: (control validity) the tag is present in the build under test");
+  // And the mechanism really was live throughout: this is a control, not a run against a build with no
+  // dock rule at all. REPOINTED BY CS035 P2 — the tag it used to name is deleted; the lockout that
+  // replaced it is what has to be present for the "outside the ring, so unaffected" framing to mean
+  // anything.
+  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture\) \{/.test(scriptSrc),
+    "J: (control validity) the dock lockout is present in the build under test");
 })();
 
 // ================= (K) AudioSys.ctx null smoke =====================
@@ -1104,7 +1180,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     feedCanister(X);
     for (let i = 0; i < 8 && X.game.chain.length > 0; i++) { X.game.offloadTimer = 0; X.update(1 / 60); }
     X.draw();
-  }, "K: a mixed towed/incidental visit runs and draws with no audio context");
+  }, "K: a towed visit plus a refused dock feed runs and draws with no audio context");
   eq(X.game.deliveryCount, 6, "K: and it still delivered its 6 towed canisters correctly");
 })();
 

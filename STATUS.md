@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.34 · Changeset: CS035 · Phase: P1 · Registry: 91 · Levers: 18
+Version: 1.0.0.34 · Changeset: CS035 · Phase: P2 · Registry: 92 · Levers: 18
 
 ## Phase ledger — CS035
 
@@ -15,19 +15,62 @@ Version: 1.0.0.34 · Changeset: CS035 · Phase: P1 · Registry: 91 · Levers: 18
   same convention as their own prior "REPOINTED BY" comments (test-cs012-p3, test-cs018-p8,
   test-cs020-p1, test-cs024-p6b, test-cs026-p4, test-cs026-p6, test-cs029-p4, test-p6).
 
+- P2 — dock scoop lockout: the capture gate now leads with `!inRing`, so nothing can be hooked while
+  the ship is inside the dock's neighbourhood ring, at any chain length including zero. A piece that
+  reaches the capture region (base circle OR scoop mouth) instead has its velocity SET — never added —
+  to the new `dockBounceSpeed` knob (DELIVERY, def 90, 20–300/10) directly away from the ship, with
+  `AudioSys.shieldPing()` as the tell and the ship completely unaffected; `debrisBounce()` is
+  deliberately not called. The magnet's pull is suppressed in the ring through `pulling` (the two
+  budget spend sites still read the raw `magnet`, unchanged), so nothing churns against that push.
+  That makes the incidental category **empty by construction**, so CS020's `towed: !inRing` tag, the
+  `node.towed !== false` read and the whole incidental branch (flat `DOCK_BASE_SCORE`, its size-12
+  floater, `AudioSys.deliver(1)`) are deleted — the actual fix for §0.2's LIFO queue jump, which was
+  never a counter reset. `inRing` survives, hoisted above the garbage loop, still guarding the pickup
+  gate and the `deliveryCount = 0` reset. Registry 91→92; no lever moved. Twenty suite files repointed
+  in this commit, nineteen phase tests plus `test-registry.js`'s count.
+
 ## Working / verified
 
-- Full suite on a full clone: **138 files, 136 passed, 2 pre-existing failures, 0 skipped.** Both
-  failures reproduce identically on this phase's own parent commit (before CS035 touched anything) —
-  see the two new Known issues entries below.
+- Full suite on a full clone: **139 files, 137 passed, 2 pre-existing failures, 0 skipped** — the
+  same two files (`test-f2`, `test-v36-death`) that were already red on this phase's parent.
+- New `scratchpad/test-cs035-p2.js` drives the real pickup/push/offload paths: the lockout either side
+  of the ring boundary (and exactly on it, which is outside), the push's exact `dockBounceSpeed`
+  magnitude/direction and its no-accumulation-on-a-second-frame property, the ship taking no recoil or
+  damage, the scoop mouth being covered too, the lockout at `chain.length === 0`, the magnet
+  suppression with an outside-the-ring non-vacuity control, the knob's shape/section — and §0.2's bug
+  asserted directly: a 24-piece haul delivered while loose pieces keep landing on the hull climbs
+  1..24 with no gap and pays the escalating share on every pop.
+- The nineteen repointed phase tests all keep their scenarios and invert what they assert (the park
+  now pays 0 rather than a flat 30,000; a +39 capture is refused rather than tagged) — CS020's claim
+  survives strictly strengthened, so no section was deleted.
 - New `scratchpad/test-cs035-p1.js` drives the real dock-offload path: the anchor frac, all five
   registry rows' `def`/`min`/`max`/`step`, no SALVAGE/MAX HAUL floater at deliveries 8/24 while the
   powerup/`maxChainVisit`/`cargoFlash` side effects still fire, and the ticker's per-piece size
   formula (`min(48, 16 + 1.0 * (N-1))`).
-- Registry unmoved at **91**, `LEVERS` at **18** — this phase is a `def` change and one constant,
-  no rows added or retired.
+- Registry at **92** (P2's `dockBounceSpeed`), `LEVERS` unmoved at **18**.
 
 ## Known issues
+
+- **⛔ NEW — the GDD's shipped-behaviour prose for the towed/incidental split is now stale, and P2 did
+  not sweep it.** `ORBITAL-OVERHAUL-GDD.md` §2.10 still documents `towed: !inRing`, the LIFO tagging
+  rationale, the incidental's flat `DOCK_BASE_SCORE`/size-12 floater and "loitering at the dock to mop
+  up stragglers is still worth doing" — all deleted or reversed by this phase. Left for the CS035
+  closing phase's doc sweep, the same convention P1 followed (it moved seven `def`s and touched no
+  GDD). Five paragraphs under "A delivery run is ONE EFFORT" plus the "incidental delivery is quieted"
+  bullet are the affected text.
+- **NEW — parking at the dock no longer cleans up, and that is a real behaviour change.** A parked
+  ship cannot mop up the loose pieces around it any more; they stay in the field, pushed clear of the
+  hull, bounded only by the CS024 P3 density ceiling. Measured in `test-cs020-p1b` §I: a 60-second
+  magnet-style park leaves ~220 pieces in the field where CS020 recycled all 600. Coalescence keeps
+  running on that cloud, so a neglected dock apron can still breed a Hunter — arguably the intended
+  pressure (the dock is for delivering, not gathering), but it is new and nobody has played it yet.
+- **NEW — `AudioSys.shieldPing()` fires once per pushed piece per frame.** With several pieces on the
+  hull at once the tell stacks. No rate limit was added: §2.3 asked for the shipped ping and no new
+  audio method, and a cooldown is a design call. Worth listening for at the gate.
+- **NEW — the push's degenerate direction was a phase decision, not a spec line.** A piece resting
+  exactly on the ship's centre has no ship→piece vector; the house `|| 0.0001` idiom would hand it a
+  velocity of ZERO and pin it on the hull with coalescence still running. It falls back to the ship's
+  own facing, so the magnitude is always `dockBounceSpeed`. Staged in `test-cs035-p2` §B.
 
 - **Delivery-ticker origin — Gate B asked for a ship-relative anchor; not built.** CS026 P6 already
   tried this and CS029 reverted it, measured: "a ship-relative origin smears the delivery column as
@@ -100,6 +143,13 @@ None.
   could migrate to `execSource()` whenever one of them is next open for other reasons.
 
 ## Playtest asks (open only — answered ones move to the log)
+
+- **FLAG-CS035-b (from spec §2.6) — is the ring boundary FELT, or merely suffered?** A player who
+  parks just outside the ring to grab one more piece still loses their run to the towed-hook reset,
+  and the lockout makes that boundary matter more than it used to. There is no visual tell for the
+  ring. If the answer is "suffered", the follow-up is a dock-ring render — deliberately out of scope
+  here. Also worth checking at the same time: whether 90 px/s reads as a firm shove or a nudge, and
+  whether losing dock-apron cleanup (Known issues) is felt as pressure or as litter.
 
 - **FLAG-CS035-a — does a Super Mega Delivery (24-haul) still land without its text celebration?**
   After P1, it announces itself with: a size-39+ ticker showing a four-figure number, the HUD cargo

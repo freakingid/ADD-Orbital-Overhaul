@@ -354,7 +354,8 @@ function compareBuilds(L, R, tag) {
     // added its two CELEBRATION knobs — a later phase's rows, named rather than re-litigated.
     // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added in
     // its place) — same idiom, named rather than re-litigated.
-    eq(OLD.DEBUG_ENTRIES.length + 2 + 4, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two and CS034 P8's net four later rows)");
+    // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed) — same idiom.
+    eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two, CS034 P8's net four and CS035 P2's one later rows)");
     assert(Object.keys(OLD).length > 500, "E: ...and the harvest re-ran against the parent's own symbol set");
   }
 })();

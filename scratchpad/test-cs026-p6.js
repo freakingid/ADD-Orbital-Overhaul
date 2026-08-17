@@ -343,9 +343,12 @@ let X = null;
   assert(g.stats.fullChainVisit, "C: Heavy Hauler's 12-in-one-visit latch still fires");
   assert(g.stats.maxChainVisit, "C: Maxed Out's CARGO_CAP_MAX latch still fires");
 
-  // -- the incidental branch shares the SAME anchor (same origin, size still distinguishes it) --
-  // REPOINTED BY CS034 P9 (GATE B, B2): the incidental's colour was brightened off COLOR.dim to
-  // COLOR.dock (too dim to read), so this section now finds it by size, not colour.
+  // -- the incidental branch: REPOINTED BY CS035 P2 (§2.4) — DELETED, so the claim inverts --
+  // Q5's finding was that both delivery branches read from the same dock anchor, the incidental one
+  // quieted by SIZE (12). CS035 P2's dock lockout makes the incidental category empty by construction
+  // (nothing can be hooked inside the ring), so that branch and its floater are gone. What is pinned
+  // now is that a node still carrying the old `towed: false` tag delivers as an ordinary towed one:
+  // one dock-anchored ticker, no size-12 floater beside it, and the tally advancing.
   const X3 = build();
   X3.startGame();
   const h = X3.game;
@@ -355,12 +358,12 @@ let X = null;
   h.chain.push({ x: h.dock.x + 120, y: h.dock.y + 90, px: 0, py: 0, mass: 1, towed: false });
   h.floaters.length = 0;
   for (let i = 0; i < 60 && h.chain.length > 0; i++) X3.update(dt);
-  const inc = h.floaters.find(f => f.size === 12);
-  assert(!!inc, "C: (setup) the incidental floater fired");
-  close(inc.x, h.dock.x, "C: the incidental floater is born at the DOCK anchor too — one shared origin, both branches");
-  eq(inc.color, X3.COLOR.dock, "C: ...now COLOR.dock, brightened per CS034 P9 GATE B (was COLOR.dim)");
-  eq(inc.size, 12, "C: ...still size 12 (FORK-G's quieting-by-size is untouched)");
-  eq(h.deliveryCount, 0, "C: ...and an incidental still touches no tally");
+  assert(!h.floaters.some(f => f.size === 12), "C: ⛔ no size-12 incidental floater — the branch is deleted (CS035 P2)");
+  const only = h.floaters.filter(f => /^\+\d+$/.test(f.text));
+  eq(only.length, 1, "C: (setup) one delivery floater fired, the ticker");
+  close(only[0].x, h.dock.x, "C: the ticker is born at the DOCK anchor — the one shared origin Q5 asked for");
+  eq(only[0].color, X3.COLOR.dock, "C: ...in COLOR.dock, the colour CS034 P9 GATE B settled on");
+  eq(h.deliveryCount, 1, "C: ...and the pop counted — a stale `towed: false` no longer demotes it");
 })();
 
 // ================= (D) the Q8 Achievements layout =====================
@@ -652,8 +655,11 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // carries deliveryFloatLife and X no longer does. Both sides now exclude their own later-phase-only
     // ids before comparing — X drops P8's five new rows, OLD drops the row P8 retired — so the
     // comparison is still "every row P6 shipped, in the same order," not weakened.
+    // REPOINTED BY CS035 P2: dockBounceSpeed joins the excluded set — the dock lockout's push speed,
+    // a later phase's row, named rather than wildcarded, exactly as every repoint above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
-      "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade"]);
+      "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade",
+      "dockBounceSpeed"]);
     const laterIdsOld = new Set(["deliveryFloatLife"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));

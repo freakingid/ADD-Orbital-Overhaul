@@ -333,7 +333,10 @@ const MAGNET_STATES = [
   // BUDGET SPEND sites still read powerActive("magnet") RAW. Collapsing those two names back into one
   // would give the Magnet free uses whenever cargo fills, which is P1's FORK-1. Pinned here because a
   // backout pass is exactly when someone might "simplify" the predicate away as no-longer-needed.
-  assert(/const pulling = magnetPulling\(\);/.test(execOnly),
+  // REPOINTED BY CS035 P2: `pulling` gained the dock-lockout suppression (`&& !inRing`, spec §2.5) —
+  // still ONE capture above the loop, still the suppressible name, so the claim is unchanged and only
+  // the literal it matches moved. The `magnetPulling()` call is what these two pins are really about.
+  assert(/const pulling = magnetPulling\(\) && !inRing;/.test(execOnly),
     "F: ⛔ update()'s pickup block still captures `const pulling = magnetPulling()` ONCE, above the loop");
   assert(/powerActive\("magnet"\)/.test(execOnly),
     "F: ...and powerActive(\"magnet\") is still read raw for budget spend (P1 FORK-1)");
@@ -344,7 +347,7 @@ const MAGNET_STATES = [
 
   // Source-level: the pull site still consults the predicate (a revert that deleted the call would make
   // the magnet permanently on at full cargo — P1's defect restored).
-  assert(/const pulling = magnetPulling\(\);/.test(execOnly),
+  assert(/const pulling = magnetPulling\(\) && !inRing;/.test(execOnly),   // CS035 P2 repoint, as above
     "F: ⛔ update()'s pickup block still captures `const pulling = magnetPulling()` once, above the loop");
 })();
 
