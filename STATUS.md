@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.35 · Changeset: CS036 · Phase: P5 · Registry: 106 · Levers: 18
+Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 18
 
 ## Phase ledger — CS036
 
@@ -40,12 +40,42 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P5 · Registry: 106 · Levers: 1
   announcement channel running and `sayLevel()` now fires inside it. The pause and the panel still hold
   the caption — untouched.
 
+- P6 — suite triage. **All three standing failures were STALE TESTS; the build is untouched** (zero
+  lines of `orbital-overhaul.html`). Two share ONE measured root cause: `waste_not` is a **weekly**
+  achievement, in the active 5-wide slice **20 weeks in 53**, and both scenarios unlock it in exactly
+  those weeks. `test-v36-death` §A — that unlock's `onUnlock()` → `save()` (shipped since the F9 commit
+  `612d8a1`, a week *before* this file was written, and named in CS024 P6d's own choke-point comment)
+  means `killShip` legitimately saves twice; repointed to what the file owns, the saves `killShip` makes
+  **outside `evaluate()`**, exactly one. `test-f2` §g — the same unlock arms CS030's celebration panel
+  at section (d)'s gameover and `update()` early-returns on it, so §g measured a **stopped world**; that
+  is FLAG-CS031-c, fixed in the **test's own** `resetShip()`. ⛔ Three of §g's four assertions were
+  passing **vacuously** under that freeze (a stopped world has no damage, stun or knockback either), so
+  §g gains an anti-vacuity pin that the shield actually came up. `test-cs023-p3` TRAP 3 — not
+  calendar-related: a `git show HEAD:` pin that evaporated into "the file equals itself" the moment
+  CS035 P3 committed; repointed onto `PRE_CS023_REF` (`f9db5c2`), the file's own literal, which the two
+  sibling traps above it already use for exactly this reason.
+
 ## Working / verified
 
-- Full suite on a full clone: **148 files, 145 passed, 3 failed, 0 skipped, 0 timed out** — the three
-  failures are the standing pre-existing set (see Known issues), unchanged from P4's 143/3 (net +2
-  passing files: P5's own new test plus the registry-count shift no longer breaking anything).
-  `node --check` on the extracted script passes.
+- Full suite on a full clone: **148 files, 148 passed, 0 failed, 0 skipped, 0 timed out** — the three
+  standing failures are gone. `node --check` on the extracted script passes. ⛔ Not "green for the first
+  time since CS035 P1": the two calendar-driven ones were red in ~38% of *weeks* stretching well back
+  before CS035, so the suite has been intermittently red far longer than the record showed.
+
+- **The green is durable across the calendar, swept not assumed.** The weekly pool is 16 wide and
+  `poolIndex()` cycles with that period, so 16 consecutive weeks cover every distinct slice; the suite
+  was run once per slice under a pinned `new Date()`. **The three triaged files pass in all 16.** Pre-fix
+  the same sweep showed `test-f2`/`test-v36-death` red only in `waste_not` weeks and `test-cs023-p3` red
+  in **every** week — the split the diagnosis predicts. 12 of the 16 runs are a clean 148/148; the other
+  four are two unrelated pre-existing flakes, below.
+
+- **Eight mutations confirmed.** `test-v36-death` fails on `killShip`'s trailing `save()` deleted, on a
+  second one added, and on the flush moved later to the `dying`→`gameover` handoff — and deliberately
+  **passes** when `onUnlock` stops persisting: that is the achievements system's contract, not the death
+  spectacle's, and this repoint's first draft wrongly coupled them. `test-cs023-p3` fails on CS035 P3's
+  guard removed and on an unrelated edit inside the scan (`h.radius + 7` → `+ 9`). `test-f2` §g fails on
+  the celebration clear reverted, and with the shield disabled outright fails **five** assertions where
+  the frozen world had let three pass.
 
 - **Thirteen suite files repointed for the registry count moving 105 → 106, all named in-commit.**
   Five formula pins (`test-cs027-p2/-p6`, `test-cs029-p4`, `test-cs030-p1`, `test-cs026-p5`) take a
@@ -238,15 +268,35 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P5 · Registry: 106 · Levers: 1
   cloud, so a neglected dock apron can still breed a Hunter — arguably the intended pressure, but new,
   and G6/G7 did not ask about it directly.
 
-- **CS035 — `test-cs035-p3.js` flaked ~1-in-5 runs during P3–P6** and did not reproduce across repeated
-  runs at P7. Carried forward unresolved rather than declared fixed; it is not seed-related (P3 adds no
-  `installSeed`).
+- **CS035 — `test-cs035-p3.js`'s flake, now REPRODUCED and measured, and it is NOT FLAG-CS031-c's
+  class.** Its shared `quiet()` stager already sets `g.celebration = null` (line 35) and the file never
+  reaches a death or gameover — the only panel it touches is the level-end one §E opens on purpose. The
+  real rate is **6/120 runs (~5%)**, not ~1-in-5, and the failing assertion is always the same one:
+  §F `"⛔ with the window shut the ship is vulnerable again (got 200, want 185)"` — the ship takes no
+  damage on a frame where it should. Left alone, per the phase prompt: not hunted further.
 
-- **Three pre-existing suite failures, none this changeset's.** `test-cs023-p3.js` (a TRAP 3 pin
-  against a fixed historical SHA); `test-f2.js` (§g "shield deflection consumed energy" fails
-  deterministically, distinct from FLAG-CS031-c's celebration flake living in the same file);
-  `test-v36-death.js` (3 `Achievements.save` call-count assertions around `killShip`). All three are
-  present on CS035's own baseline `42cecae` and were not investigated.
+- **⛔ NEW (P6) — `test-f6.js` §F has the same shape, at ~1.7% (2/120 runs).** Surfaced by the 16-week
+  sweep, unrelated to the calendar. Always the same pair: `"F: Magnet moved the canister measurably
+  closer (45.0 -> 45.0 px)"` and `"the canister's velocity points toward the ship (v·toShip = 0)"` — the
+  canister does not move **at all**, distance and velocity both exactly unchanged. Like `test-cs035-p3`
+  it carries no `installSeed`, so both drive the real unseeded `Math.random()`; that shared trait is the
+  likely class, but it was not chased. Undocumented before this phase.
+
+- **⛔ RESOLVED (P6) — the three standing suite failures. All three were stale tests; no build defect.**
+  Two corrections to how they were recorded here. (1) `test-f2.js` §g was **not** distinct from
+  FLAG-CS031-c — it *is* FLAG-CS031-c. Same leaked `game.celebration`, same seam; "deterministic" and
+  "~3% flake" were the same defect observed in different weeks. (2) `test-cs023-p3.js` TRAP 3 was **not**
+  a pin against a fixed historical SHA; it was the opposite — a pin against the **moving `HEAD`**, which
+  is what made it fail. The spec's §4 table carries both descriptions and both are wrong; the phase
+  prompt inherited them.
+
+- **⛔ NEW (P6) — two MORE moving-`HEAD` pins survive in `test-cs023-p3.js`, and they pass VACUOUSLY.**
+  `headSrc()` (`git show HEAD:orbital-overhaul.html`) still feeds the `debrisBounce` executable-line
+  count (~line 599) and the byte-strict `shieldDeflect`/`shieldBounce` comparison (~line 641): on a
+  clean tree both compare the file to itself and cannot fail. TRAP 3 surfaced only because it carried an
+  explicit "not a vacuous pass" guard; these two have none. **Not fixed** — outside P6's named scope,
+  and each needs a pin SHA chosen and intervening diffs named. The cure is written verbatim in the same
+  file, twice ("Pinned to a FIXED SHA, not the moving HEAD").
 
 - **⛔ FLAG-CS032-a — `drawTitleMenu()` calls `SaveSlots.count()` every frame**, a
   `localStorage.getItem` + `JSON.parse` per title-screen frame at 60 fps. Deliberate per CS032 §4.3 (a
@@ -258,9 +308,13 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P5 · Registry: 106 · Levers: 1
   Saved Game"`. `returnToTitleMenu()` hardcodes `MENU_TITLE.indexOf("Options")`, correct for its other
   callers. Changing it is a signature question, which is design, not wiring. See `log/CS032.md`.
 
-- **FLAG-CS031-c — `test-f2.js` flakes ~3% of runs** (CS030's celebration-panel `game.celebration`
-  leaking across sections in `resetShip()`). One-line fix identified: `game.celebration = null;` in
-  `resetShip()`. 29 suite files reach a death/gameover and never mention `game.celebration`.
+- **⛔ RESOLVED (P6) — FLAG-CS031-c.** ⛔ Worth stating plainly, because the flag's wording invites the
+  opposite reading: **this was never a build fix.** The build has no `resetShip()` at all, and
+  `resetRun()` — the one path into a fresh run — has cleared the panel since CS030 P1 (line ~7667). The
+  leak was a *test helper* standing in for a fresh run without doing what the build does. Nor was the
+  rate 3%: it is ~38% of weeks and 0% of the rest. The other 28 files in the latent class are
+  **untouched and still latent** — the 16-week sweep found none of them currently biting, which is why
+  they were left out of scope rather than chased blind.
 
 - **`test-registry.js`'s `FLAG-CS027-d`** — twelve suite files grep a comment-stripped copy of the
   source missing the same 80 lines `execSource()` fixed. Latent, not live.
@@ -288,9 +342,12 @@ None.
 
 ## Next up
 
-- **CS036 P6 — suite triage**: `test-f2.js` §g, `test-v36-death.js` §A, `test-cs023-p3.js` TRAP 3 (§4)
-  plus FLAG-CS031-c's `game.celebration = null;` in `resetShip()`. ⛔ The ceremony is complete as of
-  P3, the heartbeat punch as of P4, and the two small fixes as of P5; none lands anything further.
+- **CS036 P7 — the closing phase.** The doc sweep below, the version bump, the gate fold-in, and
+  `STATUS.md` → `log/CS036.md`. ⛔ The ceremony is complete as of P3, the heartbeat punch as of P4, the
+  two small fixes as of P5 and the suite triage as of P6; nothing further lands. P7 asserts **zero
+  skips**, and as of P6 the standing failures are zero too — so any red it sees is either its own or one
+  of the two named flakes (`test-cs035-p3` ~5%, `test-f6` ~1.7%), which a rerun distinguishes. §4's spec
+  table takes the two corrections in Known issues when it folds into the log.
 
 - **P7's doc sweep — five GDD passages now describe a build that no longer exists.** None is a code
   defect; the GDD is §2 = shipped only, so all five are the sweep's. The build's own remaining

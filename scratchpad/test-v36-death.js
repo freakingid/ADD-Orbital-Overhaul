@@ -6,8 +6,9 @@
 //   node scratchpad/test-v36-death.js
 //
 // Checks:
-//  (A) killShip() enters "dying" (NOT "gameover"), arms deathT/shake, and still fires
-//      gameEnded + Achievements.evaluate + Achievements.save exactly ONCE, at killShip — not later.
+//  (A) killShip() enters "dying" (NOT "gameover"), arms deathT/shake, and still flushes achievements
+//      AT killShip and not later: gameEnded + evaluate() exactly once, and exactly one save() of
+//      killShip's OWN — i.e. outside evaluate(), whose saves are onUnlock's per-unlock commits.
 //  (B) the field genuinely keeps MOVING during "dying" (a debris object's position changes across
 //      frames — the exact thing that froze before), and update() does NOT re-evaluate achievements
 //      during the death.
@@ -101,7 +102,7 @@ function keydown(key, repeat = false) {
 // Run one death frame through the REAL update() (state must be "dying").
 function stepDeath() { update(DT); }
 
-// ================= (A) killShip enters "dying" and flushes achievements ONCE, at killShip =========
+// ================= (A) killShip enters "dying" and flushes achievements AT killShip, not later =====
 (function sectionA() {
   startGame();
   // Give the run some score + a couple of stats so we can prove they don't move later.
@@ -109,10 +110,28 @@ function stepDeath() { update(DT); }
 
   // Spy Achievements.evaluate / save (method calls on the returned object — killShip looks them up on
   // the same object, so the spies are seen).
-  let evalCount = 0, saveCount = 0;
+  // REPOINTED BY CS036 P6, and it is a STALE PIN, not a build defect. onUnlock() has ended with
+  // `this.save()` ("persist the moment something is earned") since the F9 achievements commit 612d8a1,
+  // a week BEFORE this file was written, and CS024 P6d's choke-point comment on save() names onUnlock
+  // as one of the four deliberate funnels. So a killShip whose final evaluate() unlocks something
+  // ALWAYS saved more than once — `saveCount === 1` was the zero-unlock case mistaken for a law, and
+  // it held only by luck of the calendar: `waste_not` is WEEKLY, in the active 5-wide slice 20 weeks
+  // in 53, and this scenario unlocks it in exactly those weeks.
+  // ⛔ Split, not loosened. This file owns "the flush happens AT killShip, not later", so it counts the
+  // saves killShip itself makes — those OUTSIDE evaluate(). The commits made inside are onUnlock's, and
+  // are the achievements system's contract to pin, not the death spectacle's. killShip's own trailing
+  // save() is load-bearing at zero unlocks: it is the only thing flushing the glassCannonGames /
+  // shieldSurferGames increments made just above it.
+  let evalCount = 0, saveCount = 0, savesOutsideEval = 0, inEval = false;
   const origEval = Achievements.evaluate, origSave = Achievements.save;
-  Achievements.evaluate = function (...a) { evalCount++; return origEval.apply(this, a); };
-  Achievements.save     = function (...a) { saveCount++; return origSave.apply(this, a); };
+  Achievements.evaluate = function (...a) {
+    evalCount++; inEval = true;
+    try { return origEval.apply(this, a); } finally { inEval = false; }
+  };
+  Achievements.save = function (...a) {
+    saveCount++; if (!inEval) savesOutsideEval++;
+    return origSave.apply(this, a);
+  };
 
   assert(game.state === "playing", "A: pre-kill state is playing");
   assert(game.stats.gameEnded === false, "A: gameEnded starts false");
@@ -126,18 +145,21 @@ function stepDeath() { update(DT); }
   assert(game.ship.dead === true, "A: ship marked dead");
   assert(game.stats.gameEnded === true, "A: gameEnded flagged at killShip");
   assert(evalCount === 1, "A: Achievements.evaluate fired exactly once at killShip");
-  assert(saveCount === 1, "A: Achievements.save fired exactly once at killShip");
+  assert(savesOutsideEval === 1,
+    `A: killShip's OWN flush is exactly one Achievements.save, outside evaluate() (got ${savesOutsideEval}; total saves ${saveCount})`);
+  const savesAtKill = saveCount, ownSavesAtKill = savesOutsideEval;
 
   // A second killShip() is a guarded no-op (ship already dead) — must not double-fire achievements.
   killShip();
   assert(evalCount === 1, "A: re-killShip does not re-evaluate (guarded on ship.dead)");
-  assert(saveCount === 1, "A: re-killShip does not re-save");
+  assert(saveCount === savesAtKill, "A: re-killShip does not re-save");
+  assert(savesOutsideEval === ownSavesAtKill, "A: ...and adds no second flush of its own");
 
   // Now run the WHOLE death window; evaluate/save must NOT fire again during "dying" or at the handoff.
   const frames = Math.ceil(DEATH_DURATION / DT) + 4;
   for (let i = 0; i < frames; i++) stepDeath();
   assert(evalCount === 1, "A: no re-evaluate during the death or at the 'dying'->'gameover' handoff");
-  assert(saveCount === 1, "A: no re-save during the death or at the handoff");
+  assert(saveCount === savesAtKill, "A: no re-save during the death or at the handoff");
 
   Achievements.evaluate = origEval; Achievements.save = origSave; // restore
 })();

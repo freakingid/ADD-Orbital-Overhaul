@@ -88,6 +88,14 @@ function resetShip(over = {}) {
     x: WORLD_W / 2, y: WORLD_H / 2, vx: 0, vy: 0
   }, over);
   game.state = "playing"; game.paused = false; // a live ship implies an active game
+  // FLAG-CS031-c, FIXED CS036 P6. Section (d) below kills the ship for real, and a game that ENDS can
+  // bank an achievement — CS030's celebration panel then arms itself at the gameover and is never
+  // dismissed, because nothing here presses confirm. update() early-returns on game.celebration, so
+  // every later section would drive a STOPPED world: no ship update, no collision pass, nothing.
+  // ⛔ This is the TEST's fresh-run staging, NOT a build fix — the build's own resetRun() has cleared
+  // this since CS030 P1. Whether it bites is WEEKLY: `waste_not` sits in the active 5-wide slice in 20
+  // weeks out of 53, which is why the same defect was logged as a ~3% flake and later as a hard fail.
+  game.celebration = null;
 }
 // A hazard placed a few px to the +x of the ship (overlapping), velocity zeroed
 // so it stays put for deterministic assertions.
@@ -232,6 +240,11 @@ keys["shift"] = true; // hold shield so Ship.update keeps shieldOn true
 place(new DebrisSatellite(0, 0, 3, 1), game.debris);
 const energyBefore = game.ship.energy;
 update(DT);
+// ⛔ ANTI-VACUITY (CS036 P6). The three "nothing happened" claims below are ALSO true of a world that
+// never ran a frame at all — which is precisely how FLAG-CS031-c's leaked panel hid this section: only
+// the ONE positive claim (energy) ever failed. Pin that the shield genuinely came up, so the negatives
+// below mean "the shield blocked it" rather than "nothing was simulated".
+assert(game.ship.shieldOn === true, "g: the shield is actually up — this frame really ran");
 assert(game.ship.hp === SHIP_MAX_HP, "g: shielded hit deals no HP damage");
 assert(game.ship.invuln === 0, "g: shielded hit grants no hit-stun");
 assert(Math.hypot(game.ship.vx, game.ship.vy) < 1, "g: shielded hit applies no knockback to the ship");

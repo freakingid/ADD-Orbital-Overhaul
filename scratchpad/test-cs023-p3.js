@@ -703,9 +703,18 @@ function saucerAt(X, x, y, small) {
   // TRAP 3: no new way for a satellite to cut the chain — the hazards-vs-chain scan is untouched.
   {
     const bodyOf = (src, sig, endSig) => { const i = src.indexOf(sig); return src.slice(i, src.indexOf(endSig, i)); };
-    const b0 = bodyOf(headSrc(), "// --- Hazards vs tow chain", "// Saucer bullets can shatter");
+    // REPOINTED BY CS036 P6 OFF THE MOVING HEAD — this was a STALE PIN, not a build defect. CS035 P3
+    // named its own diff below but left b0 reading `git show HEAD:`, so the claim evaporated into "the
+    // current file equals itself" the moment P3 committed, and the anti-vacuity line below is what
+    // caught it. Its two sibling traps above already carry the cure verbatim ("Pinned to a FIXED SHA,
+    // not the moving HEAD"); this one just never got it. b0 now comes from PRE_CS023_REF, the file's
+    // OWN pre-changeset literal, which restores TRAP 3's original claim at FULL strength rather than
+    // the one-changeset window a P3-parent pin would give: measured, the scan is byte-identical across
+    // f9db5c2 / 7b03e15 / c96a983 / 59dd0f0 / dd432d7, so this now says CS023 P3 added no new way to
+    // cut the chain AND nothing in the thirteen changesets since has touched the scan but P3's guard.
+    const b0 = bodyOf(refSrc(), "// --- Hazards vs tow chain", "// Saucer bullets can shatter");
     const b1 = bodyOf(scriptSrc, "// --- Hazards vs tow chain", "// Saucer bullets can shatter");
-    assert(b0.length > 0 && b1.length > 0, "A: TRAP 3 — the hazards-vs-chain block found in both HEAD and current source");
+    assert(b0.length > 0 && b1.length > 0, "A: TRAP 3 — the hazards-vs-chain block found in both the pinned pre-CS023 build and current source");
     // REPOINTED BY CS035 P3 (spec §3.6, site 5): the level-end protection window now guards this whole
     // scan — while the window is open the block is not entered at all, so a hazard cannot reach
     // breakChain() and spend a chain-guard charge for protection the player did not earn. CS023 P3's own
@@ -719,7 +728,7 @@ function saucerAt(X, x, y, small) {
     const p3Note = b1.slice(iNote, iOpen);
     assert(p3Note.split("\n").every(l => l.trim() === "" || l.trim().startsWith("//")),
       "A: TRAP 3 — ...and everything P3 inserted ahead of the `if` is comment, not code");
-    assert(b0.includes(OLD_OPEN), "A: TRAP 3 — the pinned parent really did open the scan unguarded (not a vacuous pass)");
+    assert(b0.includes(OLD_OPEN), "A: TRAP 3 — the pinned pre-CS023 build really did open the scan unguarded (not a vacuous pass)");
     eq(b1, b0.replace(OLD_OPEN, p3Note + NEW_OPEN),
       "A: TRAP 3 — CS035 P3's level-end guard is the ONLY diff; the whole scan is otherwise BYTE-UNCHANGED");
   }
