@@ -3750,16 +3750,27 @@ const DEBUG_VARS = [
   // unchanged at 55/28, so the cycle stretches with the envelope: ~0.69 s out, ~1.36 s back, ~2.05 s
   // per beat against P4's ~1.24 s. G18 also asked for a COLOUR change on top of the motion — that is a
   // design decision spec §6 explicitly excluded, so it is DEFERRED, not taken here (see STATUS.md).
+  //   CS036 P4 (spec §2): the shape stayed right, the numbers were too subtle. Paul reversed G18's
+  // colour ask outright (no COLOR.satellite change, lerpColor() stays deleted — the motion is still the
+  // only tell) and asked for a harder punch out, slower settle back. Envelope widens 87/125 -> 80/150
+  // (38% -> 70%). `hunterPulseGrow`'s bound (300 %/s) was the binding constraint identified in spec: a
+  // wider envelope at the old ceiling is SLOWER, not punchier, so the bound is raised to 5000 %/s —
+  // enough that cranking it to max sweeps the new 70-point envelope in under one 60 fps frame
+  // (70/5000 = 0.014 s < 1/60 s), i.e. genuinely instantaneous, not just faster. The `def` itself moves
+  // to 900 %/s: the envelope sweeps in ~0.08 s (≈5 frames), read as a punch, not a ramp.
+  // `hunterPulseShrink` drops 28 -> 20, slowing the settle to ~3.5 s. Net cycle: ~0.08 s out, ~3.5 s
+  // back, ~3.58 s per beat, against P7's ~2.05 s. `hunterPulseMax`'s own bound (200 %) was not binding
+  // and is untouched. `hunterVolatileAge` is untouched at 60 — nothing here argues for moving it.
   { id: "hunterVolatileAge", label: "Hunter volatile age", unit: "s",
     def: 60, min: 0, max: 120, step: 1 },
   { id: "hunterPulseMin", label: "Hunter pulse min", unit: "%",
-    def: 87, min: 50, max: 100, step: 1 },
+    def: 80, min: 50, max: 100, step: 1 },
   { id: "hunterPulseMax", label: "Hunter pulse max", unit: "%",
-    def: 125, min: 100, max: 200, step: 1 },
+    def: 150, min: 100, max: 200, step: 1 },
   { id: "hunterPulseGrow", label: "Hunter pulse grow rate", unit: "%/s",
-    def: 55, min: 5, max: 300, step: 5 },
+    def: 900, min: 5, max: 5000, step: 5 },
   { id: "hunterPulseShrink", label: "Hunter pulse shrink rate", unit: "%/s",
-    def: 28, min: 5, max: 300, step: 1 },
+    def: 20, min: 5, max: 300, step: 1 },
   // CS024 P5 (spec §2.4/§4.5/§4.6): the UFO chain, the deepest in the odometer (a two-generation carry,
   // FLAG-CS024-d) and the one where §4.6 splits every quantity by saucer size. ufoAppearFreq (INVERTED)
   // is the ONE driver — there is exactly one appearance timer, which size spawns is the flat

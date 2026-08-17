@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.35 · Changeset: CS036 · Phase: P3 · Registry: 105 · Levers: 18
+Version: 1.0.0.35 · Changeset: CS036 · Phase: P4 · Registry: 105 · Levers: 18
 
 ## Phase ledger — CS036
 
@@ -42,9 +42,20 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P3 · Registry: 105 · Levers: 1
 
 ## Working / verified
 
-- Full suite on a full clone: **146 files, 143 passed, 3 failed, 0 skipped, 0 timed out** — the three
-  failures are the standing pre-existing set (see Known issues), unchanged from P2's 145/142/3.
+- Full suite on a full clone: **147 files, 143 passed, 3 failed, 0 skipped, 0 timed out** — the three
+  failures are the standing pre-existing set (see Known issues), unchanged from P3's 143/3.
   `node --check` on the extracted script passes.
+
+- New `scratchpad/test-cs036-p4.js` (52 assertions): the raised `hunterPulseGrow` bound and all four
+  retuned defs read from the registry itself; re-runs of CS035 P4's own don't-mutate (§G) and
+  radius-unmoved (§F) invariants against the new, much faster grow rate; `pulseScale` non-vacuously
+  reaches and reverses at both `hunterPulseMin`/`Max` across a long run; steady-state grow/shrink legs
+  are measured by detecting the exact frame `pulseUp` flips (not by epsilon-comparing `pulseScale` to a
+  target, which drifts out of sync with the clamp's own float arithmetic) — the grow leg lands in ≤6
+  frames and the shrink leg is ≥30× longer; and cranking `hunterPulseGrow` to its raised bound clamps
+  straight to the ceiling on the very frame volatility begins. Four mutations (grow def reverted, shrink
+  def reverted, bound left at 300, envelope left at 87/125) were each confirmed to fail it.
+  `test-cs035-p4.js` §A repointed to the new bound/defs, naming this phase.
 
 - New `scratchpad/test-cs036-p3.js` (121 assertions, seeded): the confirm reaches `nextWave()` and 30
   frames later the newly spawned field has not moved a pixel, on the panel fork as well as the inline one;
@@ -71,6 +82,18 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P3 · Registry: 105 · Levers: 1
   `test-cs030-p5` §B takes the new header, §D's parent trace and §E's resume lift the tail by hand (§E
   first pinning that the ceremony's freeze outlives the panel). `test-cs024-p3` and `test-cs026-p3` drive
   runs that clear the field on a fixed cadence, so both lift the freeze at the confirm.
+
+- P4 — the Hunter heartbeat punch (spec §2). No new mechanism: CS035 P4's asymmetric grow/shrink/clamp/
+  flip is unchanged, `this.radius`/`this.shape`/`this.inner` untouched, `LEVERS` stays 18. Four `def`s
+  retuned toward a harder punch and a slower settle — envelope `hunterPulseMin`/`Max` widens 87/125 →
+  80/150 (38 → 70 points), `hunterPulseGrow` 55 → 900 %/s, `hunterPulseShrink` 28 → 20 %/s. New cycle:
+  ~0.08 s out, ~3.5 s back, ~3.58 s a beat (was ~2.05 s). `hunterPulseGrow`'s `max` bound — the binding
+  constraint spec §2 named — raised 300 → 5000 %/s, chosen so the raised bound sweeps the new envelope
+  in under one 60 fps frame (70/5000 = 0.014 s < 1/60 s), genuinely instantaneous rather than just
+  faster. `hunterPulseMax`'s own bound (200) and `hunterVolatileAge` (60) are untouched — nothing in the
+  retune argued for moving either. **⛔ G18's colour ask stays reversed** — `COLOR.satellite` unchanged,
+  `lerpColor()` stays deleted; the punch is motion-only, per Paul's explicit re-decision this session.
+  `DIFFICULTY-LEVERS.md`'s not-a-lever row and GDD §2's volatility bullet both take the new numbers.
 
 - New `scratchpad/test-cs036-p2.js` (127 assertions, seeded) drives the real `update()`, the real
   keydown listener and the real `handleGamepadMenu()`: a real bullet kills the last size-1 Garbage
@@ -242,9 +265,9 @@ None.
 
 ## Next up
 
-- **CS036 P4 — the Hunter heartbeat punch** (spec §2): bounds + defaults, independent of the ceremony.
-  Then P5 (dock ping cooldown + FLAG-CS034-e, registry 105 → **106**) and P6 (suite triage). ⛔ The
-  ceremony is complete as of P3; P1–P3 land nothing further.
+- **CS036 P5 — dock ping cooldown + FLAG-CS034-e**, registry 105 → **106**. Then P6 (suite triage). ⛔
+  The ceremony is complete as of P3, and the heartbeat punch is complete as of P4; neither lands
+  anything further.
 
 - **P7's doc sweep — five GDD passages now describe a build that no longer exists.** None is a code
   defect; the GDD is §2 = shipped only, so all five are the sweep's. The build's own remaining

@@ -35,14 +35,16 @@ function quiet(X) {
 (function sectionA() {
   console.log("(A) the five HUNTER-section registry rows exist with their spec'd bounds");
   const X = buildGame();
-  // REPOINTED BY CS035 P7 (GATE G15/G16): three `def`s moved at the playtest — hunterVolatileAge
-  // 30 -> 60, and the pulse envelope 92/115 -> 87/125. Bounds, step, unit and section are unchanged,
-  // and every section below reads DEBUG live rather than a literal, so only this row list moves.
+  // REPOINTED BY CS036 P4 (spec §2): the punch retune moved four `def`s and raised
+  // hunterPulseGrow's `max` bound (the old 300 %/s ceiling was the binding constraint identified in
+  // spec). Envelope 87/125 -> 80/150, grow 55 -> 900 %/s (bound 300 -> 5000), shrink 28 -> 20 %/s.
+  // hunterVolatileAge is untouched. Bounds/step/unit not named here are unchanged, and every section
+  // below reads DEBUG live rather than a literal, so only this row list moves.
   hasKnob(X, "hunterVolatileAge", { def: 60, min: 0, max: 120, step: 1, unit: "s" }, A);
-  hasKnob(X, "hunterPulseMin", { def: 87, min: 50, max: 100, step: 1, unit: "%" }, A);
-  hasKnob(X, "hunterPulseMax", { def: 125, min: 100, max: 200, step: 1, unit: "%" }, A);
-  hasKnob(X, "hunterPulseGrow", { def: 55, min: 5, max: 300, step: 5, unit: "%/s" }, A);
-  hasKnob(X, "hunterPulseShrink", { def: 28, min: 5, max: 300, step: 1, unit: "%/s" }, A);
+  hasKnob(X, "hunterPulseMin", { def: 80, min: 50, max: 100, step: 1, unit: "%" }, A);
+  hasKnob(X, "hunterPulseMax", { def: 150, min: 100, max: 200, step: 1, unit: "%" }, A);
+  hasKnob(X, "hunterPulseGrow", { def: 900, min: 5, max: 5000, step: 5, unit: "%/s" }, A);
+  hasKnob(X, "hunterPulseShrink", { def: 20, min: 5, max: 300, step: 1, unit: "%/s" }, A);
   const ids = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
   const iHunter = ids.indexOf("#HUNTER"), iUfo = ids.indexOf("#UFO");
   for (const id of ["hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink"]) {
