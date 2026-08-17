@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.34 · Changeset: CS035 · Phase: P2 · Registry: 92 · Levers: 18
+Version: 1.0.0.34 · Changeset: CS035 · Phase: P3 · Registry: 96 · Levers: 18
 
 ## Phase ledger — CS035
 
@@ -29,10 +29,33 @@ Version: 1.0.0.34 · Changeset: CS035 · Phase: P2 · Registry: 92 · Levers: 18
   gate and the `deliveryCount = 0` reset. Registry 91→92; no lever moved. Twenty suite files repointed
   in this commit, nineteen phase tests plus `test-registry.js`'s count.
 
+- P3 — level-end invincibility: a protection window now spans the level-end seam. `game.levelEndSafe`
+  opens on the frame the last Garbage Satellite dies (a `waveClearTimer === 0` latch in the wave-clear
+  branch), holds through `levelEndHold`, the celebration panel, `nextWave()` and the "Level N" banner,
+  and closes when the post-banner grace — armed as a one-shot on the banner's expiry **crossing** —
+  reaches exactly 0. The `2.5` hold literal is REPLACED by `DEBUG.levelEndHold` (5.0s total, not 7.5).
+  Five spec gate sites became four literal edits: `&& !game.levelEndSafe` on the two
+  `ship.invuln <= 0` conditions, and a new guard on each of the two chain blocks — **guarded, not
+  absorbed**, so `breakChain()` is never entered and no chain-guard charge is spent. `ship.invuln`,
+  `shieldDeflect`/`shieldBounce`, `SHIELD_HIT_COST`, `dmgThisWave` and the Perfect Wave latch are all
+  untouched. The tell is a triangle wave on ship alpha (1.0 → 0.2 → 1.0, phase accumulated in
+  HALF-CYCLES) that REPLACES the hit-stun blink for the window's duration and accelerates across the
+  grace. Registry 92→96 (CELEBRATION); no lever moved. Seventeen suite files repointed in this commit
+  plus `test-registry.js`'s count.
+
 ## Working / verified
 
-- Full suite on a full clone: **139 files, 137 passed, 2 pre-existing failures, 0 skipped** — the
+- Full suite on a full clone: **140 files, 138 passed, 2 pre-existing failures, 0 skipped** — the
   same two files (`test-f2`, `test-v36-death`) that were already red on this phase's parent.
+- New `scratchpad/test-cs035-p3.js` drives the real paths end to end: a bullet killing the last
+  satellite opens the window in that same `update()`; the hold is the knob (nothing at 2.6s, the wave at
+  5.0s, and a retuned 1.0s hold moves the seam); a hostile bullet and a Hunter on the hull do nothing;
+  a Hunter and a hostile bullet on a settled six-node chain sever nothing and spend no guard charge
+  (with a window-shut control that does both); the panel still opens and still defers `nextWave()`;
+  the banner's crossing arms exactly `levelEndGrace` and the window shuts on the frame it hits 0; a
+  fresh `startGame()` is never protected for a single frame; `nextWave()` mid-window moves none of the
+  three; and the alpha pulse is read off `ctx.stroke()` through the real `Ship.draw()` — 1.0 at phase 0,
+  0.2 at phase 1, restored to 1 before the shield block, and the blink skipped while the window is open.
 - New `scratchpad/test-cs035-p2.js` drives the real pickup/push/offload paths: the lockout either side
   of the ring boundary (and exactly on it, which is outside), the push's exact `dockBounceSpeed`
   magnitude/direction and its no-accumulation-on-a-second-frame property, the ship taking no recoil or
@@ -51,6 +74,32 @@ Version: 1.0.0.34 · Changeset: CS035 · Phase: P2 · Registry: 92 · Levers: 18
 
 ## Known issues
 
+- **NEW — a wave cleared while the PREVIOUS level's banner is still live arms the grace early.** The
+  banner-expiry one-shot fires on any crossing with `levelEndSafe` true, and it cannot tell the level-1
+  banner it was written to exclude (handled by the `levelEndSafe` clause) from a level-N banner that has
+  simply not expired yet. Clear a wave inside `DEBUG.levelBannerTime` (2.2s) of that level starting and
+  the grace arms off the OLD banner, so the window shuts around the moment `nextWave()` fires and the new
+  banner's own crossing finds `levelEndSafe` already false — protection through the hold, none through
+  the banner. Unreachable in play at the shipped 2.2s (a level-1 clear is ~39 kills), but the
+  `levelBannerTime` knob goes to 8s, which puts it in reach from the debug panel. Spec §3.4's arm is
+  written exactly as shipped; narrowing it (e.g. also requiring `waveClearTimer > 0`) is a design call,
+  not wiring, so it was flagged rather than taken.
+- **NEW — spec §3.6's five gate sites are four `if`s in the shipped build.** Sites 2 ("hazards vs ship")
+  and 3 ("Hunter knockback / i-frame block") are the SAME condition: the Hunter arm — `damageShip()` plus
+  CS023 P3's mutual kill — lives inside the hazards-vs-ship block, and the comment at that arm already
+  names the block's own `invuln <= 0` gate as its rate limiter. One guard covers both rows; there is no
+  separate Hunter block, and `game.ship.invuln` has exactly two read sites in the collision passes.
+- **NEW — `nextWave()` had no "reset block comment" to append to.** The prompt describes a comment there
+  listing what the function zeroes, naming `sweepPause`/`deliveryCount`; that text is actually
+  `buildSaveEntry()`'s "Deliberately absent" note. `nextWave()` zeroes only `waveTime` and
+  `stats.dmgThisWave`. The required ⛔ note was written fresh above those two rather than grafted onto
+  the wrong function's comment. The three fields' reset went into `resetRun()`, not `startGame()` —
+  the standing CS016 P3 both-places rule, and what the prompt's "startGame() ONLY" means today, since a
+  field added to `startGame()`'s thin body would be missed by every resumed run.
+- **NEW — the GDD has no shipped-behaviour prose for the level-end window yet, and P3 did not write
+  any.** Same convention P1/P2 followed: `ORBITAL-OVERHAUL-GDD.md` §2 is the closing phase's doc sweep.
+  Worth folding in with the §2.10 stale text below: the sequence, the three fields, the five gate sites,
+  and ⛔ that `levelEndSafe` is never merged into `ship.invuln`.
 - **⛔ NEW — the GDD's shipped-behaviour prose for the towed/incidental split is now stale, and P2 did
   not sweep it.** `ORBITAL-OVERHAUL-GDD.md` §2.10 still documents `towed: !inRing`, the LIFO tagging
   rationale, the incidental's flat `DOCK_BASE_SCORE`/size-12 floater and "loitering at the dock to mop
@@ -122,8 +171,10 @@ None.
 
 ## Next up
 
-- **CS035 P2–P6 are next**, per `IMPLEMENTATION-PHASES-CS035.md`: dock scoop lockout, level-end
-  invincibility, Hunter volatility (age/heartbeat, then damage sources), and a powerup rebalance.
+- **CS035 P4–P6 are next**, per `IMPLEMENTATION-PHASES-CS035.md`: Hunter volatility (age/heartbeat,
+  then damage sources), and a powerup rebalance. ⛔ P4's note already flags that P3 added a
+  `!game.levelEndSafe` guard to the hostile-bullet-vs-chain block — any new hunter loop cutting the
+  chain needs the same guard, for the same guarded-not-absorbed reason.
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess, given CS029 already measured the naive version as worse. See "Known issues."
 - **Celebration header treatment (Gate B, B8) — reads clearly enough to ship, but the abrupt
@@ -143,6 +194,14 @@ None.
   could migrate to `execSource()` whenever one of them is next open for other reasons.
 
 ## Playtest asks (open only — answered ones move to the log)
+
+- **FLAG-CS035-c (from P3) — is the 10.2-second window right, and does the pulse read as protection
+  rather than as damage?** Shipped total is 5.0s hold + 2.2s banner + 3.0s grace. Three things to feel
+  for: whether 5s of full-control invincibility over an already-cleared field is a breather or dead air;
+  whether the accelerating tail (0.25s → 0.08s one-way) actually reads as "this is running out" without a
+  countdown; and whether the 20% alpha floor is distinguishable at a glance from the hit-stun blink it
+  replaces, given both now mean "you are not being hit". If the hold drags, `levelEndHold` is the knob —
+  the pulse floor/ceiling deliberately are not.
 
 - **FLAG-CS035-b (from spec §2.6) — is the ring boundary FELT, or merely suffered?** A player who
   parks just outside the ring to grab one more piece still loses their run to the towed-hook reset,

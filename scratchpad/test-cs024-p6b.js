@@ -592,6 +592,11 @@ function evalSlice(literal) {
     // levelBannerY is no longer the true tail) — CS030 P3's rows, not P6b's. Same reasoning an
     // eighth time.
     const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "")
+      // CS035 P3 repoint: strip the level-end protection window's four (levelEndHold/Grace/Fade/
+      // GracePulseEnd, CELEBRATION, appended after celebrationEmblemSize) — CS035 P3's rows, not P6b's.
+      // ⛔ THIS CHAIN IS TAIL-ORDERED and every clause in it is `$`-anchored: each strip must run while
+      // its own rows ARE the tail, so a newer section's strip goes ABOVE an older one's, never below.
+      .replace(/,levelEndHold,levelEndGrace,levelEndFade,levelEndGracePulseEnd$/, "")
       .replace(/,CELEBRATION,celebrationScrollStep,celebrationEmblemSize$/, "")
       .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
       .replace(/,startLevel$/, "")

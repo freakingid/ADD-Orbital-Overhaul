@@ -694,7 +694,22 @@ function saucerAt(X, x, y, small) {
     const b0 = bodyOf(headSrc(), "// --- Hazards vs tow chain", "// Saucer bullets can shatter");
     const b1 = bodyOf(scriptSrc, "// --- Hazards vs tow chain", "// Saucer bullets can shatter");
     assert(b0.length > 0 && b1.length > 0, "A: TRAP 3 — the hazards-vs-chain block found in both HEAD and current source");
-    eq(b1, b0, "A: TRAP 3 — the whole hazards-vs-chain scan is BYTE-UNCHANGED");
+    // REPOINTED BY CS035 P3 (spec §3.6, site 5): the level-end protection window now guards this whole
+    // scan — while the window is open the block is not entered at all, so a hazard cannot reach
+    // breakChain() and spend a chain-guard charge for protection the player did not earn. CS023 P3's own
+    // claim ("no NEW way for a satellite to cut the chain") is untouched and in fact strengthened, so the
+    // one known diff is NAMED and applied before comparing, exactly as the breakChain pin above does for
+    // CS024 P6's and CS029 P4's edits. The scan's body stays a strict byte comparison.
+    const OLD_OPEN = "  if (game.chain.length) {";
+    const NEW_OPEN = "  if (game.chain.length && !game.levelEndSafe) {";
+    const iNote = b1.indexOf("  // CS035 P3 (spec §3.6"), iOpen = b1.indexOf(NEW_OPEN);
+    assert(iNote >= 0 && iOpen > iNote, "A: TRAP 3 — CS035 P3's guard and its note are both present, note first");
+    const p3Note = b1.slice(iNote, iOpen);
+    assert(p3Note.split("\n").every(l => l.trim() === "" || l.trim().startsWith("//")),
+      "A: TRAP 3 — ...and everything P3 inserted ahead of the `if` is comment, not code");
+    assert(b0.includes(OLD_OPEN), "A: TRAP 3 — the pinned parent really did open the scan unguarded (not a vacuous pass)");
+    eq(b1, b0.replace(OLD_OPEN, p3Note + NEW_OPEN),
+      "A: TRAP 3 — CS035 P3's level-end guard is the ONLY diff; the whole scan is otherwise BYTE-UNCHANGED");
   }
 })();
 

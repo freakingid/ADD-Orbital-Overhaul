@@ -85,10 +85,21 @@ function assert(cond, msg) {
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 
 // ---- Helpers ----
+// REPOINTED BY CS035 P3: an empty game.debris IS a wave clear, and CS035 P3 opens the level-end
+// protection window on the frame it becomes true — invincible ship, guarded tow chain, no damage at all.
+// This file's claims are about Hunter behaviour in ordinary play (its H-sections deliberately need an
+// empty field for the core's pursuit gate), so the staging now says what it always meant: the field is
+// empty for convenience, this is not a level ending.
+// ⛔ Clearing game.levelEndSafe alone is NOT enough — the arm is latched on `waveClearTimer === 0`, which
+// is exactly what this staging leaves behind, so the window would re-open on the next update(). The timer
+// is parked far below zero instead: it can never equal 0 again (no re-arm) and can never reach
+// DEBUG.levelEndHold (no nextWave() out from under a section that runs long), whatever dt is fed in.
 function clearField() {
   game.debris.length = 0; game.hunters.length = 0;
   game.saucers.length = 0; game.bullets.length = 0; game.chain.length = 0;
   game.garbage.length = 0; game.particles.length = 0; game.floaters.length = 0;
+  game.levelEndSafe = false; game.levelEndGraceT = 0; game.levelEndPulseT = 0;
+  game.waveClearTimer = -1e9;
 }
 function resetShip(over = {}) {
   Object.assign(game.ship, {

@@ -629,7 +629,11 @@ let X = null;
   // CS035 P2 repoint: +1 more (dockBounceSpeed, DELIVERY — how fast the dock lockout shoves a piece of
   // Debris back out of the capture region). Not a lever: a fixed feel number for a rule that is on or
   // off by position, not a pressure axis that escalates with the level. No chain, no triple.
-  eq(nonLever.length, 38, "G: 38 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2's registry");
+  // CS035 P3 repoint: +4 more (levelEndHold/Grace/Fade/GracePulseEnd, CELEBRATION — the level-end
+  // protection window's hold, grace, and the two one-way transition times its alpha pulse runs at).
+  // Not levers: a protection window and its pulse are look-and-feel, on or off by game state, with no
+  // chain and no floor/ceil/steps triple. Same reasoning a ninth time.
+  eq(nonLever.length, 42, "G: 42 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

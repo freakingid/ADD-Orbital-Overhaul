@@ -142,7 +142,9 @@ let X = null;
     "A: the four rows appear immediately after startLevel, in order: Time, Fade, Size, Y");
   // REPOINTED BY CS030 P3: a CELEBRATION section (2 rows) now trails GLOBAL, so levelBannerY is no
   // longer literally the last row in DEBUG_VARS — narrowed to "nothing else was appended to GLOBAL".
-  eq(iY, X.DEBUG_VARS.length - 1 - 3, "A: levelBannerY is the last row of GLOBAL — only CS030 P3's CELEBRATION header + 2 rows trail it");
+  // REPOINTED BY CS035 P3: CELEBRATION gained four more rows (the level-end protection window), so the
+  // tail grows from 3 to 7. The claim itself is unchanged — nothing was appended to GLOBAL.
+  eq(iY, X.DEBUG_VARS.length - 1 - 7, "A: levelBannerY is the last row of GLOBAL — only CS030 P3's CELEBRATION header + its 2 rows + CS035 P3's 4 trail it");
 
   const rTime = X.DEBUG_VARS[iTime], rFade = X.DEBUG_VARS[iFade], rSize = X.DEBUG_VARS[iSize], rY = X.DEBUG_VARS[iY];
   eq(rTime.label, "Level banner hold", "A: levelBannerTime label");
@@ -346,7 +348,9 @@ let X = null;
     // its place) — same idiom again, named rather than wildcarded.
     // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed) — same idiom
     // again, a later phase's row named rather than wildcarded.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 11, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four and CS035 P2's one (measured, not counted)");
+    // REPOINTED BY CS035 P3: +4 more (levelEndHold/Grace/Fade/GracePulseEnd, the level-end protection
+    // window) — same idiom again, a later phase's rows named rather than wildcarded.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 15, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one and CS035 P3's four (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

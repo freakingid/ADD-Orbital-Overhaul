@@ -3811,6 +3811,25 @@ const DEBUG_VARS = [
     def: 60, min: 10, max: 200, step: 10 },
   { id: "celebrationEmblemSize", label: "Celebration emblem size", unit: "px",
     def: 32, min: 12, max: 64, step: 2 },
+  // CS035 P3 (spec §3.2): the LEVEL-END PROTECTION WINDOW's four knobs. They live under CELEBRATION
+  // because the window exists to wrap the celebration-panel seam — wave clear -> hold -> panel (if any)
+  // -> "Level N" banner -> grace -> vulnerable. NOT LEVERS: no floor/ceil/steps triple, no carriesTo, no
+  // LEVERS row. A protection window is a look-and-feel call, not a pressure axis (DIFFICULTY-LEVERS.md §4).
+  //   ⛔ levelEndHold REPLACED the wave-clear branch's `2.5` literal — it is the WHOLE pre-nextWave() hold,
+  // not an addition to it. See update()'s wave-clear branch.
+  //   ⛔ BOTH TIME KNOBS BELOW ARE ONE-WAY TRANSITION TIMES — "how long does 100% -> 20% take". The full
+  // pulse PERIOD is 2x each of them (0.5 s at rest, 0.16 s at the end of the grace). They are in the same
+  // units as each other deliberately: levelEndGracePulseEnd was offered in conversation as a 0.15 s
+  // PERIOD, and a mixed-units pair sitting two rows apart would eventually be read against each other and
+  // be wrong by a factor of two. Do not "fix" one of them into a period.
+  { id: "levelEndHold", label: "Level-end hold", unit: "s",
+    def: 5.00, min: 0, max: 15, step: 0.25 },
+  { id: "levelEndGrace", label: "Level-end grace", unit: "s",
+    def: 3.00, min: 0, max: 10, step: 0.25 },
+  { id: "levelEndFade", label: "Level-end fade time", unit: "s",
+    def: 0.25, min: 0.05, max: 1.50, step: 0.05 },
+  { id: "levelEndGracePulseEnd", label: "Level-end grace pulse end", unit: "s",
+    def: 0.08, min: 0.02, max: 0.50, step: 0.02 },
 ];
 // CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
@@ -5964,8 +5983,25 @@ class Ship {
   }
   draw() {
     if (this.dead) return;
-    const blink = this.invuln > 0 && Math.floor(this.invuln * 10) % 2 === 0;
+    // CS035 P3 (spec §3.5): the LEVEL-END PROTECTION WINDOW's tell — a continuous triangle wave on the
+    // ship's alpha, 100% -> 20% -> 100%, for the whole window. It is deliberately NOT the hit-stun blink:
+    // the blink is a hard 10Hz square that says "I just got hit", and this says "the level ended".
+    // ⛔ WHILE THE WINDOW IS OPEN THE BLINK IS SKIPPED ENTIRELY. A hit taken in the seconds before the
+    // clear leaves invuln running into the window, and the two together would strobe the ship at 10Hz on
+    // top of the 2Hz pulse. The pulse REPLACES it; ship.invuln itself is untouched and still decays.
+    // ⛔ THE 0.2 FLOOR AND THE 1.0 CEILING ARE NOT KNOBS (spec §3.5). Two more sliders for a thing whose
+    // whole job is "obviously not normal" is knob sprawl; a different floor is a later one-line change.
+    const levelEndSafe = game.levelEndSafe;
+    const blink = !levelEndSafe && this.invuln > 0 && Math.floor(this.invuln * 10) % 2 === 0;
     if (!blink) {
+      // ⛔ SET-DRAW-RESTORE, the file's standing idiom (three other sites, the shield block below among
+      // them). The restore MUST land before that block, which sets its own alpha and assumes it enters
+      // at 1. The phase is accumulated in update(); this only reads it.
+      if (levelEndSafe) {
+        const p = game.levelEndPulseT % 2;
+        const tri = p < 1 ? p : 2 - p;      // 0 -> 1 -> 0
+        ctx.globalAlpha = 1 - 0.8 * tri;    // 1.0 -> 0.2 -> 1.0
+      }
       // Scoop mouth (v3.3 P3; prong-V render restored CS010 P1 — see GDD §2.14.1 for the box-render
       // supersession history). Drawn BEFORE the hull in COLOR.dock green so it reads as a collector's
       // throat: an open V from the ship's nose (16,0) flaring forward to +/-SCOOP_WIDTH[lvl]/2 at
@@ -5989,6 +6025,7 @@ class Ship {
         const flame = [[-7, -4], [-15 - Math.random() * 6, 0], [-7, 4]];
         drawPoly(flame, this.x, this.y, this.angle, "#ffb060", false);
       }
+      if (levelEndSafe) ctx.globalAlpha = 1;   // CS035 P3: restore BEFORE the shield block below
     }
     if (this.shieldOn) {
       ctx.beginPath();
@@ -7222,7 +7259,27 @@ const game = {
   // Paul's gate answer set the minimum bar at "we definitely see a Level 2 on the screen", and routing the
   // visual through the audio gate would put that bar at the mercy of whatever else Dan happened to be
   // saying — the exact failure Q6 was raised about. The two announcements share a string, nothing else.
-  levelBanner: { text: "", life: 0 }
+  levelBanner: { text: "", life: 0 },
+  // CS035 P3 (spec §3.3) — THE LEVEL-END PROTECTION WINDOW. Three fields, one window: it opens on the
+  // frame the last Garbage Satellite dies, spans the hold, the celebration panel, nextWave() and the
+  // "Level N" banner, and closes when the post-banner grace runs out. Declared in BOTH this literal and
+  // resetRun() per the standing CS016 P3 rule.
+  //
+  // ⛔ levelEndSafe IS NOT ship.invuln, AND THE TWO ARE NEVER MERGED. ship.invuln is HIT-STUN — it is set
+  // by damageShip(), it decays in Ship.update(), and it drives a 10Hz hard square blink in Ship.draw().
+  // Folding level-end protection into it would (a) inherit that blink, which is the wrong visual, and
+  // (b) make "the level just ended" indistinguishable from "I just got hit". Every damage gate reads
+  // BOTH, and Ship.draw() SKIPS the blink entirely while this is set (spec §3.5).
+  //
+  // ⛔ NOT RESET BY nextWave(), WHICH RUNS INSIDE THE WINDOW. See the note in nextWave().
+  levelEndSafe: false,
+  // Seconds of post-banner grace left. > 0 only during the window's last step; armed as a one-shot at the
+  // level banner's expiry crossing, and its arrival at exactly 0 is the ONE thing that clears levelEndSafe.
+  levelEndGraceT: 0,
+  // The alpha pulse's phase, in HALF-CYCLES (0..1 fades out, 1..2 fades back in) — ⛔ NOT SECONDS.
+  // levelEndGracePulseEnd shortens the period across the grace, and a seconds-based phase would jump
+  // discontinuously the moment the period moved. Same integrate-the-phase reason as game.lowHpPhase above.
+  levelEndPulseT: 0
 };
 
 // ---------- CS022 P1: per-archetype world size (PLANNED-FEATURES-CS022 §4.1/§4.2/§4.3) ----------
@@ -7466,6 +7523,14 @@ function resetRun(wave, debugRun) {
   // nextWave() call below, which is what SETS the level-1 banner. Moving it after would blank the banner
   // of the level the player is about to start, and the bug would only show on level 1.
   game.levelBanner = { text: "", life: 0 };
+  // CS035 P3 (spec §3.3): the level-end protection window is closed on a fresh run, and THIS IS ITS ONLY
+  // RESET SITE. ⛔ Deliberately NOT in nextWave() — nextWave() runs inside an open window (see its own
+  // note). The order matters for exactly one of the three: startGame() calls nextWave() right after this
+  // returns, which seeds the level-1 banner; the banner-expiry arm reads levelEndSafe, so it MUST already
+  // be false by then or every new run would open with a free grace period.
+  game.levelEndSafe = false;
+  game.levelEndGraceT = 0;
+  game.levelEndPulseT = 0;
   VoiceSys.reset();
   // CS033 P2: the run-start hook, in the ONE reset both a fresh run and a resumed run share — a
   // resumed run mints a runId too, harmlessly, since Leaderboard.eligible() gates it out at submit.
@@ -7590,6 +7655,17 @@ function nextWave() {
   // reading it after the reset would only ever log 0.
   const prevLevelSecs = game.waveTime;
   game.waveTime  = 0;
+  // ⛔ CS035 P3 (spec §3.3) — WHAT THIS FUNCTION ZEROES, AND WHAT IT DELIBERATELY DOES NOT.
+  // It zeroes state that belongs to the level just finished and is meaningless at the start of a new one:
+  // game.waveTime above, and game.stats.dmgThisWave below (the perfect-wave window). Loose garbage, the
+  // tow chain, the Hunters and the powerup budgets all survive by design (CS024 P3) — this has never been
+  // a "clear the field" function.
+  //   game.levelEndSafe / levelEndGraceT / levelEndPulseT are the OPPOSITE of per-level state and MUST NOT
+  // BE ADDED HERE. nextWave() is called from INSIDE the level-end protection window (spec §3.1 step 4:
+  // clear -> hold -> panel -> THIS -> banner -> grace), so zeroing any of the three here would end the
+  // protection at the exact instant the "Level N" banner appears — the middle of the window, not its end.
+  // They are reset in resetRun() and nowhere else. A future tidy-up pass that "notices" the omission is
+  // reading this comment for a reason.
   VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
   // CS025 P5 (gate Q6) — the VISUAL half of the level announcement, and the half that cannot be lost.
   // Same string sayLevel() speaks, but set unconditionally: no AudioSys.ctx guard (this is a render field,
@@ -9558,6 +9634,33 @@ function update(dt) {
   // Capture.hudVisible reason as hudHull/cargoFlash above: a decay that only ran while drawn would freeze
   // while the HUD is hidden with H and pop back on re-show.
   if (game.hpReliefFlash > 0) game.hpReliefFlash = Math.max(0, game.hpReliefFlash - dt);
+  // CS035 P3 (spec §3.4/§3.5) — the level-end protection window's per-frame half: the grace countdown that
+  // CLOSES the window, and the phase accumulator that drives Ship.draw()'s alpha pulse.
+  //   PLACEMENT IS LOAD-BEARING IN ONE DIRECTION: this must stay ABOVE the level-banner tick further down,
+  // which is what ARMS the grace. Arming and then ticking in the same frame would eat a frame of grace on
+  // every crossing. It sits with the cargoFlash/hpReliefFlash decays for the same Capture.hudVisible
+  // reason they do — nothing here may depend on whether anything was drawn.
+  //   Reaching exactly 0 is the window's ONE close. Math.max pins the landing so the `=== 0` test cannot
+  // be stepped over by a large dt, exactly as the two decays above do.
+  if (game.levelEndGraceT > 0) {
+    game.levelEndGraceT = Math.max(0, game.levelEndGraceT - dt);
+    if (game.levelEndGraceT === 0) game.levelEndSafe = false;
+  }
+  // ⛔ THE PHASE ACCUMULATES IN HALF-CYCLES, NOT SECONDS. `oneWay` is the 100% -> 20% transition time, and
+  // it CHANGES mid-window: across the grace it ramps from levelEndFade to levelEndGracePulseEnd (spec's
+  // M2 — the protection running out is told by the thing already moving simply moving faster, with no
+  // countdown text and no second channel). Dividing dt by the LIVE one-way time keeps the accumulator
+  // continuous through any period change, including a mid-window slider drag; a `phase = t / period` form
+  // would snap the moment either knob moved. Same integrate-the-phase reason as game.lowHpPhase above.
+  //   Deliberately NOT wrapped with a modulo here: Ship.draw() takes `% 2` at the point of use, and 60 fps
+  // of the shortest period still needs ~10^13 seconds to lose a bit of precision.
+  if (game.levelEndSafe) {
+    const graceFrac = game.levelEndGraceT > 0
+      ? 1 - game.levelEndGraceT / Math.max(0.0001, DEBUG.levelEndGrace)
+      : 0;
+    const oneWay = DEBUG.levelEndFade + (DEBUG.levelEndGracePulseEnd - DEBUG.levelEndFade) * graceFrac;
+    game.levelEndPulseT += dt / Math.max(0.0001, oneWay);
+  }
   // Camera tracks the ship's world position every frame (world wraps, so no clamping)
   game.camera.x = game.ship.x;
   game.camera.y = game.ship.y;
@@ -9626,7 +9729,18 @@ function update(dt) {
   // CS025 P5: age the level banner alongside it. In the PLAYING body, so it holds through a pause and
   // resumes rather than expiring behind the menu — the same treatment the caption gets, for the same
   // reason. drawLevelBanner() gates on life > 0. Allowed to run negative; nothing reads it below zero.
+  // CS035 P3 (spec §3.4): the banner's expiry ARMS the level-end grace — the window's last step. A ONE-SHOT
+  // ON THE CROSSING, not a `life <= 0` test: life is allowed to run negative and stays there for the rest
+  // of the level, so a plain test would re-arm the grace on every subsequent frame and the protection would
+  // never end.
+  //   ⛔ THE `game.levelEndSafe` CLAUSE IS LOAD-BEARING, NOT DEFENSIVE. startGame() calls nextWave() for
+  // wave 1, which seeds a banner with no level-end window behind it; without this clause every new run
+  // would open with DEBUG.levelEndGrace seconds of free invincibility.
+  const bannerWasLive = game.levelBanner.life > 0;
   game.levelBanner.life -= dt;
+  if (bannerWasLive && game.levelBanner.life <= 0 && game.levelEndSafe) {
+    game.levelEndGraceT = DEBUG.levelEndGrace;
+  }
   if (game.dock) game.dock.update(dt);
 
   // CS024 P1: CS023 P4's single `updateDebrisDrift(dt)` call STOOD HERE — after every entity's update(dt)
@@ -10084,7 +10198,12 @@ function update(dt) {
       }
     } else {
       // hostile bullet vs player
-      if (!game.ship.dead && game.ship.invuln <= 0) {
+      // CS035 P3 (spec §3.6, site 1): + the level-end protection window. It reads ALONGSIDE ship.invuln,
+      // never instead of it — hit-stun and level-end protection are separate states (see game.levelEndSafe).
+      // ⛔ shieldDeflect / shieldBounce and the shield's own SHIELD_HIT_COST are untouched by this phase:
+      // a player holding shield through the window sees no change, because this outer gate simply never
+      // reaches them. Same for game.stats.dmgThisWave and the Perfect Wave latch.
+      if (!game.ship.dead && game.ship.invuln <= 0 && !game.levelEndSafe) {
         const r = game.ship.shieldOn ? SHIELD_RADIUS : SHIP_RADIUS;
         if (dist2(b, game.ship) < r * r) {
           b.dead = true;
@@ -10096,7 +10215,14 @@ function update(dt) {
         }
       }
       // hostile bullet vs tow chain
-      if (!b.dead && game.chain.length) {
+      // CS035 P3 (spec §3.6, site 4; FORK-K → yes): the tow chain is inside the window too, or "safe" is a
+      // lie — the player keeps full control through the hold and the grace, and a load lost to a saucer
+      // shot during protection would read as exactly the bug this window exists to remove.
+      // ⛔ GUARDED, NOT ABSORBED. This must not reach breakChain() AT ALL while the window is open:
+      // breakChain() is the chain-guard choke point, so routing there would spend a guard charge and speak
+      // the chain_guard line for protection the player did not earn. The bullet is left alive and un-dead
+      // too, so it simply flies on through.
+      if (!b.dead && game.chain.length && !game.levelEndSafe) {
         for (let i = 0; i < game.chain.length; i++) {
           if (dist2(b, game.chain[i]) < 9 * 9) {
             b.dead = true; breakChain(i, b); break;   // CS019 P1: src passed for symmetry; a dead bullet never re-presents
@@ -10107,7 +10233,14 @@ function update(dt) {
   }
 
   // --- Collisions: hazards vs ship ---
-  if (!game.ship.dead && game.ship.invuln <= 0) {
+  // CS035 P3 (spec §3.6, sites 2 AND 3): + the level-end protection window. The spec's table lists the
+  // Hunter knockback / i-frame block separately from "hazards vs ship"; in the shipped build they are ONE
+  // `if` — the Hunter arm (damageShip + the CS023 P3 mutual kill) lives inside this block, and the comment
+  // at that arm already names this gate as its rate limiter. One guard covers both rows.
+  // ⛔ Closing this gate closes the saucer-body arm below it too, which is intended: everything that can
+  // damage the hull is off for the window. The shielded arms (shieldDeflect, the deflect counters,
+  // SHIELD_HIT_COST) are untouched — unreachable for the window's duration, not modified.
+  if (!game.ship.dead && game.ship.invuln <= 0 && !game.levelEndSafe) {
     const hazards = [...game.debris, ...game.hunters];
     for (const h of hazards) {
       if (h.dead) continue;
@@ -10171,7 +10304,12 @@ function update(dt) {
 
   // --- Hazards vs tow chain: a hit destroys that canister and cuts loose
   //     everything behind it (falls back to free garbage) ---
-  if (game.chain.length) {
+  // CS035 P3 (spec §3.6, site 5; FORK-K → yes): the chain's other hostile source, guarded on the whole
+  // scan for the same reason as the bullet block above — ⛔ GUARDED, NOT ABSORBED. Not one frame of this
+  // may reach breakChain() while the window is open, or the level-end protection would quietly spend the
+  // player's chain-guard charges and speak chain_guard at them. The h.guardT stamps set by earlier real
+  // absorptions are left exactly as they are; they simply age out unread.
+  if (game.chain.length && !game.levelEndSafe) {
     const chainHazards = [...game.debris, ...game.hunters];
     chainScan:
     for (let i = 0; i < game.chain.length; i++) {
@@ -10278,8 +10416,18 @@ function update(dt) {
   // --- Wave clear --- CS015 P3: clears on debris-empty alone; Hunters and loose garbage
   // carry over by design (not wiped by nextWave()) and can accumulate if neglected.
   if (game.debris.length === 0) {
+    // CS035 P3 (spec §3.4) — THE LEVEL-END PROTECTION WINDOW OPENS HERE, on the frame the last Garbage
+    // Satellite dies, not when the hold expires: the wave-clear condition reads game.debris ONLY, so
+    // Hunters and saucers are still live and still hunting throughout everything below (§0.5).
+    //   The `=== 0` test is the "passes through exactly once" latch idiom the dock block already uses in
+    // four places — the else branch below zeroes waveClearTimer on every frame Debris exists, so this
+    // re-arms on every clear and fires once per clear. levelEndPulseT restarts with it so the pulse
+    // always opens at full brightness rather than wherever the previous window left it.
+    if (game.waveClearTimer === 0) { game.levelEndSafe = true; game.levelEndPulseT = 0; }
     game.waveClearTimer += dt;
-    if (game.waveClearTimer > 2.5) {
+    // CS035 P3 (spec §3.4, FORK-I → replace): the `2.5` literal that stood here IS this knob now — the
+    // hold is the whole pre-nextWave() pause, not an addition to a hidden 2.5 underneath it.
+    if (game.waveClearTimer > DEBUG.levelEndHold) {
       game.waveClearTimer = 0;
       // Achievements (F9): a wave completed with zero damage taken -> Perfect Wave (lifetime, 10×)
       // and, if it was wave 3, No Scratches (weekly). game.wave is still the completed wave here

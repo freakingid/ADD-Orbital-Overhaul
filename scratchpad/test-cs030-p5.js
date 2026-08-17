@@ -135,7 +135,20 @@ function freshPlay(X) {
 }
 // ONE real frame that crosses the 2.5s threshold: park the timer just under it and run update().
 // Everything the branch does — the perfect-wave block, the panel, nextWave() — runs for real.
-function clearFrame(X, dt) { X.game.waveClearTimer = 2.45; X.update(dt === undefined ? 0.1 : dt); }
+// REPOINTED BY CS035 P3: the wave-clear threshold is DEBUG.levelEndHold now, not the 2.5 literal this
+// helper's 2.45 was sized against. Read off the knob rather than re-pinned to 4.95, so a retune of the
+// hold cannot leave every section here stepping short of the branch and passing on nothing.
+// ⛔ Seeding waveClearTimer non-zero also steps OVER CS035 P3's `waveClearTimer === 0` arm latch, so the
+// level-end protection window never opens in this file. That is correct for it: every claim here is
+// about the PANEL — its open, its deferral, its freeze — and none is about the window.
+// ⛔ Each BUILD's own hold, not this build's — section D traces a parent build alongside the live one,
+// and the parent's threshold is the 2.5 literal CS035 P3 replaced. A parent has no levelEndHold knob, so
+// the fallback IS that parent's real hold, correctly pinned as history.
+function holdOf(X) { return X.DEBUG.levelEndHold === undefined ? 2.5 : X.DEBUG.levelEndHold; }
+function clearFrame(X, dt) {
+  X.game.waveClearTimer = holdOf(X) - 0.05;
+  X.update(dt === undefined ? 0.1 : dt);
+}
 // Rows in the shape onUnlock() banks (tiered and untiered both present).
 function fakeItems(n) {
   return Array.from({ length: n }, (_, i) => ({
@@ -230,7 +243,7 @@ function watchLevelVoice(X) {
   freshPlay(Y);
   const wY = Y.game.wave;
   Y.game.pendingAch = fakeItems(2);
-  Y.game.waveClearTimer = 2.45;
+  Y.game.waveClearTimer = holdOf(Y) - 0.05;   // CS035 P3 repoint: the hold is a knob now
   const shipUpdate = Y.game.ship.update.bind(Y.game.ship);
   Y.game.ship.update = dt => { shipUpdate(dt); Y.killShip(); };
   Y.update(0.1);
@@ -296,7 +309,7 @@ function watchLevelVoice(X) {
   function trace(X, frames) {
     const out = [];
     freshPlay(X);
-    X.game.waveClearTimer = 2.45;
+    X.game.waveClearTimer = holdOf(X) - 0.05;   // CS035 P3 repoint: EACH build's own hold
     for (let i = 0; i < frames; i++) {
       X.game.pendingAch.length = 0;
       X.update(0.1);
@@ -314,7 +327,7 @@ function watchLevelVoice(X) {
 
   const M = build();
   freshPlay(M);
-  M.game.waveClearTimer = 2.45;
+  M.game.waveClearTimer = holdOf(M) - 0.05;   // CS035 P3 repoint
   M.update(0.1);
   assert(M.game.celebration === null, "D: ⛔ ...and opens NO panel");
   assert(!M.render(() => M.draw()).some(x => x.c === "fillText" && x.str === "ACHIEVEMENTS UNLOCKED"),
