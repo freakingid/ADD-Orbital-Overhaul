@@ -7366,7 +7366,22 @@ const game = {
   // The alpha pulse's phase, in HALF-CYCLES (0..1 fades out, 1..2 fades back in) — ⛔ NOT SECONDS.
   // levelEndGracePulseEnd shortens the period across the grace, and a seconds-based phase would jump
   // discontinuously the moment the period moved. Same integrate-the-phase reason as game.lowHpPhase above.
-  levelEndPulseT: 0
+  levelEndPulseT: 0,
+  // CS036 P1 (spec §0.3, FORK-CS036-A) — THE LEVEL-END CEREMONY'S FREEZE. True while the field is held
+  // STILL for the completion announcement: a true freeze-frame, entities and collisions and the ship and
+  // the tow chain all stopped, run by updateLevelEndFreeze()'s reduced sim rather than by a per-system
+  // gate. A FOURTH field of the level-end window, and the same category as the three above — declared in
+  // BOTH this literal and resetRun() per the standing CS016 P3 rule.
+  //
+  // ⛔ NOT game.paused, for the identical reason CS030 P5's celebration-panel comment gives in update():
+  // setting that would satisfy menuActive() and drag in the whole menu chrome path — music ducking,
+  // drawMenu()'s input branch, the pause screen's semantics — and this is not a menu.
+  //
+  // ⛔ NOT RESET BY nextWave(), which runs INSIDE the freeze. See the note in nextWave().
+  //
+  // ⛔ INERT AS OF CS036 P1 — nothing sets it true. P1 owns the primitive and proves what a frozen frame
+  // may still run; P2 arms it at the wave clear and takes the input that lifts it.
+  levelEndFreeze: false
 };
 
 // ---------- CS022 P1: per-archetype world size (PLANNED-FEATURES-CS022 §4.1/§4.2/§4.3) ----------
@@ -7612,12 +7627,16 @@ function resetRun(wave, debugRun) {
   game.levelBanner = { text: "", life: 0 };
   // CS035 P3 (spec §3.3): the level-end protection window is closed on a fresh run, and THIS IS ITS ONLY
   // RESET SITE. ⛔ Deliberately NOT in nextWave() — nextWave() runs inside an open window (see its own
-  // note). The order matters for exactly one of the three: startGame() calls nextWave() right after this
+  // note). The order matters for exactly one of the four: startGame() calls nextWave() right after this
   // returns, which seeds the level-1 banner; the banner-expiry arm reads levelEndSafe, so it MUST already
   // be false by then or every new run would open with a free grace period.
+  //   CS036 P1 (spec §1.5 trap 2): game.levelEndFreeze joins them here, at the SAME site and for the same
+  // reason — the freeze arms at the wave clear and lifts partway through the NEXT level's banner, so it is
+  // in-flight state that must survive a wave boundary, not per-level state.
   game.levelEndSafe = false;
   game.levelEndGraceT = 0;
   game.levelEndPulseT = 0;
+  game.levelEndFreeze = false;
   VoiceSys.reset();
   // CS033 P2: the run-start hook, in the ONE reset both a fresh run and a resumed run share — a
   // resumed run mints a runId too, harmlessly, since Leaderboard.eligible() gates it out at submit.
@@ -7747,12 +7766,14 @@ function nextWave() {
   // game.waveTime above, and game.stats.dmgThisWave below (the perfect-wave window). Loose garbage, the
   // tow chain, the Hunters and the powerup budgets all survive by design (CS024 P3) — this has never been
   // a "clear the field" function.
-  //   game.levelEndSafe / levelEndGraceT / levelEndPulseT are the OPPOSITE of per-level state and MUST NOT
-  // BE ADDED HERE. nextWave() is called from INSIDE the level-end protection window (spec §3.1 step 4:
-  // clear -> hold -> panel -> THIS -> banner -> grace), so zeroing any of the three here would end the
-  // protection at the exact instant the "Level N" banner appears — the middle of the window, not its end.
-  // They are reset in resetRun() and nowhere else. A future tidy-up pass that "notices" the omission is
-  // reading this comment for a reason.
+  //   game.levelEndSafe / levelEndGraceT / levelEndPulseT / levelEndFreeze are the OPPOSITE of per-level
+  // state and MUST NOT BE ADDED HERE. nextWave() is called from INSIDE the level-end protection window
+  // (spec §3.1 step 4: clear -> hold -> panel -> THIS -> banner -> grace), so zeroing any of the four here
+  // would end the protection at the exact instant the "Level N" banner appears — the middle of the window,
+  // not its end. CS036 P1 (spec §1.5 trap 2) adds the fourth for the same reason one step further out: the
+  // FREEZE spans this call and is lifted partway through the banner this function seeds, so zeroing it here
+  // would unfreeze the field on the banner's very first frame. They are reset in resetRun() and nowhere
+  // else. A future tidy-up pass that "notices" the omission is reading this comment for a reason.
   VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
   // CS025 P5 (gate Q6) — the VISUAL half of the level announcement, and the half that cannot be lost.
   // Same string sayLevel() speaks, but set unconditionally: no AudioSys.ctx guard (this is a render field,
@@ -9708,11 +9729,79 @@ function updateDeath(dt) {
   }
 }
 
+// CS036 P1 — the level banner's per-frame tick, lifted VERBATIM out of update()'s playing body so the
+// level-end freeze can run the same one. ⛔ IT HAS EXACTLY TWO CALLERS AND MUST NEVER RUN TWICE IN A
+// FRAME: update()'s playing body (unfrozen) and updateLevelEndFreeze() (frozen). What keeps that true is
+// that the freeze branch RETURNS — a frozen frame never reaches the playing body — so a third caller, or
+// an if/else that still falls through, is what would break it.
+//
+// CS025 P5: in the PLAYING body, so it holds through a pause and resumes rather than expiring behind the
+// menu — the same treatment the caption gets, for the same reason. drawLevelBanner() gates on life > 0.
+// Allowed to run negative; nothing reads it below zero.
+// CS035 P3 (spec §3.4): the banner's expiry ARMS the level-end grace — the window's last step. A ONE-SHOT
+// ON THE CROSSING, not a `life <= 0` test: life is allowed to run negative and stays there for the rest
+// of the level, so a plain test would re-arm the grace on every subsequent frame and the protection would
+// never end.
+//   ⛔ THE `game.levelEndSafe` CLAUSE IS LOAD-BEARING, NOT DEFENSIVE. startGame() calls nextWave() for
+// wave 1, which seeds a banner with no level-end window behind it; without this clause every new run
+// would open with DEBUG.levelEndGrace seconds of free invincibility.
+function tickLevelBanner(dt) {
+  const bannerWasLive = game.levelBanner.life > 0;
+  game.levelBanner.life -= dt;
+  if (bannerWasLive && game.levelBanner.life <= 0 && game.levelEndSafe) {
+    game.levelEndGraceT = DEBUG.levelEndGrace;
+  }
+}
+
+// CS036 P1 (spec §0.3) — THE LEVEL-END FREEZE'S REDUCED SIM, modelled on updateDeath() above. The field
+// is a freeze-frame: no ship, no entity updates, no chain relaxation, no spawns, no collisions, no
+// cleanup filters, no wave-clear. Three things happen instead, and each is here for a stated reason.
+//
+//   1. ⛔ AudioSys.thrust(false) — both existing early-return paths call it and so must this one. A
+//      player thrusting on the frame that cleared the wave would otherwise get a stuck engine loop
+//      droning over a silent, motionless field, because Ship.update() (which owns the only
+//      thrust(true)/thrust(false) edge) is exactly what this branch stops running.
+//   2. ⛔ tickLevelBanner(dt) — WITHOUT THIS THE FREEZE IS A HARD HANG (spec §0.3). The unfreeze is a
+//      read on game.levelBanner.life (P3), and the banner only ages in update()'s playing body, which
+//      this branch replaces. So the tick runs in BOTH paths, from the one function, never twice.
+//   3. ⛔ VoiceSys.update() — the critical-line queue drain. Parked lines live on the AUDIO clock and
+//      have no TTL by design (CLAUDE.md), so a queue frozen for the length of a player-paced hold would
+//      simply stop speaking. Last here, as it is last in the playing body.
+//
+// ⛔ WHAT IS DELIBERATELY LEFT STOPPED, AND WHY IT IS NOT AN OMISSION: Achievements.evaluate() and the
+// heartbeat. The celebration panel's own freeze already stops both, and the wave-clear branch's `return`
+// comment states the reason in terms — an unlock raised by THIS clear would toast on top of the panel
+// (drawToasts() draws last) and still not appear IN it, since evaluate() runs after that flush either
+// way. The completion hold is the same seam one step earlier, so running them here would change
+// achievement timing that has been stable since CS030 for no gain. Leave them stopped.
+//
+// ⛔ INERT AS OF CS036 P1: nothing sets game.levelEndFreeze, so this function is unreachable in play this
+// phase. P2 arms it. That is deliberate — the risky question (what a frozen frame may still run) is
+// settled and tested before anything depends on the answer.
+function updateLevelEndFreeze(dt) {
+  AudioSys.thrust(false);
+  tickLevelBanner(dt);
+  VoiceSys.update();
+}
+
 function update(dt) {
   // v3.6 P5: the death spectacle runs its own reduced sim. This branch sits BEFORE the general
   // early-return so "dying" isn't swallowed by the `state !== "playing"` gate below.
   if (game.state === "dying" && !game.paused) {
     updateDeath(dt);
+    return;
+  }
+  // CS036 P1 (spec §0.3): the level-end freeze runs its own reduced sim too, and sits HERE for the same
+  // reason the "dying" branch above does — a naive extra term on the general early-return below would
+  // stall the level banner (a hard hang) and the voice queue along with everything it is meant to stop.
+  // ⛔ THE THREE NEGATIVE TERMS ARE NOT DEFENSIVE PADDING. They are what makes this branch a strict
+  // REPLACEMENT for an ordinary playing frame and nothing more: `state === "playing"` keeps a stale flag
+  // from freezing a gameover screen, `!game.paused` keeps the pause menu winning over the freeze exactly
+  // as it wins over the death spectacle, and `!game.celebration` leaves the celebration panel's own
+  // shipped full stop (which runs neither the banner tick nor the voice drain) byte-for-byte untouched —
+  // the panel opens INSIDE the freeze, and CS036 changes nothing about it (spec §1.6).
+  if (game.levelEndFreeze && game.state === "playing" && !game.paused && !game.celebration) {
+    updateLevelEndFreeze(dt);
     return;
   }
   // CS030 P5 (§4.4): ⛔ THE CELEBRATION PANEL FREEZES THE FIELD. The term that earns its keep is the
@@ -9838,21 +9927,10 @@ function update(dt) {
   game.particles.forEach(p => p.update(dt));
   game.floaters.forEach(f => f.update(dt));
   game.caption.life -= dt; // CS011 P2: age Dan's on-screen caption (drawCaption gates on life > 0)
-  // CS025 P5: age the level banner alongside it. In the PLAYING body, so it holds through a pause and
-  // resumes rather than expiring behind the menu — the same treatment the caption gets, for the same
-  // reason. drawLevelBanner() gates on life > 0. Allowed to run negative; nothing reads it below zero.
-  // CS035 P3 (spec §3.4): the banner's expiry ARMS the level-end grace — the window's last step. A ONE-SHOT
-  // ON THE CROSSING, not a `life <= 0` test: life is allowed to run negative and stays there for the rest
-  // of the level, so a plain test would re-arm the grace on every subsequent frame and the protection would
-  // never end.
-  //   ⛔ THE `game.levelEndSafe` CLAUSE IS LOAD-BEARING, NOT DEFENSIVE. startGame() calls nextWave() for
-  // wave 1, which seeds a banner with no level-end window behind it; without this clause every new run
-  // would open with DEBUG.levelEndGrace seconds of free invincibility.
-  const bannerWasLive = game.levelBanner.life > 0;
-  game.levelBanner.life -= dt;
-  if (bannerWasLive && game.levelBanner.life <= 0 && game.levelEndSafe) {
-    game.levelEndGraceT = DEBUG.levelEndGrace;
-  }
+  // CS025 P5: age the level banner alongside it. CS036 P1 moved the body out to tickLevelBanner() so the
+  // freeze can call the SAME tick — this call site keeps its exact position, below the grace countdown
+  // that arming must not race (see that block) and above the dock update.
+  tickLevelBanner(dt);
   if (game.dock) game.dock.update(dt);
 
   // CS024 P1: CS023 P4's single `updateDebrisDrift(dt)` call STOOD HERE — after every entity's update(dt)

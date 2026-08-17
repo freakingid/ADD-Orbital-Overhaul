@@ -766,6 +766,9 @@ let X = null;
     // NARROWED AGAIN BY CS035 P3 — the level-end protection window's three CS016-P3-rule fields
     // (`levelEndSafe` / `levelEndGraceT` / `levelEndPulseT`), reset here and DELIBERATELY NOWHERE ELSE:
     // nextWave() runs inside the window and must not touch them. Same treatment, filtered out by name.
+    // NARROWED AGAIN BY CS036 P1 — `levelEndFreeze`, the level-end ceremony's freeze flag, is a FOURTH
+    // field of that same window and lands at that same site for that same reason (it spans nextWave()).
+    // Same treatment, filtered out by name; a fifth would still fail this trap.
     const DROPPED_LINES = new Set([
       "game.deliveryTicker = null;",
       "game.pendingAch = [];",
@@ -775,6 +778,7 @@ let X = null;
       "game.levelEndSafe = false;",
       "game.levelEndGraceT = 0;",
       "game.levelEndPulseT = 0;",
+      "game.levelEndFreeze = false;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
@@ -812,7 +816,7 @@ let X = null;
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, and CS035 P3's three level-end window resets");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, and CS036 P1's levelEndFreeze");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

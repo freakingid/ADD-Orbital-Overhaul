@@ -1,112 +1,86 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.35 · Changeset: CS035 · Phase: P7 (closed) · Registry: 106 · Levers: 18
+Version: 1.0.0.35 · Changeset: CS036 · Phase: P1 · Registry: 106 · Levers: 18
 
-## Phase ledger — CS035
+## Phase ledger — CS036
 
-- P1 — delivery ticker re-tune: a later dock-float-lab session's seven values shipped as the new
-  defaults, superseding CS034 P8's GATE A numbers; `sizeStep` 0.0→1.0 turns per-piece growth on for the
-  first time. The "SALVAGE BONUS" and "MAX HAUL" floaters deleted (−15.7 px measured ink overlap),
-  every side effect kept.
-
-- P2 — dock scoop lockout: nothing can be hooked inside the dock's neighbourhood ring, at any chain
-  length; a piece reaching the capture region is pushed out at `dockBounceSpeed` (new knob, def 90).
-  That empties the incidental category by construction, so the `towed` tag and the whole flat-pay
-  branch were deleted — the real fix for the LIFO queue-jump stall. Registry 91→92.
-
-- P3 — level-end invincibility: `game.levelEndSafe` spans wave clear → `levelEndHold` → celebration
-  panel → `nextWave()` → banner → grace. Four gate sites; the two chain blocks are **guarded, not
-  absorbed**. Tell is an accelerating alpha pulse replacing the hit-stun blink. Registry 92→96.
-
-- P4 — Hunter volatility clock and heartbeat: age from construction, every tier; `volatile()` is
-  `size === 3 && age >= hunterVolatileAge`; draw-only pulse on a fresh vertex array. Five HUNTER
-  knobs, none a lever. Registry 96→101.
-
-- P5 — Hunter volatility damage sources: a volatile large dies to another volatile large, a hostile
-  bullet, or a saucer body — all `destroyHunter(h, false)`, 3-way split unchanged. The hostile-bullet
-  arm is a sibling of the `levelEndSafe`-guarded chain block, deliberately not under it.
-
-- P6 — powerup rebalance: `POWERUP_DROP_WEIGHTS` ×10 with `guard`'s entry a placeholder overwritten by
-  `guardDropWeight()` (three CHAIN GUARD knobs, 4/8/40, driven by unguarded chain severs); `guard` out
-  of the Super Mega Delivery guaranteed set (6→5) and back into the sweep pool explicitly;
-  `sweepPowerupCap` 24 and `dockPowerupSpeed` 180 replace two frozen consts. Registry 101→106.
-
-- P7 — closing: gate folded in (three `def` edits — `hunterVolatileAge` 30→60, `hunterPulseMin` 92→87,
-  `hunterPulseMax` 115→125; fourteen answers matched shipped values and are recorded as no-ops; two
-  design asks deferred, below). `GAME_VERSION` 1.0.0.34→1.0.0.35, seven live pins re-pointed and
-  `test-cs034-p9.js`'s phase-local pin flipped to its mirror. GDD §2.5/§2.7/§2.10/§2.14/§2.14.2 swept
-  and a new §2.20.1 written for the level-end window; §3.1's pass order updated;
-  `DIFFICULTY-LEVERS.md` and `CLAUDE.md` corrected. `log/CS035.md` written, both planning docs
-  archived.
+- P1 — the level-end freeze primitive, built and proved INERT. New `game.levelEndFreeze`, declared in
+  the game literal and reset in `resetRun()` only — deliberately not `nextWave()`, which runs inside
+  the freeze; added to that function's standing ⛔ note beside the other three. New
+  `updateLevelEndFreeze(dt)`, a reduced sim on the `updateDeath()` model, branching **before** the
+  general early-return: it runs `AudioSys.thrust(false)`, the level-banner tick and `VoiceSys.update()`,
+  and deliberately not `Achievements.evaluate()` or the heartbeat (the celebration panel's own freeze
+  stops both, and the wave-clear `return`'s comment says why). The banner tick moved verbatim into a new
+  `tickLevelBanner(dt)` called from both paths — without it the freeze is a hard hang. Nothing sets the
+  flag; P2 arms it. Registry unmoved at 106.
 
 ## Working / verified
 
-- Full suite on a full clone: **143 files, 140 passed, 3 failed, 0 skipped, 0 timed out** — identical
-  to the pre-P7 baseline on `ffd4e73`. Zero skips, as a closing phase requires. The three failures are
-  pre-existing and untouched by this changeset's diff (see Known issues).
+- Full suite on a full clone: **144 files, 141 passed, 3 failed, 0 skipped, 0 timed out** — the three
+  failures are the standing pre-existing set (see Known issues), unchanged from the CS036 baseline's
+  143/140/3. `node --check` on the extracted script passes.
 
-- Counts verified live off the built game, not read off the source: registry **106**, section headers
-  **10**, `LEVERS` **18**, `POWERUP_DROP_TYPES` **5**, `GAME_VERSION` `"1.0.0.35"`, and the three
-  retuned knobs reading 60 / 87 / 125. `node --check` on the extracted script passes.
+- New `scratchpad/test-cs036-p1.js` (52 assertions, seeded) drives the real `update()` with the flag set
+  by hand: a Hunter Satellite, a Garbage Satellite, a saucer, a bullet and a loose piece of Debris all
+  byte-identical across 120 frozen frames; the ship neither moves, rotates, recharges nor fires with
+  rotate/thrust/fire held; a stretched chain does not settle a single px; a Hunter on the hull deals no
+  damage and takes none; `levelBanner.life` ticks exactly one `dt` per frame in **both** paths and
+  reaches 0; a parked critical voice line still drains; `Achievements.evaluate()` and the heartbeat are
+  pinned as running **zero** times; and every one of those is paired with an unfrozen frame that does
+  the opposite. Eight mutations of the shipped code (branch deleted, each of the three calls dropped,
+  the two stops re-added, a double-tick, `nextWave()` clearing the flag, `resetRun()` forgetting it)
+  were each confirmed to fail it.
 
-- Six new phase tests ship with the changeset (`test-cs035-p1` … `p6`), each driving the real code:
-  the delivery ticker's size formula and the absent milestone floaters; the lockout either side of the
-  ring boundary (and exactly on it, which is outside) plus §0.2's stall asserted directly as a 1..24
-  climb with no gap; the level-end window's hold, grace, four gate sites and alpha pulse read off real
-  `Ship.draw()`; the volatility clock's boundary, the clamp's non-vacuity, and the don't-mutate
-  invariant on `this.shape`/`this.inner`; the three new damage sources with every no-credit case
-  checking score, `hunterLineageKills`, `largeHunterKills` and `Achievements.lifetime.hunterKills`
-  together; and the guard pity curve, the ×10 weights, and the shrunk SMD.
-
-- No `towed` reference or incidental branch survives in the build except deliberate tombstones and
-  towed-*mass* (a different quantity) — grepped, not assumed.
+- `test-cs026-p3.js`'s TRAP 5 run-reset pin repointed for the one new reset line, by name in
+  `DROPPED_LINES` — the same narrowing every prior changeset made to it, so any *other* edit to
+  `resetRun()` still fails the trap.
 
 ## Known issues
 
-- **⛔ NEW, UNRESOLVED — Paul reports the level-end window (P3) appears to do nothing in play.** From
-  the gate: "The levelEndHold did not seem to do anything. When the level ends, for some reason we are
-  immediately given the Achievements screen. It seems like the levelEndGrace items are not in effect,
-  either. I don't really see any difference visibly during gameplay at level end / Achievement panel
-  display / Level start." G9–G14 were therefore not answered. **Not reproducible headlessly and not
-  explained.** The shipped code was re-read against spec §3 line for line and matches; `test-cs035-p3`
-  (112 assertions through the real `update()`/`Ship.draw()`) passes on this commit, including that
-  nothing happens at 2.6 s, the wave advances at 5.0 s, a retuned 1.0 s hold moves the seam, and ship
-  alpha is 1.0 at phase 0 / 0.2 at phase 1. **Next session should establish the environment first** —
-  whether the browser was serving a cached `orbital-overhaul.html`, and what `DEBUG.levelEndHold` and
-  `game.levelEndSafe` actually read in DevTools at a live level end — before touching any code. No fix
-  was attempted in the closing phase.
+- **NEW (P1) — a voice caption raised DURING the freeze holds until the freeze lifts.** The freeze runs
+  `VoiceSys.update()` (so a parked critical can speak) but not `game.caption.life -= dt` (which lives in
+  the frozen playing body), so a line drained mid-freeze captions and then sits at full alpha for the
+  length of the hold. Unreachable today — nothing arms the freeze — and it cannot happen behind the
+  celebration panel, whose freeze runs neither. **P2/P3 should decide** whether the caption clock joins
+  the reduced sim; spec §0.3's table does not list it, so P1 left it stopped rather than widen scope.
 
-- **⛔ NEW — G18 asks for a red Hunter while volatile; DEFERRED, not built.** The heartbeat does not
-  read as "about to go off" on its own. A colour change is exactly what `PLANNED-FEATURES-CS035.md` §6
-  excluded ("No Hunter colour change for volatility. Motion is the tell."), so it is a design reversal
-  and belongs in a plan doc, not a closing phase. `hunterVolatileAge` 30→60 is the only part of that
-  answer applied.
+- **⛔ RESOLVED BY SPEC, not by code — the level-end window (CS035 P3) "appears to do nothing in play."**
+  `PLANNED-FEATURES-CS036.md` §0.1: the window *runs*; what it does not do is announce itself, because
+  CS035's FORK-L resolved to "the player retains full control throughout." G9–G14 stay unanswered and
+  the four knobs stay untuned, but there is no defect to chase and no environment to establish. CS036's
+  ceremony (P1–P3) is the answer. ⛔ Not to be written up as a bug fix.
 
-- **NEW — Debris sometimes not bouncing away at the dock (G5's note).** Paul: "Sometimes when player
+- **⛔ CS035 — G18 asked for a red Hunter while volatile; RESOLVED AGAINST by CS036's spec.**
+  `PLANNED-FEATURES-CS036.md` §2 records Paul reversing that answer at the CS036 planning session:
+  **no colour change**, `lerpColor()` and a hazard red stay deleted, and the punch comes from the
+  heartbeat's own asymmetry instead (CS036 P4). Kept here only so the CS035 gate answer is not read as
+  still-outstanding.
+
+- **CS035 — Debris sometimes not bouncing away at the dock (G5's note).** Paul: "Sometimes when player
   ship is in the dock, and hits a piece of debris, the debris is not bouncing away, which causes
   numerous rapid collisions between ship and debris, until the player actually flies the ship out of
   the way." `dockBounceSpeed` came back at the shipped 90, so nothing was retuned. The push's
   magnitude, direction, set-not-add and no-accumulation properties are pinned in `test-cs035-p2` §B and
   pass. The "numerous rapid collisions" reading is consistent with the ping issue directly below.
 
-- **NEW — `AudioSys.shieldPing()` fires once per pushed piece per frame.** With several pieces on the
+- **CS035 — `AudioSys.shieldPing()` fires once per pushed piece per frame.** With several pieces on the
   hull the tell stacks. No rate limit was added: spec §2.3 asked for the shipped ping and no new audio
   method, and a cooldown is a design call.
 
-- **NEW — a wave cleared while the PREVIOUS level's banner is still live arms the grace early.** The
+- **CS035 — a wave cleared while the PREVIOUS level's banner is still live arms the grace early.** The
   banner-expiry one-shot fires on any crossing with `levelEndSafe` true and cannot tell the level-1
   banner it was written to exclude from a level-N banner that has simply not expired yet. Result:
   protection through the hold, none through the banner. Unreachable at the shipped 2.2 s
   `levelBannerTime` (a level-1 clear is ~39 kills), but that knob goes to 8 s from the debug panel.
   Narrowing the arm is a design call, so it was flagged rather than taken.
 
-- **NEW — parking at the dock no longer cleans up, and that is a real behaviour change.** A parked
+- **CS035 — parking at the dock no longer cleans up, and that is a real behaviour change.** A parked
   ship cannot mop up the loose pieces around it any more; they stay in the field, pushed clear of the
   hull, bounded only by the CS024 P3 density ceiling. Measured in `test-cs020-p1b` §I: a 60-second
   magnet-style park leaves ~220 pieces where CS020 recycled all 600. Coalescence keeps running on that
   cloud, so a neglected dock apron can still breed a Hunter — arguably the intended pressure, but new,
   and G6/G7 did not ask about it directly.
 
-- **NEW — `test-cs035-p3.js` flaked ~1-in-5 runs during P3–P6** and did not reproduce across repeated
+- **CS035 — `test-cs035-p3.js` flaked ~1-in-5 runs during P3–P6** and did not reproduce across repeated
   runs at P7. Carried forward unresolved rather than declared fixed; it is not seed-related (P3 adds no
   `installSeed`).
 
@@ -156,12 +130,15 @@ None.
 
 ## Next up
 
-- **The level-end window's non-appearance is the first thing to settle** — it blocks G9–G14, which
-  means four shipped knobs have never been tuned by anyone. See the first known issue for what to
-  check before touching code.
+- **CS036 P2 — arm the freeze**: the wave-clear latch sets it, the "Level N Complete" announcement and
+  its prompt draw, both input handlers take confirm/back immediately ahead of the `game.celebration`
+  branch, `levelEndHold` retires (registry 106 → **105**) and the Perfect Wave bookkeeping moves to the
+  arm. P1 left the primitive inert and tested; nothing else in the build reads it yet.
 
-- **A volatile-Hunter colour treatment (G18)** wants its own plan doc — spec §6 excluded it and the
-  gate reversed that.
+- **CS036 P3 — the freeze tail**: the unfreeze at `levelBanner.life <= levelBannerFade` with both
+  degenerate cases (`fade >= time`, `time === 0`) degrading to "unfreeze immediately"; the alpha pulse
+  restricted to the grace; the panel header reverted. ⛔ It also owns re-deriving CS035's
+  banner-crossing edge (Known issues above) under the freeze — the answer is not known yet.
 
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess: CS026 P6 tried it and CS029 measured it worse ("a ship-relative origin smears
@@ -186,11 +163,11 @@ None.
 
 ## Playtest asks (open only — answered ones move to the log)
 
-- **G9–G14 are still open** — `levelEndHold` / `levelEndGrace` / `levelEndFade` /
-  `levelEndGracePulseEnd` are shipped at 5.00 / 3.00 / 0.25 / 0.08 and have never been assessed,
-  because the window did not appear to be running. Also unanswered: whether the alpha pulse reads
-  instantly as "invincible" and distinctly from the hit-stun blink, and whether the 0.2 alpha floor is
-  too faint to fly at.
+- **G9–G14 are still open, but three of the four knobs are about to change hands.** `levelEndHold`
+  retires at P2; `levelEndGrace` / `levelEndFade` / `levelEndGracePulseEnd` stay at 3.00 / 0.25 / 0.08
+  and are still unassessed — and the pulse they shape only runs across the grace from P3 on, so the old
+  questions (does it read instantly as "invincible", is the 0.2 floor too faint to fly at) should be
+  re-asked at the CS036 gate against the new sequence, not the CS035 one.
 
 - **Does the dock apron read as pressure or as litter?** P2's lockout means a parked ship no longer
   cleans up around itself. Nobody has played a long session against that yet, and coalescence still
