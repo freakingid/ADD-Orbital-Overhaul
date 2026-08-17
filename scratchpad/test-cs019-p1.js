@@ -329,11 +329,19 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // REPOINTED BY CS024 P6 (spec §3.5): FOUR knobs -> THREE. chainGuardTime is deleted with timed
   // expiry, so the group loses its FIRST member; cooldown is still last, and this phase's own claim
   // (that cooldown was APPENDED rather than inserted) is unaffected and still checked below.
+  // REPOINTED BY CS035 P6 (spec §5.3): the group gains THREE more members, appended after cooldown
+  // — the guard drop-weight pity knobs (chainGuardDropBase/Pity/Max). This phase's own claim (cooldown
+  // was appended, not inserted) is about cooldown's OWN position relative to intercepts/minTow, which
+  // is unmoved; "cooldown is the LAST entry" is superseded by construction and is checked against
+  // dropMax below instead.
   assert(iHeader > -1 && ids[iHeader + 1] === "chainGuardIntercepts" &&
     ids[iHeader + 2] === "chainGuardMinTow" && ids[iHeader + 3] === "chainGuardCooldown",
-    `A: the CHAIN GUARD group is [intercepts, minTow, cooldown] in that order (got ${JSON.stringify(ids.slice(iHeader, iHeader + 4))})`);
-  assert(typeof ids[iHeader + 4] === "undefined" || String(ids[iHeader + 4]).startsWith("#"),
-    "A: cooldown is the LAST entry in its group — appended, not inserted");
+    `A: the CHAIN GUARD group is [intercepts, minTow, cooldown, ...] in that order (got ${JSON.stringify(ids.slice(iHeader, iHeader + 4))})`);
+  assert(ids[iHeader + 4] === "chainGuardDropBase" && ids[iHeader + 5] === "chainGuardDropPity" &&
+    ids[iHeader + 6] === "chainGuardDropMax",
+    `A: ...followed by CS035 P6's three pity knobs (got ${JSON.stringify(ids.slice(iHeader + 4, iHeader + 7))})`);
+  assert(typeof ids[iHeader + 7] === "undefined" || String(ids[iHeader + 7]).startsWith("#"),
+    "A: dropMax is now the LAST entry in the group — CS035 P6 appended, not inserted");
   assert(A.DEBUG_ENTRIES.length === A.DEBUG_VARS.filter(v => !v.header).length,
     "A: DEBUG_ENTRIES still derives from the registry (headers filtered)");
   // REPOINTED BY CS024 P6e: +2 -> +4 (Reset All + Reset High Scores joined Dump ahead of Back, spec §2/§4).

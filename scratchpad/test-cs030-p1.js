@@ -194,7 +194,9 @@ const src = scriptSource();
     // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added).
     // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed).
     // REPOINTED BY CS035 P3: +4 more (the level-end protection window's CELEBRATION rows).
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four and CS035 P4's five later rows — a data-only collector adds no knob");
+    // REPOINTED BY CS035 P4: +5 more (the Hunter volatility clock/heartbeat's HUNTER rows).
+    // REPOINTED BY CS035 P6: +5 more (the powerup rebalance's CHAIN GUARD/POWERUPS rows).
+    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five later rows — a data-only collector adds no knob");
     eq(X.LEVERS.length, OLD.LEVERS.length, "G: ⛔ LEVERS.length unchanged");
   }
 

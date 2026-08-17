@@ -72,7 +72,7 @@ function makeLocalStorage() {
   const store = {};
   return { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
 }
-const RETURN = ["game", "startGame", "update", "DOCK_POWERUP_SPEED", "CARGO_CAP_MAX", "DOCK_RADIUS"];
+const RETURN = ["game", "startGame", "update", "DOCK_POWERUP_SPEED", "CARGO_CAP_MAX", "DOCK_RADIUS", "DEBUG"];
 function build(src = scriptSrc, windowExtra) {
   const windowStub = Object.assign({ addEventListener: () => {}, innerWidth: 1280, innerHeight: 720 }, windowExtra || {});
   const factory = new Function(
@@ -141,10 +141,11 @@ function deliverN(X, n) {
   const cases = [
     // CS018 P9 repointed the [24, 4] forward-pin (this file's original "the SMD is P9's separate
     // mechanism, untouched here" claim) to its mirror image: a 24-canister visit now awards the four
-    // tier powerups PLUS the Super Mega Delivery's guaranteed one-of-each-droppable set (6) = 10.
-    // deliverN seeds no hunters, so the SMD sweep itself pays nothing here; the sweep's own
+    // tier powerups PLUS the Super Mega Delivery's guaranteed set.
+    // REPOINTED BY CS035 P6 (spec §5.4): guard leaves the guaranteed set, 6 -> 5, so 24's total moves
+    // 10 -> 9. deliverN seeds no hunters, so the SMD sweep itself pays nothing here; the sweep's own
     // accounting is test-cs018-p9.js's subject, not this file's.
-    [7, 0], [8, 1], [11, 1], [12, 2], [15, 2], [16, 3], [19, 3], [20, 4], [23, 4], [24, 10],
+    [7, 0], [8, 1], [11, 1], [12, 2], [15, 2], [16, 3], [19, 3], [20, 4], [23, 4], [24, 9],
   ];
   for (const [n, want] of cases) {
     const X = build();
@@ -160,15 +161,17 @@ function deliverN(X, n) {
 })();
 
 // ================= (C) launch position/speed =====================
+// REPOINTED BY CS035 P6 (spec §5.5): DOCK_POWERUP_SPEED is now only the registry's `def` source — the
+// reward-tier drop's call site reads the live DEBUG.dockPowerupSpeed knob instead.
 (function sectionC() {
-  console.log("(C) each award launches from the dock's position at DOCK_POWERUP_SPEED");
+  console.log("(C) each award launches from the dock's position at DEBUG.dockPowerupSpeed");
   const X = build();
   const { powerups } = deliverN(X, 20);
   eq(powerups.length, 4, "C: (setup) a 20-canister visit awards 4 powerups");
   for (const p of powerups) {
     assert(near(p.x, X.game.dock.x) && near(p.y, X.game.dock.y), "C: a hub powerup launches from the dock's position");
-    assert(near(Math.hypot(p.vx, p.vy), X.DOCK_POWERUP_SPEED, 1e-6),
-      `C: a hub powerup launches at DOCK_POWERUP_SPEED (got ${Math.hypot(p.vx, p.vy).toFixed(2)})`);
+    assert(near(Math.hypot(p.vx, p.vy), X.DEBUG.dockPowerupSpeed, 1e-6),
+      `C: a hub powerup launches at DEBUG.dockPowerupSpeed (got ${Math.hypot(p.vx, p.vy).toFixed(2)})`);
   }
   // Fresh random vectors, not the same direction every time.
   const dirs = new Set(powerups.map(p => `${(p.vx).toFixed(3)},${(p.vy).toFixed(3)}`));

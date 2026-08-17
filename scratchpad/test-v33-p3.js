@@ -171,9 +171,11 @@ assert(Array.isArray(POWERUP_DROP_TYPES) && !POWERUP_DROP_TYPES.includes("scoop"
   "0: POWERUP_DROP_TYPES (the TIMED-effect list) does NOT contain scoop (FLAG A-9)");
 assert(["rapid", "triple", "magnet", "engine"].every(t => POWERUP_DROP_TYPES.includes(t)),
   "0: POWERUP_DROP_TYPES still holds the 4 timed effects");
-assert(POWERUP_DROP_WEIGHTS && POWERUP_DROP_WEIGHTS.scoop === 2 && POWERUP_DROP_WEIGHTS.rapid === 3 &&
-  POWERUP_DROP_WEIGHTS.triple === 3 && POWERUP_DROP_WEIGHTS.magnet === 1 && POWERUP_DROP_WEIGHTS.engine === 1,
-  "0: POWERUP_DROP_WEIGHTS is the separate weighted table {rapid3,triple3,scoop2,magnet1,engine1}");
+// REPOINTED BY CS035 P6 (spec §5.2): the whole table x10 — every non-guard ratio is byte-identical,
+// just scaled ({rapid3,triple3,scoop2,magnet1,engine1} -> {rapid30,triple30,scoop20,magnet10,engine10}).
+assert(POWERUP_DROP_WEIGHTS && POWERUP_DROP_WEIGHTS.scoop === 20 && POWERUP_DROP_WEIGHTS.rapid === 30 &&
+  POWERUP_DROP_WEIGHTS.triple === 30 && POWERUP_DROP_WEIGHTS.magnet === 10 && POWERUP_DROP_WEIGHTS.engine === 10,
+  "0: POWERUP_DROP_WEIGHTS is the separate weighted table {rapid30,triple30,scoop20,magnet10,engine10}");
 
 // =====================================================================
 console.log("(1) applyPowerup('scoop') climbs then caps + pays a bonus");

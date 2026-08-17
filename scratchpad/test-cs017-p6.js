@@ -140,7 +140,7 @@ function makeRecordingCtx() {
 const RETURN = [
   "game", "settings", "startGame", "nextWave", "update", "draw", "drawHUD",
   "breakChain", "scatterChain", "chainAnchor", "drawChain", "drawLink",
-  "dropPowerup", "applyPowerup", "powerActive", "powerBudgetAmount",
+  "dropPowerup", "applyPowerup", "powerActive", "powerBudgetAmount", "guardDropWeight",
   "menuDifficulty", "menuInput", "gotoScreen", "openPause", "closePause", "rootItems",
   "saveSettings", "loadSettings", "drawDifficulty", "drawPowerupGlyph",
   "Bullet", "HunterSatellite", "DebrisSatellite", "Powerup", "Garbage",
@@ -253,10 +253,13 @@ const chainIdentical = (g, snap) =>
     "A: guard is LAST — appending is what keeps every existing HUD row where it was");
 
   // The drop table gained a weight; the pre-existing five are untouched.
-  assert(POWERUP_DROP_WEIGHTS.guard === 1, `A: POWERUP_DROP_WEIGHTS.guard === 1 (got ${POWERUP_DROP_WEIGHTS.guard})`);
-  assert(POWERUP_DROP_WEIGHTS.rapid === 3 && POWERUP_DROP_WEIGHTS.triple === 3 && POWERUP_DROP_WEIGHTS.scoop === 2 &&
-    POWERUP_DROP_WEIGHTS.magnet === 1 && POWERUP_DROP_WEIGHTS.engine === 1,
-    "A: the five pre-P6 weights are unchanged {rapid3,triple3,scoop2,magnet1,engine1}");
+  // REPOINTED BY CS035 P6 (spec §5.2): the whole table x10 — every non-guard ratio is byte-identical,
+  // just scaled — and guard's own entry is a PLACEHOLDER overwritten at roll time by guardDropWeight()
+  // (spec §5.3), so ===1 no longer holds and ===20 asserts nothing about the actual roll.
+  assert(POWERUP_DROP_WEIGHTS.guard === 20, `A: POWERUP_DROP_WEIGHTS.guard === 20, a placeholder (got ${POWERUP_DROP_WEIGHTS.guard})`);
+  assert(POWERUP_DROP_WEIGHTS.rapid === 30 && POWERUP_DROP_WEIGHTS.triple === 30 && POWERUP_DROP_WEIGHTS.scoop === 20 &&
+    POWERUP_DROP_WEIGHTS.magnet === 10 && POWERUP_DROP_WEIGHTS.engine === 10,
+    "A: the five pre-P6 weights are unchanged in RATIO, x10: {rapid30,triple30,scoop20,magnet10,engine10}");
 
   assert(typeof POWERUP_COLOR.guard === "string" && /^#[0-9a-f]{6}$/i.test(POWERUP_COLOR.guard),
     `A: POWERUP_COLOR.guard is a hex colour (got ${POWERUP_COLOR.guard})`);
@@ -604,14 +607,23 @@ const chainIdentical = (g, snap) =>
   }
 
   // ---- AT / ABOVE the threshold: guard rolls, at about its renormalised weight ----
+  // REPOINTED BY CS035 P6 (spec §5.3): POWERUP_DROP_WEIGHTS.guard is now a placeholder, overwritten at
+  // roll time by guardDropWeight() (pity-driven off game.stats.cargoDamageEvents). rollTypes() never
+  // breaks a chain, so the pity counter sits at its startGame() default of 0 for every one of these
+  // rolls — the expected share reads the LIVE weight function, not the frozen table entry.
   for (const chainLen of [MIN_TOW, MIN_TOW + 1, 12]) {
     const now = rollTypes(A, chainLen);
     const guards = now.filter(t => t === "guard").length;
     assert(guards > 0, `F: [tow ${chainLen}] "guard" DOES roll at/above the threshold (got ${guards} in ${ROLLS})`);
-    const total = Object.values(POWERUP_DROP_WEIGHTS).reduce((a, b) => a + b, 0); // 11
-    const expected = ROLLS * POWERUP_DROP_WEIGHTS.guard / total;
+    assert(game.stats.cargoDamageEvents === 0, `F: [tow ${chainLen}] (sanity) the pity counter never moved`);
+    const guardWeight = A.guardDropWeight();
+    assert(guardWeight === DEBUG.chainGuardDropBase,
+      `F: [tow ${chainLen}] at 0 pity events guardDropWeight() is the base (${DEBUG.chainGuardDropBase}, got ${guardWeight})`);
+    const total = ["rapid", "triple", "scoop", "magnet", "engine"]
+      .reduce((a, k) => a + POWERUP_DROP_WEIGHTS[k], guardWeight);
+    const expected = ROLLS * guardWeight / total;
     assert(Math.abs(guards - expected) < expected * 0.25,
-      `F: [tow ${chainLen}] guard's share tracks its renormalised weight (expected ~${expected.toFixed(0)}, got ${guards})`);
+      `F: [tow ${chainLen}] guard's share tracks guardDropWeight() (expected ~${expected.toFixed(0)}, got ${guards})`);
     // Everything else still rolls, and nothing outside the table ever does.
     const allowed = new Set(Object.keys(POWERUP_DROP_WEIGHTS));
     assert(now.every(t => allowed.has(t)), "F: every dropped type is a key of POWERUP_DROP_WEIGHTS");

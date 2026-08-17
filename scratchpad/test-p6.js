@@ -68,7 +68,7 @@ const returnList = [
   "CARGO_BASE", "CARGO_CAP_MAX",
   "CHAIN_LINK", "CHAIN_ITER", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "ENGINE_MASS_MULT", "DOCK_OFFLOAD_INTERVAL",
-  "DOCK_RADIUS", "DOCK_POWERUP_SPEED", "shortDelta", "WORLD_W", "WORLD_H"
+  "DOCK_RADIUS", "DOCK_POWERUP_SPEED", "shortDelta", "WORLD_W", "WORLD_H", "DEBUG"
 ];
 const factory = new Function(
   "window", "document", "performance", "requestAnimationFrame", "navigator",
@@ -81,7 +81,7 @@ const {
   CARGO_BASE, CARGO_CAP_MAX,
   CHAIN_LINK, CHAIN_ITER, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, ENGINE_MASS_MULT, DOCK_OFFLOAD_INTERVAL,
-  DOCK_RADIUS, DOCK_POWERUP_SPEED, shortDelta, WORLD_W, WORLD_H
+  DOCK_RADIUS, DOCK_POWERUP_SPEED, shortDelta, WORLD_W, WORLD_H, DEBUG
 } = A;
 // CARGO_GROW_PER (30) was a dead constant, deleted in CS024 P2 (declaration-and-comment only, zero
 // live readers) — kept here as a local historical literal since section (B) below builds its math
@@ -417,8 +417,10 @@ assert(drops7.length === 0, `G: a 7-canister visit emits no hub powerup (got ${d
 const drops8 = deliverN(8);
 assert(drops8.length === 1, `G: an 8-canister visit emits exactly one hub powerup (got ${drops8.length})`);
 assert(near(drops8[0].x, cx) && near(drops8[0].y, cy), "G: the hub powerup launches from the dock's position");
-assert(near(Math.hypot(drops8[0].vx, drops8[0].vy), DOCK_POWERUP_SPEED, 1e-6),
-  `G: the hub powerup launches at DOCK_POWERUP_SPEED (got ${Math.hypot(drops8[0].vx, drops8[0].vy).toFixed(2)})`);
+// REPOINTED BY CS035 P6 (spec §5.5): the call site now reads the live DEBUG.dockPowerupSpeed knob,
+// not the frozen DOCK_POWERUP_SPEED const (which survives only as the registry's def source).
+assert(near(Math.hypot(drops8[0].vx, drops8[0].vy), DEBUG.dockPowerupSpeed, 1e-6),
+  `G: the hub powerup launches at DEBUG.dockPowerupSpeed (got ${Math.hypot(drops8[0].vx, drops8[0].vy).toFixed(2)})`);
 // REPOINTED BY CS035 P1 (§1.3): the "SALVAGE BONUS" floater that used to mark the first hub
 // emission is deleted (ink overlap against the re-tuned delivery ticker) — the powerup drop
 // itself, asserted above, is this phase's own claim and is unaffected.

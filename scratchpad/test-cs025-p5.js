@@ -515,7 +515,9 @@ function quiet(X) {
       || id.startsWith("celebration")                                    // CS030 P3
       || id === "dockBounceSpeed"                                         // CS035 P2
       || id.startsWith("levelEnd")                                        // CS035 P3
-      || id === "hunterVolatileAge" || id.startsWith("hunterPulse");       // CS035 P4
+      || id === "hunterVolatileAge" || id.startsWith("hunterPulse")       // CS035 P4
+      || id.startsWith("chainGuardDrop")                                  // CS035 P6
+      || id === "sweepPowerupCap" || id === "dockPowerupSpeed";           // CS035 P6
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

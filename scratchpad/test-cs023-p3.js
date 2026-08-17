@@ -685,8 +685,17 @@ function saucerAt(X, x, y, small) {
       const NEW_TAIL = '  game.deliveryCount = 0;\n  releaseDeliveryTicker(); // CS029 P4: a hostile break mid-offload ends the visit too\n  VoiceSys.say("chain_broken");';
       assert(before.includes(OLD_TAIL), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the reset to the voice line");
       assert(after.includes(NEW_TAIL), "A: TRAP 2/3 — ...and the current one carries the ticker release between them");
-      eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL),
-        "A: TRAP 2/3 — CS024 P6's guard-spend edit and CS029 P4's ticker-release edit are the ONLY diffs in breakChain; everything else is byte-unchanged");
+      // A THIRD known diff, added by CS035 P6 (spec §5.3): the sever path increments the chain-guard
+      // drop-weight pity counter, on the unguarded break only — this is that path.
+      const OLD_BOOM = '  boom(hit.x, hit.y, 1, COLOR.garbage);';
+      const NEW_BOOM = '  // CS035 P6 (spec §5.3): the sever path only — a guarded absorb returned above and never reaches\n' +
+        '  // here; scatterChain() (ship death) is its own terminal event and does not increment this.\n' +
+        '  game.stats.cargoDamageEvents++;\n' +
+        '  boom(hit.x, hit.y, 1, COLOR.garbage);';
+      assert(before.includes(OLD_BOOM), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the sever to boom()");
+      assert(after.includes(NEW_BOOM), "A: TRAP 2/3 — ...and the current one carries the pity-counter increment before it");
+      eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL).replace(OLD_BOOM, NEW_BOOM),
+        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit and CS035 P6's pity-counter edit are the ONLY diffs in breakChain; everything else is byte-unchanged");
     }
     assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");

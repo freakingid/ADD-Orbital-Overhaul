@@ -761,8 +761,10 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // §5 actually promised is the PLACEMENT pinned on the line above: inside POWERUPS, immediately after
     // engineMassMult. What survives here is the half that stays true — nothing was inserted BETWEEN
     // engineMassMult and this row, so every POWERUPS row after it belongs to a later phase.
+    // WIDENED BY CS035 P6, same reasoning as CS025 P2's own widening above it: its two SMD volume
+    // knobs (sweepPowerupCap, dockPowerupSpeed) also land in POWERUPS, after magnetPushSpread.
     for (const id of ids.slice(at + 1, gl))
-      assert(id.startsWith("magnetPush"),
+      assert(id.startsWith("magnetPush") || id === "sweepPowerupCap" || id === "dockPowerupSpeed",
         `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
@@ -826,7 +828,9 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id.startsWith("celebration")                         // CS030 P3
       || id === "dockBounceSpeed"                             // CS035 P2
       || id.startsWith("levelEnd")                            // CS035 P3
-      || id === "hunterVolatileAge" || id.startsWith("hunterPulse");  // CS035 P4
+      || id === "hunterVolatileAge" || id.startsWith("hunterPulse")  // CS035 P4
+      || id.startsWith("chainGuardDrop")                      // CS035 P6
+      || id === "sweepPowerupCap" || id === "dockPowerupSpeed";  // CS035 P6
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

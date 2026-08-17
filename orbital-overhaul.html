@@ -656,6 +656,9 @@ const DOCK_OFFLOAD_INTERVAL = 0.05; // PLAYTEST KNOB (v3.4 P1; was a bare litera
                                      // canisters peeling off at the dock.
 const DOCK_POWERUP_SPEED = 120;     // PLAYTEST KNOB (v3.6 P3): launch speed of the hub's per-visit
                                      // powerup drop, random direction from the dock's own position.
+                                     // CS035 P6 (spec §5.5): only the registry's `def` source now —
+                                     // both call sites (the reward-tier drops here and the Super Mega
+                                     // Delivery guaranteed set) read DEBUG.dockPowerupSpeed.
 // CS026 P6 (gate Q5) moved the delivery "+pts" floaters' origin to the ship — "closer to the ship"
 // was Paul's stated answer at that gate, read against DELIVERY_FLOAT_DY, a fixed nudge above the
 // hull. CS029 §0.3: that was a misreading. The ship moves every frame, so a ship-relative origin
@@ -1051,12 +1054,16 @@ const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine", "guard"]; // 
 // CS017 P6: "guard" is the first CONDITIONAL entry — dropPowerup only admits it to the roll while the
 // player is towing >= DEBUG.chainGuardMinTow nodes (a guard with nothing to guard is a dead pickup).
 // Below that threshold the roll renormalises over the other five and is byte-identical to pre-P6.
-// Weight 1 puts it in the existing rare tier alongside magnet/engine — a PLAYTEST KNOB, like the rest.
-const POWERUP_DROP_WEIGHTS = { rapid: 3, triple: 3, scoop: 2, magnet: 1, engine: 1, guard: 1 };
-// CS018 P9: hard ceiling on powerups spawned by ONE Super Mega Delivery — the guaranteed six PLUS
+// CS035 P6 (spec §5.2): every non-guard weight x10 — integers with no room between them, before, at
+// a table total of 10. `guard`'s own entry is now a PLACEHOLDER: guardDropWeight() overwrites it at
+// roll time (dropPowerup's weightOf indirection, below), and it is set to 20 only so a reader of this
+// table sees a plausible number rather than a lie — it is never actually read as a weight.
+const POWERUP_DROP_WEIGHTS = { rapid: 30, triple: 30, scoop: 20, magnet: 10, engine: 10, guard: 20 };
+// CS018 P9: hard ceiling on powerups spawned by ONE Super Mega Delivery — the guaranteed set PLUS
 // every per-piece sweep payout (source doc §7.3: "No more than 48 powerups may spawn simultaneously
-// from a sweep"). A FIXED bound, deliberately NOT a DEBUG_VARS knob — the source doc pins it
-// ("Fixed value, not configurable"). See superMegaDelivery() for the reservation bookkeeping.
+// from a sweep"). CS035 P6 (spec §5.5): this constant is now only the registry's `def` source — the
+// live value is DEBUG.sweepPowerupCap (POWERUPS section), which superMegaDelivery() reads. The old
+// "fixed, not configurable" pin is superseded by that gate decision; see the knob for the shipped 24.
 const SWEEP_POWERUP_CAP = 48;
 const POWERUP_HEALTH_GAP = [18, 26]; // sec between ambient Health spawns (saucer-like cadence)
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
@@ -3578,6 +3585,18 @@ const DEBUG_VARS = [
     def: 5, min: 0, max: 24, step: 1 },
   { id: "chainGuardCooldown", label: "Chain guard cooldown", unit: "s",
     def: 0.75, min: 0.1, max: 3, step: 0.05 },
+  // CS035 P6 (spec §5.3): guard's DROP weight (not the intercept budget above) goes pity-driven —
+  // see guardDropWeight(), read by dropPowerup()'s weightOf indirection. game.stats.cargoDamageEvents
+  // is the pity counter: it climbs on an unguarded chain-sever (breakChain()'s sever path only — a
+  // GUARDED absorb and scatterChain() both leave it untouched) and resets to 0 the instant a guard
+  // powerup drops (not on pickup). base 4 -> ~3.8% of a 100 non-guard total (was 9.1% at the old
+  // flat weight 1-in-11); +8 per event; capped at 40 -> ~29%.
+  { id: "chainGuardDropBase", label: "Chain guard drop base", unit: "",
+    def: 4, min: 0, max: 60, step: 1 },
+  { id: "chainGuardDropPity", label: "Chain guard drop pity", unit: "",
+    def: 8, min: 0, max: 40, step: 1 },
+  { id: "chainGuardDropMax", label: "Chain guard drop cap", unit: "",
+    def: 40, min: 0, max: 120, step: 1 },
   // CS020 P1b: the delivery combo's one-effort grace window — how long a delivery run survives while
   // the ship is outside the dock's neighborhood. Same `unit: "ms"` + `toNative: v => v / 1000` idiom
   // as autoShieldRegenPause: the panel shows and persists milliseconds, the consumer (the dock block's
@@ -3759,6 +3778,17 @@ const DEBUG_VARS = [
     def: 120, min: 0, max: 600, step: 10 },
   { id: "magnetPushSpread", label: "Magnet push spread", unit: "°",
     def: 45, min: 0, max: 180, step: 5 },
+  // CS035 P6 (spec §5.5): two Super Mega Delivery volume knobs. SWEEP_POWERUP_CAP/DOCK_POWERUP_SPEED
+  // stay in the file, unchanged, as the shipped-default consts these rows retune away from — call
+  // sites move to DEBUG.*, the chainGuardIntercepts idiom every knob in this build follows.
+  // dockPowerupSpeed has TWO call sites (both dock emitters) and they move together — the complaint
+  // being addressed is powerups landing on a parked ship, and both emitters launch from the dock.
+  // sweepPowerupCap's min of 0 lets the budget go negative on purpose if dragged down; the
+  // reservation's `budget-- > 0` already handles that — no clamp added.
+  { id: "sweepPowerupCap", label: "Sweep powerup cap", unit: "",
+    def: 24, min: 0, max: 64, step: 1 },
+  { id: "dockPowerupSpeed", label: "Dock powerup speed", unit: "px/s",
+    def: 180, min: 40, max: 400, step: 10 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -7136,6 +7166,10 @@ function resetGameStats() {
     closeShave: false,       // survived a Hunter collision under 10 HP (Close Shave)
     everBelowHalf: false,    // HP ever dropped below 50% this game (Untouchable inverts this)
     hunterCoalesced: 0,      // Hunters born this game from neglected scrap coalescing (Waste Not, v3.2 P3)
+    cargoDamageEvents: 0,    // CS035 P6: unguarded chain severs this game (the sever path of
+                             // breakChain only — a guarded absorb and scatterChain() don't count). The
+                             // chain-guard drop-weight pity counter, read by guardDropWeight(); NOT
+                             // reset in nextWave() — pity carries across waves within a run, like cargoMax growth
     gameEnded: false         // set at game over so end-of-game achievements can evaluate
   };
 }
@@ -8035,6 +8069,15 @@ function maxBullets() {
   return MAX_BULLETS;                                    // 4
 }
 
+// CS035 P6 (spec §5.3): guard's DROP weight, dynamic and pity-driven — a SEPARATE knob from
+// DEBUG.chainGuardIntercepts (the absorb budget a picked-up guard grants). game.stats.cargoDamageEvents
+// is the pity counter: breakChain()'s sever path increments it, a guard drop resets it to 0. Clamped
+// at chainGuardDropMax, same "climbs with pressure, caps out" shape as no other knob in this build.
+function guardDropWeight() {
+  return Math.min(DEBUG.chainGuardDropMax,
+    DEBUG.chainGuardDropBase + DEBUG.chainGuardDropPity * game.stats.cargoDamageEvents);
+}
+
 // v3.6 P3: unconditionally roll a random weapon/utility powerup and launch it on the given
 // vector. No chance gate here — the three emitters (destroySaucer, destroyHunter's large core,
 // the recycle hub) each decide WHEN to call this; this only decides WHAT drops. Health is NOT in
@@ -8045,13 +8088,19 @@ function dropPowerup(x, y, vx = 0, vy = 0) {
   // CS017 P6: "guard" is CONDITIONAL — it only enters the roll while the player is towing at least
   // DEBUG.chainGuardMinTow nodes (dropping a chain guard at an empty chain is a wasted pickup). An
   // ineligible key is skipped in BOTH the total and the walk, so the surviving weights RENORMALISE
-  // rather than leaving a dead slot that would silently drop nothing. Below the threshold this reduces
-  // to exactly the pre-P6 table (total 10, same walk order, one Math.random() call) — byte-identical.
+  // rather than leaving a dead slot that would silently drop nothing.
+  // CS035 P6 (spec §5.3): guard's weight is no longer the flat table entry — weightOf(k) substitutes
+  // guardDropWeight() for it, in BOTH the total and the walk, composing with (not replacing) the
+  // eligible() gate above. Every non-guard key still reads POWERUP_DROP_WEIGHTS[k] unchanged.
   const eligible = k => k !== "guard" || game.chain.length >= DEBUG.chainGuardMinTow;
+  const weightOf = k => k === "guard" ? guardDropWeight() : POWERUP_DROP_WEIGHTS[k];
   let total = 0;
-  for (const k in POWERUP_DROP_WEIGHTS) if (eligible(k)) total += POWERUP_DROP_WEIGHTS[k];
+  for (const k in POWERUP_DROP_WEIGHTS) if (eligible(k)) total += weightOf(k);
   let r = Math.random() * total, type;
-  for (const k in POWERUP_DROP_WEIGHTS) { if (!eligible(k)) continue; r -= POWERUP_DROP_WEIGHTS[k]; if (r < 0) { type = k; break; } }
+  for (const k in POWERUP_DROP_WEIGHTS) { if (!eligible(k)) continue; r -= weightOf(k); if (r < 0) { type = k; break; } }
+  // CS035 P6 (spec §5.3, FORK-T): the pity counter resets the instant a guard is SELECTED to drop,
+  // before the Powerup is pushed — not on pickup. An uncollected guard still consumed the pity.
+  if (type === "guard") game.stats.cargoDamageEvents = 0;
   game.powerups.push(new Powerup(x, y, type, vx, vy));
 }
 
@@ -8071,6 +8120,10 @@ function spawnHealthPowerup() {
 // the gate would ALWAYS exclude guard; FORK-CS018-C bypasses it deliberately. The set derives from
 // POWERUP_DROP_WEIGHTS' keys (the drop table) so a future droppable type joins automatically — it is
 // NOT POWERUP_DROP_TYPES, the timed-effect list, which excludes Scoop (see the constants block).
+// CS035 P6 (spec §5.4): "guard" LEAVES the guaranteed set — a chain-armour freebie on every 24-haul is
+// the loop being broken. setTypes.length drops 6 -> 5 and the SWEEP_POWERUP_CAP reservation below
+// follows automatically, no manual arithmetic. ⛔ The per-piece sweep pool (PART 2) re-adds "guard"
+// explicitly, flat and ungated — it is the only thing keeping chain armour reachable during a sweep.
 // PART 2, the sweep — SNAPSHOT SEMANTICS (§7.3.1, the changeset's flagged most-likely bug): every
 // hunter piece alive AT THE TRIGGER INSTANT takes exactly one hit and pays exactly one powerup;
 // fragments created BY the sweep do neither, because they are not in the snapshot. The snapshot is an
@@ -8084,23 +8137,26 @@ function spawnHealthPowerup() {
 // farming incentive and no cooldown. SILENT this phase — the dock_24 Dan line is P10's (voice-lab-
 // gated); no new floater either (the Maxed Out "MAX HAUL" at the same instant already marks it).
 function superMegaDelivery() {
-  const setTypes = Object.keys(POWERUP_DROP_WEIGHTS);  // rapid, triple, scoop, magnet, engine, guard
+  const setTypes = Object.keys(POWERUP_DROP_WEIGHTS).filter(k => k !== "guard");  // rapid, triple, scoop, magnet, engine
   for (const type of setTypes) {
     const a = rand(0, TAU);  // fresh random vector per powerup — the reward tiers' launch idiom
     game.powerups.push(new Powerup(game.dock.x, game.dock.y, type,
-      Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED));
+      Math.cos(a) * DEBUG.dockPowerupSpeed, Math.sin(a) * DEBUG.dockPowerupSpeed));
   }
 
   const snap = game.hunters.filter(h => !h.dead);  // THE SNAPSHOT — iterate this, never game.hunters
-  // SWEEP_POWERUP_CAP bookkeeping: the ceiling counts the guaranteed set plus every per-piece payout.
-  // A swept LARGE pays its one powerup from INSIDE destroyHunter (the v3.6 P3 large-core drop) — which
-  // is also why the sweep spawns nothing extra for size 3 (FLAG-g: two powerups for one piece would
-  // make the ceiling a lie). Those interior drops can't be stopped once destroyHunter is called, so
-  // their count is RESERVED out of the budget up front and the medium/small payouts spend what's left.
+  // DEBUG.sweepPowerupCap bookkeeping: the ceiling counts the guaranteed set plus every per-piece
+  // payout. A swept LARGE pays its one powerup from INSIDE destroyHunter (the v3.6 P3 large-core drop)
+  // — which is also why the sweep spawns nothing extra for size 3 (FLAG-g: two powerups for one piece
+  // would make the ceiling a lie). Those interior drops can't be stopped once destroyHunter is called,
+  // so their count is RESERVED out of the budget up front and the medium/small payouts spend what's left.
   // Under largeHunterCap() (CS024 P6f; the level-table cap it used to read topped out at 12, and this one
   // plateaus at 6) the reservation never exhausts the budget in any reachable state.
-  const pool = setTypes.concat("health");  // sweep rolls ADD Health (ambient-only everywhere else)
-  let budget = SWEEP_POWERUP_CAP - setTypes.length - snap.filter(h => h.size === 3).length;
+  // CS035 P6 (spec §5.4): "guard" is filtered OUT of setTypes above, so the per-piece pool must re-add
+  // it explicitly to stay at 7 — flat and ungated (no guardDropWeight(), no chainGuardMinTow): the
+  // chain is empty at this instant, the same reason the guaranteed set bypassed the gate pre-P6.
+  const pool = setTypes.concat("guard", "health");  // sweep rolls ADD guard back + Health (ambient-only elsewhere)
+  let budget = DEBUG.sweepPowerupCap - setTypes.length - snap.filter(h => h.size === 3).length;
   for (const h of snap) {
     destroyHunter(h, true);      // one hit, resolved exactly as a player shot: score + achievement
                                  // counters credited (awardScore gates both), normal split + scatter
@@ -9487,6 +9543,9 @@ function breakChain(i, src = null) { // node i destroyed; everything aft breaks 
     if (src) src.guardT = DEBUG.chainGuardCooldown;
     return; // no node severed, deliveryCount untouched — the load is byte-identical
   }
+  // CS035 P6 (spec §5.3): the sever path only — a guarded absorb returned above and never reaches
+  // here; scatterChain() (ship death) is its own terminal event and does not increment this.
+  game.stats.cargoDamageEvents++;
   boom(hit.x, hit.y, 1, COLOR.garbage);
   for (let j = i + 1; j < chain.length; j++) {
     game.garbage.push(Garbage.fromNode(chain[j]));
@@ -10100,7 +10159,7 @@ function update(dt) {
         if (game.deliveryCount === 8 || game.deliveryCount === 12 ||
             game.deliveryCount === 16 || game.deliveryCount === 20) {
           const a = rand(0, TAU);
-          dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DOCK_POWERUP_SPEED, Math.sin(a) * DOCK_POWERUP_SPEED);
+          dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DEBUG.dockPowerupSpeed, Math.sin(a) * DEBUG.dockPowerupSpeed);
         }
         // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
         // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.

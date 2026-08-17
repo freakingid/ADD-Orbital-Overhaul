@@ -661,11 +661,15 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // set — later phase's rows, named rather than wildcarded, exactly as every repoint above.
     // REPOINTED BY CS035 P4: the Hunter volatility clock/heartbeat's five HUNTER rows join the excluded
     // set — later phase's rows, named rather than wildcarded, exactly as every repoint above.
+    // REPOINTED BY CS035 P6: the powerup rebalance's five rows join the excluded set too — the guard
+    // drop-weight pity knobs (CHAIN GUARD) and the SMD volume knobs (POWERUPS), named rather than
+    // wildcarded, exactly as every repoint above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
       "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade",
       "dockBounceSpeed",
       "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",
-      "hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink"]);
+      "hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink",
+      "chainGuardDropBase", "chainGuardDropPity", "chainGuardDropMax", "sweepPowerupCap", "dockPowerupSpeed"]);
     const laterIdsOld = new Set(["deliveryFloatLife"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));

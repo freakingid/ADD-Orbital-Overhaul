@@ -124,7 +124,7 @@ function makeRecordingCtx() {
 const RETURN = [
   "game", "settings", "startGame", "nextWave", "update", "draw", "drawHUD", "drawDifficulty",
   "keys", "bindings", "input", "Ship", "Bullet", "Garbage", "Powerup", "DebrisSatellite",
-  "applyPowerup", "dropPowerup", "powerActive", "powerBudgetAmount", "chainMass", "maxBullets",
+  "applyPowerup", "dropPowerup", "powerActive", "powerBudgetAmount", "guardDropWeight", "chainMass", "maxBullets",
   "breakChain", "scatterChain", "addScore",
   "POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS", "POWERUP_BUDGET",
   "RAPID_SHOTS", "TRIPLE_SHOTS", "MAGNET_PIECES", "ENGINE_BURN_SECONDS", "ENGINE_MASS_MULT",
@@ -286,11 +286,15 @@ function layChain(X, n) {
   }
 
   // CHAIN GUARD is down to three, and cooldown is still last in its group.
+  // REPOINTED BY CS035 P6 (spec §5.3): the group gains three MORE rows after cooldown (the guard
+  // drop-weight pity knobs) — cooldown is no longer the group's last entry; dropMax is.
   const ids = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
   const iH = ids.indexOf("#CHAIN GUARD");
   eq(ids.slice(iH + 1, iH + 4).join(","), "chainGuardIntercepts,chainGuardMinTow,chainGuardCooldown",
-    "A: the CHAIN GUARD group is exactly [intercepts, minTow, cooldown]");
-  assert(String(ids[iH + 4]).startsWith("#"), "A: ...and nothing else follows it inside the group");
+    "A: the CHAIN GUARD group is exactly [intercepts, minTow, cooldown, ...]");
+  eq(ids.slice(iH + 4, iH + 7).join(","), "chainGuardDropBase,chainGuardDropPity,chainGuardDropMax",
+    "A: ...followed by CS035 P6's three pity knobs");
+  assert(String(ids[iH + 7]).startsWith("#"), "A: ...and nothing else follows it inside the group");
 })();
 
 // ================= (B) each budget depletes on the RIGHT event, and no other =================
@@ -666,13 +670,17 @@ function layChain(X, n) {
   // An INDEPENDENT reference walk, written from the spec's own words rather than from the shipped
   // expression: sum the ELIGIBLE weights, then walk the ELIGIBLE keys in table order. If the build
   // skipped an ineligible key in only ONE of the two places, the two would disagree.
+  // REPOINTED BY CS035 P6 (spec §5.3): guard's own weight is no longer a static table entry —
+  // weightOf(guard) is guardDropWeight() now, so the reference walk reads that instead of
+  // X.POWERUP_DROP_WEIGHTS.guard (which is a placeholder post-P6, see the constants block comment).
   function reference(r01, towing) {
     const W = X.POWERUP_DROP_WEIGHTS;
     const ok = k => k !== "guard" || towing >= MINTOW;
+    const weightOf = k => k === "guard" ? X.guardDropWeight() : W[k];
     let total = 0;
-    for (const k in W) if (ok(k)) total += W[k];
+    for (const k in W) if (ok(k)) total += weightOf(k);
     let r = r01 * total;
-    for (const k in W) { if (!ok(k)) continue; r -= W[k]; if (r < 0) return k; }
+    for (const k in W) { if (!ok(k)) continue; r -= weightOf(k); if (r < 0) return k; }
     return undefined;
   }
   // Drive the REAL dropPowerup with a pinned stream and compare type-for-type. dropPowerup makes ONE
@@ -707,11 +715,14 @@ function layChain(X, n) {
     eq(new Set(perCall).size, 1, `F: [towing ${towing}] every dropPowerup call consumes the same number of draws`);
     eq(perCall[0], REF_DRAWS_PER_CALL, `F: [towing ${towing}] ...and it is the same number at every tow length`);
 
+    // REPOINTED BY CS035 P6 (spec §5.2/§5.3): the table is x10 (100 non-guard total, not 10), and
+    // guard's ELIGIBLE weight is guardDropWeight() (the base 4 at this section's untouched pity
+    // counter of 0), not the frozen POWERUP_DROP_WEIGHTS.guard placeholder.
     const sawGuard = types.includes("guard");
     if (towing < MINTOW) {
       assert(!sawGuard, `F: [towing ${towing} < ${MINTOW}] "guard" NEVER rolls`);
-      // ...and the surviving five RENORMALISE over a total of 10 rather than leaving a 1-in-11 hole.
-      const total = 10;
+      // ...and the surviving five RENORMALISE over a total of 100 rather than leaving a hole.
+      const total = 100;
       for (const k of ["rapid", "triple", "scoop", "magnet", "engine"]) {
         const share = types.filter(t => t === k).length / types.length;
         assert(Math.abs(share - X.POWERUP_DROP_WEIGHTS[k] / total) < 0.03,
@@ -719,11 +730,15 @@ function layChain(X, n) {
       }
     } else {
       assert(sawGuard, `F: [towing ${towing} >= ${MINTOW}] "guard" DOES enter the roll`);
-      const total = 11;
+      eq(g.stats.cargoDamageEvents, 0, `F: [towing ${towing}] (sanity) the pity counter never moved this section`);
+      const guardWeight = X.guardDropWeight();
+      eq(guardWeight, X.DEBUG.chainGuardDropBase, `F: [towing ${towing}] guardDropWeight() is the base at 0 pity events`);
+      const total = 100 + guardWeight;
       for (const k of Object.keys(X.POWERUP_DROP_WEIGHTS)) {
+        const w = k === "guard" ? guardWeight : X.POWERUP_DROP_WEIGHTS[k];
         const share = types.filter(t => t === k).length / types.length;
-        assert(Math.abs(share - X.POWERUP_DROP_WEIGHTS[k] / total) < 0.03,
-          `F: [towing ${towing}] "${k}" lands near its ${X.POWERUP_DROP_WEIGHTS[k]}/${total} share (got ${share.toFixed(3)})`);
+        assert(Math.abs(share - w / total) < 0.03,
+          `F: [towing ${towing}] "${k}" lands near its ${w}/${total} share (got ${share.toFixed(3)})`);
       }
     }
   }

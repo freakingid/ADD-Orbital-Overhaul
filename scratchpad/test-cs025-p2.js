@@ -1101,7 +1101,13 @@ function stepProbe(X, p, dt = 1 / 60) {
     assert(kick > pw && spread < gl, "K: both live inside the POWERUPS section");
     eq(ids[kick - 1], "magnetResumeDelay", "K: magnetPushKick sits immediately AFTER magnetResumeDelay");
     eq(spread, kick + 1, "K: ...and magnetPushSpread immediately after it");
-    eq(ids[gl - 1], "magnetPushSpread", "K: ...closing the section");
+    // NARROWED BY CS035 P6, same reasoning CS025 P2 itself applied to test-cs025-p1.js's "closing the
+    // section" claim: "last in POWERUPS" is a statement about what comes after, which a later phase
+    // appending to the same section legitimately falsifies (P6 appends sweepPowerupCap/dockPowerupSpeed
+    // there). What survives is that nothing was inserted BETWEEN magnetPushKick and magnetPushSpread.
+    for (const id of ids.slice(spread + 1, gl))
+      assert(id === "sweepPowerupCap" || id === "dockPowerupSpeed",
+        `K: every POWERUPS row after magnetPushSpread was appended by a LATER phase (found ${id})`);
   }
 
   // Registry 73 -> 75 (CS026 P2 repoint: -> 78, the junkSplit lever's three knobs).
@@ -1165,7 +1171,9 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id.startsWith("celebration")                                // CS030 P3
       || id === "dockBounceSpeed"                                    // CS035 P2
       || id.startsWith("levelEnd")                                   // CS035 P3
-      || id === "hunterVolatileAge" || id.startsWith("hunterPulse"); // CS035 P4
+      || id === "hunterVolatileAge" || id.startsWith("hunterPulse")  // CS035 P4
+      || id.startsWith("chainGuardDrop")                             // CS035 P6
+      || id === "sweepPowerupCap" || id === "dockPowerupSpeed";      // CS035 P6
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))

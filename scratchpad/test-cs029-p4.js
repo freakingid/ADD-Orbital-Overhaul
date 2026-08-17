@@ -99,7 +99,9 @@ const src = scriptSource();
   // REPOINTED BY CS034 P8: net +4 more (deliveryFloatLife retired, five new DELIVERY rows added).
   // REPOINTED BY CS035 P2: +1 more (dockBounceSpeed, the dock lockout's push speed).
   // REPOINTED BY CS035 P3: +4 more (levelEndHold/Grace/Fade/GracePulseEnd, the level-end window).
-  eq(X.DEBUG_ENTRIES.length, 101, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four and CS035 P4's five later rows) — G1=C carries no new registry row");
+  // REPOINTED BY CS035 P4: +5 more (hunterVolatileAge, hunterPulseMin/Max/Grow/Shrink).
+  // REPOINTED BY CS035 P6: +5 more (chainGuardDropBase/Pity/Max, sweepPowerupCap, dockPowerupSpeed).
+  eq(X.DEBUG_ENTRIES.length, 106, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five and CS035 P6's five later rows) — G1=C carries no new registry row");
   assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
   assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
     "B: no minGap knob either — that belongs to model B, which was not picked");

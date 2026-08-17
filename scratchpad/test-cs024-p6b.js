@@ -626,7 +626,13 @@ function evalSlice(literal) {
       // CS035 P4 repoint: and the Hunter volatility clock/heartbeat's five knobs (hunterVolatileAge,
       // hunterPulseMin, hunterPulseMax, hunterPulseGrow, hunterPulseShrink; HUNTER, appended after
       // heldClumpMax) — CS035 P4's rows, not P6b's. Same reasoning a ninth time.
-      .replace(/,hunterVolatileAge,hunterPulseMin,hunterPulseMax,hunterPulseGrow,hunterPulseShrink/, "");
+      .replace(/,hunterVolatileAge,hunterPulseMin,hunterPulseMax,hunterPulseGrow,hunterPulseShrink/, "")
+      // CS035 P6 repoint: and the guard drop-weight pity knobs (chainGuardDropBase/Pity/Max, CHAIN
+      // GUARD, appended after chainGuardCooldown) plus the two SMD volume knobs (sweepPowerupCap,
+      // dockPowerupSpeed, POWERUPS, appended after engineMassMult) — CS035 P6's rows, not P6b's. Same
+      // reasoning a tenth time.
+      .replace(/,chainGuardDropBase,chainGuardDropPity,chainGuardDropMax/, "")
+      .replace(/,sweepPowerupCap,dockPowerupSpeed/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
@@ -673,20 +679,19 @@ function evalSlice(literal) {
     // (`{ ...game.powerBudget }`) — a new line that MENTIONS the symbol without touching the store's
     // own declaration or any existing consumer. What P6b actually promised is that the budget STORE
     // itself was left alone, which the remaining symbols below still cover in full.
-    // REPOINTED BY CS035 P2 — `dropPowerup` LEAVES the "no line mentions it" list and gains a SHARPER
-    // pin of its own, exactly as powerActive did at CS025 P1 and for the same reason. CS035 P2 deletes
-    // the dock offload's incidental branch and unwraps the `if (towed)` around everything else, which
-    // RE-INDENTS the whole towed body two spaces left — the 8/12/16/20 reward-tier `dropPowerup(...)`
-    // call among it. The call is untouched as CODE; only whitespace moved. So the claim sharpens to
-    // exactly that, rather than being dropped: every dropPowerup line in the diff is the same text on
-    // both sides once indentation is stripped. A real edit to the call would break this immediately.
-    for (const sym of ["POWERUP_DROP_TYPES", "POWERUP_DROP_WEIGHTS",
-                       "engineMassMult", "chainGuardMinTow"])
+    // REPOINTED BY CS035 P2 — `dropPowerup` LEFT the "no line mentions it" list at that phase for a
+    // whitespace-only reindent. RE-REPOINTED BY CS035 P6: dropPowerup's body now genuinely changes
+    // (weightOf's guard-vs-static indirection, the guard-drop pity reset) — the "byte-identical bar
+    // indentation" claim is no longer true of a real edit and would be false comfort to keep checking.
+    // dropPowerup LEAVES this file's pin entirely; its new behaviour is covered by
+    // scratchpad/test-cs035-p6.js instead, which is the current, sharper pin.
+    // REPOINTED BY CS035 P6 — `POWERUP_DROP_WEIGHTS` and `chainGuardMinTow` LEAVE the "no line mentions
+    // it" list too, for the same reason engineBurnSeconds/powerBudget left it before: P6 legitimately
+    // retunes the table (spec §5.2) and composes guard's dynamic weight with the existing chain-length
+    // gate (spec §5.3), touching comments and code near both symbols. Their shape is pinned by
+    // scratchpad/test-cs035-p6.js and by test-cs017-p6.js §A/F, not by this fixed-ref diff.
+    for (const sym of ["POWERUP_DROP_TYPES", "engineMassMult"])
       assert(!new RegExp("^[-+].*\\b" + sym + "\\b", "m").test(diff), `G: TRAP 5 — no diff line touches ${sym}`);
-    const dpLines = sign => diff.split("\n").filter(l => l[0] === sign && /\bdropPowerup\b/.test(l))
-      .map(l => l.slice(1).trim()).sort();
-    eq(dpLines("+").join(" | "), dpLines("-").join(" | "),
-      "G: TRAP 5 — every dropPowerup line the diff touches is byte-identical bar indentation (CS035 P2's dedent)");
     // REPOINTED BY CS025 P1 — `powerActive` LEAVES the "no line mentions it" list and gains a SHARPER
     // pin of its own, for the same reason engineBurnSeconds left it: a fixed-ref diff pin measured
     // against a MOVING working tree cannot outlive a later phase legitimately adding a READER. CS025 P1

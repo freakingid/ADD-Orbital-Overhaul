@@ -99,6 +99,10 @@ function build(src = scriptSrc, windowExtra) {
 }
 
 const DROPPABLE = ["rapid", "triple", "scoop", "magnet", "engine", "guard"];
+// REPOINTED BY CS035 P6 (spec §5.4): guard leaves the GUARANTEED set — SET_TYPES is what the dock's
+// guaranteed drop actually is now (5, deterministic); DROPPABLE (6, = Object.keys(POWERUP_DROP_WEIGHTS))
+// still names the full droppable-type universe and the per-piece sweep pool's non-Health members.
+const SET_TYPES = DROPPABLE.filter(t => t !== "guard");
 
 // Prepare a quiet in-play board for a direct superMegaDelivery() call: real startGame, all ambient
 // producers suppressed, one immortal dummy debris so the wave never clears mid-test, ship parked far
@@ -126,22 +130,28 @@ function atDock(X, p) { return p.x === X.game.dock.x && p.y === X.game.dock.y; }
     "the sweep captures an explicit snapshot via game.hunters.filter(h => !h.dead)");
   assert(!/for\s*\(\s*const\s+\w+\s+of\s+game\.hunters\s*\)/.test(body) && !body.includes("game.hunters.forEach"),
     "the sweep iterates the snapshot, never game.hunters directly (no for...of / forEach over the live array)");
-  assert(body.includes('.concat("health")'), "the sweep payout pool adds Health");
+  // REPOINTED BY CS035 P6 (spec §5.4): the pool re-adds guard explicitly now that setTypes excludes
+  // it, so the literal text is `.concat("guard", "health")`, not `.concat("health")`.
+  assert(body.includes('.concat("guard", "health")'), "the sweep payout pool re-adds guard, then adds Health");
   assert(!body.includes("dropPowerup("),
     "superMegaDelivery never calls dropPowerup — POWERUP_DROP_WEIGHTS and the guard gate are bypassed");
-  assert(/const SWEEP_POWERUP_CAP = 48;/.test(scriptSrc), "SWEEP_POWERUP_CAP is a fixed const 48");
+  assert(/const SWEEP_POWERUP_CAP = 48;/.test(scriptSrc),
+    "SWEEP_POWERUP_CAP survives as the registry's def source (spec §5.5), unchanged at 48");
   assert(/=== CARGO_CAP_MAX\) superMegaDelivery\(\);/.test(scriptSrc),
     "the trigger latch (deliveryCount === CARGO_CAP_MAX -> superMegaDelivery) sits in the dock block");
 
   const X = build();
-  eq(X.SWEEP_POWERUP_CAP, 48, "SWEEP_POWERUP_CAP value");
-  assert(!X.DEBUG_VARS.some(v => v.id && /sweep(Powerup)?Cap/i.test(v.id)),
-    "the 48 ceiling is NOT exposed as a debug-panel knob");
+  eq(X.SWEEP_POWERUP_CAP, 48, "SWEEP_POWERUP_CAP the const value is still 48 (it's only the def source now)");
+  // INVERTED BY CS035 P6 (spec §5.5): the ceiling is now a live knob, def 24 — the whole point of the
+  // phase's "the flood gets smaller" half.
+  assert(X.DEBUG_VARS.some(v => v.id === "sweepPowerupCap"),
+    "INVERTED — the sweep cap IS now exposed as a debug-panel knob (sweepPowerupCap)");
+  eq(X.DEBUG.sweepPowerupCap, 24, "sweepPowerupCap's live default is 24, not the old fixed 48");
   assert(X.DEBUG_VARS.some(v => v.id === "sweepCoalescePause"),
     "DEBUG.sweepCoalescePause (the P6 knob) is still registered");
   eq(X.DEBUG.sweepCoalescePause, 10, "sweepCoalescePause default is 10 s");
   eq(Object.keys(X.POWERUP_DROP_WEIGHTS).join(","), DROPPABLE.join(","),
-    "the six droppable types (the guaranteed set's source) are unchanged");
+    "the six droppable types (POWERUP_DROP_WEIGHTS' own keys) are unchanged — only their weights and guard's eligibility for the GUARANTEED set moved");
 })();
 
 // ================= (C) §6 item 7 — pure-large board =====================
@@ -174,16 +184,18 @@ let reportBefore = 0, reportAfter = 0, reportPowerups = 0;
   reportAfter = alive(X).length;
   eq(reportAfter, 3 * N, "board is NOT empty afterwards: 30 alive hunters");
 
-  // powerups: 6 guaranteed + N large-core drops from inside destroyHunter, ZERO sweep extras (FLAG-g)
+  // REPOINTED BY CS035 P6 (spec §5.4/§5.5): the guaranteed set drops 6 -> 5 (guard excluded), and the
+  // launch speed is now the live DEBUG.dockPowerupSpeed knob, not the frozen DOCK_POWERUP_SPEED const.
+  // powerups: 5 guaranteed + N large-core drops from inside destroyHunter, ZERO sweep extras (FLAG-g)
   reportPowerups = X.game.powerups.length;
-  eq(reportPowerups, 6 + N, "total powerups = guaranteed 6 + exactly N from the sweep (16)");
+  eq(reportPowerups, 5 + N, "total powerups = guaranteed 5 + exactly N from the sweep (15)");
   const dockPs = X.game.powerups.filter(p => atDock(X, p));
-  eq(dockPs.length, 6, "exactly 6 powerups launch from the dock");
-  eq(dockPs.map(p => p.type).sort().join(","), DROPPABLE.slice().sort().join(","),
-    "the guaranteed set is one of EACH droppable type — guard included despite the empty chain");
+  eq(dockPs.length, 5, "exactly 5 powerups launch from the dock");
+  eq(dockPs.map(p => p.type).sort().join(","), SET_TYPES.slice().sort().join(","),
+    "the guaranteed set is one of EACH droppable type EXCEPT guard, despite the empty chain");
   for (const p of dockPs) {
-    assert(near(Math.hypot(p.vx, p.vy), X.DOCK_POWERUP_SPEED, 1e-9),
-      "guaranteed powerup launches at DOCK_POWERUP_SPEED");
+    assert(near(Math.hypot(p.vx, p.vy), X.DEBUG.dockPowerupSpeed, 1e-9),
+      "guaranteed powerup launches at DEBUG.dockPowerupSpeed");
   }
   const sweepPs = X.game.powerups.filter(p => !atDock(X, p));
   eq(sweepPs.length, N, "exactly N powerups spawned at swept-piece positions");
@@ -219,8 +231,9 @@ let reportBefore = 0, reportAfter = 0, reportPowerups = 0;
   eq(dead(X, 1).length, 7, "post-sweep dead smalls = exactly the pre-existing smalls destroyed");
   eq(alive(X).length, 27, "board is NOT empty afterwards (27 alive pieces)");
 
-  // payouts: 6 set + 4 large-core (FLAG-g) + 12 medium/small sweep spawns
-  eq(X.game.powerups.length, 22, "powerups = 6 + 4 + (5+7) = 22, one per swept piece plus the set");
+  // REPOINTED BY CS035 P6 (spec §5.4): the guaranteed set is 5 now (guard excluded), so the total drops
+  // 22 -> 21. payouts: 5 set + 4 large-core (FLAG-g) + 12 medium/small sweep spawns
+  eq(X.game.powerups.length, 21, "powerups = 5 + 4 + (5+7) = 21, one per swept piece plus the set");
   const sweepPs = X.game.powerups.filter(p => !atDock(X, p));
   for (const p of sweepPs) {
     assert([...pre].some(h => h.x === p.x && h.y === p.y),
@@ -229,11 +242,17 @@ let reportBefore = 0, reportAfter = 0, reportPowerups = 0;
 })();
 
 // ================= (E) §6 item 9 — the 48 spawn ceiling =====================
+// REPOINTED BY CS035 P6 (spec §5.5): the 48 ceiling is no longer a fixed const at the call site — it's
+// DEBUG.sweepPowerupCap, defaulting to 24. The CEILING MECHANISM (reservation math never exceeds the
+// budget, every piece still takes its hit once the budget runs dry) is this section's actual subject,
+// so both boards force the knob back to 48 to keep exercising the same arithmetic at the same scale;
+// the DEFAULT of 24 is exactly what section H's real dock-visit integration exercises instead.
 (function sectionE() {
-  console.log("(E) item 9: boards implying 71 and 106 powerups spawn exactly 48");
-  // 5 larges interleaved among 60 smalls -> implied 6 + 5 + 60 = 71
+  console.log("(E) item 9: boards implying 70 and 105 powerups spawn exactly a forced 48-cap");
+  // 5 larges interleaved among 60 smalls -> implied 5 (set) + 5 (large self-drops) + 60 (sweep) = 70
   const X = build();
   quietBoard(X);
+  X.DEBUG.sweepPowerupCap = 48;
   for (let i = 0; i < 65; i++) {
     const size = (i % 13 === 6) ? 3 : 1;  // 5 larges at positions 6,19,32,45,58 — order must not matter
     X.game.hunters.push(new X.HunterSatellite(100 + (i % 10) * 150, 100 + Math.floor(i / 10) * 130, size));
@@ -241,17 +260,18 @@ let reportBefore = 0, reportAfter = 0, reportPowerups = 0;
   eq(alive(X, 3).length, 5, "seeded 5 larges");
   eq(alive(X, 1).length, 60, "seeded 60 smalls");
   X.superMegaDelivery();
-  eq(X.game.powerups.length, 48, "a board implying 71 powerups spawns exactly SWEEP_POWERUP_CAP (48)");
-  eq(X.game.powerups.filter(p => atDock(X, p)).length, 6, "the guaranteed set is never squeezed out");
+  eq(X.game.powerups.length, 48, "a board implying 70 powerups spawns exactly the forced cap (48)");
+  eq(X.game.powerups.filter(p => atDock(X, p)).length, 5, "the guaranteed set is never squeezed out");
   eq(X.game.stats.hunterLineageKills, 65, "every piece STILL takes its hit after the budget runs dry");
   eq(alive(X, 2).length, 15, "the 5 larges still split into 15 mediums");
 
-  // all-small board -> implied 6 + 100 = 106
+  // all-small board -> implied 5 (set) + 100 (sweep) = 105
   const Y = build();
   quietBoard(Y);
+  Y.DEBUG.sweepPowerupCap = 48;
   for (let i = 0; i < 100; i++) Y.game.hunters.push(new Y.HunterSatellite(100 + (i % 10) * 150, 100 + Math.floor(i / 10) * 130, 1));
   Y.superMegaDelivery();
-  eq(Y.game.powerups.length, 48, "an all-small board implying 106 powerups also spawns exactly 48");
+  eq(Y.game.powerups.length, 48, "an all-small board implying 105 powerups also spawns exactly the forced cap (48)");
   eq(Y.game.stats.hunterLineageKills, 100, "all 100 smalls are hit regardless");
   eq(alive(Y).length, 0, "an all-small board IS emptied — smalls have no children (not a cascade)");
 })();
@@ -260,6 +280,11 @@ let reportBefore = 0, reportAfter = 0, reportPowerups = 0;
 (function sectionF() {
   console.log("(F) sweep payouts draw from all SEVEN types (six droppables + Health)");
   const X = build();
+  // REPOINTED BY CS035 P6 (spec §5.5): the LIVE default budget (24) is too small to pay every one of
+  // the 30 seeded smalls (budget = 24 - 5 setTypes - 0 larges = 19 < 30) — the cap is forced back up
+  // here so every seeded piece still pays out and the "450 flat rolls" statistical claim is preserved;
+  // the default's smaller budget is what section E's forced-48 comment and section H exercise instead.
+  X.DEBUG.sweepPowerupCap = 40;
   const tally = {};
   for (let s = 0; s < 15; s++) {                       // 15 sweeps x 30 small payouts = 450 flat rolls
     quietBoard(X);
@@ -364,12 +389,16 @@ function runVisit(X, n) {
   eq(X.game.hunters.length, 6, "the swept larges are already cleanup-filtered; only fresh mediums remain");
   eq(alive(X, 2).length, 6, "the two swept larges left 6 fresh mediums");
   eq(X.game.stats.largeHunterKills, 2, "both sweep kills credited to the player");
-  // 4 P8 reward tiers (8/12/16/20) + 6 guaranteed + 2 large-core drops
-  eq(born24.length, 12, "powerups born across the visit = 4 tier awards + 6 set + 2 sweep");
+  // REPOINTED BY CS035 P6 (spec §5.4): the guaranteed set drops 6 -> 5 (guard excluded), so both
+  // totals move down by one. 4 P8 reward tiers (8/12/16/20) + 5 guaranteed + 2 large-core drops
+  eq(born24.length, 11, "powerups born across the visit = 4 tier awards + 5 set + 2 sweep");
   const dockBorn = born24.filter(p => p.x === X.game.dock.x && p.y === X.game.dock.y);
-  eq(dockBorn.length, 10, "10 of them launched from the dock (4 tier + 6 set)");
+  eq(dockBorn.length, 9, "9 of them launched from the dock (4 tier + 5 set)");
   const setTypes = dockBorn.map(p => p.type);
-  for (const t of DROPPABLE) assert(setTypes.includes(t), `guaranteed set delivered a "${t}" at the dock`);
+  // guard is no longer among the GUARANTEED set — it only reaches the dock now if one of the four
+  // random P8 tier rolls happens to land on it (pity-driven, low-probability at a fresh run's
+  // cargoDamageEvents=0), so it is deliberately not asserted here; SET_TYPES (5, deterministic) is.
+  for (const t of SET_TYPES) assert(setTypes.includes(t), `guaranteed set delivered a "${t}" at the dock`);
   eq(X.game.sweepPause, X.DEBUG.sweepCoalescePause,
     "sweepPause is armed at full value right after the triggering frame (set AFTER that frame's gate)");
 

@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.34 · Changeset: CS035 · Phase: P5 · Registry: 101 · Levers: 18
+Version: 1.0.0.34 · Changeset: CS035 · Phase: P6 · Registry: 106 · Levers: 18
 
 ## Phase ledger — CS035
 
@@ -71,15 +71,41 @@ Version: 1.0.0.34 · Changeset: CS035 · Phase: P5 · Registry: 101 · Levers: 1
   braces between the debris pass and whichever runs next" now checks for the new Hunter↔Hunter pass first;
   `test-cs023-p3.js` §A's `destroySaucer(s, false)` call-site count moved 2→3 for the new saucer arm.
 
+- P6 — powerup rebalance (spec §5): two independent fixes. `POWERUP_DROP_WEIGHTS` ×10 (every non-guard
+  ratio byte-identical, just scaled); `guard`'s own entry is now a placeholder overwritten at roll time
+  by `guardDropWeight()` — `min(chainGuardDropMax, chainGuardDropBase + chainGuardDropPity *
+  game.stats.cargoDamageEvents)`, three new CHAIN GUARD knobs (def 4/8/40). `cargoDamageEvents` increments
+  in `breakChain()`'s sever path only (a guarded absorb and `scatterChain()` don't count), resets to 0 the
+  instant `dropPowerup()` selects `"guard"` (not on pickup), and carries across waves within a run (reset
+  in `startGame()`'s `resetGameStats()`, not `nextWave()`). `dropPowerup()`'s `weightOf(k)` indirection
+  composes the dynamic guard weight with the existing `chainGuardMinTow` eligibility gate — an ineligible
+  key still skips in both the total and the walk. `POWERUP_DROP_TYPES` (the budgeted-effect list) is
+  untouched, per the standing trap. Second fix: the Super Mega Delivery flood shrinks — `guard` leaves the
+  guaranteed set (6→5 types), re-added explicitly (flat, ungated) to the per-piece sweep pool so it stays
+  reachable during a sweep; two POWERUPS knobs replace frozen consts, `sweepPowerupCap` (was
+  `SWEEP_POWERUP_CAP` 48, now def 24) and `dockPowerupSpeed` (was `DOCK_POWERUP_SPEED` 120, now def 180,
+  two call sites — the SMD guaranteed set and the 8/12/16/20 reward-tier drops). Registry 101→106; no
+  lever moved. New `scratchpad/test-cs035-p6.js`. Twenty older suite files pinning weight ratios, the
+  guaranteed-set size, `DOCK_POWERUP_SPEED`/`SWEEP_POWERUP_CAP` call sites, or the registry's
+  count/order against a fixed parent SHA were repointed in this commit, same "REPOINTED BY"/"same
+  reasoning an Nth time" convention every prior phase's registry growth or behaviour change has used
+  (test-cs017-p6, test-cs018-p8, test-cs018-p9, test-cs019-p1, test-cs023-p3, test-cs024-p6/p6b/p6c,
+  test-cs025-p1/p2/p5, test-cs026-p2/p5/p6, test-cs027-p2/p6, test-cs029-p4, test-cs030-p1, test-p6,
+  test-v33-p3).
+
 ## Working / verified
 
-- Full suite on a full clone: **142 files, 139 passed, 3 pre-existing failures, 0 skipped**
-  (`test-cs035-p5.js` is this phase's addition to the file count). `test-f2`, `test-v36-death`, and
-  `test-cs023-p3`'s TRAP 3 pin (against a fixed historical SHA) are the three this phase's parent
-  already carried — reconfirmed by stashing this phase's diff and re-running against P4's own HEAD,
-  same failure both ways.
-- **NEW finding, not caused by this phase — `test-cs035-p3.js` is flaky, ~1-in-5 runs, independent of
-  P5.** Reconfirmed against P4's own HEAD with this phase's diff stashed: same ~20% failure rate on
+- Full suite on a full clone: **143 files, 139-140 passed, 3 pre-existing failures + `test-cs035-p3`'s
+  ~1-in-5 flake, 0 skipped** (`test-cs035-p6.js` is this phase's addition to the file count). `test-f2`,
+  `test-v36-death`, and `test-cs023-p3`'s TRAP 3 pin (against a fixed historical SHA) are the same three
+  P5 already carried — unaffected by this phase's diff. Twenty older suite files needed repointing —
+  see the P6 ledger entry — for the weight table's ×10 scale, the guaranteed-set size (6→5), the
+  `DOCK_POWERUP_SPEED`/`SWEEP_POWERUP_CAP` constants' call sites moving to `DEBUG.*`, and the
+  registry's count/order against fixed parent SHAs; none of the repoints weakened a claim, each named
+  the later phase and excluded only its own rows, same convention every prior registry-growth repoint
+  in this project has used.
+- **`test-cs035-p3.js` is flaky, ~1-in-5 runs, independent of P5 and P6.** Reconfirmed against P4's own
+  HEAD with P5's diff stashed: same ~20% failure rate on
   its §F assertion either way. Not investigated further, out of P5's scope; worth a future phase's
   attention since it isn't seed-related (P3 didn't add `installSeed`).
 - P5 legitimately broke two pre-existing phase-local pins by adding real code where they asserted
@@ -233,12 +259,10 @@ None.
 
 ## Next up
 
-- **CS035 P6 is next**, per `IMPLEMENTATION-PHASES-CS035.md`: the powerup rebalance (spec §5) —
-  `POWERUP_DROP_WEIGHTS` ×10, `guard`'s weight going dynamic (pity-counter driven off
-  `game.stats.cargoDamageEvents`, incremented in `breakChain()` on the unguarded-sever path only), and
-  shrinking the Super Mega Delivery flood.
-- **`test-cs035-p3.js` flakes ~1-in-5 runs, pre-existing, not P5's** — see "Working / verified". Worth
-  a look whenever a phase is next in that file's neighborhood; it isn't seeded.
+- **The blocking playtest GATE is next**, per `IMPLEMENTATION-PHASES-CS035.md` — P6 is CS035's last
+  build phase; P7 (closing: fold in the gate, version bump, doc sweep, log, archive) waits on it.
+- **`test-cs035-p3.js` flakes ~1-in-5 runs, pre-existing, not P5's or P6's** — see "Working / verified".
+  Worth a look whenever a phase is next in that file's neighborhood; it isn't seeded.
 - **Delivery-ticker ship-anchor (Gate B, deferred) — wants its own gate/playtest**, not a
   closing-phase guess, given CS029 already measured the naive version as worse. See "Known issues."
 - **Celebration header treatment (Gate B, B8) — reads clearly enough to ship, but the abrupt
@@ -276,9 +300,16 @@ None.
 
 - **FLAG-CS035-a — does a Super Mega Delivery (24-haul) still land without its text celebration?**
   After P1, it announces itself with: a size-39+ ticker showing a four-figure number, the HUD cargo
-  flash, the `dock_24` voice line, and roughly thirty powerups erupting from the dock. Assessed as
-  sufficient; the fix if not is a re-introduced "MAX HAUL" at a y-offset clear of the ticker, not a
-  restore in place. See `PLANNED-FEATURES-CS035.md` §1.3.
+  flash, the `dock_24` voice line, and — **as of P6, fewer powerups than when this flag was written**
+  (P6 shrinks the flood: guaranteed set 6→5 types, sweep cap default 48→24) — assess against the current
+  numbers, not "roughly thirty." Assessed as sufficient pre-P6; the fix if not is a re-introduced "MAX
+  HAUL" at a y-offset clear of the ticker, not a restore in place. See `PLANNED-FEATURES-CS035.md` §1.3.
+
+- **FLAG-CS035-e (from P6, spec §5.5) — `sweepPowerupCap` (def 24) and `dockPowerupSpeed` (def 180) are
+  proposed, not measured.** Gate answers are numbers, not yes/no. Also worth checking at the same gate:
+  whether the guard drop-weight pity curve (base 4/pity 8/cap 40, ~3.8%→~29% of a 100 non-guard total)
+  makes chain armour feel rare-but-earned rather than absent, and whether a shrunk, faster-flung SMD
+  sweep still reads as a payoff moment rather than a fizzle. See `PLANNED-FEATURES-CS035.md` §5.
 
 ## Balance notes
 
