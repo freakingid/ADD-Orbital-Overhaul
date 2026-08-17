@@ -1,23 +1,22 @@
 # PLANNED-FEATURES-CS036 — Orbital Overhaul
 
-> **⚠ DRAFT — SPEC INPUT, NOT A REVIEWED PLAN.** Every `FORK-CS036-*` below is an **open question for
-> Paul**, not a resolved decision. Nothing in this document is implementable until the forks carry
-> answers, in the same shape CS035's spec carried them (`FORK-A → apply`). Written at the CS035
-> closing phase from that changeset's gate answers and carried-forward issues; no code was written
-> for any of it.
+Spec for changeset CS036. Companion: `IMPLEMENTATION-PHASES-CS036.md`.
 
-Baseline: `d8b82cf` ("cs-35 p7: closing phase — version 1.0.0.35, gate fold-in, doc sweep"),
-`GAME_VERSION` `1.0.0.35`, registry **106** entries / **10** section headers, `LEVERS` **18**,
+Baseline: `a909d33` ("Doc additions before CS036 — draft spec input"), build unchanged since
+`d8b82cf` ("cs-35 p7: closing phase — version 1.0.0.35, gate fold-in, doc sweep"), `GAME_VERSION`
+`1.0.0.35`, registry **106** entries / **10** section headers, `LEVERS` **18**,
 `POWERUP_DROP_TYPES` **5**, suite **143 files / 140 passed / 3 failed (pre-existing) / 0 skipped** on
 a full clone. Thirteen suite files hard-fail on a shallow clone — work from a **full clone**, never
 `--depth 1`.
 
-Scope areas, in the order they'd likely be built:
+Four scope areas:
 
-1. The level-end ceremony — freeze the action and announce it (**the headline item**)
-2. Volatile Hunter Satellite colour (CS035 G18)
-3. Small feedback fixes from the CS035 gate
-4. Suite hygiene — no design input needed, only scoping
+1. **The level-end ceremony** — freeze the action and announce it (the headline item)
+2. **A louder Hunter Satellite heartbeat** — CS035 G18, resolved as motion, not colour
+3. Two small feedback fixes from the CS035 gate
+4. Suite triage — the three standing red files
+
+Every `FORK-CS036-*` below carries Paul's answer, resolved at the CS035 closing session.
 
 ---
 
@@ -31,251 +30,311 @@ as a result. **The window runs.** What it does not do is *announce itself*: `PLA
 dock. Steps 2/4/5 are ordinary gameplay frames with damage switched off." So the field keeps
 simulating, Hunter Satellites keep hunting, and the only tell is a 2 Hz alpha pulse on the ship.
 
-The intent Paul actually holds is a **ceremonial pause**: the action stops, "Level N Complete" shows,
-the Achievements panel runs if there is one, "Level N+1" shows, the next level starts. That is a
-different feature, not a defect in the shipped one. **CS035's four CELEBRATION knobs were never
-assessed and their meanings change under §1**, so re-tuning them is downstream of this decision, not
-a separate task.
+The intent is a **ceremonial pause**: the action stops, "Level N Complete" holds until the player
+presses on, the Achievements panel runs if there is one, "Level N+1" announces as it already does,
+play resumes. ⛔ **This is not a bug fix and must not be written up as one.** CS035 P3 shipped what its
+spec asked for; CS036 asks for something else at the same seam.
 
 ### §0.2 ⛔ Half the desired sequence ALREADY SHIPS
 
 The Achievements panel already defers `nextWave()` to `dismissCelebration()` (CS030 P5), and
 `nextWave()` is what seeds `game.levelBanner` and fires `VoiceSys.sayLevel()`. So **panel →
 "Level N+1" → next level is already the shipped order**, and ⛔ the `return` that *is* that deferral
-is a standing invariant (`PLANNED-FEATURES-CS035.md` §3.7).
+is a standing invariant (`PLANNED-FEATURES-CS035.md` §3.7) and is not touched by this changeset.
 
 What is missing is only the front half:
 
 1. Freezing the field at wave-clear rather than at panel-open.
-2. A "Level N Complete" card during that freeze.
+2. A "Level N Complete" announcement during that freeze, held until the player presses on.
 
-**This is a much smaller change than the description suggests.** Scope it as such.
+**Scope it as that.** Every other step in §1.1 is either shipped or a one-line change to a condition.
 
-### §0.3 The freeze mechanism already exists and has a documented trap
+### §0.3 ⛔ The freeze is a REDUCED SIM, not just another early-return term
 
-`update()` early-returns on `game.state !== "playing" || game.paused || game.celebration`. Adding a
-term is the obvious shape. ⛔ **But four things live BELOW that early return, in the playing body's
-tail, and a naive freeze stalls all of them:**
+`update()` early-returns on `game.state !== "playing" || game.paused || game.celebration`. Four things
+live **below** that return, in the playing body's tail, and a naive extra term stalls all of them:
 
-| What | Where | Consequence of a naive freeze |
-|---|---|---|
-| `game.levelBanner.life -= dt` | the banner countdown | **the card never expires — a hard hang** |
-| `VoiceSys.update()` | the voice queue drain, deliberately LAST | parked critical lines never speak |
-| the heartbeat (`game.beatTimer`) | audio pacing | goes silent, or resumes mid-beat |
-| `Achievements.evaluate()` | every frame | unlocks raised by the clear are deferred |
+| What | Consequence of a naive freeze |
+|---|---|
+| `game.levelBanner.life -= dt` | **the banner never expires — a hard hang** at §1.1 step 4 |
+| `VoiceSys.update()` (the queue drain, deliberately LAST) | parked critical lines never speak |
+| the heartbeat (`game.beatTimer`) | audio pacing stops |
+| `Achievements.evaluate()` | unlocks raised by the clear are deferred |
 
-`updateToasts(dt)` and `updateMusic()` are in `loop()`, **not** `update()`, so they survive a freeze
-already. ⛔ Whatever shape the freeze takes, the banner tick must survive it or the game deadlocks on
-the very card this feature exists to show.
+**The shipped precedent is `updateDeath()`** — v3.6 P5's "the death spectacle runs its own reduced
+sim," a branch that sits *before* the general early-return and runs exactly what that state needs.
+CS036 follows it: `updateLevelEndFreeze(dt)`, a small reduced sim, with each phase below stating
+exactly what it runs.
 
-### §0.4 ⛔ `drawLevelBanner()` cannot currently render two cards of different lengths
+⚠ **Two of the four deliberately stay stopped, matching the celebration panel's shipped behaviour.**
+The panel's own freeze already drops `Achievements.evaluate()` and the heartbeat, and the wave-clear
+branch's `return` comment says why in terms: *"an unlock raised by THIS clear would otherwise toast on
+top of the panel and still not appear IN it, since evaluate() runs after this flush either way."*
+Running them during the completion hold would change achievement timing that has been stable since
+CS030. **They stay stopped. Only the voice drain and the banner countdown run.**
 
-It derives `elapsed = DEBUG.levelBannerTime - game.levelBanner.life`, and its own CS026 P5 comment
-says `levelBannerTime` **must** match the value `nextWave()` seeded `life` with or the fade goes
-negative/jumps. `game.levelBanner` is `{text, life}` and is seeded at exactly one site
-(`nextWave()`), cleared at one more (`resetRun()`).
+`updateToasts(dt)` and `updateMusic()` are in `loop()`, **not** `update()`, so they survive any freeze
+already and need no work.
 
-So a "Level N Complete" card that runs for a different duration than "Level N+1" needs the banner to
-carry its **own total** (`{text, life, total}`) rather than deriving it from a global knob. That is a
-small, contained change — but it is a change to a shipped render path with a standing invariant on
-it, and it must be made deliberately rather than discovered mid-phase.
+### §0.4 §0.4's banner problem dissolved — the two announcements never share a countdown
+
+The draft worried that `drawLevelBanner()` derives `elapsed = DEBUG.levelBannerTime -
+game.levelBanner.life`, so two cards of different lengths would break the fade. **With FORK-E resolved
+to "until the player presses on," the completion announcement has no duration at all** — it fades in,
+holds, and is replaced. Nothing counts down, so nothing can disagree with `levelBannerTime`.
+
+⛔ `game.levelBanner` is therefore **not** given a `total` field and `drawLevelBanner()` is **not**
+generalised. The completion announcement is its own sibling draw function sharing the same style
+constants (§1.3).
 
 ---
 
 ## §1 The level-end ceremony
 
-### §1.1 The intended sequence
+### §1.1 The sequence
 
-| # | Moment | Field | Duration |
-|---|---|---|---|
-| 1 | Last Garbage Satellite dies | **stops** | — |
-| 2 | "Level N Complete" card | frozen | a knob |
-| 3 | Achievements panel, if any | frozen (already) | until dismissed |
-| 4 | `nextWave()` → "Level N+1" card | ? — see FORK-CS036-B | `levelBannerTime` |
-| 5 | Grace / hand-back | live | `levelEndGrace`? |
-| 6 | Play | live | — |
+| # | Moment | Field | Ends when | Status |
+|---|---|---|---|---|
+| 1 | Last Garbage Satellite dies | **freezes** | — | **new** |
+| 2 | "Level N Complete" + prompt | frozen | player confirms | **new** |
+| 3 | Achievements panel, if any | frozen | player dismisses | ships today |
+| 4 | `nextWave()` → "Level N+1" | frozen, then live | the label starts fading | **freeze is new** |
+| 5 | Grace | live | `levelEndGrace` | ships today |
+| 6 | Play | live | — | — |
 
-Steps 3 and 4 ship today (§0.2). Steps 1, 2 and 5 are the work.
+If no panel is pending, step 3 is skipped — the existing
+`if (game.state === "playing" && game.pendingAch.length)` branch already forks there and needs no new
+code path.
 
-### §1.2 The forks
+### §1.2 The resolved forks
 
-**FORK-CS036-A — what does the freeze freeze?**
-Entities and collisions, clearly. Beyond that:
-- **A1** — everything, ship included: the ship holds position, the tow chain stops settling. A true
-  freeze-frame.
-- **A2** — everything except the ship: the player can still fly through a dead field.
-- **A3** — everything except the ship and the tow chain, so the chain visibly settles behind a
-  stopped ship.
+**FORK-CS036-A → A1. The freeze freezes everything, ship included.** A true freeze-frame: entities,
+collisions, the ship, the tow chain. One reduced-sim branch (§0.3), not a per-system gate. A selective
+freeze was considered and rejected as materially more code and more places to get wrong later.
 
-*Consideration:* A1 is the cleanest to implement (one early-return term) and the clearest read. A2/A3
-each need the freeze to be selective, which means it is no longer the existing early-return idiom and
-becomes a per-system gate — materially more code and more places to get wrong later.
+**FORK-CS036-B → the freeze lifts when the "Level N+1" label STARTS FADING OUT.** The label itself is
+exactly as shipped — same string, same style, same `levelBannerTime` — and the field is still beneath
+it until it begins to fade, at `game.levelBanner.life <= DEBUG.levelBannerFade` (1.7 s in at the
+shipped 2.2/0.5). ⛔ **This ties an unfreeze to two render knobs, and both are draggable** — see the
+degenerate cases in §1.5.
 
-**FORK-CS036-B — is the "Level N+1" card also frozen, or does play resume under it?**
-Today the field is live under it. If step 2 is frozen and step 4 is not, the ceremony has a stop and
-a start in the middle of itself.
+**FORK-CS036-C → C2. `game.levelEndSafe` keeps its full extent, unchanged.** Belt-and-braces: most of
+the window now protects against a stopped field, and that is accepted. ⛔ No gate site moves, and the
+⛔ "`levelEndSafe` is never merged into `ship.invuln`" invariant (GDD §2.20.1) stands exactly as
+written. **This fork changes no code** — it is recorded so a later cleanup pass does not read the
+redundancy as an oversight and delete it.
 
-**FORK-CS036-C — what happens to `game.levelEndSafe`?**
-If nothing moves, invincibility during steps 2–3 is redundant by construction.
-- **C1** — shrink the window to the grace only (step 5), where the field is genuinely live again.
-- **C2** — keep the full window as belt-and-braces, and accept that most of it now protects against
-  nothing.
+**FORK-CS036-D → D1. The alpha pulse runs during the grace only.** Its job is "you cannot be hit right
+now," which is meaningless while nothing moves. The accumulator and `Ship.draw()` both switch their
+condition from `game.levelEndSafe` to `game.levelEndGraceT > 0`. ⛔ **Both knobs are RETAINED** —
+`levelEndFade` and `levelEndGracePulseEnd` still shape the ramp across the grace, which is the only
+place the pulse now runs. No registry row moves for this.
 
-⛔ Whatever the answer, the four gate sites and the ⛔ "`levelEndSafe` is never merged into
-`ship.invuln`" invariant (GDD §2.20.1) stand as written. This fork is about the window's *extent*,
-not its mechanism.
+**FORK-CS036-E → E1, amended: `levelEndHold` is RETIRED.** The completion announcement is not timed;
+it holds until the player confirms. The knob timed exactly one thing, that hold, and there is nothing
+left for it to time. ⛔ **Registry 106 → 105 at that phase** (§7). ⛔ There is **no minimum hold and no
+input lockout** — a fresh press is required rather than a held button, which §1.4 gets structurally.
 
-**FORK-CS036-D — does the alpha pulse survive?**
-Its job is "you cannot be hit right now." Under a freeze there is nothing to be hit by.
-- **D1** — pulse only during the grace (step 5), where it means something.
-- **D2** — drop it entirely; the cards carry the ceremony.
-- **D3** — keep it throughout.
+**FORK-CS036-F → F2. The celebration panel's header reverts to `"ACHIEVEMENTS UNLOCKED"` in both
+branches.** CS034 P5 made the wave branch read `"LEVEL N COMPLETE"`; with a full-screen announcement
+saying that two seconds earlier, the header was saying it twice. The gameover branch already reads
+`"ACHIEVEMENTS UNLOCKED"`, so this is deleting the `isWave` ternary from `menuPanel()`'s title
+argument. ⚠ `isWave` itself has other readers — check before deleting the binding.
 
-*Consideration:* the pulse and its two knobs (`levelEndFade`, `levelEndGracePulseEnd`) were never
-assessed at CS035's gate, so nothing is lost by re-deciding them here. If D1 or D2, say explicitly
-whether the knobs are retired or retained — a retired knob is a registry row deleted, which is a
-count change, and the count lives in exactly one file.
+**FORK-CS036-G → no voice line.** `VoiceSys.sayLevel()` still announces "Level N+1" from inside
+`nextWave()` at step 4, and step 2 is silent. ⛔ Standing rule, restated because this is exactly where
+a phase would be tempted: **no `phon` string is ever derived, edited or improved by a phase.** Every
+one is composed and zero-error-verified in `tools/voice-robot-lab.html` and pasted verbatim. A
+completion line would be a future changeset with a lab session budgeted for it.
 
-**FORK-CS036-E — which knob times the "Level N Complete" card?**
-- **E1** — `levelEndHold` (currently 5.00 s). It already exists and already spans exactly this
-  moment. 5 s is long for a card, so expect the `def` to move.
-- **E2** — `levelBannerTime` (2.2 s), shared with the other card. Two cards, one duration, one feel.
-  Requires §0.4's change only if E1 is chosen for one and not the other.
-- **E3** — a new knob. Adds a registry row.
+### §1.3 The announcement
 
-**FORK-CS036-F — does CS034 P5's celebration-panel header stay?**
-CS034 P5 made the panel's header read `"LEVEL N COMPLETE"` instead of reusing the gameover copy. If a
-full-screen card says exactly that two seconds earlier, the header is arguably saying it twice.
-- **F1** — keep both (the header re-establishes context after the card has faded).
-- **F2** — the panel header reverts to something neutral.
+**Style is the shipped "Level N" banner's, exactly** (Paul: "the same style as the 'Level N' we now use
+to announce a coming level") — `LEVEL_BANNER_SIZE` (72), `LEVEL_BANNER_Y` (24), `COLOR.text`, centred,
+through `drawText`. It is **not** a panel, not a card, and adds no new visual vocabulary.
 
-**FORK-CS036-G — voice.** `VoiceSys.sayLevel()` fires from inside `nextWave()`, so it announces
-"Level N+1" at step 4 and nothing at step 2. Does the completion card want a line of its own?
-⛔ **If yes, it ships silent until the phon string clears `tools/voice-robot-lab.html`** — every
-`phon` is composed and zero-error-verified there and pasted verbatim, and no phase can derive one.
-Budget a lab session or answer "no line."
+- **Text:** `"Level N Complete"`, where `N` is the wave just cleared. ⛔ `game.wave` is still the
+  completed wave at this point — `nextWave()` increments it and is deferred to step 4 — so read it
+  directly and do **not** compensate.
+- **A prompt sits under it**, in `CELEB_HINT`'s idiom (dim, small, naming the actual bindings rather
+  than a physical button): proposed `LEVEL_DONE_HINT = "ENTER / A  continue"`. ⚠ Paul's phrasing was
+  "press fire to continue," but `fire` is not the binding this uses (§1.4) and A is *fire* in play
+  while being *confirm* at every menu. **Exact wording is a gate question** (§8).
+- **Alpha:** fades in over `DEBUG.levelBannerFade`, then holds at full for as long as the freeze lasts.
+  ⛔ **No fade-out** — the panel or the "Level N+1" label replaces it on the confirming frame.
+- **⛔ It is a SIBLING of `drawHUD()`, like `drawLevelBanner()` and `drawCaption()` are**, and is
+  **not** gated by Capture's `H` toggle: it is a transient announcement, the same category as the
+  achievement toast and the game-over text. `drawLevelBanner()`'s own header states this rule; follow
+  it rather than re-deriving it.
 
-### §1.3 What this fixes for free
+### §1.4 The input
 
-- **CS034 Gate B's B8** ("the abrupt full-stop of action when the panel opens still feels jarring")
-  is the same seam. A "Level N Complete" card is exactly the ceremony that makes a dead stop read as
-  intentional rather than as a hitch, so B8 should be re-assessed at this changeset's gate rather
-  than carried forward again.
-- **CS035's banner-crossing edge** (a wave cleared while the previous level's card is still live arms
-  the grace early) may become unreachable or meaningless depending on FORK-CS036-B/C. Re-derive it
-  once those are answered rather than porting the flag forward blindly.
+⛔ **Mirror the celebration panel's contract exactly. Do not invent a new one.**
 
-### §1.4 Not in scope here
+- **Keyboard:** a branch in the keydown handler, `if (!e.repeat)`, accepting
+  `bindings.confirm.keys` or `bindings.back.keys` — the same pair, edge-detected the same way, that
+  `game.celebration` uses one branch below.
+- **Gamepad:** the matching branch in `handleGamepadMenu()`, on `pressedConfirm || pressedBack`.
+- ⛔ **Both handlers, or neither.** CLAUDE.md's standing rule from CS030 P4: a guard added to one and
+  not the other lets a controller player blow straight through and never see it.
+- ⛔ **The branch sits IMMEDIATELY BEFORE the `game.celebration` branch in both handlers**, so input
+  priority matches the visual order: completion announcement → panel → play.
+- ⛔ **`resetMenuNav()` fires when the freeze arms**, exactly as the panel's open does and for the
+  identical reason its comment gives: *"the nav latch matters MORE here, where the player is mid-flight
+  and may well be holding the stick."*
 
-- Any change to the Achievements panel itself — its open, its input gating on **both** the keyboard
-  and gamepad handlers, its `resume: "wave"` field, or `dismissCelebration()`'s deferred `nextWave()`.
-  ⛔ The `return` that is the deferral stays exactly where it is.
+**Why a held fire button cannot skip the announcement:** the keydown that fired the killing shot
+already fired *before* the freeze armed, `!e.repeat` blocks the auto-repeat, and `resetMenuNav()`
+clears the gamepad edge. The protection is structural, which is why no minimum-hold timer was added.
+⚠ **Verify this at the gate anyway** (§8) — it is the single most likely way this feature fails in the
+player's hands.
+
+### §1.5 ⛔ Traps
+
+1. **The unfreeze reads two draggable render knobs.** `levelBannerTime` (0–8 s) and `levelBannerFade`
+   (0–3 s) are both live in the debug panel, and `fade >= time` makes the unfreeze condition true on
+   the banner's first frame. Write it so that degrades to "unfreeze immediately" rather than glitching
+   — the same spirit as `drawLevelBanner()`'s own `Math.max(0, ...)` guard, which exists for exactly
+   this pair. `levelBannerTime === 0` (no banner at all) must also unfreeze immediately, not hang.
+2. **The freeze spans `nextWave()`.** It arms at wave clear and lifts partway through the *next*
+   level's banner, so it is in-flight state that **must survive a wave boundary** — the same category
+   as `levelEndSafe`/`levelEndGraceT`/`levelEndPulseT`. ⛔ Reset it in the **run**-level reset
+   (`resetRun()`), never in `nextWave()`, and add it to that function's standing ⛔ note.
+3. **The Perfect Wave bookkeeping moves.** `lifetime.perfectWaves++`, `noScratchWave3` and
+   `flawlessLateWave` currently fire at the `waveClearTimer > DEBUG.levelEndHold` crossing. With that
+   threshold retired they move to the **arm** (the `waveClearTimer === 0` latch). Behaviourally
+   identical — the ship is invincible across the whole span either way, so `dmgThisWave` cannot change
+   between the two points — but it is a real move and must be stated, not slipped in.
+4. **`waveClearTimer` survives as the arm latch.** Nothing reads it as a threshold any more, but the
+   `=== 0` latch and the `else`-branch zeroing are what make the window re-arm on every clear. ⛔ Do
+   not delete it as newly-unused.
+5. **CS035's banner-crossing edge is re-derived, not ported.** A wave cleared while the previous
+   level's banner is still live armed the grace early. Under the freeze the *new* level's banner cannot
+   be live when a wave clears — the field is frozen through it and nothing can die — so the case
+   changes shape. **Re-derive it in the phase that owns the freeze tail and record what it becomes**;
+   do not carry the old flag forward blindly and do not assume it vanished.
+6. **`AudioSys.thrust(false)`** is called by both existing early-return paths. The freeze must too, or
+   a player thrusting on the killing frame gets a stuck engine loop over a silent, motionless field.
+
+### §1.6 Not in scope
+
+- Any change to the Achievements panel beyond F2's header string — its open, its input gating, its
+  `resume: "wave"` field, or `dismissCelebration()`'s deferred `nextWave()`. ⛔ The `return` that is
+  the deferral stays exactly where it is.
 - `game.pendingAch` remains a flushed bucket, ⛔ never filtered by `game.wave`.
+- The "Level N+1" label's own text, style, timing and voice line. Unchanged.
 
 ---
 
-## §2 Volatile Hunter Satellite colour (CS035 G18)
+## §2 A louder Hunter Satellite heartbeat
 
-Paul's gate answer: the volatility heartbeat does **not** read as "about to go off" before you know
-the rule, and he asked for the Hunter Satellite to turn red while volatile.
-`PLANNED-FEATURES-CS035.md` §6 excluded exactly this ("No Hunter colour change for volatility. Motion
-is the tell"), so it is a deliberate reversal and needs a spec, not a patch. `hunterVolatileAge`
-30 → 60 was the only part of that answer applied at CS035 P7.
+**FORK-CS036-H / -I / -J → resolved: NO COLOUR CHANGE.** Paul reversed CS035's G18 answer at this
+session: the volatile Hunter Satellite does **not** turn red. `PLANNED-FEATURES-CS035.md` §6's "No
+Hunter colour change for volatility. Motion is the tell" therefore **stands**, and ⛔ `lerpColor()` and
+a hazard red stay deleted. `COLOR.satellite` is unchanged.
 
-**FORK-CS036-H — what does "red" mean here?**
-- **H1** — a hard swap to a red at the volatility threshold.
-- **H2** — a lerp from `COLOR.satellite` toward red as `age` approaches the threshold, so the tell
-  *precedes* the danger rather than announcing it.
-- **H3** — colour tied to the existing `pulseScale` phase, so the body reddens on each pump.
+**What CS036 does instead:** the existing heartbeat is the right idea but easy to miss. Paul: *"the
+transition from small to large [should] happen quickly, so it is more of a punch, and then the
+transition back down to the smaller size will be slower."*
 
-**FORK-CS036-I — which red, and does it collide with anything?**
-⛔ `COLOR.clumpHot` (`#ff5a2a`) was **deleted in v3.6 P1a**, along with `lerpColor()`, on a deliberate
-"every Debris body glows one of two greens, never red" call — the low-health corner glow and the
-low-HP chevron are the palette's red occupants. Re-introducing a red on a *hazard* is not obviously
-in tension with that (the deletion was about salvage legibility), but it is the same decision being
-re-opened, and if H2 or H3 is chosen `lerpColor()` comes back with it. Say so explicitly.
+⛔ **That is the shape the mechanism already has.** CS035 P4 shipped an asymmetric linear ramp — grow
+at `hunterPulseGrow` %/s, shrink at `hunterPulseShrink` %/s, clamp and flip at
+`hunterPulseMin`/`hunterPulseMax` — precisely so it would read as pumping rather than breathing. **No
+new mechanism, no easing curve, no new state.** What is wrong is the numbers, and in one case the
+bounds that hold them.
 
-**FORK-CS036-J — does the motion tell stay?** If the colour carries it, the asymmetric pulse may be
-redundant — or may be exactly what makes the colour read as a *state* rather than as a second enemy
-type.
+- **Retune the four `def`s** toward a harder punch and a slower settle. Current: 87 / 125 / 55 / 28
+  (~0.69 s out, ~1.36 s back). Direction of travel: a wider envelope and a much faster growth rate.
+- **⛔ `hunterPulseGrow`'s `max` of 300 %/s is the binding constraint and must be raised.** At the
+  current ceiling an 87→125 sweep takes 0.13 s, which is fast — but a *wider* envelope at the same
+  ceiling is slower again, so widening the envelope without raising the rate ceiling makes the punch
+  worse, not better. Raise it far enough that the fastest reachable growth is effectively
+  instantaneous at 60 fps.
+- **`hunterPulseMax`'s `max` of 200 %** is not currently binding; leave it unless the gate wants past
+  it.
+- **⛔ Draw-only, unchanged.** `this.radius`, `this.shape` and `this.inner` are never touched, and the
+  collision circle can never depend on animation phase. `draw()` keeps scaling a **fresh** vertex array
+  per frame.
+- **⛔ Still not a lever.** `LEVERS` stays 18; `DIFFICULTY-LEVERS.md`'s not-a-lever row gets the new
+  numbers.
 
-⛔ Whatever is chosen is **draw-only**, exactly as the pulse is: `this.radius`, `this.shape` and
-`this.inner` are never touched, and the collision circle can never depend on animation phase.
-
----
-
-## §3 Small feedback fixes from the CS035 gate
-
-### §3.1 `AudioSys.shieldPing()` stacks at the Recycle dock
-
-The dock lockout's push fires one `shieldPing()` per pushed piece of Debris per frame, so several
-pieces on the hull stack the tell. CS035 P2 deliberately added no rate limit (spec §2.3 asked for the
-shipped ping and no new audio method; a cooldown is a design call). Paul's G5 note — "numerous rapid
-collisions between ship and debris" — is consistent with hearing this rather than with the push
-failing.
-
-**FORK-CS036-K** — one ping per frame regardless of piece count; a cooldown in seconds; or leave it.
-
-### §3.2 Is the Recycle dock apron pressure, or litter?
-
-CS035 P2's lockout means a parked ship can no longer mop up around itself. Measured in
-`test-cs020-p1b` §I: a 60-second magnet-style park leaves **~220** pieces of Debris in the field where
-CS020 recycled all 600. Coalescence keeps running on that cloud, so a neglected apron can still breed
-a Hunter Satellite. G6 said the lockout reads as a rule and G7 said the ring boundary is felt, but
-neither asked about the litter directly and no long session has been played against it.
-
-**FORK-CS036-L** — accept as intended pressure (no work), or add a bounded cleanup path (design
-needed — and note it must not re-open the incidental category, which CS035 §2.4 deleted and
-`PLANNED-FEATURES-CS035.md` §6 says is never revived in any form).
-
-### §3.3 FLAG-CS034-e — a debug label that does not fit
-
-`debrisBounceRestitution`'s canonical-vocabulary label would be "Garbage Satellite bounce
-restitution" (36 chars) against the panel's hard **32**-char column; it ships as the unchanged
-"Satellite bounce restitution". ⛔ `drawDebug` neither wraps nor truncates.
-
-**FORK-CS036-M** — a shorter canonical reading, or widen the column (which touches every row).
-
-### §3.4 Carried, no input needed unless Paul wants them in
-
-- **FLAG-CS032-a** — `drawTitleMenu()` calls `SaveSlots.count()` every frame; the build's only
-  unconditional per-frame `localStorage` read. Deliberate per CS032 §4.3. If it ever measures, the
-  fix is a cache invalidated at the three sites that can change the answer, **not** a moved question.
-- **`returnToTitleMenu()`'s cursor** — back from the slots screen in LOAD mode lands on "Options".
-  Fixing it is a signature question.
-- **`blankLegacyStores()` calls `Achievements.save()` unguarded** — harmless today (profile delete is
-  title-only). ⛔ A future changeset that makes the profiles or achievements screen reachable mid-run
-  must fix both it and the achievement reset, not just one.
-- **Delivery-ticker ship anchor** — declined three times (CS026 P6 built it, CS029 measured it worse,
-  CS034 P9 and CS035 both declined). Wants its own gate if it is ever attempted again.
+**Gate answers here are numbers, not yes/no** (§8).
 
 ---
 
-## §4 Suite hygiene — scoping only, no design input
+## §3 Small feedback fixes
 
-None of these need a decision; they need a phase.
+### §3.1 A cooldown on the dock push's `shieldPing()`
 
-- **The three standing failures.** `test-f2.js` §g ("shield deflection consumed energy", fails
-  deterministically), `test-v36-death.js` (3 `Achievements.save` call-count assertions around
-  `killShip`), `test-cs023-p3.js` (a TRAP 3 pin against a fixed historical SHA). All three predate
-  CS035 and none has been investigated. **A changeset that opens with a red suite cannot tell its own
-  regressions from the furniture.**
-- **FLAG-CS031-c** — `test-f2.js`'s celebration flake. One-line fix identified: `game.celebration =
-  null;` in `resetShip()`. 29 suite files reach a death/gameover and never mention
-  `game.celebration`, so the class is latent well beyond that one file.
-- **`test-cs035-p3.js` flaked ~1-in-5** during CS035 P3–P6 and did not reproduce at P7. Not
-  seed-related. If §1 rewrites that seam anyway, this may resolve itself — check before spending a
-  phase on it.
-- **Thirteen files hard-fail rather than skip on a shallow clone.** ⛔ The standing rule is **skip
-  loudly** (`SKIP_TAG`) when git history is unavailable, and a closing phase asserts zero skips.
-  Mechanical, same shape as CS026 P1/P2's conversions: `test-cs017-p6`, `test-cs019-p1`,
-  `test-cs020-p1`, `test-cs020-p1b`, `test-cs023-p2`, `test-cs023-p3`, `test-cs024-p1`,
-  `test-cs024-p2`, `test-cs024-p4`, `test-cs024-p6b`, `test-cs024-p6f`, `test-cs026-p1`,
-  `test-cs029-p1`.
-- **FLAG-CS027-c** — 8 test files hardcode world dimensions instead of reading `worldDims(X)` from
-  `_harness.js`. Opportunistic.
-- **FLAG-CS027-d** — 12 suite files grep a comment-stripped copy of the source missing the same 80
-  lines `execSource()` fixed. Opportunistic; migrate whenever one is open for other reasons.
+**FORK-CS036-K → a cooldown, ~0.5 s.** The dock lockout's push fires one `AudioSys.shieldPing()` per
+pushed piece of Debris per frame, so several pieces on the hull stack the tell — which is what Paul's
+G5 note ("numerous rapid collisions between ship and debris") was most likely hearing.
+
+New knob, DELIVERY section: `dockPingCooldown`, `def 0.50`, `min 0`, `max 3.0`, `step 0.05`, unit `s`,
+label `"Dock push ping cooldown"` (23 chars). ⛔ **Registry +1** (§7).
+
+- One timer on `game`, counted down wherever the per-frame decays live. The push site pings only when
+  it is at 0, then re-arms it.
+- ⛔ **Reset in `resetRun()`, not only `startGame()`** — the standing CS016 P3 both-places rule; a
+  field added to `startGame()`'s thin body is missed by every resumed run.
+- ⛔ **At `0` the feature is off** and every push pings, exactly as it does today. That is the gate's
+  clean A/B, the same property `magnetResumeDelay`'s own 0 has, and it is why `min` is 0 and not 0.05.
+- ⛔ **The push itself does not change.** Velocity is still SET, never added; direction, magnitude and
+  the degenerate-case fallback are all untouched. This is an audio rate limit and nothing else.
+
+### §3.2 The dock apron stays as it is
+
+**FORK-CS036-L → accept as intended pressure. No work.** Paul: *"the point to the player is that they
+should not plan on parking in the middle of the dock — it will not help them in any meaningful way."*
+
+⛔ **The lockout zone stays at `dock.radius + DOCK_NEIGHBORHOOD_PAD` = 88 + 40 = 128 px**, checked
+against a shrink-to-88 alternative and rejected. Recorded here because it will look shrinkable to a
+future reader: the lockout and the `deliveryCount = 0` reset are the **same expression**, and shrinking
+only the lockout leaves a 40 px annulus where the ship is `inRing` (so the counter never resets) but
+hooks still succeed — from which a player could hook and deliver repeatedly with `deliveryCount`
+climbing past `cargoMax`. **That breaks the structural guarantee `game.deliveryCount ≤ game.cargoMax`**
+(GDD §2.10/§2.10.2), which "Maxed Out is a level-12+ achievement BY CONSTRUCTION" depends on. If the
+zone is ever resized, ⛔ **both boundaries move together or neither does.**
+
+### §3.3 FLAG-CS034-e — the debug label that does not fit
+
+**FORK-CS036-M → whatever is simplest: shorten the label, do not widen the column.** Widening touches
+every row's layout; the label is one string.
+
+`debrisBounceRestitution`'s label becomes **`"Garbage Sat bounce restitution"`** (30 chars, inside the
+hard 32-char column), replacing the non-canonical `"Satellite bounce restitution"`. ⛔ `drawDebug`
+neither wraps nor truncates, so 32 is a hard ceiling, not a guideline.
+
+⛔ **The `id` is NOT renamed.** `debugShown` persists **by id** inside `afd_settings_v1.debug`;
+renaming it would orphan every player's saved tuning for that row. Only the `label` moves.
+
+---
+
+## §4 Suite triage — the three standing red files
+
+**In scope for CS036, one phase, those three files only.** A changeset that opens with a red suite
+cannot tell its own regressions from the furniture, and CS035 ran the whole way with that noise.
+
+| File | Symptom | Age |
+|---|---|---|
+| `test-f2.js` §g | "shield deflection consumed energy" — fails **deterministically** | pre-CS035, undocumented until CS035 P1 |
+| `test-v36-death.js` §A | 3 assertions on `Achievements.save` call counts around `killShip` | pre-CS035, undocumented until CS035 P1 |
+| `test-cs023-p3.js` TRAP 3 | a pin against a fixed historical SHA | carried since CS035 P5 |
+
+⛔ **Diagnose before fixing, and say which it was.** Each of these is either a stale test or a real
+build defect, and the phase must determine which for each one rather than assuming "old test, repoint
+it." `test-v36-death`'s is the one to be most careful with: if `Achievements.save()` genuinely fires
+more than once around `killShip`, that is a **build** bug with save-write consequences, not a test to
+adjust.
+
+**Also in this phase:** FLAG-CS031-c's one-line fix, `game.celebration = null;` in `resetShip()` — the
+celebration-panel state leaking across sections, which is `test-f2.js`'s *other*, intermittent failure
+and is latent in 29 suite files that reach a death/gameover without ever mentioning
+`game.celebration`. ⚠ CS036 §1 puts a freeze on the same seam, so this is worth doing here rather than
+later.
+
+**Explicitly NOT in this phase:** the thirteen shallow-clone hard-failers, FLAG-CS027-c and
+FLAG-CS027-d. All three remain opportunistic backlog.
 
 ---
 
@@ -287,37 +346,78 @@ None of these need a decision; they need a phase.
 
 ---
 
-## §6 Standing exclusions (unless a fork above reverses one explicitly)
+## §6 What CS036 explicitly does not do
 
-- **No new lever.** `LEVERS` stays at 18 unless something here is argued as a pressure axis.
+- ⛔ **No Hunter Satellite colour change.** Reversed twice now; motion is the tell (§2).
+- ⛔ **No new voice line.** Every `phon` needs a `tools/voice-robot-lab.html` gate no phase here has.
+- ⛔ **No new lever.** `LEVERS` stays at **18**.
 - ⛔ **No `destroyHunter()` split change** — `ACH_LINEAGE_FULL = 13` depends on it staying 3-way.
 - ⛔ **No `towed`-tag or incidental-delivery revival in any form.**
-- ⛔ **No new voice line without a `tools/voice-robot-lab.html` gate.** Features ship silent until it
-  clears.
+- ⛔ **No change to the dock lockout's radius or to the push's physics** (§3.2, §3.1).
+- **No delivery-ticker ship anchor.** Declined four times now; wants its own gate if ever attempted.
+- **No shallow-clone suite conversions, FLAG-CS027-c or -d** (§4).
 - **No music intensity work.** Still deferred from CS017.
 - ⛔ **Code identifiers are never renamed to match the canonical vocabulary.** `game.debris` is the
   Garbage Satellite array; `game.garbage` is the Debris array. Documentation, not a defect.
 
 ---
 
-## §7 Open questions for Paul, collected
+## §7 Registry and version
 
-| Fork | Question | Blocks |
+| | Before | After |
 |---|---|---|
-| A | What does the level-end freeze freeze? | §1, everything |
-| B | Is the "Level N+1" card frozen too? | §1 |
-| C | Does `levelEndSafe` shrink to the grace? | §1, GDD §2.20.1 |
-| D | Does the alpha pulse survive, and do its two knobs? | §1, registry count |
-| E | Which knob times the "Level N Complete" card? | §1, §0.4 |
-| F | Does CS034 P5's panel header stay? | §1 |
-| G | Does the completion card want a voice line? | §1, lab session |
-| H | What does volatile-Hunter "red" mean — swap, ramp, or pulse-tied? | §2 |
-| I | Which red, and does `lerpColor()` come back? | §2 |
-| J | Does the motion tell stay alongside the colour? | §2 |
-| K | Rate-limit the dock push's `shieldPing()`? | §3.1 |
-| L | Is the dock apron intended pressure? | §3.2 |
-| M | Shorter label, or a wider debug column? | §3.3 |
+| `DEBUG_ENTRIES` | 106 | **106** |
+| Section headers | 10 | 10 |
+| `LEVERS` | 18 | 18 |
+| `POWERUP_DROP_TYPES` | 5 | 5 |
+| `GAME_VERSION` | `1.0.0.35` | **`1.0.0.36`** |
 
-**Also outstanding from CS035's gate and NOT re-asked above:** G9–G14 (the four level-end knobs plus
-the two pulse questions) are still unanswered. ⛔ Do not re-ask them as written — §1 changes what
-three of the four knobs mean. Re-derive the gate questions after FORK-CS036-A–E carry answers.
+⚠ **The count returns to 106 by two opposite moves, and they land in different phases** — it is *not*
+unchanged, and a phase that asserts "still 106" mid-changeset will be wrong:
+
+- **`levelEndHold` RETIRED** (CELEBRATION, −1 → **105**) at the completion-hold phase (§1.2, FORK-E).
+- **`dockPingCooldown` ADDED** (DELIVERY, +1 → **106**) at the small-fixes phase (§3.1).
+
+⛔ **The count lives in exactly one file: `scratchpad/test-registry.js`'s `COUNTS`.** Both phases update
+it; no other file asserts a total. ⛔ **Retiring a row needs no migration shim** — a saved value for a
+deleted knob orphans harmlessly under the standing known-value-else-default rule, which is the whole
+point of that rule.
+
+⛔ **Every label is under the hard 32-character column.** The two new/changed strings are
+`"Dock push ping cooldown"` (23) and `"Garbage Sat bounce restitution"` (30).
+
+---
+
+## §8 Gate questions
+
+Answers are **numbers** wherever a slider is involved.
+
+**The ceremony (§1)**
+
+- H1 — Does the level end now read as a deliberate beat rather than a hitch? `yes` / `no`
+- H2 — ⛔ **Can a held fire button skip the "Level N Complete" announcement?** `no` / `yes — describe`
+  (§1.4 says it cannot, structurally; this is the most likely way the feature fails in the hand)
+- H3 — Is "ENTER / A  continue" the right prompt wording, and is it visible enough? `ok` / `change to ___`
+- H4 — Does the freeze lifting partway through the "Level N+1" label read correctly, or does play
+  restarting under a still-visible label feel wrong? `ok` / `describe`
+- H5 — **CS034 Gate B's B8 re-asked:** the abrupt full-stop when the Achievements panel opens was
+  flagged as jarring. With a frozen field and an announcement ahead of it, is it still? `fixed` /
+  `still jarring — describe`
+- H6 — With the pulse now confined to the grace, is the hand-back to live play readable? `yes` / `no`
+
+**The heartbeat (§2)**
+
+- H7 — `hunterVolatileAge` final: ___ (shipped 60)
+- H8 — `hunterPulseMin` / `Max` final: ___ / ___ (shipped 87 / 125)
+- H9 — `hunterPulseGrow` / `Shrink` final: ___ / ___ (shipped 55 / 28)
+- H10 — Does the pulse now read as a *punch* — unmissable at the edge of vision? `yes` / `no`
+- H11 — Is a volatile large now distinguishable from a non-volatile one at a glance, without knowing
+  the rule? `yes` / `no` (this is G18's original complaint, re-asked with the colour answer withdrawn)
+
+**The small fixes (§3)**
+
+- H12 — `dockPingCooldown` final: ___ (shipped 0.50)
+- H13 — Does the dock push now sound like one event rather than a stutter? `yes` / `no`
+
+⛔ **CS035's G9–G14 are deliberately NOT re-asked.** `levelEndHold` no longer exists, and the pulse
+questions are re-framed as H6/H10/H11. Do not resurrect them.
