@@ -40,42 +40,33 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
   announcement channel running and `sayLevel()` now fires inside it. The pause and the panel still hold
   the caption — untouched.
 
-- P6 — suite triage. **All three standing failures were STALE TESTS; the build is untouched** (zero
-  lines of `orbital-overhaul.html`). Two share ONE measured root cause: `waste_not` is a **weekly**
-  achievement, in the active 5-wide slice **20 weeks in 53**, and both scenarios unlock it in exactly
-  those weeks. `test-v36-death` §A — that unlock's `onUnlock()` → `save()` (shipped since the F9 commit
-  `612d8a1`, a week *before* this file was written, and named in CS024 P6d's own choke-point comment)
-  means `killShip` legitimately saves twice; repointed to what the file owns, the saves `killShip` makes
-  **outside `evaluate()`**, exactly one. `test-f2` §g — the same unlock arms CS030's celebration panel
-  at section (d)'s gameover and `update()` early-returns on it, so §g measured a **stopped world**; that
-  is FLAG-CS031-c, fixed in the **test's own** `resetShip()`. ⛔ Three of §g's four assertions were
-  passing **vacuously** under that freeze (a stopped world has no damage, stun or knockback either), so
-  §g gains an anti-vacuity pin that the shield actually came up. `test-cs023-p3` TRAP 3 — not
-  calendar-related: a `git show HEAD:` pin that evaporated into "the file equals itself" the moment
-  CS035 P3 committed; repointed onto `PRE_CS023_REF` (`f9db5c2`), the file's own literal, which the two
-  sibling traps above it already use for exactly this reason.
+- P6 — suite triage. **All three were STALE TESTS; the build is untouched** (zero lines of
+  `orbital-overhaul.html`). Two share one measured cause: `waste_not` is **weekly**, in the active slice
+  **20 weeks in 53**, and both scenarios unlock it there. `test-v36-death` §A — that unlock's
+  `onUnlock()` → `save()` predates the test file by a week (F9 commit `612d8a1`), so `killShip`
+  legitimately saves twice; repointed to what the file owns, the saves made **outside `evaluate()`**.
+  `test-f2` §g — the same unlock arms CS030's panel at (d)'s gameover and `update()` early-returns on it,
+  so §g measured a **stopped world**; that is FLAG-CS031-c, fixed in the **test's own** `resetShip()`.
+  ⛔ Three of its four assertions were passing **vacuously** under that freeze, so §g gains an
+  anti-vacuity pin. `test-cs023-p3` TRAP 3 — a `git show HEAD:` pin that evaporated into "the file equals
+  itself" when CS035 P3 committed; repointed onto `PRE_CS023_REF` (`f9db5c2`), the literal its two
+  sibling traps already use.
 
 ## Working / verified
 
-- Full suite on a full clone: **148 files, 148 passed, 0 failed, 0 skipped, 0 timed out** — the three
-  standing failures are gone. `node --check` on the extracted script passes. ⛔ Not "green for the first
-  time since CS035 P1": the two calendar-driven ones were red in ~38% of *weeks* stretching well back
-  before CS035, so the suite has been intermittently red far longer than the record showed.
-
-- **The green is durable across the calendar, swept not assumed.** The weekly pool is 16 wide and
-  `poolIndex()` cycles with that period, so 16 consecutive weeks cover every distinct slice; the suite
-  was run once per slice under a pinned `new Date()`. **The three triaged files pass in all 16.** Pre-fix
-  the same sweep showed `test-f2`/`test-v36-death` red only in `waste_not` weeks and `test-cs023-p3` red
-  in **every** week — the split the diagnosis predicts. 12 of the 16 runs are a clean 148/148; the other
-  four are two unrelated pre-existing flakes, below.
+- Full suite on a full clone: **148 files, 148 passed, 0 failed, 0 skipped, 0 timed out**; `node --check`
+  passes. Swept across all **16** distinct weekly slices under a pinned `new Date()` (the pool is 16
+  wide, so that is every slice): **the three triaged files pass in all 16**, and 12 of those runs are a
+  clean 148/148 — the other four are the two unrelated flakes below. Pre-fix the sweep had
+  `test-f2`/`test-v36-death` red only in `waste_not` weeks and `test-cs023-p3` red in **every** week.
+  ⛔ Not "green since CS035 P1" — the calendar-driven pair was red in ~38% of *weeks* long before CS035.
 
 - **Eight mutations confirmed.** `test-v36-death` fails on `killShip`'s trailing `save()` deleted, on a
-  second one added, and on the flush moved later to the `dying`→`gameover` handoff — and deliberately
-  **passes** when `onUnlock` stops persisting: that is the achievements system's contract, not the death
-  spectacle's, and this repoint's first draft wrongly coupled them. `test-cs023-p3` fails on CS035 P3's
-  guard removed and on an unrelated edit inside the scan (`h.radius + 7` → `+ 9`). `test-f2` §g fails on
-  the celebration clear reverted, and with the shield disabled outright fails **five** assertions where
-  the frozen world had let three pass.
+  second added, and on the flush moved to the `dying`→`gameover` handoff — and deliberately **passes**
+  when `onUnlock` stops persisting (the achievements system's contract, not this file's; the repoint's
+  first draft wrongly coupled them). `test-cs023-p3` fails on P3's guard removed and on an edit inside
+  the scan (`h.radius + 7` → `+ 9`). `test-f2` §g fails on the celebration clear reverted, and with the
+  shield disabled fails **five** assertions where the frozen world had let three pass.
 
 - **Thirteen suite files repointed for the registry count moving 105 → 106, all named in-commit.**
   Five formula pins (`test-cs027-p2/-p6`, `test-cs029-p4`, `test-cs030-p1`, `test-cs026-p5`) take a
@@ -84,32 +75,26 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
   `test-cs024-p6b`'s collapsed-order strip and `test-cs024-p6c`'s non-lever count (51 → 52) take the
   new row. `test-cs026-p3`'s TRAP 5 `DROPPED_LINES` gains `game.dockPingTimer = 0;` by name.
 
-- New `scratchpad/test-cs036-p4.js` (52 assertions): the raised `hunterPulseGrow` bound and all four
-  retuned defs read from the registry itself; re-runs of CS035 P4's own don't-mutate (§G) and
-  radius-unmoved (§F) invariants against the new, much faster grow rate; `pulseScale` non-vacuously
-  reaches and reverses at both `hunterPulseMin`/`Max` across a long run; steady-state grow/shrink legs
-  are measured by detecting the exact frame `pulseUp` flips (not by epsilon-comparing `pulseScale` to a
-  target, which drifts out of sync with the clamp's own float arithmetic) — the grow leg lands in ≤6
-  frames and the shrink leg is ≥30× longer; and cranking `hunterPulseGrow` to its raised bound clamps
-  straight to the ceiling on the very frame volatility begins. Four mutations (grow def reverted, shrink
-  def reverted, bound left at 300, envelope left at 87/125) were each confirmed to fail it.
-  `test-cs035-p4.js` §A repointed to the new bound/defs, naming this phase.
+- New `scratchpad/test-cs036-p4.js` (52 assertions): the raised bound and all four retuned defs read from
+  the registry; CS035 P4's don't-mutate (§G) and radius-unmoved (§F) invariants re-run against the faster
+  grow; `pulseScale` non-vacuously reaches and reverses at both envelope ends; the legs measured by the
+  frame `pulseUp` flips (not by epsilon-comparing to a target, which drifts against the clamp's float
+  arithmetic) — grow ≤6 frames, shrink ≥30× longer; the raised bound clamps to the ceiling on the frame
+  volatility begins. **Four mutations** (each def reverted, bound left at 300, envelope left at 87/125)
+  confirmed to fail it. `test-cs035-p4.js` §A repointed to the new bound/defs, naming this phase.
 
-- New `scratchpad/test-cs036-p3.js` (121 assertions, seeded): the confirm reaches `nextWave()` and 30
-  frames later the newly spawned field has not moved a pixel, on the panel fork as well as the inline one;
-  the tail lifts on exactly the frame `levelBanner.life` crosses `levelBannerFade` (asserted from both
-  sides, with the ship pinned still throughout and moving on the next frame); all three degenerate knob
-  pairs (`fade >= time`, `time === 0`, both at 0) thaw on the FIRST tail frame and a second full ceremony
-  still runs after them; the pulse is 0 across the hold, the tail and the banner, starts at the grace and
-  ramps `dt/levelEndFade` → `dt/levelEndGracePulseEnd` with every frame's advance larger than the last;
-  the alpha is read off `ctx.stroke()` through the real `Ship.draw()` at four phases with and without the
-  grace; the blink is still skipped while `levelEndSafe` with no grace running; `levelEndSafe` is true at
-  the clear, 5 s into the hold, under the panel, across the tail and the banner, and closes on the frame
-  `levelEndGraceT` hits exactly 0; and both panels render "ACHIEVEMENTS UNLOCKED". **Twelve mutations of
-  the shipped code** (the unfreeze deleted, ungated, made a crossing one-shot, moved above the banner
-  tick; each pulse condition reverted; the blink coupled to it; the restore mis-guarded; the dismissal's
-  clear re-added; the header ternary restored; a damage gate narrowed; the caption tick deleted and added
-  to the pause path) were each confirmed to fail it.
+- New `scratchpad/test-cs036-p3.js` (121 assertions, seeded): the confirm reaches `nextWave()` and the
+  new field is still frozen 30 frames on, both forks; the tail lifts on exactly the frame
+  `levelBanner.life` crosses `levelBannerFade`, asserted from both sides; all three degenerate knob pairs
+  thaw on the FIRST tail frame and a second ceremony still runs; the pulse is 0 across hold/tail/banner,
+  starts at the grace and ramps with every frame's advance larger than the last; alpha read off
+  `ctx.stroke()` through the real `Ship.draw()` at four phases; the blink still skipped under
+  `levelEndSafe`; `levelEndSafe` true at the clear, in the hold, under the panel, across tail and banner,
+  closing the frame `levelEndGraceT` hits 0; both panels render "ACHIEVEMENTS UNLOCKED". **Twelve
+  mutations of the shipped code** (the unfreeze deleted / ungated / made a crossing one-shot / moved
+  above the banner tick; each pulse condition reverted; the blink coupled to it; the restore mis-guarded;
+  the dismissal's clear re-added; the header ternary restored; a damage gate narrowed; the caption tick
+  deleted and added to the pause path) were each confirmed to fail it.
 
 - **Seven suite files repointed, all named in-commit.** `test-cs036-p1` stages the freeze the way the game
   arms it (flag **and** announcement — the bare flag now reads as a tail past its crossing and thaws), and
@@ -148,18 +133,16 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
   not set, timer not reset in `resetRun()`, label reverted). `test-registry.js`'s `COUNTS` → 106.
   GDD §2's dock-lockout passage takes the new ping-cooldown behaviour.
 
-- New `scratchpad/test-cs036-p2.js` (127 assertions, seeded) drives the real `update()`, the real
-  keydown listener and the real `handleGamepadMenu()`: a real bullet kills the last size-1 Garbage
-  Satellite and the field is frozen with the announcement seeded **in that same frame**; 20 s of frames
-  later the wave has not advanced and the ship has not moved a pixel (only `levelDone.age` ticks);
-  ENTER/ESC and pad A/B each end it, reaching `nextWave()` with an empty bucket and the panel with a
-  banked one; an `e.repeat` keydown, a held pad button across the arm, fire and the pause key all do
-  nothing; the Perfect Wave bookkeeping fires once per clear at the arm with `game.wave` reading the
-  completed wave, and not at all when damage was taken; a fresh `startGame()` is unfrozen for 120
-  frames; the announcement's alpha ramps 0 → ½ → 1 and is still 1 thirty seconds later (no fade-out),
-  draws with the HUD hidden, and never draws paused or at gameover; and the knob is gone from
-  `DEBUG_ENTRIES`/`DEBUG`/`debugShown`, with a save file carrying `debug.levelEndHold` loading fine and
-  orphaning it.
+- New `scratchpad/test-cs036-p2.js` (127 assertions, seeded) drives the real `update()`, keydown listener
+  and `handleGamepadMenu()`: a real bullet kills the last size-1 Garbage Satellite and the field freezes
+  with the announcement seeded **in that same frame**; 20 s on, the wave has not advanced and the ship
+  has not moved (only `levelDone.age` ticks); ENTER/ESC and pad A/B each end it, reaching `nextWave()`
+  with an empty bucket and the panel with a banked one; `e.repeat`, a held pad button across the arm,
+  fire and pause all do nothing; Perfect Wave fires once per clear at the arm with `game.wave` reading
+  the completed wave, and not at all after damage; a fresh `startGame()` is unfrozen for 120 frames; the
+  alpha ramps 0 → ½ → 1 and holds at 1 thirty seconds on, draws with the HUD hidden and never paused or
+  at gameover; and the knob is gone from `DEBUG_ENTRIES`/`DEBUG`/`debugShown`, a save carrying
+  `debug.levelEndHold` loading fine and orphaning it.
 
 - **Sixteen suite files repointed, all named in-commit.** Five registry-delta pins (`test-cs027-p2/-p6`,
   `test-cs029-p4`, `test-cs030-p1`, `test-cs026-p5`) and two list pins (`test-cs024-p6b/-p6c`) take a
@@ -175,15 +158,14 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
   `_phase-ref.js` — it could not survive any later phase editing the file it watches.
 
 - New `scratchpad/test-cs036-p1.js` (52 assertions, seeded) drives the real `update()` with the flag set
-  by hand: a Hunter Satellite, a Garbage Satellite, a saucer, a bullet and a loose piece of Debris all
-  byte-identical across 120 frozen frames; the ship neither moves, rotates, recharges nor fires with
-  rotate/thrust/fire held; a stretched chain does not settle a single px; a Hunter on the hull deals no
-  damage and takes none; `levelBanner.life` ticks exactly one `dt` per frame in **both** paths and
-  reaches 0; a parked critical voice line still drains; `Achievements.evaluate()` and the heartbeat are
-  pinned as running **zero** times; and every one of those is paired with an unfrozen frame that does
-  the opposite. Eight mutations of the shipped code (branch deleted, each of the three calls dropped,
-  the two stops re-added, a double-tick, `nextWave()` clearing the flag, `resetRun()` forgetting it)
-  were each confirmed to fail it.
+  by hand: Hunter, Garbage Satellite, saucer, bullet and loose Debris all byte-identical across 120
+  frozen frames; the ship neither moves, rotates, recharges nor fires with rotate/thrust/fire held; a
+  stretched chain does not settle a px; a Hunter on the hull deals and takes no damage;
+  `levelBanner.life` ticks exactly one `dt` per frame in **both** paths and reaches 0; a parked critical
+  voice line still drains; `Achievements.evaluate()` and the heartbeat run **zero** times — each paired
+  with an unfrozen frame doing the opposite. **Eight mutations** (branch deleted, each of the three calls
+  dropped, the two stops re-added, a double-tick, `nextWave()` clearing the flag, `resetRun()` forgetting
+  it) confirmed to fail it.
 
 - `test-cs026-p3.js`'s TRAP 5 run-reset pin repointed for the one new reset line, by name in
   `DROPPED_LINES` — the same narrowing every prior changeset made to it, so any *other* edit to
@@ -191,16 +173,14 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
 
 ## Known issues
 
-- **⛔ RESOLVED (P3) — the caption clock now runs during the freeze.** P1 raised it, P2 declined it and
-  handed the call to P3; P3's answer is **yes**, one line in `updateLevelEndFreeze()`. What decided it is
-  visible only from here: `nextWave()` fires INSIDE the freeze, so `VoiceSys.sayLevel()` raises a caption
-  at the head of the tail on **every** level transition, and the level banner it is the twin of (same
-  call, same string) is ticking down beside it — a stopped caption clock would hold that line at full
-  alpha for the whole 1.7 s tail while its own audio, on the audio clock, finished seconds earlier. The
-  freeze stops the SIM and deliberately keeps the ANNOUNCEMENT CHANNEL running; a caption is that
-  channel's visual half. ⛔ **The pause and the celebration panel still hold the caption** (CS011 P2's
-  rule, untouched) — they run no announcement channel at all. Pinned both ways in `test-cs036-p3` §H.
-  It is one line if Paul wants it back out.
+- **⛔ RESOLVED (P3) — the caption clock now runs during the freeze.** P1 raised it, P2 declined and
+  handed the call to P3; the answer is **yes**, one line in `updateLevelEndFreeze()`. Why: `nextWave()`
+  fires INSIDE the freeze, so `sayLevel()` raises a caption at the head of the tail on every transition,
+  and a stopped clock would hold it at full alpha for the whole 1.7 s tail while its audio finished
+  seconds earlier. The freeze stops the SIM and keeps the ANNOUNCEMENT CHANNEL running; a caption is
+  that channel's visual half. ⛔ **The pause and the celebration panel still hold the caption** (CS011
+  P2, untouched) — they run no announcement channel. Pinned both ways in `test-cs036-p3` §H; one line
+  to revert.
 
 - **NEW (P2) — a wave that spawns ZERO Garbage Satellites now soft-locks the level.** Unreachable in
   shipped play (`junkCount` floors at 3), reachable from the debug panel, whose `junkCountFloor`/`Ceil`
@@ -211,16 +191,14 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
   arm condition is a design call the spec does not cover.
 
 - **⛔ RESOLVED BY SPEC, not by code — the level-end window (CS035 P3) "appears to do nothing in play."**
-  `PLANNED-FEATURES-CS036.md` §0.1: the window *runs*; what it does not do is announce itself, because
-  CS035's FORK-L resolved to "the player retains full control throughout." G9–G14 stay unanswered and
-  the four knobs stay untuned, but there is no defect to chase and no environment to establish. CS036's
-  ceremony (P1–P3) is the answer. ⛔ Not to be written up as a bug fix.
+  Spec §0.1: the window *runs*; it just does not announce itself, because CS035's FORK-L resolved to
+  "the player retains full control throughout." G9–G14 stay unanswered and the four knobs untuned, but
+  there is no defect to chase. CS036's ceremony (P1–P3) is the answer. ⛔ Not a bug fix.
 
-- **⛔ CS035 — G18 asked for a red Hunter while volatile; RESOLVED AGAINST by CS036's spec.**
-  `PLANNED-FEATURES-CS036.md` §2 records Paul reversing that answer at the CS036 planning session:
-  **no colour change**, `lerpColor()` and a hazard red stay deleted, and the punch comes from the
-  heartbeat's own asymmetry instead (CS036 P4). Kept here only so the CS035 gate answer is not read as
-  still-outstanding.
+- **⛔ CS035 — G18 asked for a red Hunter while volatile; RESOLVED AGAINST by CS036's spec §2.** Paul
+  reversed that answer at the CS036 planning session: **no colour change**, `lerpColor()` and a hazard
+  red stay deleted, the punch comes from the heartbeat's asymmetry (P4). Here only so the CS035 gate
+  answer is not read as still-outstanding.
 
 - **CS035 — Debris sometimes not bouncing away at the dock (G5's note).** Paul: "Sometimes when player
   ship is in the dock, and hits a piece of debris, the debris is not bouncing away, which causes
@@ -237,23 +215,19 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
   old flag read: "a wave cleared while the PREVIOUS level's banner is still live arms the grace early →
   protection through the hold, none through the banner." Measured under the freeze, in four staged
   scenarios, it now goes three ways:
-  - **The old banner expires during the hold.** The one-shot still fires and still arms the grace early
-    — but `levelEndGraceT` only counts down in `update()`'s playing body, which the freeze replaces, so
-    it is **parked at its full value** for the rest of the hold and the whole tail. It then ticks for
-    exactly `levelBannerFade` seconds (the live frames between the unfreeze and the new banner's own
-    expiry) before that crossing **re-arms it to full**. Measured: armed at t=0.98, still 3.000 at the
-    unfreeze at t=11.53, re-armed 3.000 at t=12.03, closed at t=15.05 — i.e. exactly `levelEndGrace`
-    after the new banner expired, which is the intended sequence. **Nothing is lost.**
-  - **The player confirms before the old banner expires.** `nextWave()` reassigns `game.levelBanner`
-    wholesale, so the premature crossing never happens at all. The case simply does not occur.
+  - **The old banner expires during the hold.** The one-shot still arms the grace early, but
+    `levelEndGraceT` only counts down in `update()`'s playing body, which the freeze replaces — so it is
+    **parked at full** for the rest of the hold and the whole tail, then ticks for exactly
+    `levelBannerFade` seconds before that crossing **re-arms it to full**. Measured: armed t=0.98, still
+    3.000 at the unfreeze t=11.53, re-armed 3.000 at t=12.03, closed t=15.05 — exactly `levelEndGrace`
+    after the new banner expired, the intended sequence. **Nothing is lost.**
+  - **The player confirms first.** `nextWave()` reassigns `game.levelBanner` wholesale; it cannot occur.
   - **The residue: `levelEndGrace <= levelBannerFade`.** Only then can the parked grace run out inside
-    that fade window, and the crossing that would re-arm it is refused (the one-shot reads `levelEndSafe`,
-    now false). Measured at grace 0.25 / fade 1.0: protection closes 0.7 s into the banner and there is no
-    post-banner grace. Both are debug-panel knobs; shipped is 3.0 vs 0.5, a 6× margin.
-  It is also **harder to reach than it was**: the clear must land inside the previous banner's life, and
-  the first 1.7 s of every banner is now frozen, so only its last `levelBannerFade` seconds are live play.
-  Not fixed — narrowing the arm is the same design call CS035 declined, and the shipped knobs are nowhere
-  near the inequality.
+    that fade window, and the re-arming crossing is refused (the one-shot reads `levelEndSafe`, now
+    false). At grace 0.25 / fade 1.0: protection closes 0.7 s into the banner, no post-banner grace.
+    Shipped is 3.0 vs 0.5, a 6× margin, and it is harder to reach than before — the clear must land
+    inside the previous banner's life and the first 1.7 s of every banner is now frozen. Not fixed:
+    narrowing the arm is the design call CS035 declined.
 
 - **NEW (P3, cosmetic, debug-knobs-only) — the two announcements can overprint.** In the case above the
   still-live "Level N" banner and "Level N Complete" draw at the same `levelBannerY` and
@@ -268,35 +242,28 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
   cloud, so a neglected dock apron can still breed a Hunter — arguably the intended pressure, but new,
   and G6/G7 did not ask about it directly.
 
-- **CS035 — `test-cs035-p3.js`'s flake, now REPRODUCED and measured, and it is NOT FLAG-CS031-c's
-  class.** Its shared `quiet()` stager already sets `g.celebration = null` (line 35) and the file never
-  reaches a death or gameover — the only panel it touches is the level-end one §E opens on purpose. The
-  real rate is **6/120 runs (~5%)**, not ~1-in-5, and the failing assertion is always the same one:
-  §F `"⛔ with the window shut the ship is vulnerable again (got 200, want 185)"` — the ship takes no
-  damage on a frame where it should. Left alone, per the phase prompt: not hunted further.
+- **⛔ RESOLVED (P6) — the three standing failures AND FLAG-CS031-c; all stale tests, no build defect.**
+  Two corrections to the record. (1) `test-f2.js` §g was not *distinct from* FLAG-CS031-c — it **is** it:
+  same leaked `game.celebration`; "deterministic" vs "~3% flake" is one defect seen in different weeks
+  (real rate ~38% of weeks, 0% of the rest). (2) `test-cs023-p3.js` TRAP 3 was **not** a pin against a
+  fixed historical SHA but against the **moving `HEAD`** — the opposite, and what made it fail. Spec §4's
+  table carries both wrong descriptions; the phase prompt inherited them. ⛔ FLAG-CS031-c was never a
+  build fix: the build has no `resetShip()`, and `resetRun()` has cleared the panel since CS030 P1. Its
+  other 28 latent files are untouched — the sweep found none biting.
 
-- **⛔ NEW (P6) — `test-f6.js` §F has the same shape, at ~1.7% (2/120 runs).** Surfaced by the 16-week
-  sweep, unrelated to the calendar. Always the same pair: `"F: Magnet moved the canister measurably
-  closer (45.0 -> 45.0 px)"` and `"the canister's velocity points toward the ship (v·toShip = 0)"` — the
-  canister does not move **at all**, distance and velocity both exactly unchanged. Like `test-cs035-p3`
-  it carries no `installSeed`, so both drive the real unseeded `Math.random()`; that shared trait is the
-  likely class, but it was not chased. Undocumented before this phase.
+- **⛔ NEW (P6) — two MORE moving-`HEAD` pins survive in `test-cs023-p3.js`, passing VACUOUSLY.**
+  `headSrc()` still feeds the `debrisBounce` line count (~599) and the byte-strict `shieldDeflect`/
+  `shieldBounce` compare (~641); on a clean tree both compare the file to itself and cannot fail. TRAP 3
+  surfaced only because it carried a "not a vacuous pass" guard; these have none. **Not fixed** — outside
+  P6's scope, and each needs a SHA chosen and intervening diffs named. The cure is in the same file,
+  twice ("Pinned to a FIXED SHA, not the moving HEAD").
 
-- **⛔ RESOLVED (P6) — the three standing suite failures. All three were stale tests; no build defect.**
-  Two corrections to how they were recorded here. (1) `test-f2.js` §g was **not** distinct from
-  FLAG-CS031-c — it *is* FLAG-CS031-c. Same leaked `game.celebration`, same seam; "deterministic" and
-  "~3% flake" were the same defect observed in different weeks. (2) `test-cs023-p3.js` TRAP 3 was **not**
-  a pin against a fixed historical SHA; it was the opposite — a pin against the **moving `HEAD`**, which
-  is what made it fail. The spec's §4 table carries both descriptions and both are wrong; the phase
-  prompt inherited them.
-
-- **⛔ NEW (P6) — two MORE moving-`HEAD` pins survive in `test-cs023-p3.js`, and they pass VACUOUSLY.**
-  `headSrc()` (`git show HEAD:orbital-overhaul.html`) still feeds the `debrisBounce` executable-line
-  count (~line 599) and the byte-strict `shieldDeflect`/`shieldBounce` comparison (~line 641): on a
-  clean tree both compare the file to itself and cannot fail. TRAP 3 surfaced only because it carried an
-  explicit "not a vacuous pass" guard; these two have none. **Not fixed** — outside P6's named scope,
-  and each needs a pin SHA chosen and intervening diffs named. The cure is written verbatim in the same
-  file, twice ("Pinned to a FIXED SHA, not the moving HEAD").
+- **⛔ Two unseeded-test flakes, measured (P6); neither is FLAG-CS031-c's class.** `test-cs035-p3` §F
+  `"with the window shut the ship is vulnerable again (got 200, want 185)"` at **6/120 (~5%)**, not the
+  recorded ~1-in-5 — its `quiet()` stager already clears `g.celebration` (line 35) and it never reaches a
+  death. **NEW, undocumented before now:** `test-f6` §F `"Magnet moved the canister measurably closer
+  (45.0 -> 45.0 px)"` + `"v·toShip = 0"` at **2/120 (~1.7%)** — the canister does not move at all.
+  Neither carries `installSeed`; that shared trait is the likely class. Not chased, per the prompt.
 
 - **⛔ FLAG-CS032-a — `drawTitleMenu()` calls `SaveSlots.count()` every frame**, a
   `localStorage.getItem` + `JSON.parse` per title-screen frame at 60 fps. Deliberate per CS032 §4.3 (a
@@ -307,14 +274,6 @@ Version: 1.0.0.35 · Changeset: CS036 · Phase: P6 · Registry: 106 · Levers: 1
 - **Back from the slots screen in LOAD mode lands the title cursor on `"Options"`**, not on `"Load
   Saved Game"`. `returnToTitleMenu()` hardcodes `MENU_TITLE.indexOf("Options")`, correct for its other
   callers. Changing it is a signature question, which is design, not wiring. See `log/CS032.md`.
-
-- **⛔ RESOLVED (P6) — FLAG-CS031-c.** ⛔ Worth stating plainly, because the flag's wording invites the
-  opposite reading: **this was never a build fix.** The build has no `resetShip()` at all, and
-  `resetRun()` — the one path into a fresh run — has cleared the panel since CS030 P1 (line ~7667). The
-  leak was a *test helper* standing in for a fresh run without doing what the build does. Nor was the
-  rate 3%: it is ~38% of weeks and 0% of the rest. The other 28 files in the latent class are
-  **untouched and still latent** — the 16-week sweep found none of them currently biting, which is why
-  they were left out of scope rather than chased blind.
 
 - **`test-registry.js`'s `FLAG-CS027-d`** — twelve suite files grep a comment-stripped copy of the
   source missing the same 80 lines `execSource()` fixed. Latent, not live.
@@ -343,11 +302,11 @@ None.
 ## Next up
 
 - **CS036 P7 — the closing phase.** The doc sweep below, the version bump, the gate fold-in, and
-  `STATUS.md` → `log/CS036.md`. ⛔ The ceremony is complete as of P3, the heartbeat punch as of P4, the
-  two small fixes as of P5 and the suite triage as of P6; nothing further lands. P7 asserts **zero
-  skips**, and as of P6 the standing failures are zero too — so any red it sees is either its own or one
-  of the two named flakes (`test-cs035-p3` ~5%, `test-f6` ~1.7%), which a rerun distinguishes. §4's spec
-  table takes the two corrections in Known issues when it folds into the log.
+  `STATUS.md` → `log/CS036.md`. ⛔ Ceremony complete as of P3, heartbeat punch as of P4, the two small
+  fixes as of P5, suite triage as of P6; nothing further lands. P7 asserts **zero skips**, and standing
+  failures are now zero too — so any red is either its own or one of the two named flakes
+  (`test-cs035-p3` ~5%, `test-f6` ~1.7%), which a rerun distinguishes. §4's spec table takes the two
+  corrections in Known issues when it folds into the log.
 
 - **P7's doc sweep — five GDD passages now describe a build that no longer exists.** None is a code
   defect; the GDD is §2 = shipped only, so all five are the sweep's. The build's own remaining
