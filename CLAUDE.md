@@ -392,6 +392,19 @@ field orphans harmlessly, which is the whole point of the rule.
 entry already inside `afd_profiles_v1` (`Profiles.roster[i].playerId`), not a
 new store. See "Profiles (CS031)" below for the mint/backfill contract.
 
+⛔ **`resumeFromSave()` runs a fixed step order, and step 2 must precede steps 3
+and 5 (CS032 P2; step 3 added CS037 P6).** 1) `resetRun()` — fresh-run baseline.
+2) overwrite it with the save-moment values. 3) `Achievements.snapshotResumeBaseline()`
+— every active achievement's `cur()`, read once, off the stats step 2 just
+restored. 4) `game.resumedRun = true`, unconditional. 5) `nextWave()`. Step 2
+before step 3: taken earlier the baseline snapshots zeroes and suppresses
+nothing, so the achievement flood fires exactly as it does at HEAD. Step 3
+before step 5: `nextWave()` advances `game.wave`, which `untouchable`'s `cur()`
+reads — snapshot after it and a slot saved on wave 9 baselines as though
+already on wave 10, silently swallowing an achievement the player then earns
+for real. (Step 2 must also precede step 5 for its own, older reason: `nextWave()`
+reads `game.stats.powerupsPicked` to gate `maxWaveNoPowerup`.)
+
 ### Profiles (CS031)
 
 ⛔ **`Profiles.keyFor(base)` is the one route from a store's base name to the

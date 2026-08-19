@@ -23,7 +23,7 @@
 //      fires chain_broken, not chain_guard.
 //  (F) scatterChain() still fires nothing at all (FORK-CS017-E — death stays silent, unchanged by P7).
 //  (G) VoiceSys.say("chain_guard") is headless-safe: AudioSys.ctx null -> no throw, no line spoken.
-//  (H) GAME_VERSION === "1.0.0.36" pin.
+//  (H) GAME_VERSION === "1.0.0.37" pin.
 //  (I) node --check style full-file smoke: startGame()/update(1/60) don't crash with ctx null.
 
 "use strict";
@@ -290,9 +290,9 @@ const APPROVED = [
 
 // ================= (H) GAME_VERSION pin =====================
 (function sectionH() {
-  console.log("(H) GAME_VERSION === \"1.0.0.36\"");
+  console.log("(H) GAME_VERSION === \"1.0.0.37\"");
   const { GAME_VERSION } = build();
-  assert(GAME_VERSION === "1.0.0.36", `H: GAME_VERSION is "1.0.0.36" (got "${GAME_VERSION}")`);
+  assert(GAME_VERSION === "1.0.0.37", `H: GAME_VERSION is "1.0.0.37" (got "${GAME_VERSION}")`);
 })();
 
 // ================= (I) full-file smoke: startGame()/update(1/60) don't crash =====================
