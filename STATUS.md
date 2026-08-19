@@ -351,8 +351,19 @@ None.
 
 ## Next up
 
-- **CS037 is in flight (P1, P2, P2.1, P4, P5, P6, P7 done; P3 DROPPED at Gate A).** Next: the
-  BLOCKING Gate B, then P8.
+- **CS037 is in flight (P1, P2, P2.1, P4, P5, P6, P7 done; P3 DROPPED at Gate A). GATE B CLOSED
+  2026-08-19. P7.1 is next**, then P8.
+
+- **Gate B moved no knob — every tunable answer was "no change"** (delivery curve, `SHIELD_HIT_COST`,
+  auto-shield threshold), zero deferrals. ⛔ P8's "fold Gate B's answers into `def` values" is a
+  **no-op, and that is the result** — it must be recorded as *answered with no change*, not chased for
+  numbers that were deliberately never issued.
+
+- **P7.1 is Gate B's one actionable output** — on a hull hit the ship re-hooks its own released load
+  almost immediately. Four-part diagnosis and the full contract are in `PLANNED-FEATURES-CS037.md`
+  §7.1; prompt in `IMPLEMENTATION-PHASES-CS037.md`. Directed radial release + a `game.towLockoutT`
+  pickup lockout, both at the damage release site only, registry 113 → 115. ⛔ The lockout must NOT
+  read `game.ship.invuln` — an auto-shield save sets it too but *keeps* the cargo.
 
 - **P8's `CLAUDE.md` sweep now has a second item beyond P4's key list:** the Audio section's
   `VOICE_CRITICAL` rule names the critical set as "the four `VOICE_CRITICAL` events" and lists
@@ -383,11 +394,12 @@ None.
 
 ## Playtest asks (open only — answered ones move to the log)
 
-- **Does losing the WHOLE tow to any hit read as fair, or as punishing?** P5 ships it with no shield-
-  side softening beyond the existing shielded / i-framed / auto-shield exemptions, and with the chain
-  guard deliberately NOT intercepting (FORK-B1). Gate B question 5 asks whether "Payload lost." now
-  fires only on genuine total loss; this is the balance half of the same change and nobody has played
-  a wave against it.
+- ~~**Does losing the WHOLE tow to any hit read as fair, or as punishing?**~~ **ANSWERED at Gate B —
+  P8 moves this to the log.** Fair: Q6 puts the combined C+F balance at 5/10, Q4 reports the ship
+  shield reads as *more* valuable with no tuning wanted, and Q5 confirms "Payload lost." fires only on
+  genuine total loss. ⛔ Q4 also confirms **FORK-B1 → no under play**, not merely under argument: the
+  chain guard is unchanged in value precisely because a hull hit dumps the tow whether or not it is
+  up. Full answers in `IMPLEMENTATION-PHASES-CS037.md`'s Gate B section.
 
 - **H6, H10 and H11 come back**, all three under FLAG-CS036-a's remedy: clear the debug overrides
   first, then ask for **numbers** — `levelEndFade` / `levelEndGracePulseEnd` for the ship pulse, and

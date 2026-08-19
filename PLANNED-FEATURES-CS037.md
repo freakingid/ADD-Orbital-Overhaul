@@ -524,6 +524,78 @@ Scoring continues to route through `addScore()`.
 
 ---
 
+## 7.1 Item G — tow release separation (Gate B consequence)
+
+Added after Gate B, which found that P5's release hands the load straight back to the player.
+Numbered `7.1` rather than renumbering §8/§9 — the same late-insertion idiom P2.1 uses in the phases
+doc, and consistent with this changeset's standing rule that numbering stays stable once answers
+have been given against it.
+
+### 7.1.1 What Gate B found
+
+A hull hit dumps the tow (§4), and the ship re-hooks most of it within about a second. Four things
+compound, and none of them is merely "the pieces are nearby":
+
+1. **`Garbage.fromNode()` scatters in a RANDOM direction** at `rand(20, 60)` px/s. Roughly half the
+   released nodes get a velocity component pointing back at the ship.
+2. **The load starts inside pickup range.** `CHAIN_LINK` is 20 px and `GARBAGE_PICKUP` is 18 px, so
+   node 0 is touching the pickup circle at the instant it is released.
+3. **Knockback does not separate them.** `KNOCKBACK_SPEED` shoves the ship away from the *hazard*,
+   whose position is unrelated to where the chain is. The chain trails behind the ship, so the
+   knockback is as likely to fire it into its own scattered load as away from it.
+4. **A Magnet makes it deterministic.** `MAGNET_RANGE` (380) covers essentially the whole scattered
+   load, and `pulling` drags all of it straight back.
+
+Re-pickup is the expected outcome, not an edge case.
+
+### 7.1.2 Change
+
+Two mechanisms, both at the **damage release site only**:
+
+1. **Directed release.** Each released node is propelled radially away from the ship at
+   `DEBUG.towReleaseSpeed`, velocity **SET, never added** — the CS035 P2 dock-lockout push idiom
+   verbatim. This replaces `fromNode()`'s random vector *on this path*.
+2. **Pickup lockout.** `game.towLockoutT` is armed to `DEBUG.towReleaseLockout` at the same instant.
+   While it runs, the capture gate is shut and the magnet pull is suppressed.
+
+The lockout is what actually guarantees separation; the push is what makes the release read correctly
+and stops the load sitting in a heap to be re-gathered the moment the timer expires. Both are needed.
+
+### 7.1.3 ⛔ Where this must NOT go
+
+- **⛔ NOT inside `Garbage.fromNode()`.** `breakChain()` shares it. A hit *on the chain* keeps its old
+  partial-break behaviour, and the random scatter is part of that.
+- **⛔ NOT inside `scatterChain()`.** P5 reused it byte-unchanged, and that is what delivered
+  FORK-CS037-B1 and B2 for free. Ship death is a separate, terminal event and gets neither mechanism.
+- **⛔ NOT gated on `game.ship.invuln`.** It has two writers: the real non-lethal hit (cargo dumped —
+  lockout wanted) and the **auto-shield save** (cargo *kept*, per Gate B Q4 — a lockout there would
+  punish a successful save with a one-second pickup blackout). Same duration, separate timer.
+- **⛔ The pull suppression rides `pulling`, the SUPPRESSIBLE name — never `magnet`, the raw one the
+  two budget-spend sites read.** CS025 P1's split is not relaxed here; the dock lockout obeys the same
+  rule for the same reason.
+
+### 7.1.4 Two new knobs
+
+| id | Section | `def` | Why a knob |
+|---|---|---|---|
+| `towReleaseLockout` | SHIP | `HIT_STUN_DURATION` (1.0 s) | Gate B's own answer — "the same amount of time the player ship is invincible." Derives from the shipped const, `scoopHitsPerLevel` precedent. |
+| `towReleaseSpeed` | SHIP | 120 px/s | Above the dock bounce's 90: this clears a load up to ~480 px long, not one piece. A pure feel number. |
+
+Registry **113 → 115**, headers unchanged at 11 (both rows join the existing SHIP section).
+`game.towLockoutT` follows the CS016 P3 both-places rule exactly as `game.magnetHoldT` does (`game`
+literal + `resetRun()`), and counts down in the same pickup block.
+
+### 7.1.5 Fork resolutions
+
+- **FORK-CS037-E — does the lockout also push away pieces that reach the ship during the window, the
+  way the dock lockout does?** Resolved **no**. The directed release has already cleared them; a
+  second, continuous push would be a second answer to the same question and a second thing to tune.
+  If play shows pieces loitering on the hull, the knob to raise is `towReleaseSpeed`.
+- **FORK-CS037-F — does either mechanism apply on ship death?** Resolved **no**. A dead ship hooks
+  nothing, respawn is far later than the window, and `scatterChain()` stays byte-unchanged.
+
+---
+
 ## 8. Dropped
 
 **Wrong name-entry screen (raw notes item 2).** Paul identified this as a cached file in MS Edge.
@@ -536,10 +608,10 @@ renderer, its input dispatcher and its commit function; `makeRunResult()` now re
 ## 9. Cross-cutting constraints
 
 - **`DEBUG_VARS` is append-only.** Registry was **106** at HEAD. Growth this changeset: **+4** (item A
-  benchmark controls, landed P2) **+1** (telemetry interval) **+2** (delivery score knobs) =
-  **113 final**. Item A's caps contributed **0** — Gate A cleared every population and P3 was
-  dropped. Headers **10 → 11** (a BENCHMARK section). `LEVERS` stays **18** — nothing here is a
-  difficulty ramp.
+  benchmark controls, landed P2) **+1** (telemetry interval) **+2** (delivery score knobs) **+2**
+  (item G tow release separation, added post-Gate-B) = **115 final**. Item A's caps contributed
+  **0** — Gate A cleared every population and P3 was dropped. Headers **10 → 11** (a BENCHMARK
+  section). `LEVERS` stays **18** — nothing here is a difficulty ramp.
 - **`test-registry.js` pins registry 106, headers 10, `LEVERS` 18, `POWERUP_DROP_TYPES` 5.** Every
   phase that adds a row updates it in the same commit.
 - All new world-space distance/aiming math uses the wrap-aware helpers `dist2`, `angleTo`,

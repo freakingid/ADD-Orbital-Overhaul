@@ -29,7 +29,8 @@ registry 106, headers 10, `LEVERS` 18.
 | P5 | Full release on damage + voice event split | Opus, high, ultrathink |
 | P6 | Resume baseline + targeted persistence | Opus, xhigh, ultrathink |
 | P7 | Delivery payout nerf + two dock knobs | Sonnet, high |
-| **GATE B** | **⛔ BLOCKING — playtest, numeric answers** | — |
+| **GATE B** | ✅ **CLOSED 2026-08-19 — every tunable answer "no change"** | — |
+| P7.1 | Tow release separation — **added by Gate B**, runs after it | Sonnet, high |
 | P8 | Closing: version, invariants, STATUS, GDD, archive | Sonnet, high |
 
 **Ordering rationale.** P1 is a prerequisite for P4 and is cheap, so it goes first and de-risks the
@@ -38,6 +39,12 @@ in the changeset, and it is now discharged: Gate A closed with a null result and
 deliberately placed **before** a single combined Gate B, rather than each carrying its own gate: the
 full-tow release and the powerup nerf both push in the same direction (large hauls get riskier and
 less rewarding), so they need to be felt together, not separately.
+
+**P7.1 exists because that worked.** Gate B moved no knob, but it did surface a defect the combined
+feel-test was the only thing that could have caught: P5's release hands the load straight back. The
+phase is placed after the gate that found it and before the closing phase, and its number is a
+decimal for the same reason P2.1's is — inserted late, ordering carried by this table rather than by
+the integer.
 
 **All forks are closed.** FORK-CS037-A.1 resolved to **(b2)**, the targeted merge write
 (`PLANNED-FEATURES-CS037.md` §2.2), which is what P6 below is already specified against. No phase in
@@ -430,7 +437,8 @@ benchmark, and the null result is the finding.
 
 **Consequences for the phases that follow:**
 
-- Registry contributes **0** here; the final count is **113**, not 113 + 2N.
+- Registry contributes **0** here, not 2N. (The changeset's final count later became **115** — P7.1,
+  added post-Gate-B, is unrelated to the caps and does not weaken this claim.)
 - The `cullGarbage()` `⛔ INVARIANT` in `CLAUDE.md` is **not edited** — nothing about the cull changed.
 - Item A contributes **nothing** to GDD §2.
 - Gate B's questions 7 and 8 (cap effectiveness) are **struck** — there are no caps to assess.
@@ -883,35 +891,39 @@ nerf needs compensation after all.
 
 ---
 
-## ⛔ GATE B — Playtest gate (BLOCKING)
+## ✅ GATE B — Playtest gate (CLOSED 2026-08-19)
 
-**P8 does not start until these are answered.** Numeric answers where a tunable is involved.
+**Result: every tunable answer is "no change". Zero knob moves, zero deferrals — and one new defect,
+which becomes P7.1.**
 
-**⛔ Before playing: FLAG-CS036-a.** Set **"Overrides Applied" → OFF**, or use **"Reset all debug
-knobs to defaults"**. Any installation that has ever saved settings is otherwise running stored knob
-values, not shipped defaults, and every answer below will be measuring the wrong build. P2's
-benchmark handles this itself; this gate does not.
+⛔ **P8's "fold Gate B's numeric answers into `def` values" is therefore a NO-OP.** That is a result,
+not an omission: the gate ran, all eight live questions were answered, and none of them asked for a
+number to change. P8 records it as such and does not go looking for values that were deliberately
+never issued.
 
-Play several full runs into the late waves, with the tow chain loaded.
+**Answers:**
 
 **Item F — the powerup nerf.**
 
-1. At what haul size does a large haul stop feeling worth the risk in the late waves? (number of
-   canisters)
-2. If `DOCK_BASE_SCORE` and `DOCK_BONUS_STEP` need to move to compensate, to what values?
-   (two numbers, or "no change")
+1. **No threshold — a large haul always feels worth the risk.** Score alone still carries it, plus the
+   standing chance of a Super Mega Delivery at 24. The nerf did not make big hauls unattractive.
+2. **`DOCK_BASE_SCORE` / `DOCK_BONUS_STEP`: no change.** P7's two knobs stay at 50 and 25. They exist
+   for a retune that this gate says is not needed — which is exactly the outcome §7.4 was written for.
 
 **Item C — full release on damage.**
 
-3. How many hits per late wave now dump a loaded tow, roughly? (number)
-4. Does the release make the shield feel more valuable, less, or unchanged? If it should be tuned,
-   what should `SHIELD_HIT_COST` or the auto-shield threshold become? (numbers, or "no change")
-5. Does "Payload lost." now fire only on genuine total loss? (yes/no — and if no, at which event)
+3. **One.** A single unshielded hit on the *ship* dumps the whole tow. Working as specified.
+4. **The ship shield feels MORE valuable — no tuning.** `SHIELD_HIT_COST` and the auto-shield
+   threshold both stand. It is a hard feature to get used to, which is what auto-shield already
+   exists for. **The chain guard is unchanged in value**, because a hull hit dumps the tow whether or
+   not the guard is up — ⛔ **this confirms FORK-CS037-B1 → no under play**, not just under reasoning.
+   The comment at `damageShip()`'s release site asserts it on argument alone; it now has a playtest
+   behind it.
+5. **Yes** — "Payload lost." fires only on genuine total loss.
 
 **Items C+F together.**
 
-6. Combined, do the two changes push late-wave play too far toward small hauls? On a 1–10 scale where
-   5 is balanced, where does it sit? (number)
+6. **5** — balanced. The two changes together do not push late-wave play toward small hauls.
 
 **Item A — ~~the caps~~ STRUCK.** No caps shipped (Gate A), so there is nothing to assess. Questions
 7 and 8 are withdrawn rather than renumbered, so the gate's numbering stays stable against the
@@ -919,9 +931,134 @@ answers already given.
 
 **Item E — the resume fix.**
 
-9. Load a save in a fresh browser session: how many achievement banners fire? (number — expected 0)
-10. Earn one genuinely after the load, then start a fresh run and check the achievements viewer: is
-    it still there? (yes/no — expected yes)
+9. **0 banners.** Matches the expected value; P6 holds.
+10. **Yes** — an achievement earned after the load survives into a fresh run.
+
+**New defect found (→ P7.1).** On a hull hit the ship re-hooks the released load almost immediately.
+Diagnosed to four compounding causes in `PLANNED-FEATURES-CS037.md` §7.1.1 — a random release vector,
+a load that starts inside the pickup circle, knockback that is unrelated to where the chain is, and a
+Magnet that drags the whole thing back. This is a P5 consequence that only a combined feel-test could
+have surfaced, and it is the gate's real finding.
+
+---
+
+## P7.1 — Tow release separation
+
+**Model:** Sonnet, high effort.
+
+**Why this exists:** Gate B's one finding. See `PLANNED-FEATURES-CS037.md` §7.1.
+
+### Contract
+
+- **Two mechanisms, both at the damage release site only** — the `if (game.chain.length)` block inside
+  `damageShip()`'s non-lethal branch, which P5 added.
+  1. **Directed release.** Every node released by that call is propelled radially away from the ship
+     at `DEBUG.towReleaseSpeed`. ⛔ **Velocity is SET, never added** — the CS035 P2 dock-lockout push
+     idiom verbatim, and for the same reason.
+  2. **Pickup lockout.** `game.towLockoutT` is armed to `DEBUG.towReleaseLockout` at the same instant.
+     While it runs, the capture gate is shut and the magnet pull is suppressed.
+- **⛔ `scatterChain()` and `Garbage.fromNode()` both stay byte-unchanged.** `breakChain()` shares
+  `fromNode()` and keeps its random scatter; `killShip()` shares `scatterChain()` and gets neither
+  mechanism. Suggested shape, not mandated: snapshot `game.garbage.length` before the
+  `scatterChain()` call and apply the push to everything appended past that index. Any shape that
+  leaves both functions untouched is acceptable.
+- **⛔ Do NOT gate on `game.ship.invuln`.** It has two writers, and only one of them dumps cargo — the
+  **auto-shield save** sets `invuln` and *keeps* the load (Gate B Q4). Reading it would blackout
+  pickup for a second after a successful save. Same duration, separate timer.
+- **⛔ The pull suppression rides `pulling`, never the raw `magnet`.** CS025 P1's two-name split is not
+  relaxed here: `magnet` is read by the two budget-spend sites and repointing either at the
+  suppressed name hands out free hooks. The dock lockout obeys this already — follow it exactly.
+- **`game.towLockoutT` follows the CS016 P3 both-places rule** (`game` literal + `resetRun()`), and
+  counts down in the pickup block beside `game.magnetHoldT`'s own countdown. `magnetHoldT` is the
+  working precedent for all of it.
+- **Two new knobs in the existing SHIP section.** `towReleaseLockout` (`def: HIT_STUN_DURATION`,
+  unit ms on the `autoShieldRegenPause` / `dockComboGrace` `toNative` idiom) and `towReleaseSpeed`
+  (`def: 120`, px/s). Registry **113 → 115**, headers unchanged at 11. `HIT_STUN_DURATION` stays in
+  place as the documented default the first derives from — the `scoopHitsPerLevel` precedent.
+- Update **`test-registry.js`** in the same commit.
+
+### Paste-ready prompt
+
+> Read `CLAUDE.md`, `STATUS.md`, and `PLANNED-FEATURES-CS037.md` §7.1 before touching anything. Grep
+> by symbol name.
+>
+> This is CS037 P7.1: stop the ship re-hooking its own tow the instant a hit releases it. Gate B found
+> it; §7.1.1 has the four-part diagnosis.
+>
+> Two mechanisms, both hooked at the `if (game.chain.length) { scatterChain(); VoiceSys.say(...) }`
+> block P5 added inside `damageShip()`'s non-lethal branch, and nowhere else:
+>
+> 1. **Directed release** — every node that call releases is propelled radially away from the ship at
+>    `DEBUG.towReleaseSpeed`. ⛔ Velocity is SET, never added: that is the CS035 P2 dock-lockout push
+>    idiom and it is written that way because a piece re-entering the region on consecutive frames
+>    would otherwise accumulate speed. Use the wrap-aware helpers for the direction.
+> 2. **Pickup lockout** — arm `game.towLockoutT` to `DEBUG.towReleaseLockout` at the same instant.
+>    While it runs, the capture gate is shut and the magnet pull is suppressed.
+>
+> ⛔ `scatterChain()` and `Garbage.fromNode()` must both come out byte-unchanged. `breakChain()` shares
+> `fromNode()` and a hit on the *chain* keeps its old partial-break behaviour including the random
+> scatter; `killShip()` shares `scatterChain()` and ship death gets neither mechanism. The suggested
+> shape is to snapshot `game.garbage.length` before the `scatterChain()` call and push everything
+> appended past that index — any shape that leaves both functions alone is fine.
+>
+> ⛔ Do NOT gate the lockout on `game.ship.invuln`. It has two writers and only one of them dumps
+> cargo: an **auto-shield save** also sets `invuln` but the player KEEPS the load, and locking pickup
+> there would punish a successful save. Same duration, separate timer.
+>
+> ⛔ The pull suppression rides `pulling`, the suppressible name — never `magnet`, the raw one the two
+> budget-spend sites read. Read the ⛔ block above `const magnet = powerActive("magnet")` in the pickup
+> loop before you touch either name. The dock lockout already does this correctly; copy its shape.
+>
+> `game.towLockoutT` is declared in BOTH the `game` literal and `resetRun()` (CS016 P3), and counts
+> down in the pickup block right beside `game.magnetHoldT`. That timer is your working precedent for
+> the whole mechanism — read it first.
+>
+> Add two knobs to the existing SHIP registry section: `towReleaseLockout`, `def: HIT_STUN_DURATION`,
+> on the milliseconds `toNative` idiom `autoShieldRegenPause` uses; and `towReleaseSpeed`, `def: 120`,
+> px/s. `HIT_STUN_DURATION` stays in place as the documented default the first derives from. Update
+> `test-registry.js` for the new count in this same commit.
+>
+> Write `scratchpad/test-cs037-p7-1.js` covering: every released node leaving radially away from the
+> ship at exactly `DEBUG.towReleaseSpeed`; the lockout armed to `DEBUG.towReleaseLockout`; a piece
+> parked on the hull NOT hooked while it runs and hooked normally once it expires; the magnet not
+> pulling during the window; ⛔ an auto-shield save arming NO lockout and keeping its cargo; ⛔
+> `breakChain()` still scattering randomly; ⛔ `scatterChain()` and `Garbage.fromNode()` byte-unchanged
+> in source; and `towLockoutT` cleared by `resetRun()`. Confirm hand-mutated regressions fail it. Run
+> the full suite.
+>
+> Commit, do not push.
+
+### Headless test expectations
+
+- Drive the real `damageShip()` with a loaded chain; assert each released piece's velocity is
+  `towReleaseSpeed` in magnitude and points away from the ship (wrap-aware), not a random direction.
+- Assert the lockout blocks a hook that would otherwise land — park a piece inside `GARBAGE_PICKUP`
+  and step frames across the window boundary, checking it is refused before and taken after.
+- ⛔ The auto-shield arm is the trap this phase most needs pinned: a save must leave `towLockoutT` at
+  0 and the chain intact.
+- ⛔ Source-level: `scatterChain()` and `Garbage.fromNode()` byte-identical to HEAD.
+
+**Suggested commit message**
+
+```
+CS037 P7.1: tow release separation (registry 113 -> 115)
+
+Gate B found the ship re-hooks its own load the instant a hull hit
+releases it: fromNode() scatters in a random direction at 20-60 px/s,
+CHAIN_LINK 20 puts node 0 inside the 18px pickup circle, knockback is
+aimed away from the hazard rather than the chain, and a Magnet drags
+the whole load straight back.
+
+Two mechanisms at the damage release site only: released nodes are
+propelled radially away from the ship at towReleaseSpeed (SET, not
+added -- the CS035 P2 dock-lockout idiom), and game.towLockoutT shuts
+the capture gate and suppresses the pull for towReleaseLockout seconds.
+
+scatterChain() and Garbage.fromNode() are byte-unchanged: breakChain()
+keeps the random scatter for chain hits, and ship death gets neither
+mechanism. The lockout is NOT gated on ship.invuln -- an auto-shield
+save sets it too but keeps the cargo.
+```
 
 ---
 
@@ -931,8 +1068,11 @@ answers already given.
 
 ### Contract
 
-- Fold Gate B's numeric answers into `def` values. Record any question answered without a number as
-  DEFERRED in `STATUS.md`, with the knobs that already reach it named — do not invent a number.
+- ⛔ **Gate B's fold is a NO-OP and that is the finding — do not go looking for numbers.** Every
+  tunable answer came back "no change": `DOCK_BASE_SCORE` / `DOCK_BONUS_STEP` stay at 50 / 25,
+  `SHIELD_HIT_COST` and the auto-shield threshold are untouched, and nothing was deferred. Record it
+  in `STATUS.md` as *answered with no change*, not as unanswered. Gate B's one actionable output was
+  a defect, and it shipped as P7.1.
 - `GAME_VERSION` → **1.0.0.37**. Re-point every live version pin in the suite (seven at CS036).
 - **`CLAUDE.md` `⛔ INVARIANT` sweep**, specifically:
   - **only** the `resumeFromSave()` note below — the `cullGarbage()` determinism note is left
@@ -940,8 +1080,10 @@ answers already given.
   - the `resumeFromSave()` step-ordering note — the P6 baseline snapshot joins the ordering
     constraint
 - **GDD §2** — shipped behaviour only. Add: the full tow release, the "Payload lost." split, the
-  one-powerup-per-visit rule. No caps — P3 dropped. **The benchmark and the telemetry buffer are developer
-  instruments and do not enter §2.**
+  one-powerup-per-visit rule, and **P7.1's directed release + pickup lockout** (which is part of the
+  release's shipped behaviour, not a separate feature — document it with the release, not apart from
+  it). No caps — P3 dropped. **The benchmark and the telemetry buffer are developer instruments and do
+  not enter §2.**
 - `DIFFICULTY-LEVERS.md` — verify. `LEVERS` is still 18; nothing this changeset is a difficulty ramp.
   Likely no edit, but check the delivery-curve section against P7's two new knobs.
 - `STATUS.md` roll: phase ledger, registry and header counts, working/verified, known issues. Carry
@@ -1019,7 +1161,8 @@ planning docs archived.
 | P2.1 | +0 — instrumentation, no tunables | 110 | 11 |
 | ~~P3~~ | **dropped** — Gate A cleared every population | 110 | 11 |
 | P4 | +1 (`telemetryInterval`, GLOBAL) | 111 | 11 |
-| P7 | +2 (DELIVERY score knobs) | **113** | 11 |
+| P7 | +2 (DELIVERY score knobs) | 113 | 11 |
+| P7.1 | +2 (`towReleaseLockout`, `towReleaseSpeed`, SHIP) | **115** | 11 |
 
 `LEVERS` stays **18** throughout — nothing in this changeset is a difficulty ramp.
 `POWERUP_DROP_TYPES` stays **5**.
