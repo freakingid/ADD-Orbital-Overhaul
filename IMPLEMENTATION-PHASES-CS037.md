@@ -22,6 +22,7 @@ registry 106, headers 10, `LEVERS` 18.
 |---|---|---|
 | P1 | Damage source tagging (prerequisite for D) | Sonnet, high |
 | P2 | Benchmark instrument | Opus, high, ultrathink |
+| P2.1 | Gate A instrumentation: real-play peaks, mix weights, env stamp, predicted-vs-actual | Sonnet, high |
 | **GATE A** | **⛔ BLOCKING — Paul runs the benchmark, reports numbers** | — |
 | P3 | Static caps, from Gate A's numbers | Opus, high |
 | P4 | Telemetry buffer, storage, clipboard export | Opus, high |
@@ -253,26 +254,170 @@ Forces debugOverride OFF for the run and restores unconditionally
 
 ---
 
+## P2.1 — Gate A instrumentation
+
+**Model:** Sonnet, high effort.
+
+**Why this exists.** P2 landed and its CSV covers Gate A questions 1–3 well. Reviewing it against the
+gate found four things Paul would otherwise transcribe by hand or work out in a spreadsheet. This is
+a small additive phase over shipped P2 code — **no rework of P2, no behaviour change to the battery
+itself, and no new registry rows.**
+
+### Contract
+
+**1. Real-play population peaks (the gap that matters).** Gate A Q6 divides each population's
+crossing count by what a real late wave actually reaches, and nothing in the build records the
+second number. Add a passive high-water-mark recorder over the same population set the battery
+enumerates: `game.garbage` singles, `game.garbage` clumps, `game.debris` per size, `game.hunters`
+per size, `game.saucers`, `game.particles`, `game.floaters`, `game.chain`.
+
+- Sampled once per frame in normal play, in `update()`'s cleanup block after the filters, so the
+  count recorded is the post-cull count a frame actually drew.
+- Two figures per population: **peak this run**, and **peak this session** across runs.
+- Session-scoped and in memory only. **⛔ No localStorage key** — the Gate A workflow is play, then
+  run the battery, then copy, all in one session, and this does not justify new persisted state.
+- **⛔ Benchmark mode must not feed the recorder.** The battery's synthetic populations are exactly
+  what these peaks must be measured against; letting them in makes the column self-referential and
+  useless. This is P2's seal read in the other direction — verify it holds both ways.
+
+**2. Mixed-run weights in the export.** `BENCH_MIX` is a const in code, and Q5's prediction needs it.
+Emit the weight table into the CSV comment header.
+
+**3. Environment stamp.** Q4 asks which browsers and machines were tested; the CSV cannot currently
+answer that about itself. Add `navigator.userAgent`, viewport size and `devicePixelRatio` to the
+comment header, so a paste is self-identifying and pastes cannot be mixed up between browsers.
+
+**4. Predicted-vs-actual mixed crossing, computed in-build.** The per-step raw table already carries
+everything needed: derive each isolated population's per-entity cost, weight by `BENCH_MIX`, solve
+for the crossing, and emit predicted count, actual mixed count, and the ratio as one line. This turns
+Q5 from a spreadsheet exercise into a read-off.
+
+- **⛔ State the method in the comment header** — that the prediction is linear per-entity
+  extrapolation and therefore assumes populations are independent, which is precisely the assumption
+  Q5 exists to test. A number whose derivation is invisible will be trusted more than it deserves.
+- If a population needed for the prediction reported "not reached", emit the prediction as
+  unavailable rather than extrapolating past the ceiling.
+
+**Registry: unchanged at 110.** None of this is a tunable.
+
+### Paste-ready prompt
+
+> Read `CLAUDE.md`, `STATUS.md`, `PLANNED-FEATURES-CS037.md` §3, and the CS037 Gate A questions in
+> `IMPLEMENTATION-PHASES-CS037.md` before touching anything. Grep by symbol name.
+>
+> This is CS037 P2.1, a small additive phase over the benchmark that P2 already shipped. Read `Bench`,
+> `BENCH_MIX`, `benchReportCSV`, `benchCopyResults` and `benchDownloadResults` first. ⛔ Do not rework
+> the battery, change how it ramps or samples, or alter any existing CSV column — this phase only adds
+> to the export and adds one passive recorder. No new registry rows.
+>
+> **1. Real-play population peaks.** Gate A asks which populations to cap, which needs each
+> population's crossing count compared against what a real late wave actually reaches — and nothing
+> records the second number. Add a passive high-water-mark recorder covering the same populations the
+> battery enumerates: `game.garbage` singles, `game.garbage` clumps, `game.debris` per size,
+> `game.hunters` per size, `game.saucers`, `game.particles`, `game.floaters`, `game.chain`. Sample
+> once per frame in normal play, in `update()`'s cleanup block **after** the filters, so you record
+> the post-cull count a frame actually drew. Keep two figures per population: peak this run, and peak
+> this session across runs. In memory only, module-level — ⛔ no localStorage key, and no field on
+> `game` (the CS016 P3 both-places rule).
+>
+> ⛔ Benchmark mode must NOT feed this recorder. The battery's synthetic populations are the thing
+> these peaks get compared against, so letting them in makes the number self-referential. P2 sealed
+> benchmark mode against writing scores, achievements and settings; verify that seal holds in this
+> direction too and extend it if it does not.
+>
+> Emit both figures per population into the CSV.
+>
+> **2. Mixed weights.** Emit the `BENCH_MIX` weight table into the CSV comment header — the mixed-run
+> prediction depends on it and it is currently only visible in source.
+>
+> **3. Environment stamp.** Add `navigator.userAgent`, viewport size and `devicePixelRatio` to the CSV
+> comment header, so a paste identifies which browser and machine produced it.
+>
+> **4. Predicted-vs-actual mixed crossing.** The per-step raw table already carries per-population
+> update and draw cost at each count. From the isolated runs, derive each population's per-entity
+> cost, weight those by `BENCH_MIX`, and solve for the total count at which the weighted sum crosses
+> 16.7 ms. Emit that predicted count alongside the mixed run's actual crossing count and the ratio
+> between them, as one clearly-labelled line.
+>
+> ⛔ State the method in the comment header: that this is a linear per-entity extrapolation which
+> assumes the populations are independent — which is exactly the assumption the comparison exists to
+> test. If any population the prediction needs reported "not reached", emit the prediction as
+> unavailable rather than extrapolating past the ceiling.
+>
+> Write `scratchpad/test-cs037-p2-1.js` covering: peaks tracking the true maximum and not the last
+> value; peaks sampled after the filters, not before; benchmark mode not contributing to peaks;
+> run-peak resetting per run while session-peak does not; the mixed prediction against a hand-computed
+> fixture; the not-reached path emitting unavailable rather than a number; and every pre-existing CSV
+> column being byte-identical to P2's output for the same results. Confirm hand-mutated regressions
+> fail it. Run the full suite.
+>
+> Commit, do not push.
+
+**Suggested commit message**
+
+```
+CS037 P2.1: Gate A instrumentation over the P2 benchmark
+
+Passive per-population high-water marks from normal play (run peak and
+session peak), sampled post-filter and sealed off from benchmark mode, so
+the cap decision can compare crossing counts against what a real late wave
+actually reaches. BENCH_MIX weights, userAgent / viewport / DPR, and a
+computed predicted-vs-actual mixed crossing added to the CSV header, with
+the extrapolation method stated alongside it.
+
+Additive only: no battery behaviour change, no existing column altered,
+registry unchanged at 110.
+```
+
+### Headless test expectations
+
+`test-cs037-p2-1.js` — roughly 50–70 assertions. §A peak tracking (true max, not last value);
+§B post-filter sampling; §C benchmark mode excluded; §D run-peak vs session-peak lifecycle;
+§E mixed prediction against a hand-computed fixture; §F not-reached → unavailable; §G P2's existing
+columns byte-identical.
+
+---
+
 ## ⛔ GATE A — Measurement gate (BLOCKING)
 
 **P3 does not start until Paul has run the battery and returned numbers.**
 
-Run the battery on each browser/machine of interest. The benchmark forces registry defaults itself,
-so no manual "Overrides Applied → OFF" step is needed for this gate.
+**Procedure, per browser/machine.** After P2.1, one CSV per browser answers questions 1–5 on its own;
+nothing needs writing down by hand.
 
-Report, **per population, per browser**:
+1. **Play first, benchmark second.** Play a few runs into the late waves — far enough that the field
+   feels crowded and any hiccup shows. This is what populates the real-play peak columns; running the
+   battery on a cold boot leaves them empty and Q6 unanswerable.
+2. Enter the debug panel, run the battery, and **copy or download the CSV before switching browsers**
+   — results are in memory only and closing the tab loses them.
+3. Repeat per browser. Each CSV carries its own `userAgent` stamp, so pastes cannot be mixed up.
 
-1. Count at which p95 frame time crosses **16.7 ms**. (number, or "not reached")
-2. Count at which p95 frame time crosses **33.3 ms**. (number, or "not reached")
+The benchmark forces registry defaults itself, so no manual "Overrides Applied → OFF" step is needed
+for this gate.
+
+**Read off the CSV** (these are columns and header lines, not calculations):
+
+1. Count at which p95 frame time crosses **16.7 ms**, per population. (number, or "not reached")
+2. Count at which p95 frame time crosses **33.3 ms**, per population. (number, or "not reached")
 3. Update-cost share vs draw-cost share at the 16.7 ms crossing. (two numbers, ms)
+4. Which browsers and machines were tested? (the `userAgent` header line from each CSV)
+5. **Mixed run**: predicted crossing, actual crossing, and the ratio. (the predicted-vs-actual line)
+   A ratio near 1 means the populations are independent and caps can be sized off the isolated
+   numbers. A materially lower actual means something interacts — most likely Hunter homing scanning
+   a larger `game.garbage` — and caps get sized off the mixed number instead.
 
-Then:
+**The one judgment call:**
 
-4. Which browsers and machines were tested? (list)
-5. For the **mixed** run: does the crossing count differ materially from what the isolated runs
-   predict? (numeric — the mixed crossing count, against the predicted one)
-6. Given the numbers, which populations should get caps this changeset? (list — informed by, not
-   dictated by, the measurement; a population that clears comfortably gets no cap)
+6. Given the numbers, which populations should get caps this changeset, and why? (list plus
+   reasoning, not just names — P3's prompt quotes the reasoning into the spec)
+
+   Method: for each population, divide its 16.7 ms crossing count by its **real-play session peak**
+   (also a CSV column, courtesy of P2.1) to get a margin. **Margin under ~2× wants a cap; above ~3×
+   does not** — a cap nobody needs is a behaviour change with no benefit. Between the two, use the
+   update/draw split from Q3 and your own read on whether that population still feels like it
+   accumulates. Note also that `game.garbage` is already capped by `cullGarbage()` and Hunters
+   already have a *spawn* cap, so for those two the question is whether the existing mechanism is
+   doing enough, not whether to start from zero.
 
 ---
 
@@ -912,7 +1057,7 @@ Play several full runs into the late waves, with the tow chain loaded.
 > Verify `DIFFICULTY-LEVERS.md`. `LEVERS` is still 18 and nothing this changeset is a difficulty ramp,
 > so it likely needs no edit — but check its delivery-curve section against P7's two new knobs.
 >
-> Roll `STATUS.md`: phase ledger for P1–P8, final registry and header counts, working/verified, known
+> Roll `STATUS.md`: phase ledger for P1–P8 including P2.1, final registry and header counts, working/verified, known
 > issues. Carry forward the two standing unseeded flakes and FLAG-CS036-a.
 >
 > Write `log/CS037.md` and archive both planning docs into it.
@@ -944,6 +1089,7 @@ planning docs archived.
 |---|---|---|---|
 | HEAD (`70518af`) | — | **106** | 10 |
 | P2 | +4 (BENCHMARK) | 110 | **11** |
+| P2.1 | +0 — instrumentation, no tunables | 110 | 11 |
 | P3 | +2 per capped population | 110 + 2N | 11 |
 | P4 | +1 (`telemetryInterval`, GLOBAL) | 111 + 2N | 11 |
 | P7 | +2 (DELIVERY score knobs) | **113 + 2N** | 11 |

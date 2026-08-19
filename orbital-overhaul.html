@@ -4471,6 +4471,21 @@ function benchReportCSV() {
   L.push("# The frame's fixed overhead (starfield, ship, HUD, chrome) is NOT included, so a crossing");
   L.push("# count is an upper bound on what a real frame can afford. frame_ms is the p95 of the");
   L.push("# per-frame SUM and is not update_ms + draw_ms. \"not reached\" = the ceiling was hit first.");
+  // CS037 P2.1 — additive header lines only; nothing above this point moved or changed.
+  L.push("# BENCH_MIX weights (Q5, the mixed run's own shape): " +
+         BENCH_MIX.map(m => m.key + "=" + m.w).join(", "));
+  L.push("# environment: " + (typeof navigator !== "undefined" && navigator.userAgent || "?") +
+         " · viewport " + (typeof window !== "undefined" ? window.innerWidth + "x" + window.innerHeight : "?") +
+         " · devicePixelRatio " + (typeof window !== "undefined" && window.devicePixelRatio != null ? window.devicePixelRatio : "?"));
+  const pred = benchPredictMixed(B.results);
+  L.push("# predicted-vs-actual mixed crossing at 16.7 ms (Q5): predicted " +
+         (pred.predicted !== null ? Math.round(pred.predicted) : "unavailable") +
+         ", actual " + (pred.actual !== null ? pred.actual : "not reached") +
+         ", ratio " + (pred.ratio !== null ? pred.ratio.toFixed(2) : "unavailable"));
+  L.push("# method: linear per-entity extrapolation from each isolated population's cross_16.7 row");
+  L.push("# (frame_ms / count), weighted by BENCH_MIX and solved for the count at which the weighted sum");
+  L.push("# crosses 16.7 ms. Assumes the populations are independent and additive — exactly what this");
+  L.push("# comparison exists to test. \"unavailable\" = a population BENCH_MIX needs was \"not reached\".");
   L.push("");
   L.push("population,cross_16.7_count,cross_16.7_update_ms,cross_16.7_draw_ms,cross_33.3_count,cross_33.3_update_ms,cross_33.3_draw_ms,ceiling_count,ceiling_update_ms,ceiling_draw_ms,ceiling_frame_ms");
   for (const r of B.results) {
@@ -4484,6 +4499,13 @@ function benchReportCSV() {
   L.push("population,count,update_ms,draw_ms,frame_ms");
   for (const r of B.results) for (const s of r.steps)
     L.push([r.label, s.count, n(s.updMs), n(s.drawMs), n(s.frameMs)].join(","));
+  // CS037 P2.1 — real-play population peaks (Gate A Q6), a THIRD table appended after the raw ramp
+  // table so the two existing tables above are untouched. Independent of whether the battery ran
+  // this session at all; an empty session simply reads 0 for every population.
+  L.push("");
+  L.push("population,peak_this_run,peak_this_session");
+  for (const p of PEAK_POPS)
+    L.push([p.label, PlayPeaks.run[p.key], PlayPeaks.session[p.key]].join(","));
   return L.join("\n") + "\n";
 }
 
@@ -4530,6 +4552,81 @@ function benchCopyResults() {
     }
   } catch (e) { /* fall through to the download */ }
   benchDownloadResults(text, "no clipboard API");
+}
+
+// ================================================================================================
+// CS037 P2.1 — REAL-PLAY POPULATION PEAKS (PLANNED-FEATURES-CS037.md §3, Gate A Q6)
+// ================================================================================================
+// A passive high-water-mark recorder over the same population set BENCH_POPS enumerates (everything
+// but the mixed run), so Gate A can divide a population's benchmark crossing count by what a real
+// late wave actually reaches. Sampled once per frame from update()'s own cleanup block, AFTER its
+// end-of-frame dead filters — the count recorded is the post-cull count a frame actually drew, not a
+// mid-frame high-water mark that still includes bodies about to die.
+//
+// ⛔ Session-scoped, in memory only. No localStorage key — the Gate A workflow (play, then run the
+// battery, then copy) is one sitting, and this does not justify persisted state. No field on `game`
+// either: per the standing CS016 P3 rule a `game` field needs BOTH the object literal and
+// resetRun(), and a peak that must survive every resetRun() in the session (the session figure) is
+// exactly the shape that rule exists to keep off `game`. `PlayPeaks.reset()` — the run figure only —
+// is called from resetRun() instead, the same "everything a run needs zeroed" seam DiffLog.rows uses.
+//
+// ⛔ Bench.running gates sample() — the same seal input the five guarded functions above read. The
+// battery's synthetic populations are exactly what these peaks get compared against at Gate A, so
+// letting them feed the recorder would make the comparison self-referential. loop() already never
+// calls update() while Bench.running, so sample() is not reachable from real play during a battery
+// either way — but the guard is written explicitly, not left implicit, because update(dt) is also the
+// one function CLAUDE.md's Test rules say headless tests drive directly, bypassing loop().
+const PEAK_POPS = [
+  { key: "garbage",  label: "Debris — singles",       count: () => game.garbage.filter(g => g.pieces === 1).length },
+  { key: "clump",    label: "Debris — clumps",        count: () => game.garbage.filter(g => g.pieces > 1).length },
+  { key: "debris3",  label: "Garbage Satellite — lg", count: () => game.debris.filter(d => d.size === 3).length },
+  { key: "debris2",  label: "Garbage Satellite — md", count: () => game.debris.filter(d => d.size === 2).length },
+  { key: "debris1",  label: "Garbage Satellite — sm", count: () => game.debris.filter(d => d.size === 1).length },
+  { key: "hunter3",  label: "Hunter Satellite — lg",  count: () => game.hunters.filter(h => h.size === 3).length },
+  { key: "hunter2",  label: "Hunter Satellite — md",  count: () => game.hunters.filter(h => h.size === 2).length },
+  { key: "hunter1",  label: "Hunter Satellite — sm",  count: () => game.hunters.filter(h => h.size === 1).length },
+  { key: "saucer",   label: "UFO",                    count: () => game.saucers.length },
+  { key: "particle", label: "Particles",              count: () => game.particles.length },
+  { key: "floater",  label: "Floating text",          count: () => game.floaters.length },
+  { key: "chain",    label: "Tow chain",              count: () => game.chain.length },
+];
+const PlayPeaks = {
+  run: {}, session: {},
+  reset() { for (const p of PEAK_POPS) this.run[p.key] = 0; },
+  sample() {
+    if (Bench.running) return;
+    for (const p of PEAK_POPS) {
+      const n = p.count();
+      if (n > this.run[p.key]) this.run[p.key] = n;
+      if (n > this.session[p.key]) this.session[p.key] = n;
+    }
+  },
+};
+for (const p of PEAK_POPS) PlayPeaks.session[p.key] = 0;
+PlayPeaks.reset();
+
+// Q5 (Gate A) — a linear per-entity extrapolation from each isolated population's OWN 16.7 ms
+// crossing row, weighted by BENCH_MIX, solved for the total count at which the weighted sum crosses
+// 16.7 ms. A population's per-entity cost is that row's frame_ms / count — the one point on its curve
+// actually known to sit at the threshold; the model then assumes that rate holds at every count and
+// that the populations sum independently, which is exactly the assumption this comparison exists to
+// test. A population BENCH_MIX needs that reported "not reached" leaves the whole prediction
+// unavailable rather than extrapolated past a ceiling nobody measured. Takes `results` rather than
+// reading Bench.results so a hand-built fixture can drive it directly.
+function benchPredictMixed(results) {
+  const byKey = new Map(results.map(r => [r.key, r]));
+  const sumW = BENCH_MIX.reduce((s, m) => s + m.w, 0);
+  let weightedRate = 0;
+  for (const m of BENCH_MIX) {
+    const r = byKey.get(m.key);
+    if (!r || !r.cross60 || !r.cross60.count) return { predicted: null, actual: null, ratio: null };
+    weightedRate += (r.cross60.frameMs / r.cross60.count) * (m.w / sumW);
+  }
+  const mixed = byKey.get("mixed");
+  const actual = mixed && mixed.cross60 ? mixed.cross60.count : null;
+  if (weightedRate <= 0) return { predicted: null, actual, ratio: null };
+  const predicted = BENCH_FRAME_60 / weightedRate;
+  return { predicted, actual, ratio: actual ? predicted / actual : null };
 }
 
 // ---------- CS024 P6c: liveLevers() — the registry folded back into the odometer (spec §2.6) ----------
@@ -8182,6 +8279,7 @@ function resetRun(wave, debugRun) {
   game.menu = { screen: null, index: 0, row: 0, col: 0, rebinding: null, modal: null, achTab: ACH_TAB_DEFAULT,
                 nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "", hsFilter: HS_FILTER_DEFAULT }; // ensure no menu carries in
   DiffLog.rows = []; // CS017 P2: dev log is per-run, never carries into a fresh game
+  PlayPeaks.reset();  // CS037 P2.1: the run figure resets here; the session figure does not
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.pendingAch = [];           // CS030 P1: clear any lingering unflushed unlocks
@@ -11374,6 +11472,9 @@ function update(dt) {
   game.garbage = game.garbage.filter(g => !g.dead);
   game.floaters = game.floaters.filter(f => !f.dead);
   game.powerups = game.powerups.filter(p => !p.dead);
+  // CS037 P2.1 (Gate A Q6): sampled AFTER every filter above, so this is the post-cull count a frame
+  // actually drew — never a mid-frame count that still includes a body about to die.
+  PlayPeaks.sample();
   if (hadSaucer && game.saucers.length === 0) AudioSys.saucer(false);
 
   // --- Wave clear --- CS015 P3: clears on debris-empty alone; Hunters and loose garbage

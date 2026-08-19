@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS037 · Phase: P2 · Registry: 110 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P2.1 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS037
 
@@ -26,13 +26,33 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P2 · Registry: 110 · Levers: 1
   and ship velocity are set aside and put back the same way. New BENCHMARK section, registry 106 → 110,
   headers 10 → 11.
 
+- P2.1 — Gate A instrumentation over the shipped P2 benchmark, additive only: no rework of the
+  battery, no existing CSV column altered, no new registry rows. `PEAK_POPS` + `PlayPeaks` add a
+  passive real-play high-water-mark recorder over the same twelve populations the battery enumerates
+  (peak this run, peak this session), sampled once per frame from `update()`'s cleanup block **after**
+  its dead filters, and gated on `Bench.running` — the seal read in the other direction from P2's five
+  guards, verified to hold and left unchanged. `PlayPeaks.reset()` fires from `resetRun()`, mirroring
+  `DiffLog.rows`'s own per-run reset; the session figure has no reset and lives module-level, not on
+  `game` (CS016 P3). `benchPredictMixed()` answers Gate A Q5 in-build: a linear per-entity
+  extrapolation from each isolated population's own 16.7 ms crossing row, weighted by `BENCH_MIX`,
+  solved for the mixed field's predicted crossing — "unavailable" if any weighted population never
+  crossed. `benchReportCSV()` gained new header comment lines (`BENCH_MIX` weights, `navigator.userAgent`
+  / viewport / `devicePixelRatio`, the predicted-vs-actual line, and the extrapolation's stated method)
+  plus a third table (`population,peak_this_run,peak_this_session`) appended after P2's own two tables,
+  which are byte-identical to what P2 shipped.
+
 ## Working / verified
 
-- Full suite: **150 files** (149 + new `test-cs037-p2.js`, 227 assertions), **150 passed, 0 failed,
-  0 skipped**; `node --check` passes. `test-cs037-p2.js` hand-mutation-checked seven times (drop the
-  override restore; alias the draw timer onto the update timer; drop the `saveSettings` seal;
-  extrapolate instead of reporting "not reached"; drop a population; skip the field restore; latch a
-  crossing at the last count instead of the first) — all seven caught.
+- Full suite: **151 files** (150 + new `test-cs037-p2-1.js`, 49 assertions), **151 passed, 0 failed,
+  0 skipped**, run clean twice in a row; `node --check` passes. `test-cs037-p2-1.js`
+  hand-mutation-checked six times (latch the last value instead of the true max; sample before the
+  cleanup filters instead of after; drop the `Bench.running` guard on `sample()`; drop
+  `PlayPeaks.reset()` from `resetRun()`; fall back to a population's `top` row when its `cross60` is
+  `null`, extrapolating past the ceiling; alter an existing summary-table column header) — all six
+  caught. `test-cs026-p3.js`'s TRAP 5 (a byte-literal pin on `resetRun()`'s executable source) needed
+  repointing for `PlayPeaks.reset();`, the same treatment CS036 P5's `dockPingTimer` got — not a scope
+  change to what that pin protects, and its message string also picked up CS036 P5's own
+  previously-unlisted `dockPingTimer`.
 
 - **P2 touched 25 older suite files plus `test-registry.js`, all repoints, none a scope change.** The registry grew by four
   rows and a header and the panel's trailer grew by two action rows, which is what those pins measure:
