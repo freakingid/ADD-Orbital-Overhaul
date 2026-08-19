@@ -42,9 +42,13 @@ const src = scriptSource();
   assert(/pendingAch:\s*\[\]/.test(gameLitBody), "A: game literal declares pendingAch: []");
   assert(/celebration:\s*null/.test(gameLitBody), "A: game literal declares celebration: null");
 
-  const startGameBody = src.slice(src.indexOf("function startGame()"), src.indexOf("function startGame()") + 3000);
-  assert(/game\.pendingAch\s*=\s*\[\]/.test(startGameBody), "A: startGame() resets game.pendingAch = []");
-  assert(/game\.celebration\s*=\s*null/.test(startGameBody), "A: startGame() resets game.celebration = null");
+  // ⛔ REPOINTED BY CS032 P2 and again by CS037 P6 — the reset list lives in resetRun() now (startGame()
+  // is the two-line caller), and `src` is the RAW build, so the window has to clear that function's own
+  // comment blocks. Anchored on resetRun()'s closing brace instead of a byte count, which cannot go stale
+  // again the next time a phase adds a commented reset line.
+  const startGameBody = (() => { const i = src.indexOf("function resetRun(wave, debugRun) {"); return src.slice(i, src.indexOf("\n}\n", i)); })();
+  assert(/game\.pendingAch\s*=\s*\[\]/.test(startGameBody), "A: the shared run reset clears game.pendingAch = []");
+  assert(/game\.celebration\s*=\s*null/.test(startGameBody), "A: the shared run reset clears game.celebration = null");
 
   const onUnlockBody = src.slice(src.indexOf("onUnlock(ach, tierIdx)"), src.indexOf("onUnlock(ach, tierIdx)") + 400);
   assert(/game\.pendingAch\.push\(\{\s*id:\s*ach\.id,\s*name:\s*ach\.name,\s*desc:\s*ach\.desc,\s*tierIdx,\s*pool:\s*ach\.pool\s*\}\)/.test(onUnlockBody),

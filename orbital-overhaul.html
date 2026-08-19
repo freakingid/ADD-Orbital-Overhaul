@@ -8540,6 +8540,9 @@ function resetRun(wave, debugRun) {
                       // startGame() and resumeFromSave() go through — a resumed run starts clean too.
                       // The persisted envelope is deliberately NOT cleared here: it is the crash/refresh
                       // recovery copy, and the next snapshot overwrites it wholesale anyway.
+  Achievements.resumeBaseline = null;  // CS037 P6: the resume baseline is PER-RUN, cleared at the same
+                      // shared seam — a fresh run must never inherit a resumed one's floor, and
+                      // resumeFromSave() re-takes its own snapshot after this reset returns.
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.pendingAch = [];           // CS030 P1: clear any lingering unflushed unlocks
@@ -8638,13 +8641,22 @@ function resetRun(wave, debugRun) {
 //
 //   1. resetRun()  — identical to a fresh run, from the ONE shared list.
 //   2. overwrite   — the save-moment values (FORK-A), on top of the fresh state.
-//   3. resumedRun  — forced true, unconditionally, every call.
-//   4. nextWave()  — announces the level and builds the field, exactly as a fresh run does.
+//   3. baseline    — CS037 P6: snapshot what the loaded stats ALREADY justify, so the flood cannot fire.
+//   4. resumedRun  — forced true, unconditionally, every call.
+//   5. nextWave()  — announces the level and builds the field, exactly as a fresh run does.
 //
-// ⛔ INVARIANT — STEP 2 PRECEDES STEP 4 (spec §2.6). nextWave() reads game.stats.powerupsPicked to gate
-// Achievements.lifetime.maxWaveNoPowerup. Restore the stats after it and that gate reads a fresh-zeroed
-// counter and credits the resumed level to a MAX counter that never earned it. Step 3 stops that from
-// ever reaching disk, but it would still fire a same-session toast the player did not earn.
+// ⛔ INVARIANT — STEP 2 PRECEDES STEPS 3 AND 5 (spec §2.6; CS037 P6 spec §6.3). Two readers of the
+// restored stats, one order, and each fails differently if the restore lands after it:
+//   * nextWave() (step 5) reads game.stats.powerupsPicked to gate Achievements.lifetime.maxWaveNoPowerup.
+//     Restore the stats after it and that gate reads a fresh-zeroed counter and credits the resumed level
+//     to a MAX counter that never earned it. Step 4 stops that from ever reaching disk, but it would
+//     still fire a same-session toast the player did not earn.
+//   * the baseline (step 3) reads game.stats through every active achievement's own cur(). Taken before
+//     step 2 it snapshots ZEROES, suppresses nothing, and the flood fires exactly as it does at HEAD.
+//
+// ⛔ INVARIANT — AND STEP 3 PRECEDES STEP 5, for a second reason of its own. `untouchable`'s cur() reads
+// game.wave, which nextWave() increments: snapshot after it and a slot saved on wave 9 baselines as
+// though it were already on wave 10, silently suppressing an achievement the player then earns for real.
 //
 // ⛔ INVARIANT — game.hudHull FOLLOWS THE RESTORED HP. resetRun() set it from a full-HP ship; leaving it
 // there and dropping hp to 30 plays a phantom drain animation over the resumed run's first half-second.
@@ -8692,13 +8704,21 @@ function resumeFromSave(entry) {
   for (const k in game.stats.powerUsed)
     if (typeof pu[k] === "boolean") game.stats.powerUsed[k] = pu[k];
 
-  // ---- 3. ⛔ UNCONDITIONAL. Every call, every entry, no exceptions ----
+  // ---- 3. ⛔ CS037 P6 — the resume baseline, AFTER step 2 and BEFORE step 5 (the invariants above) ----
+  // Every active achievement's cur(), read once, off the stats that were just restored. It marks nothing
+  // unlocked; evaluate() reads it as a floor for the rest of this run and resetRun() clears it.
+  Achievements.snapshotResumeBaseline();
+
+  // ---- 4. ⛔ UNCONDITIONAL. Every call, every entry, no exceptions ----
   // This is the flag that makes FORK-A's save-moment values safe to ship: the run that just loaded can
   // no longer reach the high-score table or persist an achievement/lifetime write, so score banked
   // before the load cannot be replayed into a record. There is no "earn it back" path, by design.
+  //   CS037 P6 narrows ONE clause of that, and only one: an unlock that crosses ABOVE step 3's baseline
+  // was genuinely earned after the load, and now persists through Achievements.mergeUnlock() — which
+  // writes unlock ids only. The lifetime COUNTERS remain barred for the whole run (FORK-A.1 -> b2).
   game.resumedRun = true;
 
-  // ---- 4. The level the player saved on ----
+  // ---- 5. The level the player saved on ----
   // Its voice line and banner fire normally: the player wants to know where they landed.
   nextWave();
 }
@@ -9370,6 +9390,14 @@ const Achievements = {
   lifetimeUnlocked: null,         // Set of NON-tiered lifetime ids unlocked ever
   lifetimeTiers: null,            // { tieredId: highestTierIdxReached } — the per-id tier state (v3.0 P7)
   _saveAccum: ACH_SAVE_EVERY,     // periodic-save countdown
+  // CS037 P6 (spec §6.3): THE RESUME BASELINE — { id: value }, snapshotted at resumeFromSave(), and
+  // null on every other run (which is what makes evaluate() byte-identical to its pre-P6 self there).
+  // ⛔ IT IS A FLOOR, NEVER AN UNLOCK. It must never be folded into weeklyUnlocked, lifetimeUnlocked or
+  // lifetimeTiers: those three are week-scoped and persisted, so marking them at resume leaks into any
+  // FRESH run later in the same session — the naive fix, and strictly worse than the bug (spec §6.1).
+  // Cleared in resetRun(), the one seam both run paths share; module state, not a game.* field, which
+  // is what keeps it clear of the standing CS016 P3 both-places rule.
+  resumeBaseline: null,
 
   // --- ISO 8601 week + week-year from a Date, computed in UTC (Monday-based, no DST ambiguity). ---
   isoWeekYear(date) {
@@ -9428,9 +9456,19 @@ const Achievements = {
     // ⛔ CS037 P2 (spec §3.3): benchmark mode is SEALED — no unlock may be evaluated from it.
     if (Bench.running) return;
     const s = game.stats, l = this.lifetime;
+    // CS037 P6 (spec §6.3): on a resumed run this is the floor the LOAD itself arrived at; null on every
+    // other run, so both branches below reduce to exactly their pre-P6 behaviour when it is absent.
+    const base = this.resumeBaseline;
     // Non-tiered single-goal path (weekly + non-tiered lifetime): unlock once at cur >= goal.
+    // ⛔ CS037 P6: an achievement the LOADED stats already satisfied was not earned after the load, so it
+    // neither toasts nor enters the unlock set for the rest of that run. Skipping the set.add is the half
+    // that matters — entering lifetimeUnlocked in memory is what leaks `untouchable` / `max_haul` into the
+    // next NON-resumed run's save() (spec C7-rev), which is a data-integrity bug, not just a fanfare one.
+    // An id absent from the snapshot reads undefined and `undefined >= goal` is false, so anything the
+    // baseline never covered behaves exactly as it always did.
     const checkSingle = (ach, set) => {
       if (set.has(ach.id)) return;
+      if (base && base[ach.id] >= ach.goal) return;
       if (ach.cur(s, l) >= ach.goal) { set.add(ach.id); this.onUnlock(ach); }
     };
     for (const ach of this.activeWeekly()) checkSingle(ach, this.weeklyUnlocked);
@@ -9441,6 +9479,12 @@ const Achievements = {
       // first not-yet-met tier. Persist the highest tier index reached per id.
       const val = ach.cur(s, l);
       let reached = this.tierIndex(ach);
+      // CS037 P6: the baseline RAISES THE LOOP'S FLOOR — it does not write lifetimeTiers. A tier the
+      // snapshot already justified is skipped outright rather than recorded silently, so this branch
+      // cannot mark a tier either. Every tiered cur() reads only the lifetime counters today, and a
+      // resume does not overwrite those, so this line can currently only ever be a no-op; the baseline
+      // is blanket anyway (spec C7-rev) so it cannot rot the day a tiered cur() reads per-game state.
+      if (base && ach.id in base && base[ach.id] > reached) reached = base[ach.id];
       for (let ti = reached + 1; ti < ach.tiers.length && val >= ach.tiers[ti]; ti++) {
         this.lifetimeTiers[ach.id] = ti;
         this.onUnlock(ach, ti);
@@ -9464,6 +9508,37 @@ const Achievements = {
       }
     }
   },
+  // ---------- CS037 P6: the resume baseline (spec §6.3) ----------
+  // resumeFromSave() copies a slot's game.stats over the fresh ones, and the very next evaluate() finds a
+  // batch of achievements satisfied on the same frame — the flood. deriveLifetime() directly above is the
+  // silent catch-up that exists to prevent exactly that, but it runs ONCE, from init(), while game.stats
+  // is still fresh, and it walks LIFETIME only. This is its resume-time, both-pools sibling.
+  //
+  // ⛔ IT IS A FLOOR, NOT A CATCH-UP. deriveLifetime() marks things unlocked; this one marks NOTHING —
+  //    weeklyUnlocked, lifetimeUnlocked and lifetimeTiers are all untouched here, by construction.
+  // ⛔ BLANKET, BOTH POOLS (spec C7-rev). All 16 weeklies read per-game stats, and so do the LIFETIME ids
+  //    `untouchable` (game.wave + s.everBelowHalf) and `max_haul` (s.maxChainVisit) — both non-tiered, so
+  //    both run through evaluate()'s checkSingle into lifetimeUnlocked, which the NEXT non-resumed run of
+  //    the same session persists. Blanket is simpler than filtering to the eighteen that read `s` today,
+  //    and it cannot rot the day another cur() starts reading per-game state.
+  // ⛔ ONE CALL SITE, between resumeFromSave()'s step 2 and step 5 — see the invariant block there.
+  //
+  // Two entry shapes, matching what evaluate() compares each against: a TIERED id stores the tier index
+  // its snapshot value already justifies (deriveLifetime()'s own walk, read-only), and everything else
+  // stores the raw cur() value, which evaluate() compares against that achievement's own goal.
+  snapshotResumeBaseline() {
+    const s = game.stats, l = this.lifetime, base = {};
+    const record = ach => {
+      const val = ach.cur(s, l);
+      if (!ach.tiers) { base[ach.id] = val; return; }
+      let idx = -1;
+      for (let ti = 0; ti < ach.tiers.length && val >= ach.tiers[ti]; ti++) idx = ti;
+      base[ach.id] = idx;
+    };
+    for (const ach of this.activeWeekly()) record(ach);   // the 5 active ids — the only ones evaluate() walks
+    for (const ach of this.LIFETIME) record(ach);
+    this.resumeBaseline = base;
+  },
   // Unlock notification. A tiered unlock passes its tier index so the toast names the tier
   // ("Recycling Magnate — Gold"); a single-goal unlock omits it. Observe-only: never mutates state.
   onUnlock(ach, tierIdx) {
@@ -9472,6 +9547,9 @@ const Achievements = {
     game.pendingAch.push({ id: ach.id, name: ach.name, desc: ach.desc, tierIdx, pool: ach.pool });
     AudioSys.achievement();
     this.save(); // persist the moment something is earned, so an unlock is never lost
+    // CS037 P6 (spec §6.4): ...and the one run save() above refuses. The two are mutually exclusive by
+    // construction — save() returns for a resumed run, mergeUnlock() returns for every other one.
+    this.mergeUnlock(ach, tierIdx);
   },
 
   // Accumulate play time and periodically flush lifetime progress (bounded storage writes).
@@ -9508,6 +9586,62 @@ const Achievements = {
       };
       ls.setItem(Profiles.keyFor(this.STORAGE_KEY), JSON.stringify(data));   // CS031 P1: per-profile
     } catch (e) { /* quota / privacy mode / disabled — ignore */ }
+  },
+  // ---------- CS037 P6: the targeted merge write (spec §6.4; FORK-CS037-A -> b, A.1 -> b2) ----------
+  // save() above is barred for a resumed run by CS032 P2, so a genuinely post-baseline unlock was toasted
+  // and never received — the player shown a reward they do not get. This path honours exactly that unlock
+  // and nothing else.
+  //
+  // ⛔ DO NOT "SIMPLIFY" THIS BY LIFTING save()'s resumedRun clause. (b1) was REFUSED, not merely unchosen
+  // (spec §2.2): save() writes ONE blob with `lifetime: {...counters}` in it, and several of those are ++
+  // counters (fullChains, heavyHaulerEvents, pacifistTowEvents...), so lifting the bar would let a player
+  // bank the same events again on every reload of one slot — precisely what CS032 P2's bar exists to stop.
+  // This function therefore READ-MODIFY-WRITES and touches only the unlock structures; the stored
+  // `lifetime` object goes back exactly as it was read.
+  //
+  // ⛔ game.debugRun stays an ABSOLUTE bar. It is folded into the one gate below rather than written as
+  // its own `if (game.debugRun) return;` line, because test-cs032-p2.js §M pins that the single-flag form
+  // is gone from the build. ⛔ Bench.running bars it too: evaluate() returns before this is reachable,
+  // exactly as it does for save(), and the guard is what keeps the CS037 P2 seal structural.
+  //
+  // ⛔ NO STORED BLOB -> WRITE NOTHING. Creating one here would retire init()'s v1-migration branch (which
+  // is keyed on the v2 key being ABSENT) for the legacy profile, and it would buy nothing: a genuine
+  // unlock is already in the in-memory set, so the next non-resumed run's save() persists it anyway. The
+  // merge is about durability NOW — surviving a browser close after the resumed run — not about the
+  // unlock surviving at all.
+  mergeUnlock(ach, tierIdx) {
+    if (!game.resumedRun || game.debugRun) return;   // ⛔ save() already owns every other run
+    if (Bench.running) return;                       // ⛔ the CS037 P2 seal
+    const ls = storageOK(); if (!ls) return;
+    try {
+      const key = Profiles.keyFor(this.STORAGE_KEY);        // CS031 P1: per-profile, at BOTH sites
+      const raw = ls.getItem(key);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object" || Array.isArray(data)) return;
+      if (ach.pool === "weekly") {
+        // Week-scoped, exactly as init() reads it back: a row keyed to a DIFFERENT week is dead data
+        // there (init() drops it wholesale), so it is replaced rather than appended to.
+        const w = data.weekly;
+        const same = w && typeof w === "object" && w.key === this.weekKey;
+        const list = same && Array.isArray(w.unlocked) ? w.unlocked : [];
+        if (list.indexOf(ach.id) >= 0) return;
+        list.push(ach.id);
+        data.weekly = { key: this.weekKey, unlocked: list };
+      } else if (tierIdx === undefined) {
+        const list = Array.isArray(data.lifetimeUnlocked) ? data.lifetimeUnlocked : [];
+        if (list.indexOf(ach.id) >= 0) return;
+        list.push(ach.id);
+        data.lifetimeUnlocked = list;
+      } else {
+        // Monotonic, exactly like lifetimeTiers itself: only ever raise a stored index, never lower one.
+        const tiers = (data.lifetimeTiers && typeof data.lifetimeTiers === "object") ? data.lifetimeTiers : {};
+        if (typeof tiers[ach.id] === "number" && tiers[ach.id] >= tierIdx) return;
+        tiers[ach.id] = tierIdx;
+        data.lifetimeTiers = tiers;
+      }
+      ls.setItem(key, JSON.stringify(data));
+    } catch (e) { /* corrupt / quota / privacy mode — a deferred unlock beats a crash */ }
   },
   // Copy persisted lifetime COUNTERS over the defaults (only known numeric keys — unknown keys and
   // non-numbers ignored). Shared by the v2 load and the v1 migration; both carry raw counters intact.

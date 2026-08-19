@@ -205,6 +205,12 @@ function seededRun(X, wave = 12) {
   X.Achievements.evaluate();                          // onUnlock() funnels through save()
   X.Achievements.save();
   X.Achievements.tick(999999);                        // would otherwise force the periodic flush
+  // ⚠ NARROWED IN MEANING BY CS037 P6, not in outcome. That phase adds Achievements.mergeUnlock(), a
+  // SECOND writer of this key that a resumed run CAN reach — but only for an unlock crossing above the
+  // resume baseline, only into an already-stored blob, and never touching the lifetime counters (spec
+  // §2.2, FORK-A.1 -> b2). The delete above removes the blob, so there is nothing to merge into and this
+  // assertion still measures what it always did: save()'s own wholesale write is suppressed. What THIS
+  // section owns — CS032 P2's gate — is unchanged; test-cs037-p6.js §G owns the merge write.
   assert(store[key] === undefined, "E: ⛔ nothing reached the achievements key during a resumed run");
   assert(X.Achievements.lifetimeUnlocked.size > 0 || X.game.toasts.length > 0 || X.game.pendingAch.length > 0,
     "E: (non-vacuous) the unlock DID happen in memory — only the write is suppressed");

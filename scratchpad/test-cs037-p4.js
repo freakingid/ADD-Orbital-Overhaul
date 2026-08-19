@@ -577,8 +577,12 @@ console.log("(H) benchmark mode does not write to the buffer, and P2's five guar
   // Five seal guards (addScore / saveSettings / HighScores.save / Achievements.save /
   // Achievements.evaluate), plus benchCopyResults()'s own re-entrancy guard, plus PlayPeaks.sample()'s,
   // plus this phase's tick(). A dropped guard shows up here as a lower count.
-  eq((stripped.match(/if \(Bench\.running\) return;/g) || []).length, 8,
-    "H: ⛔ P2's five seal guards + benchCopyResults' + PlayPeaks.sample()'s + this phase's tick() — eight in all, none dropped");
+  //   ⛔ RAISED BY CS037 P6 — 8 -> 9. Achievements.mergeUnlock() is a NEW persistence entry point (the
+  // resumed-run targeted merge write), so it carries the seal guard for the same reason save() does. A
+  // count, not a list, is what this pin has always been; the number moves when the seal legitimately
+  // grows, and a DROPPED guard still reads as a shortfall.
+  eq((stripped.match(/if \(Bench\.running\) return;/g) || []).length, 9,
+    "H: ⛔ P2's five seal guards + benchCopyResults' + PlayPeaks.sample()'s + tick()'s + CS037 P6's mergeUnlock() — nine in all, none dropped");
   assert(stripped.includes("if (Bench.running) { Bench.frame(); requestAnimationFrame(loop); return; }"),
     "H: loop() still runs neither update() nor draw() during a battery");
 

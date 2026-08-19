@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS037 · Phase: P5 · Registry: 111 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P6 · Registry: 111 · Levers: 18
 
 ## Phase ledger — CS037
 
@@ -74,10 +74,42 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P5 · Registry: 111 · Levers: 1
   strictly below `health_low`), `VOICE_CRITICAL` true, **`VOICE_QUEUE_MAX` 4 → 5**, `VOICE_STILL_TRUE`
   predicate `game.chain.length === 0`. No registry rows, no lever change.
 
+- P6 — the resume achievement baseline + FORK-CS037-A.1's (b2) targeted merge write (spec §6, §2.2).
+  Root cause confirmed by inspection, exactly as C7-rev states it (the prompt's `load()` is the build's
+  `init()` — same function, there is no `load()`). `Achievements.resumeBaseline`, module state and NOT a
+  `game.*` field, is taken by `snapshotResumeBaseline()` **blanket over both pools** as
+  `resumeFromSave()`'s new **step 3**, between the stats overwrite and `nextWave()`; `evaluate()` reads
+  it as a floor in two places (`checkSingle` returns before its `set.add`; the tiered loop's start index
+  is raised, so a baselined tier is SKIPPED, not silently recorded). ⛔ It marks nothing —
+  `weeklyUnlocked` / `lifetimeUnlocked` / `lifetimeTiers` untouched. Cleared in `resetRun()`.
+  `Achievements.mergeUnlock()` is a second, narrow writer of `afd_achievements_v2`: read-modify-write,
+  unlock ids and tier indices only, stored `lifetime` counters returned byte-identical, guarded
+  `!game.resumedRun || game.debugRun` (combined form deliberately — `test-cs032-p2.js` §M pins the
+  single-flag `if (game.debugRun) return;` gone) plus the `Bench.running` seal, 8 guards → 9. With no
+  stored blob it writes nothing. `save()` byte-unchanged, `drawToasts()` untouched, no registry rows.
+
 ## Working / verified
 
-- Full suite: **153 files** (152 + new `test-cs037-p5.js`, 152 assertions), **153 passed, 0 failed,
-  0 skipped** after this phase's commit landed; `node --check` passes on the extracted script.
+- Full suite: **154 files** (153 + new `test-cs037-p6.js`, 229 assertions), **154 passed, 0 failed,
+  0 skipped**; `node --check` passes. `test-cs037-p6.js` hand-mutation-checked **fifteen** times, all
+  fifteen caught and thirteen BEHAVIOURALLY rather than only by a source pin: drop the `checkSingle`
+  gate / the tiered floor / `onUnlock`'s `mergeUnlock()` call / `resetRun()`'s clear; snapshot before the
+  stats overwrite; snapshot after `nextWave()`; the naive fix (snapshot marks things unlocked); snapshot
+  weekly-only; lifetime-only; the merge write writing `lifetime` counters too (i.e. (b1)); it dropping
+  the `debugRun` bar; it dropping the `Bench.running` guard; `>` for `>=` in the gate; the tiered floor
+  off by one; the merge write creating a blob where none was stored.
+
+- **P6 touched three older suite files plus one comment-only annotation, all repoints, none a scope
+  change.** `test-cs026-p3` TRAP 5 gained `Achievements.resumeBaseline = null;` in `DROPPED_LINES` (the
+  treatment P2.1's `PlayPeaks.reset();` and P4's `Telemetry.reset();` got); `test-cs030-p1` §A read the
+  reset list through a 3000-**byte** window off `function startGame()` that this phase's commented line
+  pushed past, re-anchored on `resetRun()`'s closing brace so it cannot go stale that way again;
+  `test-cs037-p4` §H's `Bench.running` guard COUNT is 8 → 9. The annotation is `test-cs032-p2` §E: it
+  still passes and still measures what it always did (the `delete` above it leaves no blob to merge
+  into), but its claim is narrower than it reads now, and the comment says so.
+
+- Previously: full suite at P5 was **153 files** (152 + new `test-cs037-p5.js`, 152 assertions), **153 passed, 0 failed,
+  0 skipped** after P5's own commit landed; `node --check` passed on the extracted script.
   `test-cs037-p5.js` hand-mutation-checked **fourteen** times, all fourteen caught, every one reporting
   cleanly rather than crashing: release moved above the lethal exit; release ALSO hooked on the lethal
   branch; the empty-chain guard dropped; the release spending a guard charge (FORK-B1); the release
@@ -124,24 +156,19 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P5 · Registry: 111 · Levers: 1
   `update()`/`draw()` outright, and 60 s of driven `update()` under `Bench.running` produces no telemetry
   row and does not move the accumulator.
 
-- Previously: `test-cs037-p2-1.js`
-  hand-mutation-checked six times (latch the last value instead of the true max; sample before the
-  cleanup filters instead of after; drop the `Bench.running` guard on `sample()`; drop
-  `PlayPeaks.reset()` from `resetRun()`; fall back to a population's `top` row when its `cross60` is
-  `null`, extrapolating past the ceiling; alter an existing summary-table column header) — all six
-  caught. `test-cs026-p3.js`'s TRAP 5 (a byte-literal pin on `resetRun()`'s executable source) needed
-  repointing for `PlayPeaks.reset();`, the same treatment CS036 P5's `dockPingTimer` got — not a scope
-  change to what that pin protects, and its message string also picked up CS036 P5's own
-  previously-unlisted `dockPingTimer`.
+- Previously: `test-cs037-p2-1.js` hand-mutation-checked six times, all six caught (latch-vs-max;
+  sample before the cleanup filters; drop `sample()`'s `Bench.running` guard; drop `PlayPeaks.reset()`
+  from `resetRun()`; fall back to a population's `top` row past the ceiling; alter a summary column
+  header). `test-cs026-p3` TRAP 5 took `PlayPeaks.reset();` into `DROPPED_LINES`, the CS036 P5
+  `dockPingTimer` treatment, and its message picked up that previously-unlisted line too.
 
-- **P2 touched 25 older suite files plus `test-registry.js`, all repoints, none a scope change.** The registry grew by four
-  rows and a header and the panel's trailer grew by two action rows, which is what those pins measure:
-  nine `DEBUG_VARS.length + 4` → `+ 6`; six section-header lists gaining `BENCHMARK`; six "registry
-  unchanged since my parent" allowances widened by four; `test-cs018-p2`/`test-cs015-p4`/`test-cs017-p2`
-  re-derived their trailer offsets (P2 now walks the two new rows); `test-cs026-p4`'s FloatText call-site
-  count 7 → 8; `test-cs023-p3`'s `/ram/i` id pattern narrowed to `ram(?![a-z])|ramming` (it matched
-  `benchRampStep`). ⛔ `Achievements.save()`'s shipped `debugRun || resumedRun` line is byte-unchanged —
-  the seal is a SECOND line under it, precisely because two files pin that text and its position.
+- **P2 touched 25 older suite files plus `test-registry.js`, all repoints, none a scope change** — the
+  registry grew four rows and a header and the panel trailer two action rows, which is exactly what
+  those pins measure (nine `DEBUG_VARS.length + 4` → `+ 6`; six header lists gaining `BENCHMARK`; six
+  "unchanged since my parent" allowances widened by four; three re-derived trailer offsets;
+  `test-cs026-p4`'s FloatText count 7 → 8; `test-cs023-p3`'s `/ram/i` narrowed to
+  `ram(?![a-z])|ramming`). ⛔ `Achievements.save()`'s shipped `debugRun || resumedRun` line is
+  byte-unchanged — the seal is a SECOND line under it, because two files pin that text and its position.
 
 - Three older suite files pin `damageShip()` / the hazards-vs-ship arm and needed touching because
   this phase's edit landed inside what they pin — none of it a scope change to what they protect:
@@ -156,6 +183,24 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P5 · Registry: 111 · Levers: 1
     function signature; all three repointed to the new (srcTag-carrying) literal text.
 
 ## Known issues
+
+- **⛔ NEW (P6) — a resume can still fanfare `master_field` / `no_powerups` tiers, OUTSIDE the baseline
+  by design.** `nextWave()` credits `lifetime.maxWave` and (behind its `powerupsPicked === 0` gate)
+  `maxWaveNoPowerup` at step 5, AFTER step 3's snapshot, so on a store that does not already record the
+  slot's wave — fresh install, a profile that never played that deep, a lifetime reset — those two MAX
+  ladders can cross on the resume frame. Pre-existing (CS032 P2 bars the write, not the in-memory
+  credit) and unreachable for a player whose own store recorded the wave they saved on. The cure would
+  be re-snapshotting after `nextWave()`, which the ⛔ placement forbids because `untouchable`'s `cur()`
+  reads `game.wave`. `test-cs037-p6.js` works around it with realistic fixture stores.
+
+- **⛔ NEW (P6) — P8's closing contract is short by two items, and this file is at its cap.** P8's GDD
+  §2 list names the tow release, the "Payload lost." split and the one-powerup rule; **the resume
+  baseline and the merge write are shipped behaviour too** (§2.20 / §2.22), and `CLAUDE.md`'s Save data
+  section now understates `afd_achievements_v2` — `Achievements.save()` is no longer its only writer.
+  Not edited here: exactly one `⛔ INVARIANT` change belongs to this changeset (this phase's
+  `resumeFromSave()` ordering, made in the build) and P8 owns both sweeps. Joins P4's key-list gap and
+  P5's `VOICE_CRITICAL` gap on that list. ⛔ **`STATUS.md` is at ~400 lines** even after this phase
+  compressed P2's and P2.1's superseded repoint blocks; P7 crosses it, and the roll resets it.
 
 - **⛔ NEW (P5) — a THIRD moving-`HEAD` pin site, `test-cs025-p4.js`'s TRAP 3.** It asserts
   `VOICE_LINES` and `VOICE_PRIORITY` are "unchanged from HEAD" via `git show HEAD:`, so it read red
@@ -294,9 +339,9 @@ None.
 
 ## Next up
 
-- **CS037 is in flight (P1, P2, P2.1, P4, P5 done; P3 DROPPED at Gate A). P6 is next** — the resume
-  baseline plus FORK-A.1's (b2) targeted merge write (spec §6). Then P7 (delivery payout nerf), the
-  BLOCKING Gate B, then P8.
+- **CS037 is in flight (P1, P2, P2.1, P4, P5, P6 done; P3 DROPPED at Gate A). P7 is next** — the
+  delivery payout nerf and the two DELIVERY knobs (spec §7, registry 111 → 113). Then the BLOCKING
+  Gate B, then P8.
 
 - **P8's `CLAUDE.md` sweep now has a second item beyond P4's key list:** the Audio section's
   `VOICE_CRITICAL` rule names the critical set as "the four `VOICE_CRITICAL` events" and lists
