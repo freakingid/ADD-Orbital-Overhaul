@@ -1,51 +1,35 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS036 · Phase: P7 (closed) · Registry: 106 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P1 · Registry: 106 · Levers: 18
 
-## Phase ledger — CS036
+## Phase ledger — CS037
 
-- P1 — the level-end freeze primitive, built and proved INERT. `game.levelEndFreeze` +
-  `updateLevelEndFreeze(dt)`, a reduced sim above `update()`'s early-return; `tickLevelBanner(dt)`
-  extracted so both paths share one banner countdown.
-
-- P2 — the completion hold. The wave-clear latch arms the ceremony (`levelDone` + `resetMenuNav()`),
-  `levelEndHold` RETIRED (registry 106 → 105), Perfect Wave and CS030 P5's fork moved to the arm and
-  to `dismissLevelDone()`, `drawLevelDone()` added.
-
-- P3 — the freeze TAIL, the pulse restriction, the panel header. The freeze survives the confirm and
-  `nextWave()`, lifting when the "Level N+1" label starts fading; the pulse moves to the grace, the
-  blink stays on `levelEndSafe`; `menuPanel()`'s `isWave` title ternary deleted; the caption clock
-  runs inside the freeze; CS035's banner-crossing edge re-derived.
-
-- P4 — the Hunter Satellite heartbeat punch. Four `def`s retuned (envelope 87/125 → 80/150, grow
-  55 → 900 %/s, shrink 28 → 20 %/s) and `hunterPulseGrow`'s bound raised 300 → 5000 %/s. No new
-  mechanism, no colour change, `LEVERS` still 18.
-
-- P5 — `dockPingCooldown` (0.50 s, DELIVERY; registry 105 → **106**) rate-limits the dock push's
-  `shieldPing()` only — the push is untouched and the feature is off at 0. FLAG-CS034-e closed by
-  shortening `debrisBounceRestitution`'s label; id unchanged.
-
-- P6 — suite triage. All three standing failures were **stale tests; the build is untouched**. Two
-  share one cause (a weekly achievement unlocking in 20 weeks of 53); the third was a pin against the
-  moving `HEAD`, not a fixed SHA. FLAG-CS031-c is the same defect as `test-f2` §g, fixed in the test.
-
-- P7 — closing. Gate folded in with **zero `def` edits**, `GAME_VERSION` → **1.0.0.36** (seven live
-  version pins re-pointed), GDD §2.20.1 rewritten plus §2.7/§2.19/§2.20/§3, `DIFFICULTY-LEVERS.md` and
-  `CLAUDE.md` verified needing no edit, `log/CS036.md` written, both planning docs archived.
+- P1 — per-source damage attribution, instrumentation only (spec §5.5, C4-rev). `damageShip()` gains
+  a `srcTag` parameter; ten flat `game.stats.dmgFrom*` accumulators (Garbage Satellite x3 sizes,
+  Hunter Satellite x3 sizes, UFO body x2 sizes, UFO shot x2 sizes), accumulated on the non-lethal
+  branch only, mirroring `dmgThisWave`'s own placement. The merged hazard loop (`[...game.debris,
+  ...game.hunters]`) discriminates via the existing `h instanceof HunterSatellite` test plus `h.size`
+  — no new field on either class. Hostile `Bullet` gains a `small` field, set only at its one spawn
+  site inside `Saucer.update()`; the player's spawn site is untouched (the constructor param defaults
+  `false`). No gameplay behaviour change: knockback, i-frames, scoop decay, `dmgThisWave`,
+  `hitsSurvived`, `everBelowHalf` and the CS023 P3 mutual-kill arms are all byte-identical in effect.
 
 ## Working / verified
 
-- Full suite on a full clone: **148 files, 148 passed, 0 failed, 0 skipped, 0 timed out**;
-  `node --check` passes. ⛔ **Zero skips AND zero failures — the first zero-failure closing phase since
-  CS034.** `test-registry.js` confirms registry **106**, headers **10**, `LEVERS` **18**,
-  `POWERUP_DROP_TYPES` **5**.
+- Full suite: **149 files** (148 + new `test-cs037-p1.js`, 243 assertions), **149 passed, 0 failed,
+  0 skipped**; `node --check` passes. `test-cs037-p1.js` hand-mutation-checked twice (a merged-loop
+  tag swap, and moving the accumulation above the lethal check) — both caught.
 
-- The build's remaining `levelEndHold` mentions are deliberate tombstones (the registry comment, the
-  wave-clear branch, `dismissLevelDone()`'s header). Nothing reads `DEBUG.levelEndHold`, and no
-  registry row carries the id.
-
-- Four new test files this changeset — `test-cs036-p1` (52 assertions), `-p2` (127), `-p3` (121),
-  `-p4` (52), `-p5` (32) — with 8, 4, 12, 4 and 4 hand-mutated regressions confirmed to fail them
-  respectively.
+- Three older suite files pin `damageShip()` / the hazards-vs-ship arm and needed touching because
+  this phase's edit landed inside what they pin — none of it a scope change to what they protect:
+  - `test-cs024-p6.js` §H TRAP 2 compares against a genuinely moving `git show HEAD:...` (a pre-existing
+    defect, same class as the two already flagged below for `test-cs023-p3.js`) — it read red only
+    until this phase's own commit landed, then passed vacuously again. Not touched.
+  - `test-cs024-p1.js` §F TRAP 2 pins against a **fixed** historical SHA (`8540f2a`, CS024 P1's own
+    parent) and correctly caught a real diff. Narrowed the same way CS033 P3's `saucerKills` line
+    already was in the same section: the new `srcTag` lines are stripped before the byte-compare, and
+    separately asserted present so the strip can't pass by accident.
+  - `test-cs023-p3.js` had three byte-literal pins on the two `damageShip()` call sites and its
+    function signature; all three repointed to the new (srcTag-carrying) literal text.
 
 ## Known issues
 
@@ -139,8 +123,9 @@ None.
 
 ## Next up
 
-- **CS036 is closed. No changeset is in flight.** The next one opens with a `PLANNED-FEATURES-CS037.md`
-  / `IMPLEMENTATION-PHASES-CS037.md` pair; `STATUS.md` above is the whole of the current state.
+- **CS037 is in flight (P1 done).** `PLANNED-FEATURES-CS037.md` / `IMPLEMENTATION-PHASES-CS037.md`
+  are the live planning pair; P1 is prerequisite instrumentation for Item D's telemetry buffer (§5),
+  which is not yet built.
 
 - **The first thing any CS037 gate should do is clear the debug overrides** (FLAG-CS036-a). Every
   slider answer this changeset returned, and every one a future gate returns, is only as good as

@@ -6171,10 +6171,11 @@ class Ship {
 }
 
 class Bullet {
-  constructor(x, y, vx, vy, hostile) {
+  constructor(x, y, vx, vy, hostile, small = false) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
     this.life = hostile ? 1.4 : BULLET_LIFE;
     this.hostile = hostile;
+    this.small = small; // CS037 P1: shooter size, set from Saucer.this.small at its one hostile spawn site
     this.dead = false;
   }
   update(dt) {
@@ -6899,7 +6900,7 @@ class Saucer {
       }
       const shotSpeed = ufoShotSpeedPx(this.small); // CS024 P5: ufoShotSpeedBig/Small levers
       game.bullets.push(new Bullet(this.x, this.y,
-        Math.cos(a) * shotSpeed, Math.sin(a) * shotSpeed, true));
+        Math.cos(a) * shotSpeed, Math.sin(a) * shotSpeed, true, this.small));
       this.fireTimer = this.rollFireTimer(this.small ? SAUCER_FIRE_SMALL : SAUCER_FIRE_BIG);
     }
   }
@@ -7258,6 +7259,13 @@ function resetGameStats() {
                              // breakChain only — a guarded absorb and scatterChain() don't count). The
                              // chain-guard drop-weight pity counter, read by guardDropWeight(); NOT
                              // reset in nextWave() — pity carries across waves within a run, like cargoMax growth
+    // CS037 P1 (spec §5.5): per-source HP attribution, flat and additive — HP actually deducted,
+    // non-lethal hits only. Ten categories: Garbage Satellite x3 sizes, Hunter Satellite x3 sizes,
+    // UFO body x2 sizes, UFO shot x2 sizes.
+    dmgFromDebris3: 0, dmgFromDebris2: 0, dmgFromDebris1: 0,
+    dmgFromHunter3: 0, dmgFromHunter2: 0, dmgFromHunter1: 0,
+    dmgFromUfoBodyLarge: 0, dmgFromUfoBodySmall: 0,
+    dmgFromUfoShotLarge: 0, dmgFromUfoShotSmall: 0,
     gameEnded: false         // set at game over so end-of-game achievements can evaluate
   };
 }
@@ -8961,7 +8969,9 @@ function powerTypesUsed(s) {
 // hits are ignored, so only one hit lands per stun window even with several overlapping
 // hazards in a frame. Lethal damage routes to killShip (game over). Returns whether
 // damage was actually applied.
-function damageShip(amount, srcX, srcY) {
+// CS037 P1: srcTag is one of the ten source-attribution keys below (or undefined) — observational
+// only, attributed on the non-lethal branch, where HP is actually deducted.
+function damageShip(amount, srcX, srcY, srcTag) {
   const s = game.ship;
   // CS012 P5 auto-shield: a reactive last-resort save at critical hull. When enabled and the hull is at/below
   // the low-health threshold, an incoming hit spends SHIELD_HIT_COST energy to raise the shield and eat the hit
@@ -9009,6 +9019,20 @@ function damageShip(amount, srcX, srcY) {
   game.stats.dmgThisWave++;
   Achievements.lifetime.hitsSurvived++;
   if (s.hp < SHIP_MAX_HP * 0.5) game.stats.everBelowHalf = true;
+  // CS037 P1 (spec §5.5): per-source HP attribution, observational only. Ten flat accumulators,
+  // one per category; an unrecognised/absent srcTag attributes nothing.
+  switch (srcTag) {
+    case "debris3": game.stats.dmgFromDebris3 += amount; break;
+    case "debris2": game.stats.dmgFromDebris2 += amount; break;
+    case "debris1": game.stats.dmgFromDebris1 += amount; break;
+    case "hunter3": game.stats.dmgFromHunter3 += amount; break;
+    case "hunter2": game.stats.dmgFromHunter2 += amount; break;
+    case "hunter1": game.stats.dmgFromHunter1 += amount; break;
+    case "ufoBodyLarge": game.stats.dmgFromUfoBodyLarge += amount; break;
+    case "ufoBodySmall": game.stats.dmgFromUfoBodySmall += amount; break;
+    case "ufoShotLarge": game.stats.dmgFromUfoShotLarge += amount; break;
+    case "ufoShotSmall": game.stats.dmgFromUfoShotSmall += amount; break;
+  }
   for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
   AudioSys.hit();
   // Scoop decays by DAMAGE, not time (v3.3 P3): every SCOOP_HITS_PER_LEVEL non-lethal hits costs one
@@ -10582,7 +10606,7 @@ function update(dt) {
             game.ship.energy = Math.max(0, game.ship.energy - SHIELD_HIT_COST);
             game.stats.deflects++; // Shield Surfer (F9): a hostile bullet blocked by the shield
             AudioSys.shieldPing();
-          } else damageShip(DMG_BULLET, b.x, b.y);
+          } else damageShip(DMG_BULLET, b.x, b.y, b.small ? "ufoShotSmall" : "ufoShotLarge");
         }
       }
       // hostile bullet vs tow chain
@@ -10654,7 +10678,10 @@ function update(dt) {
             shieldDeflect(h);
           }
         } else {
-          const applied = damageShip(h.damage, h.x, h.y);
+          // CS037 P1 (spec §5.5): discriminate via the same instanceof test Close Shave uses below,
+          // plus h.size — no new field on either DebrisSatellite (Garbage Satellite) or HunterSatellite.
+          const srcTag = (h instanceof HunterSatellite ? "hunter" : "debris") + h.size;
+          const applied = damageShip(h.damage, h.x, h.y, srcTag);
           // Close Shave (F9): survived a Hunter collision with under 10 HP left (still alive).
           if (applied && h instanceof HunterSatellite && !game.ship.dead && game.ship.hp < 10)
             game.stats.closeShave = true;
@@ -10677,7 +10704,7 @@ function update(dt) {
           game.stats.deflects++;                            // Shield Surfer (F9): saucer rammed into the shield
           destroySaucer(s);
         } else {
-          damageShip(s.damage, s.x, s.y);
+          damageShip(s.damage, s.x, s.y, s.small ? "ufoBodySmall" : "ufoBodyLarge");
           // CS023 P3: mutual damage, same rule as the hazards above — no score, drops unchanged.
           destroySaucer(s, false);
         }

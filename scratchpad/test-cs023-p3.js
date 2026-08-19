@@ -545,7 +545,7 @@ function saucerAt(X, x, y, small) {
   assert(/if \(h instanceof HunterSatellite\) destroyHunter\(h, false\); else destroyDebris\(h, false\);/.test(codeOnly),
     "A: the hazards-vs-ship else branch destroys the hazard too, awardScore=false");
   {
-    const iElse = codeOnly.indexOf("const applied = damageShip(h.damage, h.x, h.y);");
+    const iElse = codeOnly.indexOf("const applied = damageShip(h.damage, h.x, h.y, srcTag);");
     const iKill = codeOnly.indexOf("if (h instanceof HunterSatellite) destroyHunter(h, false); else destroyDebris(h, false);");
     assert(iElse > 0 && iKill > iElse, "A: damageShip is called BEFORE the kill (it reads h.x/h.y for knockback)");
     // NOT gated on `applied` (FLAG-CS023-k) — the kill line must not be inside an `if (applied)`.
@@ -559,7 +559,9 @@ function saucerAt(X, x, y, small) {
   assert(!/for \(const h of hazards\) \{[\s\S]{0,900}break;[\s\S]{0,50}\n\s*\}\s*\n\s*\/\/ saucer body contact/.test(codeOnly),
     "A: the hazards loop still does NOT break");
   // The saucer sub-loop's unshielded else now calls damageShip THEN destroySaucer(s, false).
-  assert(/damageShip\(s\.damage, s\.x, s\.y\);\s*\n\s*destroySaucer\(s, false\);/.test(codeOnly),
+  // CS037 P1 (spec §5.5): damageShip's call now carries a 4th srcTag argument — the ordering and
+  // gating this section is actually about are unchanged, so the pin follows the new literal text.
+  assert(/damageShip\(s\.damage, s\.x, s\.y, s\.small \? "ufoBodySmall" : "ufoBodyLarge"\);\s*\n\s*destroySaucer\(s, false\);/.test(codeOnly),
     "A: the saucer sub-loop's unshielded else destroys the saucer too, after damageShip");
 
   // --- the UFO<->debris pass ---
@@ -697,7 +699,7 @@ function saucerAt(X, x, y, small) {
       eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL).replace(OLD_BOOM, NEW_BOOM),
         "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit and CS035 P6's pity-counter edit are the ONLY diffs in breakChain; everything else is byte-unchanged");
     }
-    assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY) {").includes("SHIELD_HIT_COST"),
+    assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY, srcTag) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");
   }
   // TRAP 3: no new way for a satellite to cut the chain — the hazards-vs-chain scan is untouched.

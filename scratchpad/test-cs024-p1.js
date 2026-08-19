@@ -762,17 +762,28 @@ function atWave(X, w) {
   //   shieldBounce(h)` gate is this phase's own §4.1 consequence 2, and pretending otherwise would make
   //   the trap fail for the one change it is supposed to permit. Both halves are asserted explicitly so
   //   the narrowing is visible rather than implied.
+  //   NARROWED AGAIN BY CS037 P1 (spec §5.5), same idiom as the destroySaucer narrowing just below:
+  //   damageShip() gained a 4th srcTag argument, computed by three new lines right above the call. Both
+  //   are this phase's own sanctioned addition — stripped out of `now` before the byte-compare, and
+  //   separately asserted present so the strip cannot pass by accident.
   const hSrc = headSrc();
   {
-    const MUTUAL = `        } else {
-          const applied = damageShip(h.damage, h.x, h.y);`;
-    const grab = src => {
-      const i = src.indexOf(MUTUAL);
+    const OLD_CALL = "        } else {\n          const applied = damageShip(h.damage, h.x, h.y);";
+    const NEW_LINES = "        } else {\n" +
+      "          // CS037 P1 (spec §5.5): discriminate via the same instanceof test Close Shave uses below,\n" +
+      "          // plus h.size — no new field on either DebrisSatellite (Garbage Satellite) or HunterSatellite.\n" +
+      "          const srcTag = (h instanceof HunterSatellite ? \"hunter\" : \"debris\") + h.size;\n" +
+      "          const applied = damageShip(h.damage, h.x, h.y, srcTag);";
+    const grab = (src, anchor) => {
+      const i = src.indexOf(anchor);
       return i < 0 ? "" : src.slice(i, src.indexOf("      }\n    }\n    // saucer body contact", i));
     };
-    const now = grab(scriptSrc), was = grab(hSrc);
-    assert(now.length > 0 && was.length > 0, "F: TRAP 2 — the mutual-damage arm is locatable in both builds");
-    eq(now, was, "F: TRAP 2 — the hazards-vs-ship UNSHIELDED arm (CS023 P3's mutual damage) is BYTE-UNCHANGED");
+    const rawNow = grab(scriptSrc, NEW_LINES), was = grab(hSrc, OLD_CALL);
+    assert(rawNow.length > 0 && was.length > 0, "F: TRAP 2 — the mutual-damage arm is locatable in both builds");
+    assert(rawNow.includes('const srcTag = (h instanceof HunterSatellite ? "hunter" : "debris") + h.size;'),
+      "F: ...and the CS037 P1 srcTag discriminator really is there (not a vacuous strip)");
+    const now = rawNow.replace(NEW_LINES, OLD_CALL);
+    eq(now, was, "F: TRAP 2 — the hazards-vs-ship UNSHIELDED arm (CS023 P3's mutual damage) is BYTE-UNCHANGED except CS037 P1's srcTag");
     assert(/destroyHunter\(h, false\); else destroyDebris\(h, false\)/.test(now),
       "F: ...including its awardScore=false contract");
   }
@@ -792,12 +803,19 @@ function atWave(X, w) {
       "F: ...and that line really is there");
   }
   // The saucer-body-contact arm of the same block is mutual damage too, and is equally out of scope.
+  // NARROWED BY CS037 P1, same reason and same idiom as the arm just above: the damageShip() call
+  // gained its srcTag argument, normalized out before the compare.
   {
     const grab = src => {
       const i = src.indexOf("    // saucer body contact");
       return i < 0 ? "" : src.slice(i, src.indexOf("\n  }\n", i));
     };
-    eq(grab(scriptSrc), grab(hSrc), "F: TRAP 2 — the saucer-body-contact arm is BYTE-UNCHANGED too");
+    const NEW_DMG = 'damageShip(s.damage, s.x, s.y, s.small ? "ufoBodySmall" : "ufoBodyLarge");';
+    const OLD_DMG = "damageShip(s.damage, s.x, s.y);";
+    const rawNow = grab(scriptSrc);
+    assert(rawNow.includes(NEW_DMG), "F: ...and the CS037 P1 srcTag is there in the saucer-body arm too");
+    eq(rawNow.replace(NEW_DMG, OLD_DMG), grab(hSrc),
+      "F: TRAP 2 — the saucer-body-contact arm is BYTE-UNCHANGED too, except CS037 P1's srcTag");
   }
   // ...and the one thing in that block that this phase DID change, stated positively so the pin above is
   // understood as narrowed-with-a-reason rather than quietly scoped around.
