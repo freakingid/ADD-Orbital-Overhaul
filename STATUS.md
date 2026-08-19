@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS037 · Phase: P7 · Registry: 113 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P7.1 · Registry: 115 · Levers: 18
 
 ## Phase ledger — CS037
 
@@ -100,9 +100,38 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P7 · Registry: 113 · Levers: 1
   registry-count/order pins needed the same in-place "REPOINTED BY" update every prior registry
   addition has required — no build behavior in those phases changed, only their own historical pins.
 
+- P7.1 — tow release separation, Gate B's own finding (spec §7.1). Two mechanisms, both hooked ONLY
+  inside `damageShip()`'s existing `if (game.chain.length) { scatterChain(); ... }` chain-loss block:
+  every node `scatterChain()` frees is propelled radially away from the ship at `DEBUG.towReleaseSpeed`
+  (velocity SET, never added — the CS035 P2 dock-lockout push idiom, via a snapshot of
+  `game.garbage.length` taken before the call and a loop over everything appended past it), and
+  `game.towLockoutT` arms to `DEBUG.towReleaseLockout` at the same instant. While it counts down (in
+  the pickup block beside `magnetHoldT`'s own countdown) the capture gate's hook `if` and `pulling`
+  (never the raw `magnet`, CS025 P1's split extended, not relaxed) both gate on
+  `game.towLockoutT <= 0`. ⛔ NOT gated on `s.invuln` — the auto-shield save sets that too but keeps
+  the cargo, and arms no lockout. `scatterChain()`/`Garbage.fromNode()` stay byte-unchanged;
+  `breakChain()` keeps its old random-scatter sever path untouched, `killShip()` gets neither
+  mechanism. Two new SHIP knobs, `towReleaseLockout` (`def` `HIT_STUN_DURATION`) and
+  `towReleaseSpeed` (`def` 120 px/s). Registry 113 → 115. Landing inside the existing SHIP section
+  (after `scoopHitsPerLevel`) repointed twelve older registry-count/order pins the same
+  "REPOINTED BY" way P7's own DELIVERY rows did; `test-cs024-p6.js`'s 20-level ramp needed its
+  `breakChain(2)` precondition widened from `chain.length === 0` to `< 3`, since the lockout means a
+  hit no longer instantly re-fills the chain from a Magnet, making a short-but-nonzero remainder (1–2
+  nodes) a newly-reachable state that call was never written to tolerate.
+
 ## Working / verified
 
-- Full suite: **154 files** (153 + new `test-cs037-p6.js`, 229 assertions), **154 passed, 0 failed,
+- Full suite: **156 files** (155 + new `test-cs037-p7-1.js`, 65 assertions), **156 passed,
+  0 failed, 0 skipped** after this phase's own commit lands (pre-commit, `test-cs024-p6.js`'s TRAP 2
+  — a documented moving-`HEAD` pin, same class already named for `test-cs024-p6.js` §H TRAP 2 and
+  `test-cs025-p4.js`'s TRAP 3 — reads red vacuously until then). `node --check` passes.
+  `test-cs037-p7-1.js` hand-mutation-checked seven times, all seven caught: drop the lockout arm; ADD
+  instead of SET the release velocity; gate the lockout on `ship.invuln` instead of `towLockoutT`; the
+  mechanism leaking into `scatterChain()` (breakChain would then get it too); drop `resetRun()`'s
+  `towLockoutT` clear; the `towReleaseSpeed` knob's `def` edited; the release direction reversed
+  (toward the ship instead of away).
+
+- Previously: Full suite: **154 files** (153 + new `test-cs037-p6.js`, 229 assertions), **154 passed, 0 failed,
   0 skipped**; `node --check` passes. `test-cs037-p6.js` hand-mutation-checked **fifteen** times, all
   fifteen caught and thirteen BEHAVIOURALLY rather than only by a source pin: drop the `checkSingle`
   gate / the tiered floor / `onUnlock`'s `mergeUnlock()` call / `resetRun()`'s clear; snapshot before the
@@ -351,19 +380,21 @@ None.
 
 ## Next up
 
-- **CS037 is in flight (P1, P2, P2.1, P4, P5, P6, P7 done; P3 DROPPED at Gate A). GATE B CLOSED
-  2026-08-19. P7.1 is next**, then P8.
+- **CS037 is in flight (P1, P2, P2.1, P4, P5, P6, P7, P7.1 done; P3 DROPPED at Gate A). GATE B
+  CLOSED 2026-08-19, and its one actionable output (P7.1) is now built. P8 is next and closes the
+  changeset.**
 
 - **Gate B moved no knob — every tunable answer was "no change"** (delivery curve, `SHIELD_HIT_COST`,
   auto-shield threshold), zero deferrals. ⛔ P8's "fold Gate B's answers into `def` values" is a
   **no-op, and that is the result** — it must be recorded as *answered with no change*, not chased for
   numbers that were deliberately never issued.
 
-- **P7.1 is Gate B's one actionable output** — on a hull hit the ship re-hooks its own released load
-  almost immediately. Four-part diagnosis and the full contract are in `PLANNED-FEATURES-CS037.md`
-  §7.1; prompt in `IMPLEMENTATION-PHASES-CS037.md`. Directed radial release + a `game.towLockoutT`
-  pickup lockout, both at the damage release site only, registry 113 → 115. ⛔ The lockout must NOT
-  read `game.ship.invuln` — an auto-shield save sets it too but *keeps* the cargo.
+- **P8's closing sweep now also owns P7.1's own two gaps**, joining the ones already listed below:
+  P7.1 adds a fourth `⛔ INVARIANT`-shaped change this changeset (the `pulling`/capture-gate wiring
+  and the damage-release mechanism), which the cross-cutting constraint in
+  `PLANNED-FEATURES-CS037.md` §9 did not anticipate when it said "one, not two" — P8 should account
+  for it rather than silently drop it; and P7.1's own registry growth (113 → 115) needs folding into
+  `CLAUDE.md`'s code-map/registry mentions wherever P8's sweep already touches that number.
 
 - **P8's `CLAUDE.md` sweep now has a second item beyond P4's key list:** the Audio section's
   `VOICE_CRITICAL` rule names the critical set as "the four `VOICE_CRITICAL` events" and lists

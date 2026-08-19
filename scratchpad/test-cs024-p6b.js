@@ -615,6 +615,10 @@ function evalSlice(literal) {
       // CS037 P7's rows, not P6b's. Interior, not tail-anchored, like the hunterCapMax strip below: JUNK/
       // HUNTER/UFO/POWERUPS/GLOBAL already followed DELIVERY when P7 landed its two rows mid-array.
       .replace(/,dockBaseScore,dockBonusStep/, "")
+      // CS037 P7.1 repoint: strip towReleaseLockout/towReleaseSpeed (SHIP, appended after
+      // scoopHitsPerLevel) — CS037 P7.1's rows, not P6b's. Same interior reasoning as the P7 strip
+      // right above.
+      .replace(/,towReleaseLockout,towReleaseSpeed/, "")
       .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "")
       // CS025 P1 repoint: also strip magnetResumeDelay (CS025 P1, POWERUPS, appended after
       // engineMassMult) — same reasoning again, it is CS025 P1's row, not P6b's.

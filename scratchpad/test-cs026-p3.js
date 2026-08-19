@@ -792,6 +792,9 @@ let X = null;
     // both-places rule is a trap for a field only one of the two literals declares), reset at this one
     // shared seam so a fresh run can never inherit a resumed one's floor. Dropped by name, so any OTHER
     // new line in this list still fails this trap.
+    // NARROWED AGAIN BY CS037 P7.1 — `game.towLockoutT = 0;`, the tow release separation's pickup
+    // lockout timer (spec §7.1.4), a NEW CS016-P3-rule field sitting right beside `magnetHoldT`'s own
+    // reset. Same treatment: filtered out by name, so any OTHER new line here still fails this trap.
     const DROPPED_LINES = new Set([
       "game.deliveryTicker = null;",
       "game.pendingAch = [];",
@@ -807,6 +810,7 @@ let X = null;
       "PlayPeaks.reset();",
       "Telemetry.reset();",
       "Achievements.resumeBaseline = null;",
+      "game.towLockoutT = 0;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
@@ -844,7 +848,7 @@ let X = null;
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset() and CS037 P6's Achievements.resumeBaseline clear");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear and CS037 P7.1's towLockoutT clear");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

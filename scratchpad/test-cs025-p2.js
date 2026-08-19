@@ -1178,7 +1178,8 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id === "dockPingCooldown"                                   // CS036 P5
       || id.startsWith("bench")                                      // CS037 P2 (the BENCHMARK controls)
       || id === "telemetryInterval"                                   // CS037 P4 (the telemetry cadence)
-      || id === "dockBaseScore" || id === "dockBonusStep";             // CS037 P7 (the delivery score knobs)
+      || id === "dockBaseScore" || id === "dockBonusStep"              // CS037 P7 (the delivery score knobs)
+      || id === "towReleaseLockout" || id === "towReleaseSpeed";        // CS037 P7.1 (tow release separation)
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))

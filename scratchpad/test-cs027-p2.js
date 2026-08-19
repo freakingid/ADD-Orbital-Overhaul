@@ -361,7 +361,9 @@ function compareBuilds(L, R, tag) {
     // REPOINTED BY CS036 P2: −1 — levelEndHold RETIRED (the pre-nextWave() hold is player-paced now).
     // REPOINTED BY CS037 P7: +2 more (dockBaseScore, dockBonusStep, the delivery score curve's two
     // constants promoted to knobs) — same idiom.
-    eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval and CS037 P7's two delivery score knobs later)");
+    // REPOINTED BY CS037 P7.1: +2 more (towReleaseLockout, towReleaseSpeed, the tow release
+    // separation's two SHIP knobs) — same idiom.
+    eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs and CS037 P7.1's two tow release knobs later)");
     assert(Object.keys(OLD).length > 500, "E: ...and the harvest re-ran against the parent's own symbol set");
   }
 })();

@@ -934,8 +934,13 @@ function layChain(X, n) {
         for (let f = 0; f < 90; f++) { X.update(DT); X.draw(); }
         X.keys["arrowup"] = false; X.keys[" "] = false;
         for (let f = 0; f < 30; f++) { X.update(DT); X.draw(); }
-        // and a guarded break, so breakChain's guard arm runs at every level too
-        if (X.game.chain.length === 0) layChain(X, 6);
+        // and a guarded break, so breakChain's guard arm runs at every level too. REPOINTED BY
+        // CS037 P7.1: the guard widens from `=== 0` to `< 3` — the tow release separation's pickup
+        // lockout means a hull hit during this 120-frame ramble no longer instantly re-fills the
+        // chain from a Magnet, so a short-but-nonzero remainder (1 or 2 nodes) is now a reachable
+        // state breakChain(2) was never written to tolerate. Not this section's concern either way;
+        // it only needs SOME chain of at least 3 nodes before the break.
+        if (X.game.chain.length < 3) layChain(X, 6);
         X.applyPowerup("guard");
         X.breakChain(2);
       }

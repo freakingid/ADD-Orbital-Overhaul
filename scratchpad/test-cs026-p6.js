@@ -672,9 +672,11 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // phase's row, named rather than wildcarded, exactly as every repoint above.
     // REPOINTED BY CS037 P7: dockBaseScore/dockBonusStep join it — the delivery score curve's two
     // constants promoted to knobs, later phase's rows, named rather than wildcarded, exactly as above.
+    // REPOINTED BY CS037 P7.1: towReleaseLockout/towReleaseSpeed join it — the tow release
+    // separation's two SHIP knobs, later phase's rows, named rather than wildcarded, exactly as above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
       "benchRampStep", "benchRampInterval", "benchSettleFrames", "benchMaxCount", "telemetryInterval",
-      "dockBaseScore", "dockBonusStep",
+      "dockBaseScore", "dockBonusStep", "towReleaseLockout", "towReleaseSpeed",
       "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade",
       "dockBounceSpeed", "dockPingCooldown",
       "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",

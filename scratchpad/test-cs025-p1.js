@@ -494,7 +494,10 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // ring the pull is off, so a Magnet at the dock cannot churn pieces against the lockout's push. It
     // rides `pulling` PRECISELY BECAUSE of this split: `magnet` stays raw for the two spend sites
     // below, which the read-count assertion at the end of this section still holds at three.
-    assert(/const pulling = magnetPulling\(\) && !inRing;/.test(code), "C4: `pulling` is the suppressible read");
+    // REPOINTED BY CS037 P7.1 (spec §7.1.3): `pulling` gained a trailing `&& game.towLockoutT <= 0` —
+    // the damage-release pickup lockout, a second and independent suppression riding the same
+    // suppressible name for the same reason.
+    assert(/const pulling = magnetPulling\(\) && !inRing && game\.towLockoutT <= 0;/.test(code), "C4: `pulling` is the suppressible read");
     assert(/const pickR = pulling \?/.test(code), "C4: pickR follows `pulling` — the widened circle comes back WITH the pull");
     assert(/if \(pulling\) \{/.test(code), "C4: the attraction branch follows `pulling`");
     assert(/if \(magnet && game\.powerBudget\.magnet > 0\) game\.powerBudget\.magnet--;/.test(code),
@@ -835,7 +838,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "dockPingCooldown"                             // CS036 P5
       || id.startsWith("bench")                                // CS037 P2 (the BENCHMARK controls)
       || id === "telemetryInterval"                             // CS037 P4 (the telemetry cadence)
-      || id === "dockBaseScore" || id === "dockBonusStep";       // CS037 P7 (the delivery score knobs)
+      || id === "dockBaseScore" || id === "dockBonusStep"        // CS037 P7 (the delivery score knobs)
+      || id === "towReleaseLockout" || id === "towReleaseSpeed";  // CS037 P7.1 (tow release separation)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

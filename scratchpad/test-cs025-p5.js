@@ -521,7 +521,8 @@ function quiet(X) {
       || id === "dockPingCooldown"                                        // CS036 P5
       || id.startsWith("bench")                                           // CS037 P2 (BENCHMARK controls)
       || id === "telemetryInterval"                                       // CS037 P4 (the telemetry cadence)
-      || id === "dockBaseScore" || id === "dockBonusStep";                 // CS037 P7 (delivery score knobs)
+      || id === "dockBaseScore" || id === "dockBonusStep"                  // CS037 P7 (delivery score knobs)
+      || id === "towReleaseLockout" || id === "towReleaseSpeed";            // CS037 P7.1 (tow release separation)
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

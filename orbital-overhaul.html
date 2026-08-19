@@ -3666,6 +3666,16 @@ const DEBUG_VARS = [
   // place as the documented shipped value. No panel/persistence code changes.
   { id: "scoopHitsPerLevel", label: "Hits before losing scoop", unit: "",
     def: SCOOP_HITS_PER_LEVEL, min: 1, max: 20, step: 1 },
+  // CS037 P7.1 (spec §7.1.4, Gate B's tow release separation): the damage-release-only pickup
+  // lockout's duration. Gate B's own answer — "the same amount of time the player ship is
+  // invincible" — so the def derives from HIT_STUN_DURATION, which stays in place as the
+  // documented shipped default. Same ms + toNative idiom as autoShieldRegenPause.
+  { id: "towReleaseLockout", label: "Tow release lockout", unit: "ms",
+    def: HIT_STUN_DURATION * 1000, min: 0, max: 5000, step: 100, toNative: v => v / 1000 },
+  // CS037 P7.1: the damage-release-only directed push. Above the dock bounce's 90 px/s — this has
+  // to clear a whole load up to ~480px long, not one piece. A pure feel number.
+  { id: "towReleaseSpeed", label: "Tow release speed", unit: "px/s",
+    def: 120, min: 20, max: 300, step: 10 },
   { header: "GARBAGE" },
   // CS024 P5 (spec §2.5): garbageAttractRadius/Force are resolved as NOT levers (GARBAGE_MAGNET_RANGE/
   // _PULL are frozen constants, Gate A Q1's answer) and stay plain flat knobs, unchanged in shape from
@@ -8214,6 +8224,13 @@ const game = {
   // so it freezes with a pause like every other in-game timer. Declared in BOTH this literal and
   // resetRun() per the standing CS016 P3 rule.
   magnetHoldT: 0,
+  // CS037 P7.1 (spec §7.1.2/§7.1.4): sec of PICKUP LOCKOUT remaining after a damage release. The
+  // ONE writer is damageShip()'s chain-loss block, armed to DEBUG.towReleaseLockout at the same
+  // instant the released nodes are pushed. While it counts down (in the pickup block beside
+  // magnetHoldT's own countdown), the capture gate is shut and `pulling` is suppressed — never
+  // `magnet`, the raw name the two budget-spend sites read. Declared in BOTH this literal and
+  // resetRun() per the standing CS016 P3 rule.
+  towLockoutT: 0,
   // CS025 P2 (spec §2.3): was the tow chain full on the PREVIOUS pickup-block frame? The rising-edge
   // detector for the repulsion kick, and NOTHING else reads it. A plain stored boolean, deliberately
   // NOT inferred from magnetHoldT — see the ⛔ note at its one writer, at the top of update()'s pickup
@@ -8585,6 +8602,8 @@ function resetRun(wave, debugRun) {
                                    // run starts with an EMPTY chain, so the first pickup-block frame reads
                                    // not-full and would tick this down anyway — but the field must exist in
                                    // both places (the CS016 P3 rule), and 0 is the honest starting value.
+  game.towLockoutT = 0;            // CS037 P7.1: no pickup lockout carries into a fresh run — same
+                                   // both-places rule as magnetHoldT, just above.
   game.cargoWasFull = false;       // CS025 P2: the rising-edge detector starts DOWN. A fresh run starts with an
                                    // EMPTY chain, so the first pickup-block frame would write false anyway — but
                                    // the field must exist in both places (the CS016 P3 rule), and carrying a
@@ -10087,7 +10106,30 @@ function damageShip(amount, srcX, srcY, srcTag) {
   // non-empty, and is it now empty") — chain_lost, spoken HERE at the call site and never from
   // inside scatterChain(), which is what keeps killShip()'s own scatter silent (CS011 P5).
   if (game.chain.length) {
+    // CS037 P7.1 (spec §7.1.2): tow release separation, Gate B's own finding. scatterChain() and
+    // Garbage.fromNode() stay byte-unchanged (breakChain() shares fromNode()'s random scatter for a
+    // hit ON the chain; killShip() shares scatterChain() and gets neither mechanism below) — so both
+    // mechanisms live HERE, at this call site only, snapshotting the garbage array before the call
+    // and touching only what scatterChain() appended past that index.
+    const releasedFrom = game.garbage.length;
     scatterChain();
+    // Directed release: every node just freed is propelled radially AWAY FROM THE SHIP at
+    // DEBUG.towReleaseSpeed. ⛔ VELOCITY IS SET, NEVER ADDED — the CS035 P2 dock-lockout push idiom
+    // verbatim, for the same reason: a piece re-entering the lockout's capture test on consecutive
+    // frames must not accumulate speed.
+    for (let i = releasedFrom; i < game.garbage.length; i++) {
+      const p = game.garbage[i];
+      const [rx, ry] = shortDelta(s.x, s.y, p.x, p.y); // ship -> piece (wrap-aware) = away from the ship
+      const rd = Math.hypot(rx, ry);
+      const ra = rd > 0.001 ? Math.atan2(ry, rx) : rand(0, TAU);
+      p.vx = Math.cos(ra) * DEBUG.towReleaseSpeed;
+      p.vy = Math.sin(ra) * DEBUG.towReleaseSpeed;
+    }
+    // Pickup lockout: shuts the capture gate and suppresses the magnet pull for towReleaseLockout
+    // seconds (see the pickup block's own countdown and gates). ⛔ NOT gated on s.invuln — the
+    // auto-shield save above also sets it but KEEPS the cargo, and this block is unreachable from
+    // that branch (it returns before here), so the two can never be confused.
+    game.towLockoutT = DEBUG.towReleaseLockout;
     VoiceSys.say("chain_lost");
   }
   // Scoop decays by DAMAGE, not time (v3.3 P3): every SCOOP_HITS_PER_LEVEL non-lethal hits costs one
@@ -11225,6 +11267,10 @@ function update(dt) {
   if (cargoFull) game.magnetHoldT = DEBUG.magnetResumeDelay;
   else if (game.magnetHoldT > 0) game.magnetHoldT = Math.max(0, game.magnetHoldT - dt);
   game.cargoWasFull = cargoFull;
+  // CS037 P7.1 (spec §7.1.2): THE PICKUP LOCKOUT COUNTDOWN — the only place game.towLockoutT ticks
+  // down, right beside magnetHoldT's own countdown just above (the working precedent for the whole
+  // mechanism). Its one writer is damageShip()'s chain-loss block.
+  if (game.towLockoutT > 0) game.towLockoutT = Math.max(0, game.towLockoutT - dt);
   // Magnet (F6): while active, pull free garbage within an extended radius toward the ship (a real
   // attraction force reads better than a bigger invisible circle) AND widen the pickup radius.
   //
@@ -11255,7 +11301,10 @@ function update(dt) {
   // `pulling`, so the widened circle collapses to GARBAGE_PICKUP in here too: correct and intended,
   // the circle is moot when the gate above it is shut, and CS025's "the circle comes back WITH the
   // pull" rule stays in step.
-  const pulling = magnetPulling() && !inRing;
+  // CS037 P7.1 (spec §7.1.3): the pickup-lockout suppression rides `pulling`, the SUPPRESSIBLE name
+  // — never `magnet`, the raw one the two spend sites above read. Same split, same reason, as the
+  // dock lockout's own `!inRing` term right next to it.
+  const pulling = magnetPulling() && !inRing && game.towLockoutT <= 0;
   const pickR = pulling ? GARBAGE_PICKUP * MAGNET_PICKUP_MULT : GARBAGE_PICKUP;
   for (const g of game.garbage) {
     g.update(dt);
@@ -11314,7 +11363,10 @@ function update(dt) {
         game.dockPingTimer = DEBUG.dockPingCooldown;
       }
     }
-    if (!inRing && game.chain.length < game.cargoMax && inCapture) {
+    // CS037 P7.1 (spec §7.1.2): the damage-release pickup lockout shuts THIS gate — the same one the
+    // dock lockout's `!inRing` term already shuts, and for the same reason: a piece the release just
+    // pushed away must not be hookable again before it has had a chance to separate.
+    if (!inRing && game.chain.length < game.cargoMax && inCapture && game.towLockoutT <= 0) {
       // CS024 P3 (spec §1.2/§4.2): CS017 P5's ONE-SHOT BONUS PAYOUT STOOD HERE — an
       // `if (g.bonus) { g.bonus = false; addScore(BONUS_CANISTER_SCORE); ...float... }` above the
       // single/clump branch, whose flag-clear was what made "paid once per clump" true across a partial

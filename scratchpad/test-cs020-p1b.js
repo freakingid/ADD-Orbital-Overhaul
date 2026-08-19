@@ -407,7 +407,9 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // owns, the `if (!inRing)` reset asserted directly above, is untouched and still reads the same
   // single `inRing` const — which is now hoisted above the loop and also arms the lockout.
   eq((codeSrc.match(/towed: !inRing/g) || []).length, 0, "A: ⛔ P1's tag is gone from both push sites (CS035 P2)");
-  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture\) \{/.test(codeSrc),
+  // REPOINTED BY CS037 P7.1: the gate gained a trailing `&& game.towLockoutT <= 0` clause — the
+  // damage-release pickup lockout, a second and independent reason to refuse the hook.
+  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture && game\.towLockoutT <= 0\) \{/.test(codeSrc),
     "A: ...replaced by the LOCKOUT at the gate above the reset — no hook happens inside the ring at all");
 
   // -- the new run state --

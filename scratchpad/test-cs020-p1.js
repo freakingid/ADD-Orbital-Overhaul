@@ -399,7 +399,11 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     "A: inRing is derived exactly once, not re-evaluated per piece inside the loop");
   // What replaced the tag: the gate itself refuses the hook. Unconditional — no chain-length clause in
   // front of it, so it holds at an empty chain exactly as at a full one (§2.2, FORK-F).
-  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture\) \{/.test(scriptSrc),
+  // REPOINTED BY CS037 P7.1 (§7.1.2): the gate gained a trailing `&& game.towLockoutT <= 0` — the
+  // damage-release pickup lockout, a second and independent reason to refuse the hook. It joins the
+  // existing clauses rather than replacing any of them, so the claim under test (the gate LEADS with
+  // `!inRing`) is unaffected.
+  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture && game\.towLockoutT <= 0\) \{/.test(scriptSrc),
     "A: ⛔ the capture gate leads with `!inRing` — the LOCKOUT, which is what makes the tag unnecessary");
 
   // -- REPOINTED BY CS035 P2, INVERTED: the `!== false` read went with the tag it read. --
@@ -1175,7 +1179,9 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   // dock rule at all. REPOINTED BY CS035 P2 — the tag it used to name is deleted; the lockout that
   // replaced it is what has to be present for the "outside the ring, so unaffected" framing to mean
   // anything.
-  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture\) \{/.test(scriptSrc),
+  // REPOINTED BY CS037 P7.1: the gate gained a trailing `&& game.towLockoutT <= 0` clause — see the
+  // matching repoint in section A above.
+  assert(/if \(!inRing && game\.chain\.length < game\.cargoMax && inCapture && game\.towLockoutT <= 0\) \{/.test(scriptSrc),
     "J: (control validity) the dock lockout is present in the build under test");
 })();
 
