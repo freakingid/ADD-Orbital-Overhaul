@@ -247,8 +247,10 @@ console.log("(G) P2's own CSV tables are byte-identical to what P2 shipped, for 
   assert(!/BENCH_MIX weights/.test(refBlock) && !/environment:/.test(refBlock),
     "G: none of the new header material leaked into the old table block itself");
 
-  // Registry unchanged — P2.1 adds no rows (CLAUDE.md Test rules: counts live in test-registry.js only).
-  eq(X.DEBUG_ENTRIES.length, COUNTS.registryEntries, "G: the registry is still exactly what P2 left it at");
+  // P2.1 adds no rows of its own. The comparison is against test-registry.js's LIVE count (CLAUDE.md
+  // Test rules: counts live there and nowhere else), so it tracks HEAD rather than pinning P2's number —
+  // CS037 P4's telemetryInterval moved it to 111 and this stays honest by construction.
+  eq(X.DEBUG_ENTRIES.length, COUNTS.registryEntries, "G: the registry is the size test-registry.js pins");
   eq(X.DEBUG_VARS.filter(v => v.header).length, COUNTS.sectionHeaders, "G: ...and so is the header count");
   assert(!X.DEBUG_ENTRIES.some(e => /peak/i.test(e.id)), "G: no new debug-panel knob for the peaks");
 }

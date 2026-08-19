@@ -769,7 +769,7 @@ function fullAndHolding(X, { level = 1 } = {}) {
   }
 
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "G: DEBUG_ROWS is the registry plus its six trailer rows");
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7, "G: DEBUG_ROWS is the registry plus its seven trailer rows");
 
   // Persistence: an ordinary DEBUG_ENTRIES row through the existing generic path. No schema bump.
   {
@@ -833,7 +833,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id.startsWith("chainGuardDrop")                      // CS035 P6
       || id === "sweepPowerupCap" || id === "dockPowerupSpeed"  // CS035 P6
       || id === "dockPingCooldown"                             // CS036 P5
-      || id.startsWith("bench");                               // CS037 P2 (the BENCHMARK controls)
+      || id.startsWith("bench")                                // CS037 P2 (the BENCHMARK controls)
+      || id === "telemetryInterval";                            // CS037 P4 (the telemetry cadence)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

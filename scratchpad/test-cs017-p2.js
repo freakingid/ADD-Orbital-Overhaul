@@ -420,7 +420,8 @@ function build() {
   // now sit between it and Back (spec §2/§4), so Back moved from N+1 to N+3.
   // REPOINTED BY CS037 P2: two more action rows (Run benchmark battery, Copy benchmark results) sit
   // between Reset saved scores and Back, so Back moves from N + 3 to N + 5.
-  const N = A.DEBUG_VARS.length, dumpRow = N, resetAllRow = N + 1, resetScoresRow = N + 2, benchRunRow = N + 3, benchCopyRow = N + 4, backRow = N + 5; // derived, never a literal (CS015 P5 lesson)
+  // REPOINTED BY CS037 P4: one more (Copy telemetry log), so Back moves from N + 5 to N + 6.
+  const N = A.DEBUG_VARS.length, dumpRow = N, resetAllRow = N + 1, resetScoresRow = N + 2, benchRunRow = N + 3, benchCopyRow = N + 4, telemetryRow = N + 5, backRow = N + 6; // derived, never a literal (CS015 P5 lesson)
 
   // CS018 P2: the registry now interleaves non-selectable section-header entries, and up/down SKIP them, so
   // the cursor no longer starts at row 0 and "N downs" no longer equals "N rows travelled". dumpRow/backRow
@@ -449,6 +450,9 @@ function build() {
     assert(g.menu.index === benchRunRow, `G: one more down lands on the benchmark run row (index ${benchRunRow}, got ${g.menu.index})`);
     A.menuDebug("down");
     assert(g.menu.index === benchCopyRow, `G: one more down lands on the benchmark copy row (index ${benchCopyRow}, got ${g.menu.index})`);
+    // CS037 P4: and the telemetry export row, walked the same way for the same reason.
+    A.menuDebug("down");
+    assert(g.menu.index === telemetryRow, `G: one more down lands on the telemetry copy row (index ${telemetryRow}, got ${g.menu.index})`);
 
     A.menuDebug("down");
     assert(g.menu.index === backRow, `G: one more down lands on Back (index ${backRow}, got ${g.menu.index})`);

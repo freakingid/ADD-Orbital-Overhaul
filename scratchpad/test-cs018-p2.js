@@ -181,7 +181,7 @@ function onDebug(A, { playing = false } = {}) {
   assert(A.DEBUG_ENTRIES.length === vars.length - headers, "C: DEBUG_ENTRIES is the registry minus its headers");
   // REPOINTED BY CS024 P6e: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   // REPOINTED BY CS037 P2: +4 -> +6 — the benchmark instrument's Run/Copy rows joined the same trailer.
-  assert(rows.length === vars.length + 6, `C: DEBUG_ROWS = registry + its six trailer rows (${rows.length} = ${vars.length} + 6)`);
+  assert(rows.length === vars.length + 7, `C: DEBUG_ROWS = registry + its seven trailer rows (${rows.length} = ${vars.length} + 7)`);
 
   // Row order mirrors the registry exactly, then the two trailing action rows.
   let ok = true;
@@ -196,16 +196,19 @@ function onDebug(A, { playing = false } = {}) {
   // REPOINTED BY CS037 P2: two more action rows (Run benchmark battery, Copy benchmark results) sit
   // between Reset saved scores and Back, so every offset below shifts by two. The CLAIM is unchanged and
   // is the one that matters: the trailer is action rows in registry-independent order, then Back last.
-  assert(rows[rows.length - 6].kind === "action" && rows[rows.length - 6].label === "Dump difficulty log",
-    "C: the Dump action is the 6th-to-last row");
-  assert(rows[rows.length - 5].kind === "action" && rows[rows.length - 5].label === "Reset all debug knobs to defaults",
-    "C: Reset All is the 5th-to-last row");
-  assert(rows[rows.length - 4].kind === "action" && rows[rows.length - 4].label === "Reset saved scores",
-    "C: Reset High Scores is the 4th-to-last row");
-  assert(rows[rows.length - 3].kind === "action" && rows[rows.length - 3].label === "Run benchmark battery",
-    "C: the benchmark run row is the 3rd-to-last");
-  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Copy benchmark results",
-    "C: the benchmark copy row is the 2nd-to-last");
+  // REPOINTED BY CS037 P4: one more (Copy telemetry log), same treatment, same unchanged claim.
+  assert(rows[rows.length - 7].kind === "action" && rows[rows.length - 7].label === "Dump difficulty log",
+    "C: the Dump action is the 7th-to-last row");
+  assert(rows[rows.length - 6].kind === "action" && rows[rows.length - 6].label === "Reset all debug knobs to defaults",
+    "C: Reset All is the 6th-to-last row");
+  assert(rows[rows.length - 5].kind === "action" && rows[rows.length - 5].label === "Reset saved scores",
+    "C: Reset High Scores is the 5th-to-last row");
+  assert(rows[rows.length - 4].kind === "action" && rows[rows.length - 4].label === "Run benchmark battery",
+    "C: the benchmark run row is the 4th-to-last");
+  assert(rows[rows.length - 3].kind === "action" && rows[rows.length - 3].label === "Copy benchmark results",
+    "C: the benchmark copy row is the 3rd-to-last");
+  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Copy telemetry log",
+    "C: the telemetry copy row is the 2nd-to-last");
   assert(rows[rows.length - 1].kind === "back" && rows[rows.length - 1].label === "Back",
     "C: Back is the last row");
   assert(rows.filter(r => r.kind === "var").length === A.DEBUG_ENTRIES.length,
@@ -254,7 +257,9 @@ function onDebug(A, { playing = false } = {}) {
   assert(rows[g.menu.index].kind === "back", "D: ...and it is the Back row");
   // REPOINTED BY CS024 P6e: one above Back is now Reset High Scores, not Dump (spec §2/§4).
   // REPOINTED BY CS037 P2: ...and now the benchmark copy row, which is the new one-above-Back.
-  assert(rows[g.menu.index - 1].kind === "action" && rows[g.menu.index - 1].label === "Copy benchmark results",
+  // REPOINTED BY CS037 P4: ...and now the telemetry copy row. The claim is unchanged: whatever the last
+  // action row is, it is reachable and it sits directly above Back.
+  assert(rows[g.menu.index - 1].kind === "action" && rows[g.menu.index - 1].label === "Copy telemetry log",
     "D: the last action row is reachable, one above Back");
 
   // Wrap forward: last -> first selectable (row 0, the override toggle — no leading header to skip

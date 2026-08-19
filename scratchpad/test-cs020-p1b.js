@@ -464,8 +464,8 @@ const dockBlockCode = stripComments(dockBlockSrc);
   eq(A.debugShown.dockComboGrace, 4000, "A: the seeded DISPLAY value is 4000 ms");
   // The panel's row model is derived, never hardcoded — the new header + knob must flow through it.
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(A.DEBUG_ROWS.length, DEBUG_VARS.length + 6,
-    "A: DEBUG_ROWS is still registry + its six trailer rows — no hardcoded count needed a bump");
+  eq(A.DEBUG_ROWS.length, DEBUG_VARS.length + 7,
+    "A: DEBUG_ROWS is still registry + its seven trailer rows — no hardcoded count needed a bump");
   assert(A.DEBUG_ROWS.some(r => r.kind === "var" && r.e.id === "dockComboGrace"),
     "A: dockComboGrace has its own selectable row");
   assert(A.DEBUG_ROWS.some(r => r.kind === "header" && r.label === "DELIVERY"),

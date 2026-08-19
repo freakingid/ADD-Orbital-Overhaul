@@ -197,7 +197,7 @@ const src = scriptSource();
     // REPOINTED BY CS035 P4: +5 more (the Hunter volatility clock/heartbeat's HUNTER rows).
     // REPOINTED BY CS035 P6: +5 more (the powerup rebalance's CHAIN GUARD/POWERUPS rows).
     // REPOINTED BY CS036 P2: −1 — levelEndHold RETIRED (the pre-nextWave() hold is player-paced now).
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition and CS037 P2's four BENCHMARK controls later — a data-only collector adds no knob");
+    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls and CS037 P4's telemetryInterval later — a data-only collector adds no knob");
     eq(X.LEVERS.length, OLD.LEVERS.length, "G: ⛔ LEVERS.length unchanged");
   }
 

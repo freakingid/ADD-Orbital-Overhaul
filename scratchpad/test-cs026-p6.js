@@ -668,8 +668,10 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // limit, a later phase's row, named rather than wildcarded, exactly as every repoint above.
     // REPOINTED BY CS037 P2: the benchmark instrument's four BENCHMARK rows join the excluded set — a
     // later phase's rows, named rather than wildcarded, exactly as every repoint above.
+    // REPOINTED BY CS037 P4: telemetryInterval joins it — the telemetry snapshot cadence, a later
+    // phase's row, named rather than wildcarded, exactly as every repoint above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
-      "benchRampStep", "benchRampInterval", "benchSettleFrames", "benchMaxCount",
+      "benchRampStep", "benchRampInterval", "benchSettleFrames", "benchMaxCount", "telemetryInterval",
       "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade",
       "dockBounceSpeed", "dockPingCooldown",
       "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",

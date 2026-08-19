@@ -2976,7 +2976,15 @@ window.addEventListener("keydown", e => {
   // gotoScreen off the paused root). Non-backtick code chars fall through INERT — none are nav/confirm/
   // pause/O keys — so nothing is visible until the code lands. The window self-expires on inactivity in
   // loop(). Backtick keys are NOT preventDefault'd.
-  if (!game.menu.rebinding && (game.state === "title" || (game.paused && game.state === "playing"))) {
+  // CS037 P4: `|| game.state === "gameover"` joins the paused-game arm. ⛔ REQUIRED, not a convenience:
+  // the telemetry buffer is per-run and resetRun() clears it, so the only window in which a finished
+  // run's rows can be exported is between the death and the next start — and the panel was unreachable
+  // there. The PAUSED term still gates it (openPause() is what a gameover screen opens), so this admits
+  // exactly the same "a menu is already up, keystrokes are already inert" condition the playing arm
+  // does, and mid-play, the title's rebind capture and the name-entry field are all still excluded.
+  // debugReturn() already routed the gameover case — that branch stops being dead code here.
+  if (!game.menu.rebinding &&
+      (game.state === "title" || (game.paused && (game.state === "playing" || game.state === "gameover")))) {
     if (e.key === "`") {
       DebugCode.armed = true; DebugCode.buf = ""; DebugCode.last = performance.now();
       AudioSys.secretArm();
@@ -3961,6 +3969,21 @@ const DEBUG_VARS = [
     def: LEVEL_BANNER_SIZE, min: 16, max: 160, step: 4 },
   { id: "levelBannerY", label: "Level banner y offset", unit: "px",
     def: LEVEL_BANNER_Y, min: -200, max: 200, step: 4 },
+  // CS037 P4 (spec §5.1/§5.3): the gameplay-telemetry snapshot interval, in seconds of GAME TIME.
+  // Telemetry.tick() is called from update()'s own cleanup block, so menu, pause and level-ceremony
+  // seconds can never reach it — N is N seconds of play, and two rows are always comparable.
+  //   GLOBAL rather than a section of its own: one knob does not justify a header (spec P4 contract).
+  // NOT A LEVER — an observation cadence is not a pressure axis (DIFFICULTY-LEVERS.md §4): no
+  // floor/ceil/steps triple, no ▼/↳ glyph, no carriesTo, no LEVERS row.
+  //   No shipped constant backs the default. "How often do we snapshot" has no meaning outside this
+  // knob, so this entry IS the source of truth for it — the earlyWorldLevels idiom, not the
+  // DEBRIS_BOUNCE_RESTITUTION one.
+  //   ⛔ min is 1, not 0. The buffer is a 400-row ring and the tick fires at most once per frame, so a
+  // sub-second interval would burn the whole ring inside seven seconds of play and the oldest rows —
+  // the ones a post-mortem wants — would be the first gone. Telemetry.tick() independently refuses a
+  // non-positive interval, so the guard and the bound agree rather than relying on each other.
+  { id: "telemetryInterval", label: "Telemetry snapshot interval", unit: "s",
+    def: 15, min: 1, max: 120, step: 1 },
   // CS030 P3 (spec §4.5): the achievement celebration panel's two knobs. celebrationScrollStep
   // matches ACH_SCROLL_STEP's default but is independently tunable — the panel's row height
   // differs from the Achievements viewer's. celebrationEmblemSize is drawEmblem()'s radius.
@@ -4038,6 +4061,11 @@ const DEBUG_ROWS = [
   // erase rows above do.
   { kind: "action", label: "Run benchmark battery" },
   { kind: "action", label: "Copy benchmark results" },
+  // CS037 P4 (spec §5.3): the telemetry export, appended the same way and dispatched by LABEL in
+  // menuDebug. ⛔ THE EXPORT LIVES HERE AND NOWHERE ELSE — never in Options. Not destructive (it
+  // copies, and does not clear the buffer the way "Dump difficulty log" clears DiffLog), so it does
+  // not go through openModal.
+  { kind: "action", label: "Copy telemetry log" },
   { kind: "back",   label: "Back" },
 ];
 // CS018 P2: the panel's transient VIEW state — the scroll window's top row and the pending numeric-entry
@@ -4780,6 +4808,189 @@ function dumpDifficultyLog() {
   AudioSys.ui(true);
 }
 
+// ================================================================================================
+// CS037 P4 — PERIODIC GAMEPLAY TELEMETRY (PLANNED-FEATURES-CS037.md §5)
+// ================================================================================================
+// One row every DEBUG.telemetryInterval seconds of GAME TIME, exported by hand for offline analysis.
+// A sibling of DiffLog directly above and modelled on it — TELEMETRY_FIELDS is the single source of
+// truth for both the row shape and the CSV column order, the buffer is capped and drops oldest, and
+// the export is a debug-panel action row. Three things differ, each for its own reason:
+//
+//   * THE CLOCK IS GAME TIME, not performance.now(). tick(dt) is called from update()'s own cleanup
+//     block, which runs only on a live, unpaused, unfrozen playing frame — the exact clock
+//     game.stats.gameTime runs on (spec §5.3). Menu, pause and level-ceremony seconds cannot reach
+//     it, so N really is N seconds of play and any two rows are comparable.
+//   * IT PERSISTS. Each snapshot rewrites one localStorage envelope, so a crash or a refresh does not
+//     lose the run (spec §5.6). See TELEMETRY_KEY below for the idiom and its guards.
+//   * IT ALWAYS CAPTURES, debug runs and resumed runs included (spec §5.3). Every row carries
+//     debugRun/resumedRun, so filtering those out is an offline concern rather than a hole in the
+//     data that nobody can tell from a run that simply never happened.
+//
+// ⛔ MODULE-LEVEL, NOT A FIELD ON `game` — the DebugPanel/PlayPeaks precedent. A game.* field must be
+// declared in BOTH the game literal and resetRun() (the standing CS016 P3 rule), and this state has
+// exactly one clear site, so half-declaring it in two literals buys nothing and risks the usual
+// `undefined`-for-a-whole-run bug. reset() is called from resetRun() instead, the same per-run seam
+// DiffLog.rows and PlayPeaks.run already use.
+//
+// ⛔ Bench.running gates tick() — the same seal input PlayPeaks.sample() reads, for the same reason.
+// loop() never calls update() while the battery runs, so a real frame cannot reach this during one;
+// the guard is written explicitly rather than left implicit because update(dt) is the one function
+// CLAUDE.md's Test rules say headless tests drive directly, bypassing loop().
+const TELEMETRY_MAX = 400;      // per-run ring; oldest rolls off (spec §5.3)
+// ⛔ ONE SOURCE OF TRUTH for the row shape AND the CSV column order, exactly as DIFFLOG_FIELDS is.
+// SIX "remaining uses" columns, not seven, and that asymmetry is spec C10 rather than an omission:
+// powerBudget holds five (rapid/triple/magnet/engine/guard), scoop is a persistent LEVEL on
+// game.scoopLevel, and health is instantaneous — it has no remaining-use quantity at all, so it gets
+// a pickup column and nothing else. The ten dmg* columns are CS037 P1's accumulators, read straight.
+const TELEMETRY_FIELDS = [
+  "t", "level", "score", "hp", "speed",
+  "rapidLeft", "tripleLeft", "magnetLeft", "engineLeft", "guardLeft", "scoopLevel",
+  "rapidPicked", "triplePicked", "healthPicked", "magnetPicked", "enginePicked", "scoopPicked", "guardPicked",
+  "dmgDebris3", "dmgDebris2", "dmgDebris1",
+  "dmgHunter3", "dmgHunter2", "dmgHunter1",
+  "dmgUfoBodyLarge", "dmgUfoBodySmall", "dmgUfoShotLarge", "dmgUfoShotSmall",
+  "debugRun", "resumedRun",
+];
+// ⛔ A NEW KEY, additive, owned by CS037 P4. Nothing below reads, writes, renames or version-bumps any
+// of the five existing keys — afd_settings_v1, afd_achievements_v2, afd_scores_v1, afd_profiles_v1,
+// afd_saves_v1 are untouched by this whole section (spec §5.6).
+//   The SaveSlots idiom verbatim: routed through Profiles.keyFor() at BOTH the read and the write site
+// (so a non-legacy profile gets its own suffixed store and "p0" resolves to the bare name), guarded by
+// storageOK(), wrapped in try/catch, a versioned envelope, and KNOWN-VALUE-ELSE-DEFAULT ON THE
+// ENVELOPE — absent, unparseable, a wrong `v` or a non-array `rows` all resolve to an EMPTY buffer
+// rather than throwing or partially trusting a bad blob. LAZY like SaveSlots: nothing reads it at boot.
+// ⛔ IT FAILS SILENTLY, and that is the one place it deliberately differs from SaveSlots.write()'s
+// boolean return. That exception exists because Save is a player-initiated act with an expectation of
+// success (CS032 §4.4); this is a background write every 15 s that nobody is watching, so a quota or
+// privacy-mode failure must cost the run nothing.
+const TELEMETRY_KEY = "afd_telemetry_v1";
+const Telemetry = {
+  rows: [],
+  acc: 0,     // game-time seconds accrued since the last snapshot
+  msg: "",    // the export's ONE visible channel — drawDebug draws it in the panel's footer band
+
+  reset() { this.rows = []; this.acc = 0; },
+
+  // Once per playing frame, from update()'s cleanup block. `acc -= iv` rather than `acc = 0` so the
+  // cadence cannot drift: dt is clamped to 0.05 s and the knob's min is 1 s, so one subtraction
+  // always lands acc back inside [0, iv). Lowering the knob mid-run can leave acc above the NEW
+  // interval — it drains at one row per frame, never a burst inside a single frame.
+  tick(dt) {
+    if (Bench.running) return;
+    const iv = DEBUG.telemetryInterval;
+    if (!(iv > 0)) return;              // 0 / NaN would push a row every frame and eat the ring
+    this.acc += dt;
+    if (this.acc < iv) return;
+    this.acc -= iv;
+    this.push();
+  },
+
+  // ⛔ Math.hypot is CORRECT here and is not a wrap-aware-helper miss. The wrap-aware rule covers
+  // world-space distance, aiming and link math between two POSITIONS; this is the magnitude of one
+  // velocity vector, which has no seam to cross (spec §5.2 names this expression).
+  push() {
+    const s = game.stats, b = game.powerBudget, sh = game.ship;
+    this.rows.push({
+      t: s.gameTime, level: game.wave, score: game.score,
+      hp: sh.hp, speed: Math.hypot(sh.vx, sh.vy),
+      rapidLeft: b.rapid, tripleLeft: b.triple, magnetLeft: b.magnet,
+      engineLeft: b.engine, guardLeft: b.guard, scoopLevel: game.scoopLevel,
+      rapidPicked: s.rapidPicked, triplePicked: s.triplePicked, healthPicked: s.healthPicked,
+      magnetPicked: s.magnetPicked, enginePicked: s.enginePicked,
+      scoopPicked: s.scoopPicked, guardPicked: s.guardPicked,
+      dmgDebris3: s.dmgFromDebris3, dmgDebris2: s.dmgFromDebris2, dmgDebris1: s.dmgFromDebris1,
+      dmgHunter3: s.dmgFromHunter3, dmgHunter2: s.dmgFromHunter2, dmgHunter1: s.dmgFromHunter1,
+      dmgUfoBodyLarge: s.dmgFromUfoBodyLarge, dmgUfoBodySmall: s.dmgFromUfoBodySmall,
+      dmgUfoShotLarge: s.dmgFromUfoShotLarge, dmgUfoShotSmall: s.dmgFromUfoShotSmall,
+      debugRun: game.debugRun, resumedRun: game.resumedRun,
+    });
+    while (this.rows.length > TELEMETRY_MAX) this.rows.shift();   // drop oldest, keep the cap
+    this.write();   // ⛔ every snapshot, so a crash loses at most one interval (spec §5.6)
+  },
+
+  read() {
+    const ls = storageOK(); if (!ls) return [];
+    try {
+      const raw = ls.getItem(Profiles.keyFor(TELEMETRY_KEY));
+      if (!raw) return [];
+      const data = JSON.parse(raw);
+      if (!data || data.v !== 1 || !Array.isArray(data.rows)) return [];
+      return data.rows.slice();
+    } catch (e) { return []; }   // corrupt / unreadable — an empty buffer, never a throw
+  },
+  write() {
+    const ls = storageOK(); if (!ls) return;
+    try { ls.setItem(Profiles.keyFor(TELEMETRY_KEY), JSON.stringify({ v: 1, rows: this.rows })); }
+    catch (e) { /* quota / privacy mode / disabled — a background write, silent by design */ }
+  },
+};
+// CSV column order matches TELEMETRY_FIELDS exactly; one header line, then one line per row. The two
+// flags go out as `true`/`false` rather than 1/0 — a sheet reads either, and this way the column says
+// what the field actually is.
+function telemetryCSV(rows) {
+  const lines = [TELEMETRY_FIELDS.join(",")];
+  for (const row of rows) lines.push(TELEMETRY_FIELDS.map(f => row[f]).join(","));
+  return lines.join("\n") + "\n";
+}
+// Which buffer the export copies. The LIVE one wins; a session that has not snapshotted yet falls
+// back to the PERSISTED one, which is what makes the localStorage half recoverable rather than
+// write-only — after a crash or a refresh the in-memory buffer is empty and the store still holds the
+// last run's rows. The message always names the source, so the two can never be mistaken for one
+// another. (This is the only reader of Telemetry.read() in the build; nothing touches it at boot.)
+function telemetryExportRows() {
+  return Telemetry.rows.length ? { rows: Telemetry.rows, from: "this run" }
+                               : { rows: Telemetry.read(), from: "storage" };
+}
+// The download fallback, lifted from benchDownloadResults() — same shape, same guards, its own
+// filename. Wrapped so a headless/no-DOM environment (or a stub missing Blob/URL/click) can never
+// throw; the outcome is stated either way.
+function telemetryDownload(text, why) {
+  try {
+    const blob = new Blob([text], { type: "text/csv" });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "orbital-telemetry-" + ts + ".csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    Telemetry.msg = "Downloaded telemetry CSV (" + why + ").";
+    AudioSys.ui(true);
+  } catch (e) {
+    Telemetry.msg = "Copy FAILED (" + why + ") and no download either — see the console.";
+    AudioSys.ui(false);
+  }
+}
+// "Copy telemetry log" — the debug panel's action row. ⛔ THE EXPORT LIVES HERE AND NOWHERE ELSE, never
+// in Options (spec §5.3). It shares benchCopyResults()'s failure contract for the same reason that one
+// has it: navigator.clipboard is absent on file:// in several browsers and rejects without a user
+// gesture in others, so BOTH paths fall through to a Blob download and every outcome — copied,
+// downloaded, or neither — is stated in Telemetry.msg. A copy that quietly did nothing is
+// indistinguishable from one that worked.
+//
+// ⛔ REACHABLE AT GAME OVER. The buffer is per-run and resetRun() clears it, so a finished run's data
+// is only exportable between the death and the next start — which is exactly why the secret code's
+// gate now admits a PAUSED GAMEOVER screen alongside a paused live game (see the keydown listener).
+function copyTelemetry() {
+  const src = telemetryExportRows();
+  if (!src.rows.length) {
+    Telemetry.msg = "No telemetry rows yet — one lands every " + DEBUG.telemetryInterval + " s of play.";
+    AudioSys.ui(false);
+    return;
+  }
+  const text = telemetryCSV(src.rows);
+  try {
+    const cb = navigator.clipboard;
+    if (cb && typeof cb.writeText === "function") {
+      const p = cb.writeText(text);
+      Telemetry.msg = "Copied " + src.rows.length + " telemetry rows (" + src.from + ") to the clipboard.";
+      if (p && typeof p.catch === "function") p.catch(() => telemetryDownload(text, "clipboard denied"));
+      AudioSys.ui(true);
+      return;
+    }
+  } catch (e) { /* fall through to the download */ }
+  telemetryDownload(text, "no clipboard API");
+}
+
 // CS011: Dan speaks only when a real voice style is selected. voiceStyle "off" mutes him without disturbing
 // VOICE_PARAMS (which keeps the last real style so the acoustic engine always has a valid full object).
 function voiceEnabled() { return settings.voiceStyle !== "off"; }
@@ -5395,6 +5606,9 @@ function menuDebug(a) {
       // the keydown listener both hand it the frame and the keyboard while Bench.running.
       else if (r.label === "Run benchmark battery") Bench.start();
       else if (r.label === "Copy benchmark results") benchCopyResults();
+      // CS037 P4: the telemetry export. Reachable at gameover through the same panel (see the keydown
+      // listener's secret-code gate), which is the whole point — resetRun() clears the buffer.
+      else if (r.label === "Copy telemetry log") copyTelemetry();
     }
     else if (r && r.kind === "back") debugReturn();
   }
@@ -7855,7 +8069,18 @@ function resetGameStats() {
                              // Achievements.lifetime.saucerKills, which is cross-game)
     smallSaucerKills: 0,     // small (aimed) saucers destroyed this game (Small Ball)
     deflects: 0,             // hazards/bullets absorbed by the shield this game (Shield Surfer)
-    healthPicked: 0,         // Health powerups picked up this game (Glass Cannon)
+    healthPicked: 0,         // Health powerups picked up this game (Glass Cannon) — and, from CS037 P4,
+                             // ALSO the telemetry row's health-pickup column. ⛔ Health does NOT get a
+                             // seventh parallel counter (spec §5.4): this one already counts exactly
+                             // that quantity, and two counters for one event can only disagree. Glass
+                             // Cannon is neither touched nor repointed.
+    // CS037 P4 (spec §5.4, FORK-E -> all 7): the other six per-type pickup counts. FLAT fields, not a
+    // nested object — game.stats.powerUsed is nested and costs buildSaveEntry() and resumeFromSave() an
+    // explicit special-case each (a bare spread would leave it ALIASED to the live run); flat numbers
+    // need neither and inherit the known-key type-matched copy loops for free. Incremented at ONE site,
+    // the top of applyPowerup().
+    rapidPicked: 0, triplePicked: 0, magnetPicked: 0,
+    enginePicked: 0, scoopPicked: 0, guardPicked: 0,
     powerupsPicked: 0,       // ANY powerups picked up this game (No Powerups Needed)
     powerUsed: { rapid: false, triple: false, magnet: false, engine: false }, // Powered Up (all four)
     dmgThisWave: 0,          // hits taken during the wave in progress (perfect-wave detection)
@@ -8280,6 +8505,10 @@ function resetRun(wave, debugRun) {
                 nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "", hsFilter: HS_FILTER_DEFAULT }; // ensure no menu carries in
   DiffLog.rows = []; // CS017 P2: dev log is per-run, never carries into a fresh game
   PlayPeaks.reset();  // CS037 P2.1: the run figure resets here; the session figure does not
+  Telemetry.reset();  // CS037 P4: the telemetry buffer is PER-RUN, and this is the shared seam both
+                      // startGame() and resumeFromSave() go through — a resumed run starts clean too.
+                      // The persisted envelope is deliberately NOT cleared here: it is the crash/refresh
+                      // recovery copy, and the next snapshot overwrites it wholesale anyway.
   game.stats = resetGameStats();  // fresh per-game achievement tracking (F9)
   game.toasts = [];               // clear any lingering unlock toasts
   game.pendingAch = [];           // CS030 P1: clear any lingering unflushed unlocks
@@ -8955,6 +9184,13 @@ function superMegaDelivery() {
 // banking rule for the first time (it was timed-only before): a second Engine pickup with fuel left
 // adds a second tankful and arms the same HUD bank badge as any other type.
 function applyPowerup(type) {
+  // CS037 P4 (spec §5.4): THE ONE per-type pickup increment site, deliberately above the scoop branch's
+  // early return so all six flat counters are fed from a single line. Health is excluded on purpose —
+  // it already has healthPicked, incremented on the shared arm below, and a second increment here would
+  // double it. The typeof gate is not defensive padding: a future powerup type added without its own
+  // counter would otherwise write NaN into game.stats and poison every telemetry row silently.
+  const pickKey = type + "Picked";
+  if (type !== "health" && typeof game.stats[pickKey] === "number") game.stats[pickKey]++;
   if (type === "scoop") {
     // Scoop is a PERSISTENT, non-timed upgrade (v3.3 P3) — it lives on game.scoopLevel, NOT in
     // powerBudget. Each pickup adds a level; at the cap it pays a small score bonus instead,
@@ -11475,6 +11711,11 @@ function update(dt) {
   // CS037 P2.1 (Gate A Q6): sampled AFTER every filter above, so this is the post-cull count a frame
   // actually drew — never a mid-frame count that still includes a body about to die.
   PlayPeaks.sample();
+  // CS037 P4 (spec §5.3): the telemetry snapshot, on the SAME once-per-frame seam and for the same
+  // reason — the row records the post-cull field a frame actually drew. Reaching here at all means
+  // this was a live, unpaused, unfrozen playing frame, which is precisely the clock game.stats.gameTime
+  // runs on, so `dt` here is game time by construction rather than by a second rule written down.
+  Telemetry.tick(dt);
   if (hadSaucer && game.saucers.length === 0) AudioSys.saucer(false);
 
   // --- Wave clear --- CS015 P3: clears on debris-empty alone; Hunters and loose garbage
@@ -11969,6 +12210,9 @@ function drawDebug() {
   // "downloaded instead", "copy failed", "complete", "aborted". Sits in the footer band above the
   // position indicator; empty until the instrument has something to say.
   if (Bench.msg) drawText(Bench.msg, VIEW_W / 2, y + DEBUG_PANEL_H - 80, 13, COLOR.dim);
+  // CS037 P4: the telemetry export's own status line, one band above the benchmark's so the two
+  // instruments never overwrite each other's last word. Same font, same tint, empty until it speaks.
+  if (Telemetry.msg) drawText(Telemetry.msg, VIEW_W / 2, y + DEBUG_PANEL_H - 96, 13, COLOR.dim);
   const more = (top > 0 ? "▲  " : "    ") + (m.index + 1) + " / " + total + (end < total ? "  ▼" : "    ");
   drawText(more, VIEW_W / 2, y + DEBUG_PANEL_H - 58, 15, COLOR.dim);
   // CS024 P1: the conditional "R reroll orbit start angles" tail is gone with the keybind it documented

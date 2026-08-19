@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS037 · Phase: P2.1 · Registry: 110 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P4 · Registry: 111 · Levers: 18
 
 ## Phase ledger — CS037
 
@@ -41,10 +41,51 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P2.1 · Registry: 110 · Levers:
   plus a third table (`population,peak_this_run,peak_this_session`) appended after P2's own two tables,
   which are byte-identical to what P2 shipped.
 
+- P4 — periodic gameplay telemetry (spec §5). `Telemetry` (module-level, the `DebugPanel`/`PlayPeaks`
+  precedent) buffers one row every `telemetryInterval` seconds of **game time** — new GLOBAL knob, def 15,
+  registry 110 → 111, headers unchanged at 11. `Telemetry.tick(dt)` sits beside `PlayPeaks.sample()` in
+  `update()`'s cleanup block, so pause, menu and level-ceremony seconds cannot reach it by construction.
+  Thirty columns (`TELEMETRY_FIELDS`, the one source of truth for row shape and CSV order): score, level,
+  hull, speed, six remaining-use columns (five `powerBudget` keys + `scoopLevel` — health has none, spec
+  C10), seven pickup counts, P1's ten `dmgFrom*` accumulators, `debugRun`/`resumedRun`, and the
+  `game.stats.gameTime` timestamp. 400-row ring, oldest off; cleared by `Telemetry.reset()` in
+  `resetRun()`, so both `startGame()` and `resumeFromSave()` inherit it. Six new flat `*Picked` counters on
+  `resetGameStats()`, incremented at ONE site above `applyPowerup()`'s scoop early-return; **health reuses
+  `healthPicked`** and Glass Cannon is untouched. New key `afd_telemetry_v1`, written each snapshot on the
+  `SaveSlots` idiom verbatim (`Profiles.keyFor()` at both sites, `storageOK()`, try/catch, versioned
+  envelope, known-value-else-default) but **silent on failure** — a background write, not a player-initiated
+  save. ⛔ No existing key touched. Export is a "Copy telemetry log" debug-panel action row, and the secret
+  code's gate gained a **paused-gameover** arm so it is reachable there — required, since the next
+  `resetRun()` clears the buffer.
+
 ## Working / verified
 
-- Full suite: **151 files** (150 + new `test-cs037-p2-1.js`, 49 assertions), **151 passed, 0 failed,
-  0 skipped**, run clean twice in a row; `node --check` passes. `test-cs037-p2-1.js`
+- Full suite: **152 files** (151 + new `test-cs037-p4.js`, 288 assertions), **152 passed, 0 failed,
+  0 skipped**, run clean twice in a row; `node --check` passes. `test-cs037-p4.js` hand-mutation-checked
+  eleven times (drop `Telemetry.reset()` from `resetRun()`; move the pickup increment below the scoop
+  early-return; drop the health exclusion so `healthPicked` double-counts; cap 400 → 500; roll the NEWEST
+  row off instead of the oldest; drop `tick()`'s `Bench.running` guard; stop checking the envelope version;
+  revert the paused-gameover arm; write the bare key instead of `Profiles.keyFor()`; make the empty-buffer
+  export a silent no-op; halve the effective interval) — all eleven caught.
+
+- **P4 touched 21 older suite files plus `test-registry.js`, all repoints, none a scope change** except one,
+  named below. Registry 110 → 111 and the panel trailer grew by one action row: ten `DEBUG_VARS.length + 6`
+  → `+ 7`; `test-cs018-p2`/`test-cs015-p4`/`test-cs017-p2` re-derived their trailer offsets;
+  `test-cs018-p6`/`test-cs026-p3` widened their GLOBAL-membership lists; `test-cs024-p6b` gained a
+  tail-ordered `,telemetryInterval$` strip; `test-cs024-p6c`'s non-lever count 56 → 57; five "added since"
+  allowlists gained the id; six "registry unchanged since my parent" allowances widened by one;
+  `test-cs026-p3`'s TRAP 5 gained `Telemetry.reset();` in `DROPPED_LINES`, the same treatment CS037 P2.1's
+  `PlayPeaks.reset();` got. **The one genuine narrowing:** `test-cs026-p5.js` §A asserted "nothing was
+  appended to GLOBAL"; P4 appends `telemetryInterval` there, so that claim is retired and replaced by a
+  pin that `levelBannerY` is followed by exactly that row. What §A actually owns — the four banner knobs
+  sitting together after `startLevel` — is unchanged.
+
+- CS037 P2's seal re-measured after P4 and **holds**: eight `if (Bench.running) return;` guards now (P2's
+  five, `benchCopyResults()`'s, `PlayPeaks.sample()`'s and `Telemetry.tick()`'s), `loop()` still skips
+  `update()`/`draw()` outright, and 60 s of driven `update()` under `Bench.running` produces no telemetry
+  row and does not move the accumulator.
+
+- Previously: `test-cs037-p2-1.js`
   hand-mutation-checked six times (latch the last value instead of the true max; sample before the
   cleanup filters instead of after; drop the `Bench.running` guard on `sample()`; drop
   `PlayPeaks.reset()` from `resetRun()`; fall back to a population's `top` row when its `cross60` is
@@ -76,6 +117,23 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P2.1 · Registry: 110 · Levers:
     function signature; all three repointed to the new (srcTag-carrying) literal text.
 
 ## Known issues
+
+- **⛔ NEW (P4) — `CLAUDE.md`'s Save data section now understates the key list, and P8 must fix it.**
+  That section enumerates three frozen keys, "CS031 adds a fourth", "CS032 adds a fifth" and
+  "⛔ CS033 adds no sixth key." P4 adds `afd_telemetry_v1` — additive, owned by CS037 P4, not frozen,
+  lazy (nothing reads it at boot), routed through `Profiles.keyFor()`. The CS033 line stays literally
+  true about CS033, but the enumeration now reads as complete when it is not. **Deliberately NOT edited
+  here:** the spec's cross-cutting constraints say exactly one `⛔ INVARIANT` marker changes this
+  changeset (`resumeFromSave()` step ordering, P6's) and P8 owns the `CLAUDE.md` sweep. This is the
+  hazard that constraint was written before P4 existed to account for.
+
+- **The telemetry export falls back to the PERSISTED buffer when the live one is empty (P4).** A design
+  detail the spec did not name: §5.6 says the key exists "so a crash or refresh does not lose the run",
+  which is only true if something reads it back, and nothing else in the build does. `copyTelemetry()`
+  is that reader — live buffer first, persisted copy second — and `Telemetry.msg` always states which
+  of the two it copied, so the two can never be confused. Consequence, stated rather than hidden: after
+  a `resetRun()` and before the new run's first snapshot, the export hands back the PREVIOUS run's rows,
+  labelled "storage". That is the recovery case working, not a leak.
 
 - **The benchmark's ms figures exclude the frame's fixed overhead** (starfield, ship, HUD, chrome), by
   design — that is what makes the update-vs-draw split readable — so a crossing count is an **upper
@@ -181,14 +239,16 @@ None.
 
 ## Next up
 
-- **CS037 is in flight (P1, P2 done). ⛔ GATE A is next and is BLOCKING** — P3 (static caps) does not
-  start until Paul has run the battery and returned numbers. Run it from the debug panel's "Run
-  benchmark battery" row, then "Copy benchmark results"; the battery forces registry defaults itself, so
-  no manual "Overrides Applied → OFF" step is needed. `IMPLEMENTATION-PHASES-CS037.md` GATE A lists the
-  six questions to answer.
+- **CS037 is in flight (P1, P2, P2.1, P4 done; P3 DROPPED at Gate A). P5 is next** — full tow release
+  on damage plus the "Payload lost." voice event split (spec §4). P6 (resume baseline), P7 (delivery
+  payout nerf), then the BLOCKING Gate B, then P8.
 
-- `PLANNED-FEATURES-CS037.md` / `IMPLEMENTATION-PHASES-CS037.md` are the live planning pair; P1 is
-  prerequisite instrumentation for Item D's telemetry buffer (§5), which is not yet built.
+- **GATE A closed 2026-08-19 with a null result** — every population cleared both thresholds at the
+  2000-entity ceiling, so P3 (static caps) was dropped. `IMPLEMENTATION-PHASES-CS037.md` keeps the
+  phase in place, struck, and `PLANNED-FEATURES-CS037.md` §3.4 holds the numbers.
+
+- `PLANNED-FEATURES-CS037.md` / `IMPLEMENTATION-PHASES-CS037.md` are the live planning pair. Item D
+  (§5) is now BUILT — P1's ten accumulators and P4's buffer, storage and export together.
 
 - **The first thing any CS037 gate should do is clear the debug overrides** (FLAG-CS036-a). Every
   slider answer this changeset returned, and every one a future gate returns, is only as good as

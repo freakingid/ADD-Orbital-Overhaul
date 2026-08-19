@@ -415,9 +415,11 @@ let X = null;
   // claim narrows to GLOBAL's own membership (up to the next header), not "everything after GLOBAL".
   const nextHIdx = X.DEBUG_VARS.findIndex((v, i) => i > gIdx && v.header);
   const globalIds = X.DEBUG_VARS.slice(gIdx + 1, nextHIdx === -1 ? undefined : nextHIdx).map(v => v.id);
+  // REPOINTED BY CS037 P4: telemetryInterval joins GLOBAL's tail. This section's own claim — where
+  // earlyWorldLevels sits — is untouched by that.
   eq(globalIds.join(","),
-    "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY",
-    "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel (CS026 P5's four level banner knobs trail startLevel)");
+    "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY,telemetryInterval",
+    "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel (CS026 P5's four level banner knobs then CS037 P4's telemetryInterval trail startLevel)");
   eq(X.DEBUG.earlyWorldLevels, 5, "D: the live value seeds from the def");
 
   // It is READ LIVE at the wave boundary, never cached — a panel change takes effect on the next level.
@@ -782,6 +784,9 @@ let X = null;
     // reset, is NOT a `game.*` field (it deliberately sits OUTSIDE the CS016-P3-rule shape — see
     // PlayPeaks' own header), but it is a new line in this same list and gets the same treatment: dropped
     // by name, so any OTHER new line here still fails this trap.
+    // NARROWED AGAIN BY CS037 P4 — `Telemetry.reset();`, the telemetry buffer's per-run clear, for exactly
+    // the same reason and with exactly the same treatment: module-level state (not a `game.*` field), one
+    // new line in this same list, dropped by name.
     const DROPPED_LINES = new Set([
       "game.deliveryTicker = null;",
       "game.pendingAch = [];",
@@ -795,6 +800,7 @@ let X = null;
       "game.levelDone = null;",
       "game.dockPingTimer = 0;",
       "PlayPeaks.reset();",
+      "Telemetry.reset();",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
@@ -832,7 +838,7 @@ let X = null;
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer and CS037 P2.1's PlayPeaks.reset()");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset() and CS037 P4's Telemetry.reset()");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

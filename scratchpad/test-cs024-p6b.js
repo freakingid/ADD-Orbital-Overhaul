@@ -605,6 +605,10 @@ function evalSlice(literal) {
       // strip is narrowed rather than dropped — the three that remain are still CS035 P3's rows, not P6b's.
       .replace(/,levelEndGrace,levelEndFade,levelEndGracePulseEnd$/, "")
       .replace(/,CELEBRATION,celebrationScrollStep,celebrationEmblemSize$/, "")
+      // CS037 P4 repoint: and telemetryInterval (GLOBAL, appended after levelBannerY) — CS037 P4's row,
+      // not P6b's. It sits between the level banner rows and the CELEBRATION header, so by the
+      // tail-ordering rule above its strip goes exactly here: below CELEBRATION's, above the banners'.
+      .replace(/,telemetryInterval$/, "")
       .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
       .replace(/,startLevel$/, "")
       .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "")

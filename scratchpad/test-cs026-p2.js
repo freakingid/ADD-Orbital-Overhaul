@@ -662,7 +662,8 @@ let X = null;
       || id.startsWith("chainGuardDrop")                                // CS035 P6
       || id === "sweepPowerupCap" || id === "dockPowerupSpeed"          // CS035 P6
       || id === "dockPingCooldown"                                      // CS036 P5
-      || id.startsWith("bench");                                        // CS037 P2 (BENCHMARK controls)
+      || id.startsWith("bench")                                         // CS037 P2 (BENCHMARK controls)
+      || id === "telemetryInterval";                                    // CS037 P4 (the telemetry cadence)
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",
       `J: exactly THREE rows were added by THIS phase, in that order (all added since: ${added.join(", ")})`);
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRows.includes(id)).join(","), oldRows.join(","),

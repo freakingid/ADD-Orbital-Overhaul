@@ -227,7 +227,7 @@ let X = null;
     "A: three lever-knob rows per LEVERS entry — the standard leverKnob() triple");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "A: DEBUG_ROWS is still the registry plus its six trailer rows");
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7, "A: DEBUG_ROWS is still the registry plus its seven trailer rows");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -647,7 +647,10 @@ let X = null;
   // CS037 P2 repoint: +4 more (benchRampStep/RampInterval/SettleFrames/MaxCount, BENCHMARK — the
   // benchmark instrument's ramp controls). Not levers, spec §3.2: a measurement instrument is not a
   // pressure axis, no chain, no floor/ceil/steps triple. Same reasoning a twelfth time.
-  eq(nonLever.length, 56, "G: 56 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2's registry");
+  // CS037 P4 repoint: +1 more (telemetryInterval, GLOBAL — the telemetry snapshot cadence). Not a
+  // lever, spec §5.1: an observation cadence is not a pressure axis, no chain, no floor/ceil/steps
+  // triple. Same reasoning a thirteenth time.
+  eq(nonLever.length, 57, "G: 57 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

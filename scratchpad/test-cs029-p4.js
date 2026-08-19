@@ -103,7 +103,7 @@ const src = scriptSource();
   // REPOINTED BY CS035 P6: +5 more (chainGuardDropBase/Pity/Max, sweepPowerupCap, dockPowerupSpeed).
   // REPOINTED BY CS036 P2: −1 — levelEndHold RETIRED (the pre-nextWave() hold is player-paced now).
   // REPOINTED BY CS036 P5: +1 — dockPingCooldown (the dock push's audio rate limit).
-  eq(X.DEBUG_ENTRIES.length, 110, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition and CS037 P2's four BENCHMARK controls later) — G1=C carries no new registry row");
+  eq(X.DEBUG_ENTRIES.length, 111, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition CS037 P2's four BENCHMARK controls and CS037 P4's telemetryInterval later) — G1=C carries no new registry row");
   assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
   assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
     "B: no minGap knob either — that belongs to model B, which was not picked");

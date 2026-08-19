@@ -232,8 +232,8 @@ let X = null;
 
   eq(X.DEBUG.deliveryFloatRise, 150, "B: the live value seeds from def (rise)");
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6,
-    "B: DEBUG_ROWS is still registry + its six trailer rows");
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7,
+    "B: DEBUG_ROWS is still registry + its seven trailer rows");
 
   // Live through the real panel path.
   const A = build();
