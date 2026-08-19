@@ -112,10 +112,19 @@ function buildInstance(fakeCtor) {
 
 // ================= (B) VOICE_LINES.chain_broken =====================
 (function () {
-  console.log("(B) VOICE_LINES.chain_broken: 5 lines, each parses clean");
+  console.log("(B) the break lines: every alternative under chain_broken AND chain_lost parses clean");
   const { VOICE_LINES, parsePhonTokens } = buildInstance();
-  const lines = VOICE_LINES.chain_broken;
-  assert(Array.isArray(lines) && lines.length === 5, "B: chain_broken has 5 alternatives");
+  // REPOINTED BY CS037 P5. This read `chain_broken.length === 5` — a count that was never CS011 P5's
+  // to own (P5 built the TRIGGER; CS015 P7 later replaced the set wholesale) and that CS037 P5 re-
+  // partitioned: "Payload lost." moved verbatim into its own chain_lost event, leaving 4 + 1. The
+  // claim this section actually carries is that every break alternative in the build parses clean, so
+  // it now walks BOTH events and pins the conserved total instead of one table's size.
+  const lines = (VOICE_LINES.chain_broken || []).concat(VOICE_LINES.chain_lost || []);
+  assert(Array.isArray(VOICE_LINES.chain_broken) && VOICE_LINES.chain_broken.length > 0,
+    "B: chain_broken still carries the PARTIAL-break alternatives");
+  assert(Array.isArray(VOICE_LINES.chain_lost) && VOICE_LINES.chain_lost.length > 0,
+    "B: chain_lost carries the TOTAL-loss alternative(s)");
+  assert(lines.length === 5, `B: five break alternatives across the two events (got ${lines.length})`);
   for (const line of (lines || [])) {
     assert(typeof line.text === "string" && line.text.length > 0, `B: line has text ("${line.text}")`);
     assert(typeof line.phon === "string" && line.phon.length > 0, `B: line has phon ("${line.text}")`);
@@ -151,8 +160,14 @@ function makeChainNode(x, y) {
   game.chain = [makeChainNode(0, 0), makeChainNode(10, 0), makeChainNode(20, 0)];
   game.caption = { text: "", dur: 0, life: 0 };
   noThrow(() => breakChain(0), "D: breakChain(0) does not throw");
-  const texts = VOICE_LINES.chain_broken.map(l => l.text);
-  assert(texts.includes(game.caption.text), `D: caption text is one of the chain_broken lines (got "${game.caption.text}")`);
+  // REPOINTED BY CS037 P5. What §D owns is "a break captions exactly once, and a second inside
+  // VOICE_COOLDOWN does not caption again" — not WHICH event supplies the line. CS037 P5's selection
+  // rule ("was the chain non-empty, and is it now empty") makes breakChain(0) a TOTAL loss, so it now
+  // draws from chain_lost; a partial break (i > 0) still draws from chain_broken. Accept either pool,
+  // which keeps the captioning claim at full strength and is agnostic to the partition. §D's own
+  // extra check that i === 0 picks chain_lost lives in test-cs037-p5.js, which owns that rule.
+  const texts = VOICE_LINES.chain_broken.concat(VOICE_LINES.chain_lost).map(l => l.text);
+  assert(texts.includes(game.caption.text), `D: caption text is one of the break lines (got "${game.caption.text}")`);
   assert(game.chain.length === 0, "D: chain truncated to i (0) after break");
 
   // Rebuild a chain and break it again, well inside VOICE_COOLDOWN (1.2s) -> must be dropped, not replace.
@@ -160,7 +175,11 @@ function makeChainNode(x, y) {
   ctx.currentTime += 0.5; // < VOICE_COOLDOWN since the first line's busyUntil
   game.caption.text = "__sentinel__";
   noThrow(() => breakChain(0), "D: second breakChain within cooldown does not throw");
-  assert(game.caption.text === "__sentinel__", "D: second breakChain within cooldown is dropped (caption unchanged)");
+  // CS037 P5 note: chain_lost is VOICE_CRITICAL, so the second line is PARKED rather than discarded.
+  // That is a queue fact, not a caption fact — a parked line is not captioned until it PASSES the gate
+  // at drain (one gate, two outputs), so this section's claim is unchanged and is deliberately still
+  // stated against the caption. The parking itself is pinned in test-cs037-p5.js.
+  assert(game.caption.text === "__sentinel__", "D: second breakChain within cooldown does not caption (unchanged)");
   assert(game.chain.length === 0, "D: chain still truncates on the dropped break");
 })();
 
@@ -183,7 +202,10 @@ function makeChainNode(x, y) {
   game.caption = { text: "__sentinel2__", dur: 0, life: 0 };
   game.chain = [makeChainNode(0, 0), makeChainNode(10, 0)];
   noThrow(() => breakChain(0), "E: breakChain(0) while priority-3 busy does not throw");
-  assert(game.caption.text === "__sentinel2__", "E: chain_broken (priority 2) dropped while priority-3 busy");
+  // CS037 P5: breakChain(0) now speaks chain_lost, also priority 2 (VOICE_PRIORITY is untouched by
+  // criticality — two tables, never merged), so it still loses this gate and still does not caption.
+  // Being critical it PARKS instead of dropping; the caption claim below is what §E owns and holds.
+  assert(game.caption.text === "__sentinel2__", "E: the break line (priority 2) does not caption while priority-3 busy");
   assert(game.chain.length === 0, "E: chain still truncated even though the voice line dropped");
 })();
 

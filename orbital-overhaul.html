@@ -2309,12 +2309,26 @@ const VOICE_LINES = {
     { text: "Truck is full, let's go.",
       phon: "T R AH1 K / IH Z / F UH1 L , L EH1 T S / G OW1 ." },
   ],
+  // CS015 P7's approved set MINUS "Payload lost.", which CS037 P5 (spec §4.2) moved to chain_lost
+  // below. These four describe a PARTIAL loss and are now the partial-break line only: chain_broken
+  // fires from breakChain(i > 0), where the player kept the front of the load.
   chain_broken: [
     { text: "Payload damaged.",         phon: "P EY1 L OW D / D AE1 M IH JH D ." },
     { text: "Payload disrupted.",       phon: "P EY1 L OW D / D IH S R AH1 P T IH D ." },
-    { text: "Payload lost.",            phon: "P EY1 L OW D / L AO1 S T ." },
     { text: "Payload adrift.",          phon: "P EY1 L OW D / AH D R IH1 F T ." },
     { text: "Payload is getting away.", phon: "P EY1 L OW D / IH Z / G EH1 T IH NG / AH W EY1 ." },
+  ],
+  // CS037 P5 (spec §4.2) — TOTAL loss, and only total loss. Under chain_broken this line was one of
+  // five random alternatives, so it read as "everything is gone" on a break that cost the player two
+  // canisters out of twelve. Splitting it is a TABLE PARTITION fix, not a trigger fix (C3).
+  // ⛔ MOVED VERBATIM, text and phon both — the phon was composed and zero-error-verified in
+  // tools/voice-robot-lab.html for CS015 P7, so this split composes NO new phon and needs no lab gate.
+  // Chosen by ONE general rule at every chain-loss site — "was the chain non-empty, and is it now
+  // empty": the damage release in damageShip() (empty by construction) and breakChain(0). ⛔ NEVER
+  // from scatterChain(): ship death stays silent (CS011 P5), and keeping the say() at damageShip()'s
+  // call site is exactly what buys that with no flag and no guard parameter on scatterChain().
+  chain_lost: [
+    { text: "Payload lost.",            phon: "P EY1 L OW D / L AO1 S T ." },
   ],
   // CS017 P7 — fired from the guard-absorb branch at the top of breakChain (the single choke point,
   // so a multi-node hit speaks once). Lab-composed and zero-err-verified by Paul in
@@ -2371,7 +2385,11 @@ function levelPhon(n) {
 // a lower one that is currently playing; an equal/lower one is DROPPED (never queued — a queue would have
 // Dan narrating events that finished ten seconds ago). 3 = hull critical, 2 = health milestones, 1 = rest.
 const VOICE_COOLDOWN = 1.2;
-const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2, chain_broken: 2, chain_guard: 2 };
+// CS037 P5: chain_lost enters at 2, MATCHING chain_broken — the split changed which line is truthful,
+// not how urgent the channel considers it. It is VOICE_CRITICAL (below) so it may WAIT; it stays at 2
+// so it may NOT pre-empt health_low (3). Two questions, two tables, and this one is untouched by the
+// other. See VOICE_CRITICAL's own header.
+const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level: 2, chain_broken: 2, chain_guard: 2, chain_lost: 2 };
 
 // CS025 P4 — CRITICALITY, which is ORTHOGONAL TO PRIORITY and deliberately a SECOND table. Priority
 // answers "may this line INTERRUPT one that is playing?"; criticality answers "may this line WAIT?".
@@ -2387,12 +2405,18 @@ const VOICE_PRIORITY = { health_low: 3, health_relief: 2, health_full: 2, level:
 // Criticality is the right table for it: the level call should WAIT for the channel, and it must NOT gain
 // the power to pre-empt health_low (3) — which is exactly the split this pair of tables exists to
 // express, and is why `level` stays at its existing VOICE_PRIORITY 2 and that table is again untouched.
-const VOICE_CRITICAL = { health_low: true, health_relief: true, cargo_full: true, level: true };
-// Sized to the critical set (4 events, deduped by event), so the cap stays a STRUCTURAL GUARD for the day
-// a fifth is added without anyone thinking about depth — never live logic that silently eats a real line.
-// CS025 P4 shipped this at 3 for the same reason, when the set was three. ⛔ IF YOU ADD A CRITICAL EVENT,
-// RAISE THIS WITH IT: test-cs025-p4.js §F pins the relationship rather than either literal, so it fails.
-const VOICE_QUEUE_MAX = 4;
+// CS037 P5 adds a FIFTH out of FORK-CS037-C: `chain_lost`. Total loss of the tow is the loudest thing
+// that can happen to a run short of dying, and it fires from damageShip() — a busy instant (AudioSys.hit,
+// a possible expire_scoop, whatever else the frame is doing), which is the same shape of problem `level`
+// had. It should WAIT for the channel; it must NOT gain the power to pre-empt health_low, which is why
+// VOICE_PRIORITY.chain_lost stays 2 and that table is again untouched.
+const VOICE_CRITICAL = { health_low: true, health_relief: true, cargo_full: true, level: true, chain_lost: true };
+// Sized to the critical set (5 events, deduped by event), so the cap stays a STRUCTURAL GUARD for the day
+// a sixth is added without anyone thinking about depth — never live logic that silently eats a real line.
+// CS025 P4 shipped this at 3 for the same reason, when the set was three; CS025 P5 took it to 4 with
+// `level`; CS037 P5 takes it to 5 with `chain_lost`. ⛔ IF YOU ADD A CRITICAL EVENT, RAISE THIS WITH IT:
+// test-cs025-p4.js §F pins the relationship rather than either literal, so moving one alone fails.
+const VOICE_QUEUE_MAX = 5;
 
 // CS025 P4 — re-validation at DRAIN time: each predicate is its own trigger's condition RESTATED, so a
 // queued line speaks only while the thing it describes is still true, and is otherwise discarded
@@ -2420,6 +2444,13 @@ const VOICE_STILL_TRUE = {
   // string the banner shows. Note the predicate does NOT read game.levelBanner: the banner is a 2.2 s
   // look-call and the voice channel must not inherit a visual timing knob as a deadline.
   level:         (q) => q.line.text === "Level " + game.wave,
+  // CS037 P5 — the trigger's own condition restated, per the same contract: "the payload is gone" is
+  // `game.chain.length === 0`. A player who re-scooped between the trigger and the drain still has a
+  // payload, so the parked line is discarded SILENTLY rather than spoken late at a full tow. Mutually
+  // exclusive with cargo_full's predicate by construction (that one needs length >= cargoMax >= 1).
+  // Takes no `q`: unlike `level`, the condition is a property of the world alone, not of which line
+  // was parked — there is only one alternative under this event.
+  chain_lost:    () => game.chain.length === 0,
 };
 
 // CS011 P2 — on-screen caption look/timing knobs (LOOK-CALL). The caption is Dan's VISIBLE echo, shown
@@ -9892,6 +9923,28 @@ function damageShip(amount, srcX, srcY, srcTag) {
   }
   for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
   AudioSys.hit();
+  // CS037 P5 (spec §4.1) — A REAL HP-DEALING HIT RELEASES THE WHOLE TOW, from any source.
+  // ⛔ THE NON-LETHAL BRANCH ONLY. This function returns true from two places: after killShip()
+  //   above, and here. killShip() ALREADY calls scatterChain(), so hooking the shared return — or
+  //   moving this above the `s.hp <= 0` early exit — double-scatters on death. It sits below that
+  //   exit deliberately.
+  // ⛔ Shielded / i-framed / auto-shield hits never reach here: all three return false and deal 0 HP
+  //   further up, and keep the cargo. That is what the shield is FOR.
+  // ⛔ FORK-CS037-B1 → no. A chain-guard charge does NOT intercept this. The guard intercepts chain
+  //   SEVERS, through breakChain(), which is not on this path at all; hull damage is a different
+  //   event. game.powerBudget.guard is neither read nor spent here, and must not become so.
+  // ⛔ FORK-CS037-B2 → no. game.stats.cargoDamageEvents is NOT incremented. CS035 P6 scoped that
+  //   drop-weight pity counter to breakChain()'s sever path; scatterChain() deliberately leaves it
+  //   alone, so reusing scatterChain() UNCHANGED delivers this for free. Do not add an increment.
+  // The empty-chain case is a genuine no-op and is guarded as one: scatterChain() also zeroes
+  // deliveryCount and releases the delivery ticker, and a hit taken with nothing in tow has no
+  // business ending a dock visit's tally. That same guard IS the voice rule ("was the chain
+  // non-empty, and is it now empty") — chain_lost, spoken HERE at the call site and never from
+  // inside scatterChain(), which is what keeps killShip()'s own scatter silent (CS011 P5).
+  if (game.chain.length) {
+    scatterChain();
+    VoiceSys.say("chain_lost");
+  }
   // Scoop decays by DAMAGE, not time (v3.3 P3): every SCOOP_HITS_PER_LEVEL non-lethal hits costs one
   // scoop level. scoopHits is a running tally — it is NOT reset by a scoop pickup (FORK-3: no), only
   // when a level is actually lost, and it doesn't accumulate at level 0 (hits there are harmless).
@@ -10579,7 +10632,13 @@ function breakChain(i, src = null) { // node i destroyed; everything aft breaks 
   chain.length = i;
   game.deliveryCount = 0;
   releaseDeliveryTicker(); // CS029 P4: a hostile break mid-offload ends the visit too
-  VoiceSys.say("chain_broken"); // CS011 P5: choke point only — scatterChain() (ship death) stays silent
+  // CS011 P5: choke point only — scatterChain() (ship death) stays silent.
+  // CS037 P5 (spec §4.2): WHICH line, by the one general rule applied at every chain-loss site —
+  // "was the chain non-empty, and is it now empty". A sever always starts from a non-empty chain
+  // (i indexes a live node), and `chain.length = i` above means the test reduces to i === 0 here:
+  // node 0 cut loose is the whole load, which is chain_lost; anything aft of it is a PARTIAL loss and
+  // keeps chain_broken. Written against the length so the rule reads the same at all three sites.
+  VoiceSys.say(chain.length === 0 ? "chain_lost" : "chain_broken");
 }
 
 function scatterChain() { // ship destroyed: whole load breaks loose

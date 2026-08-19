@@ -7,10 +7,13 @@
 // block, and drive the ACTUAL functions (parsePhonTokens/buildUtterance/VoiceSys.say) — never
 // reimplement game logic. Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) VOICE_LINES.chain_broken: exactly 5 entries, each the approved {text,phon} pair pasted
-//      verbatim, non-empty text+phon.
+//  (B) the five approved {text,phon} pairs are in the build VERBATIM. ⛔ REPOINTED BY CS037 P5: they
+//      no longer live under one event. P5 (spec §4.2) moved "Payload lost." — text AND phon, byte for
+//      byte — into its own chain_lost event, so the set is now chain_broken's four PARTIAL-loss lines
+//      plus chain_lost's one TOTAL-loss line. CS015 P7's claim is about the PAIRS, not the table they
+//      sit in, and is asserted at full strength across both.
 //  (C) Each phon parses through the REAL parsePhonTokens/buildUtterance path with ZERO unknown
-//      tokens (the same zero-err gate the lab enforces).
+//      tokens (the same zero-err gate the lab enforces) — walked over both events.
 //  (D) VOICE_PRIORITY.chain_broken unchanged (still 2).
 //  (E) VoiceSys.say("chain_broken") is headless-safe: AudioSys.ctx null -> early-return, no throw.
 //  (F) GAME_VERSION === "1.0.0.36".
@@ -77,34 +80,56 @@ function buildInstance() {
 
 // The five lines Paul composed/verified in tools/voice-robot-lab.html, pasted verbatim into the
 // build. Pinned here so a future drift (hand-edit, accidental revert) is caught immediately.
-const APPROVED = [
+// ⛔ REPOINTED BY CS037 P5 — SPLIT, NOT WEAKENED. Every byte below is exactly what CS015 P7 approved;
+// the only change is which event each pair now belongs to, and that partition is itself asserted.
+// "Payload lost." reads as total loss, so under chain_broken it lied on a partial break (spec §4.2);
+// moving it verbatim into chain_lost is what makes the line truthful without recomposing any phon.
+const APPROVED_PARTIAL = [
   { text: "Payload damaged.",         phon: "P EY1 L OW D / D AE1 M IH JH D ." },
   { text: "Payload disrupted.",       phon: "P EY1 L OW D / D IH S R AH1 P T IH D ." },
-  { text: "Payload lost.",            phon: "P EY1 L OW D / L AO1 S T ." },
   { text: "Payload adrift.",          phon: "P EY1 L OW D / AH D R IH1 F T ." },
   { text: "Payload is getting away.", phon: "P EY1 L OW D / IH Z / G EH1 T IH NG / AH W EY1 ." },
 ];
+const APPROVED_TOTAL = [
+  { text: "Payload lost.",            phon: "P EY1 L OW D / L AO1 S T ." },
+];
+const APPROVED = APPROVED_PARTIAL.concat(APPROVED_TOTAL);
 
-// ================= (B) VOICE_LINES.chain_broken: 5 entries, pasted verbatim =====================
+// ================= (B) the approved pairs, verbatim, across chain_broken + chain_lost ==============
 (function () {
-  console.log("(B) VOICE_LINES.chain_broken: 5 entries, matching the approved set verbatim");
+  console.log("(B) chain_broken's 4 partial lines + chain_lost's 1 total line match the approved set verbatim");
   const { VOICE_LINES } = buildInstance();
-  const lines = VOICE_LINES.chain_broken;
-  assert(Array.isArray(lines) && lines.length === 5, `B: chain_broken has 5 entries (got ${lines && lines.length})`);
-  for (let i = 0; i < APPROVED.length; i++) {
-    const got = lines[i] || {};
-    assert(typeof got.text === "string" && got.text.length > 0, `B[${i}]: has non-empty text`);
-    assert(typeof got.phon === "string" && got.phon.length > 0, `B[${i}]: has non-empty phon`);
-    assert(got.text === APPROVED[i].text, `B[${i}]: text matches approved ("${got.text}" vs "${APPROVED[i].text}")`);
-    assert(got.phon === APPROVED[i].phon, `B[${i}]: phon matches approved verbatim ("${got.phon}" vs "${APPROVED[i].phon}")`);
+  const CASES = [
+    { ev: "chain_broken", want: APPROVED_PARTIAL },
+    { ev: "chain_lost",   want: APPROVED_TOTAL },
+  ];
+  let seen = 0;
+  for (const { ev, want } of CASES) {
+    const lines = VOICE_LINES[ev];
+    assert(Array.isArray(lines) && lines.length === want.length,
+      `B: ${ev} has ${want.length} entries (got ${lines && lines.length})`);
+    for (let i = 0; i < want.length; i++) {
+      const got = (lines || [])[i] || {};
+      assert(typeof got.text === "string" && got.text.length > 0, `B ${ev}[${i}]: has non-empty text`);
+      assert(typeof got.phon === "string" && got.phon.length > 0, `B ${ev}[${i}]: has non-empty phon`);
+      assert(got.text === want[i].text, `B ${ev}[${i}]: text matches approved ("${got.text}" vs "${want[i].text}")`);
+      assert(got.phon === want[i].phon, `B ${ev}[${i}]: phon matches approved verbatim ("${got.phon}" vs "${want[i].phon}")`);
+    }
+    seen += (lines || []).length;
   }
+  // The conserved total — no approved line was dropped on the way through the split, and none gained.
+  assert(seen === APPROVED.length, `B: all ${APPROVED.length} approved lines survive the CS037 P5 split (got ${seen})`);
+  // ...and "Payload lost." is on the TOTAL-loss event, not still sitting under the partial one.
+  assert(!VOICE_LINES.chain_broken.some(l => l.text === "Payload lost."),
+    "B: \"Payload lost.\" is NOT one of chain_broken's alternatives any more (that was the lie CS037 P5 fixed)");
 })();
 
 // ================= (C) every phon parses/builds with ZERO unknown tokens =====================
 (function () {
-  console.log("(C) every chain_broken phon parses through parsePhonTokens/buildUtterance with zero unknown tokens");
+  console.log("(C) every chain_broken AND chain_lost phon parses through parsePhonTokens/buildUtterance with zero unknown tokens");
   const { VOICE_LINES, parsePhonTokens, buildUtterance, VOICE_PARAMS } = buildInstance();
-  for (const line of VOICE_LINES.chain_broken) {
+  // CS037 P5 moved one pair to chain_lost; the zero-err gate follows it rather than losing coverage.
+  for (const line of VOICE_LINES.chain_broken.concat(VOICE_LINES.chain_lost)) {
     const { errs } = parsePhonTokens(line.phon);
     assert(errs.length === 0, `C: parsePhonTokens("${line.text}") zero errs (got ${JSON.stringify(errs)})`);
     let utt;

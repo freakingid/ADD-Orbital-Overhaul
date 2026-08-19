@@ -686,10 +686,24 @@ function saucerAt(X, x, y, small) {
       assert(!after.includes(OLD_GATE) && after.includes(NEW_SPEND), "A: TRAP 2/3 — ...and the current one carries the unconditional spend instead");
       // A SECOND known diff, added by CS029 P4 (§6.3) on top of CS024 P6's: the hostile break also
       // releases a pinned model-C delivery ticker, same as scatterChain's own new line above.
-      const OLD_TAIL = '  game.deliveryCount = 0;\n  VoiceSys.say("chain_broken");';
-      const NEW_TAIL = '  game.deliveryCount = 0;\n  releaseDeliveryTicker(); // CS029 P4: a hostile break mid-offload ends the visit too\n  VoiceSys.say("chain_broken");';
-      assert(before.includes(OLD_TAIL), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the reset to the voice line");
-      assert(after.includes(NEW_TAIL), "A: TRAP 2/3 — ...and the current one carries the ticker release between them");
+      // WIDENED BY CS037 P5, and only by exactly its own edit: the tail now also carries P5's voice
+      // SELECTION (spec §4.2 — i === 0 speaks the new chain_lost event, i > 0 keeps chain_broken), so
+      // both halves of the pair are extended through the whole say() line INCLUDING its comment rather
+      // than stopping at the semicolon. The claim is unchanged in kind: every diff in breakChain is a
+      // named one. ⛔ Do not collapse this into a substring or comment-insensitive compare — the final
+      // eq() below is what makes the list exhaustive, and it is byte-strict on purpose.
+      const OLD_TAIL = '  game.deliveryCount = 0;\n  VoiceSys.say("chain_broken"); // CS011 P5: choke point only — scatterChain() (ship death) stays silent';
+      const NEW_TAIL = '  game.deliveryCount = 0;\n' +
+        '  releaseDeliveryTicker(); // CS029 P4: a hostile break mid-offload ends the visit too\n' +
+        '  // CS011 P5: choke point only — scatterChain() (ship death) stays silent.\n' +
+        '  // CS037 P5 (spec §4.2): WHICH line, by the one general rule applied at every chain-loss site —\n' +
+        '  // "was the chain non-empty, and is it now empty". A sever always starts from a non-empty chain\n' +
+        '  // (i indexes a live node), and `chain.length = i` above means the test reduces to i === 0 here:\n' +
+        '  // node 0 cut loose is the whole load, which is chain_lost; anything aft of it is a PARTIAL loss and\n' +
+        '  // keeps chain_broken. Written against the length so the rule reads the same at all three sites.\n' +
+        '  VoiceSys.say(chain.length === 0 ? "chain_lost" : "chain_broken");';
+      assert(before.includes(OLD_TAIL), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the reset to an unconditional chain_broken");
+      assert(after.includes(NEW_TAIL), "A: TRAP 2/3 — ...and the current one carries the ticker release plus CS037 P5's chain_lost/chain_broken selection");
       // A THIRD known diff, added by CS035 P6 (spec §5.3): the sever path increments the chain-guard
       // drop-weight pity counter, on the unguarded break only — this is that path.
       const OLD_BOOM = '  boom(hit.x, hit.y, 1, COLOR.garbage);';
@@ -700,7 +714,7 @@ function saucerAt(X, x, y, small) {
       assert(before.includes(OLD_BOOM), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the sever to boom()");
       assert(after.includes(NEW_BOOM), "A: TRAP 2/3 — ...and the current one carries the pity-counter increment before it");
       eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL).replace(OLD_BOOM, NEW_BOOM),
-        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit and CS035 P6's pity-counter edit are the ONLY diffs in breakChain; everything else is byte-unchanged");
+        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit, CS035 P6's pity-counter edit and CS037 P5's voice selection are the ONLY diffs in breakChain; everything else is byte-unchanged");
     }
     assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY, srcTag) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");

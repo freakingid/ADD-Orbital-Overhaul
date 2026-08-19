@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS037 · Phase: P4 · Registry: 111 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P5 · Registry: 111 · Levers: 18
 
 ## Phase ledger — CS037
 
@@ -58,10 +58,49 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P4 · Registry: 111 · Levers: 1
   code's gate gained a **paused-gameover** arm so it is reachable there — required, since the next
   `resetRun()` clears the buffer.
 
+- P5 — full tow release on damage + the "Payload lost." event split (spec §4). Any real HP-dealing hit
+  now calls `scatterChain()` **unchanged**, hooked on `damageShip()`'s non-lethal branch **below** the
+  `s.hp <= 0` exit — `killShip()` already scatters, so the shared return would double-scatter. Shielded /
+  i-framed / auto-shield hits return false, deal 0 HP and keep the cargo. ⛔ FORK-B1 → no (`powerBudget.guard`
+  neither read nor spent; `breakChain()` is not on this path) and ⛔ FORK-B2 → no (`cargoDamageEvents`
+  untouched — reusing `scatterChain()` verbatim gives both for free). The release is guarded on a
+  **non-empty** chain: with nothing in tow it is a genuine no-op, so a hit taken empty-handed cannot zero
+  a dock visit's `deliveryCount` through `scatterChain()`'s own side effects. "Payload lost." moved out of
+  `chain_broken` into a new `chain_lost` event, **text and phon verbatim** — no new phon, no
+  `voice-robot-lab` gate. One selection rule at every chain-loss site ("was the chain non-empty, and is it
+  now empty"): the damage release speaks it, `breakChain(0)` speaks it, `breakChain(i > 0)` keeps
+  `chain_broken`, the guarded absorb is unchanged, and ship death stays silent because the `say()` is at
+  `damageShip()`'s call site, never inside `scatterChain()`. `VOICE_PRIORITY` 2 (matching `chain_broken`,
+  strictly below `health_low`), `VOICE_CRITICAL` true, **`VOICE_QUEUE_MAX` 4 → 5**, `VOICE_STILL_TRUE`
+  predicate `game.chain.length === 0`. No registry rows, no lever change.
+
 ## Working / verified
 
-- Full suite: **152 files** (151 + new `test-cs037-p4.js`, 288 assertions), **152 passed, 0 failed,
-  0 skipped**, run clean twice in a row; `node --check` passes. `test-cs037-p4.js` hand-mutation-checked
+- Full suite: **153 files** (152 + new `test-cs037-p5.js`, 152 assertions), **153 passed, 0 failed,
+  0 skipped** after this phase's commit landed; `node --check` passes on the extracted script.
+  `test-cs037-p5.js` hand-mutation-checked **fourteen** times, all fourteen caught, every one reporting
+  cleanly rather than crashing: release moved above the lethal exit; release ALSO hooked on the lethal
+  branch; the empty-chain guard dropped; the release spending a guard charge (FORK-B1); the release
+  bumping `cargoDamageEvents` (FORK-B2); the `say()` moved inside `scatterChain()`; `VOICE_QUEUE_MAX`
+  left at 4; `chain_lost` promoted to priority 3; `chain_lost` dropped from `VOICE_CRITICAL`; the
+  still-true predicate weakened to `() => true`; `breakChain`'s selection removed; `breakChain`'s
+  selection inverted; "Payload lost." left under `chain_broken` as well; `VOICE_STILL_TRUE.chain_lost`
+  removed. ⛔ A double scatter is behaviourally INVISIBLE (the second call sees an empty chain), so §E
+  pins it two ways — released pieces are counted by a marked node `mass` that `Garbage.fromNode()` copies
+  through, and §I pins the source ORDER inside `damageShip()` against `execSource()`'s comment-free copy.
+
+- **P5 touched four older suite files, all repoints, none a scope change.** `test-cs015-p7` split its
+  `APPROVED` five into four partial + one total and now asserts the CONSERVED TOTAL across both events
+  (every byte of Paul's approved pairs is still pinned, and §C's zero-err gate follows the moved line);
+  `test-cs011-p5` §B stopped pinning `chain_broken.length === 5` (a count it never owned — CS015 P7
+  replaced that set) and walks both events, while §D/§E accept either pool since what they own is the
+  captioning, not which event supplied the line; `test-cs017-p7`'s "chain_broken's 5 lines are
+  untouched" sanity line became the same conserved-total claim plus a no-leak check; `test-cs023-p3`
+  §A's byte-strict `breakChain` pin gained P5's voice selection as a **fourth named diff**, with both
+  halves of the pair extended through the whole `say()` line including its comment — the final
+  `eq()` stays byte-strict, which is what keeps the diff list exhaustive.
+
+- Previously: `test-cs037-p4.js` hand-mutation-checked
   eleven times (drop `Telemetry.reset()` from `resetRun()`; move the pickup increment below the scoop
   early-return; drop the health exclusion so `healthPicked` double-counts; cap 400 → 500; roll the NEWEST
   row off instead of the oldest; drop `tick()`'s `Bench.running` guard; stop checking the envelope version;
@@ -117,6 +156,22 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P4 · Registry: 111 · Levers: 1
     function signature; all three repointed to the new (srcTag-carrying) literal text.
 
 ## Known issues
+
+- **⛔ NEW (P5) — a THIRD moving-`HEAD` pin site, `test-cs025-p4.js`'s TRAP 3.** It asserts
+  `VOICE_LINES` and `VOICE_PRIORITY` are "unchanged from HEAD" via `git show HEAD:`, so it read red
+  through this session and goes green (vacuously — the file compared to itself) the moment P5's commit
+  lands. Same class as `test-cs024-p6.js` §H TRAP 2, which CS037 P1 hit and deliberately left, and as
+  the two already listed below in `test-cs023-p3.js`. **Deliberately not repaired here:** the cure is
+  choosing a fixed SHA and naming the intervening diffs in a file this phase does not own, which is the
+  same judgement P1 made. What P5 *does* change is that both tables are now genuinely edited, so the
+  trap has a real diff to have caught and did not. Four sites now share this defect; they want one pass.
+
+- **⛔ NEW (P5) — the release is guarded on a non-empty chain, and the spec did not say either way.**
+  §4.1 says a hit "releases all towed Debris"; with nothing in tow there is nothing to release, but
+  `scatterChain()` also zeroes `deliveryCount` and calls `releaseDeliveryTicker()`. Called
+  unconditionally it would end a dock visit's tally on any hit taken empty-handed — a side effect the
+  spec never asks for. The guard is the same condition the voice rule needs ("was the chain non-empty"),
+  so it is one test, not two. Stated rather than hidden; reversible in one line if Gate B disagrees.
 
 - **⛔ NEW (P4) — `CLAUDE.md`'s Save data section now understates the key list, and P8 must fix it.**
   That section enumerates three frozen keys, "CS031 adds a fourth", "CS032 adds a fifth" and
@@ -239,9 +294,17 @@ None.
 
 ## Next up
 
-- **CS037 is in flight (P1, P2, P2.1, P4 done; P3 DROPPED at Gate A). P5 is next** — full tow release
-  on damage plus the "Payload lost." voice event split (spec §4). P6 (resume baseline), P7 (delivery
-  payout nerf), then the BLOCKING Gate B, then P8.
+- **CS037 is in flight (P1, P2, P2.1, P4, P5 done; P3 DROPPED at Gate A). P6 is next** — the resume
+  baseline plus FORK-A.1's (b2) targeted merge write (spec §6). Then P7 (delivery payout nerf), the
+  BLOCKING Gate B, then P8.
+
+- **P8's `CLAUDE.md` sweep now has a second item beyond P4's key list:** the Audio section's
+  `VOICE_CRITICAL` rule names the critical set as "the four `VOICE_CRITICAL` events" and lists
+  `health_low` / `health_relief` / `cargo_full` / `level`. P5 makes it five, adding `chain_lost`. The
+  rule's substance — criticality is orthogonal to priority, no TTL, raise `VOICE_QUEUE_MAX` with the set
+  — is unchanged and was followed to the letter; only the enumeration is now short by one. Not edited
+  here: the spec's cross-cutting constraints give exactly one `⛔ INVARIANT` change to this changeset
+  (P6's `resumeFromSave()` ordering) and P8 owns the sweep.
 
 - **GATE A closed 2026-08-19 with a null result** — every population cleared both thresholds at the
   2000-entity ceiling, so P3 (static caps) was dropped. `IMPLEMENTATION-PHASES-CS037.md` keeps the
@@ -263,6 +326,12 @@ None.
   column and a worldwide/just-me scope toggle. Shape recorded in `log/CS034.md`.
 
 ## Playtest asks (open only — answered ones move to the log)
+
+- **Does losing the WHOLE tow to any hit read as fair, or as punishing?** P5 ships it with no shield-
+  side softening beyond the existing shielded / i-framed / auto-shield exemptions, and with the chain
+  guard deliberately NOT intercepting (FORK-B1). Gate B question 5 asks whether "Payload lost." now
+  fires only on genuine total loss; this is the balance half of the same change and nobody has played
+  a wave against it.
 
 - **H6, H10 and H11 come back**, all three under FLAG-CS036-a's remedy: clear the debug overrides
   first, then ask for **numbers** — `levelEndFade` / `levelEndGracePulseEnd` for the ship pulse, and

@@ -152,9 +152,19 @@ const APPROVED = [
     assert(got.text === APPROVED[i].text, `B[${i}]: text matches approved ("${got.text}" vs "${APPROVED[i].text}")`);
     assert(got.phon === APPROVED[i].phon, `B[${i}]: phon matches approved verbatim ("${got.phon}" vs "${APPROVED[i].phon}")`);
   }
-  // Sanity: chain_broken is untouched by this phase.
-  assert(Array.isArray(VOICE_LINES.chain_broken) && VOICE_LINES.chain_broken.length === 5,
-    "B: (sanity) chain_broken's 5 lines are untouched");
+  // Sanity: this phase added chain_guard WITHOUT disturbing the pre-existing break lines.
+  // REPOINTED BY CS037 P5. The claim was written as the literal 5 — a phase-local fact wearing a
+  // permanent assertion's clothing, and about a table CS017 P7 does not own. CS037 P5 (spec §4.2)
+  // split "Payload lost." out of chain_broken into its own chain_lost event, verbatim, so the set is
+  // now 4 + 1. What P7 actually promised — that its own chain_guard addition disturbed none of those
+  // lines — is restated below against the CONSERVED TOTAL, which stays true through that split and
+  // fails if a line is genuinely lost. Do NOT re-point this to the literal 4.
+  assert(Array.isArray(VOICE_LINES.chain_broken) && Array.isArray(VOICE_LINES.chain_lost),
+    "B: (sanity) both break-line events exist");
+  assert(VOICE_LINES.chain_broken.length + VOICE_LINES.chain_lost.length === 5,
+    `B: (sanity) the five break lines survive across chain_broken + chain_lost (got ${VOICE_LINES.chain_broken.length} + ${VOICE_LINES.chain_lost.length})`);
+  assert(!VOICE_LINES.chain_broken.concat(VOICE_LINES.chain_lost).some(l => APPROVED.some(a => a.text === l.text)),
+    "B: (sanity) ...and none of chain_guard's own lines leaked into either of them");
 })();
 
 // ================= (C) every chain_guard phon parses/builds with ZERO unknown tokens =====================
