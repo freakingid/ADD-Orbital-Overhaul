@@ -9,7 +9,7 @@ script"), `GAME_VERSION` **1.0.0.36**, CS036 closed at P7. Registry **106**, hea
 
 | | Item | Shape |
 |---|---|---|
-| **A** | Perf measurement, then static object caps | new instrument + gated caps |
+| **A** | Perf measurement (caps measured, not needed — see §3.4) | new instrument; **no caps ship** |
 | **C** | Full tow release on damage + truthful "Payload lost." | behaviour + voice table |
 | **D** | Periodic gameplay telemetry | new subsystem + build surgery |
 | **E** | Resumed-run achievement flood | defect fix (data integrity) |
@@ -167,13 +167,13 @@ precisely to prevent that, and (b1) would silently reopen it while appearing to 
 
 ---
 
-## 3. Item A — perf measurement, then static object caps
+## 3. Item A — perf measurement (no caps shipped)
 
 ### 3.1 What ships
 
 A **benchmark mode**, driven from the debug panel, that measures the shipped entity code on real
-hardware; then, in a later phase gated on Paul's numbers, **static caps** for whichever populations
-the measurement implicates.
+hardware. Caps were to follow in a phase gated on the measurement; **the measurement cleared every
+population, so no caps ship** — see §3.4.
 
 Not exposed in Options. Not a player-facing feature. Not a `tools/` lab — a lab would have to
 re-implement `DebrisSatellite`, `HunterSatellite`, the particle system and the draw calls, and that
@@ -213,34 +213,48 @@ buffer of item D, or `saveSettings()`. Entry is from the debug panel only.
 
 Per **FORK-CS037-D → (a)**, it forces `debugOverride` OFF for the run and restores it after (§2.1).
 
-### 3.4 Caps
+### 3.4 Caps — MEASURED, NOT NEEDED, NOT SHIPPED
 
-Caps land **in this changeset**, in a phase that runs **after** a blocking measurement gate. They are
-**static constants exposed as knobs**, never frame-rate-reactive.
+**Gate A closed 2026-08-19. No caps ship this changeset. P3 is dropped.**
 
-**⛔ C2 stands and is not reversed.** CS024 P3 considered and rejected a frame-rate-reactive cull,
-documenting the cull as *fully deterministic, and that is a requirement rather than a nicety: same
-inputs, same victims, every run.* Item A **preserves** that decision: the measurement is offline, the
-caps it produces are static, and the runtime cull never samples frame time.
+The measurement did not support the premise. Run at the 2000-entity ceiling on two browsers (Edge on
+Ganesh / AMD integrated, Chrome on Graphite / RTX 3060), **every population reported "not reached" at
+both 16.7 ms and 33.3 ms.** One apparent Chrome crossing at 1700 large Garbage Satellites is noise,
+not a threshold: the raw steps run 9.4 → 17.1 → 16.0 → 11.3 → 11.8, i.e. non-monotonic and settling
+back down well below the line.
 
-New caps follow `cullGarbage()`'s idiom exactly:
+Against real-play peaks from the P2.1 recorder, the smallest margin is **>12×**, and every figure is
+a *lower bound* because nothing crossed:
 
-- Soft ceiling drips one victim per frame; hard ceiling drains to soft in one pass.
-- **Dead-flag plus the end-of-frame `.filter()`** — never a mid-loop splice.
-- Silent: no blink, no particle, no sound.
-- Victim selection is a deterministic total order over the array, with ties broken by array order.
-- Soft/hard knobs are read live and are **not** validated against each other — an inverted pair
-  yields a non-positive count and culls nothing, which is why `cullGarbage()` carries no ordering
-  assert and neither may these.
-- Populations that the measurement clears are **not** capped. A cap nobody needs is a behaviour
-  change with no benefit.
+| Population | Cost at 2000 | Real-play peak | Margin |
+|---|---|---|---|
+| Particles | 1.0 ms | 166 | >12× |
+| Debris singles | 3.1 ms | 90 | >22× |
+| Hunter Satellite — sm | 2.2 ms | 35 | >57× |
+| Tow chain | 5.7 ms | 20 | >100× |
+| Garbage Satellite — lg | 10.2 ms | 12 | >166× |
+| All others | — | 1–26 | >75× |
 
-Which populations get caps, and at what numbers, is **not decided in this document** — it is Gate A's
-output. Note that Hunters currently have a *spawn* cap (`hunterCapMax` 6, `hunterCapLevelsPerStep` 2)
-and no *field* cap; if Gate A implicates Hunters, the new cap is a field cap and sits alongside the
-spawn cap rather than replacing it.
+The spec's own rule decides it: *populations that the measurement clears are not capped; a cap nobody
+needs is a behaviour change with no benefit.* Every population clears, by two orders of magnitude.
 
----
+**Secondary findings, worth keeping:**
+
+- **Draw dominates; update is negligible.** At 2000 entities, update cost is ≤1.0 ms for every
+  population while draw runs 0.9–16.5 ms. The suspicion recorded in §3.2 — that Hunter homing's
+  wrap-aware per-frame work was the cost centre — is **wrong**, and is corrected here rather than
+  left standing.
+- **The frame-rate hiccup has some other cause.** The benchmark deliberately excludes fixed
+  per-frame overhead (starfield, ship, HUD, chrome), and at real-play counts all populations combined
+  cost roughly 1–2 ms. Entity accumulation is ruled out; the real cause is unmeasured and remains
+  open. **Not pursued this changeset** — recorded in `STATUS.md` as a known issue with the evidence
+  attached, so a future changeset starts from the null result rather than re-deriving it.
+- **Rasterizer backend matters more than GPU.** Edge (Ganesh) outperformed Chrome (Graphite) on
+  identical work despite Chrome holding the discrete GPU. Relevant to any future perf work: size
+  against the slowest representative backend, not the fastest available one.
+
+**⛔ C2 is untouched.** CS024 P3's determinism requirement was never at risk — no cull changed, and
+the `cullGarbage()` invariant in `CLAUDE.md` needs **no edit** this changeset.
 
 ## 4. Item C — release the whole tow on any hit; fix the "Payload lost" lie
 
@@ -521,10 +535,11 @@ renderer, its input dispatcher and its commit function; `makeRunResult()` now re
 
 ## 9. Cross-cutting constraints
 
-- **`DEBUG_VARS` is append-only.** Registry is **106** at HEAD. Growth this changeset: **+4** (item A
-  benchmark controls) **+1** (telemetry interval) **+2** (delivery score knobs) **+N** (item A caps,
-  count set at Gate A) = **113 + N**. Headers **10 → 11** (a BENCHMARK section). `LEVERS` stays
-  **18** — nothing here is a difficulty ramp.
+- **`DEBUG_VARS` is append-only.** Registry was **106** at HEAD. Growth this changeset: **+4** (item A
+  benchmark controls, landed P2) **+1** (telemetry interval) **+2** (delivery score knobs) =
+  **113 final**. Item A's caps contributed **0** — Gate A cleared every population and P3 was
+  dropped. Headers **10 → 11** (a BENCHMARK section). `LEVERS` stays **18** — nothing here is a
+  difficulty ramp.
 - **`test-registry.js` pins registry 106, headers 10, `LEVERS` 18, `POWERUP_DROP_TYPES` 5.** Every
   phase that adds a row updates it in the same commit.
 - All new world-space distance/aiming math uses the wrap-aware helpers `dist2`, `angleTo`,
@@ -536,11 +551,13 @@ renderer, its input dispatcher and its commit function; `makeRunResult()` now re
 - The CS016 P3 both-places rule: any new field on `game` is declared in **both** the `game` literal
   and `resetRun()`. Preferred alternative where it fits: module-level state (the `DebugPanel`
   precedent), which the baseline and the telemetry buffer both use.
-- **`⛔ INVARIANT` markers in `CLAUDE.md` to update:** the `cullGarbage()` determinism note (item A —
-  reaffirmed and extended to the new caps) and the `resumeFromSave()` step ordering (item E — the
-  baseline snapshot joins the ordering constraint).
+- **`⛔ INVARIANT` markers in `CLAUDE.md` to update: one, not two.** Only the `resumeFromSave()` step
+  ordering (item E — the baseline snapshot joins the ordering constraint). The `cullGarbage()`
+  determinism note is **left exactly as it stands**: no cull changed, no cap shipped, and editing it
+  would imply a change that did not happen.
 - **GDD §2 describes shipped behaviour only.** Nothing enters it until built. Item A's benchmark is a
-  developer instrument and does not enter §2 at all.
+  developer instrument and does not enter §2 at all — and with P3 dropped, item A contributes
+  **nothing** to §2.
 - **Two unseeded-test flakes are standing** (`test-cs035-p3` §F at ~5 %, `test-f6` §F at ~1.7 %). A
   rerun is the standing way to tell either from a real regression; roughly one full-suite run in
   twenty goes red for this reason alone.

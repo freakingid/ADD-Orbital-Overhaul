@@ -23,8 +23,8 @@ registry 106, headers 10, `LEVERS` 18.
 | P1 | Damage source tagging (prerequisite for D) | Sonnet, high |
 | P2 | Benchmark instrument | Opus, high, ultrathink |
 | P2.1 | Gate A instrumentation: real-play peaks, mix weights, env stamp, predicted-vs-actual | Sonnet, high |
-| **GATE A** | **⛔ BLOCKING — Paul runs the benchmark, reports numbers** | — |
-| P3 | Static caps, from Gate A's numbers | Opus, high |
+| **GATE A** | ✅ **CLOSED 2026-08-19 — every population cleared** | — |
+| ~~P3~~ | ~~Static caps~~ — **DROPPED**, Gate A found no population needs one | — |
 | P4 | Telemetry buffer, storage, clipboard export | Opus, high |
 | P5 | Full release on damage + voice event split | Opus, high, ultrathink |
 | P6 | Resume baseline + targeted persistence | Opus, xhigh, ultrathink |
@@ -33,8 +33,8 @@ registry 106, headers 10, `LEVERS` 18.
 | P8 | Closing: version, invariants, STATUS, GDD, archive | Sonnet, high |
 
 **Ordering rationale.** P1 is a prerequisite for P4 and is cheap, so it goes first and de-risks the
-measurement window. P2 must precede Gate A, and Gate A must precede P3 — that is the only hard
-sequencing constraint in the changeset. P5 and P7 are both player-facing balance changes and are
+measurement window. P2 and P2.1 had to precede Gate A — that was the only hard sequencing constraint
+in the changeset, and it is now discharged: Gate A closed with a null result and P3 was dropped. P5 and P7 are both player-facing balance changes and are
 deliberately placed **before** a single combined Gate B, rather than each carrying its own gate: the
 full-tow release and the powerup nerf both push in the same direction (large hauls get riskier and
 less rewarding), so they need to be felt together, not separately.
@@ -378,140 +378,62 @@ columns byte-identical.
 
 ---
 
-## ⛔ GATE A — Measurement gate (BLOCKING)
+## ✅ GATE A — Measurement gate (CLOSED 2026-08-19)
 
-**P3 does not start until Paul has run the battery and returned numbers.**
+**Result: every population cleared. No caps ship. P3 dropped.**
 
-**Procedure, per browser/machine.** After P2.1, one CSV per browser answers questions 1–5 on its own;
-nothing needs writing down by hand.
+Run on two browsers at a 2000-entity ceiling, ramp step 50, 60-frame intervals, world 2560×1440,
+waves 10–11:
 
-1. **Play first, benchmark second.** Play a few runs into the late waves — far enough that the field
-   feels crowded and any hiccup shows. This is what populates the real-play peak columns; running the
-   battery on a cold boot leaves them empty and Q6 unanswerable.
-2. Enter the debug panel, run the battery, and **copy or download the CSV before switching browsers**
-   — results are in memory only and closing the tab loses them.
-3. Repeat per browser. Each CSV carries its own `userAgent` stamp, so pastes cannot be mixed up.
+- **Edge 151** — Skia **Ganesh**, AMD Radeon integrated, viewport 1528×742 @ DPR 1.25
+- **Chrome 151** — Skia **Graphite**, NVIDIA RTX 3060 Laptop, viewport 1536×739 @ DPR 1.25
+- Firefox 154 abandoned mid-run (projected >1 hour); not needed given the margins.
 
-The benchmark forces registry defaults itself, so no manual "Overrides Applied → OFF" step is needed
-for this gate.
+**Answers:**
 
-**Read off the CSV** (these are columns and header lines, not calculations):
+1. **16.7 ms crossing — "not reached" for every population, both browsers.** The single apparent
+   Chrome crossing (Garbage Satellite lg at 1700) is noise: raw steps run 9.4 → 17.1 → 16.0 → 11.3 →
+   11.8, non-monotonic and settling back below the line.
+2. **33.3 ms — not reached anywhere.**
+3. **Draw dominates; update is negligible.** At 2000 entities update is ≤1.0 ms for every population,
+   draw 0.9–16.5 ms. The §3.2 suspicion that Hunter homing was the cost centre is **refuted**.
+4. Edge and Chrome as above.
+5. **Prediction unavailable** — it needs crossings and there were none. Correctly reported as
+   unavailable by P2.1 rather than extrapolated past the ceiling.
+6. **No population gets a cap.** Smallest margin against real-play peaks is >12× (particles: 166 peak
+   against 2000 costing 1.0 ms); most exceed 75×. All are lower bounds.
 
-1. Count at which p95 frame time crosses **16.7 ms**, per population. (number, or "not reached")
-2. Count at which p95 frame time crosses **33.3 ms**, per population. (number, or "not reached")
-3. Update-cost share vs draw-cost share at the 16.7 ms crossing. (two numbers, ms)
-4. Which browsers and machines were tested? (the `userAgent` header line from each CSV)
-5. **Mixed run**: predicted crossing, actual crossing, and the ratio. (the predicted-vs-actual line)
-   A ratio near 1 means the populations are independent and caps can be sized off the isolated
-   numbers. A materially lower actual means something interacts — most likely Hunter homing scanning
-   a larger `game.garbage` — and caps get sized off the mixed number instead.
+**Secondary findings** (carried into `STATUS.md`, not acted on here):
 
-**The one judgment call:**
-
-6. Given the numbers, which populations should get caps this changeset, and why? (list plus
-   reasoning, not just names — P3's prompt quotes the reasoning into the spec)
-
-   Method: for each population, divide its 16.7 ms crossing count by its **real-play session peak**
-   (also a CSV column, courtesy of P2.1) to get a margin. **Margin under ~2× wants a cap; above ~3×
-   does not** — a cap nobody needs is a behaviour change with no benefit. Between the two, use the
-   update/draw split from Q3 and your own read on whether that population still feels like it
-   accumulates. Note also that `game.garbage` is already capped by `cullGarbage()` and Hunters
-   already have a *spawn* cap, so for those two the question is whether the existing mechanism is
-   doing enough, not whether to start from zero.
+- **The hiccup has some other cause.** The benchmark excludes fixed per-frame overhead (starfield,
+  ship, HUD, chrome), and at real-play counts all populations together cost ~1–2 ms. Entity
+  accumulation is **ruled out**; the real cause is unmeasured and left open for a future changeset,
+  which now starts from a null result instead of re-deriving it.
+- **Rasterizer backend outweighs GPU.** Edge on Ganesh beat Chrome on Graphite despite Chrome holding
+  the discrete GPU. Any future perf work should size against the slowest representative backend.
 
 ---
 
-## P3 — Static caps
+## ~~P3 — Static caps~~ — DROPPED
 
-**Model:** Opus, high effort, thinking.
+**Gate A closed with a null result; no caps ship. This phase does not run.**
 
-**Blocked on Gate A.** Populations and numbers come from Gate A answers 1–3 and 6.
+Every population reported "not reached" at both thresholds at the 2000-entity ceiling, on both
+browsers tested. Measured against the P2.1 real-play peaks, the smallest margin is **>12×** and all
+figures are lower bounds. The spec's own rule applies: a population the measurement clears is not
+capped, because a cap nobody needs is a behaviour change with no benefit. Full numbers and the
+secondary findings are in `PLANNED-FEATURES-CS037.md` §3.4.
 
-### Contract
+**Kept deliberately rather than deleted**, so the changeset log shows the phase was planned, gated,
+measured and refuted — not quietly forgotten. Item A still delivered: P2 and P2.1 shipped the
+benchmark, and the null result is the finding.
 
-- Caps for the populations Gate A implicates, and **only** those. A cap nobody needs is a behaviour
-  change with no benefit.
-- **Follows the `cullGarbage()` idiom exactly:** soft ceiling drips one victim per frame, hard
-  ceiling drains to soft in one pass; **dead-flag plus the end-of-frame `.filter()`**, never a
-  mid-loop splice; silent (no blink, no particle, no sound).
-- **⛔ Fully deterministic — same inputs, same victims, every run.** CS024 P3 considered and rejected
-  a frame-rate-reactive cull and recorded determinism as a requirement rather than a nicety. Item A
-  **preserves** that: the measurement was offline, these caps are static constants, and the runtime
-  cull never samples frame time. **This is not a reversal and must not be written up as one.**
-- Victim selection is a deterministic total order over the array, ties broken by array order.
-- Soft/hard knobs are read live and **not** validated against each other — an inverted pair yields a
-  non-positive count and culls nothing. `cullGarbage()` carries no ordering assert; neither may
-  these.
-- Runs in `update()`'s cleanup block, after every pass that can mark an entity dead and before the
-  filters — the placement `cullGarbage()` already occupies and documents. **Not** mirrored into
-  `updateDeath()`, for the reasons recorded there.
-- If Hunters are capped: this is a **field** cap and sits **alongside** the existing spawn cap
-  (`hunterCapMax` 6, `hunterCapLevelsPerStep` 2), not replacing it.
-- Registry grows by 2 per capped population. Update `test-registry.js`.
+**Consequences for the phases that follow:**
 
-### Paste-ready prompt
-
-> ultrathink
->
-> Read `CLAUDE.md`, `STATUS.md`, `PLANNED-FEATURES-CS037.md` §3.4, and the `IMPLEMENTATION-PHASES-CS037.md`
-> Gate A answers before touching anything. Grep by symbol name.
->
-> This is CS037 P3: add static object caps for the populations Gate A implicated. Read `cullGarbage()`
-> and its surrounding comment block, and the cleanup-block comment in `update()` that explains its
-> placement, before writing anything — the new caps follow that idiom exactly rather than inventing a
-> second one.
->
-> Cap **only** the populations named in the Gate A answers, at the numbers given there. A population
-> that cleared comfortably gets no cap.
->
-> Each cap: soft ceiling drips exactly one victim per frame; hard ceiling drains straight back to soft
-> in one pass; victims marked with the dead flag and swept by the existing end-of-frame `.filter()`,
-> never spliced mid-loop; entirely silent — no blink, no particle, no sound. Victim selection is a
-> deterministic total order over the array with ties broken by array order.
->
-> ⛔ Determinism is a requirement, not a nicety: same inputs, same victims, every run. CS024 P3
-> rejected a frame-rate-reactive cull and recorded that decision; this phase **preserves** it — the
-> measurement was offline, these caps are static constants read from the registry, and the runtime
-> cull must never sample frame time. Do not write this up as reversing anything.
->
-> ⛔ Do not validate soft against hard. `cullGarbage()` deliberately carries no ordering assert — an
-> inverted pair yields a non-positive count and culls nothing — and no registry row in this build has
-> ever validated a sibling. Match that.
->
-> Place the caps in `update()`'s cleanup block alongside `cullGarbage()`: after every pass that can
-> mark an entity dead, before the filters. Do not mirror them into `updateDeath()`.
->
-> If Hunters are capped, this is a **field** cap and sits alongside the existing spawn cap
-> (`hunterCapMax`, `hunterCapLevelsPerStep`) — read `largeHunterCount()` first and do not conflate
-> the two.
->
-> Add two registry rows per capped population, in that population's existing section, following the
-> surrounding comment conventions. Update `test-registry.js` for the new count in this same commit.
->
-> Write `scratchpad/test-cs037-p3.js` covering, per cap: the soft drip rate (exactly one per frame);
-> the hard drain in one pass; determinism (identical inputs produce identical victims across repeated
-> runs); the inverted-pair no-op; and that no victim survives a frame to be drawn. Confirm
-> hand-mutated regressions fail it. Run the full suite.
->
-> Commit, do not push.
-
-**Suggested commit message**
-
-```
-CS037 P3: static object caps for <populations> (registry NNN -> NNN)
-
-Soft-drip / hard-drain ceilings following the cullGarbage() idiom:
-dead-flag plus the end-of-frame filter, silent, deterministic victim
-order, no soft/hard cross-validation. Numbers from the CS037 Gate A
-measurement. CS024 P3's determinism requirement is preserved, not
-reversed: the measurement was offline and the runtime cull never samples
-frame time.
-```
-
-### Headless test expectations
-
-Per cap: soft drip rate, hard drain, determinism across repeated identical runs, inverted-pair no-op,
-no victim drawn after death. Plus a registry-count assertion.
+- Registry contributes **0** here; the final count is **113**, not 113 + 2N.
+- The `cullGarbage()` `⛔ INVARIANT` in `CLAUDE.md` is **not edited** — nothing about the cull changed.
+- Item A contributes **nothing** to GDD §2.
+- Gate B's questions 7 and 8 (cap effectiveness) are **struck** — there are no caps to assess.
 
 ---
 
@@ -991,11 +913,9 @@ Play several full runs into the late waves, with the tow chain loaded.
 6. Combined, do the two changes push late-wave play too far toward small hauls? On a 1–10 scale where
    5 is balanced, where does it sit? (number)
 
-**Item A — the caps.**
-
-7. Are frame-rate hiccups gone in the late waves after the caps? (yes/no)
-8. If any capped population still visibly accumulates, which, and at what count does it become
-   noticeable? (population + number)
+**Item A — ~~the caps~~ STRUCK.** No caps shipped (Gate A), so there is nothing to assess. Questions
+7 and 8 are withdrawn rather than renumbered, so the gate's numbering stays stable against the
+answers already given.
 
 **Item E — the resume fix.**
 
@@ -1015,12 +935,12 @@ Play several full runs into the late waves, with the tow chain loaded.
   DEFERRED in `STATUS.md`, with the knobs that already reach it named — do not invent a number.
 - `GAME_VERSION` → **1.0.0.37**. Re-point every live version pin in the suite (seven at CS036).
 - **`CLAUDE.md` `⛔ INVARIANT` sweep**, specifically:
-  - the `cullGarbage()` determinism note — extended to cover P3's new caps, and explicitly **not**
-    written up as reversing CS024 P3
+  - **only** the `resumeFromSave()` note below — the `cullGarbage()` determinism note is left
+    untouched, since P3 was dropped and no cull changed
   - the `resumeFromSave()` step-ordering note — the P6 baseline snapshot joins the ordering
     constraint
 - **GDD §2** — shipped behaviour only. Add: the full tow release, the "Payload lost." split, the
-  one-powerup-per-visit rule, the new caps. **The benchmark and the telemetry buffer are developer
+  one-powerup-per-visit rule. No caps — P3 dropped. **The benchmark and the telemetry buffer are developer
   instruments and do not enter §2.**
 - `DIFFICULTY-LEVERS.md` — verify. `LEVERS` is still 18; nothing this changeset is a difficulty ramp.
   Likely no edit, but check the delivery-curve section against P7's two new knobs.
@@ -1044,21 +964,28 @@ Play several full runs into the late waves, with the tow chain loaded.
 > Bump `GAME_VERSION` to **1.0.0.37** and re-point every live version pin in the suite — grep for
 > them; there were seven at CS036.
 >
-> Sweep `CLAUDE.md`'s `⛔ INVARIANT` markers. Two need updating specifically. The `cullGarbage()`
-> determinism note now covers P3's new caps — and ⛔ write it as CS024 P3's requirement being
-> *preserved*, not reversed: the measurement was offline, the caps are static constants, and the
-> runtime cull never samples frame time. The `resumeFromSave()` step-ordering note now includes P6's
-> baseline snapshot in the ordering constraint.
+> Sweep `CLAUDE.md`'s `⛔ INVARIANT` markers. ⛔ **Exactly one needs updating: the `resumeFromSave()`
+> step-ordering note, which now includes P6's baseline snapshot in the ordering constraint.** Leave
+> the `cullGarbage()` determinism note EXACTLY as it stands — P3 was dropped, no cull changed and no
+> cap shipped, so editing it would imply a change that did not happen.
 >
 > Update GDD §2 for shipped behaviour only: the full tow release on damage, the "Payload lost." event
-> split, one powerup per dock visit, and the new object caps. ⛔ The benchmark mode and the telemetry
-> buffer are developer instruments and do **not** enter §2.
+> split, and one powerup per dock visit. ⛔ There are no new object caps — P3 was dropped. The
+> benchmark mode and the telemetry buffer are developer instruments and do **not** enter §2, so item
+> A contributes nothing to it.
 >
 > Verify `DIFFICULTY-LEVERS.md`. `LEVERS` is still 18 and nothing this changeset is a difficulty ramp,
 > so it likely needs no edit — but check its delivery-curve section against P7's two new knobs.
 >
-> Roll `STATUS.md`: phase ledger for P1–P8 including P2.1, final registry and header counts, working/verified, known
-> issues. Carry forward the two standing unseeded flakes and FLAG-CS036-a.
+> Roll `STATUS.md`: phase ledger for P1, P2, P2.1, P4–P8 (⛔ record P3 as DROPPED with the Gate A
+> result, not omitted), final registry **113** and headers **11**, working/verified, known issues.
+> Carry forward the two standing unseeded flakes and FLAG-CS036-a.
+>
+> ⛔ Add a known issue recording the Gate A null result: the late-wave frame hiccup is NOT caused by
+> entity accumulation — every population cleared by >12× against real-play peaks — so its cause is
+> unmeasured and open. Note that the benchmark excludes fixed per-frame overhead (starfield, ship,
+> HUD, chrome), which is where a future investigation should start. This is the finding item A
+> actually produced and it must survive into `STATUS.md` rather than dying with the dropped phase.
 >
 > Write `log/CS037.md` and archive both planning docs into it.
 >
@@ -1074,8 +1001,8 @@ Play several full runs into the late waves, with the tow chain loaded.
 CS037 P8: closing — v1.0.0.37, invariants, GDD, STATUS, archive
 
 Gate B answers folded into defs. CLAUDE.md invariant sweep: cullGarbage()
-determinism extended to the new caps (preserved, not reversed) and
-resumeFromSave() step ordering extended to the P6 baseline snapshot.
+note left untouched (P3 dropped, no cull changed); resumeFromSave() step
+ordering extended to the P6 baseline snapshot.
 GDD §2 updated for shipped behaviour only — benchmark and telemetry stay
 out as developer instruments. STATUS rolled, log/CS037.md written, both
 planning docs archived.
@@ -1090,9 +1017,9 @@ planning docs archived.
 | HEAD (`70518af`) | — | **106** | 10 |
 | P2 | +4 (BENCHMARK) | 110 | **11** |
 | P2.1 | +0 — instrumentation, no tunables | 110 | 11 |
-| P3 | +2 per capped population | 110 + 2N | 11 |
-| P4 | +1 (`telemetryInterval`, GLOBAL) | 111 + 2N | 11 |
-| P7 | +2 (DELIVERY score knobs) | **113 + 2N** | 11 |
+| ~~P3~~ | **dropped** — Gate A cleared every population | 110 | 11 |
+| P4 | +1 (`telemetryInterval`, GLOBAL) | 111 | 11 |
+| P7 | +2 (DELIVERY score knobs) | **113** | 11 |
 
 `LEVERS` stays **18** throughout — nothing in this changeset is a difficulty ramp.
 `POWERUP_DROP_TYPES` stays **5**.
