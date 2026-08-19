@@ -834,7 +834,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "sweepPowerupCap" || id === "dockPowerupSpeed"  // CS035 P6
       || id === "dockPingCooldown"                             // CS036 P5
       || id.startsWith("bench")                                // CS037 P2 (the BENCHMARK controls)
-      || id === "telemetryInterval";                            // CS037 P4 (the telemetry cadence)
+      || id === "telemetryInterval"                             // CS037 P4 (the telemetry cadence)
+      || id === "dockBaseScore" || id === "dockBonusStep";       // CS037 P7 (the delivery score knobs)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

@@ -611,6 +611,10 @@ function evalSlice(literal) {
       .replace(/,telemetryInterval$/, "")
       .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
       .replace(/,startLevel$/, "")
+      // CS037 P7 repoint: strip dockBaseScore/dockBonusStep (DELIVERY, appended after dockComboGrace) —
+      // CS037 P7's rows, not P6b's. Interior, not tail-anchored, like the hunterCapMax strip below: JUNK/
+      // HUNTER/UFO/POWERUPS/GLOBAL already followed DELIVERY when P7 landed its two rows mid-array.
+      .replace(/,dockBaseScore,dockBonusStep/, "")
       .replace(/,hunterCapMax,hunterCapLevelsPerStep,heldClumpMax/, "")
       // CS025 P1 repoint: also strip magnetResumeDelay (CS025 P1, POWERUPS, appended after
       // engineMassMult) — same reasoning again, it is CS025 P1's row, not P6b's.

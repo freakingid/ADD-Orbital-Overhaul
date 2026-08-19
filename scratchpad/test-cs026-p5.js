@@ -372,7 +372,10 @@ let X = null;
     // again, a later phase's row named rather than wildcarded.
     // REPOINTED BY CS037 P2: +4 more (benchRampStep/RampInterval/SettleFrames/MaxCount, the benchmark
     // instrument's ramp controls) — same idiom again, a later phase's rows named rather than wildcarded.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 30, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five CS037 P2's four and CS037 P4's one, less CS036 P2's one retirement, plus CS036 P5's one addition (measured, not counted)");
+    // (30 above already folds in CS037 P4's +1, telemetryInterval — see the F comment there.)
+    // REPOINTED BY CS037 P7: +2 more (dockBaseScore, dockBonusStep, the delivery score curve's two
+    // constants promoted to knobs) — same idiom again, named rather than wildcarded.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 32, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS037 P2's four, CS037 P4's one and CS037 P7's two, less CS036 P2's one retirement, plus CS036 P5's one addition (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

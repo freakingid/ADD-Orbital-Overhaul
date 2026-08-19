@@ -520,7 +520,8 @@ function quiet(X) {
       || id === "sweepPowerupCap" || id === "dockPowerupSpeed"            // CS035 P6
       || id === "dockPingCooldown"                                        // CS036 P5
       || id.startsWith("bench")                                           // CS037 P2 (BENCHMARK controls)
-      || id === "telemetryInterval";                                      // CS037 P4 (the telemetry cadence)
+      || id === "telemetryInterval"                                       // CS037 P4 (the telemetry cadence)
+      || id === "dockBaseScore" || id === "dockBonusStep";                 // CS037 P7 (delivery score knobs)
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

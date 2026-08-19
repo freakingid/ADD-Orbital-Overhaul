@@ -391,12 +391,14 @@ function runVisit(X, n) {
   eq(X.game.stats.largeHunterKills, 2, "both sweep kills credited to the player");
   // REPOINTED BY CS035 P6 (spec §5.4): the guaranteed set drops 6 -> 5 (guard excluded), so both
   // totals move down by one. 4 P8 reward tiers (8/12/16/20) + 5 guaranteed + 2 large-core drops
-  eq(born24.length, 11, "powerups born across the visit = 4 tier awards + 5 set + 2 sweep");
+  // REPOINTED BY CS037 P7 (spec §7.2): the 12/16/20 latches are deleted — 1 P8/P7 reward tier (8) +
+  // 5 guaranteed + 2 large-core drops.
+  eq(born24.length, 8, "powerups born across the visit = 1 tier award + 5 set + 2 sweep");
   const dockBorn = born24.filter(p => p.x === X.game.dock.x && p.y === X.game.dock.y);
-  eq(dockBorn.length, 9, "9 of them launched from the dock (4 tier + 5 set)");
+  eq(dockBorn.length, 6, "6 of them launched from the dock (1 tier + 5 set)");
   const setTypes = dockBorn.map(p => p.type);
-  // guard is no longer among the GUARANTEED set — it only reaches the dock now if one of the four
-  // random P8 tier rolls happens to land on it (pity-driven, low-probability at a fresh run's
+  // guard is no longer among the GUARANTEED set — it only reaches the dock now if the one random P7
+  // tier roll happens to land on it (pity-driven, low-probability at a fresh run's
   // cargoDamageEvents=0), so it is deliberately not asserted here; SET_TYPES (5, deterministic) is.
   for (const t of SET_TYPES) assert(setTypes.includes(t), `guaranteed set delivered a "${t}" at the dock`);
   eq(X.game.sweepPause, X.DEBUG.sweepCoalescePause,
@@ -406,7 +408,7 @@ function runVisit(X, n) {
   const born23 = runVisit(Y, 23);
   eq(Y.game.deliveryCount, 23, "control visit delivered 23 pieces");
   eq(alive(Y, 3).length, 2, "23 pieces: both larges still alive — no sweep");
-  eq(born23.length, 4, "23 pieces: only the four P8 tier awards, no set, no sweep payouts");
+  eq(born23.length, 1, "23 pieces: only the one P7 reward tier, no set, no sweep payouts");
   eq(Y.game.sweepPause, 0, "23 pieces: no coalescence pause armed");
 })();
 

@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS037 · Phase: P6 · Registry: 111 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P7 · Registry: 113 · Levers: 18
 
 ## Phase ledger — CS037
 
@@ -87,6 +87,18 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P6 · Registry: 111 · Levers: 1
   `!game.resumedRun || game.debugRun` (combined form deliberately — `test-cs032-p2.js` §M pins the
   single-flag `if (game.debugRun) return;` gone) plus the `Bench.running` seal, 8 guards → 9. With no
   stored blob it writes nothing. `save()` byte-unchanged, `drawToasts()` untouched, no registry rows.
+
+- P7 — one powerup per dock visit + two DELIVERY score knobs (spec §7). The four `deliveryCount`
+  latches (8/12/16/20) collapse to one: `=== 8` kept, `=== 12`/`=== 16`/`=== 20` deleted — the counter
+  always passes through 8, so the equality already is the ">= 8, once per visit" rule. Hauls of 7 or
+  fewer still award nothing; `=== 12` Heavy Hauler and `=== CARGO_CAP_MAX` Maxed Out/`superMegaDelivery()`
+  are untouched (different mechanisms, shared numbers). `DOCK_BASE_SCORE`/`DOCK_BONUS_STEP` promoted to
+  `dockBaseScore`/`dockBonusStep`, DELIVERY registry knobs at their shipped values (50/25, unchanged this
+  changeset) — the delivery pts calculation now reads `DEBUG.dockBaseScore`/`DEBUG.dockBonusStep`, same
+  `scoopHitsPerLevel` precedent. No score compensation (S4). Registry 111 → 113. The two new rows land
+  inside the existing DELIVERY section, not at the registry's true tail, so fourteen older phases'
+  registry-count/order pins needed the same in-place "REPOINTED BY" update every prior registry
+  addition has required — no build behavior in those phases changed, only their own historical pins.
 
 ## Working / verified
 
@@ -339,9 +351,8 @@ None.
 
 ## Next up
 
-- **CS037 is in flight (P1, P2, P2.1, P4, P5, P6 done; P3 DROPPED at Gate A). P7 is next** — the
-  delivery payout nerf and the two DELIVERY knobs (spec §7, registry 111 → 113). Then the BLOCKING
-  Gate B, then P8.
+- **CS037 is in flight (P1, P2, P2.1, P4, P5, P6, P7 done; P3 DROPPED at Gate A).** Next: the
+  BLOCKING Gate B, then P8.
 
 - **P8's `CLAUDE.md` sweep now has a second item beyond P4's key list:** the Audio section's
   `VOICE_CRITICAL` rule names the critical set as "the four `VOICE_CRITICAL` events" and lists

@@ -24,6 +24,13 @@
 //      ===CARGO_CAP_MAX Maxed Out achievement latches are untouched; VoiceSys.dockDelivery's
 //      5/10/15/20 voice tiers are untouched (FLAG-h — deliberately left alone this changeset).
 //  (F) fewer than 8 pieces in a visit awards nothing, and no consolation drop exists.
+//
+// REPOINTED BY CS037 P7 (spec §7.2): the 12/16/20 latches are deleted — deliveryCount===8 alone is
+// kept, since the counter always passes through 8 and the equality already IS the ">= 8, once per
+// visit" rule. (B)'s cumulative table collapses to a flat 1 (0 below 8); (C) drives a 24-canister
+// visit instead of 20 so multiple distinct-vector powerups still exist to compare (the reward latch's
+// own 1 plus superMegaDelivery()'s guaranteed set, untouched by this phase); (E) asserts the new
+// single-condition text in place of the retired four-way one.
 
 "use strict";
 const fs = require("fs");
@@ -136,16 +143,14 @@ function deliverN(X, n) {
 }
 
 // ================= (B) reward-count INTEGRATION =====================
+// REPOINTED BY CS037 P7 (spec §7.2): the §4.3 cumulative table (1/2/3/4 at 8/12/16/20) is retired —
+// the 12/16/20 latches are deleted, so every visit that reaches 8 pays exactly one, flat, with no
+// further escalation. 24 still adds superMegaDelivery()'s guaranteed set (5, guard excluded) on top,
+// unaffected by this phase: 1 + 5 = 6, down from the old table's 4 + 5 = 9.
 (function sectionB() {
-  console.log("(B) reward count per visit size — the §4.3 cumulative table (1/2/3/4 at 8/12/16/20)");
+  console.log("(B) reward count per visit size — flat 1 at 8+, unaffected by SMD's own +5 at 24");
   const cases = [
-    // CS018 P9 repointed the [24, 4] forward-pin (this file's original "the SMD is P9's separate
-    // mechanism, untouched here" claim) to its mirror image: a 24-canister visit now awards the four
-    // tier powerups PLUS the Super Mega Delivery's guaranteed set.
-    // REPOINTED BY CS035 P6 (spec §5.4): guard leaves the guaranteed set, 6 -> 5, so 24's total moves
-    // 10 -> 9. deliverN seeds no hunters, so the SMD sweep itself pays nothing here; the sweep's own
-    // accounting is test-cs018-p9.js's subject, not this file's.
-    [7, 0], [8, 1], [11, 1], [12, 2], [15, 2], [16, 3], [19, 3], [20, 4], [23, 4], [24, 9],
+    [7, 0], [8, 1], [11, 1], [12, 1], [15, 1], [16, 1], [19, 1], [20, 1], [23, 1], [24, 6],
   ];
   for (const [n, want] of cases) {
     const X = build();
@@ -163,11 +168,15 @@ function deliverN(X, n) {
 // ================= (C) launch position/speed =====================
 // REPOINTED BY CS035 P6 (spec §5.5): DOCK_POWERUP_SPEED is now only the registry's `def` source — the
 // reward-tier drop's call site reads the live DEBUG.dockPowerupSpeed knob instead.
+// FURTHER REPOINTED BY CS037 P7 (spec §7.2): with only one reward-tier latch left, a 20-canister visit
+// awards a single powerup — not enough to compare "do they all launch on distinct vectors" against
+// itself. Driving 24 instead brings back a second launch (superMegaDelivery()'s guaranteed set, its
+// own untouched mechanism) so the multi-vector claim still has something non-trivial to check.
 (function sectionC() {
   console.log("(C) each award launches from the dock's position at DEBUG.dockPowerupSpeed");
   const X = build();
-  const { powerups } = deliverN(X, 20);
-  eq(powerups.length, 4, "C: (setup) a 20-canister visit awards 4 powerups");
+  const { powerups } = deliverN(X, 24);
+  eq(powerups.length, 6, "C: (setup) a 24-canister visit awards 6 powerups (1 reward tier + 5 SMD guaranteed set)");
   for (const p of powerups) {
     assert(near(p.x, X.game.dock.x) && near(p.y, X.game.dock.y), "C: a hub powerup launches from the dock's position");
     assert(near(Math.hypot(p.vx, p.vy), X.DEBUG.dockPowerupSpeed, 1e-6),
@@ -175,7 +184,7 @@ function deliverN(X, n) {
   }
   // Fresh random vectors, not the same direction every time.
   const dirs = new Set(powerups.map(p => `${(p.vx).toFixed(3)},${(p.vy).toFixed(3)}`));
-  assert(dirs.size > 1, "C: the four awards in one visit do not all launch on the identical vector");
+  assert(dirs.size > 1, "C: the six awards in one visit do not all launch on the identical vector");
 })();
 
 // ================= (D) SALVAGE BONUS floater =====================
@@ -207,9 +216,10 @@ function deliverN(X, n) {
   assert(scriptSrc.includes('n >= 20 ? "dock_20" : n >= 15 ? "dock_15" : n >= 10 ? "dock_10" : n >= 5 ? "dock_5" : null'),
     "E: VoiceSys.dockDelivery's 5/10/15/20 voice tiers are byte-unchanged (FLAG-h)");
 
-  // The new latch condition itself, present exactly once.
-  const latchHits = (scriptSrc.match(/game\.deliveryCount === 8 \|\| game\.deliveryCount === 12 \|\|\s*\n\s*game\.deliveryCount === 16 \|\| game\.deliveryCount === 20/g) || []).length;
-  eq(latchHits, 1, `E: the new 8/12/16/20 latch condition appears exactly once (got ${latchHits})`);
+  // REPOINTED BY CS037 P7 (spec §7.2): the 8/12/16/20 latch condition is retired — deliveryCount===8
+  // alone survives, present exactly once.
+  const latchHits = (scriptSrc.match(/if \(game\.deliveryCount === 8\) \{/g) || []).length;
+  eq(latchHits, 1, `E: the deliveryCount===8 latch condition appears exactly once (got ${latchHits})`);
 })();
 
 // ================= (F) fewer than 8 awards nothing =====================

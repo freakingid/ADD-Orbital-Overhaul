@@ -453,8 +453,10 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     "A: no DOCK_INCIDENTAL_SCORE constant was invented (FORK-CS020-C: it is DOCK_BASE_SCORE)");
 
   // -- item (5): nothing else moved --
-  assert(scriptSrc.includes("if (game.deliveryCount === 8 || game.deliveryCount === 12 ||"),
-    "A: the CS018 P8 reward-tier latch is byte-unchanged (no second guard added)");
+  // REPOINTED BY CS037 P7 (spec §7.2): the four latches collapse to one — deliveryCount===8 alone.
+  // Unrelated to this phase's own concern (no second guard added); only the literal text moved.
+  assert(scriptSrc.includes("if (game.deliveryCount === 8) {"),
+    "A: the CS018 P8 (now CS037 P7) reward-tier latch is byte-unchanged");
   assert(scriptSrc.includes("game.deliveryCount === 12) { game.stats.fullChainVisit = true"),
     "A: the ===12 Heavy Hauler latch is byte-unchanged");
   assert(scriptSrc.includes("if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();"),
@@ -867,7 +869,7 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     }
     eq(X.game.chain.length, 0, "G1: ⛔ 40 feeds at the dock hook NOTHING (CS035 P2 — was 40 incidentals)");
     eq(X.game.deliveryCount, 0, "G1: ...so deliveryCount stays 0");
-    eq(pw.out.length, 0, "G1: ...and ZERO CS018 P8 reward powerups fire (the 8/12/16/20 tiers)");
+    eq(pw.out.length, 0, "G1: ...and ZERO CS018 P8 (now CS037 P7) reward powerups fire");
     eq(X.game.stats.fullChainVisit, false, "G1: no Heavy Hauler");
     eq(X.Achievements.lifetime.fullChains, 0, "G1: no Long Haul");
     eq(X.Achievements.lifetime.heavyHaulerEvents, 0, "G1: no Freight Baron event");
@@ -906,9 +908,11 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     eq(X.Achievements.lifetime.heavyHaulerEvents, 1, "G2: Freight Baron still fires, exactly once");
     eq(X.game.stats.maxChainVisit, true, "G2: Maxed Out still fires");
     eq(smdCalls, 1, "G2: superMegaDelivery still fires, exactly once");
-    // 4 tier powerups (8/12/16/20) + the SMD's guaranteed one-of-each-droppable set. The set's size is
-    // read off the live build rather than hardcoded, so a future drop-table change does not fail this.
-    assert(pw.out.length >= 4, `G2: the 8/12/16/20 reward tiers still pay (got ${pw.out.length} powerups in total)`);
+    // REPOINTED BY CS037 P7 (spec §7.2): the reward tier is one latch now (deliveryCount===8), not
+    // four — and superMegaDelivery() is SPIED to a bare counter increment above (__spySMD), so its
+    // guaranteed set never actually pushes to game.powerups here. What this section can see is the
+    // reward-tier latch alone: exactly one powerup.
+    eq(pw.out.length, 1, `G2: the deliveryCount===8 reward tier pays exactly one powerup (got ${pw.out.length})`);
     // REPOINTED BY CS035 P1 (§1.3): both floaters are deleted (ink overlap against the re-tuned
     // delivery ticker) — the cap-flash celebration below is what's left to assert.
     eq(fl.out.filter(f => f.text === "SALVAGE BONUS").length, 0, "G2: no SALVAGE BONUS floater (retired)");
@@ -1134,9 +1138,18 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
   assert(fixed.delivered === 96, `J: (setup) the control run really delivered 96 canisters (got ${fixed.delivered})`);
   assert(fixed.smdCalls === 4, `J: (setup) it really fired 4 Super Mega Deliveries (got ${fixed.smdCalls})`);
   for (const k of Object.keys(fixed)) {
-    if (k === "floaters") continue;
+    if (k === "floaters" || k === "powerupCount") continue;
     eq(fixed[k], pre[k], `J: ${k} is bit-identical to the pre-fix build`);
   }
+  // ⛔ NARROWED BY CS037 P7 (spec §7.2), SAME REASON AS THE FLOATERS NARROWING ABOVE: PRE_FIX_REF
+  // predates the one-powerup-per-visit nerf entirely, so it still pays all four of the retired
+  // deliveryCount 8/12/16/20 latches per visit where the fixed build now pays only deliveryCount===8.
+  // That is CS037 P7's own claim, not CS020's, and it is unrelated to the tagging fix this file exists
+  // to pin — superMegaDelivery() is SPIED to a bare counter above, so its guaranteed set never
+  // contributes to either total; only the reward-tier latch(es) do.
+  // Non-vacuity: the expected gap is exactly 3 fewer reward-tier powerups per visit, four visits.
+  eq(pre.powerupCount, 4 * 4, `J: (non-vacuity) the pre-fix build still pays all 4 retired tiers per visit (got ${pre.powerupCount})`);
+  eq(fixed.powerupCount, 4 * 1, `J: (non-vacuity) the fixed build pays exactly 1 tier per visit, CS037 P7's own claim (got ${fixed.powerupCount})`);
   // ⛔ NARROWED BY CS026 P6 (gate Q5), AND THE NARROWING IS THE POINT OF THE CLAIM, NOT A WEAKENING.
   // This pin compared floater TEXT **and POSITION** against a build of the CS020 pre-fix parent. CS020's
   // claim was that tagging nodes `towed` changed nothing observable about the delivery feedback — that

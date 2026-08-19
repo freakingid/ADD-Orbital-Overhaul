@@ -484,8 +484,11 @@ const dockBlockCode = stripComments(dockBlockSrc);
   // -- nothing the phase was told not to touch, moved --
   assert(scriptSrc.includes("if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();"),
     "A: the SMD trigger is byte-unchanged — NOT separately gated");
-  assert(scriptSrc.includes("if (game.deliveryCount === 8 || game.deliveryCount === 12 ||"),
-    "A: the CS018 P8 reward-tier latches are byte-unchanged");
+  // REPOINTED BY CS037 P7 (spec §7.2): the four latches are collapsed to one — deliveryCount===8
+  // alone, 12/16/20 deleted (the counter always passes through 8, so the equality already IS the
+  // once-per-visit rule). Not this phase's concern either way; only the literal text moved.
+  assert(scriptSrc.includes("if (game.deliveryCount === 8) {"),
+    "A: the CS018 P8 (now CS037 P7) reward-tier latch is byte-unchanged");
   assert(scriptSrc.includes("game.deliveryCount === 12) { game.stats.fullChainVisit = true"),
     "A: the ===12 Heavy Hauler latch is byte-unchanged");
   assert(scriptSrc.includes("const DOCK_OFFLOAD_INTERVAL = 0.05;"),

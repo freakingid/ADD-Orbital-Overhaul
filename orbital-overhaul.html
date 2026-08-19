@@ -630,6 +630,9 @@ const CARGO_TURN = 0.0;         // PLAYTEST KNOB (CS010 §3, the proposed "inert
 // shipped with both its levers disabled and pinned at start=2.0 — baked in here rather than
 // restored to 1x (PLANNED-FEATURES-CS024 §1.6).
 const DOCK_RADIUS = 88;
+// CS037 P7 (spec §7.4): both promoted to DELIVERY registry knobs (dockBaseScore/dockBonusStep),
+// same scoopHitsPerLevel precedent — these stay in place as the documented defaults the knobs
+// derive from; the delivery pts calculation reads DEBUG.dockBaseScore/DEBUG.dockBonusStep live.
 const DOCK_BASE_SCORE = 50;     // 1st canister of a visit
 const DOCK_BONUS_STEP = 25;     // each additional canister: +25 over the last
 // CS020: px PAST dock.radius — the dock's "neighborhood". Readers, and they must all be the same
@@ -3775,6 +3778,14 @@ const DEBUG_VARS = [
   // magnetResumeDelay's own 0 has, and why min is 0 and not 0.05.
   { id: "dockPingCooldown", label: "Dock push ping cooldown", unit: "s",
     def: 0.50, min: 0, max: 3.0, step: 0.05 },
+  // CS037 P7 (spec §7.4): the delivery score curve's two constants, promoted to knobs at their
+  // current values so the curve can be retuned by feel in-browser if the one-powerup-per-visit
+  // nerf (this same phase) turns out to need compensation after all. Values unchanged this
+  // changeset — DOCK_BASE_SCORE/DOCK_BONUS_STEP stay in place as the documented shipped defaults.
+  { id: "dockBaseScore", label: "Delivery base score", unit: "pts",
+    def: DOCK_BASE_SCORE, min: 0, max: 500, step: 5 },
+  { id: "dockBonusStep", label: "Delivery bonus step", unit: "pts",
+    def: DOCK_BONUS_STEP, min: 0, max: 200, step: 5 },
   // CS024 P5/P6c (spec §2.4/§2.6/§4.5/§5): the JUNK chain, THREE knobs per lever (floor, ceil, steps) —
   // see leverKnob() above, which also derives the ▼ / ↳ / (inv) markers straight off LEVERS. junkCount
   // is the driver (sawtooths every 10 levels, so it wears ▼); the three sizes are fully independent (no
@@ -11483,7 +11494,7 @@ function update(dt) {
         // one consumer down, because it still names the anchor once at the top of the pop handler.
         const deliveryAnchorX = game.dock.x, deliveryAnchorY = game.dock.y - DOCK_RADIUS * DELIVERY_FLOAT_ANCHOR_FRAC;
         game.deliveryCount++;
-        const pts = DOCK_BASE_SCORE + DOCK_BONUS_STEP * (game.deliveryCount - 1);
+        const pts = DEBUG.dockBaseScore + DEBUG.dockBonusStep * (game.deliveryCount - 1);
         addScore(pts);
         // Achievement stats (F9): per-game delivered count (Scrap Runner) + best combo this visit
         // (Combo Collector); a first-canister-within-60s flag (Speed Recycler); a full 12-in-one-visit
@@ -11491,16 +11502,17 @@ function update(dt) {
         game.stats.delivered++;
         game.stats.bestCombo = Math.max(game.stats.bestCombo, game.deliveryCount);
         // CS018 P8 (PLANNED-FEATURES-CS018.md §4.3, replaces the v3.6 P3 single ===10 emitter):
-        // four independent "passes through N exactly once per visit" latches — same idiom as the
-        // deliveryCount===12 Heavy Hauler / ===CARGO_CAP_MAX Maxed Out latches below — each awarding
-        // ONE powerup. Cumulatively: 1 for 8-11, 2 for 12-15, 3 for 16-19, 4 for 20-23 delivered.
-        // Each launches from the dock's own position on a fresh random vector, exactly as the old
+        // a "passes through N exactly once per visit" latch — same idiom as the deliveryCount===12
+        // Heavy Hauler / ===CARGO_CAP_MAX Maxed Out latches below — awarding ONE powerup.
+        // Launches from the dock's own position on a fresh random vector, exactly as the old
         // ===10 emitter did.
         // CS035 P1 (§1.3): the "SALVAGE BONUS" floater that used to fire on the first award (8) is
         // deleted — the lab measured -15.7px ink overlap against the re-tuned delivery ticker. The
         // reward-tier powerup award itself is untouched.
-        if (game.deliveryCount === 8 || game.deliveryCount === 12 ||
-            game.deliveryCount === 16 || game.deliveryCount === 20) {
+        // CS037 P7 (spec §7.2): one powerup per dock visit. The counter increments by one per
+        // canister, so it always passes through 8 — this equality already IS the ">= 8, once per
+        // visit" rule. The former 12/16/20 latches are deleted, not restructured.
+        if (game.deliveryCount === 8) {
           const a = rand(0, TAU);
           dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DEBUG.dockPowerupSpeed, Math.sin(a) * DEBUG.dockPowerupSpeed);
         }
