@@ -331,7 +331,8 @@ function atWave(X, w) {
   eq(X.DEBUG_ENTRIES.filter(e => e.id === "debrisBounceRestitution").length, 1,
     "B: ...while CS023 P2's debrisBounceRestitution SURVIVES (archetype-independent, CS024 spec §0)");
   assert(!X.DEBUG_VARS.some(v => v.header === "ORBIT"), "B: the ORBIT section header is gone too");
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "B: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset High Scores + Back");
+  // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "B: DEBUG_ROWS is still the registry plus its six trailer rows");
   eq(Object.keys(X.DEBUG).length, X.DEBUG_ENTRIES.length, "B: the native DEBUG map agrees with the registry");
   // The removed knobs' persisted values are ORPHANED, not migrated: a settings blob written by the
   // pre-edit build must load cleanly and simply ignore them (the standing known-value-else-default rule).

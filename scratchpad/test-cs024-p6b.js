@@ -562,8 +562,9 @@ function evalSlice(literal) {
   // registry names exactly the same levers in exactly the same order, and the only thing about them
   // P6b touched is the derived slider step of the nine restaged UFO knobs.
   // REPOINTED BY CS030 P3: a CELEBRATION section trails GLOBAL — later phase, named here.
+  // REPOINTED BY CS037 P2: a BENCHMARK section trails CELEBRATION — later phase, named here.
   eq(X.DEBUG_VARS.filter(e => e.header).map(e => e.header).join(","),
-    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION", "G: ...and the same ten section headers, in the same order");
+    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION,BENCHMARK", "G: ...and the same section headers, in the same order");
   if (OLD) {
     const RESTAGED = new Set(["ufoFlightSpeedBig", "ufoFlightSpeedSmall", "ufoFireFreqBig", "ufoFireFreqSmall",
       "ufoDirChangeBig", "ufoDirChangeSmall", "ufoShotSpeedBig", "ufoShotSpeedSmall", "ufoAccuracySmall"]);
@@ -592,6 +593,10 @@ function evalSlice(literal) {
     // levelBannerY is no longer the true tail) — CS030 P3's rows, not P6b's. Same reasoning an
     // eighth time.
     const collapsedX = collapse(X.DEBUG_VARS).replace(/^debugOverride,/, "")
+      // CS037 P2 repoint: strip the whole BENCHMARK section (its header plus the four ramp controls,
+      // appended after levelEndGracePulseEnd) — CS037 P2's rows, not P6b's. It goes FIRST because it is
+      // now the true tail; see the tail-ordering note directly below.
+      .replace(/,BENCHMARK,benchRampStep,benchRampInterval,benchSettleFrames,benchMaxCount$/, "")
       // CS035 P3 repoint: strip the level-end protection window's four (levelEndHold/Grace/Fade/
       // GracePulseEnd, CELEBRATION, appended after celebrationEmblemSize) — CS035 P3's rows, not P6b's.
       // ⛔ THIS CHAIN IS TAIL-ORDERED and every clause in it is `$`-anchored: each strip must run while

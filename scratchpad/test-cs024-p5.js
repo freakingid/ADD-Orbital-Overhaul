@@ -408,7 +408,8 @@ function atWave(A, w) {
   // a ceiling, a step count and the level number, not a value), and its single row could only PIN a
   // lever flat. Each lever now emits three rows — checked per-id below, by name, not by count.
   // REPOINTED BY CS030 P3: a CELEBRATION section trails GLOBAL — later phase, named here.
-  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION",
+  // REPOINTED BY CS037 P2: a BENCHMARK section trails CELEBRATION — later phase, named here.
+  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION,BENCHMARK",
     "G: section headers, in the specced order, POWERUPS now present (CS024 P6's)");
   for (const h of headers) {
     const i = A.DEBUG_VARS.findIndex(e => e.header === h);

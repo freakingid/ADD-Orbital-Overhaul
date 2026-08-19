@@ -18,10 +18,12 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 106,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 110,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
                           // 106 -> 105: CS036 P2 retired levelEndHold (CELEBRATION), the pre-nextWave()
                           // hold, now player-paced. 105 -> 106: CS036 P5 adds dockPingCooldown (DELIVERY).
-  sectionHeaders: 10,     // DEBUG_VARS.filter(v => v.header).length
+                          // 106 -> 110: CS037 P2 adds the four BENCHMARK controls (ramp step, ramp
+                          // interval, settle frames, safety ceiling).
+  sectionHeaders: 11,     // DEBUG_VARS.filter(v => v.header).length — 10 -> 11: CS037 P2's BENCHMARK
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only
 };

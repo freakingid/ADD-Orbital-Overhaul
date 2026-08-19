@@ -626,7 +626,10 @@ function saucerAt(X, x, y, small) {
   // stays correct forever. Do not re-point it to a literal version again.
   assert(X.GAME_VERSION !== "1.0.0.22", "A: TRAP 1 — GAME_VERSION has moved off the pre-CS024-P7 baseline 1.0.0.22");
   // P3's own claim — that IT added no knob — is asserted directly on the next line.
-  assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ram/i.test(e.id)),
+  // NARROWED BY CS037 P2, not weakened: the bare `ram` alternative matched any id merely CONTAINING
+  // those three letters, and CS037 P2's benchRampStep/benchRampInterval do. `ram(?![a-z])` still catches
+  // ramDamage / saucerRam / ramAward, and `ramming` is spelled out so the one real word it drops is back.
+  assert(!X.DEBUG_ENTRIES.some(e => /saucer.*award|award.*score|mutual|ramming|ram(?![a-z])/i.test(e.id)),
     "A: TRAP 4 — ...and P3 still contributed none of them");
   {
     // RAW source both sides (not codeOnly) — these must be byte-unchanged including their comments.

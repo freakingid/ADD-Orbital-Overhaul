@@ -838,7 +838,8 @@ function evalSlice(literal) {
   const values = X.DEBUG_VARS.filter(e => e.id);
   const headers = X.DEBUG_VARS.filter(e => e.header).map(e => e.header);
   // REPOINTED BY CS030 P3: a CELEBRATION section trails GLOBAL — later phase, named here.
-  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION",
+  // REPOINTED BY CS037 P2: a BENCHMARK section trails CELEBRATION — later phase, named here.
+  eq(headers.join(","), "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION,BENCHMARK",
     "H: ten section headers, none of them empty — JUNK and UFO are BACK (P4 had removed them with the 21 tier knobs), each now holding one knob per lever instead of three knobs per tier, and CS024 P6's POWERUPS joins them");
   for (const h of headers) {
     const i = X.DEBUG_VARS.findIndex(e => e.header === h);

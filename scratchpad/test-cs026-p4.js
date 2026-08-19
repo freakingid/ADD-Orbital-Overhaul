@@ -191,9 +191,13 @@ let X = null;
   // actually belongs to P4 — is unmoved at six.
   const totalSites = (codeSrc.match(/new FloatText\(/g) || []).length;
   const knobSites = (codeSrc.match(/DEBUG\.deliveryFloatRise/g) || []).length;
-  eq(totalSites, 7, "A: (setup) seven FloatText call sites exist in the source (CS035 P1 removed two, CS035 P2 one more)");
+  // RE-REPOINTED BY CS037 P2: the benchmark instrument's floater population builds one (BENCH_POPS'
+  // `floater` maker), seven to eight and the untouched remainder six to seven. It is a developer
+  // instrument's constructor, not a delivery floater, and it names none of this phase's knobs — which
+  // is exactly what the split below measures.
+  eq(totalSites, 8, "A: (setup) eight FloatText call sites exist in the source (CS035 P1 removed two, CS035 P2 one more, CS037 P2 added one)");
   eq(knobSites, 1, "A: ...exactly one of them is still one of this phase's (the incidental push is deleted)");
-  eq(totalSites - knobSites, 6, "A: ⛔ ...and the other six are byte-identical to the parent (CS012 P3's own trailing-optional precedent)");
+  eq(totalSites - knobSites, 7, "A: ⛔ ...and the other seven are byte-identical to the parent (CS012 P3's own trailing-optional precedent)");
 })();
 
 // ================= (B) the registry =====================
@@ -227,8 +231,9 @@ let X = null;
   eq(X.DEBUG.deliveryFloatLife, undefined, "B: ...and DEBUG.deliveryFloatLife is undefined");
 
   eq(X.DEBUG.deliveryFloatRise, 150, "B: the live value seeds from def (rise)");
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4,
-    "B: DEBUG_ROWS is still registry + Dump + Reset All + Reset Scores + Back");
+  // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6,
+    "B: DEBUG_ROWS is still registry + its six trailer rows");
 
   // Live through the real panel path.
   const A = build();

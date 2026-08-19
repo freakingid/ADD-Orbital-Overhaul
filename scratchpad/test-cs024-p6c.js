@@ -226,7 +226,8 @@ let X = null;
   eq(X.DEBUG_VARS.filter(v => !v.header && /Floor$|Ceil$|Steps$/.test(v.id)).length, X.LEVERS.length * 3,
     "A: three lever-knob rows per LEVERS entry — the standard leverKnob() triple");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "A: DEBUG_ROWS is still the registry plus Dump + Reset All + Reset Scores + Back");
+  // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "A: DEBUG_ROWS is still the registry plus its six trailer rows");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.
@@ -643,7 +644,10 @@ let X = null;
   // is nothing left for a duration knob to time). The first removal this pin has taken; same idiom.
   // CS036 P5 repoint: +1 more (dockPingCooldown, DELIVERY — the dock push's audio rate limit). Not a
   // lever: a flat feel number for an audio cooldown, no chain, no floor/ceil/steps triple.
-  eq(nonLever.length, 52, "G: 52 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5's registry");
+  // CS037 P2 repoint: +4 more (benchRampStep/RampInterval/SettleFrames/MaxCount, BENCHMARK — the
+  // benchmark instrument's ramp controls). Not levers, spec §3.2: a measurement instrument is not a
+  // pressure axis, no chain, no floor/ceil/steps triple. Same reasoning a twelfth time.
+  eq(nonLever.length, 56, "G: 56 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);
@@ -855,9 +859,10 @@ let X = null;
 
   // TRAP 4 — P6's POWERUPS rows survive, and §5's section order holds.
   // REPOINTED BY CS030 P3: a CELEBRATION section trails GLOBAL — later phase, named here.
+  // REPOINTED BY CS037 P2: a BENCHMARK section trails CELEBRATION — later phase, named here.
   eq(X.DEBUG_VARS.filter(v => v.header).map(v => v.header).join(","),
-    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION",
-    "J: TRAP 4 — the ten sections, in §5's order (bar CS030 P3's trailing CELEBRATION)");
+    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION,BENCHMARK",
+    "J: TRAP 4 — the sections, in §5's order (bar CS030 P3's CELEBRATION and CS037 P2's BENCHMARK)");
   const ids = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
   const iP = ids.indexOf("#POWERUPS");
   eq(ids.slice(iP + 1, iP + 3).join(","), "engineBurnSeconds,engineMassMult", "J: TRAP 4 — P6's two POWERUPS rows are intact");

@@ -768,7 +768,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
         `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "G: DEBUG_ROWS is the registry plus its four trailer rows");
+  // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "G: DEBUG_ROWS is the registry plus its six trailer rows");
 
   // Persistence: an ordinary DEBUG_ENTRIES row through the existing generic path. No schema bump.
   {
@@ -831,7 +832,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "hunterVolatileAge" || id.startsWith("hunterPulse")  // CS035 P4
       || id.startsWith("chainGuardDrop")                      // CS035 P6
       || id === "sweepPowerupCap" || id === "dockPowerupSpeed"  // CS035 P6
-      || id === "dockPingCooldown";                            // CS036 P5
+      || id === "dockPingCooldown"                             // CS036 P5
+      || id.startsWith("bench");                               // CS037 P2 (the BENCHMARK controls)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
@@ -847,8 +849,13 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // whole new CELEBRATION section, not just rows under an existing one), never by a hidden special case.
     const oldHeaders = new Set(OLD.DEBUG_VARS.filter(v => v.header).map(v => v.header));
     const headersAdded = X.DEBUG_VARS.filter(v => v.header && !oldHeaders.has(v.header)).length;
-    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length + headersAdded,
-      "G: the panel grew by exactly one row per added registry entry (and one per added section header)");
+    // CS037 P2 repoint: the panel can also grow by a TRAILER ACTION ROW, which belongs to no registry
+    // entry — this phase appended two (Run benchmark battery / Copy benchmark results). Derived from the
+    // two builds, never a literal, so the structural claim survives the next one as well.
+    const actionsAdded = X.DEBUG_ROWS.filter(r => r.kind === "action").length
+                       - OLD.DEBUG_ROWS.filter(r => r.kind === "action").length;
+    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length + headersAdded + actionsAdded,
+      "G: the panel grew by exactly one row per added registry entry, section header and action row");
   } else {
     skip("the parent-commit registry pins");
   }

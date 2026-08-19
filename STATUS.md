@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.36 · Changeset: CS037 · Phase: P1 · Registry: 106 · Levers: 18
+Version: 1.0.0.36 · Changeset: CS037 · Phase: P2 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS037
 
@@ -13,11 +13,35 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P1 · Registry: 106 · Levers: 1
   `false`). No gameplay behaviour change: knockback, i-frames, scoop decay, `dmgThisWave`,
   `hitsSurvived`, `everBelowHalf` and the CS023 P3 mutual-kill arms are all byte-identical in effect.
 
+- P2 — the in-game benchmark instrument (spec §3), driven from two new debug-panel action rows. A
+  thirteen-run battery over twelve isolated populations (Debris singles / clumps, Garbage Satellites
+  3/2/1, Hunters 3/2/1, UFOs, particles, floaters, the tow chain) plus one mixed late-wave run, ramping
+  by `benchRampStep` to `benchMaxCount` and reporting the count at which p95 crosses 16.7 ms and then
+  33.3 ms, **update and draw timed separately**; a population that reaches the ceiling reports "not
+  reached". Results export as CSV through `navigator.clipboard`, falling back to the `dumpDifficultyLog`
+  Blob download and stating the outcome on the panel. ⛔ **Sealed** — five one-line `Bench.running`
+  guards at `addScore`/`saveSettings`/`HighScores.save`/`Achievements.save`/`Achievements.evaluate`, and
+  `loop()` skips `update()`/`draw()` entirely. ⛔ FORK-CS037-D → (a): `debugOverride` is forced OFF for
+  the run and restored on completion, ESC abort and the per-frame `catch`; the run's own entity arrays
+  and ship velocity are set aside and put back the same way. New BENCHMARK section, registry 106 → 110,
+  headers 10 → 11.
+
 ## Working / verified
 
-- Full suite: **149 files** (148 + new `test-cs037-p1.js`, 243 assertions), **149 passed, 0 failed,
-  0 skipped**; `node --check` passes. `test-cs037-p1.js` hand-mutation-checked twice (a merged-loop
-  tag swap, and moving the accumulation above the lethal check) — both caught.
+- Full suite: **150 files** (149 + new `test-cs037-p2.js`, 227 assertions), **150 passed, 0 failed,
+  0 skipped**; `node --check` passes. `test-cs037-p2.js` hand-mutation-checked seven times (drop the
+  override restore; alias the draw timer onto the update timer; drop the `saveSettings` seal;
+  extrapolate instead of reporting "not reached"; drop a population; skip the field restore; latch a
+  crossing at the last count instead of the first) — all seven caught.
+
+- **P2 touched 25 older suite files plus `test-registry.js`, all repoints, none a scope change.** The registry grew by four
+  rows and a header and the panel's trailer grew by two action rows, which is what those pins measure:
+  nine `DEBUG_VARS.length + 4` → `+ 6`; six section-header lists gaining `BENCHMARK`; six "registry
+  unchanged since my parent" allowances widened by four; `test-cs018-p2`/`test-cs015-p4`/`test-cs017-p2`
+  re-derived their trailer offsets (P2 now walks the two new rows); `test-cs026-p4`'s FloatText call-site
+  count 7 → 8; `test-cs023-p3`'s `/ram/i` id pattern narrowed to `ram(?![a-z])|ramming` (it matched
+  `benchRampStep`). ⛔ `Achievements.save()`'s shipped `debugRun || resumedRun` line is byte-unchanged —
+  the seal is a SECOND line under it, precisely because two files pin that text and its position.
 
 - Three older suite files pin `damageShip()` / the hazards-vs-ship arm and needed touching because
   this phase's edit landed inside what they pin — none of it a scope change to what they protect:
@@ -32,6 +56,20 @@ Version: 1.0.0.36 · Changeset: CS037 · Phase: P1 · Registry: 106 · Levers: 1
     function signature; all three repointed to the new (srcTag-carrying) literal text.
 
 ## Known issues
+
+- **The benchmark's ms figures exclude the frame's fixed overhead** (starfield, ship, HUD, chrome), by
+  design — that is what makes the update-vs-draw split readable — so a crossing count is an **upper
+  bound** on what a real frame can afford. The report header says so. Gate A's numbers should be read
+  that way, and P3's caps set with headroom accordingly.
+
+- **With "Overrides Applied" already OFF, the four BENCHMARK knobs read their own registry defaults**
+  like every other row. Consistent, and no longer a footgun (the battery forces the toggle itself), but
+  it means a knob edit made in that state is silently not in effect for the run.
+
+- **`navigator.clipboard` is unavailable on `file://` in several browsers.** The copy row falls back to
+  a CSV download and says which happened; if both fail it says that too. Untested in a real browser —
+  this session is headless, so the clipboard path itself has only been exercised on its absent-API
+  branch.
 
 - **⛔ NEW (P7) — FLAG-CS036-a: a `def` retune does not reach any installation that has ever saved
   settings.** `saveSettings()` writes `debug: { ...debugShown }`, a full snapshot of **every** knob
@@ -123,9 +161,14 @@ None.
 
 ## Next up
 
-- **CS037 is in flight (P1 done).** `PLANNED-FEATURES-CS037.md` / `IMPLEMENTATION-PHASES-CS037.md`
-  are the live planning pair; P1 is prerequisite instrumentation for Item D's telemetry buffer (§5),
-  which is not yet built.
+- **CS037 is in flight (P1, P2 done). ⛔ GATE A is next and is BLOCKING** — P3 (static caps) does not
+  start until Paul has run the battery and returned numbers. Run it from the debug panel's "Run
+  benchmark battery" row, then "Copy benchmark results"; the battery forces registry defaults itself, so
+  no manual "Overrides Applied → OFF" step is needed. `IMPLEMENTATION-PHASES-CS037.md` GATE A lists the
+  six questions to answer.
+
+- `PLANNED-FEATURES-CS037.md` / `IMPLEMENTATION-PHASES-CS037.md` are the live planning pair; P1 is
+  prerequisite instrumentation for Item D's telemetry buffer (§5), which is not yet built.
 
 - **The first thing any CS037 gate should do is clear the debug overrides** (FLAG-CS036-a). Every
   slider answer this changeset returned, and every one a future gate returns, is only as good as

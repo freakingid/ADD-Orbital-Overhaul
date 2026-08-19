@@ -537,6 +537,11 @@ orbital-overhaul.html
                    screens, immediately above STORAGE_KEY/saveSettings/
                    loadSettings, which every per-profile store still routes
                    through
+    Bench          CS037 P2's benchmark instrument: BENCH_POPS (the battery, data) +
+                   benchP95 + the Bench module + benchReportCSV/benchCopyResults.
+                   Sits immediately after the DEBUG registry's resetAllDebug() seed
+                   — the five seal guards read `Bench.running`, and a const is in
+                   TDZ until its declaration runs. See "Benchmark mode" below
     Helpers        rand, wrap, dist2, angleTo, shortDelta, glowStroke, drawPoly,
                    drawRingArc, drawRingSegments, COLOR
     Entities       Ship, Bullet, Asteroid, Satellite, Wedge, Saucer, Particle,
@@ -581,6 +586,37 @@ collide with menu navigation or rebinding.
 or `draw()` is ever restructured:
 1. `dt` is multiplied by `Capture.timeScale`.
 2. `Capture.afterDraw()` runs immediately after `draw()`.
+
+---
+
+## Benchmark mode (CS037 P2) — a developer instrument, and it is SEALED
+
+⛔ **Reached only from the debug panel's "Run benchmark battery" action row.** Not
+in Options, not player-facing, and deliberately not a `tools/` lab — a lab would
+re-implement the entity classes and drift from the build. It drives the shipped
+constructors, `update(dt)` methods and draw path.
+
+⛔ **The seal is five one-line `if (Bench.running) return;` guards** — at
+`addScore()`, `saveSettings()`, `HighScores.save()`, `Achievements.save()` and
+`Achievements.evaluate()`. `loop()` also skips `update()`/`draw()` outright while
+it runs, so none of the five is even reachable; the guards are what makes the seal
+structural and assertable. Do not remove one as "dead code."
+
+⛔ **`Bench.stop()` restores the `debugOverride` toggle UNCONDITIONALLY** — normal
+completion, ESC abort, and the `try/catch` around every frame (FORK-CS037-D → (a),
+`RATIONALE`-free: the reason is FLAG-CS036-a, and it is written at the module's
+header). It also puts the run's own entity arrays and the ship's velocity back:
+entry from a paused live game is legal and must not eat a run. The restore never
+persists, because `saveSettings()` was sealed the whole time.
+
+⛔ **The four BENCHMARK knobs are read ONCE, at `start()`, BEFORE the override is
+forced.** Read after, they would resolve to their own defaults and the panel rows
+would be inert.
+
+⚠ **SETTLED — the timers cover the population's own update and draw, not the
+frame's fixed overhead** (starfield/ship/HUD/chrome). That is what makes the
+update-vs-draw split mean anything; a crossing count is an upper bound on what a
+real frame can afford, and the report says so in its own header.
 
 ---
 

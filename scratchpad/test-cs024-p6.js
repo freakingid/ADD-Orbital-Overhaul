@@ -260,9 +260,10 @@ function layChain(X, n) {
     "A: POWERUP_DROP_TYPES is unchanged — append-only, order load-bearing");
 
   // REPOINTED BY CS030 P3: a CELEBRATION section trails GLOBAL — later phase, named here.
+  // REPOINTED BY CS037 P2: a BENCHMARK section trails CELEBRATION — later phase, named here.
   eq(X.DEBUG_VARS.filter(v => v.header).map(v => v.header).join(","),
-    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION",
-    "A: ten section headers, POWERUPS between UFO and GLOBAL");
+    "SHIP,GARBAGE,CHAIN GUARD,DELIVERY,JUNK,HUNTER,UFO,POWERUPS,GLOBAL,CELEBRATION,BENCHMARK",
+    "A: eleven section headers, POWERUPS between UFO and GLOBAL");
   // No header may be left empty (the standing rule: an empty header renders as a stray label).
   X.DEBUG_VARS.forEach((e, i) => {
     if (!e.header) return;

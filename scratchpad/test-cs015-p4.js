@@ -277,7 +277,8 @@ const CODE_KEYS = ["E", "v", "i", "l", "G", "3", "n", "i", "u", "$"];
   // cursor no longer starts at 0 and "N downs" no longer equals "N rows travelled" — step until we arrive
   // instead of counting, and take the first row from the registry rather than assuming index 0.
   // REPOINTED BY CS024 P6e: +1 -> +3 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
-  const backRow = A.DEBUG_VARS.length + 3;
+  // REPOINTED BY CS037 P2: +3 -> +5 — the benchmark instrument's Run/Copy rows joined the same trailer.
+  const backRow = A.DEBUG_VARS.length + 5;
   const firstVar = A.DEBUG_VARS.findIndex(v => !v.header);
   g.paused = true; g.state = "title"; g.menu.screen = "debug"; g.menu.index = firstVar;
   let threw = null;

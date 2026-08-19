@@ -683,7 +683,8 @@ function levelForCap(n) {
   const headerOrder = Y.DEBUG_VARS.filter(v => v.header).map(v => v.header);
   // CS030 P3 appended a CELEBRATION section after GLOBAL — later phase, named here rather than
   // re-litigated (same allowance idiom as CS025 P1/P2/P5's LATER()).
-  const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL", "CELEBRATION"];
+  // CS037 P2 appended a BENCHMARK section after CELEBRATION — same allowance idiom.
+  const WANT_HEADERS = ["SHIP", "GARBAGE", "CHAIN GUARD", "DELIVERY", "JUNK", "HUNTER", "UFO", "POWERUPS", "GLOBAL", "CELEBRATION", "BENCHMARK"];
   assert(headerOrder.length === WANT_HEADERS.length && headerOrder.every((h, i) => h === WANT_HEADERS[i]),
     `H: section headers are exactly ${WANT_HEADERS.join("/")}, in order (got ${headerOrder.join("/")})`);
 

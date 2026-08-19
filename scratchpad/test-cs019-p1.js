@@ -345,8 +345,9 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   assert(A.DEBUG_ENTRIES.length === A.DEBUG_VARS.filter(v => !v.header).length,
     "A: DEBUG_ENTRIES still derives from the registry (headers filtered)");
   // REPOINTED BY CS024 P6e: +2 -> +4 (Reset All + Reset High Scores joined Dump ahead of Back, spec §2/§4).
-  assert(A.DEBUG_ROWS.length === A.DEBUG_VARS.length + 4,
-    "A: DEBUG_ROWS still derives from the registry (+ the Dump/Reset All/Reset High Scores/Back rows) — no hardcoded count");
+  // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
+  assert(A.DEBUG_ROWS.length === A.DEBUG_VARS.length + 6,
+    "A: DEBUG_ROWS still derives from the registry (+ the six trailer rows) — no hardcoded count");
   // REPOINTED BY CS024 P6e: the registry is no longer strictly append-only — the debugOverride master
   // toggle is deliberately inserted at the TOP (spec §3), pushing CS015 P4's entry to second place.
   const firstValueEntries = A.DEBUG_VARS.filter(v => !v.header);

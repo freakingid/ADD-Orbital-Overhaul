@@ -518,7 +518,8 @@ function quiet(X) {
       || id === "hunterVolatileAge" || id.startsWith("hunterPulse")       // CS035 P4
       || id.startsWith("chainGuardDrop")                                  // CS035 P6
       || id === "sweepPowerupCap" || id === "dockPowerupSpeed"            // CS035 P6
-      || id === "dockPingCooldown";                                       // CS036 P5
+      || id === "dockPingCooldown"                                        // CS036 P5
+      || id.startsWith("bench");                                          // CS037 P2 (BENCHMARK controls)
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

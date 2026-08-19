@@ -180,7 +180,8 @@ function onDebug(A, { playing = false } = {}) {
   assert(vars.every(v => !!v.header !== !!v.id), "C: every registry entry is either a header or a value entry, never both");
   assert(A.DEBUG_ENTRIES.length === vars.length - headers, "C: DEBUG_ENTRIES is the registry minus its headers");
   // REPOINTED BY CS024 P6e: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
-  assert(rows.length === vars.length + 4, `C: DEBUG_ROWS = registry + Dump + Reset All + Reset High Scores + Back (${rows.length} = ${vars.length} + 4)`);
+  // REPOINTED BY CS037 P2: +4 -> +6 — the benchmark instrument's Run/Copy rows joined the same trailer.
+  assert(rows.length === vars.length + 6, `C: DEBUG_ROWS = registry + its six trailer rows (${rows.length} = ${vars.length} + 6)`);
 
   // Row order mirrors the registry exactly, then the two trailing action rows.
   let ok = true;
@@ -192,12 +193,19 @@ function onDebug(A, { playing = false } = {}) {
   assert(ok, "C: every registry entry maps to its row in order (header rows carry the label, var rows the entry)");
   // REPOINTED BY CS024 P6e: Dump is now the 4th-from-last row — Reset All and Reset High Scores follow
   // it, then Back (spec §2/§4).
-  assert(rows[rows.length - 4].kind === "action" && rows[rows.length - 4].label === "Dump difficulty log",
-    "C: the Dump action is the 4th-to-last row");
-  assert(rows[rows.length - 3].kind === "action" && rows[rows.length - 3].label === "Reset all debug knobs to defaults",
-    "C: Reset All is the 3rd-to-last row");
-  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Reset saved scores",
-    "C: Reset High Scores is the 2nd-to-last row");
+  // REPOINTED BY CS037 P2: two more action rows (Run benchmark battery, Copy benchmark results) sit
+  // between Reset saved scores and Back, so every offset below shifts by two. The CLAIM is unchanged and
+  // is the one that matters: the trailer is action rows in registry-independent order, then Back last.
+  assert(rows[rows.length - 6].kind === "action" && rows[rows.length - 6].label === "Dump difficulty log",
+    "C: the Dump action is the 6th-to-last row");
+  assert(rows[rows.length - 5].kind === "action" && rows[rows.length - 5].label === "Reset all debug knobs to defaults",
+    "C: Reset All is the 5th-to-last row");
+  assert(rows[rows.length - 4].kind === "action" && rows[rows.length - 4].label === "Reset saved scores",
+    "C: Reset High Scores is the 4th-to-last row");
+  assert(rows[rows.length - 3].kind === "action" && rows[rows.length - 3].label === "Run benchmark battery",
+    "C: the benchmark run row is the 3rd-to-last");
+  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Copy benchmark results",
+    "C: the benchmark copy row is the 2nd-to-last");
   assert(rows[rows.length - 1].kind === "back" && rows[rows.length - 1].label === "Back",
     "C: Back is the last row");
   assert(rows.filter(r => r.kind === "var").length === A.DEBUG_ENTRIES.length,
@@ -245,8 +253,9 @@ function onDebug(A, { playing = false } = {}) {
   assert(g.menu.index === ROWS - 1, `D: the LAST row (Back, index ${ROWS - 1}) is reachable — got ${g.menu.index}`);
   assert(rows[g.menu.index].kind === "back", "D: ...and it is the Back row");
   // REPOINTED BY CS024 P6e: one above Back is now Reset High Scores, not Dump (spec §2/§4).
-  assert(rows[g.menu.index - 1].kind === "action" && rows[g.menu.index - 1].label === "Reset saved scores",
-    "D: the Reset High Scores row is reachable, one above Back");
+  // REPOINTED BY CS037 P2: ...and now the benchmark copy row, which is the new one-above-Back.
+  assert(rows[g.menu.index - 1].kind === "action" && rows[g.menu.index - 1].label === "Copy benchmark results",
+    "D: the last action row is reachable, one above Back");
 
   // Wrap forward: last -> first selectable (row 0, the override toggle — no leading header to skip
   // over anymore, so the wrap lands ON row 0 rather than past it).

@@ -1113,7 +1113,8 @@ function stepProbe(X, p, dt = 1 / 60) {
   // Registry 73 -> 75 (CS026 P2 repoint: -> 78, the junkSplit lever's three knobs).
   hasKnob(X, "magnetPushKick", { def: 120, min: 0, max: 600, step: 10 }, { assert, eq });
   hasKnob(X, "magnetPushSpread", { def: 45, min: 0, max: 180, step: 5 }, { assert, eq });
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 4, "K: DEBUG_ROWS is the registry plus its four trailer rows");
+  // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "K: DEBUG_ROWS is the registry plus its six trailer rows");
   for (const id of ["magnetPushKick", "magnetPushSpread"])
     assert(!X.LEVERS.some(l => l.id === id), `K: ...${id} specifically is not in it`);
 
@@ -1174,7 +1175,8 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id === "hunterVolatileAge" || id.startsWith("hunterPulse")  // CS035 P4
       || id.startsWith("chainGuardDrop")                             // CS035 P6
       || id === "sweepPowerupCap" || id === "dockPowerupSpeed"       // CS035 P6
-      || id === "dockPingCooldown";                                  // CS036 P5
+      || id === "dockPingCooldown"                                   // CS036 P5
+      || id.startsWith("bench");                                     // CS037 P2 (the BENCHMARK controls)
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))
@@ -1189,8 +1191,13 @@ function stepProbe(X, p, dt = 1 / 60) {
     // CS030 P3 added a whole new CELEBRATION section header, not just rows under an existing one.
     const oldHeaders = new Set(OLD.DEBUG_VARS.filter(v => v.header).map(v => v.header));
     const headersAdded = X.DEBUG_VARS.filter(v => v.header && !oldHeaders.has(v.header)).length;
-    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length + headersAdded,
-      "K: the panel grew by exactly one row per added registry entry (and one per added section header)");
+    // CS037 P2 repoint: the panel can also grow by a TRAILER ACTION ROW, which belongs to no registry
+    // entry — this phase appended two (Run benchmark battery / Copy benchmark results). Derived from the
+    // two builds, never a literal, so the structural claim survives the next one as well.
+    const actionsAdded = X.DEBUG_ROWS.filter(r => r.kind === "action").length
+                       - OLD.DEBUG_ROWS.filter(r => r.kind === "action").length;
+    eq(X.DEBUG_ROWS.length - OLD.DEBUG_ROWS.length, added.length + headersAdded + actionsAdded,
+      "K: the panel grew by exactly one row per added registry entry, section header and action row");
   } else {
     skip("the parent-commit registry pins");
   }

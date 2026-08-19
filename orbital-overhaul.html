@@ -699,6 +699,34 @@ const STAR_NEAR_DENSITY = 22;   // near parallax layer: sparse, per viewport-siz
 const STAR_NEAR_BRIGHT_MIN = 0.55; // near layer reads brighter (closer) than the far layer
 const STAR_NEAR_BRIGHT_MAX = 1.0;
 
+// ---------- CS037 P2: BENCHMARK MODE CONSTANTS (PLANNED-FEATURES-CS037.md §3) ----------
+// The measurement contract's fixed numbers, plus the `def` source for the four BENCHMARK registry rows
+// (the standing "retune the const, never the def" convention). Grouped up here with every other tuning
+// constant per CLAUDE.md's Build rules; the instrument itself lives with the debug-panel plumbing.
+// NOT LEVERS and never will be — a measurement instrument is not a pressure axis
+// (DIFFICULTY-LEVERS.md §4): no floor/ceil/steps triple, no ▼/↳ glyph, no carriesTo, no LEVERS row.
+const BENCH_FRAME_60 = 1000 / 60;   // 16.67 ms — the first threshold the battery reports (spec §3.2)
+const BENCH_FRAME_30 = 1000 / 30;   // 33.33 ms — the second
+const BENCH_P95       = 0.95;       // the percentile both thresholds are read at
+const BENCH_DT        = 1 / 60;     // ⛔ FIXED sim step, deliberately NOT loop()'s real dt. Cost is what is
+                                    // being measured, so the step the entities integrate must not itself
+                                    // move with the frame time — a slow frame would otherwise fling every
+                                    // body further and change what wraps, drifts and homes on the next
+                                    // one. It also takes Capture.timeScale out of the measurement.
+const BENCH_SAMPLE_HZ = 60;         // frames per second of ramp interval. The interval knob is authored in
+                                    // SECONDS (what a tester thinks in) and spent as a FRAME COUNT (what
+                                    // the battery counts deterministically, headless included) — the
+                                    // counter-based rule, never a wall clock.
+const BENCH_RAMP_STEP      = 50;    // entities added per ramp step
+const BENCH_RAMP_INTERVAL  = 1.0;   // sec sampled at each count, after the settle frames
+const BENCH_SETTLE_FRAMES  = 6;     // frames discarded after each step before sampling resumes
+const BENCH_MAX_COUNT      = 2000;  // safety ceiling. A population that reaches it without crossing
+                                    // reports "not reached" — never an extrapolated number (spec §3.2).
+// A representative clump: half the transform threshold. A clump AT HUNTER_COALESCE_COUNT is the HELD
+// state, which heldClumpMax already bounds to a handful, and which would put a pulsing ring on every
+// body in the population and price a condition the field never holds in bulk.
+const BENCH_CLUMP_PIECES = Math.max(2, Math.round(HUNTER_COALESCE_COUNT / 2));
+
 // ---------- CS024 P1: ORBIT LEVELS AND THE INWARD DRIFT ARE GONE (PLANNED-FEATURES-CS024 §1.1/§1.5/§4.1) ----------
 // What stood here through CS023: the ORBIT_* geometry block (inner radius, ring step, per-ring density,
 // the fairness-floor multiplier trio, the safety margin, the two angular velocities, the fast-ring list,
@@ -2931,6 +2959,13 @@ window.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   AudioSys.init(); AudioSys.resume();
 
+  // CS037 P2: benchmark mode OWNS the keyboard for its whole duration, ahead of the secret code and
+  // all three context branches below — the debug panel is still the open screen underneath it, and a
+  // keystroke reaching that panel mid-battery would step a knob the measurement is standing on.
+  // ESC (Bench.key) is the abort. The gamepad is covered by loop(), which never reaches
+  // handleGamepadMenu() while the battery runs.
+  if (Bench.running) { e.preventDefault(); if (!e.repeat) Bench.key(k); return; }
+
   // CS015 P4: hidden Debug Options secret code — consulted before the three context branches below, but
   // ONLY on the Title screen or a paused live game (never mid-play, gameover, or a rebind capture), so
   // its keystrokes can't collide with those exclusive input modes. (CS034 P7: a fourth exclusion, for
@@ -3955,6 +3990,29 @@ const DEBUG_VARS = [
     def: 0.25, min: 0.05, max: 1.50, step: 0.05 },
   { id: "levelEndGracePulseEnd", label: "Level-end grace pulse end", unit: "s",
     def: 0.08, min: 0.02, max: 0.50, step: 0.02 },
+  // CS037 P2 (spec §3.2): the BENCHMARK instrument's four controls — ramp step, ramp interval, settle
+  // frames and the safety ceiling. Each `def` is the shipped constant declared with the rest of the
+  // tuning block; retuning is done there, not here. NOT LEVERS (see that block for why).
+  //   ⛔ READ ONCE, AT Bench.start(), BEFORE THE OVERRIDE TOGGLE IS FORCED OFF. FORK-CS037-D → (a)
+  // forces `debugOverride` to 0 for the battery's duration so the measurement runs against registry
+  // defaults (FLAG-CS036-a: a saved settings blob would otherwise move garbageSoftMax/garbageHardMax
+  // — the very numbers this instrument exists to inform — under the measurement). These four rows are
+  // snapshotted BEFORE that force, or they would resolve to their own defaults and the panel rows
+  // would be inert. Snapshotting also means a mid-battery edit cannot make two ramp steps
+  // incomparable: the battery runs at the values it started with.
+  //   Consequence, stated rather than papered over: with the toggle ALREADY off, these four read their
+  // own `def`s like every other row — that is what the toggle means, and it is the right answer here
+  // (the defaults are the intended ramp). The tester has no reason to set it off by hand any more, since
+  // the battery forces it itself.
+  { header: "BENCHMARK" },
+  { id: "benchRampStep", label: "Bench ramp step", unit: "",
+    def: BENCH_RAMP_STEP, min: 1, max: 500, step: 5, clampShown: v => Math.round(v) },
+  { id: "benchRampInterval", label: "Bench ramp interval", unit: "s",
+    def: BENCH_RAMP_INTERVAL, min: 0.25, max: 10, step: 0.25 },
+  { id: "benchSettleFrames", label: "Bench settle frames", unit: "",
+    def: BENCH_SETTLE_FRAMES, min: 0, max: 120, step: 1, clampShown: v => Math.round(v) },
+  { id: "benchMaxCount", label: "Bench max count", unit: "",
+    def: BENCH_MAX_COUNT, min: 10, max: 20000, step: 100, clampShown: v => Math.round(v) },
 ];
 // CS018 P2: the registry's VALUE entries, with the section headers filtered out. Every loop that wants
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
@@ -3973,6 +4031,13 @@ const DEBUG_ROWS = [
   // the normal confirm input, dispatched by label in menuDebug's existing action branch.
   { kind: "action", label: "Reset all debug knobs to defaults" },
   { kind: "action", label: "Reset saved scores" },
+  // CS037 P2 (spec §3.2/§3.3): the benchmark instrument's two rows, appended exactly like every
+  // action row before them — dispatched by LABEL in menuDebug, never by index, so the registry can
+  // keep growing underneath them. Neither is destructive (the battery sets the run's own field
+  // aside and puts it back, and ESC aborts), so neither goes through openModal the way the two
+  // erase rows above do.
+  { kind: "action", label: "Run benchmark battery" },
+  { kind: "action", label: "Copy benchmark results" },
   { kind: "back",   label: "Back" },
 ];
 // CS018 P2: the panel's transient VIEW state — the scroll window's top row and the pending numeric-entry
@@ -4027,6 +4092,445 @@ function resetAllDebug() {
   for (const v of DEBUG_ENTRIES) applyDebug(v.id, v.def);
 }
 resetAllDebug();   // seed both maps from the registry defaults
+
+// ================================================================================================
+// CS037 P2 — BENCHMARK MODE (PLANNED-FEATURES-CS037.md §3, IMPLEMENTATION-PHASES-CS037.md P2)
+// ================================================================================================
+// A developer instrument, reached ONLY from the debug panel's "Run benchmark battery" action row.
+// Not in Options, not player-facing, and deliberately NOT a tools/ lab: a lab would have to
+// re-implement DebrisSatellite, HunterSatellite, the particle system and the draw calls, and that
+// duplicate would drift from the build and would never exercise Hunter homing's per-frame wrap-aware
+// angleTo/dist2 work. Everything below drives the SHIPPED constructors, the SHIPPED update(dt)
+// methods, the SHIPPED updateChain() and the SHIPPED draw path (drawEntity / drawChain).
+//
+// It sits HERE, immediately under the debug registry's own plumbing, for one load-bearing reason:
+// the five seal guards below read `Bench.running`, and a `const` is in its temporal dead zone until
+// its declaration executes. Nothing between the top of the file and this point calls a guarded
+// function (resetAllDebug() above is the only executable statement, and it reaches applyDebug only),
+// while Profiles.init()/loadSettings()/HighScores.load()/Achievements.init() all run below it.
+//
+// ⛔ THE MODE IS SEALED. For a battery's whole duration addScore(), HighScores.save(),
+// Achievements.save(), Achievements.evaluate() and saveSettings() early-return on Bench.running —
+// five one-line guards at those five functions, which is what makes the seal STRUCTURAL rather than
+// incidental. Nothing a benchmark does can reach the score, the high-score table, achievement state
+// or the settings blob. (loop() also skips update()/draw() outright while running, so none of the
+// five is even on a reachable path — the guards are the belt to that's braces, and they are what a
+// headless test can actually assert.)
+//
+// ⛔ FORK-CS037-D → (a) / FLAG-CS036-a — WHY THE OVERRIDE TOGGLE IS FORCED. saveSettings() persists a
+// snapshot of EVERY knob and loadSettings() re-applies it over the registry defaults, so any
+// installation that has ever saved settings is not running shipped defaults — including
+// garbageSoftMax / garbageHardMax, the very numbers this instrument exists to inform. start()
+// stashes debugShown[DEBUG_OVERRIDE_ID] and calls applyDebug(DEBUG_OVERRIDE_ID, 0) (the existing
+// carve-out routes that into a full rebuildDebug()); stop() restores the stashed value
+// UNCONDITIONALLY — normal completion, ESC abort, and the catch around every frame all land there.
+// The restore deliberately does NOT persist: saveSettings() is sealed for the duration, so storage
+// still holds exactly what the tester had, and re-saving would be the failure mode, not the cure.
+//
+// ⛔ WHAT THE TIMERS COVER, STATED SO A NUMBER IS NEVER READ WRONG. The update timer covers the
+// population's own update pass plus the end-of-frame dead filter, exactly where update() runs it;
+// the draw timer covers the population's own draw calls inside the same camera transform draw()
+// uses. NEITHER INCLUDES THE FRAME'S FIXED OVERHEAD — starfield, ship, HUD, menu chrome — so a
+// crossing count is an UPPER BOUND on what a real frame can afford, not a prediction of it. Keeping
+// the fixed cost out is what makes the update-vs-draw split mean anything, which is the whole point
+// of the measurement (Hunters are update-heavy, particles are draw-heavy; spec §3.2).
+//
+// ⛔ POPULATIONS ARE PLACED UNIFORMLY OVER THE WHOLE WORLD, not packed into the viewport. A cap knob
+// bounds an ARRAY LENGTH, i.e. a world population, so that is what is ramped; only the viewport's
+// share of it pays draw cost, exactly as in play. The report header records WORLD_W x WORLD_H so a
+// crossing count can be read back against the field it was measured in.
+const BENCH_ARRAYS = ["debris", "hunters", "saucers", "particles", "garbage", "floaters", "chain",
+                      "bullets", "powerups"];
+// Mirrors draw()'s own z-order, so a mixed run pays the same overdraw a real frame does.
+const BENCH_DRAW_ORDER = ["particles", "garbage", "chain", "debris", "hunters", "saucers", "floaters"];
+
+function benchSpot() { return { x: Math.random() * WORLD_W, y: Math.random() * WORLD_H }; }
+
+// A Garbage Satellite at `size`. Speed is left at the ctor's own DEBRIS_SPEEDS default rather than a
+// lever read: a lever changes how fast a body MOVES, never what a frame COSTS.
+function benchSat(size) { const p = benchSpot(); return new DebrisSatellite(p.x, p.y, size); }
+
+// A Hunter at `size`. ⛔ THE SCATTER WINDOW IS ZEROED ON THE TWO HOMING TIERS. HUNTER_SCATTER holds a
+// fresh medium/small on a straight line for its first 0.6 s, and a ramp step that spent its sample
+// window inside that would measure a straight-line integrate and miss the wrap-aware angleTo homing
+// this population exists to price. The large core keeps its own path untouched: it tumbles, and in an
+// isolated run (game.debris empty) it takes the documented last-stand steer — both shipped paths.
+function benchHunter(size) {
+  const p = benchSpot();
+  const h = new HunterSatellite(p.x, p.y, size, rand(0, TAU));
+  if (h.homing) h.scatter = 0;
+  return h;
+}
+
+// A clump — a separate population from a single because it carries lineage and merge state.
+// coalesceGarbage() makes one by summing `mass` and re-deriving `radius` from `pieces`, so the same
+// two lines are applied here; a clump built from a single's fields would draw at r = 7 and would not
+// be a clump at all. coalesceDelay is spent so the piece is "active", as a real clump's is.
+function benchClump() {
+  const p = benchSpot();
+  const g = new Garbage(p.x, p.y, rand(-30, 30), rand(-30, 30));
+  g.pieces = BENCH_CLUMP_PIECES;
+  g.mass = BENCH_CLUMP_PIECES;
+  g.radius = 7 * Math.sqrt(g.pieces);
+  g.coalesceDelay = 0;
+  return g;
+}
+
+// A tow node, in the exact shape the pickup site pushes (x/y/px/py/spin/spinRate/mass) and laid out
+// along the ship's tail so the verlet solver starts from a settled chain instead of exploding a
+// thousand-node pile out of one point. mass 1.0 is the Debris-sourced weight; low-mass Hunter scrap
+// only moves chainMass(), never the per-node work.
+function benchChainNode(i) {
+  const a = chainAnchor();
+  const p = wrapPos({ x: a.x - Math.cos(game.ship.angle) * CHAIN_LINK * (i + 1),
+                      y: a.y - Math.sin(game.ship.angle) * CHAIN_LINK * (i + 1) });
+  return { x: p.x, y: p.y, px: p.x, py: p.y, spin: rand(0, TAU), spinRate: rand(-1.5, 1.5), mass: 1.0 };
+}
+
+// The MIXED run's proportions (spec §3.2 item 9). WEIGHTS, not counts — the mixed run ramps a TOTAL
+// like every other population and splits it by these, so the field's SHAPE is constant while its SIZE
+// grows. The shape is read off the shipped mechanisms rather than invented:
+//   · loose Debris dominates a late field (GARBAGE_SOFT_MAX is 220 against everything else on the
+//     board), with a minority of it coalesced into clumps;
+//   · Garbage Satellites are bottom-heavy — junkSplit is 3, so one large becomes 3 mediums and 9
+//     smalls and the tiers stack about 1 : 3 : 9 once a wave is underway;
+//   · Hunters stack the same way for the same reason (destroyHunter is 3-way and is never levered),
+//     under a large-core ceiling that keeps the whole lineage small;
+//   · UFOs, floaters and the tow are each bounded by their own mechanism and stay thin.
+const BENCH_MIX = [
+  { key: "garbage", w: 50 }, { key: "clump", w: 6 },
+  { key: "debris3", w: 2 },  { key: "debris2", w: 6 }, { key: "debris1", w: 18 },
+  { key: "hunter3", w: 1 },  { key: "hunter2", w: 3 }, { key: "hunter1", w: 9 },
+  { key: "saucer", w: 1 },   { key: "particle", w: 6 }, { key: "floater", w: 1 },
+  { key: "chain", w: 3 },
+];
+
+// THE BATTERY, IN ORDER. Data, not code: adding a population is one row. Twelve isolated runs then
+// one mixed run — deliberately no population-selector knob (spec §3.2: a selector would need a
+// label-array registry hook that does not exist, and the whole set is what the measurement needs).
+// `make(i)` takes the index only so the chain can lay itself out; every other maker ignores it.
+const BENCH_POPS = [
+  { key: "garbage",  label: "Debris — singles",        arr: "garbage",
+    make: () => { const p = benchSpot(); return new Garbage(p.x, p.y, rand(-30, 30), rand(-30, 30)); } },
+  { key: "clump",    label: "Debris — clumps",         arr: "garbage",   make: benchClump },
+  { key: "debris3",  label: "Garbage Satellite — lg",  arr: "debris",    make: () => benchSat(3) },
+  { key: "debris2",  label: "Garbage Satellite — md",  arr: "debris",    make: () => benchSat(2) },
+  { key: "debris1",  label: "Garbage Satellite — sm",  arr: "debris",    make: () => benchSat(1) },
+  { key: "hunter3",  label: "Hunter Satellite — lg",   arr: "hunters",   make: () => benchHunter(3) },
+  { key: "hunter2",  label: "Hunter Satellite — md",   arr: "hunters",   make: () => benchHunter(2) },
+  { key: "hunter1",  label: "Hunter Satellite — sm",   arr: "hunters",   make: () => benchHunter(1) },
+  { key: "saucer",   label: "UFO",                     arr: "saucers",
+    make: () => new Saucer(Math.random() < 0.5) },
+  { key: "particle", label: "Particles",               arr: "particles",
+    make: () => { const p = benchSpot(); return new Particle(p.x, p.y, COLOR.debris); } },
+  { key: "floater",  label: "Floating text",           arr: "floaters",
+    make: () => { const p = benchSpot(); return new FloatText("+100", p.x, p.y, COLOR.garbage); } },
+  { key: "chain",    label: "Tow chain",               arr: "chain",     make: benchChainNode },
+  { key: "mixed",    label: "Mixed — late wave",       mix: BENCH_MIX },
+];
+
+// Nearest-rank p95 — NEVER interpolated, so the value returned is always a frame that was actually
+// observed rather than one synthesised between two of them. An empty window returns 0, which cannot
+// cross either threshold; a window only ever reaches _commit() with cfg.frames samples in it.
+function benchP95(samples) {
+  if (!samples.length) return 0;
+  const s = samples.slice().sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.ceil(BENCH_P95 * s.length) - 1))];
+}
+
+const Bench = {
+  running: false,       // ⛔ the seal's one input — read by the five guarded functions and by loop()
+  results: [],          // finished population rows, in battery order
+  msg: "",              // status line drawn under the debug panel's row band (never silent)
+  error: "",
+  cfg: null,            // the four controls, snapshotted at start()
+  saved: null,          // the run's own field state, set aside for the duration
+  savedOverride: null,  // debugShown[DEBUG_OVERRIDE_ID] as it was before the force
+  ctxNote: null,        // world size + wave the battery ran in, for the report header
+  popIdx: 0, cur: null, count: 0, live: 0,
+  buckets: [], arrays: [],
+  updS: [], drawS: [], totS: [], settle: 0,
+  // The one clock seam. Defaults to performance.now(); the headless suite substitutes a scripted
+  // clock, which is the only way to drive the real threshold state machine at known frame costs
+  // (the harness's performance stub is a constant).
+  clock: () => performance.now(),
+
+  // ---- entry / exit ------------------------------------------------------------------------
+  start() {
+    if (this.running) return;
+    // ⛔ THE CONTROLS ARE READ HERE, BEFORE THE OVERRIDE IS FORCED — see the registry rows' note.
+    this.cfg = {
+      step:   Math.max(1, Math.round(DEBUG.benchRampStep)),
+      frames: Math.max(1, Math.round(DEBUG.benchRampInterval * BENCH_SAMPLE_HZ)),
+      settle: Math.max(0, Math.round(DEBUG.benchSettleFrames)),
+      max:    Math.max(1, Math.round(DEBUG.benchMaxCount)),
+    };
+    this.results = []; this.msg = ""; this.error = "";
+    this.ctxNote = { world: WORLD_W + "x" + WORLD_H, wave: game.wave };
+    this._stash();
+    this.running = true;                       // the seal is live from here, not one line later
+    try {
+      this.savedOverride = debugShown[DEBUG_OVERRIDE_ID];
+      applyDebug(DEBUG_OVERRIDE_ID, 0);        // the carve-out routes this into a full rebuildDebug()
+      this._startPop(0);
+    } catch (err) { this.error = String((err && err.message) || err); this.stop("error"); }
+  },
+  // ⛔ THE ONE EXIT. Completion, ESC abort and the catch around every frame all come through here, and
+  // the override restore is unconditional in all three. Re-entrant-safe: a second call is a no-op.
+  stop(reason) {
+    if (!this.running) return;
+    if (reason !== "complete" && this.cur && this.cur.steps.length) this.results.push(this.cur);
+    this._restore();
+    if (this.savedOverride !== null) {
+      applyDebug(DEBUG_OVERRIDE_ID, this.savedOverride);   // never persisted — see the header
+      this.savedOverride = null;
+    }
+    this.running = false;
+    this.cur = null; this.buckets = []; this.arrays = [];
+    this.msg = reason === "complete"
+      ? "Benchmark complete — " + this.results.length + " populations. Use \"Copy benchmark results\"."
+      : reason === "aborted"
+      ? "Benchmark aborted after " + this.results.length + " populations — partial results kept."
+      : "Benchmark stopped: " + (this.error || reason) + " — partial results kept.";
+    AudioSys.ui(reason === "complete");
+  },
+  // ESC always aborts, on top of whatever `back` is bound to: a benchmark that cannot be stopped from
+  // the keyboard is a hang, and the binding table is data.
+  key(k) { if (k === "escape" || bindings.back.keys.includes(k)) this.stop("aborted"); },
+
+  // The run's own field, set aside whole and put back whole. Entry from a PAUSED LIVE GAME is legal,
+  // so the benchmark must not be able to eat a run: it works on fresh arrays and the originals are
+  // untouched objects held here. The ship's velocity is stashed too — updateChain() tugs it.
+  _stash() {
+    const s = this.saved = { arrays: {}, ship: null, camera: null };
+    for (const k of BENCH_ARRAYS) { s.arrays[k] = game[k]; game[k] = []; }
+    const sh = game.ship;
+    s.ship = { x: sh.x, y: sh.y, vx: sh.vx, vy: sh.vy, angle: sh.angle };
+    s.camera = { x: game.camera.x, y: game.camera.y };
+    // update() pins the camera to the ship every frame and benchmark mode does not run update(), so
+    // it does that pinning once, here. Without it the tow chain — which anchors to the SHIP and images
+    // against the CAMERA — would render off the side of the viewport on the title screen, where the
+    // two differ, and the chain population would price a draw nobody can see.
+    game.camera.x = sh.x; game.camera.y = sh.y;
+  },
+  _restore() {
+    const s = this.saved;
+    if (!s) return;
+    for (const k of BENCH_ARRAYS) game[k] = s.arrays[k];
+    const sh = game.ship;
+    sh.x = s.ship.x; sh.y = s.ship.y; sh.vx = s.ship.vx; sh.vy = s.ship.vy; sh.angle = s.ship.angle;
+    game.camera.x = s.camera.x; game.camera.y = s.camera.y;
+    this.saved = null;
+  },
+
+  // ---- the ramp ----------------------------------------------------------------------------
+  _startPop(i) {
+    this.popIdx = i;
+    const p = BENCH_POPS[i];
+    this.cur = { key: p.key, label: p.label, steps: [], top: null, cross60: null, cross30: null };
+    this.count = Math.min(this.cfg.max, this.cfg.step);
+    this._resetSamples();
+    this._shape();
+  },
+  _resetSamples() { this.updS = []; this.drawS = []; this.totS = []; this.settle = this.cfg.settle; },
+  // Split this step's total across the population's buckets and rebuild the field from scratch.
+  _shape() {
+    const p = BENCH_POPS[this.popIdx];
+    const list = p.mix || [{ key: p.key, w: 1 }];
+    const sum = list.reduce((s, m) => s + m.w, 0);
+    this.buckets = list.map(m => {
+      const src = BENCH_POPS.find(q => q.key === m.key);
+      let n = p.mix ? Math.round(this.count * m.w / sum) : this.count;
+      // ⛔ A TOW CANNOT RAMP INSIDE A REALISTIC FIELD. game.cargoMax is the shipped ceiling on how many
+      // nodes can be on the chain at once, so the mixed run's chain share is clamped to it. The
+      // ISOLATED chain population is deliberately NOT clamped — finding where the verlet solver gives
+      // out is exactly what that run is for.
+      if (p.mix && src.key === "chain") n = Math.min(n, game.cargoMax);
+      return { arr: src.arr, make: src.make, n: Math.max(0, n) };
+    });
+    this.live = this.buckets.reduce((s, b) => s + b.n, 0);
+    const used = new Set(this.buckets.map(b => b.arr));
+    this.arrays = BENCH_DRAW_ORDER.filter(k => used.has(k));
+    for (const k of BENCH_ARRAYS) game[k] = [];
+    for (const b of this.buckets) { const a = game[b.arr]; for (let i = 0; i < b.n; i++) a.push(b.make(a.length)); }
+  },
+  // Restore the target before the timed block. Only the three MORTAL kinds can ever be short: Garbage,
+  // DebrisSatellite and HunterSatellite never set `dead` in their own update(), while Particle (life),
+  // Saucer (travel) and FloatText (life) all do — and each of those three has exactly one contributor
+  // in every population above, mixed included, which is what makes a per-bucket top-up correct. An
+  // array with two contributors (garbage across singles+clumps, debris/hunters across sizes) is
+  // immortal by construction and never reaches the loop body.
+  //   The update is therefore always measured at exactly `live`; the draw is measured at `live` minus
+  // that frame's natural deaths, which is under 3 % for particles at their shipped lifetimes and zero
+  // for every immortal population.
+  _topUp() {
+    const want = {};
+    for (const b of this.buckets) want[b.arr] = (want[b.arr] || 0) + b.n;
+    for (const b of this.buckets) {
+      const a = game[b.arr];
+      while (a.length < want[b.arr]) a.push(b.make(a.length));
+    }
+    // A UFO fires into game.bullets, which no population under test updates or draws. Dropping them
+    // HERE — outside the timed block — keeps the array bounded while leaving the FIRING itself (the
+    // Bullet construction) inside the saucer's own measured update cost, where it belongs.
+    if (game.bullets.length) game.bullets.length = 0;
+  },
+  _update() {
+    for (const k of this.arrays) {
+      if (k === "chain") updateChain(BENCH_DT);
+      else game[k].forEach(e => e.update(BENCH_DT));
+    }
+    // The end-of-frame cleanup filter, at the point update() runs it — so a body that died this frame
+    // is not drawn this frame, exactly as in a real one.
+    for (const k of this.arrays) if (k !== "chain") game[k] = game[k].filter(e => !e.dead);
+  },
+  _draw() {
+    ctx.save();
+    ctx.translate(VIEW_W / 2 - game.camera.x, VIEW_H / 2 - game.camera.y);
+    for (const k of this.arrays) {
+      if (k === "chain") drawChain();
+      else game[k].forEach(drawEntity);
+    }
+    ctx.restore();
+  },
+  // Close the window at this count: p95 the three series, record the row, and latch either threshold
+  // the FIRST time the frame series crosses it. ⛔ frameMs is the p95 of the per-frame SUM, not the sum
+  // of the two p95s — those are different numbers, and the threshold is a property of the frame.
+  // updMs/drawMs are each their own p95 and are what Gate A's "update share vs draw share" asks for.
+  _commit() {
+    const r = this.cur;
+    const row = { count: this.live, updMs: benchP95(this.updS), drawMs: benchP95(this.drawS),
+                  frameMs: benchP95(this.totS) };
+    r.steps.push(row);
+    r.top = row;
+    if (!r.cross60 && row.frameMs >= BENCH_FRAME_60) r.cross60 = row;
+    if (!r.cross30 && row.frameMs >= BENCH_FRAME_30) r.cross30 = row;
+  },
+  // A population is finished when the 33.3 ms threshold is crossed or the safety ceiling is reached.
+  // A threshold left null stays null and REPORTS "not reached" — never an extrapolation (spec §3.2).
+  _advance() {
+    this._commit();
+    if (this.cur.cross30 || this.count >= this.cfg.max) {
+      this.results.push(this.cur);
+      this.cur = null;
+      if (this.popIdx + 1 >= BENCH_POPS.length) { this.stop("complete"); return; }
+      this._startPop(this.popIdx + 1);
+      return;
+    }
+    this.count = Math.min(this.cfg.max, this.count + this.cfg.step);
+    this._resetSamples();
+    this._shape();
+  },
+
+  // ---- the frame ---------------------------------------------------------------------------
+  // ⛔ THE CATCH IS THE UNCONDITIONAL-RESTORE GUARANTEE, not defensive padding: any throw anywhere in
+  // the instrument exits through stop(), which puts the field and the override toggle back.
+  frame() {
+    try { this._frame(); }
+    catch (err) { this.error = String((err && err.message) || err); this.stop("error"); }
+  },
+  _frame() {
+    this._topUp();
+    ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+    const t0 = this.clock(); this._update();
+    const t1 = this.clock(); this._draw();
+    const t2 = this.clock();
+    if (this.settle > 0) this.settle--;
+    else { this.updS.push(t1 - t0); this.drawS.push(t2 - t1); this.totS.push(t2 - t0); }
+    if (this.totS.length >= this.cfg.frames) this._advance();
+    if (this.running) this._overlay();
+  },
+  _overlay() {
+    const p = BENCH_POPS[this.popIdx], r = this.cur, top = r.top;
+    const cross = c => c ? String(c.count) : "—";
+    drawText("BENCHMARK", VIEW_W / 2, 150, 34, COLOR.satellite);
+    drawText((this.popIdx + 1) + " / " + BENCH_POPS.length + "   " + p.label, VIEW_W / 2, 190, 22);
+    drawText("count " + this.live + "  /  ceiling " + this.cfg.max, VIEW_W / 2, 224, 18, COLOR.dim);
+    if (top) {
+      drawText("last step   update " + top.updMs.toFixed(2) + " ms    draw " + top.drawMs.toFixed(2) +
+               " ms    frame " + top.frameMs.toFixed(2) + " ms", VIEW_W / 2, 254, 16, COLOR.dim);
+    }
+    drawText("p95 16.7 ms at " + cross(r.cross60) + "        p95 33.3 ms at " + cross(r.cross30),
+             VIEW_W / 2, 284, 16, COLOR.garbage);
+    drawText("ESC aborts — the override toggle is restored either way", VIEW_W / 2, VIEW_H - 60, 15, COLOR.dim);
+  },
+};
+
+// The report, as CSV — the same shape dumpDifficultyLog() emits, for the same reason: it pastes
+// straight into a sheet. Two tables, because Gate A asks two different questions: the SUMMARY answers
+// "where did each population cross", and the RAMP answers "what did the curve look like getting
+// there", which is what actually sets a cap.
+function benchReportCSV() {
+  const B = Bench, n = v => v.toFixed(3);
+  const L = [];
+  L.push("# Orbital Overhaul benchmark — v" + GAME_VERSION);
+  L.push("# world " + (B.ctxNote ? B.ctxNote.world : "?") + " · wave " + (B.ctxNote ? B.ctxNote.wave : "?") +
+         " · ramp step " + B.cfg.step + " · interval " + B.cfg.frames + " frames · settle " +
+         B.cfg.settle + " · ceiling " + B.cfg.max);
+  L.push("# ms figures are the POPULATION's own update and draw cost at p95 (nearest rank).");
+  L.push("# The frame's fixed overhead (starfield, ship, HUD, chrome) is NOT included, so a crossing");
+  L.push("# count is an upper bound on what a real frame can afford. frame_ms is the p95 of the");
+  L.push("# per-frame SUM and is not update_ms + draw_ms. \"not reached\" = the ceiling was hit first.");
+  L.push("");
+  L.push("population,cross_16.7_count,cross_16.7_update_ms,cross_16.7_draw_ms,cross_33.3_count,cross_33.3_update_ms,cross_33.3_draw_ms,ceiling_count,ceiling_update_ms,ceiling_draw_ms,ceiling_frame_ms");
+  for (const r of B.results) {
+    const c60 = r.cross60, c30 = r.cross30, t = r.top;
+    L.push([r.label,
+      c60 ? c60.count : "not reached", c60 ? n(c60.updMs) : "", c60 ? n(c60.drawMs) : "",
+      c30 ? c30.count : "not reached", c30 ? n(c30.updMs) : "", c30 ? n(c30.drawMs) : "",
+      t ? t.count : "", t ? n(t.updMs) : "", t ? n(t.drawMs) : "", t ? n(t.frameMs) : ""].join(","));
+  }
+  L.push("");
+  L.push("population,count,update_ms,draw_ms,frame_ms");
+  for (const r of B.results) for (const s of r.steps)
+    L.push([r.label, s.count, n(s.updMs), n(s.drawMs), n(s.frameMs)].join(","));
+  return L.join("\n") + "\n";
+}
+
+// ⛔ NET-NEW BROWSER API — there is no clipboard code anywhere else in this build. It is guarded the
+// way every other browser-API touch here is (try/catch, absence is the normal fallback path) and it
+// FAILS VISIBLY, never silently: navigator.clipboard is absent on file:// in several browsers and
+// rejects without a user gesture in others, so BOTH the missing-API and the rejected-promise paths
+// fall through to the same Blob download dumpDifficultyLog() already uses, and every outcome — copied,
+// downloaded, or neither — is stated in Bench.msg, which drawDebug draws under the row band. A copy
+// that quietly did nothing is indistinguishable from one that worked, which is the failure this
+// avoids.
+function benchDownloadResults(text, why) {
+  try {
+    const blob = new Blob([text], { type: "text/csv" });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "orbital-benchmark-" + ts + ".csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    Bench.msg = "Downloaded benchmark CSV (" + why + ").";
+    AudioSys.ui(true);
+  } catch (e) {
+    Bench.msg = "Copy FAILED (" + why + ") and no download either — see the console.";
+    AudioSys.ui(false);
+  }
+}
+function benchCopyResults() {
+  if (Bench.running) return;
+  if (!Bench.results.length) {
+    Bench.msg = "No benchmark results yet — run the battery first.";
+    AudioSys.ui(false);
+    return;
+  }
+  const text = benchReportCSV();
+  try {
+    const cb = navigator.clipboard;
+    if (cb && typeof cb.writeText === "function") {
+      const p = cb.writeText(text);
+      Bench.msg = "Copied " + Bench.results.length + " population rows to the clipboard.";
+      if (p && typeof p.catch === "function") p.catch(() => benchDownloadResults(text, "clipboard denied"));
+      AudioSys.ui(true);
+      return;
+    }
+  } catch (e) { /* fall through to the download */ }
+  benchDownloadResults(text, "no clipboard API");
+}
 
 // ---------- CS024 P6c: liveLevers() — the registry folded back into the odometer (spec §2.6) ----------
 // THE ONE IMPURE FACE OF THE ODOMETER, and the reason it sits HERE rather than up in the odometer
@@ -4790,6 +5294,10 @@ function menuDebug(a) {
       // two-stage flow the High Scores screen raises, so the erase is behind a typed word from here too.
       // backIndex is this row's own index, so cancelling or committing lands the cursor back on it.
       else if (r.label === "Reset saved scores") openScoresReset("debug", m.index);
+      // CS037 P2: the benchmark instrument. Bench.start() owns everything from here — loop() and
+      // the keydown listener both hand it the frame and the keyboard while Bench.running.
+      else if (r.label === "Run benchmark battery") Bench.start();
+      else if (r.label === "Copy benchmark results") benchCopyResults();
     }
     else if (r && r.kind === "back") debugReturn();
   }
@@ -5554,6 +6062,10 @@ function storageOK() {
   try { return typeof localStorage !== "undefined" ? localStorage : null; } catch (e) { return null; }
 }
 function saveSettings() {
+  // ⛔ CS037 P2 (spec §3.3, FORK-CS037-D): benchmark mode is SEALED. This write persists a snapshot
+  // of EVERY knob, and the battery forces debugOverride OFF for its duration — a save landing while
+  // that force is up would persist the toggle OFF and silently discard the tester's entire knob set.
+  if (Bench.running) return;
   const ls = storageOK(); if (!ls) return;
   try {
     // CS024 P6: shotPowerupMode / magnetMode / chainGuardMode STOPPED BEING WRITTEN HERE with the
@@ -7976,6 +8488,8 @@ function nextWave() {
 }
 
 function addScore(pts) {
+  // ⛔ CS037 P2 (spec §3.3): benchmark mode is SEALED — it may not reach the score. See Bench.
+  if (Bench.running) return;
   game.score += pts;
   // Score milestones repair the hull instead of granting an extra life (F2).
   if (game.score >= game.nextRepair) {
@@ -8546,6 +9060,8 @@ const Achievements = {
   // Check every currently-relevant achievement; unlock any whose predicate has newly become true.
   // Safe to call every frame — already-unlocked ones short-circuit.
   evaluate() {
+    // ⛔ CS037 P2 (spec §3.3): benchmark mode is SEALED — no unlock may be evaluated from it.
+    if (Bench.running) return;
     const s = game.stats, l = this.lifetime;
     // Non-tiered single-goal path (weekly + non-tiered lifetime): unlock once at cur >= goal.
     const checkSingle = (ach, set) => {
@@ -8612,6 +9128,11 @@ const Achievements = {
   // debug run (a pre-existing, accepted quirk this phase does not change).
   save() {
     if (game.debugRun || game.resumedRun) return;
+    // ⛔ CS037 P2 (spec §3.3): benchmark mode is SEALED. Its OWN line, deliberately NOT folded into the
+    // shipped gate above: the two ask different questions ("was this a fair run?" vs "is this a
+    // measurement?"), and that line's exact text — including its position directly under `save() {` —
+    // is pinned byte-for-byte by test-cs032-p2.js §M and test-cs034-p6.js §A.
+    if (Bench.running) return;
     const ls = storageOK(); if (!ls) return;
     try {
       const data = {
@@ -8782,6 +9303,8 @@ const HighScores = {
   // --- Persistence (own key; same guarded pattern as Settings/Achievements — never crash on storage
   // failure). ---
   save() {
+    // ⛔ CS037 P2 (spec §3.3): benchmark mode is SEALED — the table may not be written from it.
+    if (Bench.running) return;
     const ls = storageOK(); if (!ls) return;
     try { ls.setItem(this.STORAGE_KEY, JSON.stringify({ v: 1, entries: this.entries })); }
     catch (e) { /* quota / privacy mode / disabled — ignore */ }
@@ -11341,6 +11864,10 @@ function drawDebug() {
     }
     cy += DEBUG_ROW_STEP;
   }
+  // CS037 P2: the benchmark instrument's status line — the ONE visible channel for "copied",
+  // "downloaded instead", "copy failed", "complete", "aborted". Sits in the footer band above the
+  // position indicator; empty until the instrument has something to say.
+  if (Bench.msg) drawText(Bench.msg, VIEW_W / 2, y + DEBUG_PANEL_H - 80, 13, COLOR.dim);
   const more = (top > 0 ? "▲  " : "    ") + (m.index + 1) + " / " + total + (end < total ? "  ▼" : "    ");
   drawText(more, VIEW_W / 2, y + DEBUG_PANEL_H - 58, 15, COLOR.dim);
   // CS024 P1: the conditional "R reroll orbit start angles" tail is gone with the keybind it documented
@@ -12662,6 +13189,13 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000) * Capture.timeScale;
   last = now;
+  // CS037 P2: benchmark mode REPLACES the frame outright — no gamepad, no update(), no draw(), no
+  // toasts, no music scheduler. That is not a shortcut: update() would cull the very population
+  // being ramped (cullGarbage reads garbageSoftMax/HardMax), clear the wave, and run every spawn
+  // timer into the measurement. Bench.frame() takes a FIXED BENCH_DT and never reads `dt`, so
+  // Capture.timeScale cannot scale a measurement. Both of loop()'s load-bearing integration points
+  // (the timeScale multiply above, Capture.afterDraw() below) are untouched on the normal path.
+  if (Bench.running) { Bench.frame(); requestAnimationFrame(loop); return; }
   pollGamepad();        // refresh the first-gamepad snapshot once per frame, before anything reads it
   handleGamepadMenu();  // edge-triggered controller menu/system actions (Start/A/B)
   update(dt);
