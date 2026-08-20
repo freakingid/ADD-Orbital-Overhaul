@@ -608,7 +608,9 @@ function evalSlice(literal) {
       // CS037 P4 repoint: and telemetryInterval (GLOBAL, appended after levelBannerY) — CS037 P4's row,
       // not P6b's. It sits between the level banner rows and the CELEBRATION header, so by the
       // tail-ordering rule above its strip goes exactly here: below CELEBRATION's, above the banners'.
-      .replace(/,telemetryInterval$/, "")
+      // CS038 P3 repoint: telemetryCapture joins it immediately after — CS038 P3's row, not P6b's, so
+      // the strip widens to match rather than gaining its own separate clause.
+      .replace(/,telemetryInterval,telemetryCapture$/, "")
       .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
       .replace(/,startLevel$/, "")
       // CS037 P7 repoint: strip dockBaseScore/dockBonusStep (DELIVERY, appended after dockComboGrace) —

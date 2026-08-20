@@ -57,6 +57,9 @@ console.log("(A) interval timing against game time, with a pause interposed");
   X.startGame();
   eq(X.Telemetry.rows.length, 0, "A: a fresh run starts with an empty buffer");
   close(X.Telemetry.acc, 0, "A: ...and a zeroed accumulator");
+  // CS038 P3: capture is now opt-in (def 0). This suite predates that phase and exercises the
+  // clock/cadence mechanics on the assumption capture is running — turn it on once per build below.
+  X.applyDebug("telemetryCapture", 1);
 
   run(X, 14);
   eq(X.Telemetry.rows.length, 0, "A: nothing lands before the interval elapses");
@@ -153,6 +156,7 @@ console.log("(B) the 400-row cap");
   // this section is measuring the ring, not survivability.
   X.startGame();
   X.applyDebug("telemetryInterval", 1);
+  X.applyDebug("telemetryCapture", 1);
   for (let i = 0; i < Math.round(420 / DT); i++) { X.game.ship.hp = X.SHIP_MAX_HP; X.update(DT); }
   eq(X.game.state, "playing", "B: (setup) the run survived the whole 420 s");
   eq(X.Telemetry.rows.length, 400, "B: 420 s at a 1 s interval still caps at 400");
@@ -164,6 +168,7 @@ console.log("(B) the 400-row cap");
 console.log("(C) the buffer clears at resetRun() — startGame() and resumeFromSave() alike");
 {
   const X = buildGame();
+  X.applyDebug("telemetryCapture", 1);
   X.startGame();
   X.applyDebug("telemetryInterval", 1);
   run(X, 10);
@@ -203,6 +208,7 @@ console.log("(C) the buffer clears at resetRun() — startGame() and resumeFromS
 console.log("(D) debugRun / resumedRun, set correctly and captured either way");
 {
   const X = buildGame();
+  X.applyDebug("telemetryCapture", 1);
   X.applyDebug("startLevel", 5);
   X.startGame();
   eq(X.game.debugRun, true, "D: (setup) startLevel 5 flags the run as a debug run");
@@ -334,6 +340,7 @@ console.log("(F) the localStorage round trip");
     const store = {};
     const X = buildGame({ store });
     eq(X.TELEMETRY_KEY, KEY, "F: the key is afd_telemetry_v1 — new, additive, owned by this phase");
+    X.applyDebug("telemetryCapture", 1);
     X.startGame();
     X.applyDebug("telemetryInterval", 1);
     run(X, 3);
@@ -374,6 +381,7 @@ console.log("(F) the localStorage round trip");
     const store = {};
     const X = buildGame({ store });
     X.Profiles.activeId = "p3";
+    X.applyDebug("telemetryCapture", 1);
     X.startGame();
     X.applyDebug("telemetryInterval", 1);
     run(X, 2);
@@ -393,6 +401,7 @@ console.log("(F) the localStorage round trip");
     const X = buildGame({ store });
     X.startGame();
     X.applyDebug("telemetryInterval", 1);
+    X.applyDebug("telemetryCapture", 1);
     // applyDebug's callers persist settings; the telemetry path itself must not. Re-seed, then run.
     Object.assign(store, FROZEN);
     run(X, 20);
@@ -459,6 +468,7 @@ console.log("(G) the clipboard export, and its reachability at game over");
   X.copyTelemetry();
   assert(/no telemetry rows yet/i.test(X.Telemetry.msg), "G: an empty buffer says so");
   X.applyDebug("telemetryInterval", 1);
+  X.applyDebug("telemetryCapture", 1);
   run(X, 3);
   X.Telemetry.msg = "";
   X.copyTelemetry();
@@ -474,6 +484,7 @@ console.log("(G) the clipboard export, and its reachability at game over");
     const Y = buildGame({ store });
     Y.startGame();
     Y.applyDebug("telemetryInterval", 1);
+    Y.applyDebug("telemetryCapture", 1);
     run(Y, 3);
     eq(Y.telemetryExportRows().from, "this run", "G: a live buffer exports as 'this run'");
     const persisted = Y.Telemetry.rows.length;
@@ -497,6 +508,7 @@ console.log("(G) the clipboard export, and its reachability at game over");
     const Y = buildKeyed();
     Y.startGame();
     Y.applyDebug("telemetryInterval", 1);
+    Y.applyDebug("telemetryCapture", 1);
     run(Y, 3);
     const rowsAtDeath = Y.Telemetry.rows.length;
     assert(rowsAtDeath >= 3, "G: (setup) the run banked rows before it ended");
@@ -555,6 +567,7 @@ console.log("(H) benchmark mode does not write to the buffer, and P2's five guar
   const X = buildGame();
   X.startGame();
   X.applyDebug("telemetryInterval", 1);
+  X.applyDebug("telemetryCapture", 1);
   run(X, 3);
   const rows = X.Telemetry.rows.length, acc = X.Telemetry.acc;
   assert(rows >= 3, "H: (setup) the buffer is live before the seal goes up");

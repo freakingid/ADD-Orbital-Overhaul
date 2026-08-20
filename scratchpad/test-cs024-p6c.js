@@ -656,7 +656,10 @@ let X = null;
   // CS037 P7.1 repoint: +2 more (towReleaseLockout, towReleaseSpeed, SHIP — the tow release
   // separation's two knobs). Not levers, spec §7.1.4: flat feel numbers with no chain, no
   // floor/ceil/steps triple. Same reasoning a fifteenth time.
-  eq(nonLever.length, 61, "G: 61 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1's registry");
+  // CS038 P3 repoint: +1 more (telemetryCapture, GLOBAL — the telemetry opt-in switch). Not a lever,
+  // and not even a gameplay tuning value: an instrumentation sessionSwitch row, no chain, no
+  // floor/ceil/steps triple. Same reasoning a sixteenth time.
+  eq(nonLever.length, 62, "G: 62 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1 + CS038 P3's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

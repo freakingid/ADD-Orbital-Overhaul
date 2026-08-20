@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Low-HP Glow Lab — Orbital Overhaul</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050a12; color: #a8d4ff;
+    font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; }
+  #main { flex: 1 1 auto; overflow: auto; padding: 14px; box-sizing: border-box; }
+  #stage { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  figure.pane { margin: 0; min-width: 0; }
+  figure.pane.hidden { display: none; }
+  figcaption { color: #6f92bd; font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+    margin-bottom: 4px; }
+  figcaption b { color: #70ffa0; }
+  figcaption.ship b { color: #9fd8ff; }
+  canvas { display: block; background: #000208; border: 1px solid #223347; }
+
+  #headline { margin: 16px 0 6px; padding: 10px 12px; background: #0a1220;
+    border: 1px solid #223347; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  #headline .lbl { color: #6f92bd; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  #worst { font-size: 40px; color: #70ffa0; font-variant-numeric: tabular-nums; line-height: 1; }
+  #worstWhere { color: #3a5a80; font-size: 11px; }
+  .cmp { font-variant-numeric: tabular-nums; color: #a8d4ff; }
+  .cmp b { color: #ffcf5a; }
+
+  table.m { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }
+  table.m th { color: #3a5a80; font-weight: 400; text-align: right; padding: 3px 6px;
+    border-bottom: 1px solid #223347; white-space: nowrap; }
+  table.m th:first-child { text-align: left; }
+  table.m th.grp { color: #70ffa0; text-align: center; border-bottom: none; }
+  table.m th.grp.ship { color: #9fd8ff; }
+  table.m td { padding: 2px 6px; text-align: right; font-variant-numeric: tabular-nums;
+    color: #a8d4ff; }
+  table.m td:first-child { text-align: left; color: #6f92bd; }
+  table.m tr.ctrl td { color: #3a5a80; font-style: italic; }
+  table.m tr.worst td { background: #101c2c; }
+  table.m td.sep { border-left: 1px solid #223347; }
+  table.m th.sep { border-left: 1px solid #223347; }
+
+  #panel { flex: 0 0 420px; padding: 16px; overflow-y: auto; border-left: 1px solid #223347;
+    box-sizing: border-box; }
+  h1 { font-size: 16px; color: #9fd8ff; margin: 0 0 4px; }
+  h2 { font-size: 12px; color: #70ffa0; text-transform: uppercase; letter-spacing: 0.05em;
+    margin: 20px 0 8px; border-bottom: 1px solid #223347; padding-bottom: 4px; }
+  p.sub { color: #3a5a80; margin: 0 0 12px; }
+  label { display: block; margin: 9px 0 2px; color: #a8d4ff; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { flex: 1 1 auto; }
+  .val { width: 58px; text-align: right; color: #70ffa0; font-variant-numeric: tabular-nums; }
+  button { background: #12203a; color: #a8d4ff; border: 1px solid #3a5a80; border-radius: 4px;
+    padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #70ffa0; color: #70ffa0; }
+  button.active { background: #1a3a2a; border-color: #70ffa0; color: #70ffa0; }
+  .btnRow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .off { opacity: 0.35; }
+  .hint { color: #3a5a80; font-size: 11px; margin-top: 4px; }
+  .warn { color: #ffcf5a; font-size: 11px; margin-top: 4px; }
+  .warn.hidden { display: none; }
+  pre#dump { background: #0a1220; border: 1px solid #223347; padding: 8px; font-size: 11px;
+    white-space: pre-wrap; max-height: 360px; overflow-y: auto; }
+  #copyBtn { margin-top: 6px; width: 100%; }
+  #copyBtn.copied { border-color: #ffcf5a; color: #ffcf5a; }
+  #tRead { color: #ffcf5a; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<div id="main">
+  <div id="stage">
+    <figure class="pane" id="paneShip">
+      <figcaption class="ship">Shipped &mdash; <b>four corner blobs, 0.10/0.26, r=280</b></figcaption>
+      <canvas id="cvShip" width="1280" height="720"></canvas>
+    </figure>
+    <figure class="pane" id="paneCand">
+      <figcaption>Candidate &mdash; <b id="candCap">&hellip;</b></figcaption>
+      <canvas id="cvCand" width="1280" height="720"></canvas>
+    </figure>
+  </div>
+
+  <div id="headline">
+    <span class="lbl">Worst-probe glow&nbsp;:&nbsp;background</span>
+    <span id="worst">&mdash;</span>
+    <span id="worstWhere">&mdash;</span>
+    <span class="cmp">shipped <span id="worstShip">&mdash;</span> &middot; candidate is <b id="worstMult">&mdash;</b> of today</span>
+    <span class="cmp">HP <span id="hpRead">100</span>/100 &rarr; t = <span id="tRead">0.00</span></span>
+  </div>
+  <p class="hint">The lowest glow-to-background contrast ratio across the <b>eight edge probes</b>;
+  the centre probe is a control and is excluded. This is the number GATE A A2 is argued in.
+  <b>There is no standard threshold here</b> &mdash; WCAG's 3:1 / 4.5:1 bars are for reading TEXT,
+  not for noticing a large soft field in peripheral vision, and quoting one would be inventing a bar.
+  Argue in the &times;today multiple, and check it against the canvases above.</p>
+
+  <table class="m" id="mtable"></table>
+  <p class="hint">Luminance is <b>WCAG 2.x relative luminance</b> (sRGB de-gamma, then
+  0.2126R + 0.7152G + 0.0722B) and the ratio is (L<sub>hi</sub>+0.05)/(L<sub>lo</sub>+0.05) &mdash;
+  see the comment above <code>relLum()</code> for why that formula and not a bare luminance ratio.
+  Every figure is sampled with <code>getImageData</code> off a <b>composited</b> 1280&times;720 render
+  (backdrop &rarr; glow &rarr; HUD furniture, the game's own order), at the two exact pulse poses,
+  not computed from the alpha arithmetic. The measurement pass is deterministic and independent of
+  the animation: it does not read whatever phase the canvases above happen to be at.</p>
+</div>
+
+<div id="panel">
+  <h1>Low-HP Glow Lab</h1>
+  <p class="sub">Instrument for the low-hull corner glow (CS038 &sect;2, GATE A). Not part of the
+  game build &mdash; no imports, no build step, opens by double-click. The glow itself is the
+  <b>PORT-ME BLOCK</b>, copied verbatim out of <code>drawHUD()</code> and driven from the sliders
+  below; the backdrop and HUD furniture are lab-only mocks at the build's real coordinates.</p>
+
+  <h2>Compare</h2>
+  <div class="btnRow" id="modeRow"></div>
+  <div class="btnRow" style="margin-top:6px">
+    <button id="flipBtn">Flip (space)</button>
+    <button id="resetBtn">Reset candidate to shipped</button>
+  </div>
+  <p class="hint">Side-by-side reads brightness; <b>flip-in-place</b> reads it far better &mdash;
+  the same screen pixels swap between the two parameter sets, so the eye compares against its own
+  afterimage instead of across 12px of gutter.</p>
+  <label>Canvas scale
+    <div class="btnRow" id="zoomRow"></div>
+  </label>
+
+  <h2>Hull state</h2>
+  <label>HP (LOW_HP_THRESHOLD = 100)
+    <div class="row"><input type="range" id="hp" min="1" max="100" step="1">
+      <span class="val" id="hpVal"></span></div>
+  </label>
+  <p class="hint"><b>t = 1 &minus; hp/100.</b> The default is HP 100, i.e. <b>t = 0</b> &mdash; the
+  moment the alarm ENGAGES, where it is weakest and where "I never noticed it" is most likely to be
+  true. At t = 0 peak alpha is <code>ALPHA_MIN</code> and the trough is
+  <code>ALPHA_MIN &times; 0.2</code> (0.02 as shipped). Walk the slider to 1 to see near-death.</p>
+  <div class="btnRow">
+    <button id="playBtn" class="active">Pause</button>
+    <button id="poseP">Pose: peak</button>
+    <button id="poseT">Pose: trough</button>
+  </div>
+  <label><input type="checkbox" id="lockPhase" checked> lock both panes to one phase</label>
+  <p class="hint">Unlock to watch the two rates beat against each other; leave locked (on the
+  candidate's rate) to judge brightness without a phase difference confounding it.</p>
+
+  <h2>Candidate &mdash; shape</h2>
+  <div class="btnRow" id="shapeRow"></div>
+  <p class="hint" id="shapeDesc"></p>
+  <p class="warn" id="shapeWarn">Shape changes are a <b>draw-block</b> change in P6, not a constants
+  retune. Whatever wins stays a FILL, stays gated on <code>game.lowHpSiren</code>, stays driven by
+  <code>game.lowHpPhase</code>, and adds <b>no <code>shadowBlur</code></b> &mdash; CS037's benchmark
+  put <code>ctx.shadowBlur</code> at the top of the renderer's cost. No shape in this lab uses one.</p>
+
+  <h2>Candidate &mdash; values</h2>
+  <label>LOWHP_GLOW_ALPHA_MIN (peak alpha at t=0)
+    <div class="row"><input type="range" id="alphaMin" min="0" max="1" step="0.01">
+      <span class="val" id="alphaMinVal"></span></div>
+  </label>
+  <label>LOWHP_GLOW_ALPHA_MAX (peak alpha at t=1)
+    <div class="row"><input type="range" id="alphaMax" min="0" max="1" step="0.01">
+      <span class="val" id="alphaMaxVal"></span></div>
+  </label>
+  <label id="radiusLbl"><span id="radiusLblText">LOWHP_GLOW_RADIUS (px)</span>
+    <div class="row"><input type="range" id="radius" min="40" max="900" step="10">
+      <span class="val" id="radiusVal"></span></div>
+  </label>
+  <label id="occLbl">LOWHP_GLOW_OCC_ATTEN (occupied-corner factor)
+    <div class="row"><input type="range" id="occAtten" min="0" max="1" step="0.05">
+      <span class="val" id="occAttenVal"></span></div>
+  </label>
+  <label>LOWHP_GLOW_RGB &mdash; R
+    <div class="row"><input type="range" id="rgbR" min="0" max="255" step="1">
+      <span class="val" id="rgbRVal"></span></div>
+  </label>
+  <label>&hellip; G
+    <div class="row"><input type="range" id="rgbG" min="0" max="255" step="1">
+      <span class="val" id="rgbGVal"></span></div>
+  </label>
+  <label>&hellip; B
+    <div class="row"><input type="range" id="rgbB" min="0" max="255" step="1">
+      <span class="val" id="rgbBVal"></span></div>
+  </label>
+  <p class="warn hidden" id="rgbWarn">&#9888; off the <code>COLOR.lowhp</code> mirror
+  (<b>255,64,64</b> = #ff4040). The glow shares its colour with the critical-hull ring on purpose, so
+  moving it is a deliberate GATE A A5 answer, not a side effect of dragging a slider.
+  <button id="mirrorBtn" style="margin-top:4px">Restore the mirror</button></p>
+  <label>LOWHP_PULSE_RATE_MIN (Hz, at t=0)
+    <div class="row"><input type="range" id="rateMin" min="0.2" max="4" step="0.1">
+      <span class="val" id="rateMinVal"></span></div>
+  </label>
+  <label>LOWHP_PULSE_RATE_MAX (Hz, at t=1)
+    <div class="row"><input type="range" id="rateMax" min="0.2" max="6" step="0.1">
+      <span class="val" id="rateMaxVal"></span></div>
+  </label>
+  <p class="warn">&#9888; The two rate knobs are <b>not glow knobs</b>. <code>lowhpPulseRate(t)</code>
+  is the ONE formula the audio siren's LFO and the critical-hull ring read as well, so moving either
+  moves all three. They are here because the glow cannot be judged without them &mdash; not because
+  P6 may quietly retune them.</p>
+  <p class="hint">The <code>0.6 + 0.4&middot;sin</code> pulse split is a literal inside the shipped
+  block and is deliberately <b>not</b> a slider: changing it would be a draw-block edit, not a
+  constants retune, and it would put the port out of sync with the build. Its consequence is
+  measured instead &mdash; that is what the peak:trough column is.</p>
+
+  <h2>Export &mdash; paste-ready</h2>
+  <pre id="dump"></pre>
+  <button id="copyBtn">Copy constants</button>
+  <p class="hint">P6 ports from this block. Paste it over the <code>LOWHP_GLOW_*</code> group at
+  the top of <code>orbital-overhaul.html</code> &mdash; do not retype a number by hand.</p>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================================
+// tools/lowhp-glow-lab.html — the low-hull corner glow instrument (CS038 P2).
+//
+// The question this exists to answer has two candidate causes and they need
+// separating (PLANNED-FEATURES-CS038.md §2.2):
+//   (a) the glow is too DIM   — at t=0 its trough alpha is ALPHA_MIN * 0.2 = 0.02;
+//   (b) the glow is in the wrong PLACE — two of the four corners are already
+//       occupied, and at r=280 on 1280x720 the middle of every edge is dark
+//       (720 px of unlit span across the top edge alone).
+// A slider-only lab can only ever answer (a), so shape is a first-class control
+// here, and every figure below is measured off a composited render rather than
+// derived from the alpha arithmetic.
+//
+// House rules this file is written to: standalone (no imports, no build step,
+// opens from file://), it DUPLICATES the slice of the game it needs rather than
+// importing it, and drift here can only ever produce a bad PREVIEW, never a bad
+// BUILD. The one thing that is NOT duplicated is the glow itself — see the
+// PORT-ME BLOCK below.
+// ============================================================================
+
+
+// ---------------------------------------------------------------------------
+// Copied from orbital-overhaul.html (v1.0.0.37). Keep in sync by eye.
+// ---------------------------------------------------------------------------
+const VIEW_W = 1280, VIEW_H = 720;
+const TAU = Math.PI * 2;
+const LOW_HP_THRESHOLD = 100;
+const SHIP_MAX_HP = 250;   // LOW_HP_THRESHOLD is 40% of this — the mock HULL arc reads it
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+const COLOR = {
+  ship: "#9fd8ff",
+  debris: "#7fb7e8",
+  satellite: "#6fe8d8",
+  text: "#a8d4ff",
+  dim: "#3a5a80",
+  garbage: "#c8ff50",
+  chain: "#8aa0ff",
+  shield: "#40b0ff",
+  hp: "#5fe08a",
+  lowhp: "#ff4040",   // the glow's RGB mirrors this
+  ach: "#ffcf5a",
+};
+
+const HUD_RING_R = 30, HUD_RING_W = 4, HUD_RING_TRACK_W = 2, HUD_RING_BLUR = 12;
+const HUD_HULL_CX = 1156, HUD_CARGO_CX = 1232, HUD_RING_CY = 74, HUD_RING_LABEL_Y = 122;
+const HUD_SHIELD_R_GAP = 9;
+const HUD_SHIP_GLYPH = [[8.8, 0], [-6.05, -4.95], [-3.3, 0], [-6.05, 4.95]];
+const HUD_FX_BASE_Y = 640, HUD_FX_ROW_H = 40, HUD_FX_RING_R = 16, HUD_FX_GLYPH_R = 9;
+const HUD_RING_SEG_GAP = 0.12;
+const SCOOP_MAX_LEVEL = 5;
+const SHIP_HULL = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
+const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine", "guard"];
+const POWERUP_COLOR = { rapid: "#ffd24a", triple: "#ff8adf", magnet: "#8ab6ff",
+  engine: "#7dffb0", scoop: "#c07bff", guard: "#ff9a3c" };
+const POWERUP_LABEL = { rapid: "RAPID", triple: "TRIPLE", magnet: "MAGNET", engine: "ENGINE",
+  scoop: "SCOOP", guard: "GUARD" };
+
+// The pulse-rate formula. ⛔ NOT a glow knob: the audio siren's LFO and the critical-hull
+// ring read this same function, so the two rate sliders in the panel move all three at once.
+function lowhpPulseRate(t) {
+  return CAND.LOWHP_PULSE_RATE_MIN +
+    (CAND.LOWHP_PULSE_RATE_MAX - CAND.LOWHP_PULSE_RATE_MIN) * t;
+}
+
+// The one module-level ctx every draw helper strokes into, exactly as the build's helpers read
+// the build's global `ctx` — reassigned per target canvas (the emblem-lab idiom). Keeping this
+// shape is what lets the PORT-ME BLOCK below stay byte-identical to the build: it names `ctx`.
+let ctx = null;
+
+function glowStroke(color, width = 1.6, blur = 10) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+function drawPoly(points, x, y, angle, color, closed = true) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed) ctx.closePath();
+  glowStroke(color);
+  ctx.restore();
+}
+function drawText(str, x, y, size, color = COLOR.text, align = "center") {
+  ctx.font = `${size}px monospace`;
+  ctx.textAlign = align;
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  ctx.fillText(str, x, y);
+  ctx.shadowBlur = 0;
+}
+function drawRingArc(x, y, r, frac, color, width = HUD_RING_W, blur = HUD_RING_BLUR) {
+  if (frac <= 0) return;
+  ctx.beginPath();
+  ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
+  glowStroke(color, width, blur);
+}
+function drawRingSegments(x, y, r, segs, filled, litColor, dimColor) {
+  const step = TAU / segs;
+  for (let i = 0; i < segs; i++) {
+    const start = -Math.PI / 2 + i * step + HUD_RING_SEG_GAP / 2;
+    const end = -Math.PI / 2 + (i + 1) * step - HUD_RING_SEG_GAP / 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, start, end);
+    if (i < filled) glowStroke(litColor, HUD_RING_W, HUD_RING_BLUR);
+    else { ctx.strokeStyle = dimColor; ctx.lineWidth = HUD_RING_TRACK_W; ctx.stroke(); }
+  }
+}
+function drawPowerupGlyph(type, x, y, r, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(r / 12, r / 12);
+  ctx.beginPath();
+  switch (type) {
+    case "rapid":
+      ctx.moveTo(-6, -6); ctx.lineTo(0, 0); ctx.lineTo(-6, 6);
+      ctx.moveTo(1, -6);  ctx.lineTo(7, 0); ctx.lineTo(1, 6);
+      break;
+    case "triple":
+      ctx.moveTo(-7, 0); ctx.lineTo(7, -7);
+      ctx.moveTo(-7, 0); ctx.lineTo(8, 0);
+      ctx.moveTo(-7, 0); ctx.lineTo(7, 7);
+      break;
+    case "magnet":
+      ctx.arc(0, 1, 5, 0, Math.PI);
+      ctx.moveTo(-5, 1); ctx.lineTo(-5, -7);
+      ctx.moveTo(5, 1);  ctx.lineTo(5, -7);
+      ctx.moveTo(-7, -7); ctx.lineTo(-3, -7);
+      ctx.moveTo(3, -7);  ctx.lineTo(7, -7);
+      break;
+    case "engine":
+      ctx.moveTo(-4, -8); ctx.lineTo(4, -8); ctx.lineTo(6, 2); ctx.lineTo(-6, 2); ctx.closePath();
+      ctx.moveTo(-4, 3); ctx.lineTo(-3, 8);
+      ctx.moveTo(0, 3);  ctx.lineTo(0, 9);
+      ctx.moveTo(4, 3);  ctx.lineTo(3, 8);
+      break;
+    case "guard":
+      ctx.moveTo(-7, -7); ctx.lineTo(7, -7); ctx.lineTo(7, 0);
+      ctx.lineTo(0, 8); ctx.lineTo(-7, 0); ctx.closePath();
+      ctx.moveTo(-3, -3); ctx.lineTo(3, -3);
+      ctx.moveTo(-3, 1);  ctx.lineTo(3, 1);
+      break;
+  }
+  glowStroke(color, 1.6, 8);
+  ctx.restore();
+}
+// ---- end copied game draw path ----
+
+
+// ---------------------------------------------------------------------------
+// Parameter sets. Keys are the BUILD's own constant names, so the PORT-ME block
+// destructures them under the names it already used and the dump reads as source.
+// SHIPPED is frozen: it is the baseline every candidate is quoted against, and a
+// lab whose "today" column has drifted from the build is worse than no lab.
+// ---------------------------------------------------------------------------
+const SHIPPED = Object.freeze({
+  LOWHP_GLOW_ALPHA_MIN: 0.10,
+  LOWHP_GLOW_ALPHA_MAX: 0.26,
+  LOWHP_GLOW_RADIUS: 280,
+  LOWHP_GLOW_RGB: "255,64,64",
+  LOWHP_GLOW_OCC_ATTEN: 1,      // no attenuation ships; the shape does not exist yet
+  LOWHP_PULSE_RATE_MIN: 0.9,
+  LOWHP_PULSE_RATE_MAX: 2.4,
+});
+const CAND = Object.assign({}, SHIPPED, { LOWHP_GLOW_OCC_ATTEN: 0.35 });
+
+// The two pulse poses the measurement uses. sin(+π/2) = +1 → gpulse 1.0 (peak);
+// sin(−π/2) = −1 → gpulse 0.2 (trough). Fixed, so a measurement never depends on
+// whatever phase the animated canvases happen to be at when you read the table.
+const PHASE_PEAK = Math.PI / 2;
+const PHASE_TROUGH = -Math.PI / 2;
+
+
+// ---------------------------------------------------------------------------
+// ⛔ PORT-ME BLOCK — copied VERBATIM from drawHUD() in orbital-overhaul.html
+// (v1.0.0.37). This lab must not contain a SECOND implementation of the glow;
+// a lab that renders its own version answers a question about the lab.
+//
+// Exactly three substitutions, so a diff against the build is three lines:
+//   game.ship.hp     -> hp          (the HP slider)
+//   game.lowHpPhase  -> phase       (the animated / measurement phase)
+//   the four LOWHP_GLOW_* module constants -> destructured off `P`
+// The `if (game.lowHpSiren)` gate is the CALLER's here (drawGlow) — the lab is
+// always inside the low-health state by construction.
+// ---------------------------------------------------------------------------
+function glowCorners(P, hp, phase) {
+  const { LOWHP_GLOW_ALPHA_MIN, LOWHP_GLOW_ALPHA_MAX, LOWHP_GLOW_RADIUS, LOWHP_GLOW_RGB } = P;
+    const gt = clamp01(1 - hp / LOW_HP_THRESHOLD);            // HP urgency, the same t the siren uses
+    const gpulse = 0.6 + 0.4 * Math.sin(phase);              // shared phase → locked to the hull ring + siren
+    const peak = (LOWHP_GLOW_ALPHA_MIN + (LOWHP_GLOW_ALPHA_MAX - LOWHP_GLOW_ALPHA_MIN) * gt) * gpulse;
+    const R = LOWHP_GLOW_RADIUS;
+    for (const c of [[0, 0], [VIEW_W, 0], [0, VIEW_H], [VIEW_W, VIEW_H]]) {
+      const grad = ctx.createRadialGradient(c[0], c[1], 0, c[0], c[1], R);
+      grad.addColorStop(0, `rgba(${LOWHP_GLOW_RGB},${peak})`);
+      grad.addColorStop(1, `rgba(${LOWHP_GLOW_RGB},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(Math.max(0, c[0] - R), Math.max(0, c[1] - R), R, R);
+    }
+}
+// ---------------------------------------------------------------------------
+// end PORT-ME BLOCK
+// ---------------------------------------------------------------------------
+
+
+// The peak-alpha arithmetic, lifted out for the three CANDIDATE-ONLY shapes below. It is the
+// same three lines the PORT-ME block computes inline, and it is deliberately NOT factored out
+// of that block — the block stays verbatim, this stays a mirror, and test-cs038-p2 pins the
+// two against each other so the mirror cannot drift.
+function peakAlpha(P, hp, phase) {
+  const gt = clamp01(1 - hp / LOW_HP_THRESHOLD);
+  const gpulse = 0.6 + 0.4 * Math.sin(phase);
+  return (P.LOWHP_GLOW_ALPHA_MIN + (P.LOWHP_GLOW_ALPHA_MAX - P.LOWHP_GLOW_ALPHA_MIN) * gt) * gpulse;
+}
+
+// The two corners something else already lives in: top-right is the HULL/CARGO rings,
+// bottom-left is the powerup row stack + the SCOOP ring.
+const CORNERS = [[0, 0], [VIEW_W, 0], [0, VIEW_H], [VIEW_W, VIEW_H]];
+const OCCUPIED = [[VIEW_W, 0], [0, VIEW_H]];
+const isOccupied = c => OCCUPIED.some(o => o[0] === c[0] && o[1] === c[1]);
+
+// ⛔ EVERY SHAPE BELOW IS A FILL, AND NONE OF THEM TOUCHES shadowBlur OR globalAlpha.
+// shadowBlur: CS037's benchmark put ctx.shadowBlur (Chrome/Skia Graphite) at the top of the
+// renderer's cost, so a candidate that adds one is a performance regression wearing a look
+// change's clothes. globalAlpha: the shipped block rides its alpha on the gradient stop
+// specifically so it cannot leak into the rest of the frame; a candidate that sets
+// globalAlpha would be proposing a leak the build spent a comment block avoiding.
+
+// Candidate shape 2 — FULL EDGE VIGNETTE: a linear gradient inward from each of the four
+// edges, `peak` at the edge falling to 0 at `depth` px in. The four bands overlap in the
+// corners and accumulate under source-over, so the corners stay the brightest part for free —
+// this is the shipped look with the dark middle-of-every-edge filled in, which is exactly the
+// (b) hypothesis stated at the top of this file.
+function glowVignette(P, hp, phase) {
+  const a = peakAlpha(P, hp, phase);
+  const D = P.LOWHP_GLOW_RADIUS;              // the radius slider reads as vignette DEPTH here
+  const c0 = `rgba(${P.LOWHP_GLOW_RGB},${a})`, c1 = `rgba(${P.LOWHP_GLOW_RGB},0)`;
+  const bands = [
+    [0, 0, 0, D,                 0, 0, VIEW_W, D],                    // top
+    [0, VIEW_H, 0, VIEW_H - D,   0, VIEW_H - D, VIEW_W, D],           // bottom
+    [0, 0, D, 0,                 0, 0, D, VIEW_H],                    // left
+    [VIEW_W, 0, VIEW_W - D, 0,   VIEW_W - D, 0, D, VIEW_H],           // right
+  ];
+  for (const b of bands) {
+    const grad = ctx.createLinearGradient(b[0], b[1], b[2], b[3]);
+    grad.addColorStop(0, c0);
+    grad.addColorStop(1, c1);
+    ctx.fillStyle = grad;
+    ctx.fillRect(b[4], b[5], b[6], b[7]);
+  }
+}
+
+// Candidate shape 3 — EDGE BARS: a flat band of `thickness` along each edge. The four rects are
+// cut so they do NOT overlap, so the alpha is uniform all the way round (unlike the vignette,
+// whose corners double up). ⚠ Read its numbers knowing what it is: a flat band has a HARD INNER
+// EDGE, and "low-frequency, large-area and EDGELESS" is the whole argument the fills-exception
+// was granted on. It will measure well and may still read as a third HUD element.
+function glowBars(P, hp, phase) {
+  const a = peakAlpha(P, hp, phase);
+  const T = Math.min(P.LOWHP_GLOW_RADIUS, Math.floor(Math.min(VIEW_W, VIEW_H) / 2));
+  ctx.fillStyle = `rgba(${P.LOWHP_GLOW_RGB},${a})`;
+  ctx.fillRect(0, 0, VIEW_W, T);
+  ctx.fillRect(0, VIEW_H - T, VIEW_W, T);
+  ctx.fillRect(0, T, T, VIEW_H - 2 * T);
+  ctx.fillRect(VIEW_W - T, T, T, VIEW_H - 2 * T);
+}
+
+// Candidate shape 4 — CORNERS, OCCUPIED TWO ATTENUATED. The shipped shape with a separate
+// factor on the top-right and bottom-left blobs, so the two free corners can be pushed
+// brighter without the glow fighting the HULL/CARGO rings or the powerup stack for focus.
+// Same gradient construction as the PORT-ME block; only the alpha differs per corner.
+function glowCornersAtt(P, hp, phase) {
+  const a0 = peakAlpha(P, hp, phase);
+  const R = P.LOWHP_GLOW_RADIUS;
+  for (const c of CORNERS) {
+    const a = a0 * (isOccupied(c) ? P.LOWHP_GLOW_OCC_ATTEN : 1);
+    const grad = ctx.createRadialGradient(c[0], c[1], 0, c[0], c[1], R);
+    grad.addColorStop(0, `rgba(${P.LOWHP_GLOW_RGB},${a})`);
+    grad.addColorStop(1, `rgba(${P.LOWHP_GLOW_RGB},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(Math.max(0, c[0] - R), Math.max(0, c[1] - R), R, R);
+  }
+}
+
+const SHAPES = {
+  corners: { label: "Four corners", fn: glowCorners, radiusLabel: "LOWHP_GLOW_RADIUS (px)",
+    desc: "What ships. Four radial-gradient blobs, one per corner. At r=280 the middle of every " +
+          "edge is unlit — 720px across the top, 160px down each side. The control." },
+  vignette: { label: "Edge vignette", fn: glowVignette, radiusLabel: "vignette DEPTH (px)",
+    desc: "A gradient inward from all four edges. Fills the dark middle-of-every-edge span the " +
+          "corner shape leaves; corners stay brightest because the bands overlap there." },
+  bars: { label: "Edge bars", fn: glowBars, radiusLabel: "bar THICKNESS (px)",
+    desc: "A flat band along each edge, uniform alpha the whole way round. Measures best and " +
+          "reads worst: a flat band has a hard inner edge, which is the opposite of the " +
+          "'edgeless peripheral alarm' the fills-exception was argued on." },
+  cornersAtt: { label: "Corners, occupied dimmed", fn: glowCornersAtt,
+    radiusLabel: "LOWHP_GLOW_RADIUS (px)",
+    desc: "The shipped shape with the top-right (HULL/CARGO) and bottom-left (powerup rows) " +
+          "blobs scaled by OCC_ATTEN, so the two free corners can go brighter without the glow " +
+          "competing with the furniture already in the other two." },
+};
+let shape = "corners";
+
+// The one entry point: binds the module ctx and dispatches. `key` null draws no glow at all,
+// which is how the no-glow BASE render for the glow-to-background ratio is taken.
+function drawGlow(target, P, hp, phase, key) {
+  ctx = target;
+  if (!key) return;
+  SHAPES[key].fn(P, hp, phase);
+}
+
+
+// ---------------------------------------------------------------------------
+// The backdrop — a representative busy frame, NOT an empty canvas. Judging a
+// peripheral alarm against black answers a question nobody asked.
+//
+// Seeded once at load (mulberry32, never Math.random) so the field is identical
+// in both panes, on every frame, and across sessions — a measurement that moved
+// because the rocks moved would be worthless.
+// ---------------------------------------------------------------------------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const SCENE_SEED = 0xB0A7;    // any fixed value; changing it reshuffles the field, nothing else
+
+// Star layers, built to the game's own densities/brightness/colours (STAR_DENSITY 80,
+// STAR_NEAR_DENSITY 22, the two rgba() literals drawStarfield() uses). Screen-space here:
+// the lab has no camera, and parallax cannot change a still frame's luminance.
+const stars = [];
+{
+  const r = mulberry32(SCENE_SEED);
+  for (let i = 0; i < 80; i++)
+    stars.push({ x: r() * VIEW_W, y: r() * VIEW_H, s: 1 + r() * 0.8,
+      a: 0.35 + r() * 0.65, c: "120, 160, 210" });
+  for (let i = 0; i < 22; i++)
+    stars.push({ x: r() * VIEW_W, y: r() * VIEW_H, s: 1.2 + r() * 1.0,
+      a: 0.55 + r() * 0.45, c: "160, 195, 235" });
+}
+
+// A scatter of vector strokes in the game's palette: Garbage Satellites (COLOR.debris — see
+// CLAUDE.md's vocabulary table, the build's `debris` IS the shootable satellite), towable
+// Debris canisters (COLOR.garbage), and one Hunter (COLOR.satellite) for a busy frame.
+const scatter = [];
+{
+  const r = mulberry32(SCENE_SEED ^ 0x51D);
+  const poly = (n, rad, jit) => {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * TAU, rr = rad * (1 - jit + r() * jit * 2);
+      pts.push([Math.cos(th) * rr, Math.sin(th) * rr]);
+    }
+    return pts;
+  };
+  for (let i = 0; i < 7; i++)                       // Garbage Satellites, mixed tiers
+    scatter.push({ pts: poly(9, 20 + r() * 40, 0.25), x: r() * VIEW_W, y: r() * VIEW_H,
+      a: r() * TAU, color: COLOR.debris });
+  for (let i = 0; i < 12; i++)                      // Debris canisters
+    scatter.push({ pts: poly(6, 7 + r() * 4, 0.15), x: r() * VIEW_W, y: r() * VIEW_H,
+      a: r() * TAU, color: COLOR.garbage });
+  for (let i = 0; i < 2; i++)                       // Hunter Satellites
+    scatter.push({ pts: poly(3, 16 + r() * 6, 0.1), x: r() * VIEW_W, y: r() * VIEW_H,
+      a: r() * TAU, color: COLOR.satellite });
+}
+
+// The tow chain trailing the ship — the busiest thing usually on screen near the middle.
+const chainNodes = [];
+for (let i = 0; i < 7; i++)
+  chainNodes.push({ x: VIEW_W / 2 - 26 - i * 22, y: VIEW_H / 2 + 10 + Math.sin(i * 0.9) * 12 });
+
+function drawBackdrop() {
+  // ⛔ The game's draw() clears to TRANSPARENT and the ground comes from CSS
+  // (`canvas { background: #000208 }`). A getImageData sample of a transparent pixel reads
+  // (0,0,0,0) — NOT the pixel a player sees — so the lab paints that ground itself. Without
+  // this fill every luminance in the table below would be measured against the wrong black.
+  ctx.fillStyle = "#000208";
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  for (const st of stars) {
+    ctx.fillStyle = `rgba(${st.c}, ${st.a})`;
+    ctx.fillRect(st.x, st.y, st.s, st.s);
+  }
+  for (const s of scatter) drawPoly(s.pts, s.x, s.y, s.a, s.color);
+
+  // chain + ship, dead centre: the camera follows the ship, so the ship IS the viewport centre.
+  // That is why the centre probe is a CONTROL and not a ninth glow reading — it sits in the
+  // ship's own glow bleed, which shows up identically in the base and glow renders.
+  ctx.beginPath();
+  ctx.moveTo(VIEW_W / 2, VIEW_H / 2);
+  for (const n of chainNodes) ctx.lineTo(n.x, n.y);
+  glowStroke(COLOR.chain, 1.4, 8);
+  for (const n of chainNodes) drawPoly([[-5, -5], [5, -5], [5, 5], [-5, 5]], n.x, n.y, 0.4, COLOR.garbage);
+  drawPoly(SHIP_HULL, VIEW_W / 2, VIEW_H / 2, -0.4, COLOR.ship);
+}
+
+// The HUD furniture that OCCUPIES two of the four corners, at its real coordinates, colours and
+// sizes — that occupancy is half the question this lab exists to answer, so an empty corner
+// would be a rigged test. Mock state only; the draw calls are the build's own helpers.
+// The HULL ring pulses on the SAME phase as the glow when critical, because it does in the game
+// and because "do the ring and the glow read as ONE alarm" is GATE B B2.
+const MOCK = { energy: 0.62, chain: 7, cargoMax: 16, scoop: 2, score: "012450",
+  level: 7, rows: [0.42, 0, 0.85, 0.30, 0], nums: ["17", "0", "34", "12", "0"] };
+
+function drawMockHUD(hp, phase) {
+  drawText(MOCK.score, 30, 46, 30, COLOR.text, "left");
+  drawText("LEVEL " + MOCK.level, 30, 62, 22, COLOR.text, "left");
+
+  // HULL ring — track, shield arc, then the value arc + glyph pulsing when critical.
+  const hpCrit = hp <= LOW_HP_THRESHOLD;
+  const hullColor = hpCrit ? COLOR.lowhp : COLOR.hp;
+  ctx.beginPath();
+  ctx.arc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R, 0, TAU);
+  ctx.strokeStyle = COLOR.dim; ctx.lineWidth = HUD_RING_TRACK_W; ctx.stroke();
+  drawRingArc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R - HUD_SHIELD_R_GAP, MOCK.energy,
+    COLOR.shield, HUD_RING_TRACK_W + 1);
+  if (hpCrit) ctx.globalAlpha = 0.6 + 0.4 * Math.sin(phase);
+  drawRingArc(HUD_HULL_CX, HUD_RING_CY, HUD_RING_R, clamp01(hp / SHIP_MAX_HP), hullColor, HUD_RING_W);
+  drawPoly(HUD_SHIP_GLYPH, HUD_HULL_CX, HUD_RING_CY, -Math.PI / 2, hullColor);
+  ctx.globalAlpha = 1;
+  drawText("HULL", HUD_HULL_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
+
+  // CARGO ring
+  ctx.beginPath();
+  ctx.arc(HUD_CARGO_CX, HUD_RING_CY, HUD_RING_R, 0, TAU);
+  ctx.strokeStyle = COLOR.dim; ctx.lineWidth = HUD_RING_TRACK_W; ctx.stroke();
+  drawRingArc(HUD_CARGO_CX, HUD_RING_CY, HUD_RING_R, clamp01(MOCK.chain / MOCK.cargoMax),
+    COLOR.text, HUD_RING_W);
+  drawText(String(MOCK.chain), HUD_CARGO_CX, HUD_RING_CY - 4, 20, COLOR.text, "center");
+  drawText("/" + MOCK.cargoMax, HUD_CARGO_CX, HUD_RING_CY + 14, 11, COLOR.dim, "center");
+  drawText("CARGO", HUD_CARGO_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
+
+  // powerup rows (bottom-left), row i at HUD_FX_BASE_Y - (i+1)*HUD_FX_ROW_H
+  for (let i = 0; i < POWERUP_DROP_TYPES.length; i++) {
+    const t = POWERUP_DROP_TYPES[i];
+    const y = HUD_FX_BASE_Y - (i + 1) * HUD_FX_ROW_H;
+    const frac = MOCK.rows[i];
+    const color = frac > 0 ? POWERUP_COLOR[t] : COLOR.dim;
+    ctx.beginPath();
+    ctx.arc(40, y, HUD_FX_RING_R, 0, TAU);
+    ctx.strokeStyle = COLOR.dim; ctx.lineWidth = HUD_RING_TRACK_W; ctx.stroke();
+    if (frac > 0) drawRingArc(40, y, HUD_FX_RING_R, frac, color, 3);
+    drawPowerupGlyph(t, 40, y, HUD_FX_GLYPH_R, color);
+    drawText(POWERUP_LABEL[t], 64, y - 4, 13, color, "left");
+    drawText(MOCK.nums[i], 64, y + 14, 16, color, "left");
+  }
+  const scoopCol = MOCK.scoop > 0 ? POWERUP_COLOR.scoop : COLOR.dim;
+  drawRingSegments(40, HUD_FX_BASE_Y, HUD_FX_RING_R, SCOOP_MAX_LEVEL, MOCK.scoop, scoopCol, COLOR.dim);
+  drawText("SCOOP", 64, HUD_FX_BASE_Y - 4, 13, scoopCol, "left");
+  drawText(String(MOCK.scoop), 64, HUD_FX_BASE_Y + 14, 16, scoopCol, "left");
+}
+
+// One composited frame, in the game's own z-order: world, then the glow (which is the FIRST
+// thing drawHUD() draws), then the HUD readouts painting crisply over it.
+function renderScene(target, P, hp, phase, key) {
+  ctx = target;
+  drawBackdrop();
+  drawGlow(target, P, hp, phase, key);
+  ctx = target;
+  drawMockHUD(hp, phase);
+}
+
+
+// ---------------------------------------------------------------------------
+// Measurement
+//
+// WCAG 2.x relative luminance: de-gamma each sRGB channel, then
+// 0.2126R + 0.7152G + 0.0722B. Chosen because it is the standard answer to
+// "can a person tell these two screen colours apart", and because the paired
+// contrast ratio (L_hi + 0.05) / (L_lo + 0.05) carries a +0.05 viewing-flare
+// term. That term is what makes the figures here USABLE: against a #000208
+// backdrop a bare luminance ratio divides by ~0.0004 and reports numbers in the
+// tens or hundreds that swing wildly on rounding — the flare term compresses
+// them into a scale a human can argue in and compare between candidates.
+//
+// ⚠ Note the weights when reading a RED glow: red carries only 0.2126 of the
+// luminance sum, so 255,64,64 scores far lower than the same alpha in white or
+// green would. That is not the formula being unfair — it is the reason a red
+// peripheral alarm has to be either large or bright to be noticed at all.
+// ---------------------------------------------------------------------------
+function srgbToLin(c) {
+  c /= 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+function relLum(r, g, b) {
+  return 0.2126 * srgbToLin(r) + 0.7152 * srgbToLin(g) + 0.0722 * srgbToLin(b);
+}
+function contrastRatio(l1, l2) {
+  const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// Eight edge probes + one centre control. Inset from the very edge so no probe sits on the
+// outermost pixel row (where a 1x1 read at x = VIEW_W would be off-canvas outright), and so a
+// corner reading is the glow's near-peak rather than a single extreme pixel.
+const PROBE_INSET = 8;
+const PROBES = [
+  { name: "corner TL", x: PROBE_INSET, y: PROBE_INSET },
+  { name: "edge top", x: VIEW_W / 2, y: PROBE_INSET },
+  { name: "corner TR", x: VIEW_W - PROBE_INSET, y: PROBE_INSET },
+  { name: "edge right", x: VIEW_W - PROBE_INSET, y: VIEW_H / 2 },
+  { name: "corner BR", x: VIEW_W - PROBE_INSET, y: VIEW_H - PROBE_INSET },
+  { name: "edge bottom", x: VIEW_W / 2, y: VIEW_H - PROBE_INSET },
+  { name: "corner BL", x: PROBE_INSET, y: VIEW_H - PROBE_INSET },
+  { name: "edge left", x: PROBE_INSET, y: VIEW_H / 2 },
+  { name: "centre", x: VIEW_W / 2, y: VIEW_H / 2, control: true },
+];
+
+// A dedicated offscreen canvas, rendered by the SAME renderScene() the visible panes use, so
+// "composited" means composited — background, glow and HUD furniture on one pixel — while the
+// numbers stay decoupled from whatever the animation is doing.
+const measCv = document.createElement("canvas");
+measCv.width = VIEW_W; measCv.height = VIEW_H;
+// willReadFrequently: measure() takes 45 one-pixel readbacks per knob move, and without this
+// hint each one is a GPU->CPU sync that makes dragging a slider stutter.
+const measCtx = measCv.getContext("2d", { willReadFrequently: true });
+
+function sampleProbes() {
+  return PROBES.map(p => {
+    const d = measCtx.getImageData(p.x, p.y, 1, 1).data;
+    return relLum(d[0], d[1], d[2]);
+  });
+}
+function measureAt(P, hp, key) {
+  renderScene(measCtx, P, hp, PHASE_PEAK, key);
+  const peak = sampleProbes();
+  renderScene(measCtx, P, hp, PHASE_TROUGH, key);
+  const trough = sampleProbes();
+  return { peak, trough };
+}
+
+let report = null;
+function measure() {
+  const hp = state.hp;
+  renderScene(measCtx, null, hp, PHASE_PEAK, null);      // BASE: identical frame, no glow at all
+  const base = sampleProbes();
+  const cand = measureAt(CAND, hp, shape);
+  const ship = measureAt(SHIPPED, hp, "corners");
+  const rows = PROBES.map((p, i) => ({
+    name: p.name, control: !!p.control, base: base[i],
+    cand: { pk: cand.peak[i], tr: cand.trough[i],
+      pkTr: contrastRatio(cand.peak[i], cand.trough[i]),
+      glowBg: contrastRatio(cand.peak[i], base[i]) },
+    ship: { pk: ship.peak[i], tr: ship.trough[i],
+      pkTr: contrastRatio(ship.peak[i], ship.trough[i]),
+      glowBg: contrastRatio(ship.peak[i], base[i]) },
+  }));
+  const edge = rows.filter(r => !r.control);
+  // The headline. WORST, not mean: an alarm you can only find in one corner is not findable,
+  // and a mean would let four bright corners hide four dark edges — which is precisely the
+  // failure mode (b) this lab was built to expose.
+  let worst = edge[0], worstShip = Infinity;
+  for (const r of edge) {
+    if (r.cand.glowBg < worst.cand.glowBg) worst = r;
+    if (r.ship.glowBg < worstShip) worstShip = r.ship.glowBg;
+  }
+  report = { rows, worst, worstCand: worst.cand.glowBg, worstShip };
+  return report;
+}
+
+
+// ---------------------------------------------------------------------------
+// Export — the paste-ready block P6 ports from
+// ---------------------------------------------------------------------------
+const f2 = v => v.toFixed(2);
+const f3 = v => v.toFixed(3);
+const f4 = v => v.toFixed(4);
+
+function dumpText() {
+  const r = report || measure();
+  const mult = r.worstCand / r.worstShip;
+  const mirrored = CAND.LOWHP_GLOW_RGB === SHIPPED.LOWHP_GLOW_RGB;
+  const t = clamp01(1 - state.hp / LOW_HP_THRESHOLD);
+  let s =
+"// tools/lowhp-glow-lab.html — CS038 GATE A. Measured at HP " + state.hp + "/100 (t = " + f2(t) + "),\n" +
+"// shape: " + shape + " (" + SHAPES[shape].label + ").\n" +
+"const LOWHP_GLOW_ALPHA_MIN = " + f2(CAND.LOWHP_GLOW_ALPHA_MIN) + ";  // peak corner-glow alpha at the threshold (t=0)\n" +
+"const LOWHP_GLOW_ALPHA_MAX = " + f2(CAND.LOWHP_GLOW_ALPHA_MAX) + ";  // peak corner-glow alpha near death (t=1)\n" +
+"const LOWHP_GLOW_RADIUS     = " + CAND.LOWHP_GLOW_RADIUS.toFixed(0) + ";  // " +
+  (shape === "vignette" ? "vignette depth" : shape === "bars" ? "bar thickness" : "px reach of each corner's radial gradient") + "\n" +
+"const LOWHP_GLOW_RGB        = \"" + CAND.LOWHP_GLOW_RGB + "\";  // " +
+  (mirrored ? "mirrors COLOR.lowhp (#ff4040)" : "⛔ NO LONGER MIRRORS COLOR.lowhp — a deliberate A5 answer, or back it out") + "\n";
+  if (shape === "cornersAtt")
+    s += "const LOWHP_GLOW_OCC_ATTEN  = " + f2(CAND.LOWHP_GLOW_OCC_ATTEN) +
+         ";  // alpha factor on the two OCCUPIED corners (top-right rings, bottom-left powerup rows)\n";
+  if (CAND.LOWHP_PULSE_RATE_MIN !== SHIPPED.LOWHP_PULSE_RATE_MIN ||
+      CAND.LOWHP_PULSE_RATE_MAX !== SHIPPED.LOWHP_PULSE_RATE_MAX)
+    s += "\n// ⛔ THESE TWO ARE NOT GLOW KNOBS — lowhpPulseRate(t) also drives the audio siren's LFO\n" +
+         "// and the critical-hull ring. Moving them moves all three; that is a separate decision.\n" +
+         "const LOWHP_PULSE_RATE_MIN   = " + f2(CAND.LOWHP_PULSE_RATE_MIN) + ";\n" +
+         "const LOWHP_PULSE_RATE_MAX   = " + f2(CAND.LOWHP_PULSE_RATE_MAX) + ";\n";
+  if (shape !== "corners")
+    s += "\n// ⛔ SHAPE MOVED — P6 rewrites drawHUD()'s glow block, not just these constants. It stays a\n" +
+         "// FILL (the named GDD §3.2 fills-exception), stays gated on game.lowHpSiren, stays driven by\n" +
+         "// game.lowHpPhase (one alarm, one rate), never touches ctx.globalAlpha, and adds NO shadowBlur.\n" +
+         "// The lab's " + shape + " implementation is the reference.\n";
+  s += "\n// GATE A answers\n" +
+       "// A1 shape   = " + shape + " (" + SHAPES[shape].label + ")\n" +
+       "// A2 alphas  = " + f2(CAND.LOWHP_GLOW_ALPHA_MIN) + " / " + f2(CAND.LOWHP_GLOW_ALPHA_MAX) +
+       "  worst-probe glow:bg " + f3(r.worstCand) + " vs today's " + f3(r.worstShip) +
+       " (x" + f2(mult) + "), worst at " + r.worst.name + "\n" +
+       "// A3 radius  = " + CAND.LOWHP_GLOW_RADIUS.toFixed(0) + "\n" +
+       "// A4 pulse   = peak:trough " + f3(r.worst.cand.pkTr) + " at " + r.worst.name +
+       ", " + f3(r.rows[0].cand.pkTr) + " at " + r.rows[0].name + " (today " + f3(r.worst.ship.pkTr) + ")\n" +
+       "// A5 rgb     = " + CAND.LOWHP_GLOW_RGB + (mirrored ? " (mirror intact)" : " (MIRROR BROKEN)") + "\n";
+  return s;
+}
+function refreshDump() {
+  document.getElementById("dump").textContent = dumpText();
+}
+
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
+const state = { hp: 100, playing: true, mode: "side", flipShipped: false, lockPhase: true,
+  zoom: 0.5, phaseShip: 0, phaseCand: 0 };
+
+const cvShip = document.getElementById("cvShip");
+const cvCand = document.getElementById("cvCand");
+const gShip = cvShip.getContext("2d");
+const gCand = cvCand.getContext("2d");
+
+const SLIDERS = [
+  { id: "alphaMin", key: "LOWHP_GLOW_ALPHA_MIN", dec: 2 },
+  { id: "alphaMax", key: "LOWHP_GLOW_ALPHA_MAX", dec: 2 },
+  { id: "radius", key: "LOWHP_GLOW_RADIUS", dec: 0 },
+  { id: "occAtten", key: "LOWHP_GLOW_OCC_ATTEN", dec: 2 },
+  { id: "rateMin", key: "LOWHP_PULSE_RATE_MIN", dec: 1 },
+  { id: "rateMax", key: "LOWHP_PULSE_RATE_MAX", dec: 1 },
+];
+const RGB_IDS = ["rgbR", "rgbG", "rgbB"];
+
+function rgbParts() { return CAND.LOWHP_GLOW_RGB.split(",").map(Number); }
+function setRgbFromSliders() {
+  CAND.LOWHP_GLOW_RGB = RGB_IDS.map(id => String(Math.round(+document.getElementById(id).value))).join(",");
+}
+
+function syncControls() {
+  for (const s of SLIDERS) {
+    document.getElementById(s.id).value = CAND[s.key];
+    document.getElementById(s.id + "Val").textContent = CAND[s.key].toFixed(s.dec);
+  }
+  const parts = rgbParts();
+  RGB_IDS.forEach((id, i) => {
+    document.getElementById(id).value = parts[i];
+    document.getElementById(id + "Val").textContent = String(parts[i]);
+  });
+  document.getElementById("hp").value = state.hp;
+  document.getElementById("hpVal").textContent = String(state.hp);
+  document.getElementById("radiusLblText").textContent = SHAPES[shape].radiusLabel;
+  document.getElementById("occLbl").classList.toggle("off", shape !== "cornersAtt");
+  document.getElementById("occAtten").disabled = shape !== "cornersAtt";
+  document.getElementById("shapeDesc").textContent = SHAPES[shape].desc;
+  document.getElementById("rgbWarn").classList.toggle("hidden",
+    CAND.LOWHP_GLOW_RGB === SHIPPED.LOWHP_GLOW_RGB);
+  document.getElementById("candCap").textContent =
+    SHAPES[shape].label.toLowerCase() + ", " + f2(CAND.LOWHP_GLOW_ALPHA_MIN) + "/" +
+    f2(CAND.LOWHP_GLOW_ALPHA_MAX) + ", r=" + CAND.LOWHP_GLOW_RADIUS.toFixed(0) +
+    ", rgb " + CAND.LOWHP_GLOW_RGB;
+}
+
+function syncMetrics() {
+  const r = report || measure();
+  const t = clamp01(1 - state.hp / LOW_HP_THRESHOLD);
+  document.getElementById("worst").textContent = f3(r.worstCand);
+  document.getElementById("worstWhere").textContent = "at " + r.worst.name;
+  document.getElementById("worstShip").textContent = f3(r.worstShip);
+  document.getElementById("worstMult").textContent = "x" + f2(r.worstCand / r.worstShip);
+  document.getElementById("hpRead").textContent = String(state.hp);
+  document.getElementById("tRead").textContent = f2(t);
+
+  let html =
+    '<tr><th></th><th></th><th class="grp sep" colspan="4">candidate — ' + SHAPES[shape].label +
+    '</th><th class="grp ship sep" colspan="4">shipped — four corners</th><th></th></tr>' +
+    '<tr><th>probe</th><th>base L</th>' +
+    '<th class="sep">L peak</th><th>L trough</th><th>peak:trough</th><th>glow:bg</th>' +
+    '<th class="sep">L peak</th><th>L trough</th><th>peak:trough</th><th>glow:bg</th>' +
+    '<th class="sep">&times;today</th></tr>';
+  for (const row of r.rows) {
+    const cls = row.control ? "ctrl" : (row === r.worst ? "worst" : "");
+    html += '<tr class="' + cls + '"><td>' + row.name + (row.control ? " (control)" : "") +
+      '</td><td>' + f4(row.base) + '</td>' +
+      '<td class="sep">' + f4(row.cand.pk) + '</td><td>' + f4(row.cand.tr) + '</td><td>' +
+      f3(row.cand.pkTr) + '</td><td>' + f3(row.cand.glowBg) + '</td>' +
+      '<td class="sep">' + f4(row.ship.pk) + '</td><td>' + f4(row.ship.tr) + '</td><td>' +
+      f3(row.ship.pkTr) + '</td><td>' + f3(row.ship.glowBg) + '</td>' +
+      '<td class="sep">x' + f2(row.cand.glowBg / row.ship.glowBg) + '</td></tr>';
+  }
+  document.getElementById("mtable").innerHTML = html;
+}
+
+// A knob moved: re-measure, then re-render everything that quotes a measurement.
+function recompute() {
+  measure();
+  syncControls();
+  syncMetrics();
+  refreshDump();
+}
+
+for (const s of SLIDERS) {
+  const el = document.getElementById(s.id);
+  el.addEventListener("input", () => { CAND[s.key] = parseFloat(el.value); recompute(); });
+}
+for (const id of RGB_IDS) {
+  document.getElementById(id).addEventListener("input", () => { setRgbFromSliders(); recompute(); });
+}
+document.getElementById("hp").addEventListener("input", (e) => {
+  state.hp = parseFloat(e.target.value); recompute();
+});
+document.getElementById("mirrorBtn").addEventListener("click", () => {
+  CAND.LOWHP_GLOW_RGB = SHIPPED.LOWHP_GLOW_RGB; recompute();
+});
+document.getElementById("resetBtn").addEventListener("click", () => {
+  Object.assign(CAND, SHIPPED, { LOWHP_GLOW_OCC_ATTEN: 0.35 });
+  setShape("corners");
+});
+
+const shapeRow = document.getElementById("shapeRow");
+function setShape(key) {
+  shape = key;
+  [...shapeRow.children].forEach(b => b.classList.toggle("active", b.dataset.key === key));
+  recompute();
+}
+for (const key of Object.keys(SHAPES)) {
+  const b = document.createElement("button");
+  b.textContent = SHAPES[key].label;
+  b.dataset.key = key;
+  b.addEventListener("click", () => setShape(key));
+  shapeRow.appendChild(b);
+}
+
+const modeRow = document.getElementById("modeRow");
+function setMode(m) {
+  state.mode = m;
+  [...modeRow.children].forEach(b => b.classList.toggle("active", b.dataset.key === m));
+  applyLayout();
+}
+for (const m of [["side", "Side by side"], ["flip", "Flip in place"]]) {
+  const b = document.createElement("button");
+  b.textContent = m[1]; b.dataset.key = m[0];
+  b.addEventListener("click", () => setMode(m[0]));
+  modeRow.appendChild(b);
+}
+
+const zoomRow = document.getElementById("zoomRow");
+for (const z of [["fit", 0], ["50%", 0.5], ["75%", 0.75], ["100%", 1]]) {
+  const b = document.createElement("button");
+  b.textContent = z[0]; b.dataset.z = String(z[1]);
+  b.addEventListener("click", () => {
+    state.zoom = z[1];
+    [...zoomRow.children].forEach(c => c.classList.toggle("active", c.dataset.z === String(z[1])));
+    applyLayout();
+  });
+  zoomRow.appendChild(b);
+}
+
+// In FLIP mode both canvases keep rendering; only one is displayed, in the same screen slot.
+// That is the point — the eye compares against its own afterimage, not across a gutter.
+function applyLayout() {
+  const flip = state.mode === "flip";
+  document.getElementById("paneShip").classList.toggle("hidden", flip && !state.flipShipped);
+  document.getElementById("paneCand").classList.toggle("hidden", flip && state.flipShipped);
+  // A fixed zoom sizes the canvas and lets the pane shrink-to-fit; "fit" hands the row to the
+  // two panes evenly (or to the one visible pane in flip mode) and the canvas follows at 100%.
+  const fixed = state.zoom > 0;
+  const w = fixed ? Math.round(VIEW_W * state.zoom) + "px" : "100%";
+  for (const pair of [[document.getElementById("paneShip"), cvShip],
+                      [document.getElementById("paneCand"), cvCand]]) {
+    pair[0].style.flex = fixed ? "0 0 auto" : "1 1 0";
+    pair[1].style.width = w;
+    pair[1].style.height = "auto";
+  }
+}
+document.getElementById("flipBtn").addEventListener("click", () => {
+  state.flipShipped = !state.flipShipped;
+  if (state.mode !== "flip") setMode("flip"); else applyLayout();
+});
+window.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "BUTTON" || tag === "TEXTAREA") return;  // space is theirs
+  if (e.code === "Space") { e.preventDefault(); document.getElementById("flipBtn").click(); }
+});
+
+const playBtn = document.getElementById("playBtn");
+playBtn.addEventListener("click", () => {
+  state.playing = !state.playing;
+  playBtn.textContent = state.playing ? "Pause" : "Play";
+  playBtn.classList.toggle("active", state.playing);
+});
+function pose(ph) {
+  state.playing = false;
+  playBtn.textContent = "Play"; playBtn.classList.remove("active");
+  state.phaseShip = state.phaseCand = ph;
+}
+document.getElementById("poseP").addEventListener("click", () => pose(PHASE_PEAK));
+document.getElementById("poseT").addEventListener("click", () => pose(PHASE_TROUGH));
+document.getElementById("lockPhase").addEventListener("change", (e) => {
+  state.lockPhase = e.target.checked;
+  if (state.lockPhase) state.phaseShip = state.phaseCand;
+});
+
+const copyBtn = document.getElementById("copyBtn");
+copyBtn.addEventListener("click", () => {
+  const text = document.getElementById("dump").textContent;
+  const done = () => {
+    copyBtn.classList.add("copied"); copyBtn.textContent = "Copied!";
+    setTimeout(() => { copyBtn.classList.remove("copied"); copyBtn.textContent = "Copy constants"; }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, done);
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta); done();
+  }
+});
+
+// The animation exists for the EYE only. Every number in the table comes from measure()'s own
+// deterministic peak/trough renders — nothing here feeds a measurement, so a paused lab and a
+// running one report identical figures.
+let lastTs = 0;
+function loop(ts) {
+  const dt = Math.min(0.05, (ts - lastTs) / 1000) || 0;
+  lastTs = ts;
+  if (state.playing) {
+    const t = clamp01(1 - state.hp / LOW_HP_THRESHOLD);
+    const rateCand = lowhpPulseRate(t);
+    const rateShip = SHIPPED.LOWHP_PULSE_RATE_MIN +
+      (SHIPPED.LOWHP_PULSE_RATE_MAX - SHIPPED.LOWHP_PULSE_RATE_MIN) * t;
+    state.phaseCand = (state.phaseCand + TAU * rateCand * dt) % TAU;
+    state.phaseShip = state.lockPhase ? state.phaseCand
+      : (state.phaseShip + TAU * rateShip * dt) % TAU;
+  }
+  renderScene(gShip, SHIPPED, state.hp, state.phaseShip, "corners");
+  renderScene(gCand, CAND, state.hp, state.phaseCand, shape);
+  requestAnimationFrame(loop);
+}
+
+setMode("side");
+[...zoomRow.children].forEach(c => c.classList.toggle("active", c.dataset.z === "0.5"));
+setShape("corners");
+applyLayout();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

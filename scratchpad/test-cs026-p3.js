@@ -417,9 +417,10 @@ let X = null;
   const globalIds = X.DEBUG_VARS.slice(gIdx + 1, nextHIdx === -1 ? undefined : nextHIdx).map(v => v.id);
   // REPOINTED BY CS037 P4: telemetryInterval joins GLOBAL's tail. This section's own claim — where
   // earlyWorldLevels sits — is untouched by that.
+  // REPOINTED BY CS038 P3: telemetryCapture joins right after it. Same non-claim.
   eq(globalIds.join(","),
-    "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY,telemetryInterval",
-    "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel (CS026 P5's four level banner knobs then CS037 P4's telemetryInterval trail startLevel)");
+    "sweepCoalescePause,debrisBounceRestitution,earlyWorldLevels,startLevel,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY,telemetryInterval,telemetryCapture",
+    "D: GLOBAL holds it, after debrisBounceRestitution and before startLevel (CS026 P5's four level banner knobs then CS037 P4's telemetryInterval and CS038 P3's telemetryCapture trail startLevel)");
   eq(X.DEBUG.earlyWorldLevels, 5, "D: the live value seeds from the def");
 
   // It is READ LIVE at the wave boundary, never cached — a panel change takes effect on the next level.

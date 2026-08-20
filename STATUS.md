@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.37 · Changeset: CS038 · Phase: P1 · Registry: 115 · Levers: 18
+Version: 1.0.0.37 · Changeset: CS038 · Phase: P6 · Registry: 115 · Levers: 18
 
 ## Phase ledger — CS038
 
@@ -19,11 +19,59 @@ Version: 1.0.0.37 · Changeset: CS038 · Phase: P1 · Registry: 115 · Levers: 1
   header was already right and the spec's static 114 is the wrong count** (61 literal rows, not 60,
   + 18 levers × 3). Four older suite files repointed, none narrowed.
 
+- P2 — `tools/lowhp-glow-lab.html`, the low-hull glow instrument for GATE A. **`orbital-overhaul.html`
+  is unmodified** (verified against `git status`). The glow is a **PORT-ME BLOCK** copied
+  byte-for-byte out of `drawHUD()` — three substitutions only (`game.ship.hp`→`hp`,
+  `game.lowHpPhase`→`phase`, the four `LOWHP_GLOW_*` constants destructured off a parameter set) and
+  the test compares it against the build's own bytes. Backdrop is a seeded busy frame with the
+  HULL/CARGO rings and powerup rows at their real coordinates, and it paints `#000208` itself,
+  because the build clears to TRANSPARENT and takes its ground from CSS — a `getImageData` sample of
+  the real canvas would read (0,0,0,0). Four shapes (corners / edge vignette / edge bars / corners
+  with the two occupied ones attenuated), all fills, none touching `shadowBlur` or `globalAlpha`.
+  Measurement: WCAG relative luminance off a composited offscreen render at the two exact pulse
+  poses, 8 edge probes + a centre control, headlined by **worst-probe glow:bg**. The
+  `0.6 + 0.4·sin` pulse split is deliberately NOT a slider (it is a literal inside the ported block;
+  moving it would be a draw-block edit, not a constants retune). Paste-ready dump answers A1–A5.
+
+- P6 — **GATE A cleared** (Paul, in-browser). Answers: **A1** shape = full edge vignette (not the
+  shipped four corners — the lab's own hypothesis (b), that the middle of every edge was dark
+  regardless of alpha, won). **A2** `LOWHP_GLOW_ALPHA_MIN`/`_MAX` 0.10/0.26 → **0.20/0.40**;
+  worst-probe glow:bg **1.188** vs shipped **1.000** (×1.19, worst at "edge top"). **A3** depth/radius
+  unchanged at **280**. **A4** peak:trough 1.163 at edge top / 1.469 at corner TL (shipped 1.000 at
+  every edge probe, since the shipped shape painted nothing there) — the pulse still reads. **A5**
+  `LOWHP_GLOW_RGB` unchanged, mirror intact. Applied to `drawHUD()`'s glow block per the lab's
+  `glowVignette()` reference (four `createLinearGradient` bands, one inward from each edge,
+  overlapping at the corners under source-over) — ported, not retyped; `LOWHP_GLOW_RADIUS` keeps its
+  name across the shape change (now read as vignette depth), per the lab's own dump convention. Every
+  P6 invariant held: still a fill, no `shadowBlur`, `globalAlpha` never touched, still gated on
+  `game.lowHpSiren`, still driven by the shared `game.lowHpPhase`. `test-cs038-p2.js` §B/§C repointed
+  (a lab's frozen "shipped" baseline does not re-track the build after the build's own retune ships;
+  full reasoning inline in the test) — a repoint, not a narrowing.
+  **Flag carried to GATE B B1: the chosen worst-probe ratio (1.19×) is barely above 1.000 (no
+  contrast at all) — a small edge-legibility win, not a strong one. Worth confirming it actually
+  reads as findable in real play before treating GATE A as closed on brightness, not just shape.**
+
 ## Working / verified
 
-- Full suite: **157 files, 157 passed, 0 failed, 0 skipped, 0 timed out**; `node --check` passes on
+- Full suite: **159 files, 159 passed, 0 failed, 0 skipped, 0 timed out**; `node --check` passes on
   the extracted script. `test-registry.js` confirms registry **115**, headers **11**, `LEVERS` **18**,
-  `POWERUP_DROP_TYPES` **5**. Neither standing unseeded flake fired on the P1 run.
+  `POWERUP_DROP_TYPES` **5**. Neither standing unseeded flake fired on the P6 run.
+- `test-cs038-p6.js` (45 assertions) — drives the real `drawHUD()`/`startGame()` against a recording
+  ctx (test-cs009-hud.js's bespoke pattern, since `_harness.js`'s stub swallows gradient stops):
+  constants equal GATE A's dump; the block is unreachable when `lowHpSiren` is false; the shape is
+  4 linear (not radial) gradients with band geometry matching the vignette contract exactly; alpha
+  brackets `ALPHA_MIN`↔`ALPHA_MAX` at t=0/t=1 at both the pulse peak and trough; alpha rises
+  monotonically as HP falls; `globalAlpha`/`shadowBlur` are never touched **inside the glow block
+  specifically** (isolated from the HULL ring's own legitimate `globalAlpha` use immediately after
+  it); still reads the shared `game.lowHpPhase`; `Capture.hudVisible` still gates the whole thing.
+  Hand-mutation-checked against four regressions (peak alpha stops tracking t, a `globalAlpha` leak,
+  band-depth drift, and the siren gate loosening) — all four caught.
+- `test-cs038-p2.js` (243 assertions, repointed for P6 — see §B/§C's own comments) — the lab's frozen
+  pre-retune baseline pinned as a historical snapshot (no longer re-read from the live build for the
+  four constants GATE A can move), the RGB-mirror check (unaffected by the retune, still checked
+  live), the byte-strict port-verbatim compare against a frozen copy of the pre-P6 block, WCAG
+  luminance + contrast against known inputs, probe geometry, per-shape coverage evaluated
+  analytically at each probe, and the dump round-tripping every slider.
 - `test-cs038-p1.js` (341 assertions) — the credits table's shape, the twelve SAT_ART names read out
   of `SAT_ART`'s own header comments, the label-resolved `MENU_OPTIONS` consumers, nav + derived
   scroll, `openExternal`'s three outcomes, and `drawCredits` at every selection state and both scroll
@@ -44,6 +92,9 @@ Version: 1.0.0.37 · Changeset: CS038 · Phase: P1 · Registry: 115 · Levers: 1
   would hand the opened page a live `window.opener` handle back into the game and is refused. **GATE B
   B6 should confirm the links actually open from `file://`, a local server and the itch.io build** —
   headless, only the absent/blocked branch has been exercised.
+
+- **CS038 GATE A closed (Paul, in-browser) — resolved, see P6's ledger entry above** for the answers
+  and the retune applied from them.
 
 - **CS038 P1: the spec's C4 registry count (114) is wrong; the live build reports 115** and
   `STATUS.md`'s header already said so. 61 literal `{ id: … }` rows + 18 levers × 3, not 60 — CS037
@@ -122,9 +173,10 @@ None.
 
 ## Next up
 
-- **CS038 is in flight** against `PLANNED-FEATURES-CS038.md` / `IMPLEMENTATION-PHASES-CS038.md`. P1
-  (Credits) has landed. P2–P5 are independent of it and of each other; **GATE A** (the glow lab
-  session) blocks P6 and **GATE B** (playtest) blocks the P7 doc sweep.
+- **CS038 is in flight** against `PLANNED-FEATURES-CS038.md` / `IMPLEMENTATION-PHASES-CS038.md`.
+  P1 (Credits), P2 (glow lab) and P6 (glow retune, GATE A cleared) have landed. **P3–P5 (telemetry
+  opt-in, voice repeat suppression, knob retirement) are still open** — independent of P6 and of each
+  other. **GATE B** (playtest) blocks the P7 doc sweep.
 
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a). Every
   slider answer any past gate has returned, and every one a future gate returns, is only as good as

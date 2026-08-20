@@ -648,6 +648,13 @@ bad *build*.
 - **`tools/dock-float-lab.html`** — the delivery "+pts" floater column: anchor, cadence, and the
   three placement models (CS029 P3). Its `slotY()` header records why the model-B rule as first
   written does not hold.
+- **`tools/lowhp-glow-lab.html`** — the low-hull corner glow (CS038 §2, GATE A). The only lab that
+  does not duplicate what it studies: the glow is a **PORT-ME BLOCK** copied byte-for-byte out of
+  `drawHUD()` and driven from sliders, over a mock busy frame with the HULL/CARGO rings and powerup
+  rows at their real coordinates. A/B against the shipped values, four candidate **shapes** (corners
+  / edge vignette / edge bars / corners with the two occupied ones attenuated — all fills, none
+  adding `shadowBlur`), and a `getImageData` measurement at eight edge probes plus a centre control,
+  headlined by the **worst-probe glow-to-background contrast ratio**.
 - **`tools/music-lab.html`** — the porting source for every `MUSIC_TRACKS` entry.
 - **`tools/voice-lab.html`** — the CS010 engine source (formant synth).
 - **`tools/voice-robot-lab.html`** — ⛔ **the active source for all `phon`

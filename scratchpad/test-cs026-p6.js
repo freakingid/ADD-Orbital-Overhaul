@@ -674,8 +674,11 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // constants promoted to knobs, later phase's rows, named rather than wildcarded, exactly as above.
     // REPOINTED BY CS037 P7.1: towReleaseLockout/towReleaseSpeed join it — the tow release
     // separation's two SHIP knobs, later phase's rows, named rather than wildcarded, exactly as above.
+    // REPOINTED BY CS038 P3: telemetryCapture joins it — the telemetry opt-in sessionSwitch row, a
+    // later phase's row, named rather than wildcarded, exactly as above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
       "benchRampStep", "benchRampInterval", "benchSettleFrames", "benchMaxCount", "telemetryInterval",
+      "telemetryCapture",
       "dockBaseScore", "dockBonusStep", "towReleaseLockout", "towReleaseSpeed",
       "deliveryFloatSize", "deliveryFloatSizeStep", "deliveryFloatSizeMax", "deliveryFloatHold", "deliveryFloatFade",
       "dockBounceSpeed", "dockPingCooldown",

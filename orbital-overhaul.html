@@ -400,18 +400,21 @@ const LOWHP_PARAM_RAMP       = 0.15;  // s — click-free per-frame param ramp (
 // this; cargo-gold and the powerup low-timer keep the flat HUD_PULSE_HZ (a distinct rate is how the ear
 // and eye tell a hull alarm apart from a timer running out).
 function lowhpPulseRate(t) { return LOWHP_PULSE_RATE_MIN + (LOWHP_PULSE_RATE_MAX - LOWHP_PULSE_RATE_MIN) * t; }
-// CS010 P3 §5 — the low-health CORNER GLOW + RELIEF POP knobs. The glow is a NAMED GDD §3.2
+// CS010 P3 §5 — the low-health EDGE-VIGNETTE GLOW + RELIEF POP knobs. The glow is a NAMED GDD §3.2
 // fills-exception (FORK-3 = FILL, Paul signed off; see drawHUD's block comment for the why): a
 // peripheral-vision alarm is low-frequency, large-area and EDGELESS by definition — that is what makes
 // it readable out of the corner of the eye without competing with the two red rings for focus, and it
 // costs no shadowBlur. Intensity scales with BOTH the HP-urgency t (brighter near death) and the shared
-// pulse (game.lowHpPhase), so near death it is BRIGHTER, not merely FASTER. All PLAYTEST KNOBS — sized by
-// eye in a browser (STATUS.md carries the ask: which values, and does the synced ring/glow/siren read as
-// one alarm).
-const LOWHP_GLOW_ALPHA_MIN = 0.10;  // peak corner-glow alpha at the threshold (t=0) — a soft breath
-const LOWHP_GLOW_ALPHA_MAX = 0.26;  // peak corner-glow alpha near death (t=1) — brighter, not just faster
-const LOWHP_GLOW_RADIUS     = 280;  // px reach of each corner's radial gradient (FRAME the screen, don't fill it — two corners are occupied by the HULL/CARGO rings)
-const LOWHP_GLOW_RGB        = "255,64,64";  // corner-glow color channels — mirrors COLOR.lowhp (#ff4040); kept as a triple so a radial-gradient stop can carry the pulsing alpha
+// pulse (game.lowHpPhase), so near death it is BRIGHTER, not merely FASTER.
+// CS038 P6 (GATE A, tools/lowhp-glow-lab.html): the shipped FOUR-CORNER shape left the middle of every
+// edge unlit — 720px across the top alone — which is why the alarm read as unfindable regardless of
+// alpha. GATE A A1 moved the shape to a FULL EDGE VIGNETTE (a linear gradient inward from each of the
+// four edges); ported verbatim from the lab, values ported verbatim from its dump. Worst-probe
+// glow:background contrast measured 1.19x today's at the chosen alpha (A2); the RGB mirror stands (A5).
+const LOWHP_GLOW_ALPHA_MIN = 0.20;  // peak vignette alpha at the threshold (t=0) — CS038 GATE A A2
+const LOWHP_GLOW_ALPHA_MAX = 0.40;  // peak vignette alpha near death (t=1) — CS038 GATE A A2
+const LOWHP_GLOW_RADIUS     = 280;  // vignette depth in px, inward from each edge (CS038 GATE A A3 — this constant kept its name across the shape change, per the lab's own dump)
+const LOWHP_GLOW_RGB        = "255,64,64";  // edge-vignette color channels — mirrors COLOR.lowhp (#ff4040), CS038 GATE A A5 kept the mirror; kept as a triple so a gradient stop can carry the pulsing alpha
 const LOWHP_RELIEF_FLASH    = 0.5;  // sec — the geometry-only hull-ring "exhale" when low-health CLEARS with the ship alive (§5 relief cue, FLAG-CS010-a). HUD_CAP_FLASH's neighbourhood.
 const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonus (was: extra life)
 const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
@@ -4101,6 +4104,18 @@ const DEBUG_VARS = [
   // non-positive interval, so the guard and the bound agree rather than relying on each other.
   { id: "telemetryInterval", label: "Telemetry snapshot interval", unit: "s",
     def: 15, min: 1, max: 120, step: 1 },
+  // CS038 P3 (spec §3): telemetry capture is OPT-IN, off by default and off at every launch.
+  // `sessionSwitch: true` is what makes that true — NOT a way for a future gameplay knob to dodge
+  // persistence, it exists for instrumentation only. Three effects, read together at applyDebug/
+  // rebuildDebug/saveSettings/loadSettings: (a) omitted from saveSettings' `debug` sub-object, so the
+  // blob never carries it; (b) skipped in loadSettings' per-entry restore loop, belt and braces, so an
+  // older or hand-edited blob cannot revive it either; (c) exempt from overridesOn() the same way
+  // DEBUG_OVERRIDE_ID itself is — it reads debugShown[id] directly. (c) is the part that is easy to
+  // miss: without it, with the master "Overrides Applied" toggle OFF, this row would resolve to its
+  // `def` (0) while the panel still displayed whatever the player last set — ON, reading ON, capturing
+  // nothing. A silent trap for exactly the person using the panel.
+  { id: "telemetryCapture", label: "Telemetry capture", unit: "",
+    def: 0, min: 0, max: 1, step: 1, boolLabels: ["OFF", "ON"], sessionSwitch: true },
   // CS030 P3 (spec §4.5): the achievement celebration panel's two knobs. celebrationScrollStep
   // matches ACH_SCROLL_STEP's default but is independently tunable — the panel's row height
   // differs from the Achievements viewer's. celebrationEmblemSize is drawEmblem()'s radius.
@@ -4220,7 +4235,10 @@ function applyDebug(id, shown) {
   // for what the toggle IS (still a plain DEBUG_ENTRIES row, still resettable by `r`/Reset All) — only
   // for what writing it must trigger downstream.
   if (id === DEBUG_OVERRIDE_ID) { rebuildDebug(); return; }
-  DEBUG[id] = debugNative(e, clamped, overridesOn());
+  // CS038 P3: a sessionSwitch row is exempt from overridesOn() — it always reads its own debugShown
+  // value, same as DEBUG_OVERRIDE_ID above. Forcing `on: true` into debugNative still runs any
+  // toNative conversion the entry declares; it just never falls back to e.def with the toggle off.
+  DEBUG[id] = debugNative(e, clamped, e.sessionSwitch ? true : overridesOn());
 }
 // CS024 P6e: the full re-derivation, called ONLY when the toggle flips (applyDebug, above) — every other
 // edit (◄►, typed entry, `r`, Reset All) goes through applyDebug's single-field write, which applies the
@@ -4228,7 +4246,11 @@ function applyDebug(id, shown) {
 function rebuildDebug() {
   const on = overridesOn();
   for (const e of DEBUG_ENTRIES)
-    DEBUG[e.id] = e.id === DEBUG_OVERRIDE_ID ? debugShown[e.id] : debugNative(e, debugShown[e.id], on);
+    // CS038 P3: sessionSwitch rows are exempt from `on` here too, for the identical reason as
+    // applyDebug — a full rebuild (triggered by flipping the master toggle) must not silently zero
+    // instrumentation the panel still shows as ON.
+    DEBUG[e.id] = e.id === DEBUG_OVERRIDE_ID ? debugShown[e.id]
+      : debugNative(e, debugShown[e.id], e.sessionSwitch ? true : on);
 }
 // CS024 P6e: extracted from the module-level seed loop so "reset every row" has exactly one
 // implementation — the seed below and the panel's Reset All action row both call this, so they cannot
@@ -4992,8 +5014,16 @@ const Telemetry = {
   // cadence cannot drift: dt is clamped to 0.05 s and the knob's min is 1 s, so one subtraction
   // always lands acc back inside [0, iv). Lowering the knob mid-run can leave acc above the NEW
   // interval — it drains at one row per frame, never a burst inside a single frame.
+  // CS038 P3 (spec §3): the ONE gate for opt-in capture, and nowhere else. All of this is intended:
+  //   - No rows accrue while off, so push() never runs, so write() never runs, so afd_telemetry_v1 is
+  //     LEFT UNTOUCHED by an off session — yesterday's capture survives a today spent with it off.
+  //   - read(), telemetryExportRows() and the "Copy telemetry log" action row are NOT gated here or
+  //     anywhere else. The export must keep working while capture is off — that's precisely the state
+  //     you're in the morning after a capture session, and gating it would make the data unreachable.
+  //   - reset() stays wired to resetRun() unchanged.
   tick(dt) {
     if (Bench.running) return;
+    if (!DEBUG.telemetryCapture) return;
     const iv = DEBUG.telemetryInterval;
     if (!(iv > 0)) return;              // 0 / NaN would push a row every frame and eat the ring
     this.acc += dt;
@@ -6593,12 +6623,17 @@ function saveSettings() {
     // CS024 P6: shotPowerupMode / magnetMode / chainGuardMode STOPPED BEING WRITTEN HERE with the
     // settings fields behind them. A store written by an earlier build still holds them; this save
     // simply stops re-emitting them, and the next write drops them from the blob. Nothing reads them.
+    // CS038 P3: sessionSwitch rows (instrumentation, not gameplay tuning) are left out of the debug
+    // sub-object entirely — the blob never carries them, so a launch can never revive one from a
+    // prior session. Built from DEBUG_ENTRIES rather than `{ ...debugShown }` for exactly that filter.
+    const debugSave = {};
+    for (const e of DEBUG_ENTRIES) if (!e.sessionSwitch) debugSave[e.id] = debugShown[e.id];
     const data = { vol: { ...AudioSys.vol }, bindings: {},
       musicTrack: settings.musicTrack,                                            // v3.4 P6 (additive)
       shipTurnScale: settings.shipTurnScale,                                      // CS010 §10b (additive)
       voiceStyle: settings.voiceStyle, captions: settings.captions,               // CS011 P3 (additive)
       autoShield: settings.autoShield,                                            // CS012 P5 (additive)
-      debug: { ...debugShown } };                                                 // CS015 P4 (additive sub-object, display units)
+      debug: debugSave };                                                         // CS015 P4 (additive sub-object, display units)
     for (const name of REBINDABLE) {
       const b = bindings[name];
       data.bindings[name] = { keys: b.keys, buttons: b.buttons || [], axis: b.axis || null };
@@ -6659,6 +6694,9 @@ function loadSettings() {
     // header entries, which have no id/min/max and nothing to restore.
     if (data.debug) {
       for (const e of DEBUG_ENTRIES) {
+        // CS038 P3: belt and braces — saveSettings never writes a sessionSwitch id, but an older or
+        // hand-edited blob could still carry one. Skip it here too so it cannot be revived that way.
+        if (e.sessionSwitch) continue;
         const dv = data.debug[e.id];
         if (Number.isFinite(dv) && dv >= e.min && dv <= e.max) applyDebug(e.id, dv);
       }
@@ -13724,32 +13762,44 @@ function draw() {
 // block comment above the Capture object) only ever hides the always-on overlay, never anything
 // modal or transient.
 function drawHUD() {
-  // CS010 P3 — low-health CORNER GLOW (§5, FORK-3 = FILL; a NAMED GDD §3.2 fills-exception, Paul signed
-  // off). A peripheral-vision alarm: four radial-gradient corner fills in the low-health red. It engages
-  // on the EXACT SAME predicate as the siren (game.lowHpSiren) and pulses IN PHASE with the critical-hull
-  // ring and the siren — all read game.lowHpPhase, one instrument. It NEVER reads a Web Audio LFO value:
-  // the phase is a game-side accumulator, so the glow renders even with audio unavailable (ctx null, no
-  // user gesture yet). WHY A FILL, not a glowStroke arc: a corner-of-the-eye alarm is low-frequency,
+  // CS010 P3, shape retuned CS038 P6 (GATE A) — low-health EDGE-VIGNETTE GLOW (§5, FORK-3 = FILL; a
+  // NAMED GDD §3.2 fills-exception, Paul signed off). A peripheral-vision alarm: four linear-gradient
+  // bands, one inward from each screen edge, in the low-health red — the bands overlap in the corners
+  // under source-over, so the corners stay the brightest part for free. It engages on the EXACT SAME
+  // predicate as the siren (game.lowHpSiren) and pulses IN PHASE with the critical-hull ring and the
+  // siren — all read game.lowHpPhase, one instrument. It NEVER reads a Web Audio LFO value: the phase
+  // is a game-side accumulator, so the glow renders even with audio unavailable (ctx null, no user
+  // gesture yet). WHY A FILL, not a glowStroke arc: a corner-of-the-eye alarm is low-frequency,
   // large-area and EDGELESS by definition — that is what makes it readable without competing for focus.
   // A glowStroke arc is a LINE (high-frequency, small-area) that would read as a THIRD red HUD element
   // beside the two red rings — the very noise this phase exists to remove — and it is more expensive
-  // (glowStroke is shadowBlur, the renderer's hot spot; four blurred arcs would burn it in the busiest
-  // frames). Drawn FIRST so the HUD readouts paint crisply over it. Lives in drawHUD() so Capture's H key
-  // hides it and P exports a clean frame. Intensity scales with t (BRIGHTER near death) AND the shared
-  // pulse — never merely faster. Alpha rides the gradient stop, so this block NEVER touches globalAlpha
-  // (it can't leak). Two corners (top-right rings, bottom-left powerup rows) are occupied; the radius is
-  // sized to FRAME rather than fight — a PLAYTEST KNOB (STATUS.md).
+  // (glowStroke is shadowBlur, the renderer's hot spot; blurred bands would burn it in the busiest
+  // frames — this shape adds none). Drawn FIRST so the HUD readouts paint crisply over it. Lives in
+  // drawHUD() so Capture's H key hides it and P exports a clean frame. Intensity scales with t
+  // (BRIGHTER near death) AND the shared pulse — never merely faster. Alpha rides the gradient stop, so
+  // this block NEVER touches globalAlpha (it can't leak).
+  // CS038 P6: the four-CORNER shape (shipped CS010–CS037) left the middle of every edge unlit — 720px
+  // across the top alone — which is what GATE A's lab (tools/lowhp-glow-lab.html) found unfindable
+  // regardless of alpha. This is that lab's "edge vignette" shape, ported verbatim; LOWHP_GLOW_RADIUS
+  // is now read as vignette DEPTH (inward from each edge), not a corner blob's reach.
   if (game.lowHpSiren) {
     const gt = clamp01(1 - game.ship.hp / LOW_HP_THRESHOLD);            // HP urgency, the same t the siren uses
     const gpulse = 0.6 + 0.4 * Math.sin(game.lowHpPhase);              // shared phase → locked to the hull ring + siren
     const peak = (LOWHP_GLOW_ALPHA_MIN + (LOWHP_GLOW_ALPHA_MAX - LOWHP_GLOW_ALPHA_MIN) * gt) * gpulse;
-    const R = LOWHP_GLOW_RADIUS;
-    for (const c of [[0, 0], [VIEW_W, 0], [0, VIEW_H], [VIEW_W, VIEW_H]]) {
-      const grad = ctx.createRadialGradient(c[0], c[1], 0, c[0], c[1], R);
-      grad.addColorStop(0, `rgba(${LOWHP_GLOW_RGB},${peak})`);
-      grad.addColorStop(1, `rgba(${LOWHP_GLOW_RGB},0)`);
+    const D = LOWHP_GLOW_RADIUS;
+    const c0 = `rgba(${LOWHP_GLOW_RGB},${peak})`, c1 = `rgba(${LOWHP_GLOW_RGB},0)`;
+    const bands = [
+      [0, 0, 0, D,                 0, 0, VIEW_W, D],                    // top
+      [0, VIEW_H, 0, VIEW_H - D,   0, VIEW_H - D, VIEW_W, D],           // bottom
+      [0, 0, D, 0,                 0, 0, D, VIEW_H],                    // left
+      [VIEW_W, 0, VIEW_W - D, 0,   VIEW_W - D, 0, D, VIEW_H],           // right
+    ];
+    for (const b of bands) {
+      const grad = ctx.createLinearGradient(b[0], b[1], b[2], b[3]);
+      grad.addColorStop(0, c0);
+      grad.addColorStop(1, c1);
       ctx.fillStyle = grad;
-      ctx.fillRect(Math.max(0, c[0] - R), Math.max(0, c[1] - R), R, R);
+      ctx.fillRect(b[4], b[5], b[6], b[7]);
     }
   }
   // CS024 P6d: the visible tell for a debug run — without it, a good score silently failing to record

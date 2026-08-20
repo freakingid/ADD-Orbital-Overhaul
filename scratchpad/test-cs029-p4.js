@@ -107,7 +107,7 @@ const src = scriptSource();
   // constants promoted to knobs).
   // REPOINTED BY CS037 P7.1: +2 — towReleaseLockout, towReleaseSpeed (the tow release separation's
   // two SHIP knobs).
-  eq(X.DEBUG_ENTRIES.length, 115, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs and CS037 P7.1's two tow release knobs later) — G1=C carries no new registry row");
+  eq(X.DEBUG_ENTRIES.length, 116, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs and CS038 P3's telemetryCapture later) — G1=C carries no new registry row");
   assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
   assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
     "B: no minGap knob either — that belongs to model B, which was not picked");

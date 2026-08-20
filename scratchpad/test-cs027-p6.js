@@ -119,7 +119,7 @@ const { assert, eq } = A;
   // constants promoted to knobs).
   // REPOINTED BY CS037 P7.1: +2 more (towReleaseLockout, towReleaseSpeed, the tow release
   // separation's two SHIP knobs).
-  eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs and CS037 P7.1's two tow release knobs later) — no OTHER phase added a knob");
+  eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1, X.DEBUG_ENTRIES.length, "B: ⛔ registry unchanged from the CS027 start point (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs and CS038 P3's telemetryCapture later) — no OTHER phase added a knob");
   eq(X.DEBUG_ENTRIES.length, COUNTS.registryEntries, "B: ...and it's test-registry.js's own count (the only file allowed to name it)");
   eq(OLD.LEVERS.length, X.LEVERS.length, "B: ⛔ LEVERS unchanged from the CS027 start point — no phase moved a lever");
   eq(X.LEVERS.length, COUNTS.levers, "B: ...and it's test-registry.js's own count too");

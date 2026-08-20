@@ -490,8 +490,10 @@ function onDebug(A, { playing = false } = {}) {
   assert(typeof blob === "string", "G: the commit wrote the settings blob (saveSettings ran)");
   const parsed = JSON.parse(blob);
   assert(parsed.debug && parsed.debug[target] === 73, "G: the blob carries the typed value in DISPLAY units");
-  assert(Object.keys(parsed.debug).length === A.DEBUG_ENTRIES.length,
-    "G: the debug sub-object holds one key per value entry — headers contribute nothing");
+  // CS038 P3: sessionSwitch entries (telemetryCapture) are deliberately OMITTED from the saved
+  // sub-object — headers contribute nothing, and neither does instrumentation.
+  assert(Object.keys(parsed.debug).length === A.DEBUG_ENTRIES.filter(e => !e.sessionSwitch).length,
+    "G: the debug sub-object holds one key per PERSISTED value entry — headers and sessionSwitch rows contribute nothing");
   assert(!("undefined" in parsed.debug), "G: no header leaked an `undefined` key into the save");
   assert(A.STORAGE_KEY === "afd_settings_v1", "G: still the frozen key — not renamed, not versioned");
 
@@ -524,9 +526,17 @@ function onDebug(A, { playing = false } = {}) {
     assert(B.debugShown[e.id] === want[e.id], `G: typed ${v} into ${e.id} -> ${B.debugShown[e.id]}`);
   }
   const after = build({ storage: { "afd_settings_v1": inst2.lsStore[B.STORAGE_KEY] } }).exports;
-  for (const e of B.DEBUG_ENTRIES)
+  for (const e of B.DEBUG_ENTRIES) {
+    // CS038 P3: sessionSwitch entries never persist by design — a reload finds them back at `def`,
+    // not at whatever was typed and committed live before the save.
+    if (e.sessionSwitch) {
+      assert(after.debugShown[e.id] === e.def,
+        `G: ⛔ ${e.id} is a sessionSwitch row and does NOT survive the reload (${after.debugShown[e.id]} === ${e.def})`);
+      continue;
+    }
     assert(after.debugShown[e.id] === want[e.id],
       `G: ${e.id} survived the reload (${after.debugShown[e.id]} === ${want[e.id]})`);
+  }
 
   // An older save (written before the headers existed) still loads, and headers can't break it.
   // CS024 P3: the fixture key moved off garbageLifetime (deleted this phase) onto chainGuardTime — and

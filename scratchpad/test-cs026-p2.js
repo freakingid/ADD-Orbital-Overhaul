@@ -665,7 +665,8 @@ let X = null;
       || id.startsWith("bench")                                         // CS037 P2 (BENCHMARK controls)
       || id === "telemetryInterval"                                     // CS037 P4 (the telemetry cadence)
       || id === "dockBaseScore" || id === "dockBonusStep"                // CS037 P7 (delivery score knobs)
-      || id === "towReleaseLockout" || id === "towReleaseSpeed";          // CS037 P7.1 (tow release separation)
+      || id === "towReleaseLockout" || id === "towReleaseSpeed"           // CS037 P7.1 (tow release separation)
+      || id === "telemetryCapture";                                       // CS038 P3 (telemetry opt-in switch)
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",
       `J: exactly THREE rows were added by THIS phase, in that order (all added since: ${added.join(", ")})`);
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRows.includes(id)).join(","), oldRows.join(","),
