@@ -107,7 +107,10 @@ const src = scriptSource();
   // constants promoted to knobs).
   // REPOINTED BY CS037 P7.1: +2 — towReleaseLockout, towReleaseSpeed (the tow release separation's
   // two SHIP knobs).
-  eq(X.DEBUG_ENTRIES.length, 116, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs and CS038 P3's telemetryCapture later) — G1=C carries no new registry row");
+  // REPOINTED BY CS038 P5: −12 — celebrationScrollStep/celebrationEmblemSize, the six delivery-floater
+  // knobs (including this phase's own deliveryFloatRise reads below) and the four hunter-pulse knobs
+  // are all retired outright to plain constants (spec §4).
+  eq(X.DEBUG_ENTRIES.length, 104, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture and CS038 P5's twelve retirements later) — G1=C carries no new registry row");
   assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
   assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
     "B: no minGap knob either — that belongs to model B, which was not picked");
@@ -115,7 +118,10 @@ const src = scriptSource();
   // REPOINTED BY CS034 P8 (GATE A): rise moved 160 -> 200; deliveryFloatLife is retired outright, its
   // two readers replaced by deliveryFloatHold/deliveryFloatFade (test-cs034-p8.js's territory now).
   // REPOINTED BY CS035 P1 (§1.1): rise moved again, 200 -> 150.
-  eq(X.DEBUG.deliveryFloatRise, 150, "B: deliveryFloatRise's live value is 150 (CS035 P1)");
+  // RE-REPOINTED BY CS038 P5 (spec §4): deliveryFloatRise is retired to DELIVERY_FLOAT_RISE — no
+  // longer a DEBUG row at all, byte-identical value.
+  eq(X.DEBUG.deliveryFloatRise, undefined, "B: ⛔ deliveryFloatRise no longer exists — retired by CS038 P5");
+  eq(X.DELIVERY_FLOAT_RISE, 150, "B: DELIVERY_FLOAT_RISE's value is 150 (CS035 P1), unchanged by the retirement");
   eq(X.DEBUG.deliveryFloatLife, undefined, "B: ⛔ deliveryFloatLife no longer exists — retired by CS034 P8");
 })();
 
@@ -195,10 +201,12 @@ function stageVisit(X, canisterCount) {
   eq(ticker.text, "+" + expectedTotal, "C: ⛔ the ticker's FINAL text is the whole visit's running total");
   eq(ticker.pinned, false, "C: ⛔ the ticker is released (un-pinned) once the last canister lands");
   eq(g.deliveryTicker, null, "C: ...and the live reference is cleared — nothing left pinned for the next visit to find");
-  eq(ticker.rise, X.DEBUG.deliveryFloatRise, "C: the released ticker still reads the live rise knob");
+  // RE-REPOINTED BY CS038 P5 (spec §4): rise/hold/fade are retired off DEBUG to DELIVERY_FLOAT_*
+  // constants — "the live knob" is now "the shipped constant", same values, no longer overridable.
+  eq(ticker.rise, X.DELIVERY_FLOAT_RISE, "C: the released ticker still reads the shipped rise constant");
   // REPOINTED BY CS034 P8: life0 is now hold+fade (deliveryFloatLife retired).
-  eq(ticker.life0, X.DEBUG.deliveryFloatHold + X.DEBUG.deliveryFloatFade, "C: ...and the live hold+fade knobs");
-  eq(ticker.fade, X.DEBUG.deliveryFloatFade, "C: ...and the live fade knob");
+  eq(ticker.life0, X.DELIVERY_FLOAT_HOLD + X.DELIVERY_FLOAT_FADE, "C: ...and the shipped hold+fade constants");
+  eq(ticker.fade, X.DELIVERY_FLOAT_FADE, "C: ...and the shipped fade constant");
 
   // A SECOND visit, immediately after: the ticker must be a FRESH object starting from ITS OWN first
   // canister, not a resumed/stale total left over from the first visit. deliveryCount/offloadTimer are
@@ -219,7 +227,7 @@ function stageVisit(X, canisterCount) {
   };
   for (let f = 0; f < 60 && g.chain.length > 0; f++) { g.floaters.push = interceptor2; X.update(1 / 60); }
   eq(g.chain.length, 0, "C: (setup) the second, one-canister visit was delivered");
-  const secondTicker = pushes2.find(f => f.color === X.COLOR.dock && f.size === X.DEBUG.deliveryFloatSize && /^\+\d+$/.test(f.text));
+  const secondTicker = pushes2.find(f => f.color === X.COLOR.dock && f.size === X.DELIVERY_FLOAT_SIZE && /^\+\d+$/.test(f.text));
   assert(!!secondTicker && secondTicker !== ticker, "C: (setup) a NEW ticker object exists, distinct from the first visit's");
   eq(secondTicker.text, "+" + X.DOCK_BASE_SCORE,
     "C: ⛔ the second visit's ticker starts at ITS OWN first canister's points — no stale total carried over");

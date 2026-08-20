@@ -11,7 +11,6 @@
 "use strict";
 const { buildGame, mkAssert, scriptSource } = require("./_harness.js");
 const { ownCommits, changedFiles, outsideScope, parentSource } = require("./_phase-ref.js");
-const { hasKnob } = require("./test-registry.js");
 
 // ⛔ THIS PHASE'S OWN PARENT, PINNED AS A LITERAL — "cs-30 p2: tools/emblem-lab.html ...".
 const PARENT_SHA = "30c7b27fd0a2085c1403f50fa41912384bf5a8e1";
@@ -74,12 +73,20 @@ const src = scriptSource();
     "C: (contrast) a non-zero tier still routes correctly");
 })();
 
-// ================= (D) the two new DEBUG_VARS rows =====================
+// ================= (D) the two celebration knobs — RETIRED by CS038 P5 to plain constants =====================
 (function sectionD() {
-  console.log("(D) celebrationScrollStep / celebrationEmblemSize knobs");
+  console.log("(D) celebrationScrollStep / celebrationEmblemSize: retired (spec §4), values survive as constants");
   const X = buildGame();
-  hasKnob(X, "celebrationScrollStep", { def: 60, min: 10, max: 200, step: 10 }, A);
-  hasKnob(X, "celebrationEmblemSize", { def: 32, min: 12, max: 64, step: 2 }, A);
+  // REPOINTED BY CS038 P5 (spec §4): both rows are retired outright to CELEB_SCROLL_STEP /
+  // CELEB_EMBLEM_SIZE — pure presentation, no gameplay effect. ⛔ NO VALUE CHANGE: this section's
+  // own def/min/max/step live values (60 and 32) land byte-identical on the constants; the
+  // assertion moves rather than disappearing.
+  assert(!X.DEBUG_VARS.some(v => v.id === "celebrationScrollStep"),
+    "D: ⛔ celebrationScrollStep no longer exists — retired by CS038 P5");
+  assert(!X.DEBUG_VARS.some(v => v.id === "celebrationEmblemSize"),
+    "D: ⛔ celebrationEmblemSize no longer exists — retired by CS038 P5");
+  eq(X.CELEB_SCROLL_STEP, 60, "D: CELEB_SCROLL_STEP carries this phase's 60 forward, unchanged");
+  eq(X.CELEB_EMBLEM_SIZE, 32, "D: CELEB_EMBLEM_SIZE carries this phase's 32 forward, unchanged");
 })();
 
 // ================= (E) TRAP: scope pin against this phase's own parent =====================

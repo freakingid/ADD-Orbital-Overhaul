@@ -205,7 +205,9 @@ const src = scriptSource();
     // constants promoted to knobs).
     // REPOINTED BY CS037 P7.1: +2 more (towReleaseLockout, towReleaseSpeed, the tow release
     // separation's two SHIP knobs).
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs and CS038 P3's telemetryCapture later — a data-only collector adds no knob");
+    // REPOINTED BY CS038 P5: −12 — celebrationScrollStep/celebrationEmblemSize, the six delivery-floater
+    // knobs and the four hunter-pulse knobs are all retired outright to plain constants (spec §4).
+    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1 - 12, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture and CS038 P5's twelve retirements later — a data-only collector adds no knob");
     eq(X.LEVERS.length, OLD.LEVERS.length, "G: ⛔ LEVERS.length unchanged");
   }
 

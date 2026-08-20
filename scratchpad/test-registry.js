@@ -18,7 +18,7 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 116,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 104,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
                           // 106 -> 105: CS036 P2 retired levelEndHold (CELEBRATION), the pre-nextWave()
                           // hold, now player-paced. 105 -> 106: CS036 P5 adds dockPingCooldown (DELIVERY).
                           // 106 -> 110: CS037 P2 adds the four BENCHMARK controls (ramp step, ramp
@@ -28,6 +28,12 @@ const COUNTS = {
                           // 113 -> 115: CS037 P7.1 adds towReleaseLockout/towReleaseSpeed (SHIP,
                           // trailing scoopHitsPerLevel). 115 -> 116: CS038 P3 adds telemetryCapture
                           // (GLOBAL, trailing telemetryInterval) — the first sessionSwitch row.
+                          // 116 -> 104: CS038 P5 (spec §4) retires twelve pure-presentation knobs to
+                          // plain constants — CELEBRATION's celebrationScrollStep/celebrationEmblemSize
+                          // (2), DELIVERY's six floater knobs (deliveryFloatRise/Size/SizeStep/
+                          // SizeMax/Hold/Fade, 6) and HUNTER's four pulse-envelope knobs
+                          // (hunterPulseMin/Max/Grow/Shrink, 4). No section header emptied — CELEBRATION
+                          // keeps levelEndGrace/Fade/GracePulseEnd, DELIVERY and HUNTER keep many others.
   sectionHeaders: 11,     // DEBUG_VARS.filter(v => v.header).length — 10 -> 11: CS037 P2's BENCHMARK
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only

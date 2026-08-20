@@ -137,7 +137,7 @@ const RETURN = [
   "ACH_LEADER_MIN", "ACH_LEADER_MAX",
   "Achievements", "HighScores", "makeRunResult", "COLOR", "TIER_COLOR", "FloatText",
   "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "applyDebug", "DEBUG_OVERRIDE_ID",
-  "DOCK_OFFLOAD_INTERVAL", "DELIVERY_FLOAT_ANCHOR_FRAC", "DOCK_BASE_SCORE", "DOCK_BONUS_STEP",
+  "DOCK_OFFLOAD_INTERVAL", "DELIVERY_FLOAT_ANCHOR_FRAC", "DELIVERY_FLOAT_RISE", "DOCK_BASE_SCORE", "DOCK_BONUS_STEP",
   "DOCK_RADIUS", "CARGO_CAP_MAX", "CHAIN_LINK", "SHIP_MAX_HP", "LEVERS", "leverState", "GAME_VERSION", "AudioSys",
 ];
 function buildFrom(src, { exportList = RETURN, measure = null } = {}) {
@@ -200,11 +200,15 @@ let X = null;
   // REPOINTED BY CS035 P1 (§1.1): a later dock-float-lab session re-settled it again, 200 -> 150.
   // deliveryFloatLife is retired outright — its own def/range claims no longer have a subject;
   // its replacement (deliveryFloatHold/deliveryFloatFade) is test-cs034-p8.js's, not P6's.
-  eq(byId.deliveryFloatRise.def, 150, "B: deliveryFloatRise.def is 150 (P4 300, P6 160, CS034 P8's GATE A 200, CS035 P1 150)");
-  eq(X.DEBUG.deliveryFloatRise, 150, "B: ...and the live value seeds from the def");
+  // RE-REPOINTED BY CS038 P5 (spec §4): deliveryFloatRise itself is retired the same way, alongside
+  // its five DELIVERY siblings — the row this section's own Q5 retune landed on is gone, and the
+  // range/panel-arithmetic claims that depended on a row (min/max containing the default) go with
+  // it. ⛔ NO VALUE CHANGE: DELIVERY_FLOAT_RISE carries P6's own 150 forward, byte-identical — that
+  // is the one thing left for this section to still own.
+  assert(!byId.deliveryFloatRise, "B: ⛔ deliveryFloatRise (this phase's own retuned row) no longer exists — retired by CS038 P5");
+  eq(X.DEBUG.deliveryFloatRise, undefined, "B: ...and DEBUG.deliveryFloatRise is undefined");
+  eq(X.DELIVERY_FLOAT_RISE, 150, "B: ...and DELIVERY_FLOAT_RISE carries Q5's 150 forward, unchanged (P4 300, P6 160, CS034 P8's GATE A 200, CS035 P1 150)");
   assert(!byId.deliveryFloatLife, "B: ⛔ deliveryFloatLife (P6's other retuned row) no longer exists — retired by CS034 P8");
-  // The range must still CONTAIN the new default, or the panel opens on an out-of-range row.
-  assert(byId.deliveryFloatRise.min <= 150 && 150 <= byId.deliveryFloatRise.max, "B: 150 is inside deliveryFloatRise's range");
 
   // -- ⛔ THE KNOB PAUL DECLINED. The three-knob option would have added a `dockOffloadInterval` row
   //    and moved DOCK_OFFLOAD_INTERVAL to 0.10, buying back the separation a single origin costs.
@@ -219,27 +223,8 @@ let X = null;
 
   // -- the registry count HOLDS: this gate answer added no knob at all — measured in §G's TRAP 2 --
 
-  // -- the retuned row is still in DELIVERY, still an ordinary knob --
-  // REPOINTED BY CS034 P8: deliveryFloatLife (P6's other retuned row) is retired, so the adjacency
-  // claim has no second row to check against; the DELIVERY-section claim survives for rise alone.
-  let section = null; const sectionOf = {};
-  for (const r of X.DEBUG_VARS) { if (r.header) section = r.header; else sectionOf[r.id] = section; }
-  eq(sectionOf.deliveryFloatRise, "DELIVERY", "B: deliveryFloatRise is in the DELIVERY section");
-
-  // -- applyDebug round-trip on a retuned row: the NEW def is what "overrides off" falls back to --
-  X.applyDebug("deliveryFloatRise", 420);
-  eq(X.DEBUG.deliveryFloatRise, 420, "B: applyDebug moves the live rise");
-  X.applyDebug(X.DEBUG_OVERRIDE_ID, 0);
-  eq(X.DEBUG.deliveryFloatRise, 150, "B: ⛔ with overrides OFF the consumer sees the current shipped default, 150 (CS035 P1)");
-  X.applyDebug(X.DEBUG_OVERRIDE_ID, 1);
-  eq(X.DEBUG.deliveryFloatRise, 420, "B: with overrides ON it sees the knob again");
-  X.applyDebug("deliveryFloatRise", 150);
-  X.applyDebug(X.DEBUG_OVERRIDE_ID, 0);
-
-  // -- the retuned row is not a lever --
+  // -- the retuned row is not a lever (still true of the constant it became: no LEVERS entry names it) --
   assert(!X.LEVERS.some(l => l.id === "deliveryFloatRise"), "B: deliveryFloatRise is not a lever");
-  assert(!("floor" in byId.deliveryFloatRise) && !("ceil" in byId.deliveryFloatRise) && !("steps" in byId.deliveryFloatRise),
-    "B: ...deliveryFloatRise carries no lever triple");
 
   // -- REPOINTED BY CS029 P4 (§0.3): DELIVERY_FLOAT_DY (a fixed nudge above the ship) is retired.
   //    CS026 P6's own gate reading — "closer to the ship" — was a misinterpretation; Paul's actual
@@ -676,6 +661,12 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // separation's two SHIP knobs, later phase's rows, named rather than wildcarded, exactly as above.
     // REPOINTED BY CS038 P3: telemetryCapture joins it — the telemetry opt-in sessionSwitch row, a
     // later phase's row, named rather than wildcarded, exactly as above.
+    // REPOINTED BY CS038 P5: unlike every prior repoint here, this one doesn't ADD to X's excluded set
+    // — celebrationScrollStep/celebrationEmblemSize and the four hunterPulse* ids are already in it
+    // (harmless: they were later ADDITIONS, now simply absent from X, so excluding an absent id is a
+    // no-op) — but deliveryFloatRise is P6's OWN row, present in OLD, and CS038 P5 retires it outright.
+    // Same shape as deliveryFloatLife below: present-in-OLD, absent-in-X, so it joins laterIdsOld, not
+    // laterIdsX.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
       "benchRampStep", "benchRampInterval", "benchSettleFrames", "benchMaxCount", "telemetryInterval",
       "telemetryCapture",
@@ -685,7 +676,7 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
       "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",
       "hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink",
       "chainGuardDropBase", "chainGuardDropPity", "chainGuardDropMax", "sweepPowerupCap", "dockPowerupSpeed"]);
-    const laterIdsOld = new Set(["deliveryFloatLife"]);
+    const laterIdsOld = new Set(["deliveryFloatLife", "deliveryFloatRise"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));
     eq(xIdsSansLater.length - oldIdsSansLater.length, 0,

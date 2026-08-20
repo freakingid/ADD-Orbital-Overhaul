@@ -99,6 +99,7 @@ const RETURN = [
   "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "DEBUG_OVERRIDE_ID", "applyDebug",
   "LEVERS", "leverState",
   "FloatText", "COLOR", "POWERUP_COLOR",
+  "DELIVERY_FLOAT_RISE", "DELIVERY_FLOAT_SIZE", "DELIVERY_FLOAT_HOLD", "DELIVERY_FLOAT_FADE",
   "DOCK_BASE_SCORE", "DOCK_BONUS_STEP", "DOCK_OFFLOAD_INTERVAL", "DOCK_NEIGHBORHOOD_PAD",
   "CARGO_CAP_MAX", "CHAIN_LINK", "SHIP_MAX_HP",
   "AudioSys", "Achievements", "GAME_VERSION",
@@ -156,26 +157,29 @@ let X = null;
     "A: ⛔ THE TRAP — draw()'s alpha divides by this.fade (defaults to the constructed life), not a literal");
   assert(!/this\.life \/ 1\.1/.test(ftBody), "A: ...and the old literal 1.1 divisor is gone");
 
-  // -- the delivery push site reads the live DEBUG knobs --
+  // -- the delivery push site reads the live rise/hold/fade values --
   // REPOINTED BY CS034 P8 (spec §3.5): deliveryFloatLife is retired; both sites now read
   // deliveryFloatRise plus the hold+fade pair. The "exactly two sites" claim moves to that shape.
   // RE-REPOINTED BY CS035 P2 (§2.4): there is only ONE delivery push site now. The dock lockout makes
   // the incidental category empty by construction, so that branch — and the FloatText push in it —
   // is deleted. P4's claim (every delivery floater reads the live knobs, none hardcodes) is intact;
   // it simply has one subject instead of two.
-  eq((codeSrc.match(/DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade/g) || []).length, 1,
-    "A: the ONE surviving push site reads DEBUG.deliveryFloatRise plus the hold+fade pair — the towed ticker (CS035 P2 deleted the incidental branch)");
+  // RE-REPOINTED BY CS038 P5 (spec §4): rise/size/size-step/size-max/hold/fade are retired off the
+  // debug registry to DELIVERY_FLOAT_* constants — same identifiers, no more DEBUG. prefix. The push
+  // site's SHAPE (one call, these six arguments, in this order) is exactly what this section still owns.
+  eq((codeSrc.match(/DELIVERY_FLOAT_RISE,\s*\n\s*DELIVERY_FLOAT_HOLD \+ DELIVERY_FLOAT_FADE, DELIVERY_FLOAT_FADE/g) || []).length, 1,
+    "A: the ONE surviving push site reads DELIVERY_FLOAT_RISE plus the hold+fade pair — the towed ticker (CS035 P2 deleted the incidental branch)");
   // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS029 P4 (§0.3/§6.1/§6.3, model C), THEN AGAIN BY
-  // CS034 P8 (spec §3.5), THEN AGAIN BY CS034 P9 (GATE B, B2). The origin moved from `node.x, node.y`
-  // (the popped node) to the ship (P6), then to a static dock anchor (P4) shared as
-  // `deliveryAnchorX`/`deliveryAnchorY`. P8 replaced the single deliveryFloatLife arg with the
-  // hold+fade pair and, on the towed branch, the hardcoded size 16 with the live deliveryFloatSize
+  // CS034 P8 (spec §3.5), THEN AGAIN BY CS034 P9 (GATE B, B2), THEN AGAIN BY CS038 P5 (retirement). The
+  // origin moved from `node.x, node.y` (the popped node) to the ship (P6), then to a static dock anchor
+  // (P4) shared as `deliveryAnchorX`/`deliveryAnchorY`. P8 replaced the single deliveryFloatLife arg with
+  // the hold+fade pair and, on the towed branch, the hardcoded size 16 with the live deliveryFloatSize
   // knob. P9 brightened the incidental branch from COLOR.dim to COLOR.dock (it read as too dim to see)
   // — size 12 is the one thing still distinguishing it from the towed tally. The towed branch's push
   // site itself changed shape — it now creates the model-C ticker on the FIRST towed canister of a
   // visit; that shape is asserted in test-cs029-p4.js/test-cs034-p8.js, not here.
-  assert(/game\.deliveryTicker = new FloatText\("\+" \+ pts, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, DEBUG\.deliveryFloatSize, DEBUG\.deliveryFloatRise,\s*\n\s*DEBUG\.deliveryFloatHold \+ DEBUG\.deliveryFloatFade, DEBUG\.deliveryFloatFade\);/.test(scriptSrc),
-    "A: the TOWED branch's ticker reads deliveryFloatSize (P8) and the live rise/hold/fade knobs, and is born at the dock anchor");
+  assert(/game\.deliveryTicker = new FloatText\("\+" \+ pts, deliveryAnchorX, deliveryAnchorY,\s*\n\s*COLOR\.dock, DELIVERY_FLOAT_SIZE, DELIVERY_FLOAT_RISE,\s*\n\s*DELIVERY_FLOAT_HOLD \+ DELIVERY_FLOAT_FADE, DELIVERY_FLOAT_FADE\);/.test(scriptSrc),
+    "A: the TOWED branch's ticker reads DELIVERY_FLOAT_SIZE (P8) and the live rise/hold/fade constants, and is born at the dock anchor");
   // REPOINTED BY CS035 P2 (§2.4), INVERTED: the incidental branch's push site is deleted with the
   // branch, so what P4 owned here is now an ABSENCE — nothing pushes a flat DOCK_BASE_SCORE floater
   // at the dock any more, and no delivery floater is hardcoded at size 12.
@@ -190,7 +194,10 @@ let X = null;
   // seven, and this phase's touched sites two to one. The untouched remainder — the claim that
   // actually belongs to P4 — is unmoved at six.
   const totalSites = (codeSrc.match(/new FloatText\(/g) || []).length;
-  const knobSites = (codeSrc.match(/DEBUG\.deliveryFloatRise/g) || []).length;
+  // CS038 P5 repoint: DEBUG.deliveryFloatRise -> DELIVERY_FLOAT_RISE (retired to a constant). The
+  // negative lookahead excludes the constant's OWN declaration (`const DELIVERY_FLOAT_RISE = 150`),
+  // counting call-site usage only, same as the old `DEBUG.` prefix did structurally.
+  const knobSites = (codeSrc.match(/DELIVERY_FLOAT_RISE(?!\s*=)/g) || []).length;
   // RE-REPOINTED BY CS037 P2: the benchmark instrument's floater population builds one (BENCH_POPS'
   // `floater` maker), seven to eight and the untouched remainder six to seven. It is a developer
   // instrument's constructor, not a delivery floater, and it names none of this phase's knobs — which
@@ -202,27 +209,7 @@ let X = null;
 
 // ================= (B) the registry =====================
 (function sectionB() {
-  console.log("(B) deliveryFloatRise: registry order, ranges, live values (deliveryFloatLife retired by CS034 P8)");
-  const iGrace = X.DEBUG_VARS.findIndex(v => v.id === "dockComboGrace");
-  const iRise = X.DEBUG_VARS.findIndex(v => v.id === "deliveryFloatRise");
-  assert(iGrace >= 0 && iRise === iGrace + 1,
-    "B: deliveryFloatRise immediately follows dockComboGrace");
-
-  const rise = X.DEBUG_VARS[iRise];
-  eq(rise.label, "Delivery floater rise", "B: deliveryFloatRise label");
-  eq(rise.unit, "px/s", "B: deliveryFloatRise unit");
-  // ⛔ REPOINTED BY CS026 P6 (gate Q5), THEN AGAIN BY CS034 P8 (GATE A), THEN AGAIN BY CS035 P1
-  // (§1.1). P4 SHIPPED THESE AS FIRST GUESSES SPECIFICALLY SO THE GATE COULD SETTLE THEM — its own
-  // comment said so — so the gate moving them is this phase working as designed, not a regression.
-  // P6: "the score numbers need to fade more slowly, and they need to travel upwards more slowly"
-  // (300 -> 160). P8's GATE A re-settled rise to 200 against the larger, growing ticker. CS035 P1
-  // applied a later dock-float-lab session's numbers, 200 -> 150.
-  eq(rise.def, 150, "B: deliveryFloatRise def 150 (P4 300, P6 160, CS034 P8's GATE A 200, CS035 P1 150)");
-  eq(rise.min, 30, "B: deliveryFloatRise min 30");
-  eq(rise.max, 600, "B: deliveryFloatRise max 600");
-  eq(rise.step, 10, "B: deliveryFloatRise step 10");
-  assert(!rise.toNative, "B: no toNative hook — shown value is native");
-
+  console.log("(B) deliveryFloatRise: RETIRED by CS038 P5 — the registry row is gone, the value survives as a constant");
   // REPOINTED BY CS034 P8 (spec §3.5): deliveryFloatLife is retired outright — its two readers moved
   // to the deliveryFloatHold/deliveryFloatFade pair, tested in test-cs034-p8.js. P4's own claim about
   // it shipping alongside rise no longer has a subject; assert the retirement instead.
@@ -230,18 +217,21 @@ let X = null;
     "B: ⛔ deliveryFloatLife (P4's own row) no longer exists — retired by CS034 P8");
   eq(X.DEBUG.deliveryFloatLife, undefined, "B: ...and DEBUG.deliveryFloatLife is undefined");
 
-  eq(X.DEBUG.deliveryFloatRise, 150, "B: the live value seeds from def (rise)");
+  // RE-REPOINTED BY CS038 P5 (spec §4): deliveryFloatRise itself — P4's OWN row, the one this whole
+  // file is named for — is retired the same way, alongside its five DELIVERY siblings. ⛔ NO VALUE
+  // CHANGE: the registry `def` (150, CS035 P1's number — P4 300, P6 160, CS034 P8's GATE A 200) is
+  // now DELIVERY_FLOAT_RISE, byte-identical. The def/min/max/step SHAPE this section used to pin is
+  // gone with the row — there is no min/max/step on a plain constant — and that ownership question
+  // (does 150 still hold) is test-cs035-p1.js's, not this file's; what survives here is P4's own
+  // narrower claim, that its row is present, then that it is retired to the same value.
+  assert(!X.DEBUG_VARS.some(v => v.id === "deliveryFloatRise"),
+    "B: ⛔ deliveryFloatRise (P4's own row) no longer exists — retired by CS038 P5");
+  eq(X.DEBUG.deliveryFloatRise, undefined, "B: ...and DEBUG.deliveryFloatRise is undefined");
+  eq(X.DELIVERY_FLOAT_RISE, 150, "B: ...and DELIVERY_FLOAT_RISE carries the same 150 forward, unchanged");
+
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
   eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7,
     "B: DEBUG_ROWS is still registry + its seven trailer rows");
-
-  // Live through the real panel path.
-  const A = build();
-  A.applyDebug("deliveryFloatRise", 500);
-  eq(A.DEBUG.deliveryFloatRise, 500, "B: applyDebug writes deliveryFloatRise live");
-  A.applyDebug(A.DEBUG_OVERRIDE_ID, 0);
-  eq(A.DEBUG.deliveryFloatRise, 150, "B: overrides OFF derives from def, like every other row");
-  eq(A.debugShown.deliveryFloatRise, 500, "B: ...without discarding the edit");
 })();
 
 // ================= (C) FloatText behaviour =====================
@@ -396,10 +386,12 @@ let X = null;
   eq(incidentalFloaters.length, 0, "E: ⛔ and NO incidental floater was pushed — that branch is deleted (CS035 P2)");
   // REPOINTED BY CS034 P8: life0/fade split off the retired single deliveryFloatLife knob into
   // deliveryFloatHold + deliveryFloatFade (life0) and deliveryFloatFade (fade).
+  // RE-REPOINTED BY CS038 P5 (spec §4): rise/hold/fade are retired off DEBUG to DELIVERY_FLOAT_*
+  // constants — "the live knob" is now "the shipped constant", same values, no longer overridable.
   for (const p of towedFloaters) {
-    eq(p.obj.rise, A.DEBUG.deliveryFloatRise, "E: every delivery floater's rise is the live knob");
-    eq(p.obj.life0, A.DEBUG.deliveryFloatHold + A.DEBUG.deliveryFloatFade, "E: ...and every one's life0 is hold+fade");
-    eq(p.obj.fade, A.DEBUG.deliveryFloatFade, "E: ...and every one's fade is the live fade knob");
+    eq(p.obj.rise, A.DELIVERY_FLOAT_RISE, "E: every delivery floater's rise is the shipped constant");
+    eq(p.obj.life0, A.DELIVERY_FLOAT_HOLD + A.DELIVERY_FLOAT_FADE, "E: ...and every one's life0 is hold+fade");
+    eq(p.obj.fade, A.DELIVERY_FLOAT_FADE, "E: ...and every one's fade is the shipped fade constant");
   }
 
   // -- the ticker's own lifecycle: born at the first canister's own points, ends up holding the FULL

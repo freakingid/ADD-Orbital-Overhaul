@@ -154,7 +154,9 @@ let X = null;
   // startLevel — plus the one fact P4 changed, named here so a later reader is not left guessing.
   // REPOINTED BY CS038 P3: telemetryCapture joins telemetryInterval as GLOBAL's tail, one more row
   // before CELEBRATION — 12 -> 13. Same non-claim: nothing else was appended to GLOBAL.
-  eq(iY, X.DEBUG_VARS.length - 1 - 13, "A: levelBannerY is followed by CS037 P4's telemetryInterval and CS038 P3's telemetryCapture (the last two GLOBAL rows), then CS030 P3's CELEBRATION header + its 2 rows, CS035 P3's 3 surviving rows and CS037 P2's BENCHMARK header + its 4 rows");
+  // REPOINTED BY CS038 P5: celebrationScrollStep/celebrationEmblemSize are retired outright (spec §4),
+  // so CELEBRATION's header no longer carries its own 2 rows — 13 -> 11.
+  eq(iY, X.DEBUG_VARS.length - 1 - 11, "A: levelBannerY is followed by CS037 P4's telemetryInterval and CS038 P3's telemetryCapture (the last two GLOBAL rows), then CS030 P3's (now knob-less) CELEBRATION header, CS035 P3's 3 surviving rows and CS037 P2's BENCHMARK header + its 4 rows");
   eq(X.DEBUG_VARS[iY + 1].id, "telemetryInterval", "A: ...and that next row is telemetryInterval, GLOBAL's new tail");
 
   const rTime = X.DEBUG_VARS[iTime], rFade = X.DEBUG_VARS[iFade], rSize = X.DEBUG_VARS[iSize], rY = X.DEBUG_VARS[iY];
@@ -381,7 +383,10 @@ let X = null;
     // separation's two SHIP knobs) — same idiom again, named rather than wildcarded.
     // REPOINTED BY CS038 P3: +1 more (telemetryCapture, the telemetry opt-in sessionSwitch row) —
     // same idiom again, named rather than wildcarded.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 35, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS037 P2's four, CS037 P4's one, CS037 P7's two, CS037 P7.1's two and CS038 P3's one, less CS036 P2's one retirement, plus CS036 P5's one addition (measured, not counted)");
+    // REPOINTED BY CS038 P5: −12 — celebrationScrollStep/celebrationEmblemSize, the six delivery-floater
+    // knobs and the four hunter-pulse knobs are all retired outright to plain constants (spec §4). The
+    // second REMOVAL this pin has taken, same idiom as CS036 P2's.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 23, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS037 P2's four, CS037 P4's one, CS037 P7's two, CS037 P7.1's two and CS038 P3's one, less CS036 P2's one retirement and CS038 P5's twelve, plus CS036 P5's one addition (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

@@ -604,7 +604,10 @@ function evalSlice(literal) {
       // CS036 P2 repoint: levelEndHold is RETIRED, so the window's tail is three rows, not four. The
       // strip is narrowed rather than dropped — the three that remain are still CS035 P3's rows, not P6b's.
       .replace(/,levelEndGrace,levelEndFade,levelEndGracePulseEnd$/, "")
-      .replace(/,CELEBRATION,celebrationScrollStep,celebrationEmblemSize$/, "")
+      // CS038 P5 repoint: celebrationScrollStep/celebrationEmblemSize are retired outright (spec §4),
+      // so by the time this clause runs the header has nothing left after it — the regex narrows to
+      // match the bare tail rather than the two knobs that no longer exist to strip.
+      .replace(/,CELEBRATION$/, "")
       // CS037 P4 repoint: and telemetryInterval (GLOBAL, appended after levelBannerY) — CS037 P4's row,
       // not P6b's. It sits between the level banner rows and the CELEBRATION header, so by the
       // tail-ordering rule above its strip goes exactly here: below CELEBRATION's, above the banners'.
@@ -647,7 +650,9 @@ function evalSlice(literal) {
       // CS035 P4 repoint: and the Hunter volatility clock/heartbeat's five knobs (hunterVolatileAge,
       // hunterPulseMin, hunterPulseMax, hunterPulseGrow, hunterPulseShrink; HUNTER, appended after
       // heldClumpMax) — CS035 P4's rows, not P6b's. Same reasoning a ninth time.
-      .replace(/,hunterVolatileAge,hunterPulseMin,hunterPulseMax,hunterPulseGrow,hunterPulseShrink/, "")
+      // CS038 P5 repoint: the four pulse knobs are retired outright (spec §4), leaving only
+      // hunterVolatileAge behind them — the regex narrows to match what's actually still there.
+      .replace(/,hunterVolatileAge/, "")
       // CS035 P6 repoint: and the guard drop-weight pity knobs (chainGuardDropBase/Pity/Max, CHAIN
       // GUARD, appended after chainGuardCooldown) plus the two SMD volume knobs (sweepPowerupCap,
       // dockPowerupSpeed, POWERUPS, appended after engineMassMult) — CS035 P6's rows, not P6b's. Same

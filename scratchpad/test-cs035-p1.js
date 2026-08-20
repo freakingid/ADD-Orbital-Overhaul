@@ -20,24 +20,25 @@ const { assert, eq } = A;
   eq(X.DELIVERY_FLOAT_ANCHOR_FRAC, 0.50, "A: anchor frac is 0.50");
 })();
 
-// ================= (B) the five registry rows: new def, unchanged min/max/step =================
+// ================= (B) the six delivery-floater knobs: RETIRED by CS038 P5 to plain constants =====
 (function sectionB() {
-  console.log("(B) DELIVERY registry rows: def moved, min/max/step did not");
+  console.log("(B) DELIVERY floater knobs: retired (spec §4) — this phase's six defs survive as constants");
   const X = buildGame();
+  // REPOINTED BY CS038 P5 (spec §4): all six rows are retired outright to DELIVERY_FLOAT_* constants
+  // — pure presentation, tuned by eye, no gameplay effect. ⛔ NO VALUE CHANGE: the def this phase
+  // fought for on each row (min/max/step no longer apply to a plain constant) lands byte-identical.
+  // The assertion moves here rather than disappearing.
   const expected = {
-    deliveryFloatRise:     { def: 150, min: 30, max: 600, step: 10 },
-    deliveryFloatSize:     { def: 16,  min: 12, max: 64,  step: 1 },
-    deliveryFloatSizeStep: { def: 1.0, min: 0,  max: 6,   step: 0.5 },
-    deliveryFloatSizeMax:  { def: 48,  min: 16, max: 96,  step: 1 },
-    deliveryFloatHold:     { def: 0.00, min: 0, max: 3.0, step: 0.05 },
-    deliveryFloatFade:     { def: 1.20, min: 0.1, max: 3.0, step: 0.05 },
+    deliveryFloatRise: ["DELIVERY_FLOAT_RISE", 150],
+    deliveryFloatSize: ["DELIVERY_FLOAT_SIZE", 16],
+    deliveryFloatSizeStep: ["DELIVERY_FLOAT_SIZE_STEP", 1.0],
+    deliveryFloatSizeMax: ["DELIVERY_FLOAT_SIZE_MAX", 48],
+    deliveryFloatHold: ["DELIVERY_FLOAT_HOLD", 0.00],
+    deliveryFloatFade: ["DELIVERY_FLOAT_FADE", 1.20],
   };
-  for (const id of Object.keys(expected)) {
-    const row = X.DEBUG_VARS.find(v => v.id === id);
-    assert(row, `B: (setup) registry row ${id} exists`);
-    for (const field of ["def", "min", "max", "step"]) {
-      eq(row[field], expected[id][field], `B: ${id}.${field} === ${expected[id][field]}`);
-    }
+  for (const [id, [constName, def]] of Object.entries(expected)) {
+    assert(!X.DEBUG_VARS.some(v => v.id === id), `B: ⛔ ${id} no longer exists — retired by CS038 P5`);
+    eq(X[constName], def, `B: ${constName} carries this phase's ${def} forward, unchanged`);
   }
 })();
 

@@ -483,7 +483,7 @@ function watchLevelVoice(X) {
 // ================= (F) ↑/↓ reach the panel, not the ship ========================================
 (function sectionF() {
   console.log("(F) up/down scroll the panel while it is open MID-LEVEL — the guard is not gated on gameover");
-  const step = build().DEBUG.celebrationScrollStep;
+  const step = build().CELEB_SCROLL_STEP;
 
   const X = build();
   freshPlay(X);
@@ -593,14 +593,13 @@ function watchLevelVoice(X) {
     // "A SECOND CALL SITE, NOT A SECOND IMPLEMENTATION": every render/scroll function is the
     // parent's, byte for byte. dismissCelebration() is the ONE that may differ, and must.
     // CS034 P5 legitimately changed drawCelebration() itself (the level-end header, spec §4), so
-    // it is dropped from this byte-identity list; the other three stay untouched by that phase too.
-    for (const fn of ["function drawCelebrationRow(",
-                      "function celebrationMaxScroll(", "function celebrationScroll("]) {
-      const mine = blockAt(src, src.indexOf(fn));
-      const theirs = blockAt(ps, ps.indexOf(fn));
-      assert(mine.length > 0 && theirs.length > 0, `H: (setup) ${fn}) brace-matched in both builds`);
-      eq(mine, theirs, `H: ⛔ ${fn}) is BYTE-UNCHANGED by this phase`);
-    }
+    // it was dropped from this byte-identity list; the other three stood untouched by that phase.
+    // CS038 P5 legitimately changes ALL THREE of the remaining functions (spec §4): DEBUG.
+    // celebrationScrollStep/celebrationEmblemSize are retired to CELEB_SCROLL_STEP/CELEB_EMBLEM_SIZE,
+    // and drawCelebrationRow()/celebrationMaxScroll()/celebrationScroll() all repoint. Same idiom as
+    // CS034 P5 above — dropped from this phase's own byte-identity claim (which was never about a
+    // later phase's retirement) rather than the pin re-litigating an edit this phase didn't make.
+    // The list is now empty; the loop is gone with it rather than left iterating vacuously.
     const dMine = blockAt(src, src.indexOf("function dismissCelebration("));
     const dTheirs = blockAt(ps, ps.indexOf("function dismissCelebration("));
     assert(dMine !== dTheirs, "H: (non-vacuous) dismissCelebration() DID change — it is the one that branches");

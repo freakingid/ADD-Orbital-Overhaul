@@ -214,9 +214,9 @@ function fakeItems(n) {
 
 // ================= (C) scroll, clamped against celebrationMaxScroll(), on BOTH handlers ===========
 (function sectionC() {
-  console.log("(C) up/down scroll by DEBUG.celebrationScrollStep, clamped to celebrationMaxScroll() — keyboard AND gamepad");
-  const step = build().DEBUG.celebrationScrollStep;
-  assert(step > 0, `C: (setup) DEBUG.celebrationScrollStep is ${step}`);
+  console.log("(C) up/down scroll by CELEB_SCROLL_STEP (CS038 P5: retired off DEBUG), clamped to celebrationMaxScroll() — keyboard AND gamepad");
+  const step = build().CELEB_SCROLL_STEP;
+  assert(step > 0, `C: (setup) CELEB_SCROLL_STEP is ${step}`);
 
   // A row count big enough that maxScroll is genuinely positive (and not a multiple of the step, so
   // the final clamp is a real clamp rather than an exact landing).
@@ -256,13 +256,13 @@ function fakeItems(n) {
   // emblem headroom short and cuts the bottom row's emblem in half at full scroll. Derived from the
   // build's own consts, so a later layout retune re-derives with it instead of going stale.
   const rowBottom = Math.max(X.CELEB_DESC_DY + X.CELEB_DESC_SIZE,
-                             X.CELEB_EMBLEM_DY + X.DEBUG.celebrationEmblemSize);
+                             X.CELEB_EMBLEM_DY + X.CELEB_EMBLEM_SIZE);
   const lastInk = X.CELEB_ROW0_Y + 11 * X.CELEB_ROW_STEP - max + rowBottom;
   assert(lastInk <= X.CELEB_ROW_CLIP_BOTTOM,
     `C: ⛔ at full scroll the LAST row's lowest ink (${lastInk}) is inside the clip (bottom ${X.CELEB_ROW_CLIP_BOTTOM})`);
   assert(lastInk > X.CELEB_ROW_CLIP_BOTTOM - X.CELEB_ROW_STEP,
     "C: ...and the ceiling doesn't over-scroll into a whole row of empty space either");
-  assert(X.CELEB_ROW0_Y + X.CELEB_EMBLEM_DY - X.DEBUG.celebrationEmblemSize >= X.CELEB_ROW_CLIP_TOP,
+  assert(X.CELEB_ROW0_Y + X.CELEB_EMBLEM_DY - X.CELEB_EMBLEM_SIZE >= X.CELEB_ROW_CLIP_TOP,
     "C: ...and at scroll 0 row 0's emblem clears the clip top (that headroom is what the maths accounts for)");
 
   // Four rows are the shipped no-scroll capacity — the ▲/▼ affordance must not appear for a panel

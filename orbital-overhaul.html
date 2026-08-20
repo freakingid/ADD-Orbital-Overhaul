@@ -2522,6 +2522,31 @@ const LEVEL_BANNER_TIME = 2.2, LEVEL_BANNER_FADE = 0.5, LEVEL_BANNER_SIZE = 72, 
 //          72px line with air to spare, and stays clear up to the size knob's 160 ceiling.
 const LEVEL_DONE_HINT = "ENTER / A  continue", LEVEL_DONE_HINT_DY = 44;
 
+// CS038 P5 (spec §4, FORK-CS038-G) — twelve presentation knobs retired off the debug registry to
+// plain constants, same LOOK-CALL convention as CAPTION_LINGER/LEVEL_BANNER_TIME above: pure look,
+// tuned by eye, no gameplay effect. Each lands at exactly its old registry `def`; the provenance
+// that used to sit on the registry row moves here with it.
+//   CELEB_SCROLL_STEP / CELEB_EMBLEM_SIZE — CS030 P3 (spec §4.5): the celebration panel's own
+//     scroll step (independently tunable from ACH_SCROLL_STEP — the panel's row height differs
+//     from the Achievements viewer's) and drawEmblem()'s radius (sized in tools/emblem-lab.html
+//     at r=32, shipped there).
+const CELEB_SCROLL_STEP = 60, CELEB_EMBLEM_SIZE = 32;
+
+//   DELIVERY_FLOAT_RISE / _SIZE / _SIZE_STEP / _SIZE_MAX / _HOLD / _FADE — the delivery ticker's
+//     rise and its size-growth-per-piece (clamped at the cap), hold and fade. RISE: CS026 P4,
+//     retuned CS026 P6 (gate Q5) and again by a CS035 P1 dock-float-lab session, landing at 150.
+//     SIZE/SIZE_STEP/SIZE_MAX/HOLD/FADE: CS034 P8 (spec §3.5, GATE A) split the old single life
+//     knob into hold+fade at first-guess numbers; a CS035 P1 (§1.1) dock-float-lab session replaced
+//     all five with the numbers below.
+const DELIVERY_FLOAT_RISE = 150, DELIVERY_FLOAT_SIZE = 16, DELIVERY_FLOAT_SIZE_STEP = 1.0, DELIVERY_FLOAT_SIZE_MAX = 48, DELIVERY_FLOAT_HOLD = 0.00, DELIVERY_FLOAT_FADE = 1.20;
+
+//   HUNTER_PULSE_MIN / _MAX / _GROW / _SHRINK — the volatile-Hunter draw-only size heartbeat
+//     (pulseScale), asymmetric by design: fast growth, slow shrink, so it reads as pumping rather
+//     than breathing. Settled CS036 P4 (spec §2): envelope widened 87/125 -> 80/150 and the shape
+//     sharpened to a hard punch-out / slow settle-back — grow 900 %/s (~0.08s sweep), shrink
+//     20 %/s (~3.5s settle). Envelope and shrink both moved once before, at CS035 P7 (gate G15/G16).
+const HUNTER_PULSE_MIN = 80, HUNTER_PULSE_MAX = 150, HUNTER_PULSE_GROW = 900, HUNTER_PULSE_SHRINK = 20;
+
 // VoiceSys — Dan's speech. A SEPARATE module alongside AudioSys/MusicSys (NOT folded into AudioSys, a
 // flat bag of one-shots): it owns a small sequencer + a radio-processing chain that feeds AudioSys.voice
 // (the volume bus). Every entry point no-ops when AudioSys.ctx is null (the headless-safe guard idiom).
@@ -3869,44 +3894,9 @@ const DEBUG_VARS = [
   { header: "DELIVERY" },
   { id: "dockComboGrace", label: "Delivery one-effort window", unit: "ms",
     def: DOCK_COMBO_GRACE * 1000, min: 0, max: 10000, step: 100, toNative: v => v / 1000 },
-  // CS026 P4 (spec §3, archive/PLANNED-FEATURES-CS026.md §3.3a/§3.4): the delivery floaters' own rise/life,
-  // separating what DOCK_OFFLOAD_INTERVAL's 20/sec cadence used to stack into an unreadable smear.
-  // First-guess numbers — the gate is what settles them, which is why they are knobs, not constants.
-  // CS026 P6 (gate Q5): settled. "They need to travel upwards more slowly" -> rise 300 -> 160; "the
-  // score numbers need to fade more slowly" -> life 0.55 -> 1.2. Both stay inside their P4 ranges.
-  // CS029 P4 supersedes the note that used to sit here. The CS026 P6 arithmetic (rise x
-  // DOCK_OFFLOAD_INTERVAL as the only source of separation, DOCK_OFFLOAD_INTERVAL as "the lever, NOT
-  // a bigger rise") assumed model A — a single timing-spaced stream sharing one moving-then-static
-  // origin. CS029's dock-float-lab gate (§4.3/§5) picked model C, the accumulating ticker: one pinned
-  // floater per visit, text rewritten per canister, released as an ordinary floater only at the last
-  // canister. There is no delivery COLUMN under C, so there is nothing for DOCK_OFFLOAD_INTERVAL or a
-  // bigger rise to space apart — the instruction above is obsolete, not wrong for what it described.
-  // rise/life now govern exactly two things: how the released ticker rises and fades after that
-  // release. (It said "and every incidental floater" through CS034; CS035 P2 deleted the incidental
-  // category outright, so the ticker is the only delivery floater there is.)
-  // DOCK_OFFLOAD_INTERVAL stayed at 0.05 (gate G5) because C
-  // dissolves the trade it used to control, not because the trade was re-won.
-  { id: "deliveryFloatRise", label: "Delivery floater rise", unit: "px/s",
-    def: 150, min: 30, max: 600, step: 10 },
-  // CS034 P8 (spec §3.5, GATE A): the old single delivery-floater life knob is retired — its two
-  // readers (the delivery ticker's construction and the incidental floater's push) both move to the
-  // hold/fade pair below. `fade` is what FloatText's new `fade` field reads; `hold` is folded into
-  // `life` at each call site as `hold + fade`, so the floater holds full opacity for `hold` seconds
-  // after release, then fades linearly over `fade`. Size grows per piece: `deliveryFloatSize +
-  // deliveryFloatSizeStep * (deliveryCount - 1)`, clamped at `deliveryFloatSizeMax`.
-  // CS035 P1 (§1.1): `def` on all five rows replaced with a later dock-float-lab session's numbers,
-  // superseding CS034 P8's GATE A values above. `sizeStep` moving off 0.0 turns on per-piece growth
-  // for the first time — CS034 shipped the mechanism with its step at zero. min/max/step unchanged.
-  { id: "deliveryFloatSize", label: "Delivery floater size", unit: "px",
-    def: 16, min: 12, max: 64, step: 1 },
-  { id: "deliveryFloatSizeStep", label: "Delivery floater size/piece", unit: "px",
-    def: 1.0, min: 0, max: 6, step: 0.5 },
-  { id: "deliveryFloatSizeMax", label: "Delivery floater size cap", unit: "px",
-    def: 48, min: 16, max: 96, step: 1 },
-  { id: "deliveryFloatHold", label: "Delivery floater hold", unit: "s",
-    def: 0.00, min: 0, max: 3.0, step: 0.05 },
-  { id: "deliveryFloatFade", label: "Delivery floater fade", unit: "s",
-    def: 1.20, min: 0.1, max: 3.0, step: 0.05 },
+  // CS038 P5: the six delivery-floater knobs that used to live here (rise, size, size/piece, size
+  // cap, hold, fade) are retired to DELIVERY_FLOAT_* constants — pure look, tuned by eye, no
+  // gameplay effect. Full provenance is on the constants themselves.
   // CS035 P2 (§2.3): the dock lockout's push. Inside the dock's neighborhood ring the ship cannot hook
   // Debris at all, and a piece that reaches the capture region is shoved straight back out at this
   // speed instead. The velocity is SET, not added (see the push site in the garbage loop) — a knob that
@@ -4000,14 +3990,9 @@ const DEBUG_VARS = [
   // and is untouched. `hunterVolatileAge` is untouched at 60 — nothing here argues for moving it.
   { id: "hunterVolatileAge", label: "Hunter volatile age", unit: "s",
     def: 60, min: 0, max: 120, step: 1 },
-  { id: "hunterPulseMin", label: "Hunter pulse min", unit: "%",
-    def: 80, min: 50, max: 100, step: 1 },
-  { id: "hunterPulseMax", label: "Hunter pulse max", unit: "%",
-    def: 150, min: 100, max: 200, step: 1 },
-  { id: "hunterPulseGrow", label: "Hunter pulse grow rate", unit: "%/s",
-    def: 900, min: 5, max: 5000, step: 5 },
-  { id: "hunterPulseShrink", label: "Hunter pulse shrink rate", unit: "%/s",
-    def: 20, min: 5, max: 300, step: 1 },
+  // CS038 P5: the four pulse-envelope knobs that used to live here (min/max/grow/shrink) are
+  // retired to HUNTER_PULSE_* constants — pure look, tuned by eye, no gameplay effect. Full
+  // provenance is on the constants themselves.
   // CS024 P5 (spec §2.4/§4.5/§4.6): the UFO chain, the deepest in the odometer (a two-generation carry,
   // FLAG-CS024-d) and the one where §4.6 splits every quantity by saucer size. ufoAppearFreq (INVERTED)
   // is the ONE driver — there is exactly one appearance timer, which size spawns is the flat
@@ -4181,14 +4166,10 @@ const DEBUG_VARS = [
   // nothing. A silent trap for exactly the person using the panel.
   { id: "telemetryCapture", label: "Telemetry capture", unit: "",
     def: 0, min: 0, max: 1, step: 1, boolLabels: ["OFF", "ON"], sessionSwitch: true },
-  // CS030 P3 (spec §4.5): the achievement celebration panel's two knobs. celebrationScrollStep
-  // matches ACH_SCROLL_STEP's default but is independently tunable — the panel's row height
-  // differs from the Achievements viewer's. celebrationEmblemSize is drawEmblem()'s radius.
   { header: "CELEBRATION" },
-  { id: "celebrationScrollStep", label: "Celebration scroll step", unit: "px",
-    def: 60, min: 10, max: 200, step: 10 },
-  { id: "celebrationEmblemSize", label: "Celebration emblem size", unit: "px",
-    def: 32, min: 12, max: 64, step: 2 },
+  // CS038 P5: the two knobs that used to live here (scroll step, emblem size) are retired to
+  // CELEB_SCROLL_STEP / CELEB_EMBLEM_SIZE constants — pure look, tuned by eye, no gameplay effect.
+  // Full provenance is on the constants themselves.
   // CS035 P3 (spec §3.2): the LEVEL-END PROTECTION WINDOW's knobs. They live under CELEBRATION
   // because the window exists to wrap the celebration-panel seam — wave clear -> hold -> panel (if any)
   // -> "Level N" banner -> grace -> vulnerable. NOT LEVERS: no floor/ceil/steps triple, no carriesTo, no
@@ -7073,8 +7054,8 @@ const TIER_COLOR = ["#c8823c", "#c0c8d2", "#ffcf5a", "#e8d8b0", "#dfe8f2", "#fff
 // The six tiers are ONE FAMILY WITH SIX RUNGS, not six shapes: every rung draws the same
 // delta mark inside the SAME circle (r=0.66), and the ladder is how much of that circle
 // exists — 120° cradle, 240°, 300°, closed, closed + four points, points bound in an
-// outer facet ring. Legibility measured in the lab at r=32 (celebrationEmblemSize's
-// default): tightest gap between two features meant to read apart is 5.1px.
+// outer facet ring. Legibility measured in the lab at r=32 (CELEB_EMBLEM_SIZE's
+// value): tightest gap between two features meant to read apart is 5.1px.
 //
 // ⛔ tierIdx 0 is Bronze and is a VALID tier. Resolve with `typeof tierIdx === "number"`.
 // ⚠ The two pool marks draw in COLOR.ach, which is BYTE-IDENTICAL to TIER_COLOR[2]
@@ -7920,11 +7901,11 @@ class HunterSatellite {
       // CS035 P4 (spec §4.3): draw-only heartbeat. Asymmetric — fast growth, slow shrink — reads as
       // pumping rather than breathing. Never touches this.radius/shape/inner; see draw().
       if (this.pulseUp) {
-        this.pulseScale += DEBUG.hunterPulseGrow * dt;
-        if (this.pulseScale >= DEBUG.hunterPulseMax) { this.pulseScale = DEBUG.hunterPulseMax; this.pulseUp = false; }
+        this.pulseScale += HUNTER_PULSE_GROW * dt;
+        if (this.pulseScale >= HUNTER_PULSE_MAX) { this.pulseScale = HUNTER_PULSE_MAX; this.pulseUp = false; }
       } else {
-        this.pulseScale -= DEBUG.hunterPulseShrink * dt;
-        if (this.pulseScale <= DEBUG.hunterPulseMin) { this.pulseScale = DEBUG.hunterPulseMin; this.pulseUp = true; }
+        this.pulseScale -= HUNTER_PULSE_SHRINK * dt;
+        if (this.pulseScale <= HUNTER_PULSE_MIN) { this.pulseScale = HUNTER_PULSE_MIN; this.pulseUp = true; }
       }
     }
     if (this.homing) {
@@ -11869,13 +11850,13 @@ function update(dt) {
         // running visit total as each canister lands. It is released (unpinned, becomes an ordinary
         // rising/fading floater) at the visit's last canister, below. The running total is carried on
         // the ticker itself — there is nowhere else that needs it.
-        // CS034 P8 (spec §3.5): size grows per piece (deliveryFloatSize/SizeStep/SizeMax) and life
-        // splits into a hold (full opacity after release) plus a fade (the linear falloff) — the
-        // old single-life knob is retired.
+        // CS034 P8 (spec §3.5): size grows per piece (DELIVERY_FLOAT_SIZE/SIZE_STEP/SIZE_MAX) and
+        // life splits into a hold (full opacity after release) plus a fade (the linear falloff) —
+        // the old single-life knob is retired.
         if (!game.deliveryTicker) {
           game.deliveryTicker = new FloatText("+" + pts, deliveryAnchorX, deliveryAnchorY,
-            COLOR.dock, DEBUG.deliveryFloatSize, DEBUG.deliveryFloatRise,
-            DEBUG.deliveryFloatHold + DEBUG.deliveryFloatFade, DEBUG.deliveryFloatFade);
+            COLOR.dock, DELIVERY_FLOAT_SIZE, DELIVERY_FLOAT_RISE,
+            DELIVERY_FLOAT_HOLD + DELIVERY_FLOAT_FADE, DELIVERY_FLOAT_FADE);
           game.deliveryTicker.pinned = true;
           game.deliveryTicker.total = pts;
           game.floaters.push(game.deliveryTicker);
@@ -11883,8 +11864,8 @@ function update(dt) {
           game.deliveryTicker.total += pts;
           game.deliveryTicker.text = "+" + game.deliveryTicker.total;
           // CS034 P8 (spec §3.5): size grows one step per piece, clamped at the ceiling.
-          game.deliveryTicker.size = Math.min(DEBUG.deliveryFloatSizeMax,
-            DEBUG.deliveryFloatSize + DEBUG.deliveryFloatSizeStep * (game.deliveryCount - 1));
+          game.deliveryTicker.size = Math.min(DELIVERY_FLOAT_SIZE_MAX,
+            DELIVERY_FLOAT_SIZE + DELIVERY_FLOAT_SIZE_STEP * (game.deliveryCount - 1));
         }
         AudioSys.deliver(game.deliveryCount);
         // CS010 P9 (FORK-5 = b): Dan sizes up the haul on the pop that EMPTIES the chain — the offload
@@ -13496,13 +13477,13 @@ const CELEB_HINT = "↑↓ scroll    ENTER / A / ESC / B  continue";
 // bottom row's emblem. The ROLE is the analogue — one shared, row-count-derived ceiling — not the
 // arithmetic. Measured from the clip top, full scroll lands a row's lowest ink exactly on the clip
 // bottom. That lowest ink is normally the description's; the emblem only overtakes it once
-// celebrationEmblemSize is cranked past CELEB_DESC_DY + CELEB_DESC_SIZE (40), which is why the knob
-// is read here. Past ~40 that knob also lets adjacent rows touch — a consequence of the slider, not
-// of the shipped layout, whose default (32) leaves 20px of air between emblems.
+// CELEB_EMBLEM_SIZE is cranked past CELEB_DESC_DY + CELEB_DESC_SIZE (40), which is why the constant
+// is read here. Past ~40 it would also let adjacent rows touch — a consequence noted for whoever
+// next retunes it, not of the shipped layout, whose 32 leaves 20px of air between emblems.
 function celebrationMaxScroll() {
   const n = game.celebration ? game.celebration.items.length : 0;
   if (n === 0) return 0;
-  const rowBottom = Math.max(CELEB_DESC_DY + CELEB_DESC_SIZE, CELEB_EMBLEM_DY + DEBUG.celebrationEmblemSize);
+  const rowBottom = Math.max(CELEB_DESC_DY + CELEB_DESC_SIZE, CELEB_EMBLEM_DY + CELEB_EMBLEM_SIZE);
   const contentH = (CELEB_ROW0_Y - CELEB_ROW_CLIP_TOP) + (n - 1) * CELEB_ROW_STEP + rowBottom;
   return Math.max(0, contentH - CELEB_ROW_VISIBLE_H);
 }
@@ -13513,7 +13494,7 @@ function celebrationMaxScroll() {
 function celebrationScroll(dir) {
   const c = game.celebration;
   if (!c) return;
-  c.scroll = Math.max(0, Math.min(celebrationMaxScroll(), c.scroll + dir * DEBUG.celebrationScrollStep));
+  c.scroll = Math.max(0, Math.min(celebrationMaxScroll(), c.scroll + dir * CELEB_SCROLL_STEP));
 }
 // Confirm/back dismisses UNCONDITIONALLY, at any scroll position — the Achievements viewer's own
 // convention (§2.6, FORK-CS030-E). No "scroll to the bottom before you can leave" gate exists
@@ -13540,7 +13521,7 @@ function dismissCelebration() {
 // string is built exactly as onUnlock()'s toast label is ("Name — Gold"), so the panel and the toast
 // that fired during play name the same unlock the same way.
 function drawCelebrationRow(item, x, ry) {
-  const r = DEBUG.celebrationEmblemSize;
+  const r = CELEB_EMBLEM_SIZE;
   drawEmblem(x + r, ry + CELEB_EMBLEM_DY, r, item.tierIdx, item.pool);
   // ⛔ typeof, never truthiness — tierIdx 0 is Bronze, a VALID tier (see drawEmblem's header).
   const tiered = typeof item.tierIdx === "number";

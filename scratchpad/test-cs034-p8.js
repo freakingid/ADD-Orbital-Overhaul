@@ -76,10 +76,12 @@ function drawnAlpha(X, f) {
 })();
 
 // ================= (D)-(F) drive a real delivery visit =================
-function driveDeliveryVisit(X, pieceCount, overrides) {
+// CS038 P5 repoint (spec §4): size/size-step/size-max/hold/fade are retired off DEBUG to
+// DELIVERY_FLOAT_* constants — the push site no longer reads DEBUG at all, so an `overrides`
+// param that Object.assign()s onto X.DEBUG has nothing left to influence. Dropped with it.
+function driveDeliveryVisit(X, pieceCount) {
   X.startGame();
   const g = X.game;
-  Object.assign(X.DEBUG, overrides);
   g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
   g.garbage.length = 0; g.powerups.length = 0; g.floaters.length = 0;
   g.debris.length = 1;
@@ -110,16 +112,24 @@ function driveDeliveryVisit(X, pieceCount, overrides) {
 }
 
 (function sectionD() {
-  console.log("(D) delivery ticker size grows by deliveryFloatSizeStep per piece, clamps at deliveryFloatSizeMax");
+  console.log("(D) delivery ticker size grows by DELIVERY_FLOAT_SIZE_STEP per piece, clamps at DELIVERY_FLOAT_SIZE_MAX");
   const X = buildGame();
-  const { sizeSamples } = driveDeliveryVisit(X, 6, {
-    deliveryFloatSize: 10, deliveryFloatSizeStep: 5, deliveryFloatSizeMax: 22,
-  });
-  eq(sizeSamples.length, 6, "D: (setup) six pieces landed, six samples taken");
-  const expected = [10, 15, 20, 22, 22, 22]; // min(22, 10 + 5*(n-1))
-  for (let i = 0; i < 6; i++) {
-    eq(sizeSamples[i].size, expected[i], `D: piece ${sizeSamples[i].n} size is ${expected[i]}`);
+  // CS038 P5 repoint (spec §4): size/size-step/size-max are retired to plain constants, so this
+  // section can no longer inject small test-friendly numbers via DEBUG — it drives against the
+  // REAL shipped constants instead, with the piece count computed to reach the cap and then some,
+  // so both the growth formula and the clamp are exercised for real rather than assumed.
+  const SIZE = X.DELIVERY_FLOAT_SIZE, STEP = X.DELIVERY_FLOAT_SIZE_STEP, MAX = X.DELIVERY_FLOAT_SIZE_MAX;
+  const piecesToCap = Math.ceil((MAX - SIZE) / STEP) + 1;
+  const pieceCount = piecesToCap + 2;
+  const { sizeSamples } = driveDeliveryVisit(X, pieceCount);
+  eq(sizeSamples.length, pieceCount, `D: (setup) ${pieceCount} pieces landed, ${pieceCount} samples taken`);
+  for (let i = 0; i < pieceCount; i++) {
+    const n = sizeSamples[i].n;
+    const expected = Math.min(MAX, SIZE + STEP * (n - 1));
+    eq(sizeSamples[i].size, expected, `D: piece ${n} size is ${expected}`);
   }
+  assert(sizeSamples[piecesToCap - 1].size === MAX && sizeSamples[pieceCount - 1].size === MAX,
+    `D: ⛔ the clamp is genuinely reached and held — piece ${piecesToCap} through the last piece all sit at DELIVERY_FLOAT_SIZE_MAX (${MAX})`);
 })();
 
 (function sectionE() {
@@ -127,9 +137,12 @@ function driveDeliveryVisit(X, pieceCount, overrides) {
   const X = buildGame();
   const g = X.game;
   X.startGame();
-  Object.assign(X.DEBUG, { deliveryFloatHold: 1.0, deliveryFloatFade: 0.5 });
+  // CS038 P5 repoint (spec §4): rise/hold/fade are retired off DEBUG to DELIVERY_FLOAT_* constants
+  // — this section only needs SOME hold/fade pair to exercise the pinned-vs-released mechanism, so
+  // it uses its own local values rather than the (now inert) DEBUG-object scratch idiom.
+  const hold = 1.0, fade = 0.5;
   g.deliveryTicker = new X.FloatText("+50", g.dock.x, g.dock.y, X.COLOR.dock, 16,
-    X.DEBUG.deliveryFloatRise, X.DEBUG.deliveryFloatHold + X.DEBUG.deliveryFloatFade, X.DEBUG.deliveryFloatFade);
+    X.DELIVERY_FLOAT_RISE, hold + fade, fade);
   g.deliveryTicker.pinned = true;
   const lifeAtBirth = g.deliveryTicker.life;
   for (let f = 0; f < 120; f++) g.deliveryTicker.update(1 / 60); // 2 real seconds, still pinned

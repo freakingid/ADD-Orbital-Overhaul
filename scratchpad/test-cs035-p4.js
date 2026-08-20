@@ -33,7 +33,7 @@ function quiet(X) {
 
 // ================= (A) the five knobs =================
 (function sectionA() {
-  console.log("(A) the five HUNTER-section registry rows exist with their spec'd bounds");
+  console.log("(A) hunterVolatileAge's registry row; the four pulse knobs RETIRED (CS038 P5) to constants");
   const X = buildGame();
   // REPOINTED BY CS036 P4 (spec §2): the punch retune moved four `def`s and raised
   // hunterPulseGrow's `max` bound (the old 300 %/s ceiling was the binding constraint identified in
@@ -41,16 +41,20 @@ function quiet(X) {
   // hunterVolatileAge is untouched. Bounds/step/unit not named here are unchanged, and every section
   // below reads DEBUG live rather than a literal, so only this row list moves.
   hasKnob(X, "hunterVolatileAge", { def: 60, min: 0, max: 120, step: 1, unit: "s" }, A);
-  hasKnob(X, "hunterPulseMin", { def: 80, min: 50, max: 100, step: 1, unit: "%" }, A);
-  hasKnob(X, "hunterPulseMax", { def: 150, min: 100, max: 200, step: 1, unit: "%" }, A);
-  hasKnob(X, "hunterPulseGrow", { def: 900, min: 5, max: 5000, step: 5, unit: "%/s" }, A);
-  hasKnob(X, "hunterPulseShrink", { def: 20, min: 5, max: 300, step: 1, unit: "%/s" }, A);
   const ids = X.DEBUG_VARS.map(v => v.header ? `#${v.header}` : v.id);
   const iHunter = ids.indexOf("#HUNTER"), iUfo = ids.indexOf("#UFO");
-  for (const id of ["hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink"]) {
-    const at = ids.indexOf(id);
-    assert(at > iHunter && at < iUfo, `A: ${id} lives inside the HUNTER section`);
+  const at = ids.indexOf("hunterVolatileAge");
+  assert(at > iHunter && at < iUfo, "A: hunterVolatileAge lives inside the HUNTER section");
+  // RE-REPOINTED BY CS038 P5 (spec §4): the four pulse knobs — min/max/step/unit no longer apply to
+  // a plain constant — are retired outright to HUNTER_PULSE_* constants. ⛔ NO VALUE CHANGE: CS036
+  // P4's own defs (80/150/900/20) land byte-identical; the assertion moves rather than disappearing.
+  for (const id of ["hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink"]) {
+    assert(!X.DEBUG_VARS.some(v => v.id === id), `A: ⛔ ${id} no longer exists — retired by CS038 P5`);
   }
+  eq(X.HUNTER_PULSE_MIN, 80, "A: HUNTER_PULSE_MIN carries CS036 P4's 80 forward, unchanged");
+  eq(X.HUNTER_PULSE_MAX, 150, "A: HUNTER_PULSE_MAX carries CS036 P4's 150 forward, unchanged");
+  eq(X.HUNTER_PULSE_GROW, 900, "A: HUNTER_PULSE_GROW carries CS036 P4's 900 forward, unchanged");
+  eq(X.HUNTER_PULSE_SHRINK, 20, "A: HUNTER_PULSE_SHRINK carries CS036 P4's 20 forward, unchanged");
 })();
 
 // ================= (B) a fresh large: age 0, pulseScale 100 =================
@@ -108,13 +112,13 @@ function quiet(X) {
     h.update(DT);
     if (h.pulseScale > worstHigh) worstHigh = h.pulseScale;
     if (h.pulseScale < worstLow) worstLow = h.pulseScale;
-    assert(h.pulseScale <= X.DEBUG.hunterPulseMax + 1e-9, `E: pulseScale ${h.pulseScale} never exceeds hunterPulseMax`);
-    assert(h.pulseScale >= X.DEBUG.hunterPulseMin - 1e-9, `E: pulseScale ${h.pulseScale} never falls below hunterPulseMin`);
+    assert(h.pulseScale <= X.HUNTER_PULSE_MAX + 1e-9, `E: pulseScale ${h.pulseScale} never exceeds HUNTER_PULSE_MAX`);
+    assert(h.pulseScale >= X.HUNTER_PULSE_MIN - 1e-9, `E: pulseScale ${h.pulseScale} never falls below HUNTER_PULSE_MIN`);
     if (!h.pulseUp) sawDown = true;
     if (h.pulseUp && sawDown) sawUp = true;
   }
-  close(worstHigh, X.DEBUG.hunterPulseMax, "E: the run genuinely reached the ceiling (non-vacuity)", 1e-6);
-  close(worstLow, X.DEBUG.hunterPulseMin, "E: ...and genuinely reached the floor", 1e-6);
+  close(worstHigh, X.HUNTER_PULSE_MAX, "E: the run genuinely reached the ceiling (non-vacuity)", 1e-6);
+  close(worstLow, X.HUNTER_PULSE_MIN, "E: ...and genuinely reached the floor", 1e-6);
   assert(sawDown, "E: (non-vacuity) the pulse actually flipped to shrinking at least once");
   assert(sawUp, "E: (non-vacuity) ...and flipped back to growing at least once — a real oscillation");
 })();

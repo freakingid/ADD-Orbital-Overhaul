@@ -28,15 +28,23 @@ function quiet(X) {
   return g;
 }
 
-// ================= (A) the raised bound and the four retuned defs =================
+// ================= (A) hunterVolatileAge's row; the four retuned defs — RETIRED (CS038 P5) ========
 (function sectionA() {
-  console.log("(A) hunterPulseGrow's raised bound, and the four CS036 P4 defs");
+  console.log("(A) hunterVolatileAge's registry row; the four CS036 P4 defs survive as retired constants");
   const X = buildGame();
   hasKnob(X, "hunterVolatileAge", { def: 60, min: 0, max: 120, step: 1, unit: "s" }, A);
-  hasKnob(X, "hunterPulseMin", { def: 80, min: 50, max: 100, step: 1, unit: "%" }, A);
-  hasKnob(X, "hunterPulseMax", { def: 150, min: 100, max: 200, step: 1, unit: "%" }, A);
-  hasKnob(X, "hunterPulseGrow", { def: 900, min: 5, max: 5000, step: 5, unit: "%/s" }, A);
-  hasKnob(X, "hunterPulseShrink", { def: 20, min: 5, max: 300, step: 1, unit: "%/s" }, A);
+  // REPOINTED BY CS038 P5 (spec §4): the four pulse knobs — min/max/step/unit no longer apply to a
+  // plain constant, and the raised 5000 %/s bound this phase itself won is retired along with the
+  // row it lived on — are retired outright to HUNTER_PULSE_* constants. ⛔ NO VALUE CHANGE: this
+  // phase's own defs (80/150/900/20) land byte-identical; the assertion moves rather than
+  // disappearing. The bound's own story survives as provenance on the constant, not as a live range.
+  for (const id of ["hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink"]) {
+    assert(!X.DEBUG_VARS.some(v => v.id === id), `A: ⛔ ${id} no longer exists — retired by CS038 P5`);
+  }
+  eq(X.HUNTER_PULSE_MIN, 80, "A: HUNTER_PULSE_MIN carries this phase's 80 forward, unchanged");
+  eq(X.HUNTER_PULSE_MAX, 150, "A: HUNTER_PULSE_MAX carries this phase's 150 forward, unchanged");
+  eq(X.HUNTER_PULSE_GROW, 900, "A: HUNTER_PULSE_GROW carries this phase's 900 forward, unchanged");
+  eq(X.HUNTER_PULSE_SHRINK, 20, "A: HUNTER_PULSE_SHRINK carries this phase's 20 forward, unchanged");
 })();
 
 // ================= (B) a fresh large: age 0, pulseScale 100 =================
@@ -97,13 +105,13 @@ function quiet(X) {
     h.update(DT);
     if (h.pulseScale > worstHigh) worstHigh = h.pulseScale;
     if (h.pulseScale < worstLow) worstLow = h.pulseScale;
-    assert(h.pulseScale <= X.DEBUG.hunterPulseMax + 1e-9, `E: pulseScale ${h.pulseScale} never exceeds hunterPulseMax`);
-    assert(h.pulseScale >= X.DEBUG.hunterPulseMin - 1e-9, `E: pulseScale ${h.pulseScale} never falls below hunterPulseMin`);
+    assert(h.pulseScale <= X.HUNTER_PULSE_MAX + 1e-9, `E: pulseScale ${h.pulseScale} never exceeds HUNTER_PULSE_MAX`);
+    assert(h.pulseScale >= X.HUNTER_PULSE_MIN - 1e-9, `E: pulseScale ${h.pulseScale} never falls below HUNTER_PULSE_MIN`);
     if (!h.pulseUp) sawDown = true;
     if (h.pulseUp && sawDown) sawUp = true;
   }
-  close(worstHigh, X.DEBUG.hunterPulseMax, "E: the run genuinely reached the ceiling (non-vacuity)", 1e-6);
-  close(worstLow, X.DEBUG.hunterPulseMin, "E: ...and genuinely reached the floor", 1e-6);
+  close(worstHigh, X.HUNTER_PULSE_MAX, "E: the run genuinely reached the ceiling (non-vacuity)", 1e-6);
+  close(worstLow, X.HUNTER_PULSE_MIN, "E: ...and genuinely reached the floor", 1e-6);
   assert(sawDown, "E: (non-vacuity) the pulse actually flipped to shrinking at least once");
   assert(sawUp, "E: (non-vacuity) ...and flipped back to growing at least once — a real oscillation");
 })();
@@ -163,37 +171,32 @@ function quiet(X) {
   assert(h.pulseUp, "H: (setup) still on the partial first grow leg");
   runToFlip(100000); // -> ceiling
   runToFlip(100000); // -> floor
-  eq(h.pulseScale, X.DEBUG.hunterPulseMin, "H: (setup) steady state established exactly at the floor");
+  eq(h.pulseScale, X.HUNTER_PULSE_MIN, "H: (setup) steady state established exactly at the floor");
   // Measure the next grow leg, floor -> ceiling.
   const growFrames = runToFlip(100000);
-  eq(h.pulseScale, X.DEBUG.hunterPulseMax, "H: the grow leg reaches the ceiling exactly");
-  const envelope = X.DEBUG.hunterPulseMax - X.DEBUG.hunterPulseMin;
-  const expectGrow = envelope / X.DEBUG.hunterPulseGrow / DT;
+  eq(h.pulseScale, X.HUNTER_PULSE_MAX, "H: the grow leg reaches the ceiling exactly");
+  const envelope = X.HUNTER_PULSE_MAX - X.HUNTER_PULSE_MIN;
+  const expectGrow = envelope / X.HUNTER_PULSE_GROW / DT;
   assert(Math.abs(growFrames - expectGrow) <= 2, `H: ⛔ grow leg took ${growFrames} frames, expected ~${expectGrow.toFixed(1)} (a punch, not a ramp)`);
   assert(growFrames <= 6, `H: ⛔ grow leg (${growFrames} frames) reads as a punch at 60 fps`);
   // Measure the next shrink leg, ceiling -> floor.
   const shrinkFrames = runToFlip(100000);
-  eq(h.pulseScale, X.DEBUG.hunterPulseMin, "H: the shrink leg reaches the floor exactly");
-  const expectShrink = envelope / X.DEBUG.hunterPulseShrink / DT;
+  eq(h.pulseScale, X.HUNTER_PULSE_MIN, "H: the shrink leg reaches the floor exactly");
+  const expectShrink = envelope / X.HUNTER_PULSE_SHRINK / DT;
   assert(Math.abs(shrinkFrames - expectShrink) <= 2, `H: ⛔ shrink leg took ${shrinkFrames} frames, expected ~${expectShrink.toFixed(1)} (a slow settle)`);
   assert(shrinkFrames >= growFrames * 30, `H: ⛔ the settle (${shrinkFrames} frames) is tens of times slower than the punch (${growFrames} frames)`);
 })();
 
-// ================= (I) at the raised bound, the sweep is a single 60 fps frame =================
-(function sectionI() {
-  console.log("(I) cranking hunterPulseGrow to its raised bound clears the envelope in one frame");
-  const X = buildGame(); X.startGame(); quiet(X);
-  const entry = X.DEBUG_ENTRIES.find(v => v.id === "hunterPulseGrow");
-  assert(entry && entry.max === 5000, "I: (setup) the raised bound reads 5000 from the registry row itself");
-  X.DEBUG.hunterPulseGrow = entry.max;
-  const h = new X.HunterSatellite(500, 500, 3);
-  const frames = Math.round(X.DEBUG.hunterVolatileAge / DT);
-  for (let i = 0; i < frames; i++) h.update(DT);
-  assert(!h.volatile(), "I: (setup, boundary) one frame short of the threshold, still not volatile");
-  eq(h.pulseScale, 100, "I: (setup) pulseScale has not moved yet");
-  h.update(DT);
-  assert(h.volatile(), "I: this frame crosses the threshold");
-  eq(h.pulseScale, X.DEBUG.hunterPulseMax, "I: ⛔ the SAME frame that crosses into volatility clamps straight to the ceiling at the raised bound — effectively instantaneous");
-})();
+// ================= (I) RETIRED (CS038 P5): the raised-bound slider scenario has no runtime path ===
+// This section drove hunterPulseGrow's registry `max` (5000 %/s) through the live debug panel
+// (X.DEBUG.hunterPulseGrow = entry.max) to prove the envelope COULD be swept in a single 60 fps
+// frame if cranked to its ceiling — a claim about the KNOB'S RANGE, not about the shipped rate.
+// CS038 P5 (spec §4) retires hunterPulseGrow to a plain HUNTER_PULSE_GROW constant: there is no
+// registry row, no min/max, and nothing left to crank — DEBUG.hunterPulseGrow is now undefined and
+// writing to it has no consumer. The scenario's SUBJECT (a debug-panel affordance) no longer exists
+// post-retirement, so the section is retired with it rather than left asserting against a knob that
+// is gone. What it does NOT take with it: the four shipped defs are still checked in §A, and the
+// grow leg's actual timing at the shipped 900 %/s rate (a punch, ~5 frames, not the extreme case)
+// is still driven for real in §H.
 
 A.report();
