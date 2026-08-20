@@ -1,87 +1,54 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.37 · Changeset: CS037 · Phase: P8 (closed) · Registry: 115 · Levers: 18
+Version: 1.0.0.37 · Changeset: CS038 · Phase: P1 · Registry: 115 · Levers: 18
 
-## Phase ledger — CS037
+## Phase ledger — CS038
 
-- P1 — per-source damage attribution, instrumentation only. `damageShip()` gains a `srcTag` covering
-  ten categories (Garbage Satellite/Hunter Satellite × 3 sizes, UFO body/shot × 2 sizes); ten flat
-  `game.stats.dmgFrom*` accumulators, non-lethal branch only. No gameplay behaviour change.
-
-- P2 — the in-game benchmark instrument. A sealed, debug-panel-only battery over twelve isolated
-  entity populations plus one mixed run, reporting p95 16.7/33.3 ms crossing counts with update and
-  draw timed separately. **FORK-CS037-D → (a)** forces `debugOverride` off for the run and restores
-  it unconditionally, neutralizing FLAG-CS036-a for the measurement's own duration. New BENCHMARK
-  section, registry 106 → 110, headers 10 → 11.
-
-- P2.1 — Gate A instrumentation, additive over shipped P2: a passive real-play per-population peak
-  recorder (run + session), `BENCH_MIX` weights and an environment stamp in the CSV header, and an
-  in-build predicted-vs-actual mixed-crossing calculation. Registry unchanged at 110.
-
-- ~~P3 — static object caps~~ — **DROPPED.** ✅ **Gate A closed 2026-08-19: every population cleared
-  both thresholds at a 2000-entity ceiling on two browsers** (Edge/Ganesh, Chrome/Graphite); the
-  smallest margin against real-play peaks was **>12×**, all figures lower bounds. No population needs
-  a cap. Secondary finding kept as a known issue below: the late-wave frame hiccup is **not** caused
-  by entity accumulation, and its real cause is unmeasured.
-
-- P4 — periodic gameplay telemetry. One row every `telemetryInterval` seconds of **game time**
-  (new GLOBAL knob, def 15; registry 110 → 111), 400-row per-run ring cleared at `resetRun()`. Thirty
-  columns: score/level/hull/speed, six remaining-use columns, seven pickup counts, P1's ten
-  `dmgFrom*` columns, `debugRun`/`resumedRun`, timestamp. New key `afd_telemetry_v1` (SaveSlots
-  idiom, silent-fail background write). Clipboard export in the debug panel, reachable at game-over.
-
-- P5 — full tow release on damage; "Payload lost." as its own event. Any real HP-dealing hit calls
-  `scatterChain()` unchanged on `damageShip()`'s non-lethal branch only (no double-scatter on death).
-  **FORK-B1/B2 → no** — no chain-guard interception, no `cargoDamageEvents` bump. "Payload lost."
-  moved verbatim out of `chain_broken` into a new critical event, `chain_lost`, chosen by "was the
-  chain non-empty, and is it now empty" at every chain-loss site. `VOICE_QUEUE_MAX` 4 → 5. No
-  registry rows.
-
-- P6 — resume achievement baseline, both pools. `Achievements.snapshotResumeBaseline()` snapshots
-  every active achievement's `cur()` as `resumeFromSave()`'s new step 3 (after the stats overwrite,
-  before `nextWave()`), fixing a live data-integrity bug where two LIFETIME achievements
-  (`untouchable`, `max_haul`) were leaking into `afd_achievements_v2` via the next non-resumed run.
-  **FORK-A → (b), FORK-A.1 → (b2):** a genuinely post-baseline unlock now persists through a targeted
-  merge write (`Achievements.mergeUnlock()`) that leaves stored `lifetime` counters untouched, so
-  CS032 P2's repeated-resume counter bar survives intact. No registry rows.
-
-- P7 — one powerup per dock visit + two DELIVERY score knobs. The four `deliveryCount` latches
-  (8/12/16/20) collapse to the `=== 8` one; the counter always passes through 8, so that equality
-  already is the rule. `DOCK_BASE_SCORE`/`DOCK_BONUS_STEP` promoted to `dockBaseScore`/`dockBonusStep`
-  registry knobs at unchanged values (50/25) — no score compensation. Registry 111 → 113.
-
-- ✅ **GATE B — closed 2026-08-19: every tunable answer "no change."** Zero knob moves, zero
-  deferrals. The dock nerf and the tow release both read as intended under play — under play, not
-  just argument, this confirms FORK-CS037-B1 → no. **The gate's one actionable output was a defect,
-  not a tunable:** a hull hit's released tow re-hooks itself almost immediately (random release
-  vector + pickup-circle overlap + knockback aimed at the wrong thing + a Magnet's pull). → P7.1.
-
-- P7.1 — tow release separation. Two mechanisms, both hooked only at the P5 damage-release site:
-  every freed node is propelled radially away from the ship at `DEBUG.towReleaseSpeed` (velocity SET,
-  not added), and `game.towLockoutT` arms to `DEBUG.towReleaseLockout` and shuts the capture gate +
-  suppresses the Magnet's `pulling` pull while it runs. **Not** gated on `ship.invuln` — an
-  auto-shield save sets that too but keeps the cargo. `scatterChain()`/`Garbage.fromNode()`/
-  `breakChain()`/`killShip()` all byte-unchanged. Two new SHIP knobs. Registry 113 → 115.
-
-- P8 — closing. Gate B's "fold numeric answers into `def`s" was a no-op and is recorded as such —
-  every answer was "no change." `GAME_VERSION` → **1.0.0.37** (seven live pins re-pointed). One new
-  `⛔ INVARIANT` in `CLAUDE.md` (the `resumeFromSave()` five-step order, now including P6's baseline
-  as step 3) — `cullGarbage()`'s note left untouched, P3 having shipped nothing. GDD §2 updated for
-  the tow release + P7.1's lockout (documented together, one mechanism), the `chain_broken`/
-  `chain_lost` split threaded through every §2.8 voice mention, and the one-powerup dock nerf.
-  `DIFFICULTY-LEVERS.md` verified — `LEVERS` still 18, two new "not a lever" rows added for P7's and
-  P7.1's flat knobs. `log/CS037.md` written, both planning docs archived.
+- P1 — Credits screen, reachable from Options. `CREDITS_ROWS` (32 rows; four kinds — `head` / `text` /
+  `link` / `gap`) drives the whole screen, so a later credit is one table edit; `menuCredits` /
+  `drawCredits` follow the `menuHighScores` / `drawHighScores` template. `MENU_OPTIONS` 4 rows → 5
+  ("Credits" before "Back") — the 5th row's baseline lands y+286, 114 px clear of the y+400 footer, so
+  the 600×420 panel is unresized. `openExternal()` is the build's first and only `window.open`, always
+  `(url, "_blank", "noopener")`. Up/down move the CURSOR between the five `link` rows only
+  (`debugStep`'s walk); the scroll is DERIVED from the cursor every nav press and every draw
+  (`debugScrollTop`'s recompute rule), with the first link pinned to 0 and the last to
+  `creditsMaxScroll()` — those two pins are the only thing that makes the header block and the
+  SATELLITE SILHOUETTES + LICENSE tail reachable, since neither carries a cursor. Every URL is drawn
+  in full under its label whether or not the row is selected (FORK-CS038-B → c). New
+  `game.menu.linkMsg`, in BOTH literals. No registry rows, no gameplay change, `GAME_VERSION`
+  unmoved. **C4 checked against the running build: `DEBUG_ENTRIES.length` is 115, so `STATUS.md`'s
+  header was already right and the spec's static 114 is the wrong count** (61 literal rows, not 60,
+  + 18 levers × 3). Four older suite files repointed, none narrowed.
 
 ## Working / verified
 
-- Full suite: **156 files, 156 passed, 0 failed, 0 skipped, 0 timed out**; `node --check` passes on
+- Full suite: **157 files, 157 passed, 0 failed, 0 skipped, 0 timed out**; `node --check` passes on
   the extracted script. `test-registry.js` confirms registry **115**, headers **11**, `LEVERS` **18**,
-  `POWERUP_DROP_TYPES` **5**. Neither standing unseeded flake fired on the closing run.
+  `POWERUP_DROP_TYPES` **5**. Neither standing unseeded flake fired on the P1 run.
+- `test-cs038-p1.js` (341 assertions) — the credits table's shape, the twelve SAT_ART names read out
+  of `SAT_ART`'s own header comments, the label-resolved `MENU_OPTIONS` consumers, nav + derived
+  scroll, `openExternal`'s three outcomes, and `drawCredits` at every selection state and both scroll
+  extremes.
 - Eight new test files this changeset — `test-cs037-p1/p2/p2-1/p4/p5/p6/p7/p7-1.js` — each
   hand-mutation-checked against multiple regressions (P5 and P6 the deepest, 14 and 15 respectively)
   before landing; every one of the ~25 older suite files P1–P7.1 touched was a repoint, never a scope
   change to what that file protects (full accounting in `log/CS037.md`).
 
 ## Known issues
+
+- **⛔ CS038 P1: `window.open(url, "_blank", "noopener")` RETURNS `null` ON SUCCESS** — the HTML spec's
+  own rule, not a browser quirk — so the build genuinely cannot tell a blocked popup from a working
+  one. `CREDITS_LINK_MSG` is therefore worded conditionally ("If nothing opened, your browser blocked
+  it — the address is on screen above.") and is set on every actuation rather than only on a detected
+  failure; a flat "the popup was blocked" would be a lie after every working click. The spec (§1.2 and
+  the P1 prompt) assumed null meant blocked. Dropping `noopener` to recover a truthful return value
+  would hand the opened page a live `window.opener` handle back into the game and is refused. **GATE B
+  B6 should confirm the links actually open from `file://`, a local server and the itch.io build** —
+  headless, only the absent/blocked branch has been exercised.
+
+- **CS038 P1: the spec's C4 registry count (114) is wrong; the live build reports 115** and
+  `STATUS.md`'s header already said so. 61 literal `{ id: … }` rows + 18 levers × 3, not 60 — CS037
+  P7.1's two SHIP knobs took it 113 → 115. `test-registry.js` has pinned 115 since that phase. No
+  registry content was touched.
 
 - **The late-wave frame hiccup's cause remains unmeasured (Gate A null result).** Entity accumulation
   is ruled out — every population cleared the benchmark's ceiling by >12× against real-play peaks
@@ -155,9 +122,9 @@ None.
 
 ## Next up
 
-- **CS037 is closed. No changeset is in flight.** The next one opens with a
-  `PLANNED-FEATURES-CS038.md` / `IMPLEMENTATION-PHASES-CS038.md` pair; `STATUS.md` above is the whole
-  of the current state.
+- **CS038 is in flight** against `PLANNED-FEATURES-CS038.md` / `IMPLEMENTATION-PHASES-CS038.md`. P1
+  (Credits) has landed. P2–P5 are independent of it and of each other; **GATE A** (the glow lab
+  session) blocks P6 and **GATE B** (playtest) blocks the P7 doc sweep.
 
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a). Every
   slider answer any past gate has returned, and every one a future gate returns, is only as good as

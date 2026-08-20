@@ -166,7 +166,10 @@ for (const dead of ["shotPowerupMode", "magnetMode", "chainGuardMode"])
 for (const dead of ["powerMode", "powerDuration", "POWERUP_DURATION", "MAGNET_DURATION"])
   assert(probe(dead) === "__ReferenceError__", `A: INVERTED BY CS024 P6 — ${dead} is deleted outright`);
 assert(MENU_OPTIONS.includes("Difficulty"), "A: MENU_OPTIONS still has a Difficulty row (the SCREEN is kept, spec §3.7)");
-assert(MENU_OPTIONS.indexOf("Difficulty") === MENU_OPTIONS.indexOf("Back") - 1, "A: Difficulty sits immediately before Back");
+// CS038 P1 inserted "Credits" between Difficulty and Back, so the ADJACENCY this line pinned no
+// longer holds — and never was this phase's claim. What it was pinning is that Difficulty is a
+// content row ABOVE the Back row, not appended after it; that survives the insert verbatim.
+assert(MENU_OPTIONS.indexOf("Difficulty") < MENU_OPTIONS.indexOf("Back"), "A: Difficulty sits above Back (CS038 P1 inserted Credits between them)");
 assert(POWERUP_BUDGET.rapid === RAPID_SHOTS && POWERUP_BUDGET.triple === TRIPLE_SHOTS && POWERUP_BUDGET.magnet === MAGNET_PIECES,
   "A: POWERUP_BUDGET maps rapid/triple/magnet to their constants");
 assert([RAPID_SHOTS, TRIPLE_SHOTS, MAGNET_PIECES].every(n => Number.isFinite(n) && n > 0), "A: budget constants are positive numbers");

@@ -824,7 +824,10 @@ let X = null;
     // by name rather than loosened into a wildcard — a sixth field would still fail this trap.
     // NARROWED AGAIN BY CS034 P7 — `hsFilter`, the High Scores screen's view state, is a seventh field
     // on that same line. Same treatment: anchored by name, so an eighth still fails.
-    const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "", hsFilter: HS_FILTER_DEFAULT \};/, " };");
+    // NARROWED AGAIN BY CS038 P1 — `linkMsg`, openExternal()'s status line, is that eighth field, added
+    // under the same standing CS016 P3 rule (a new game.menu field lands in BOTH literals or it is
+    // undefined for a whole run). Anchored by name like the seven before it, so a ninth still fails.
+    const foldMenuReset = t => t.replace(/,\n\s*nameBuf: "", nameCtx: null, nameErr: "", slotMode: null, slotMsg: "", hsFilter: HS_FILTER_DEFAULT, linkMsg: "" \};/, " };");
     // ⛔ REPOINTED BY CS032 P2 — THE RESET LIST MOVED, WHOLE AND UNEDITED, out of startGame() and into a
     // new shared `resetRun(wave, debugRun)` that resumeFromSave() calls too (CS032 spec Risk 5: ONE
     // reset list, never a hand-copied second, because a duplicated list is a drift generator). What this
@@ -848,7 +851,7 @@ let X = null;
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear and CS037 P7.1's towLockoutT clear");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear, CS037 P7.1's towLockoutT clear and CS038 P1's linkMsg menu field");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

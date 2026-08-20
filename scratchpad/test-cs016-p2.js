@@ -177,9 +177,13 @@ function build({ audio = true } = {}) {
   const TITLE_ROWS = ["Start Game", "Load Saved Game", "Profile", "Achievements", "High Scores", "Leaderboard", "Options"];
   assert(eqJSON(A.MENU_TITLE, TITLE_ROWS),
     `A: MENU_TITLE === ${JSON.stringify(TITLE_ROWS)}; got ${JSON.stringify(A.MENU_TITLE)}`);
-  assert(eqJSON(A.MENU_OPTIONS, ["Sound / Music", "Controls", "Difficulty", "Back"]),
-    `A: MENU_OPTIONS shrank 6 -> 4; got ${JSON.stringify(A.MENU_OPTIONS)}`);
-  assert(A.MENU_OPTIONS.length === 4, "A: MENU_OPTIONS is exactly 4 rows");
+  // REPOINTED BY CS038 P1, which inserted "Credits" before "Back" (4 -> 5). This phase's own claim —
+  // that Achievements and High Scores are GONE from Options — is indifferent to the insert and is
+  // asserted on its own two lines below rather than riding on the row count.
+  assert(eqJSON(A.MENU_OPTIONS, ["Sound / Music", "Controls", "Difficulty", "Credits", "Back"]),
+    `A: MENU_OPTIONS shrank 6 -> 4, then CS038 P1 added Credits; got ${JSON.stringify(A.MENU_OPTIONS)}`);
+  assert(!A.MENU_OPTIONS.includes("Achievements") && !A.MENU_OPTIONS.includes("High Scores"),
+    "A: neither moved screen is an Options row (the shrink this phase owns)");
   // The two roots that existed before are untouched by THIS phase (P4 later adds a dim, inert "Save"
   // row to MENU_ROOT_PLAY, not P2 — this file re-runs against the current build, so it pins the
   // post-P4 shape rather than the stale pre-P4 one).
