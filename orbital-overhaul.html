@@ -5035,8 +5035,17 @@ const TELEMETRY_FIELDS = [
   "dmgDebris3", "dmgDebris2", "dmgDebris1",
   "dmgHunter3", "dmgHunter2", "dmgHunter1",
   "dmgUfoBodyLarge", "dmgUfoBodySmall", "dmgUfoShotLarge", "dmgUfoShotSmall",
+  "chainLen", "cargoMax",
+  "delivered", "deliveryScore", "cargoDamageEvents",
+  "debrisKills", "hunterKills", "saucerKills", "hunterCoalesced",
+  "deflects", "hitsTaken",
+  "scoreRepairBonus", "scoreScoopBonus",
   "debugRun", "resumedRun",
 ];
+// CS039 P2: thirteen columns added above, ahead of the two trailing flags. `chainLen`/`cargoMax` are
+// INSTANTANEOUS state at the sample instant (like hp/speed) — the DiffLog expressions, verbatim. Every
+// other column here is a CUMULATIVE per-run counter (like the *Picked/dmgFrom* families above) and is
+// monotone non-decreasing within a run.
 // ⛔ A NEW KEY, additive, owned by CS037 P4. Nothing below reads, writes, renames or version-bumps any
 // of the five existing keys — afd_settings_v1, afd_achievements_v2, afd_scores_v1, afd_profiles_v1,
 // afd_saves_v1 are untouched by this whole section (spec §5.6).
@@ -5096,6 +5105,20 @@ const Telemetry = {
       dmgHunter3: s.dmgFromHunter3, dmgHunter2: s.dmgFromHunter2, dmgHunter1: s.dmgFromHunter1,
       dmgUfoBodyLarge: s.dmgFromUfoBodyLarge, dmgUfoBodySmall: s.dmgFromUfoBodySmall,
       dmgUfoShotLarge: s.dmgFromUfoShotLarge, dmgUfoShotSmall: s.dmgFromUfoShotSmall,
+      chainLen: game.chain.length,        // the DiffLog expression, verbatim
+      cargoMax: game.cargoMax,            // the live runtime cap, NOT payloadSlots(game.wave)
+                                           // recomputed — the two must never be two sources of truth
+      delivered: s.delivered,
+      deliveryScore: s.deliveryScore,
+      cargoDamageEvents: s.cargoDamageEvents,
+      debrisKills: s.debrisKills,         // Garbage Satellites — the inverted vocabulary, see CLAUDE.md
+      hunterKills: s.hunterKills,
+      saucerKills: s.saucerKills,         // both sizes
+      hunterCoalesced: s.hunterCoalesced,
+      deflects: s.deflects,
+      hitsTaken: s.hitsTaken,
+      scoreRepairBonus: s.scoreRepairBonus,
+      scoreScoopBonus: s.scoreScoopBonus,
       debugRun: game.debugRun, resumedRun: game.resumedRun,
     });
     while (this.rows.length > TELEMETRY_MAX) this.rows.shift();   // drop oldest, keep the cap
@@ -5108,13 +5131,13 @@ const Telemetry = {
       const raw = ls.getItem(Profiles.keyFor(TELEMETRY_KEY));
       if (!raw) return [];
       const data = JSON.parse(raw);
-      if (!data || data.v !== 1 || !Array.isArray(data.rows)) return [];
+      if (!data || data.v !== 2 || !Array.isArray(data.rows)) return [];
       return data.rows.slice();
     } catch (e) { return []; }   // corrupt / unreadable — an empty buffer, never a throw
   },
   write() {
     const ls = storageOK(); if (!ls) return;
-    try { ls.setItem(Profiles.keyFor(TELEMETRY_KEY), JSON.stringify({ v: 1, rows: this.rows })); }
+    try { ls.setItem(Profiles.keyFor(TELEMETRY_KEY), JSON.stringify({ v: 2, rows: this.rows })); }
     catch (e) { /* quota / privacy mode / disabled — a background write, silent by design */ }
   },
 };

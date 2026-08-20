@@ -100,7 +100,10 @@ console.log("(A) interval timing against game time, with a pause interposed");
   eq(X.Telemetry.rows.length, 5, "A: at a 5 s interval, 15 s of play adds three rows");
 
   // The row carries every column TELEMETRY_FIELDS names, and nothing else.
-  eq(X.TELEMETRY_FIELDS.length, 30, "A: the row is 30 columns wide");
+  // CS039 P2 appended 13 columns (chainLen/cargoMax + eleven cumulative counters) ahead of the two
+  // trailing flags — 30 -> 43. This phase's own scope (the SIX remaining-use + TEN dmg columns below)
+  // is unaffected; only the total width moved.
+  eq(X.TELEMETRY_FIELDS.length, 43, "A: the row is 43 columns wide");
   const row = X.Telemetry.rows[0];
   for (const f of X.TELEMETRY_FIELDS)
     assert(f in row, `A: the row carries the "${f}" column`);
@@ -346,7 +349,7 @@ console.log("(F) the localStorage round trip");
     run(X, 3);
     assert(KEY in store, "F: ⛔ a snapshot WRITES — the run survives a crash or a refresh");
     const env = JSON.parse(store[KEY]);
-    eq(env.v, 1, "F: the envelope is versioned");
+    eq(env.v, 2, "F: the envelope is versioned"); // CS039 P2 bumped the shape to v:2
     assert(Array.isArray(env.rows), "F: ...and carries a rows array");
     eq(env.rows.length, X.Telemetry.rows.length, "F: ...holding every buffered row");
     eq(JSON.stringify(X.Telemetry.read()), JSON.stringify(X.Telemetry.rows),
@@ -363,15 +366,15 @@ console.log("(F) the localStorage round trip");
     eq(X.Telemetry.read().length, 0, "F: an ABSENT key reads as an empty buffer");
     store[KEY] = "{not json";
     eq(X.Telemetry.read().length, 0, "F: an UNPARSEABLE blob reads as an empty buffer");
-    store[KEY] = JSON.stringify({ v: 2, rows: [{ score: 1 }] });
+    store[KEY] = JSON.stringify({ v: 1, rows: [{ score: 1 }] }); // stale pre-CS039-P2 shape
     eq(X.Telemetry.read().length, 0, "F: ⛔ a WRONG-VERSION envelope reads as empty — never partially trusted");
-    store[KEY] = JSON.stringify({ v: 1, rows: "not an array" });
+    store[KEY] = JSON.stringify({ v: 2, rows: "not an array" });
     eq(X.Telemetry.read().length, 0, "F: a non-array rows field reads as empty");
     store[KEY] = JSON.stringify({ rows: [{ score: 1 }] });
     eq(X.Telemetry.read().length, 0, "F: a missing version reads as empty");
     store[KEY] = "null";
     eq(X.Telemetry.read().length, 0, "F: a null blob reads as empty");
-    store[KEY] = JSON.stringify({ v: 1, rows: [{ score: 7 }] });
+    store[KEY] = JSON.stringify({ v: 2, rows: [{ score: 7 }] });
     eq(X.Telemetry.read().length, 1, "F: ...and a VALID envelope reads back");
     eq(X.Telemetry.read()[0].score, 7, "F: ...with its rows intact");
   }
@@ -444,7 +447,7 @@ console.log("(F) the localStorage round trip");
     eq((tele.match(/Profiles\.keyFor\(TELEMETRY_KEY\)/g) || []).length, 2,
       "F: ⛔ keyFor() at BOTH the read and the write site — localStorage is never keyed directly");
     eq((tele.match(/catch \(e\)/g) || []).length, 2, "F: both storage paths are try/catch-wrapped");
-    assert(/data\.v !== 1/.test(tele), "F: known-value-else-default is on the ENVELOPE's version");
+    assert(/data\.v !== 2/.test(tele), "F: known-value-else-default is on the ENVELOPE's version"); // CS039 P2: v:1 -> v:2
   }
 }
 

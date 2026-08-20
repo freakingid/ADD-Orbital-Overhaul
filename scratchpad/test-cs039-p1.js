@@ -212,23 +212,12 @@ function fakeKitLeaderboard(calls) {
   for (const f of NEW_FIELDS) eq(X.game.stats[f], VALUES[f], `G: resumeFromSave restores ${f}`);
 })();
 
-// ================= (H) no output changed: TELEMETRY_FIELDS, the CSV header, Leaderboard.submit() =================
+// ================= (H) P1 itself touched neither TELEMETRY_FIELDS nor Leaderboard.submit() =================
+// CS039 P2 (a later phase) wires all five of NEW_FIELDS into TELEMETRY_FIELDS — expected, and this
+// section's job shrinks to what P1 itself owns: Leaderboard.submit()'s stats object still keeps
+// exactly its frozen four keys, and none of NEW_FIELDS leaked into that payload.
 (function sectionH() {
-  console.log("(H) TELEMETRY_FIELDS is byte-identical, the CSV header matches, and Leaderboard.submit()'s stats keeps exactly its four keys");
-  const X = buildGame();
-  const EXPECTED_TELEMETRY_FIELDS = [
-    "t", "level", "score", "hp", "speed",
-    "rapidLeft", "tripleLeft", "magnetLeft", "engineLeft", "guardLeft", "scoopLevel",
-    "rapidPicked", "triplePicked", "healthPicked", "magnetPicked", "enginePicked", "scoopPicked", "guardPicked",
-    "dmgDebris3", "dmgDebris2", "dmgDebris1",
-    "dmgHunter3", "dmgHunter2", "dmgHunter1",
-    "dmgUfoBodyLarge", "dmgUfoBodySmall", "dmgUfoShotLarge", "dmgUfoShotSmall",
-    "debugRun", "resumedRun",
-  ];
-  eq(X.TELEMETRY_FIELDS.length, EXPECTED_TELEMETRY_FIELDS.length, "H: TELEMETRY_FIELDS length unchanged");
-  eq(X.TELEMETRY_FIELDS.join(","), EXPECTED_TELEMETRY_FIELDS.join(","), "H: TELEMETRY_FIELDS is byte-identical");
-  assert(!NEW_FIELDS.some(f => X.TELEMETRY_FIELDS.includes(f)), "H: none of the five new fields appear in TELEMETRY_FIELDS");
-
+  console.log("(H) Leaderboard.submit()'s stats keeps exactly its four keys, none of P1's new fields leak in");
   const calls = {};
   const Y = buildGame({ store: { afd_settings_v1: "{}" }, extraExports: ["window"] });
   Y.window.KitLeaderboard = fakeKitLeaderboard(calls);
