@@ -1,6 +1,7 @@
 // Headless test for CS018 Phase 10 — the SMD voice line (dock_24), version bump.
 // Covers: node --check on the extracted <script>, the VOICE_LINES.dock_24 data pin (exact
-// lab-verified text/phon, no derivation), GAME_VERSION === "1.0.0.37", and that superMegaDelivery()
+// lab-verified text/phon, no derivation), GAME_VERSION !== "1.0.0.37" (phase-local pin, mirrored at
+// CS038 P7's version bump), and that superMegaDelivery()
 // fires VoiceSys.say("dock_24") — NOT a fifth VoiceSys.dockDelivery tier (dockDelivery's 5/10/15/20
 // chain stays untouched, still keyed off dock_5/10/15/20 only).
 //
@@ -58,7 +59,7 @@ function build(src = scriptSrc, windowExtra) {
 // ================= (B) source pins =====================
 (function sectionB() {
   console.log("(B) source pins: version, VOICE_LINES.dock_24, dockDelivery chain untouched");
-  eq(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1], "1.0.0.37", "GAME_VERSION bumped to 1.0.0.37");
+  assert(scriptSrc.match(/const GAME_VERSION = "([^"]+)"/)[1] !== "1.0.0.37", "GAME_VERSION has moved on from 1.0.0.37");
   assert(/dock_24:\s*\[/.test(scriptSrc), "VOICE_LINES has a dock_24 entry");
   assert(/VoiceSys\.say\(\s*"dock_24"\s*\)/.test(scriptSrc),
     "superMegaDelivery fires VoiceSys.say(\"dock_24\") directly");

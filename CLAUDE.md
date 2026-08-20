@@ -253,6 +253,14 @@ voice audio doesn't load, the game plays silently-voiced; if the leaderboard
 module doesn't load, the game plays with no leaderboard. **Log every one in
 `EXTERNAL-FILES.md` before it ships.**
 
+⛔ **Outbound links go through `openExternal(url)` — always `window.open(url, "_blank",
+"noopener")` (CS038 P1).** `noopener` is mandatory: without it, the opened page gets a
+live `window.opener` handle back into the game (reverse tabnabbing) — recovering a
+truthful return value is not worth reintroducing that handle. Per the HTML spec,
+`window.open` with `noopener` returns `null` on success as well as on a blocked popup, so
+the build genuinely cannot tell the two apart; word any status line conditionally rather
+than asserting "blocked" on every `null`. `Credits` is the one caller today.
+
 ⛔ **Tuning constants at the top, grouped by system** (`GARBAGE_*`, `CHAIN_*`,
 `CARGO_*`, `DOCK_*`). Never inline magic numbers.
 
@@ -290,8 +298,12 @@ no sprites, no textures (Pillar 1).
 ⛔ **The HUD uses `glowStroke` — no `fillRect`, no `strokeRect`.** Don't
 reintroduce a bar or rect for a new HUD element; follow the ring idiom.
 ⚠ **SETTLED:** exactly two fill exceptions exist, both named in GDD §3.2 —
-`drawText` and the low-health corner radial gradients. The corner glow is a fill
-*by design* (a peripheral, edgeless alarm). It is not a bar.
+`drawText` and the low-health edge glow. The glow is a fill *by design* (a
+peripheral, edgeless alarm); it is not a bar. **Shape changed CS038 GATE A**
+(four `createRadialGradient` corner fills → four `createLinearGradient` bands,
+one inward from each edge, overlapping at the corners under source-over) — the
+fill exception and the "no `shadowBlur`/`globalAlpha`" contract carry over
+unchanged, only the geometry moved.
 
 ### Scoring
 
@@ -315,7 +327,10 @@ into AudioSys**, which is a flat bag of one-shot voices and must not grow a
 sequencer.
 
 1. ⛔ **Lines are DATA.** `VOICE_LINES` is keyed by event, each an array of
-   `{text, phon}`. Adding a line is a data edit. Selection is a plain random pick.
+   `{text, phon}`. Adding a line is a data edit. **Selection excludes the alternative
+   picked last time for that event (CS038 P4 mechanism 1)** — a uniform pick over the
+   remaining n−1, stepped past the excluded index; a one-line event has nothing to
+   exclude and is unaffected, which is exactly why mechanism 2 (item 8) exists.
 2. ⛔ **You never derive, edit, or improve a `phon` string.** Every `phon` is
    composed and zero-error-verified in `tools/voice-robot-lab.html` (or
    programmatically against the build's `PH` table) and pasted in verbatim.
@@ -324,12 +339,12 @@ sequencer.
    the ring-modulation stage are all ported verbatim from the labs. The labs'
    g2p, flanger, and crush stages do **not** ship.
 3. ⛔ **Ask "did an effect end?" through `powerActive(type)`, never `powerFx`.**
-4. ⚠ **SETTLED — superseded lines DROP, except the four `VOICE_CRITICAL` events,
+4. ⚠ **SETTLED — superseded lines DROP, except the five `VOICE_CRITICAL` events,
    which PARK and are RE-VALIDATED.** `VOICE_CRITICAL` = `health_low`,
-   `health_relief`, `cargo_full`, `level`. A critical line that loses the gate is
-   parked on a FIFO queue (`VOICE_QUEUE_MAX`, deduped by event — a newer line
-   **replaces** a parked one in place, keeping its slot) and is exempt from the
-   cooldown gap. At drain, `VOICE_STILL_TRUE[event](entry)` restates the
+   `health_relief`, `cargo_full`, `level`, and `chain_lost` (CS037 P5). A critical line
+   that loses the gate is parked on a FIFO queue (`VOICE_QUEUE_MAX`, deduped by event —
+   a newer line **replaces** a parked one in place, keeping its slot) and is exempt from
+   the cooldown gap. At drain, `VOICE_STILL_TRUE[event](entry)` restates the
    trigger's own condition; a line gone false is discarded **silently**, never
    spoken late. The older blanket "never queue" rule was over-broad, not wrong —
    don't restore it, and don't widen this either. See `RATIONALE.md#voice-queue`.
@@ -337,8 +352,10 @@ sequencer.
      merge them.** Priority answers *may this line interrupt?*; criticality
      answers *may this line wait?* `VOICE_PRIORITY` is untouched — `cargo_full`
      stays 1, `level` stays 2.
-   - ⛔ **No TTL.** The drain takes no `dt`. A TTL would tick the game clock while
-     `busyUntil` lives on the audio clock, which doesn't pause.
+   - ⛔ **No TTL — standing prohibition, and it also binds item 8's repeat window
+     (CS038 P4).** The park drain takes no `dt`; a TTL would tick the game clock
+     while `busyUntil` (and `lastSpoke`, item 8) live on the audio clock, which
+     doesn't pause.
    - ⛔ **Adding a critical event means raising `VOICE_QUEUE_MAX` with it.**
 5. ⛔ **One gate, two outputs.** `_emit(line, p)` resolves the single
    cooldown/priority gate and drives **both** caption and audio; `_schedule(utt)`
@@ -354,6 +371,24 @@ sequencer.
 7. Every entry point is `if (!AudioSys.ctx) return;`-guarded (headless-safe).
    The low-health voice has its own latch (`game.lowHpVoiced`) that menus do not
    tear down — distinct from the siren latch.
+8. ⛔ **Per-event repeat suppression (CS038 P4) is a THIRD question, answered by a
+   THIRD mechanism — orthogonal to both priority and criticality.** Priority asks
+   *may this line interrupt?*, criticality asks *may this line wait?*, repeat
+   suppression asks *has this event JUST spoken?* Two independent parts:
+   - **Mechanism 1 — the no-immediate-repeat picker**, in `say()` (item 1).
+   - **Mechanism 2 — the entry-gate repeat window**, in `_emit()`, sitting at the
+     TOP of the gate, before the busy/cooldown branches: an event inside its own
+     window (`voiceRepeatGap(event)` — `VOICE_REPEAT_GAP` 12s ordinary,
+     `VOICE_REPEAT_GAP_CRITICAL` 20s for a `VOICE_CRITICAL` event) is **DROPPED,
+     never enqueued.** ⚠ **SETTLED — a repeat-suppressed critical DROPS, it does
+     NOT park.** Parking it would replay the identical line seconds later, which
+     is exactly what this mechanism exists to stop — a deliberate exception to
+     item 4's park-and-revalidate rule, not a contradiction of it. `level` is
+     exempt (`VOICE_REPEAT_EXEMPT`): it carries data (a different number each
+     time), so consecutive levels are never a repeat.
+   - ⛔ **THE WINDOW RUNS ON `AudioSys.now()`** — the same clock `busyUntil` uses,
+     never game time. A long pause lets a window lapse, which is correct:
+     re-saying a line after five minutes is not a repeat.
 
 ### Save data
 
@@ -502,6 +537,29 @@ have been conflated twice already; don't do it a third time (GDD §2.14).
 Found via a difficulty regression at level 33.
 ⛔ **`destroyHunter()` is not levered and stays 3-way** — `ACH_LINEAGE_FULL = 13`
 depends on it. Levering the split moves a shipped achievement threshold.
+
+### Debug registry — sessionSwitch and presentation knobs
+
+⛔ **A `DEBUG_VARS` entry may carry `sessionSwitch: true` — instrumentation only, never
+a way for a gameplay knob to dodge persistence.** Three effects, all together: the row
+is omitted from `saveSettings`'s `debug` sub-object (the blob never carries it), skipped
+in `loadSettings`'s per-entry restore loop, and exempt from `overridesOn()` in both
+`applyDebug` (single-field write) and `rebuildDebug` (the full pass fired when the master
+"Overrides Applied" toggle itself is written) — so the row always reads its own live
+`debugShown` value regardless of that toggle. `telemetryCapture` (CS038 P3) is the one
+entry that carries it: telemetry capture is opt-in and off at every launch, and
+`sessionSwitch` is what makes a launch unable to revive a stale "was ON last session"
+state. Do not reach for it to make an ordinary tuning knob "stick less" — that is what
+it is not for.
+
+⚠ **SETTLED — twelve pure-presentation knobs retired to plain constants (CS038 P5),
+following `CAPTION_LINGER`/`CAPTION_FADE`/`LEVEL_BANNER_TIME`'s own standing precedent,
+not a new idiom.** `CELEB_SCROLL_STEP`, `CELEB_EMBLEM_SIZE`, the six `DELIVERY_FLOAT_*`
+knobs, and the four `HUNTER_PULSE_*` knobs came off the debug registry once their gates
+settled — pure look, tuned by eye, no gameplay effect, exactly the category
+`CAPTION_LINGER`/`CAPTION_FADE`/`LEVEL_BANNER_TIME` already lived in as plain constants
+rather than registry rows. Don't re-add any of the twelve as an oversight fix; a future
+retune edits the constant directly, the same as it would `CAPTION_LINGER`.
 
 ### Achievement celebration panel
 

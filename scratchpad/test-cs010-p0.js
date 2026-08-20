@@ -6,8 +6,8 @@
 //   node scratchpad/test-cs010-p0.js
 //
 // Checks:
-//  (A) GAME_VERSION === "1.0.0.37" (unprefixed).
-//  (B) a fresh run's record carries build === "1.0.0.37". ⚠ CS034 P7 moved WHERE that stamp is
+//  (A) GAME_VERSION !== "1.0.0.37" (CS010's own version — a phase-local pin, mirrored at CS038 P7's bump).
+//  (B) a fresh run's record carries build === GAME_VERSION. ⚠ CS034 P7 moved WHERE that stamp is
 //      applied: HighScores.add() may no longer read a game global (spec §6.6), so makeRunResult() —
 //      the one assembler — puts GAME_VERSION on the record and add() stores what it is handed.
 //  (C) an existing record carrying build "3.6" survives an afd_scores_v1 load/save round-trip
@@ -74,20 +74,22 @@ function assert(cond, msg) { if (cond) passed++; else { failed++; console.error(
 AudioSys.init();
 
 // ================= (A) GAME_VERSION is the new unprefixed scheme =====================
+// ⚠ CS038 P7: a version bump flips a phase-local version pin to its standing mirror image
+// (CLAUDE.md, phase-local pins) rather than re-pointing the literal forward every changeset.
 (function sectionA() {
-  console.log("(A) GAME_VERSION === \"1.0.0.37\"");
-  assert(GAME_VERSION === "1.0.0.37", "A: GAME_VERSION is exactly \"1.0.0.37\" (unprefixed)");
+  console.log("(A) GAME_VERSION !== \"1.0.0.37\" (has moved on since CS010's own version)");
+  assert(GAME_VERSION !== "1.0.0.37", "A: GAME_VERSION is no longer \"1.0.0.37\" (unprefixed scheme unaffected)");
 })();
 
 // ================= (B) a fresh HighScores.add() stamps the new build ==================
 (function sectionB() {
-  console.log("(B) a fresh run's record carries build === \"1.0.0.37\"");
+  console.log("(B) a fresh run's record carries build === GAME_VERSION");
   HighScores.entries = [];
   const rec = HighScores.add(makeRunResult());
-  assert(rec.build === "1.0.0.37", "B: new record's build field is \"1.0.0.37\"");
+  assert(rec.build === GAME_VERSION, "B: new record's build field is GAME_VERSION's live value");
   // ⚠ CS034 P7: and it came off the RunResult, not out of add() — the version pin has to follow the
   // stamp, or it goes on passing while nothing stamps anything.
-  assert(makeRunResult().build === "1.0.0.37", "B: makeRunResult() is what stamps it");
+  assert(makeRunResult().build === GAME_VERSION, "B: makeRunResult() is what stamps it");
 })();
 
 // ================= (C) an old "3.6" record survives a load/save round-trip unchanged ==

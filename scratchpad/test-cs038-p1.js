@@ -47,7 +47,7 @@ const code = execSource(src);
     "A: a gap row is pure vertical air — it carries no text");
 
   const links = rows.filter(r => r.kind === "link");
-  eq(links.length, 5, "A: five link rows");
+  eq(links.length, 6, "A: six link rows (CS038 GATE B: Asteroids Deluxe promoted to a link)");
   assert(links.every(r => typeof r.url === "string" && /^https:\/\/\S+$/.test(r.url)),
     "A: every link carries a non-empty https url with no whitespace");
   assert(rows.filter(r => r.kind !== "link").every(r => r.url === undefined),
@@ -56,8 +56,9 @@ const code = execSource(src);
   for (const want of ["https://coinlessgames.com",
                       "https://coinlessgames.itch.io/orbital-overhaul",
                       "https://github.com/freakingid/ADD-Orbital-Overhaul",
+                      "https://en.wikipedia.org/wiki/Asteroids_Deluxe",
                       "https://www.anthropic.com/claude-code",
-                      "https://developer.mozilla.org"])
+                      "https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API"])
     assert(urls.includes(want), `A: spec §1.3 link present: ${want}`);
   eq(new Set(urls).size, urls.length, "A: no url is listed twice");
 
