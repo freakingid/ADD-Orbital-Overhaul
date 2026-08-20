@@ -73,7 +73,8 @@ console.log("(C) CSV header and data lines have matching column counts, and no c
   X.applyDebug("telemetryCapture", 1);
   X.Telemetry.push();
   X.Telemetry.push();
-  const lines = X.telemetryCSV(X.Telemetry.rows).split("\n").filter(l => l.length);
+  // CS039 P3's `#` fingerprint block is dropped: this section owns the columns, not the header block.
+  const lines = X.telemetryCSV(X.Telemetry.rows).split("\n").filter(l => l.length && !l.startsWith("#"));
   const headerCols = lines[0].split(",").length;
   for (let i = 1; i < lines.length; i++) {
     eq(lines[i].split(",").length, headerCols, `C: data line ${i} has the same column count as the header`);

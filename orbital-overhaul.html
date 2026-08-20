@@ -5141,11 +5141,70 @@ const Telemetry = {
     catch (e) { /* quota / privacy mode / disabled — a background write, silent by design */ }
   },
 };
-// CSV column order matches TELEMETRY_FIELDS exactly; one header line, then one line per row. The two
-// flags go out as `true`/`false` rather than 1/0 — a sheet reads either, and this way the column says
-// what the field actually is.
-function telemetryCSV(rows) {
-  const lines = [TELEMETRY_FIELDS.join(",")];
+// CS039 P3 (spec §1, FORK-D/E/F) — THE LEVER FINGERPRINT. Seven `#` lines above the CSV header, so
+// two logs can be told apart without asking what the debug panel looked like when each was captured.
+//
+// ⛔ THE CARRIER IS `#` COMMENT LINES, AND THAT IS THE WHOLE COMPATIBILITY STORY (FORK-D). pandas
+// (`comment="#"`), R (`read.csv(comment.char="#")`) and most sheet importers skip them with ONE
+// argument, so the export stays a CSV nobody has to pre-process first. Refused options, on the record
+// so they are not re-proposed: extra COLUMNS (one constant repeated 400 times), a separate clipboard
+// block (it gets separated from its data the first time someone pastes into two files), and a second
+// export action row (two things to remember to press).
+//
+// ⛔ THE `levers=` LINE REPORTS EFFECTIVE VALUES, NOT EDITED ONES (FORK-E). ⚠ SETTLED, and the one
+// thing here most likely to be "helpfully" reverted. Each entry resolves the way rebuildDebug()
+// resolves it — `debugNative(e, debugShown[e.id], on)` under the CURRENT `overridesOn()` state — never
+// by reading `debugShown` directly. With the master "Overrides Applied" toggle OFF every gameplay knob
+// reads its own `def` no matter what the panel still displays, so the line must read `levers=none`: a
+// fingerprint listing shown-but-inert edits would be worse than no fingerprint at all, because it
+// would be believed. Same failure mode the `sessionSwitch` comment up at the registry warns about.
+//   A `sessionSwitch` row (telemetryCapture) is EXEMPT from the toggle and resolves from its own
+// debugShown, so it can legitimately differ from `def` while `overrides=OFF`. That rule lives inside
+// debugNative and is reached THROUGH it — never restated here, or the two copies drift apart.
+//
+// ⛔ NO PROFILE NAME OR ID (FORK-F). A telemetry log gets pasted into chats and files; it does not
+// need to identify a player, and TELEMETRY-ANALYSIS-GUIDE.md never reads one. Do not add one later.
+function telemetryHeaderLines(rows, from) {
+  // Display only, and only in the `levers=` list: 1e-6 rounding trims the float dust the epsilon below
+  // already forgave, so a knob that genuinely IS different does not print as 0.35000000000000003.
+  const fmt = v => String(Math.round(v * 1e6) / 1e6);
+  const on = overridesOn();
+  const changed = [];
+  for (const e of DEBUG_ENTRIES) {
+    // The master toggle gets its own `overrides=` line and is skipped HERE on purpose: resolved
+    // through debugNative under itself it reads its own `def` the moment it is off, so it could never
+    // report as changed anyway — an omission that would look like a bug rather than a decision.
+    if (e.id === DEBUG_OVERRIDE_ID) continue;
+    const live = debugNative(e, debugShown[e.id], e.sessionSwitch ? true : on);
+    const def  = debugNative(e, e.def, true);   // the default through the entry's OWN toNative
+    // ⛔ AN EPSILON, NEVER `!==`. Several entries are floats (step 0.05 / 0.02) with toNative
+    // conversions, and stepping one up and back down lands 0.30000000000000004 where 0.3 started — a
+    // bare inequality would report a knob sitting at its default as changed, on most runs. Scaled by
+    // the default's magnitude so it means the same thing at 0.08 s and at 20000 entities. Written
+    // `!(d <= eps)` rather than `d > eps` so a NaN — which fails every ordinary comparison — reports
+    // as changed instead of being silently swallowed.
+    const d = Math.abs(live - def);
+    if (!(d <= 1e-9 * Math.max(1, Math.abs(def)))) changed.push(e.id + "=" + fmt(live));
+  }
+  return [
+    "# orbital-overhaul telemetry v2",                    // the envelope's own `v`, not a second version
+    "# build=" + GAME_VERSION,
+    "# overrides=" + (on ? "ON" : "OFF"),
+    "# telemetryInterval=" + DEBUG.telemetryInterval,     // the RESOLVED value tick() reads, not debugShown
+    "# rows=" + rows.length,
+    "# source=" + from,
+    "# levers=" + (changed.length ? changed.join(" ") : "none"),
+  ];
+}
+// CSV column order matches TELEMETRY_FIELDS exactly; the CS039 P3 `#` fingerprint, then one header
+// line, then one line per row. The two flags go out as `true`/`false` rather than 1/0 — a sheet reads
+// either, and this way the column says what the field actually is.
+// `from` is threaded in from telemetryExportRows()'s own `{ rows, from }` rather than read off a
+// global, so the header can never name a source the rows did not come from. The default is stated
+// rather than left to print "source=undefined" for a bare call.
+function telemetryCSV(rows, from = "unknown") {
+  const lines = telemetryHeaderLines(rows, from);
+  lines.push(TELEMETRY_FIELDS.join(","));
   for (const row of rows) lines.push(TELEMETRY_FIELDS.map(f => row[f]).join(","));
   return lines.join("\n") + "\n";
 }
@@ -5194,7 +5253,9 @@ function copyTelemetry() {
     AudioSys.ui(false);
     return;
   }
-  const text = telemetryCSV(src.rows);
+  // CS039 P3: built ONCE, with the source string the same call resolved, and handed to both the
+  // clipboard path and the download fallback below — the two can never receive different text.
+  const text = telemetryCSV(src.rows, src.from);
   try {
     const cb = navigator.clipboard;
     if (cb && typeof cb.writeText === "function") {

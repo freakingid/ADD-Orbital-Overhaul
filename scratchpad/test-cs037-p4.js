@@ -132,8 +132,9 @@ console.log("(A) interval timing against game time, with a pause interposed");
   eq(r.guardLeft, 3, "A: ...and guard's");
   eq(r.scoopLevel, 2, "A: scoop's 'remaining use' is game.scoopLevel, its persistent level");
 
-  // The CSV mirrors TELEMETRY_FIELDS exactly, header first.
-  const csv = X.telemetryCSV(X.Telemetry.rows).split("\n");
+  // The CSV mirrors TELEMETRY_FIELDS exactly, header first. CS039 P3 prepends a `#` fingerprint block
+  // above it — dropped here, since this file owns the columns and not the block (test-cs039-p3.js does).
+  const csv = X.telemetryCSV(X.Telemetry.rows).split("\n").filter(l => !l.startsWith("#"));
   eq(csv[0], X.TELEMETRY_FIELDS.join(","), "A: the CSV header IS TELEMETRY_FIELDS, in order");
   eq(csv.length, X.Telemetry.rows.length + 2, "A: one header line, one line per row, trailing newline");
   eq(csv[1].split(",").length, X.TELEMETRY_FIELDS.length, "A: ...and each data line has one cell per column");
