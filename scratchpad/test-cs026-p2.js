@@ -690,8 +690,15 @@ let X = null;
     // ⛔ The standing strip idiom replaces a trailing `//…` FIRST, which turns a whole-line comment into
     // a whitespace-only line rather than removing it — so blank lines have to go too, or an ADDED
     // comment still shows up as an added (empty) line and the "executable source" pin is not one.
+    // REPOINTED BY CS039 P1, the same "later sanctioned phase flips an old pin" precedent as TRAP 1's
+    // GAME_VERSION mirror-image above: this trap's real subject (per §3) is the hardcoded 3-way SPLIT
+    // LOOP, not an eternal freeze on the whole function body. CS039 P1 added one flat telemetry counter,
+    // `game.stats.hunterKills++;`, inside the SAME awardScore gate as the existing achievement counters
+    // — the split loop itself did not move. That one added line is stripped alongside comments/blanks so
+    // the pin keeps asserting what it always meant.
     const strip = t => t.split("\n").map(l => l.replace(/\s\/\/.*$/, ""))
-      .filter(l => l.trim() !== "" && !l.trim().startsWith("//")).join("\n");
+      .filter(l => l.trim() !== "" && !l.trim().startsWith("//"))
+      .filter(l => l.trim() !== "game.stats.hunterKills++;").join("\n");
     eq(strip(bodyOf(scriptSrc, "function destroyHunter(h, awardScore = true) {")),
        strip(bodyOf(ps, "function destroyHunter(h, awardScore = true) {")),
       "J: ⛔ destroyHunter's EXECUTABLE source is byte-identical to the parent — a comment was added, nothing else");

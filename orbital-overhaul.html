@@ -8396,6 +8396,19 @@ function resetGameStats() {
     dmgFromHunter3: 0, dmgFromHunter2: 0, dmgFromHunter1: 0,
     dmgFromUfoBodyLarge: 0, dmgFromUfoBodySmall: 0,
     dmgFromUfoShotLarge: 0, dmgFromUfoShotSmall: 0,
+    // CS039 P1: five more flat, additive counters for offline telemetry only — nothing reads these
+    // this phase (no HUD, no leaderboard, no achievement). Same flat-number shape as the pickup/dmgFrom
+    // counters above, for the same reason: buildSaveEntry()'s spread and resumeFromSave()'s known-key
+    // type-matched loop carry them for free, no special case at either site.
+    hunterKills: 0,          // every Hunter destroyed by the player, all three tiers (Achievements.lifetime.hunterKills
+                             // is cross-game; this is per-run). `hunter_kills` IS a registered statsField on the
+                             // leaderboard Worker and is deliberately still unsent — wiring it into Leaderboard.submit()
+                             // is an open, un-taken decision, not an oversight this phase forgot.
+    hitsTaken: 0,            // non-lethal hits that actually deducted HP — same population, same site, as the
+                             // dmgFrom* attribution switch, so "mean damage per hit" derived offline is coherent.
+    deliveryScore: 0,        // points earned at the recycle dock this run
+    scoreRepairBonus: 0,     // cumulative REPAIR_FULL_BONUS awarded (full-HP milestone cash-in)
+    scoreScoopBonus: 0,      // cumulative SCOOP_MAX_BONUS awarded (max-level scoop pickup cash-in)
     gameEnded: false         // set at game over so end-of-game achievements can evaluate
   };
 }
@@ -9150,6 +9163,9 @@ function addScore(pts) {
       game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + REPAIR_AMOUNT);
     } else {
       game.score += REPAIR_FULL_BONUS; // already at full HP: cash the milestone in as points
+      // CS039 P1: per-run counter for offline telemetry only — see resetGameStats(). This arm adds to
+      // game.score DIRECTLY rather than recursing through addScore(), so this cannot double-count.
+      game.stats.scoreRepairBonus += REPAIR_FULL_BONUS;
     }
     AudioSys.shieldPing();
   }
@@ -9235,6 +9251,9 @@ function destroyHunter(h, awardScore = true) {
     if (game.stats.hunterLineageKills >= ACH_LINEAGE_FULL) game.stats.hunterLineComplete = true;
     if (h.size === 3) game.stats.largeHunterKills++;
     Achievements.lifetime.hunterKills++;
+    // CS039 P1: per-run counter for offline telemetry only — see resetGameStats(). Gated on
+    // awardScore with the rest of this block so the "dying"-state chain detonations move it nowhere.
+    game.stats.hunterKills++;
   }
   boom(h.x, h.y, h.size, COLOR.satellite);
   // CS034 (Paul's call, FORK-C -> b): large/medium Hunters no longer emit Debris on death — only
@@ -9527,6 +9546,10 @@ function applyPowerup(type) {
       game.floaters.push(new FloatText("SCOOP +1", game.ship.x, game.ship.y - 22, POWERUP_COLOR.scoop));
     } else {
       addScore(SCOOP_MAX_BONUS);
+      // CS039 P1: per-run counter for offline telemetry only — see resetGameStats(). Unlike
+      // scoreRepairBonus, this DOES go through addScore(), so it can itself trip a repair milestone —
+      // the two bonus counters are not symmetric code, and that is fine.
+      game.stats.scoreScoopBonus += SCOOP_MAX_BONUS;
       game.floaters.push(new FloatText("SCOOP MAX", game.ship.x, game.ship.y - 22, POWERUP_COLOR.scoop));
     }
     game.stats.powerupsPicked++;
@@ -10315,6 +10338,10 @@ function damageShip(amount, srcX, srcY, srcTag) {
   game.stats.dmgThisWave++;
   Achievements.lifetime.hitsSurvived++;
   if (s.hp < SHIP_MAX_HP * 0.5) game.stats.everBelowHalf = true;
+  // CS039 P1: per-run counter for offline telemetry only — see resetGameStats(). Lands on the same
+  // side of the shielded/i-frame early return as the dmgFrom* switch below, so it counts exactly the
+  // same population those ten sums do.
+  game.stats.hitsTaken++;
   // CS037 P1 (spec §5.5): per-source HP attribution, observational only. Ten flat accumulators,
   // one per category; an unrecognised/absent srcTag attributes nothing.
   switch (srcTag) {
@@ -11845,6 +11872,7 @@ function update(dt) {
         if (game.deliveryCount === CARGO_CAP_MAX) superMegaDelivery();
         Achievements.lifetime.delivered++;
         Achievements.lifetime.deliveryScore += pts;
+        game.stats.deliveryScore += pts; // CS039 P1: per-run mirror, offline telemetry only — see resetGameStats()
         // CS026 P4 (spec §3.3a/§3.4): rise read from the DELIVERY registry knobs. CS029 P4
         // (model C, gate G1/§6.3): the towed branch no longer spawns a new floater per canister — one
         // ticker lives for the whole visit, pinned at the dock anchor, its text rewritten to the
