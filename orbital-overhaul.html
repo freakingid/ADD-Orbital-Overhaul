@@ -2425,6 +2425,35 @@ const VOICE_CRITICAL = { health_low: true, health_relief: true, cargo_full: true
 // test-cs025-p4.js §F pins the relationship rather than either literal, so moving one alone fails.
 const VOICE_QUEUE_MAX = 5;
 
+// CS038 P4 — PER-EVENT REPEAT SUPPRESSION. A THIRD question, and so deliberately a THIRD mechanism:
+// priority answers "may this line INTERRUPT?", criticality answers "may this line WAIT?", and this one
+// answers "has this event JUST SPOKEN?". An event inside its window is DROPPED at the TOP of the gate —
+// including a critical one, which does NOT park: parking would replay the identical line seconds later
+// and defeat the entire item. VOICE_PRIORITY and VOICE_CRITICAL are untouched by this; repetition is
+// neither a promotion nor a demotion in either. PLAYTEST KNOBS, plain constants and NOT registry rows
+// (CS038 §4 takes presentation rows off the debug panel; CAPTION_* is the standing precedent).
+//   ⛔ THE WINDOW RUNS ON AudioSys.now() — the same clock busyUntil uses, never game time. VoiceSys.update()'s
+//     header states why the two must not be mixed. A long pause therefore lets a window LAPSE, which is
+//     correct: re-saying "Truck is full" after five minutes is not a repeat.
+//   ⛔ THIS IS ENTRY-GATE SUPPRESSION, NOT A TTL, AND MUST NOT GROW INTO ONE. It expires nothing that is
+//     already queued; VOICE_STILL_TRUE remains the only thing that discards a parked line.
+// Why this mechanism is the load-bearing half of the pair: only five events have alternatives at all
+// (health_low / health_relief / health_full 3, chain_broken 4, chain_guard 3). cargo_full and chain_lost
+// have exactly ONE line each, so say()'s no-repeat picker cannot help the two that annoy most — and
+// CS037 P5 made both of those fire far more often (any HP-dealing hit now releases the WHOLE tow, so
+// chain_lost fires where chain_broken used to, and the forced refill re-fires cargo_full).
+const VOICE_REPEAT_GAP = 12;            // s — the default window: ordinary chatter
+const VOICE_REPEAT_GAP_CRITICAL = 20;   // s — the longer window, for VOICE_CRITICAL events
+// ⛔ `level` IS EXEMPT, and this table exists for it. The window keys on EVENT, but a `level` firing carries
+// DATA — each one names a different number, so consecutive levels are not a repeat, and suppressing
+// "Level 6" because "Level 5" spoke nine seconds ago would break CS025 P5's unmissable-level requirement
+// outright. Nothing else has this property: the dock_* tiers carry data too, but a second dock_10 genuinely
+// IS a repeat of the same line and stays subject to the window.
+const VOICE_REPEAT_EXEMPT = { level: true };
+// One rule, one place. Criticality is REUSED here as the "this one matters, so space it further apart"
+// axis — it is not extended, re-tabled, or merged with anything.
+function voiceRepeatGap(event) { return VOICE_CRITICAL[event] ? VOICE_REPEAT_GAP_CRITICAL : VOICE_REPEAT_GAP; }
+
 // CS025 P4 — re-validation at DRAIN time: each predicate is its own trigger's condition RESTATED, so a
 // queued line speaks only while the thing it describes is still true, and is otherwise discarded
 // SILENTLY rather than spoken late. This is what answers the old drop-not-queue rule's real concern
@@ -2506,6 +2535,8 @@ const VoiceSys = {
                            // AudioContext's first VOICE_COOLDOWN seconds) isn't swallowed by a phantom gap.
   curPriority: -Infinity,  // priority of the line occupying the channel (for pre-emption)
   queue: [],               // CS025 P4: {event,line,p} waiting criticals — FIFO, VOICE_QUEUE_MAX deep, deduped by event
+  lastLine: {},            // CS038 P4 mech 1: event -> index of the alternative picked LAST TIME for it
+  lastSpoke: {},           // CS038 P4 mech 2: event -> AudioSys-clock time it last PASSED the gate
 
   // Build the noise bed + radio chain once the audio graph exists (first user gesture). Idempotent;
   // no-ops until AudioSys.init() has created AudioSys.voice. Mirrors MusicSys.ensureGraph().
@@ -2602,16 +2633,34 @@ const VoiceSys = {
   // the very end of the PLAYING body: it never runs while paused, during the "dying" spectacle, or on a
   // menu, so a stranded entry cannot speak, and startGame() (which calls reset()) clears it before the
   // next run can drain. Adding teardown to those sites would be dead code pretending to be a guard.
-  reset() { this._stop(); this.busyUntil = -Infinity; this.curPriority = -Infinity; this.queue.length = 0; },
+  // CS038 P4: also clears the two per-event maps. A fresh run picks its first alternative unconstrained and
+  // inherits no repeat window — both are stale by construction (one is the previous run's pick history, the
+  // other an audio-clock stamp from a run that is over).
+  reset() { this._stop(); this.busyUntil = -Infinity; this.curPriority = -Infinity; this.queue.length = 0; this.lastLine = {}; this.lastSpoke = {}; },
 
-  // Speak a random alternative for `event`, subject to §11e cooldown/priority. Returns the chosen line
-  // (or null if dropped/unavailable). Selection is a plain random pick; the gate + caption + scheduling
+  // Speak an alternative for `event`, subject to §11e cooldown/priority. Returns the chosen line
+  // (or null if dropped/unavailable). Selection is CS038 P4's no-immediate-repeat pick; the gate + caption + scheduling
   // all live in _emit, so an event maps to a line here and the channel logic is shared with any future
   // direct caller (e.g. CS011's coming sayLevel()).
   say(event) {
     const lines = VOICE_LINES[event];
     if (!lines || !lines.length) return null;
-    const line = lines[(Math.random() * lines.length) | 0];
+    // CS038 P4 (mechanism 1) — was a plain pick WITH replacement, which said the same alternative twice in
+    // a row often enough to read as a bug. Now: a UNIFORM pick over the alternatives EXCLUDING the previous
+    // one for this event — roll over the remaining n-1, then step past the hole. One branch, no re-roll
+    // loop, no shuffle bag. `prev` is deliberately null at n === 1 (there is nothing to exclude, and rolling
+    // over 0 slots then stepping past index 0 would run off the end): a one-line event is simply unaffected,
+    // which is exactly why the per-event repeat window in _emit exists.
+    // ⛔ RECORDED AT PICK TIME, not on a successful _emit — matching the design already stated below (the
+    // line is picked HERE, at trigger time, and a queued critical carries the alternative rolled when the
+    // event happened). The consequence, stated plainly: an alternative that is picked and then DROPPED by
+    // the gate still rotates. Over 3-4 alternatives that is benign, and threading the index back out
+    // through _emit buys nothing.
+    const prev = lines.length > 1 ? this.lastLine[event] : null;
+    let i = (Math.random() * (lines.length - (prev == null ? 0 : 1))) | 0;
+    if (prev != null && i >= prev) i++;
+    this.lastLine[event] = i;
+    const line = lines[i];
     // CS025 P4: the event is passed through so _emit can consult VOICE_CRITICAL. The line is picked HERE,
     // at TRIGGER time — a queued critical carries the alternative that was rolled when it happened, not
     // one re-rolled at drain time. One less thing to be inconsistent about.
@@ -2627,6 +2676,9 @@ const VoiceSys = {
   // ⛔ The `text` FORMAT is load-bearing in two places outside this function — VOICE_STILL_TRUE.level
   // compares against "Level " + game.wave, and the banner in nextWave() shows the same string. Change the
   // format here and both follow, or the predicate silently discards every queued level call.
+  // CS038 P4: does not go through say(), so the no-repeat picker never applies here (there are no
+  // alternatives to rotate); and `level` is in VOICE_REPEAT_EXEMPT, so the repeat window never applies
+  // either — consecutive announcements name different numbers and are not repeats. See that table.
   sayLevel(n) {
     return this._emit({ text: "Level " + n, phon: levelPhon(n) }, VOICE_PRIORITY.level, "level");
   },
@@ -2649,6 +2701,13 @@ const VoiceSys = {
     if (!AudioSys.ctx) return null;
     this.ensure();
     const now = AudioSys.now();
+    // CS038 P4 (mechanism 2) — an event that spoke within its own window is DROPPED. ⛔ PLACEMENT IS
+    // LOAD-BEARING: this sits at the TOP of the gate, BEFORE the busy/cooldown branches and therefore
+    // BEFORE _enqueue(), so a suppressed critical DROPS rather than PARKING. Parking it would replay the
+    // identical line seconds later, which is the whole thing this mechanism exists to stop. See
+    // VOICE_REPEAT_GAP for the clock, the exemption, and why this is not a TTL.
+    const said = event == null ? null : this.lastSpoke[event];
+    if (said != null && !VOICE_REPEAT_EXEMPT[event] && now - said < voiceRepeatGap(event)) return null;
     const critical = !!(event && VOICE_CRITICAL[event]);   // CS025 P4 — see VOICE_CRITICAL
     if (now < this.busyUntil) {              // a line is on the channel right now
       if (p <= this.curPriority) {
@@ -2667,6 +2726,12 @@ const VoiceSys = {
       // line ends with no 1.2 s tail; VOICE_COOLDOWN stays an anti-chatter rule for everything else.
       if (!critical) return null;
     }
+    // CS038 P4 (mechanism 2) — the line has PASSED the gate; stamp it. Everything below this point runs
+    // unconditionally, so this is the same instant at which curPriority/busyUntil advance, and it stamps in
+    // captions-only mode too (the two outputs share the one gate, and a captioned repeat is as annoying as
+    // a spoken one). It sits ABOVE the utterance rather than beside busyUntil so the post-gate arithmetic
+    // stays byte-identical to what test-cs025-p4.js §K pins; the two placements are equivalent.
+    if (event != null) this.lastSpoke[event] = now;
     const utt = buildUtterance(line.phon, VOICE_PARAMS);
     if (settings.captions) this.showCaption(line.text, utt.dur);
     if (voiceEnabled()) this._schedule(utt);

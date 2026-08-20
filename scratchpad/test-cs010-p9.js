@@ -200,18 +200,24 @@ function count(arr, v) { return arr.filter(x => x === v).length; }
   assert(l3 && A.VoiceSys.curPriority === 3, "a higher-priority line PRE-EMPTS the lower one (curPriority → 3)");
   const busyHL = A.VoiceSys.busyUntil;
 
+  // ⛔ EDITED BY CS038 P4, and by the same precedent CS036 P2 set above this file's §A pin: the three
+  // probes below all re-used collect_triple, which SPOKE at l1 — under CS038 P4's per-event repeat window
+  // (VOICE_REPEAT_GAP, 12 s) a second collect_triple is now suppressed at the top of the gate, so l6's
+  // claim "once VOICE_COOLDOWN has elapsed a new line speaks" was being answered by the wrong mechanism.
+  // Each probe now uses a DISTINCT event that has never passed the gate, so each one exercises exactly
+  // the §11e branch it names and the repeat window is provably not involved. The claims are unchanged.
   // reverse: while hull-critical (3) plays, a collect (1) is dropped
-  const l4 = A.VoiceSys.say("collect_triple");
+  const l4 = A.VoiceSys.say("collect_scoop");
   assert(l4 === null && A.VoiceSys.busyUntil === busyHL, "a lower-priority line cannot pre-empt a higher one (dropped)");
 
   // cooldown gap: advance past the line's end but within VOICE_COOLDOWN → still dropped
   ctx.currentTime = busyHL + 0.05;
-  const l5 = A.VoiceSys.say("collect_triple");
+  const l5 = A.VoiceSys.say("collect_magnet");
   assert(l5 === null, `a new line inside the ${A.VOICE_COOLDOWN}s cooldown gap after the last ends is DROPPED`);
 
   // past the cooldown → speaks again
   ctx.currentTime = busyHL + A.VOICE_COOLDOWN + 0.05;
-  const l6 = A.VoiceSys.say("collect_triple");
+  const l6 = A.VoiceSys.say("collect_engine");
   assert(l6 !== null, "once VOICE_COOLDOWN has elapsed after the last line, a new line speaks");
 
   // burst case from the prompt: hit → low health → grab a powerup, all in one instant
