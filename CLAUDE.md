@@ -427,6 +427,16 @@ field orphans harmlessly, which is the whole point of the rule.
 entry already inside `afd_profiles_v1` (`Profiles.roster[i].playerId`), not a
 new store. See "Profiles (CS031)" below for the mint/backfill contract.
 
+⛔ **CS039 adds the actual sixth key, `afd_telemetry_v1` — additive, owned by
+CS039, not frozen.** The per-run capture ring `Telemetry` reads and writes,
+routed through `Profiles.keyFor()` exactly like `afd_saves_v1`. Like
+`afd_saves_v1` it is **lazy** — nothing reads or writes it unless
+`DEBUG.telemetryCapture` is on (a `sessionSwitch` row, off at every launch; see
+Debug registry, below) — so a session spent with capture off leaves yesterday's
+capture untouched. Its stored JSON carries its own `v` envelope, independent of
+the `_v1` in the key name; see Telemetry, below, for the row-shape-vs-key-name
+distinction.
+
 ⛔ **`resumeFromSave()` runs a fixed step order, and step 2 must precede steps 3
 and 5 (CS032 P2; step 3 added CS037 P6).** 1) `resetRun()` — fresh-run baseline.
 2) overwrite it with the save-moment values. 3) `Achievements.snapshotResumeBaseline()`
@@ -560,6 +570,28 @@ settled — pure look, tuned by eye, no gameplay effect, exactly the category
 `CAPTION_LINGER`/`CAPTION_FADE`/`LEVEL_BANNER_TIME` already lived in as plain constants
 rather than registry rows. Don't re-add any of the twelve as an oversight fix; a future
 retune edits the constant directly, the same as it would `CAPTION_LINGER`.
+
+### Telemetry (CS039)
+
+⛔ **`TELEMETRY_FIELDS` is the one source of truth for both the row shape and the CSV
+column order.** Adding or reordering a column means editing `TELEMETRY_FIELDS` and the
+matching line in `Telemetry.push()` together — the list drives the header, and `push()`
+drives the data, and they must never drift apart.
+
+⛔ **A row-shape change bumps the persistence ENVELOPE's `v`, never the storage KEY
+name.** The key stays `afd_telemetry_v1` forever (Save data, above); `v` inside the
+stored JSON is what versions the shape. `read()` rejects any `v` that doesn't match the
+current shape and returns an empty buffer rather than exporting a column of the literal
+string `"undefined"` — silently dropping a stale run beats exporting a corrupt one.
+
+⚠ **SETTLED — the export's `levers=` fingerprint line reports EFFECTIVE lever values,
+not edited ones (FORK-E).** With the master "Overrides Applied" toggle OFF, every
+gameplay knob resolves to its own registry default no matter what the debug panel
+displays — so the fingerprint walks `DEBUG_ENTRIES` through the same `debugNative()`
+resolution `rebuildDebug()` uses, not `debugShown` directly. "Surely it should show what
+the panel shows" is exactly the reasoning that would revert this to something misleading:
+a fingerprint listing shown-but-inert edits would be believed. A `sessionSwitch` row
+(`telemetryCapture`) is the one exception, by design — see Debug registry, above.
 
 ### Achievement celebration panel
 
