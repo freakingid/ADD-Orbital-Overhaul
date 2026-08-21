@@ -5036,16 +5036,27 @@ const TELEMETRY_FIELDS = [
   "dmgHunter3", "dmgHunter2", "dmgHunter1",
   "dmgUfoBodyLarge", "dmgUfoBodySmall", "dmgUfoShotLarge", "dmgUfoShotSmall",
   "chainLen", "cargoMax",
-  "delivered", "deliveryScore", "cargoDamageEvents",
+  "delivered", "deliveryScore", "cargoDamageEvents", "cargoSevers",
   "debrisKills", "hunterKills", "saucerKills", "hunterCoalesced",
   "deflects", "hitsTaken",
   "scoreRepairBonus", "scoreScoopBonus",
   "debugRun", "resumedRun",
 ];
-// CS039 P2: thirteen columns added above, ahead of the two trailing flags. `chainLen`/`cargoMax` are
-// INSTANTANEOUS state at the sample instant (like hp/speed) — the DiffLog expressions, verbatim. Every
-// other column here is a CUMULATIVE per-run counter (like the *Picked/dmgFrom* families above) and is
-// monotone non-decreasing within a run.
+// CS039 P2: thirteen columns added above, ahead of the two trailing flags; GATE T added a fourteenth
+// (`cargoSevers`). THREE kinds, not two, and the names do not tell you which:
+//   INSTANTANEOUS — `chainLen`/`cargoMax`, state at the sample instant (like hp/speed), the DiffLog
+//     expressions verbatim.
+//   CUMULATIVE — every other column here, a per-run counter (like the *Picked/dmgFrom* families
+//     above), monotone non-decreasing within a run.
+//   ⛔ NEITHER — `cargoDamageEvents` ALONE. It is a SAWTOOTH and it DECREASES. It is the chain-guard
+//     drop-weight PITY counter, zeroed in dropPowerup() the instant a guard is SELECTED to drop
+//     (CS035 P6 / FORK-T — not on pickup, so it can reset with no matching guardPicked increment).
+//     It counts severs SINCE THE LAST GUARD DROP, never the run. Do not "restore" it to the
+//     cumulative group: it was described as cumulative here, in the P2 spec, in test-cs039-p2's
+//     §F and in TELEMETRY-ANALYSIS-GUIDE.md §3 for the whole of CS039, and the first real capture
+//     (GATE T) showed 7 decreases in 53 rows with the LAST ROW READING 0.
+//     `cargoSevers` is the run total, incremented on the same line the pity counter is, and is the
+//     column an analysis should read. Both are emitted: guardDropWeight() needs the pity value.
 // ⛔ A NEW KEY, additive, owned by CS037 P4. Nothing below reads, writes, renames or version-bumps any
 // of the five existing keys — afd_settings_v1, afd_achievements_v2, afd_scores_v1, afd_profiles_v1,
 // afd_saves_v1 are untouched by this whole section (spec §5.6).
@@ -5110,7 +5121,8 @@ const Telemetry = {
                                            // recomputed — the two must never be two sources of truth
       delivered: s.delivered,
       deliveryScore: s.deliveryScore,
-      cargoDamageEvents: s.cargoDamageEvents,
+      cargoDamageEvents: s.cargoDamageEvents,  // ⛔ SAWTOOTH — pity counter, resets on a guard DROP
+      cargoSevers: s.cargoSevers,              // ...the cumulative run total of the same event
       debrisKills: s.debrisKills,         // Garbage Satellites — the inverted vocabulary, see CLAUDE.md
       hunterKills: s.hunterKills,
       saucerKills: s.saucerKills,         // both sizes
@@ -5125,19 +5137,28 @@ const Telemetry = {
     this.write();   // ⛔ every snapshot, so a crash loses at most one interval (spec §5.6)
   },
 
+  // ⛔ THE ENVELOPE IS v:3, AND THE P2 SPEC'S "REUSE v2, ONE SHAPE PER CHANGESET" ⛔ WAS DELIBERATELY
+  // OVERRIDDEN AT GATE T (Paul's call; DECISIONS.md). Do not "restore" v:2 on the strength of that
+  // line — it was written before anyone knew a column would be needed after P3 shipped, and the two
+  // rules it sits between point opposite ways. P2 bumped v1 -> v2 for ONE stated reason: a stale blob
+  // missing the new keys makes telemetryCSV emit the literal string "undefined", and "silently
+  // dropping a stale run beats exporting a corrupt one." A 14th column under a reused v:2 recreates
+  // exactly that, against a v:2 blob that by then existed in the wild (GATE T's own capture). The
+  // reason won over the letter. ⛔ THE KEY NAME STILL DOES NOT CHANGE — it stays afd_telemetry_v1;
+  // the `_v1` in the key and the `v:` in the envelope are different things (P2 §3, still binding).
   read() {
     const ls = storageOK(); if (!ls) return [];
     try {
       const raw = ls.getItem(Profiles.keyFor(TELEMETRY_KEY));
       if (!raw) return [];
       const data = JSON.parse(raw);
-      if (!data || data.v !== 2 || !Array.isArray(data.rows)) return [];
+      if (!data || data.v !== 3 || !Array.isArray(data.rows)) return [];
       return data.rows.slice();
     } catch (e) { return []; }   // corrupt / unreadable — an empty buffer, never a throw
   },
   write() {
     const ls = storageOK(); if (!ls) return;
-    try { ls.setItem(Profiles.keyFor(TELEMETRY_KEY), JSON.stringify({ v: 2, rows: this.rows })); }
+    try { ls.setItem(Profiles.keyFor(TELEMETRY_KEY), JSON.stringify({ v: 3, rows: this.rows })); }
     catch (e) { /* quota / privacy mode / disabled — a background write, silent by design */ }
   },
 };
@@ -5187,7 +5208,7 @@ function telemetryHeaderLines(rows, from) {
     if (!(d <= 1e-9 * Math.max(1, Math.abs(def)))) changed.push(e.id + "=" + fmt(live));
   }
   return [
-    "# orbital-overhaul telemetry v2",                    // the envelope's own `v`, not a second version
+    "# orbital-overhaul telemetry v3",                    // the envelope's own `v`, not a second version
     "# build=" + GAME_VERSION,
     "# overrides=" + (on ? "ON" : "OFF"),
     "# telemetryInterval=" + DEBUG.telemetryInterval,     // the RESOLVED value tick() reads, not debugShown
@@ -8469,10 +8490,15 @@ function resetGameStats() {
     closeShave: false,       // survived a Hunter collision under 10 HP (Close Shave)
     everBelowHalf: false,    // HP ever dropped below 50% this game (Untouchable inverts this)
     hunterCoalesced: 0,      // Hunters born this game from neglected scrap coalescing (Waste Not, v3.2 P3)
-    cargoDamageEvents: 0,    // CS035 P6: unguarded chain severs this game (the sever path of
-                             // breakChain only — a guarded absorb and scatterChain() don't count). The
-                             // chain-guard drop-weight pity counter, read by guardDropWeight(); NOT
-                             // reset in nextWave() — pity carries across waves within a run, like cargoMax growth
+    cargoDamageEvents: 0,    // CS035 P6: unguarded chain severs SINCE THE LAST GUARD DROP (the sever
+                             // path of breakChain only — a guarded absorb and scatterChain() don't count).
+                             // ⛔ NOT a run total and NOT monotone: this is the chain-guard drop-weight
+                             // PITY counter, read by guardDropWeight() and zeroed in dropPowerup() when a
+                             // guard is SELECTED to drop. NOT reset in nextWave() — pity carries across
+                             // waves within a run, like cargoMax growth. For the run total, read cargoSevers.
+    cargoSevers: 0,          // CS039 GATE T: the same event, counted CUMULATIVELY for the run. Incremented
+                             // on the line below cargoDamageEvents++ and reset NOWHERE else, so telemetry
+                             // can report a sever total instead of the lower bound the sawtooth allows.
     // CS037 P1 (spec §5.5): per-source HP attribution, flat and additive — HP actually deducted,
     // non-lethal hits only. Ten categories: Garbage Satellite x3 sizes, Hunter Satellite x3 sizes,
     // UFO body x2 sizes, UFO shot x2 sizes.
@@ -9522,6 +9548,8 @@ function dropPowerup(x, y, vx = 0, vy = 0) {
   for (const k in POWERUP_DROP_WEIGHTS) { if (!eligible(k)) continue; r -= weightOf(k); if (r < 0) { type = k; break; } }
   // CS035 P6 (spec §5.3, FORK-T): the pity counter resets the instant a guard is SELECTED to drop,
   // before the Powerup is pushed — not on pickup. An uncollected guard still consumed the pity.
+  // ⛔ game.stats.cargoSevers is NOT reset here — it is the cumulative run total of the same event and
+  // has no pity semantics. Zeroing it would put the telemetry column back to the sawtooth GATE T fixed.
   if (type === "guard") game.stats.cargoDamageEvents = 0;
   game.powerups.push(new Powerup(x, y, type, vx, vy));
 }
@@ -11167,6 +11195,7 @@ function breakChain(i, src = null) { // node i destroyed; everything aft breaks 
   // CS035 P6 (spec §5.3): the sever path only — a guarded absorb returned above and never reaches
   // here; scatterChain() (ship death) is its own terminal event and does not increment this.
   game.stats.cargoDamageEvents++;
+  game.stats.cargoSevers++;   // CS039 GATE T: same event, cumulative — the pity counter above resets, this never does
   boom(hit.x, hit.y, 1, COLOR.garbage);
   for (let j = i + 1; j < chain.length; j++) {
     game.garbage.push(Garbage.fromNode(chain[j]));

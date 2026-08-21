@@ -706,15 +706,21 @@ function saucerAt(X, x, y, small) {
       assert(after.includes(NEW_TAIL), "A: TRAP 2/3 — ...and the current one carries the ticker release plus CS037 P5's chain_lost/chain_broken selection");
       // A THIRD known diff, added by CS035 P6 (spec §5.3): the sever path increments the chain-guard
       // drop-weight pity counter, on the unguarded break only — this is that path.
+      // WIDENED BY CS039 GATE T, and only by exactly its own edit: the SAME event now also bumps
+      // game.stats.cargoSevers, the cumulative run total the telemetry column reads. The pity counter
+      // is a sawtooth (dropPowerup() zeroes it when a guard is SELECTED to drop), so it could never
+      // answer "how many severs this run" — hence a second, adjacent increment rather than a change
+      // to the first. The claim is unchanged in kind: every diff in breakChain is a named one.
       const OLD_BOOM = '  boom(hit.x, hit.y, 1, COLOR.garbage);';
       const NEW_BOOM = '  // CS035 P6 (spec §5.3): the sever path only — a guarded absorb returned above and never reaches\n' +
         '  // here; scatterChain() (ship death) is its own terminal event and does not increment this.\n' +
         '  game.stats.cargoDamageEvents++;\n' +
+        '  game.stats.cargoSevers++;   // CS039 GATE T: same event, cumulative — the pity counter above resets, this never does\n' +
         '  boom(hit.x, hit.y, 1, COLOR.garbage);';
       assert(before.includes(OLD_BOOM), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the sever to boom()");
-      assert(after.includes(NEW_BOOM), "A: TRAP 2/3 — ...and the current one carries the pity-counter increment before it");
+      assert(after.includes(NEW_BOOM), "A: TRAP 2/3 — ...and the current one carries both sever counters before it");
       eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL).replace(OLD_BOOM, NEW_BOOM),
-        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit, CS035 P6's pity-counter edit and CS037 P5's voice selection are the ONLY diffs in breakChain; everything else is byte-unchanged");
+        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit, CS035 P6's pity-counter edit (widened by CS039 GATE T's cargoSevers) and CS037 P5's voice selection are the ONLY diffs in breakChain; everything else is byte-unchanged");
     }
     assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY, srcTag) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");

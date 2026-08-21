@@ -36,7 +36,7 @@ console.log("(A) a fresh boot's header: seven lines, every one a `#` key=value, 
   const on = X.overridesOn();
   eq(on, entry(X, X.DEBUG_OVERRIDE_ID).def !== 0, "A: a fresh boot's overrides state IS the registry def");
 
-  eq(lines[0], "# orbital-overhaul telemetry v2", "A: line 1 names the format and the envelope's v");
+  eq(lines[0], "# orbital-overhaul telemetry v3", "A: line 1 names the format and the envelope's v");
   eq(lines[1], "# build=" + X.GAME_VERSION, "A: line 2 is GAME_VERSION, read off the build");
   eq(lines[2], "# overrides=" + (on ? "ON" : "OFF"), "A: line 3 is the master toggle's live state");
   eq(lines[3], "# telemetryInterval=" + X.DEBUG.telemetryInterval, "A: line 4 is the RESOLVED interval");
@@ -213,7 +213,7 @@ console.log("(G) the clipboard path and the download fallback are handed the sam
   assert(/downloaded telemetry csv/i.test(X.Telemetry.msg), "G: ...and the outcome is stated");
   const src = X.telemetryExportRows();
   eq(downloaded, X.telemetryCSV(src.rows, src.from), "G: the downloaded text is the fingerprinted CSV");
-  assert(downloaded.startsWith("# orbital-overhaul telemetry v2\n"), "G: ...header block and all");
+  assert(downloaded.startsWith("# orbital-overhaul telemetry v3\n"), "G: ...header block and all");
   assert(downloaded.includes("\n# source=this run\n"), "G: ⛔ with the source telemetryExportRows resolved");
 
   // The clipboard branch is unreachable here (no clipboard API in the sandbox), so its half is pinned

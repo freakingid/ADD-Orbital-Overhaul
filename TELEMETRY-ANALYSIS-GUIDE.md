@@ -5,8 +5,9 @@ the log, verify it, run the standard battery, and avoid the traps — so a sessi
 findings instead of rediscovering the schema.
 
 **Written after:** the first full analysis (196-row run, waves 1–13, `orbital-overhaul.html` @
-`76eeca7` / CS038). Covers both the **v1 schema** (30 columns, CS037 P4) and the **v2 schema**
-(43 columns + `#` header, CS039).
+`76eeca7` / CS038). Covers the **v1 schema** (30 columns, CS037 P4), the **v2 schema** (43 columns +
+`#` header, CS039 P1–P3) and the **v3 schema** (44 columns, CS039 GATE T). A v2 log still parses
+fine — it is simply missing `cargoSevers`, and §3 says what to do instead.
 
 ---
 
@@ -66,9 +67,11 @@ Six checks. Each has caught something real.
    column then starts from a non-zero, unknown baseline and *all* whole-run totals are lower bounds.
    Say so prominently — this is the single most misleading failure mode.
    If `t[0] ≈ interval`, the log is complete from the run's start.
-3. **Monotonicity.** Every cumulative column (`score`, all `*Picked`, all `dmg*`, and in v2 all the
+3. **Monotonicity.** Every cumulative column (`score`, all `*Picked`, all `dmg*`, and in v2/v3 the
    kill/delivery/bonus counters) must be non-decreasing. A decrease means a schema misread or a
-   corrupt export.
+   corrupt export — **with exactly one sanctioned exception: `cargoDamageEvents` legitimately
+   decreases** and must be excluded from this check, or it reports a failure on every real log
+   (§3). It is the only such column; anything else dropping is a genuine problem.
 4. **Flags.** `debugRun` and `resumedRun`. A `debugRun` row was played with knob overrides in force;
    a `resumedRun` row belongs to a run that loaded a save, meaning `score` contains a baked-in
    pre-load component that cannot be separated out. **Either flag being true anywhere makes the run
@@ -118,9 +121,11 @@ a persistent level, and health is instantaneous so it has no remaining-use quant
 
 **Flags:** `debugRun`, `resumedRun` — emitted as `true`/`false`, always the last two columns.
 
-### v2 — the CS039 additions (13 columns)
+### v2/v3 — the CS039 additions (14 columns)
 
-Inserted before the two flags. Two kinds, and the names don't tell you which:
+Inserted before the two flags. **Three** kinds, and the names don't tell you which. The third kind
+has exactly one member, and it is the trap in this whole schema — read `cargoDamageEvents` below
+before you total anything.
 
 **Instantaneous:**
 
@@ -135,7 +140,7 @@ Inserted before the two flags. Two kinds, and the names don't tell you which:
 |---|---|
 | `delivered` | canisters delivered to the dock |
 | `deliveryScore` | points earned *at the dock* |
-| `cargoDamageEvents` | unguarded chain severs — cargo actually lost |
+| `cargoSevers` | **v3 only.** unguarded chain severs this run — cargo actually lost. The column to total. |
 | `debrisKills` | **Garbage Satellites** destroyed |
 | `hunterKills` | Hunters destroyed, all three tiers |
 | `saucerKills` | saucers destroyed, both sizes |
@@ -145,13 +150,39 @@ Inserted before the two flags. Two kinds, and the names don't tell you which:
 | `scoreRepairBonus` | cumulative `REPAIR_FULL_BONUS` (milestone hit at full HP) |
 | `scoreScoopBonus` | cumulative `SCOOP_MAX_BONUS` (scoop picked at max level) |
 
-### v2 — the `#` header block
+**Neither — one column, and it DECREASES:**
+
+| Column | Meaning |
+|---|---|
+| `cargoDamageEvents` | unguarded chain severs **since the last guard drop**. A sawtooth, not a total. |
+
+⛔ **`cargoDamageEvents` is the chain-guard drop-weight PITY counter, not a run tally.** It is zeroed
+in `dropPowerup()` the instant a guard is *selected to drop* — **not on pickup**, so it resets with
+no matching `guardPicked` increment and a log can show more resets than pickups. The last row is
+whatever happened to be standing when the run ended, and is routinely **0**. It was documented here
+and in the build as cumulative for the whole of CS039; the first real capture showed 7 decreases in
+53 rows. `guardDropWeight()` is the one consumer that wants this value.
+
+**In a v3 log, read `cargoSevers` and ignore the sawtooth.** In a v2 log `cargoSevers` does not
+exist, and the best available answer is a **lower bound** — sum the positive deltas, and at each
+reset add the new value (severs between the last sample and the reset are unrecoverable):
+
+```python
+sev, resets, prev = 0, 0, 0
+for c in d.cargoDamageEvents:
+    if c >= prev: sev += c - prev
+    else:         sev += c; resets += 1
+    prev = c
+print(f'severs >= {sev} across {resets} guard drops')   # v2: a FLOOR, never a total
+```
+
+### v2/v3 — the `#` header block
 
 Seven `#`-prefixed lines above the CSV header. Skip them with `pd.read_csv(path, comment='#')`, but
 **read them first** — they are the run's provenance:
 
 ```
-# orbital-overhaul telemetry v2
+# orbital-overhaul telemetry v3
 # build=1.0.0.38
 # overrides=OFF
 # telemetryInterval=15
@@ -281,8 +312,8 @@ run's story lives; build it first.
 11. **Narrate the worst window as a sequence.** Find the lowest-HP or lowest-score-rate stretch and
     walk it in order: what spiked, what depleted, what collapsed, what recovered and how. Feedback
     loops are visible in ordering and invisible in a correlation matrix.
-12. **v2 additions:** tow occupancy (`chainLen` / `cargoMax`), deliveries per minute, sever rate
-    (`cargoDamageEvents`), coalescence rate (`hunterCoalesced`), deflect share
+12. **v2/v3 additions:** tow occupancy (`chainLen` / `cargoMax`), deliveries per minute, sever rate
+    (`cargoSevers` — **never** `cargoDamageEvents`, §3), coalescence rate (`hunterCoalesced`), deflect share
     (`deflects` vs `hitsTaken`), and the score decomposition from §5.
 
 ---
@@ -312,6 +343,11 @@ than the coefficients.
 - **Health rate rising is not good news.** Because health is time-gated and everything else is
   kill-gated, health's *share* of pickups rises automatically whenever kills dry up. A wave where
   health pickups go up and everything else goes down is a wave in trouble, not a wave being generous.
+- **`cargoDamageEvents` is a sawtooth and its last row is meaningless.** The one column in the
+  schema that decreases; totalling it, differencing it as if cumulative, or reading the final row as
+  a run total all give wrong answers. Read `cargoSevers` (v3) or reconstruct a floor (v2). See §3 —
+  this was wrong in this document, in the build's own comment and in the P2 test simultaneously,
+  which is why it gets a trap entry as well as a schema entry.
 - **Ring truncation makes every total a lower bound.** See §2.2.
 - **15 s aliasing.** Anything faster than the interval is invisible: an i-frame window, a chain
   sever and recovery, a powerup picked and fully spent. Absence of a change between two rows is not
@@ -358,6 +394,9 @@ V2   = ['chainLen','cargoMax','delivered','deliveryScore','cargoDamageEvents','d
         'hunterKills','saucerKills','hunterCoalesced','deflects','hitsTaken',
         'scoreRepairBonus','scoreScoopBonus']
 v2 = all(c in d.columns for c in V2)
+v3 = v2 and 'cargoSevers' in d.columns          # CS039 GATE T's 44th column
+# ⛔ cargoDamageEvents is a SAWTOOTH (§3) — never in a cumulative list, never totalled from the last row.
+CUM_V2 = [c for c in V2[2:] if c != 'cargoDamageEvents'] + (['cargoSevers'] if v3 else [])
 
 # --- verification -------------------------------------------------------
 iv = d['t'].diff().median()
@@ -365,10 +404,18 @@ print(f'rows={len(d)}  t={d.t.iloc[0]:.1f}->{d.t.iloc[-1]:.1f}  '
       f'interval={iv:.3f} (sd {d.t.diff().std():.4f})  schema={"v2" if v2 else "v1"}')
 if len(d) >= 400 and d.t.iloc[0] > iv * 1.5:
     print('!! RING TRUNCATED — opening rows rolled off; all totals are LOWER BOUNDS')
-cum = ['score'] + [p+'Picked' for p in PICK] + DMG + (V2[2:] if v2 else [])
+cum = ['score'] + [p+'Picked' for p in PICK] + DMG + (CUM_V2 if v2 else [])
 bad = [c for c in cum if c in d and (d[c].diff().dropna() < 0).any()]
 print('non-monotonic:', bad or 'none',
       '| debugRun:', bool(d.debugRun.any()), '| resumedRun:', bool(d.resumedRun.any()))
+if v2:
+    sev = resets = prev = 0
+    for c in d.cargoDamageEvents:
+        if c >= prev: sev += c - prev
+        else:         sev += c; resets += 1
+        prev = c
+    print(f'severs: {int(d.cargoSevers.iloc[-1])} (cargoSevers, exact)' if v3
+          else f'severs >= {sev} across {resets} guard drops (v2 LOWER BOUND — no cargoSevers column)')
 
 # --- derived ------------------------------------------------------------
 d['dmgTot'] = d[DMG].sum(axis=1)

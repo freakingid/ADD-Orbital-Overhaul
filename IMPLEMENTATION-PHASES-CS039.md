@@ -452,6 +452,81 @@ Not a code phase. Paul, in the browser, on the P1–P3 build:
 - **T5.** `hunterCoalesced` over the run: is the Kessler loop actually firing, and at what rate per
   wave?
 
+### ✅ GATE T — CLOSED. Recorded answers (2026-08-20)
+
+Log: `LEVEL-5-TELEMETRY.csv` at the repo root — 53 rows, waves 1–5, 795 s of game time, final score
+133,185, ended at 35 HP. Header `overrides=ON` / `levers=telemetryCapture=1`: the only effective
+non-default knob is the `sessionSwitch` capture switch itself, so **tuning was stock and the run is
+comparable**. `debugRun`/`resumedRun` false in every row. Not ring-truncated (53 of 400, `t[0]` ≈
+interval), so every total is exact rather than a floor. Cadence σ 0.0016 s, no dropped snapshots.
+⛔ These answers are pre-`cargoSevers`: the log is a **v2** capture, which is what surfaced T-DEFECT
+below.
+
+- **T1 — PASS, FORK-D holds.** 43 columns matching `TELEMETRY_FIELDS` exactly; 7 `#` lines + header
+  + 53 data rows; ASCII/LF, no BOM, no CR, no quotes, no embedded delimiters, no blank lines,
+  uniform field counts, and **no `#` anywhere after the header block** (which is what makes pandas'
+  truncate-at-first-`#` safe). `rows=53` matches the row count. Sheets/Excel do **not** treat `#`
+  as a comment and land the 7 lines as single-cell rows above the header — a delete-rows-1–7 step,
+  not a choke. No carrier change needed.
+- **T2 — the ~14% estimate is KILLED; measured 3.75%.** `deliveryScore` 34,825 (**26.15%**),
+  `scoreRepairBonus` 5,000 (**3.75%**, exactly 2 × `REPAIR_FULL_BONUS`), `scoreScoopBonus` 500
+  (**0.38%**), residual **92,860 (69.72%)**. The books close independently: 13 milestones crossed,
+  2 paid the bonus, 11 healed at 25 HP = 275, total healing applied 680, so health pickups supplied
+  405 of a possible 475 with 70 HP lost to the cap. The residual is overwhelmingly **Hunter kills** —
+  337 × the 2,900-per-13-kill lineage mix ≈ 75,176, i.e. **~56% of the whole run's score from Hunters
+  alone**, against 26% from delivery. Delivery is a minority income stream in this run.
+- **T3 — EXACT.** 895 HP over the ten sums reconstructs to **28 hits**; `hitsTaken` = **28**. Every
+  sum divides integrally by its constant. P1's counter is on the correct side of the
+  shield/i-frame/lethal early returns. `deflects` = 5, so the shield absorbed 15.2% of 33 contacts.
+  Both `dmgUfoBody*` are zero — no saucer was ever rammed all run.
+- **T4 — NO, and the sign points the other way.** ρ(`chainLen`, Δscore) = **−0.09** whole run,
+  **−0.11** inside wave 5. Mean tow by wave **3.0 → 3.6 → 5.7 → 5.1 → 5.6** — it rises and never
+  collapses. Score rate is a function of Hunter kills: ρ(Δ`hunterKills`, Δscore) = **+0.82** whole
+  run, **+0.99** in wave 5. The worst rolling-3 window (t 690–720, 17.8 pts/s vs 334 at best) had
+  mean `chainLen` **7.0 on a cap of 10**, and there is a **105 s delivery drought** (t 645–750) with
+  the chain at 10/10 in five of seven samples. The failure mode is cargo accumulating and **not
+  moving** under hull pressure, not a tow collapse. n=1 — wants a second log before generalising.
+- **T5 — FIRING, and accelerating.** 34 coalescences in 13.25 min = **2.57/min**; per wave **0.67 /
+  1.71 / 2.33 / 2.50 / 4.33** per minute, monotone rising, wave 5 at 6.5× wave 1.
+  `hunterKills/hunterCoalesced` = **9.91**, so ~76% of each 13-kill lineage is cleared. Hunters are
+  also the dominant threat: `dmgHunter*` = 585 of 895 HP (**65%** of all damage), vs 31% Garbage
+  Satellites and 3% saucer shots. They pay ~56% of the score and charge 65% of the damage.
+
+### ⛔ T-DEFECT — `cargoDamageEvents` was never cumulative. Fixed at the gate.
+
+The one integrity check that failed: **7 decreases in 53 rows, last row 0.** It is the chain-guard
+drop-weight PITY counter, zeroed in `dropPowerup()` when a guard is *selected to drop* (CS035 P6 /
+FORK-T — not on pickup, hence 7 resets against 6 `guardPicked`). It counts severs since the last
+guard drop, never the run.
+
+⚠ **It was described as cumulative in FOUR places at once** — §P2 step 2 of this document, the
+build's comment above `TELEMETRY_FIELDS`, `test-cs039-p2.js` §F, and `TELEMETRY-ANALYSIS-GUIDE.md`
+§3 — and §F passed for a whole changeset because it drove the counters by hand and never reached
+the reset path. **The §P2 text above is left as written**: it is the record of what was specified,
+and correcting it in place would hide how a wrong claim propagated into three artefacts unchallenged.
+Read it with this section attached.
+
+**Applied at the gate** (Paul's call — see `DECISIONS.md`, retire into `log/CS039.md` at P4):
+
+1. `game.stats.cargoSevers` — a genuine cumulative run total, incremented on the line below
+   `cargoDamageEvents++` in `breakChain()`'s sever path, reset nowhere else. Emitted as a **44th**
+   telemetry column immediately after the pity counter. Both ship: `guardDropWeight()` needs the
+   pity value, an analysis needs the total.
+2. ⛔ **Envelope → `v: 3`**, overriding §P2 step 3's "reuse v2, one shape per changeset". Full
+   reasoning in `DECISIONS.md`; the short form is that P2's own stated reason for versioning (never
+   export an `undefined` column from a stale blob) beat its letter. **`afd_telemetry_v1` is
+   unchanged** — the key name and the envelope `v` are different things.
+3. `test-cs039-p2.js` §H — the section §F could not be: it drives the real `breakChain()` sever and
+   `dropPowerup()` reset, and pins that `guardPicked` does **not** move when the pity counter zeroes.
+4. `TELEMETRY-ANALYSIS-GUIDE.md` — a third "neither" kind in §3, a §7 trap, the §2.3 monotonicity
+   exception, and a v2 lower-bound reconstruction recipe for logs captured before this change.
+5. Reconstructed from this (v2) log: **≥26 severs** across 7 guard drops — a floor, not a total.
+   Per wave ≥ 1 / 1 / 10 / 7 / 7.
+
+**Not done, for P4 to note:** this run is waves 1–5, not the wave 10+ the gate asked for, so the
+late-game material the previous analysis found interesting is still uncaptured. A second log — on
+the v3 build, ideally deeper — would turn T4's n=1 observation into something actionable.
+
 ---
 
 ## P4 — Doc sweep, version bump, changeset close

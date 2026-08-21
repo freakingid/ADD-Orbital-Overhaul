@@ -76,9 +76,23 @@ None.
 
 ## Next up
 
-- **CS039 is not yet started.** `CS039-VOICE-WORKLIST.md` (this phase) records which voice events most
-  need line alternatives and why, in priority order, for Paul's next `tools/voice-robot-lab.html`
-  session — no `phon` is composed here, per the standing rule.
+- **CS039 P1–P3 and GATE T are in the tree; P4 (closing) is next.** GATE T's recorded answers and the
+  defect it caught are written up in `IMPLEMENTATION-PHASES-CS039.md` under "GATE T — CLOSED" — P4
+  folds them into the new ledger and `log/CS039.md`. ⚠ **GATE T made a build change**, which its own
+  prompt did not anticipate (see below), so P4 should not assume P1–P3 are the whole of CS039's code.
+- **⛔ GATE T, hazard the prompt didn't name: `cargoDamageEvents` was never a cumulative counter** —
+  it is the guard-drop pity counter and it decreases (7 times in 53 rows, last row 0). It had been
+  documented as cumulative in the P2 spec, the build comment, `test-cs039-p2.js` §F and
+  `TELEMETRY-ANALYSIS-GUIDE.md` §3 simultaneously. Fixed at the gate: new `game.stats.cargoSevers`
+  (44th telemetry column), envelope **v:2 → v:3** overriding a P2 ⛔, new §H test, all four
+  descriptions corrected. **P4 must retire `DECISIONS.md`'s CS039 entry into `log/CS039.md`** per
+  that file's own rule.
+- **GATE T's log is waves 1–5, not the wave 10+ the gate asked for**, and it is a v2 capture (no
+  `cargoSevers`). A second, deeper log on the v3 build would turn T4's n=1 finding into something
+  actionable.
+- `CS039-VOICE-WORKLIST.md` (CS038 P7) records which voice events most need line alternatives and
+  why, in priority order, for Paul's next `tools/voice-robot-lab.html` session — no `phon` is
+  composed there, per the standing rule.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - **Delivery-ticker ship-anchor (deferred) — wants its own gate/playtest**, not a closing-phase guess.
   Declined four times now; see `log/CS029.md`/`log/CS026.md`.

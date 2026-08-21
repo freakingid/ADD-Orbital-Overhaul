@@ -144,7 +144,7 @@ console.log("(F) telemetryExportRows() reads storage regardless of the capture s
   X.startGame();
   eq(X.DEBUG.telemetryCapture, 0, "F: (setup) capture is OFF this session");
   // Seed the store as if a PRIOR session (capture on, back then) wrote it.
-  store[X.TELEMETRY_KEY] = JSON.stringify({ v: 2, rows: [{ score: 7 }, { score: 8 }] }); // CS039 P2: envelope is v:2
+  store[X.TELEMETRY_KEY] = JSON.stringify({ v: 3, rows: [{ score: 7 }, { score: 8 }] }); // CS039 P2: v:2; GATE T: v:3
   eq(X.Telemetry.rows.length, 0, "F: (setup) the live buffer is empty — nothing accrued this (OFF) session");
 
   const exp = X.telemetryExportRows();
