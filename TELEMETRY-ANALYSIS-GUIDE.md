@@ -67,6 +67,19 @@ Six checks. Each has caught something real.
    column then starts from a non-zero, unknown baseline and *all* whole-run totals are lower bounds.
    Say so prominently — this is the single most misleading failure mode.
    If `t[0] ≈ interval`, the log is complete from the run's start.
+
+   **Capacity is interval-dependent.** `TELEMETRY_MAX = 400` rows, so the ring's wall-clock capacity
+   scales with `telemetryInterval`:
+
+   | Interval | Capacity |
+   |---|---|
+   | 5 s | 33 min |
+   | 10 s | 67 min |
+   | 15 s (default) | 100 min |
+
+   **Practical rule:** any run expected to run past ~30 minutes needs interval 15 (or a raised
+   `TELEMETRY_MAX`) to avoid wrapping. The 08-26 capture wrapped and silently lost its first 21.5
+   minutes and waves 1–7 — `t[0]` was 1290 with `rows = 400`.
 3. **Monotonicity.** Every cumulative column (`score`, all `*Picked`, all `dmg*`, and in v2/v3 the
    kill/delivery/bonus counters) must be non-decreasing. A decrease means a schema misread or a
    corrupt export — **with exactly one sanctioned exception: `cargoDamageEvents` legitimately
@@ -78,7 +91,9 @@ Six checks. Each has caught something real.
    non-comparable to a clean one** — filter or caveat, do not quietly average.
 5. **Damage arithmetic.** Every `dmg*` total should divide evenly by its source's damage constant
    (§4). If it does not, either a constant was retuned or a damage multiplier has landed — and the
-   hit-ledger reconstruction in §5 is invalid.
+   hit-ledger reconstruction in §5 is invalid. Both the 08-23 and 08-26 captures passed this check
+   exactly — reconstructed hits (`dmg*/UNIT`) equalled `hitsTaken` to the unit across all five parts
+   of those runs (34, 54, 86, 120, 126). Worth recording as the shape of a pass, not just a failure.
 6. **Column count.** Compare the header against `TELEMETRY_FIELDS` in the cloned build. A mismatch
    means the log came from a different build than the one you are reading.
 
@@ -111,6 +126,9 @@ Six checks. Each has caught something real.
 
 There are six, not seven, and the asymmetry is deliberate: five live in `game.powerBudget`, scoop is
 a persistent level, and health is instantaneous so it has no remaining-use quantity at all.
+
+`SCOOP_MAX_LEVEL` is itself a tunable constant (currently 5) that a future changeset may raise —
+read it from the build (§4's grep), never assume 5 when computing an "at max" share.
 
 **Cumulative pickup counters:** `rapidPicked`, `triplePicked`, `healthPicked`, `magnetPicked`,
 `enginePicked`, `scoopPicked`, `guardPicked`.
@@ -222,9 +240,18 @@ Re-grep these; do not trust the values below across builds.
 | `RAPID_SHOTS / TRIPLE_SHOTS / MAGNET_PIECES` | 40 / 30 / 40 | budget granted per pickup |
 | `ENGINE_BURN_SECONDS` | 10.0 | thrust-seconds per engine pickup |
 | `DEBUG.chainGuardIntercepts` | 3 | intercepts per guard pickup |
-| `POWERUP_DROP_WEIGHTS` | rapid 30, triple 30, scoop 20, magnet 10, engine 10; guard dynamic | expected drop mix |
+| `POWERUP_DROP_WEIGHTS` | rapid 30, triple 30, scoop 20, magnet 10, engine 10; guard's `20` is a placeholder, never read as a weight | expected drop mix |
 | `POWERUP_HEALTH_GAP` | [18, 26] s | ambient health spawn cadence |
 | `CARGO_CAP_MAX` | 24 | tow cap ceiling |
+
+**Guard's real weight is dynamic, not the table's `20`.** `dropPowerup()`'s `weightOf()`
+indirection substitutes `guardDropWeight() = min(chainGuardDropMax, chainGuardDropBase +
+chainGuardDropPity × cargoDamageEvents)` — defaults 40 / 4 / 8 — and guard is admitted to the roll
+at all only while `game.chain.length >= chainGuardMinTow` (default 5); an ineligible key is skipped
+in both the running total and the walk, so the remaining weights renormalise. Against the fixed
+100-point non-guard total, that puts guard's own share at ~3.8% at its pity-reset floor (4/104),
+climbing to ~29% at its cap (40/140). The `20` sitting in the table exists only so a reader sees a
+plausible slot — it is never actually evaluated as a weight.
 
 **Two behavioural facts that matter more than any single constant:**
 
@@ -274,6 +301,28 @@ and the estimate should be dropped.
 `score = deliveryScore + scoreRepairBonus + scoreScoopBonus + residual`, where the residual is kills
 and everything else. Report all four shares — this is the thing v1 could not do.
 
+**Delivery economy has a fixed incentive floor at 8 (v2/v3).** The recycle hub drops exactly ONE
+powerup per dock visit, latched at `game.deliveryCount === 8` (CS037 P7 collapsed the former
+12/16/20 latches into this single equality — the counter increments by one per canister, so it
+always passes through 8 exactly once per visit). `game.deliveryCount === CARGO_CAP_MAX` (24)
+additionally fires `superMegaDelivery()`. Per-visit score is quadratic —
+`pts(n) = DOCK_BASE_SCORE + DOCK_BONUS_STEP × (n-1)` per canister — summing to `12.5×N² + 37.5×N`
+at the shipped 50/25 (`DOCK_BASE_SCORE = 50`, `DOCK_BONUS_STEP = 25`), i.e. an average of 137.5
+pts/canister at N=8 and 337.5 at N=24. **Consequence:** mean `chainLen` is a STRATEGY readout, not a
+capacity readout — 8 is a hard floor that does not move with `cargoMax`. `deliveryScore / delivered`
+recovers the player's typical visit size by inverting the per-canister average `12.5×N + 37.5`.
+This pairs with tow-cap occupancy (dwell vs. distinct full hauls — §7):
+
+```python
+at_cap = d.chainLen >= d.cargoMax
+episodes = (at_cap & ~at_cap.shift(1, fill_value=False)).sum()
+print(f'at-cap dwell: {at_cap.mean()*100:.1f}% of samples  |  distinct full hauls: {episodes}')
+
+avg_per_canister = d.deliveryScore.iloc[-1] / d.delivered.iloc[-1]
+typical_N = (avg_per_canister - 37.5) / 12.5
+print(f'typical visit size ≈ {typical_N:.1f} canisters (avg payout {avg_per_canister:.1f}/canister)')
+```
+
 **Wave table.** Group by `level` and report, per wave: duration, score/s, damage/min, HP min and
 mean, mean scoop, pickups/min, and in v2 mean `chainLen` and deliveries/min. This table is where the
 run's story lives; build it first.
@@ -289,8 +338,12 @@ run's story lives; build it first.
    against `t`. In the first analysed run both were ≈0.04, i.e. **difficulty scaling was invisible in
    per-minute terms** and showed up only as wave length. That is a headline finding either way.
 3. **Damage composition.** Share by source, implied hit counts, and first-appearance time per source.
-   Look for sources that never fire at all — one of them being zero for a whole run is either a
-   design fact or a dead hook.
+   Look for sources that never fire at all. **Do not diagnose a zero as a bug, and do not propose
+   instrumentation for it before asking** — report the zero, name the mechanism, and ask the player.
+   `deflects` was 0 across 81 minutes in the 08-23 and 08-26 captures; the shield is a deliberate
+   *Asteroids Deluxe* homage this particular player does not use, with the auto-shield option
+   covering players who want the mechanic without manual timing. A zero can be a design outcome, not
+   a dead hook.
 4. **Damage clustering.** Fraction of intervals with zero damage, longest clean streak, worst
    rolling 3–5-interval window. Damage is bursty; a mean is close to meaningless and the tail is the
    tunable thing.
@@ -305,7 +358,13 @@ run's story lives; build it first.
    otherwise. This was the strongest single-variable split in the first run (1,400 vs 4,825).
 8. **Drop mix vs the design table.** Kill-drop shares against `POWERUP_DROP_WEIGHTS`. Close agreement
    means both that the roll is behaving and that the player is collecting rather than filtering; a
-   shortfall in one type is a hint that it is being skipped or timing out.
+   shortfall in one type is a hint that it is being skipped or timing out. **`guard` must be excluded
+   from a naive share comparison, or its expected share computed dynamically from
+   `guardDropWeight()`** (§4) — comparing observed guard pickups against the table's flat `20` will
+   always look like a shortfall and always be wrong. **This comparison measures COLLECTION, not the
+   roll.** In the 08-23 and 08-26 captures, `triple` was over-collected and `rapid` under-collected
+   by ~12 points of share in both runs, and the cause was player preference, not drop behaviour —
+   ask the player before inferring anything from a drop-mix gap.
 9. **Health share of pickups, by wave.** The throughput index (§7). Cleaner than score because it is
    not polluted by bonuses.
 10. **Correlations — then immediately sort them into three buckets** (§7).
@@ -315,6 +374,11 @@ run's story lives; build it first.
 12. **v2/v3 additions:** tow occupancy (`chainLen` / `cargoMax`), deliveries per minute, sever rate
     (`cargoSevers` — **never** `cargoDamageEvents`, §3), coalescence rate (`hunterCoalesced`), deflect share
     (`deflects` vs `hitsTaken`), and the score decomposition from §5.
+13. **Delivery economy floor (v2/v3).** The dock's one-powerup-per-visit latch fires at a fixed
+    `game.deliveryCount === 8`, and per-visit score is quadratic — see §5's derivation and inversion.
+    Because 8 does not move with `cargoMax`, mean `chainLen` reads as a strategy choice, not a
+    capacity ceiling; recover typical visit size from `deliveryScore / delivered` instead of reading
+    `chainLen` as "how much cargo the player can carry."
 
 ---
 
@@ -352,8 +416,26 @@ than the coefficients.
 - **15 s aliasing.** Anything faster than the interval is invisible: an i-frame window, a chain
   sever and recovery, a powerup picked and fully spent. Absence of a change between two rows is not
   absence of the event. Never assert "never happened" from the log alone.
-- **`resumedRun` poisons score comparisons** — the pre-load component is baked into `game.score` with
-  no way to separate it.
+- **`resumedRun` poisons a lone post-load log's score comparisons** — the pre-load component is
+  baked into `game.score` with no way to separate it out of that log alone. **This has a supported
+  workaround:** if the PRE-load portion is exported as its own part before capture is re-enabled
+  post-load, the parts stitch — every cumulative column matched to the unit across the seam in the
+  08-23 capture. Measured seam cost: 5–9 s of unlogged play per seam; the worst seam in that capture
+  lost 610 score, 10 Garbage Satellite kills and one triple pickup. Concatenation recipe: concat the
+  parts in `t` order, then NULL the delta row at each seam so the seam gap doesn't pollute rate
+  stats — never let a single `.diff()` run across a seam uncorrected.
+- **External capture keystrokes are invisible.** A player pressing a hotkey for external
+  screen-capture software (F8 for Medal, etc.) leaves no trace in the log in any form, and the
+  resulting distraction reads as a clean difficulty spike — damage burst, weapons dry, HP collapse.
+  The 08-23 capture's wave 4–5 near-death was exactly this and nothing else. Never conclude "this
+  wave is too hard" from a single bad window without asking the player what was happening outside
+  the game.
+- **Dwell at cap is not frequency at cap.** `chainLen`/`cargoMax` occupancy measures how long the
+  chain SITS at a value, not how often it gets there. A full chain is delivered almost immediately,
+  so dwell-at-cap is short by construction — that is not evidence the cap goes unused. To ask "does
+  the player reach the cap", count distinct EPISODES where `chainLen` crosses the threshold, not the
+  fraction of samples at it (§5's episode-counting snippet). In the 08-26 capture, at-cap dwell was
+  11% of samples while the run contained 19 separate full-24 hauls.
 - **One log is one run.** Every number in a report is n=1. Resist "the game does X"; write "in this
   run, X." A pattern worth acting on wants a second log.
 
@@ -485,7 +567,11 @@ Even with the CS039 columns, the log still cannot see:
   the dock" is unanswerable.
 - **Shots fired.** Budgets spent can be inferred (`picked × grant − Δstock`), but shots that missed,
   accuracy, and time-to-kill cannot.
-- **Enemy population.** How many Garbage Satellites or Hunters were *alive* at the sample instant.
-  `DiffLog` logs `hunterCount` once per level; the telemetry log does not carry it at all. This is
-  the most obvious next column if the analysis keeps wanting it.
+- **Enemy population — confirmed top priority.** How many Garbage Satellites or Hunters were *alive*
+  at the sample instant: three integers, `game.hunters.length`, `game.debris.length` (Garbage
+  Satellites — inverted vocabulary, §0), `game.garbage.length` (Debris). `DiffLog` logs `hunterCount`
+  once per level; the telemetry log does not carry any of the three at all. This is the most obvious
+  next column if the analysis keeps wanting it.
+- **No row is flushed at game over**, so the killing blow — whatever spiked in the final interval —
+  is never in the log.
 - **What the player was doing.** No input, no thrust state, no fire state.
