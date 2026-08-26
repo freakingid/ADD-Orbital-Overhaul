@@ -416,9 +416,12 @@ const LOWHP_GLOW_ALPHA_MAX = 0.40;  // peak vignette alpha near death (t=1) — 
 const LOWHP_GLOW_RADIUS     = 280;  // vignette depth in px, inward from each edge (CS038 GATE A A3 — this constant kept its name across the shape change, per the lab's own dump)
 const LOWHP_GLOW_RGB        = "255,64,64";  // edge-vignette color channels — mirrors COLOR.lowhp (#ff4040), CS038 GATE A A5 kept the mirror; kept as a triple so a gradient stop can carry the pulsing alpha
 const LOWHP_RELIEF_FLASH    = 0.5;  // sec — the geometry-only hull-ring "exhale" when low-health CLEARS with the ship alive (§5 relief cue, FLAG-CS010-a). HUD_CAP_FLASH's neighbourhood.
-const REPAIR_MILESTONE = 10000; // score interval that grants a hull-repair bonus (was: extra life)
-const REPAIR_AMOUNT = 25;       // +HP granted at each milestone (capped at max)
-const REPAIR_FULL_BONUS = 2500; // flat score awarded instead when already at full HP
+const REPAIR_MILESTONE = 10000; // score interval that SPAWNS a Health powerup while the hull is hurt
+                                // (CS040 P1; was a direct hull repair, and before that an extra life)
+// CS040 P1 (spec §1.2): REPAIR_AMOUNT (25) and REPAIR_FULL_BONUS (2500) STOOD HERE and are DELETED, not
+// parked — the milestone no longer heals and no longer pays, so neither constant has a consumer left.
+// Do not reinstate either one without reinstating the mechanism, which is Paul's call, not a cleanup
+// pass. The measured reason the arm changed at all is written out in full at addScore().
 
 // v3.6 P5 — the death spectacle. killShip() enters a new "dying" state for DEATH_DURATION seconds
 // instead of freezing straight to "gameover": the field keeps simulating (updateDeath) while an
@@ -1198,7 +1201,7 @@ const SCOOP_HITS_PER_LEVEL = 5;              // non-lethal hits that cost one sc
                                               // hits; with SHIP_MAX_HP 250 and DMG_MEDIUM 35 a full-health run
                                               // only takes ~7 hits total, so the scoop is now effectively sticky
                                               // once earned. That's the intent, not a bug to "fix."
-const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (mirrors the full-HP REPAIR_FULL_BONUS pattern; tunable)
+const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (once mirrored the full-HP REPAIR_FULL_BONUS, deleted CS040 P1; this one stands; tunable)
 const SCOOP_SPILL_KICK = 85;                 // v3.3 P4 (9c): px/s outward kick on the leftover when a clump is PARTIALLY scooped ("the rest floats off and away"); playtest knob (~60-110)
 // CS025 P3 added four SCOOP_MAGNET_* look-call constants here (stroke width / blur / nose-V width /
 // nose-V depth) for the magnet-pull scoop tell. CS025 P5 DELETED them with the tell itself — the
@@ -5130,7 +5133,11 @@ const Telemetry = {
       hunterCoalesced: s.hunterCoalesced,
       deflects: s.deflects,
       hitsTaken: s.hitsTaken,
-      scoreRepairBonus: s.scoreRepairBonus,
+      // ⛔ CS040 P1: the counter behind this column is DELETED (the full-HP milestone no longer pays),
+      // so the column emits a literal 0 — never s.scoreRepairBonus, which would now serialise as an
+      // empty cell. TELEMETRY_FIELDS is deliberately untouched this phase: CS040 P5 owns the schema
+      // change that drops the column outright. Until then the 0 is the honest value, not a placeholder.
+      scoreRepairBonus: 0,
       scoreScoopBonus: s.scoreScoopBonus,
       debugRun: game.debugRun, resumedRun: game.resumedRun,
     });
@@ -8518,7 +8525,10 @@ function resetGameStats() {
     hitsTaken: 0,            // non-lethal hits that actually deducted HP — same population, same site, as the
                              // dmgFrom* attribution switch, so "mean damage per hit" derived offline is coherent.
     deliveryScore: 0,        // points earned at the recycle dock this run
-    scoreRepairBonus: 0,     // cumulative REPAIR_FULL_BONUS awarded (full-HP milestone cash-in)
+    // CS040 P1 (spec §1.2): scoreRepairBonus STOOD HERE and is DELETED along with the mechanism that
+    // fed it — the full-HP milestone no longer pays, so the counter could only ever read 0. A save
+    // written before CS040 still carries the key; it orphans harmlessly under the known-value-else-
+    // default rule, which is exactly why removing a field needs no migration shim.
     scoreScoopBonus: 0,      // cumulative SCOOP_MAX_BONUS awarded (max-level scoop pickup cash-in)
     gameEnded: false         // set at game over so end-of-game achievements can evaluate
   };
@@ -9267,18 +9277,34 @@ function addScore(pts) {
   // ⛔ CS037 P2 (spec §3.3): benchmark mode is SEALED — it may not reach the score. See Bench.
   if (Bench.running) return;
   game.score += pts;
-  // Score milestones repair the hull instead of granting an extra life (F2).
+  // ---- Score milestones SPAWN health. They do not heal, and they do not pay (CS040 P1, spec §1.2) ----
+  // ⛔ WHY THIS IS A SPAWN AND NOT A REPAIR. Measured across the 2026-08-23 and 2026-08-26 telemetry
+  // captures, this one arm supplied 63% and 62% of ALL healing in those runs — 1,650 and 1,525 HP,
+  // against <= 950 from pickups in each. Nobody designed that; it emerged. A milestone is a flat 10,000
+  // points, score rate climbs with wave, so healing throughput climbed with wave all by itself.
+  // ⛔ AND WHY IT COULD NOT SIMPLY BE DELETED. Replaying each capture's exact damage trace with this arm
+  // removed and nothing else changed kills run A at wave 4 (it actually reached 14) and run B at wave 9
+  // (it reached 16). The rescue is NOT a bigger number: run B took 485 HP of damage between two
+  // consecutive health pickups, against a 250 HP hull, so no value of POWERUP_HEALTH_AMOUNT saves it.
+  // It is a DELIVERY-TIMING problem — the pity cadence (spec §1.3) and the health bank (§1.4) are the
+  // two pieces that answer it, and they land in P2 and P3. Do not re-tune the pickup amount here.
+  // ⛔ THE FULL-HULL GATE IS DELIBERATE — it is not a missing else to be "completed". A milestone must
+  // not be generous exactly when the player is safest, so at SHIP_MAX_HP the crossing does nothing at
+  // all, and therefore also makes no sound (FORK-CS040-A: the ping sits INSIDE the spawn arm).
   if (game.score >= game.nextRepair) {
+    // Advances on EVERY crossing, whatever the hull reads. The full-hull case skips the reward, never
+    // the bookkeeping — otherwise a stretch spent at full HP would bank crossings and cash them all at
+    // the first scratch.
     game.nextRepair += REPAIR_MILESTONE;
     if (game.ship.hp < SHIP_MAX_HP) {
-      game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + REPAIR_AMOUNT);
-    } else {
-      game.score += REPAIR_FULL_BONUS; // already at full HP: cash the milestone in as points
-      // CS039 P1: per-run counter for offline telemetry only — see resetGameStats(). This arm adds to
-      // game.score DIRECTLY rather than recursing through addScore(), so this cannot double-count.
-      game.stats.scoreRepairBonus += REPAIR_FULL_BONUS;
+      // The AMBIENT placement path, reused as-is (spec §1.2: "do not write a second placement path") —
+      // random angle, a distance in [POWERUP_HEALTH_MIN_DIST, POWERUP_HEALTH_MAX_DIST], wrapped.
+      // ⛔ The one-health-at-a-time gate lives at the AMBIENT CALL SITE in update(), not inside
+      // spawnHealthPowerup(), so a milestone CAN put a second one on the field. That is what the spec
+      // asks for; adding the gate here would be a design change, not a tidy-up.
+      spawnHealthPowerup();
+      AudioSys.shieldPing();
     }
-    AudioSys.shieldPing();
   }
 }
 
@@ -9650,8 +9676,9 @@ function applyPowerup(type) {
   if (type !== "health" && typeof game.stats[pickKey] === "number") game.stats[pickKey]++;
   if (type === "scoop") {
     // Scoop is a PERSISTENT, non-timed upgrade (v3.3 P3) — it lives on game.scoopLevel, NOT in
-    // powerBudget. Each pickup adds a level; at the cap it pays a small score bonus instead,
-    // mirroring the full-HP Health-milestone pattern. It still counts as a powerup pick (FLAG A-8:
+    // powerBudget. Each pickup adds a level; at the cap it pays a small score bonus instead, mirroring
+    // what the full-HP Health milestone once paid — that arm was DELETED in CS040 P1 and this one
+    // deliberately stands. It still counts as a powerup pick (FLAG A-8:
     // this freezes the maxWaveNoPowerup achievement — accepted, it IS a powerup), but it does NOT
     // feed powerUsed[] (that gates "Powered Up", the four original drop types only).
     if (game.scoopLevel < SCOOP_MAX_LEVEL) {
@@ -9659,9 +9686,10 @@ function applyPowerup(type) {
       game.floaters.push(new FloatText("SCOOP +1", game.ship.x, game.ship.y - 22, POWERUP_COLOR.scoop));
     } else {
       addScore(SCOOP_MAX_BONUS);
-      // CS039 P1: per-run counter for offline telemetry only — see resetGameStats(). Unlike
-      // scoreRepairBonus, this DOES go through addScore(), so it can itself trip a repair milestone —
-      // the two bonus counters are not symmetric code, and that is fine.
+      // CS039 P1: per-run counter for offline telemetry only — see resetGameStats(). This DOES go
+      // through addScore(), so it can itself trip a repair milestone — which as of CS040 P1 means it
+      // can SPAWN A HEALTH POWERUP, not pay a second bonus. Its asymmetric twin scoreRepairBonus was
+      // deleted with that arm; this counter stands alone now.
       game.stats.scoreScoopBonus += SCOOP_MAX_BONUS;
       game.floaters.push(new FloatText("SCOOP MAX", game.ship.x, game.ship.y - 22, POWERUP_COLOR.scoop));
     }

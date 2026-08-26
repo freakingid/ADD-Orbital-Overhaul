@@ -1137,14 +1137,33 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
     });
   }
   const fixed = run(build());
-  const pre = run(buildPreFix());
+  // The pre-fix module is built directly rather than through buildPreFix() for one reason: CS040 P1's
+  // narrowing below needs REPAIR_FULL_BONUS, which exists at PRE_FIX_REF and does NOT exist at HEAD, so
+  // it can only be asked of THIS build. RETURN is shared by both and could never carry it.
+  const preMod = build({ src: preFixSrc(), extra: ["REPAIR_FULL_BONUS"] });
+  const pre = run(preMod);
 
   assert(fixed.delivered === 96, `J: (setup) the control run really delivered 96 canisters (got ${fixed.delivered})`);
   assert(fixed.smdCalls === 4, `J: (setup) it really fired 4 Super Mega Deliveries (got ${fixed.smdCalls})`);
+  // ⛔ NARROWED BY CS040 P1 (spec §1.2), SAME SHAPE AND SAME REASON AS THE THREE NARROWINGS BELOW:
+  // PRE_FIX_REF predates the healing rework, so its addScore() still cashes a FULL-HULL score milestone
+  // in for a flat REPAIR_FULL_BONUS where HEAD's pays nothing whatsoever. This control run never takes a
+  // scratch, so every crossing it makes is a full-hull crossing and the entire score gap is that retired
+  // payout. It is not a DELIVERY-income difference, which is the only thing CS020's claim was ever about
+  // and which delivered / deliveryCount / lifeScore / lifeDelivered in this same loop still pin
+  // bit-for-bit. `hp` and `nextRepair` stay IN the loop on purpose — they are what makes the narrowing
+  // safe to read: identical hulls prove both builds saw the same full-hull condition at every crossing,
+  // and an identical nextRepair proves they made the same NUMBER of crossings.
   for (const k of Object.keys(fixed)) {
-    if (k === "floaters" || k === "powerupCount") continue;
+    if (k === "floaters" || k === "powerupCount" || k === "score") continue;
     eq(fixed[k], pre[k], `J: ${k} is bit-identical to the pre-fix build`);
   }
+  // Non-vacuity for that narrowing: the gap is EXACTLY the retired bonus times the number of crossings,
+  // derived from the pre-fix build's own two constants — HEAD has neither symbol left to read.
+  const crossings = pre.nextRepair / preMod.REPAIR_MILESTONE - 1;
+  assert(crossings > 0, `J: (non-vacuity) the control run really did cross a score milestone (got ${crossings})`);
+  eq(pre.score - fixed.score, crossings * preMod.REPAIR_FULL_BONUS,
+    `J: the whole score gap is the retired full-hull payout, ${crossings} x ${preMod.REPAIR_FULL_BONUS} (got ${pre.score - fixed.score})`);
   // ⛔ NARROWED BY CS037 P7 (spec §7.2), SAME REASON AS THE FLOATERS NARROWING ABOVE: PRE_FIX_REF
   // predates the one-powerup-per-visit nerf entirely, so it still pays all four of the retired
   // deliveryCount 8/12/16/20 latches per visit where the fixed build now pays only deliveryCount===8.

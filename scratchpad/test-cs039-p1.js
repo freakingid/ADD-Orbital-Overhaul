@@ -1,5 +1,6 @@
 // Headless test for CS039 P1 — five new per-run telemetry counters on game.stats (hunterKills,
-// hitsTaken, deliveryScore, scoreRepairBonus, scoreScoopBonus). Nothing reads them this phase — no
+// hitsTaken, deliveryScore, scoreRepairBonus, scoreScoopBonus), of which FOUR survive: CS040 P1 deleted
+// scoreRepairBonus with the mechanism that fed it (see NEW_FIELDS). Nothing reads them this phase — no
 // HUD, no leaderboard, no achievement — so this file's own job is entirely: each field lands at
 // exactly its one documented site, agrees with its sibling population where the spec says it must,
 // round-trips through save/resume with no edit to either function, and every existing export
@@ -15,7 +16,10 @@ const { assert, eq } = A;
 
 installSeed(20260820);
 
-const NEW_FIELDS = ["hunterKills", "hitsTaken", "deliveryScore", "scoreRepairBonus", "scoreScoopBonus"];
+// ⛔ NARROWED BY CS040 P1 (spec §1.2): scoreRepairBonus — P1's fifth counter — was DELETED along with
+// the full-HP milestone payout that fed it, so four of the five remain. This is the counter going away,
+// not the test losing interest in it; §E below is a tombstone for the same reason.
+const NEW_FIELDS = ["hunterKills", "hitsTaken", "deliveryScore", "scoreScoopBonus"];
 
 function freshShip(X, { hp = 100, invuln = 0, shieldOn = false } = {}) {
   const g = X.game;
@@ -40,7 +44,7 @@ function fakeKitLeaderboard(calls) {
 
 // ================= (A) defaults and reset =================
 (function sectionA() {
-  console.log("(A) resetGameStats() returns all five at 0; resetRun() clears them mid-run");
+  console.log("(A) resetGameStats() returns all four surviving counters at 0; resetRun() clears them mid-run");
   const X = buildGame();
   const fresh = X.resetGameStats();
   for (const f of NEW_FIELDS) eq(fresh[f], 0, `A: resetGameStats().${f} starts at 0`);
@@ -147,33 +151,12 @@ function fakeKitLeaderboard(calls) {
   eq(delta, lifetimeDelta, "D: game.stats.deliveryScore's delta equals Achievements.lifetime.deliveryScore's delta (same pts, same site)");
 })();
 
-// ================= (E) scoreRepairBonus moves only on a full-HP milestone =================
-(function sectionE() {
-  console.log("(E) scoreRepairBonus moves only when a score milestone lands with the ship already at full HP");
-  // -- full HP: the milestone pays REPAIR_FULL_BONUS and scoreRepairBonus tracks it --
-  {
-    const X = buildGame(); X.startGame();
-    X.game.ship.hp = X.SHIP_MAX_HP;
-    X.game.score = X.game.nextRepair - 1;
-    const nextRepairBefore = X.game.nextRepair;
-    eq(X.game.stats.scoreRepairBonus, 0, "E: scoreRepairBonus starts at 0");
-    X.addScore(1); // crosses the milestone
-    assert(X.game.nextRepair > nextRepairBefore, "E: (sanity) the milestone actually fired");
-    eq(X.game.stats.scoreRepairBonus, X.REPAIR_FULL_BONUS, "E: scoreRepairBonus === REPAIR_FULL_BONUS after a full-HP milestone");
-  }
-  // -- damaged HP: the milestone repairs hull instead, scoreRepairBonus stays 0 --
-  {
-    const X = buildGame(); X.startGame();
-    X.game.ship.hp = X.SHIP_MAX_HP - 50;
-    X.game.score = X.game.nextRepair - 1;
-    const nextRepairBefore = X.game.nextRepair;
-    const hpBefore = X.game.ship.hp;
-    X.addScore(1);
-    assert(X.game.nextRepair > nextRepairBefore, "E: (sanity) the milestone fired");
-    assert(X.game.ship.hp > hpBefore, "E: (sanity) hull was repaired instead of paid out");
-    eq(X.game.stats.scoreRepairBonus, 0, "E: scoreRepairBonus stays 0 when the milestone repairs hull instead");
-  }
-})();
+// ================= (E) DELETED BY CS040 P1 =================
+// Section (E) pinned scoreRepairBonus against the full-HP milestone that paid REPAIR_FULL_BONUS. CS040
+// P1 deleted both — the milestone now spawns a Health powerup below max hull and does nothing at full
+// hull, and neither the constant nor the counter exists. There is nothing left here to narrow, so the
+// section is gone rather than weakened. The replacement claims (spawn, no score, threshold advance) are
+// in test-cs040-p1.js §B/§C, where the phase that owns them lives.
 
 // ================= (F) scoreScoopBonus moves only on a max-level scoop pickup =================
 (function sectionF() {
@@ -198,9 +181,9 @@ function fakeKitLeaderboard(calls) {
   }
 })();
 
-// ================= (G) save/resume round trip preserves all five, no edit to either function =================
+// ================= (G) save/resume round trip preserves them all, no edit to either function =================
 (function sectionG() {
-  console.log("(G) all five fields survive buildSaveEntry() -> resumeFromSave()");
+  console.log("(G) every surviving field makes it through buildSaveEntry() -> resumeFromSave()");
   const X = buildGame(); X.startGame();
   const VALUES = {};
   NEW_FIELDS.forEach((f, i) => { VALUES[f] = (i + 1) * 11; X.game.stats[f] = VALUES[f]; });
@@ -213,7 +196,7 @@ function fakeKitLeaderboard(calls) {
 })();
 
 // ================= (H) P1 itself touched neither TELEMETRY_FIELDS nor Leaderboard.submit() =================
-// CS039 P2 (a later phase) wires all five of NEW_FIELDS into TELEMETRY_FIELDS — expected, and this
+// CS039 P2 (a later phase) wires all of NEW_FIELDS into TELEMETRY_FIELDS — expected, and this
 // section's job shrinks to what P1 itself owns: Leaderboard.submit()'s stats object still keeps
 // exactly its frozen four keys, and none of NEW_FIELDS leaked into that payload.
 (function sectionH() {

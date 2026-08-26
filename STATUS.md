@@ -1,7 +1,16 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.39 · Changeset: CS039 · Phase: P4 (closed) · Registry: 104 · Levers: 18
+Version: 1.0.0.39 · Changeset: CS040 · Phase: P1 · Registry: 104 · Levers: 18
 
-## Phase ledger — CS039
+## Phase ledger — CS040
+
+- P1 — The score milestone no longer heals or pays: below `SHIP_MAX_HP` a crossing calls
+  `spawnHealthPowerup()` (the ambient placement path, reused) and pings; at exactly `SHIP_MAX_HP` it
+  does nothing and makes no sound (FORK-CS040-A). `game.nextRepair` still advances on every crossing.
+  `REPAIR_AMOUNT`, `REPAIR_FULL_BONUS` and `game.stats.scoreRepairBonus` deleted outright, zero
+  consumers left. `REPAIR_MILESTONE` stays 10,000 (FORK-CS040-B). GDD §2's two milestone/health
+  bullets and §2.12's hull-full parenthetical corrected in place.
+
+## Phase ledger — CS039 (closed; full narrative in `log/CS039.md`)
 
 - P1 — Five new per-run counters on `game.stats` (`hunterKills`, `hitsTaken`, `deliveryScore`,
   `scoreRepairBonus`, `scoreScoopBonus`), each flat and incremented at one site. Nothing reads
@@ -27,8 +36,10 @@ decision verbatim: `log/CS039.md`.
 
 ## Working / verified
 
-- Full suite: see this phase's closing session summary for file/pass/fail/skip counts (target:
-  zero skips). `node --check` passes on the extracted script.
+- **CS040 P1:** full suite 166 files, 166 passed, 0 failed, 0 skipped (baseline before the phase was
+  165/165/0/0 — the extra file is `test-cs040-p1.js`). `node --check` passes on the extracted script.
+  The new test is non-vacuous against the parent build at `1ee9eed`, checked directly: that build
+  heals +25 HP and spawns nothing on the same crossing.
 - Telemetry: five counters agree with their sibling populations (`hitsTaken` reconstructs exactly
   from the `dmgFrom*` sums; `hunterKills` counts all three tiers); thirteen new columns present on
   every pushed row; `cargoSevers` never moves when the pity counter resets. Confirmed via
@@ -38,6 +49,19 @@ decision verbatim: `log/CS039.md`.
 
 ## Known issues
 
+- **⛔ CS040 P5 MUST remove the `scoreRepairBonus` telemetry column.** P1 deleted the counter behind
+  it but left `TELEMETRY_FIELDS` alone by instruction, so `Telemetry.push()` now emits a **literal 0**
+  for that column with a comment saying so. Left reading the deleted counter it would have serialised
+  as an **empty cell** (`Array.join` renders `undefined` as `""`), and `test-cs039-p2` §F's
+  monotonicity walk would have gone red on `NaN`. The 0 is honest — the value can no longer be
+  anything else — but the column is dead weight until P5 drops it.
+- **Two other-phase tests were repaired by CS040 P1, both narrowings rather than deletions.**
+  `test-cs020-p1.js` §J now excludes `score` from its bit-identical cross-build loop (PRE_FIX_REF
+  still pays the retired full-hull bonus; the gap is pinned at exactly `crossings ×
+  REPAIR_FULL_BONUS`, read off the pre-fix module, since HEAD has neither symbol left).
+  `test-cs039-p1.js` lost §E and one of its five `NEW_FIELDS` — the counter it pinned is gone.
+  `test-f2.js` §(e/f) was repointed to the new contract and its two constants dropped from the
+  hand-rolled return list.
 - **CLAUDE.md documentation debt: one item remains, one closed this phase.** `afd_telemetry_v1`
   now documented as the sixth Save-data key (closed CS039 P4, flagged CS037 P4). Still open:
   `Achievements.save()` is no longer `afd_achievements_v2`'s only writer, and `mergeUnlock()` goes
