@@ -122,7 +122,8 @@ const code = execSource(src);
   const opts = X.MENU_OPTIONS;
   assert(opts.includes("Credits"), "C: MENU_OPTIONS carries a Credits row");
   assert(opts.indexOf("Credits") < opts.indexOf("Back"), "C: Credits sits before Back");
-  eq(opts.indexOf("Credits"), opts.length - 2, "C: ...immediately before it, as spec §1.1 places it");
+  // CS040 P6 inserted "Telemetry" between Credits and Back, so "immediately before Back" is no longer
+  // this phase's claim to make — only that Credits precedes Back at all, asserted above.
   assert(!X.MENU_TITLE.includes("Credits"), "C: the title menu is NOT a second parent (FORK-CS038-A -> c)");
   const parents = [X.MENU_TITLE, X.MENU_ROOT_PLAY, X.MENU_ROOT_OVER, X.SOUND_ROWS]
     .filter(Boolean).filter(list => list.includes("Credits"));

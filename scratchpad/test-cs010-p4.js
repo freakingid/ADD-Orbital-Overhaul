@@ -115,10 +115,11 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
   assert(!/const\s+MENU_ROOT_SYS/.test(currentSrc), "B: MENU_ROOT_SYS is no longer declared (only referenced in a retire-note comment)");
   // CS016 P2: §10a's six-row order minus the two rows that moved to the title menu. The remaining four
   // keep §10a's relative order exactly (Sound / Music, Controls, …, Back), which is what §10a fixed.
-  // CS038 P1 inserted "Credits" before "Back" — pinned to its current post-P1 shape, the same
-  // "re-runs against the current build" precedent MENU_ROOT_PLAY's own comment above already follows.
-  // §10a's relative order is still exactly what this line is for, and the insert preserves it.
-  const expectedOptions = ["Sound / Music", "Controls", "Difficulty", "Credits", "Back"];
+  // CS038 P1 inserted "Credits" before "Back"; CS040 P6 inserted "Telemetry" the same way, immediately
+  // after it — pinned to its current post-P6 shape, the same "re-runs against the current build"
+  // precedent MENU_ROOT_PLAY's own comment above already follows.
+  // §10a's relative order is still exactly what this line is for, and both inserts preserve it.
+  const expectedOptions = ["Sound / Music", "Controls", "Difficulty", "Credits", "Telemetry", "Back"];
   assert(JSON.stringify(A.MENU_OPTIONS) === JSON.stringify(expectedOptions),
     `B: MENU_OPTIONS === ${JSON.stringify(expectedOptions)} (§10a order, CS016 P2 shrink); got ${JSON.stringify(A.MENU_OPTIONS)}`);
   assert(!A.MENU_OPTIONS.includes("High Scores") && !A.MENU_OPTIONS.includes("Achievements"),

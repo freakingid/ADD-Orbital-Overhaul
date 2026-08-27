@@ -227,7 +227,8 @@ let X = null;
     "A: three lever-knob rows per LEVERS entry — the standard leverKnob() triple");
   // CS024 P6e repoint: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7, "A: DEBUG_ROWS is still the registry plus its seven trailer rows");
+  // CS040 P6 repoint: +7 -> +6 — "Copy telemetry log" moved off this panel onto Options' Telemetry screen.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "A: DEBUG_ROWS is still the registry plus its six trailer rows");
 
   // Three rows per lever, ADJACENT and in floor/ceil/steps order — that grouping is the whole point of
   // returning an array from leverKnob() rather than three scattered literals.

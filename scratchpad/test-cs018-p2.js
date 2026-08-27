@@ -72,6 +72,7 @@ function makeAudioProxy() {
 const RETURN = [
   "startGame", "update", "loop", "game", "settings",
   "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "DEBUG_ROWS", "DebugPanel", "applyDebug",
+  "TELEMETRY_PANEL_HIDDEN",
   "saveSettings", "loadSettings", "STORAGE_KEY",
   "DebugCode", "DEBUG_CODE",
   "openDebug", "enterDebug", "gotoScreen", "menuDebug", "drawDebug", "drawMenu", "debugReturn", "menuInput",
@@ -181,7 +182,10 @@ function onDebug(A, { playing = false } = {}) {
   assert(A.DEBUG_ENTRIES.length === vars.length - headers, "C: DEBUG_ENTRIES is the registry minus its headers");
   // REPOINTED BY CS024 P6e: +2 -> +4 — Reset All + Reset High Scores joined Dump ahead of Back (spec §2/§4).
   // REPOINTED BY CS037 P2: +4 -> +6 — the benchmark instrument's Run/Copy rows joined the same trailer.
-  assert(rows.length === vars.length + 7, `C: DEBUG_ROWS = registry + its seven trailer rows (${rows.length} = ${vars.length} + 7)`);
+  // REPOINTED BY CS037 P4: +6 -> +7 — the telemetry export's own action row joined too.
+  // REPOINTED BY CS040 P6: +7 -> +6 — that row moved off this panel onto Options' Telemetry sub-screen
+  // (spec §4.5); its own "Copy log" row lives there now, not here.
+  assert(rows.length === vars.length + 6, `C: DEBUG_ROWS = registry + its six trailer rows (${rows.length} = ${vars.length} + 6)`);
 
   // Row order mirrors the registry exactly, then the two trailing action rows.
   let ok = true;
@@ -191,24 +195,29 @@ function onDebug(A, { playing = false } = {}) {
     else if (r.kind !== "var" || r.e !== v || r.label !== v.label) ok = false;
   });
   assert(ok, "C: every registry entry maps to its row in order (header rows carry the label, var rows the entry)");
+  // CS040 P6 (spec §4.5): the two telemetry knobs stay AT their registry position but their var rows
+  // carry `hidden: true` — unreachable by ↑↓ (see section D), but still real rows, so the count above
+  // and the mapping above are both unaffected by the hide.
+  assert(vars.filter(v => A.TELEMETRY_PANEL_HIDDEN.includes(v.id))
+    .every(v => rows[vars.indexOf(v)].hidden === true),
+    "C: telemetryInterval/telemetryCapture's rows carry hidden:true at their own registry position");
   // REPOINTED BY CS024 P6e: Dump is now the 4th-from-last row — Reset All and Reset High Scores follow
   // it, then Back (spec §2/§4).
   // REPOINTED BY CS037 P2: two more action rows (Run benchmark battery, Copy benchmark results) sit
   // between Reset saved scores and Back, so every offset below shifts by two. The CLAIM is unchanged and
   // is the one that matters: the trailer is action rows in registry-independent order, then Back last.
-  // REPOINTED BY CS037 P4: one more (Copy telemetry log), same treatment, same unchanged claim.
-  assert(rows[rows.length - 7].kind === "action" && rows[rows.length - 7].label === "Dump difficulty log",
-    "C: the Dump action is the 7th-to-last row");
-  assert(rows[rows.length - 6].kind === "action" && rows[rows.length - 6].label === "Reset all debug knobs to defaults",
-    "C: Reset All is the 6th-to-last row");
-  assert(rows[rows.length - 5].kind === "action" && rows[rows.length - 5].label === "Reset saved scores",
-    "C: Reset High Scores is the 5th-to-last row");
-  assert(rows[rows.length - 4].kind === "action" && rows[rows.length - 4].label === "Run benchmark battery",
-    "C: the benchmark run row is the 4th-to-last");
-  assert(rows[rows.length - 3].kind === "action" && rows[rows.length - 3].label === "Copy benchmark results",
-    "C: the benchmark copy row is the 3rd-to-last");
-  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Copy telemetry log",
-    "C: the telemetry copy row is the 2nd-to-last");
+  // REPOINTED BY CS037 P4: one more (Copy telemetry log) joined, then REPOINTED BY CS040 P6: removed
+  // again (moved to Options) — net back to the same five-action-plus-Back shape P2 shipped.
+  assert(rows[rows.length - 6].kind === "action" && rows[rows.length - 6].label === "Dump difficulty log",
+    "C: the Dump action is the 6th-to-last row");
+  assert(rows[rows.length - 5].kind === "action" && rows[rows.length - 5].label === "Reset all debug knobs to defaults",
+    "C: Reset All is the 5th-to-last row");
+  assert(rows[rows.length - 4].kind === "action" && rows[rows.length - 4].label === "Reset saved scores",
+    "C: Reset High Scores is the 4th-to-last row");
+  assert(rows[rows.length - 3].kind === "action" && rows[rows.length - 3].label === "Run benchmark battery",
+    "C: the benchmark run row is the 3rd-to-last");
+  assert(rows[rows.length - 2].kind === "action" && rows[rows.length - 2].label === "Copy benchmark results",
+    "C: the benchmark copy row is the 2nd-to-last");
   assert(rows[rows.length - 1].kind === "back" && rows[rows.length - 1].label === "Back",
     "C: Back is the last row");
   assert(rows.filter(r => r.kind === "var").length === A.DEBUG_ENTRIES.length,
@@ -235,11 +244,13 @@ function onDebug(A, { playing = false } = {}) {
   const A = build().exports;
   const g = onDebug(A);
   const rows = A.DEBUG_ROWS, ROWS = rows.length;
-  const selectable = rows.map((r, i) => r.kind !== "header" ? i : -1).filter(i => i >= 0);
+  // CS040 P6 (spec §4.5): `hidden` rows (telemetryInterval/telemetryCapture) are excluded from
+  // "selectable" alongside headers — debugStep/debugFirstRow skip both the same way.
+  const selectable = rows.map((r, i) => (r.kind !== "header" && !r.hidden) ? i : -1).filter(i => i >= 0);
 
   assert(g.menu.screen === "debug", "D: enterDebug put us on the debug screen");
   assert(g.menu.index === A.debugFirstRow(), "D: the cursor lands on the first SELECTABLE row");
-  assert(rows[g.menu.index].kind !== "header", "D: ...which is not a header");
+  assert(rows[g.menu.index].kind !== "header" && !rows[g.menu.index].hidden, "D: ...which is not a header, nor hidden");
   // REPOINTED BY CS024 P6e: row 0 is now itself selectable (the debugOverride master toggle, spec §3),
   // ahead of every section header — so the first selectable row IS row 0, not row 1.
   assert(g.menu.index === 0, `D: concretely, row 0 — the override toggle, no leading header to skip — got ${g.menu.index}`);
@@ -248,7 +259,8 @@ function onDebug(A, { playing = false } = {}) {
   const seen = [g.menu.index];
   for (let k = 1; k < selectable.length; k++) {
     A.menuDebug("down");
-    assert(rows[g.menu.index].kind !== "header", `D: down never lands on a header (step ${k}, index ${g.menu.index})`);
+    assert(rows[g.menu.index].kind !== "header" && !rows[g.menu.index].hidden,
+      `D: down never lands on a header or hidden row (step ${k}, index ${g.menu.index})`);
     seen.push(g.menu.index);
   }
   assert(JSON.stringify(seen) === JSON.stringify(selectable),
@@ -257,9 +269,10 @@ function onDebug(A, { playing = false } = {}) {
   assert(rows[g.menu.index].kind === "back", "D: ...and it is the Back row");
   // REPOINTED BY CS024 P6e: one above Back is now Reset High Scores, not Dump (spec §2/§4).
   // REPOINTED BY CS037 P2: ...and now the benchmark copy row, which is the new one-above-Back.
-  // REPOINTED BY CS037 P4: ...and now the telemetry copy row. The claim is unchanged: whatever the last
-  // action row is, it is reachable and it sits directly above Back.
-  assert(rows[g.menu.index - 1].kind === "action" && rows[g.menu.index - 1].label === "Copy telemetry log",
+  // REPOINTED BY CS037 P4: ...and now the telemetry copy row, then REPOINTED BY CS040 P6: that row
+  // moved to Options, so one-above-Back is the benchmark copy row again. The claim is unchanged:
+  // whatever the last action row is, it is reachable and it sits directly above Back.
+  assert(rows[g.menu.index - 1].kind === "action" && rows[g.menu.index - 1].label === "Copy benchmark results",
     "D: the last action row is reachable, one above Back");
 
   // Wrap forward: last -> first selectable (row 0, the override toggle — no leading header to skip
@@ -277,21 +290,21 @@ function onDebug(A, { playing = false } = {}) {
   for (let k = 1; k < selectable.length; k++) { A.menuDebug("up"); seenUp.push(g.menu.index); }
   assert(JSON.stringify(seenUp.slice().sort((a, b) => a - b)) === JSON.stringify(selectable),
     "D: one lap up visits exactly the same selectable set");
-  assert(seenUp.every(i => rows[i].kind !== "header"), "D: up never lands on a header either");
+  assert(seenUp.every(i => rows[i].kind !== "header" && !rows[i].hidden), "D: up never lands on a header or hidden row either");
 
   // Many laps: the invariant holds indefinitely, in both directions.
   let headerHits = 0;
-  for (let k = 0; k < 500; k++) { A.menuDebug(k % 3 === 0 ? "up" : "down"); if (rows[g.menu.index].kind === "header") headerHits++; }
-  assert(headerHits === 0, `D: 500 mixed moves never selected a header (got ${headerHits})`);
+  for (let k = 0; k < 500; k++) { A.menuDebug(k % 3 === 0 ? "up" : "down"); if (rows[g.menu.index].kind === "header" || rows[g.menu.index].hidden) headerHits++; }
+  assert(headerHits === 0, `D: 500 mixed moves never selected a header or hidden row (got ${headerHits})`);
 
-  // debugStep is the primitive, and it is header-free from ANY starting row — including from a header index,
-  // which is what defends the cursor if some future reset writes a raw 0.
+  // debugStep is the primitive, and it is header/hidden-free from ANY starting row — including from a
+  // header index, which is what defends the cursor if some future reset writes a raw 0.
   let stepOk = true;
   for (let from = 0; from < ROWS; from++) for (const dir of [1, -1]) {
     const to = A.debugStep(from, dir);
-    if (rows[to].kind === "header") stepOk = false;
+    if (rows[to].kind === "header" || rows[to].hidden) stepOk = false;
   }
-  assert(stepOk, "D: debugStep returns a non-header row from every index in both directions");
+  assert(stepOk, "D: debugStep returns a non-header, non-hidden row from every index in both directions");
   // REPOINTED BY CS024 P6e: row 0 is no longer a header (it's the override toggle), so the "step off a
   // header" case now has to target the actual first header — the SHIP section, one row further down.
   const shipHeader = rows.findIndex(r => r.kind === "header");
@@ -877,9 +890,9 @@ function onDebug(A, { playing = false } = {}) {
   // Panel height must NOT have grown — that is the whole point of the fixed-height rewrite.
   assert(A.DEBUG_PANEL_H === 640 && A.DEBUG_PANEL_H <= A.VIEW_H, `M: the panel height is unchanged at ${ROWS} rows`);
 
-  // A full lap still visits every selectable row, never a header, and reaches the last row.
+  // A full lap still visits every selectable row, never a header or hidden row, and reaches the last row.
   g.menu.index = A.debugFirstRow();
-  const selectable = rows.map((r, i) => r.kind !== "header" ? i : -1).filter(i => i >= 0);
+  const selectable = rows.map((r, i) => (r.kind !== "header" && !r.hidden) ? i : -1).filter(i => i >= 0);
   const seen = [g.menu.index];
   for (let k = 1; k < selectable.length; k++) {
     A.menuDebug("down");

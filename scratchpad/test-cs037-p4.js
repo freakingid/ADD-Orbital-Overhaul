@@ -466,18 +466,20 @@ console.log("(F) the localStorage round trip");
   }
 }
 
-// ================= (G) the export: a debug-panel action row, reachable AT GAME OVER ==============
+// ================= (G) the export: an Options action row (CS040 P6 relocation), reachable AT GAME OVER ==============
 console.log("(G) the clipboard export, and its reachability at game over");
 {
   const X = buildGame();
+  // REPOINTED BY CS040 P6 (spec §4.2/§4.5): "Copy telemetry log" moved OFF the debug panel onto
+  // Options' new "Telemetry" sub-screen, as "Copy log" — this phase's own claim, that the export is a
+  // plain label-dispatched action row reachable wherever Options is reachable (including game over),
+  // is unchanged; only WHICH screen carries the row moved.
   const labels = X.DEBUG_ROWS.filter(r => r.kind === "action").map(r => r.label);
-  assert(labels.includes("Copy telemetry log"), "G: the export is a debug-panel ACTION row");
-  eq(X.DEBUG_ROWS[X.DEBUG_ROWS.length - 1].kind, "back", "G: ...and Back is still the last row");
-  assert(stripped.includes('r.label === "Copy telemetry log"'), "G: it dispatches by LABEL, never by index");
-  // ⛔ Debug panel only — never Options.
-  const optionRows = [].concat(X.MENU_OPTIONS || [], X.MENU_ROOT_PLAY || [], X.MENU_ROOT_OVER || [], X.MENU_TITLE || []);
-  assert(!optionRows.some(r => String(r).toLowerCase().includes("telemetry")),
-    "G: ⛔ nothing telemetry-shaped appears in Options, the pause root or the title menu");
+  assert(!labels.includes("Copy telemetry log"), "G: the export is no longer a debug-panel action row");
+  eq(X.DEBUG_ROWS[X.DEBUG_ROWS.length - 1].kind, "back", "G: ...and Back is still the last debug-panel row");
+  assert(X.MENU_OPTIONS.includes("Telemetry"), "G: Options now carries a Telemetry row");
+  assert(X.TELEMETRY_ROWS.includes("Copy log"), "G: ...whose sub-screen carries the export as an action row");
+  assert(stripped.includes('label === "Copy log") copyTelemetry()'), "G: it dispatches by LABEL, never by index");
 
   // Every outcome is STATED. In this sandbox there is no clipboard and no Blob, so the copy lands on
   // its visible-failure branch — which is the contract: never a silent no-op.
@@ -539,18 +541,22 @@ console.log("(G) the clipboard export, and its reachability at game over");
     Y.openPause();
     eq(Y.game.paused, true, "G: (setup) gameover opens the pause root");
     for (const ch of ["`", ...Array.from("EvilG3niu$")]) Y.keydown(ch);
-    eq(Y.game.menu.screen, "debug", "G: ⛔ the debug panel IS reachable from a paused game-over screen");
+    eq(Y.game.menu.screen, "debug", "G: the debug panel IS still reachable from a paused game-over screen");
+    Y.menuDebug("back");   // leave the secret-code panel; the export itself lives on Options now
 
-    const idx = Y.DEBUG_ROWS.findIndex(r => r.kind === "action" && r.label === "Copy telemetry log");
-    assert(idx >= 0, "G: (setup) the export row exists");
-    Y.game.menu.index = idx;
+    // REPOINTED BY CS040 P6 (spec §4.2/§4.5): the export's OWN reachability-at-game-over claim moved
+    // with it — Options' pause-root entry needs no secret code, which is the whole improvement.
+    Y.gotoScreen("options", Y.MENU_OPTIONS.indexOf("Telemetry"));
+    Y.menuInput("confirm");
+    eq(Y.game.menu.screen, "telemetry", "G: (setup) Options' Telemetry row opens the sub-screen");
+    Y.game.menu.index = Y.TELEMETRY_ROWS.indexOf("Copy log");
     Y.Telemetry.msg = "";
-    Y.menuDebug("confirm");
+    Y.menuInput("confirm");
     assert(Y.Telemetry.msg !== "", "G: ⛔ confirming it at game over runs the export and states an outcome");
     eq(Y.Telemetry.rows.length, rowsAtDeath, "G: ...and the export does not consume the buffer");
 
     // ...and the window is real: the next run is what clears it.
-    Y.menuDebug("back");
+    Y.menuInput("back");
     Y.startGame();
     eq(Y.Telemetry.rows.length, 0, "G: the next run clears it, which is WHY the panel had to be reachable there");
   }

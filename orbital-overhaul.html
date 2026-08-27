@@ -3688,12 +3688,30 @@ function rootItems() { return game.state === "gameover" ? MENU_ROOT_OVER : MENU_
 // y+400 footer, and the panel needs no resize. Still ONE parent per screen (CS016 P2's IA): Credits'
 // one parent is Options. Safe positionally-blind for the same reason CS016 P2's shrink was — every
 // consumer resolves rows by LABEL via MENU_OPTIONS.indexOf(), re-verified by grep at this insert.
-const MENU_OPTIONS = ["Sound / Music", "Controls", "Difficulty", "Credits", "Back"];
+// CS040 P6 (spec §4.1): "Telemetry" inserted before "Back" the identical way, 5 rows -> 6 — its own
+// sub-screen (TELEMETRY_ROWS below), same one-parent-per-screen IA. Re-verified by grep: every
+// consumer still resolves MENU_OPTIONS rows by LABEL, no positional addressing anywhere.
+const MENU_OPTIONS = ["Sound / Music", "Controls", "Difficulty", "Credits", "Telemetry", "Back"];
 // CS010 P4 (§9): the Sound/Music sub-screen's rows, same template as DIFFICULTY_ROWS. CS010 P9 (§11c)
 // added the Voice Volume slider — SOUND_ROWS + VOL_LABELS + VOL_CATS grow together so the parallel
 // label→category lookup stays paired. CS011 P3 added "Voice" (style picker) + "Captions" (toggle),
 // both dispatched by label in menuSound/drawSound like the existing Music Track cycler.
 const SOUND_ROWS   = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume", "Voice", "Captions", "Music Track", "Back"];
+// CS040 P6 (spec §4.2): the Telemetry sub-screen's rows, same label-dispatch template as SOUND_ROWS.
+// "Capture" and "Sample rate" are ◄►-adjusted value rows over the existing DEBUG.telemetryCapture /
+// DEBUG.telemetryInterval knobs (applyDebug() is still the one write path — this screen is a more
+// convenient place to flip them, not a second store); "Copy log" is a plain action row calling the
+// existing copyTelemetry(), unchanged from the debug panel's own row.
+const TELEMETRY_ROWS = ["Capture", "Sample rate", "Copy log", "Back"];
+// The preset ring (spec §4.4). `def: 15` on the registry entry is untouched — a stock run still
+// reports `levers=none` — but the label is DERIVED from TELEMETRY_MAX, not hardcoded, so a future
+// change to the ring size (like P5's 400 -> 800) moves these minutes without a second edit here.
+const TELEMETRY_RATE_PRESETS = [5, 10, 15];
+const TELEMETRY_RATE_NAMES = { 5: "Detail", 10: "Balanced", 15: "Full run" };
+function telemetryRateLabel(iv) {
+  const mins = Math.round(TELEMETRY_MAX * iv / 60);
+  return iv + " s — " + (TELEMETRY_RATE_NAMES[iv] || "Custom") + " (" + mins + " min)";
+}
 const VOL_CATS     = ["sfx", "music", "master", "voice"]; // parallel to VOL_LABELS (NOT to any MENU_OPTIONS/SOUND_ROWS position)
 const VOL_LABELS   = ["SFX Volume", "Music Volume", "Master Volume", "Voice Volume"]; // the slider rows, by label
 const VOL_STEP     = 0.1;                         // per left/right nudge on a volume slider
@@ -4303,6 +4321,17 @@ const DEBUG_VARS = [
 // "each knob" (the startup seed below, loadSettings' per-entry validation) goes through this — a header has
 // no `id`/`def`/`min`/`max`, so iterating DEBUG_VARS directly would seed `debugShown[undefined]`.
 const DEBUG_ENTRIES = DEBUG_VARS.filter(v => !v.header);
+// CS040 P6 (spec §4.5): the two telemetry knobs and the export action moved off this panel onto the
+// Options "Telemetry" sub-screen (menuTelemetry/drawTelemetryMenu). They STAY in DEBUG_VARS/DEBUG_ENTRIES
+// at their existing position — Telemetry.tick()/flush(), the CSV header fingerprint and the
+// sessionSwitch/save-exemption machinery all still read them there unchanged, and every OTHER entry's
+// DEBUG_VARS index must keep matching its DEBUG_ROWS index (dozens of phase-local tests navigate the
+// panel by that index). `TELEMETRY_PANEL_HIDDEN` rows are therefore marked `hidden: true` rather than
+// filtered out — still occupying their slot, but skipped by debugStep/debugFirstRow (unreachable by
+// ↑↓, same treatment a header gets) and skipped by drawDebug's render loop (no row drawn, no vertical
+// space spent) — invisible and inert, exactly "removed from the debug panel", with zero index drift
+// for every entry after them.
+const TELEMETRY_PANEL_HIDDEN = ["telemetryInterval", "telemetryCapture"];
 // CS018 P2: the panel's ROW MODEL, derived from the registry — never a hardcoded count or offset. Each
 // registry entry becomes one row (a header row or a value row carrying its entry), and the two trailing rows
 // (the CS017 P2 "Dump difficulty log" action and Back) are APPENDED HERE rather than special-cased in the
@@ -4310,7 +4339,8 @@ const DEBUG_ENTRIES = DEBUG_VARS.filter(v => !v.header);
 // everything else, and both menuDebug and drawDebug read row `kind` instead of comparing against
 // DEBUG_VARS.length. `game.menu.index` indexes THIS array, not DEBUG_VARS.
 const DEBUG_ROWS = [
-  ...DEBUG_VARS.map(v => v.header ? { kind: "header", label: v.header } : { kind: "var", label: v.label, e: v }),
+  ...DEBUG_VARS.map(v => v.header ? { kind: "header", label: v.header }
+    : { kind: "var", label: v.label, e: v, hidden: TELEMETRY_PANEL_HIDDEN.includes(v.id) }),
   { kind: "action", label: "Dump difficulty log" },
   // CS024 P6e (spec §2/§4): two more action rows, same kind as Dump — no value, no chevrons, fired by
   // the normal confirm input, dispatched by label in menuDebug's existing action branch.
@@ -4323,11 +4353,9 @@ const DEBUG_ROWS = [
   // erase rows above do.
   { kind: "action", label: "Run benchmark battery" },
   { kind: "action", label: "Copy benchmark results" },
-  // CS037 P4 (spec §5.3): the telemetry export, appended the same way and dispatched by LABEL in
-  // menuDebug. ⛔ THE EXPORT LIVES HERE AND NOWHERE ELSE — never in Options. Not destructive (it
-  // copies, and does not clear the buffer the way "Dump difficulty log" clears DiffLog), so it does
-  // not go through openModal.
-  { kind: "action", label: "Copy telemetry log" },
+  // CS037 P4 (spec §5.3) added "Copy telemetry log" here, appended the same way. CS040 P6 (spec §4.5)
+  // REMOVES it — Options' "Telemetry" sub-screen is the row's only home now (menuTelemetry's "Copy
+  // log"), and copyTelemetry() itself is untouched: only the control surface moved, never the export.
   { kind: "back",   label: "Back" },
 ];
 // CS018 P2: the panel's transient VIEW state — the scroll window's top row and the pending numeric-entry
@@ -5446,16 +5474,17 @@ function telemetryDownload(text, why) {
     AudioSys.ui(false);
   }
 }
-// "Copy telemetry log" — the debug panel's action row. ⛔ THE EXPORT LIVES HERE AND NOWHERE ELSE, never
-// in Options (spec §5.3). It shares benchCopyResults()'s failure contract for the same reason that one
-// has it: navigator.clipboard is absent on file:// in several browsers and rejects without a user
-// gesture in others, so BOTH paths fall through to a Blob download and every outcome — copied,
-// downloaded, or neither — is stated in Telemetry.msg. A copy that quietly did nothing is
-// indistinguishable from one that worked.
+// "Copy log" — CS037 P4 put this on the debug panel's action row; CS040 P6 (spec §4.2/§4.5) moved the
+// CONTROL to Options' "Telemetry" sub-screen and removed the panel row. The function itself is
+// untouched: it shares benchCopyResults()'s failure contract for the same reason that one has it —
+// navigator.clipboard is absent on file:// in several browsers and rejects without a user gesture in
+// others, so BOTH paths fall through to a Blob download and every outcome — copied, downloaded, or
+// neither — is stated in Telemetry.msg. A copy that quietly did nothing is indistinguishable from one
+// that worked.
 //
-// ⛔ REACHABLE AT GAME OVER. The buffer is per-run and resetRun() clears it, so a finished run's data
-// is only exportable between the death and the next start — which is exactly why the secret code's
-// gate now admits a PAUSED GAMEOVER screen alongside a paused live game (see the keydown listener).
+// Reachable at game over too, same as any other Options row (Options' pause-menu entry point already
+// admits a paused gameover screen) — the buffer is per-run and resetRun() clears it, so a finished
+// run's data is only exportable between the death and the next start.
 function copyTelemetry() {
   const src = telemetryExportRows();
   if (!src.rows.length) {
@@ -5705,6 +5734,7 @@ function menuInput(action) {
     case "profiles":     menuProfiles(action); break;   // CS031 P4: the roster screen
     case "slots":        menuSlots(action); break;      // CS032 P3: the save/load slots screen
     case "credits":      menuCredits(action); break;    // CS038 P1: the Credits screen
+    case "telemetry":    menuTelemetry(action); break;  // CS040 P6: the Telemetry sub-screen
     case "debug":        menuDebug(action); break;   // CS015 P4: hidden, secret-code-only
   }
 }
@@ -5811,6 +5841,7 @@ function menuOptions(a) {
     // gotoScreen — row 0 of CREDITS_ROWS is a heading, so gotoScreen's `index = 0` is not a valid
     // cursor here and the first selectable row is applied after it (enterDebug()'s idiom exactly).
     else if (label === "Credits") openCredits();
+    else if (label === "Telemetry") gotoScreen("telemetry"); // CS040 P6 (spec §4.1)
     // CS012 P4 / CS013 P1: Back is context-aware — paused mid-game OR gameover (both have a root)
     // return to it (cursor on Options). CS016 P2: from the title the `else` no longer closes the
     // overlay entirely — the title has a menu of its own to return to, with game.paused cleared.
@@ -6053,13 +6084,44 @@ function menuCredits(a) {
   else if (a === "pause") closePause();
 }
 
+// CS040 P6 (spec §4): the Telemetry sub-screen — moved off the debug panel so capture is reachable
+// without the secret code. Follows the menuSound/menuOptions label-dispatch template exactly.
+// "Capture" and "Sample rate" write through applyDebug(), the SAME path the (now-removed) debug-panel
+// rows used — this screen is a more convenient control surface, not a second store. §4.3: Capture
+// stays session-only because DEBUG.telemetryCapture is a `sessionSwitch` registry entry — that
+// exemption (never persisted, never revived by a reload) lives at the registry, untouched here.
+function menuTelemetry(a) {
+  const m = game.menu, N = TELEMETRY_ROWS.length, label = TELEMETRY_ROWS[m.index];
+  if (a === "up")   { m.index = (m.index + N - 1) % N; AudioSys.ui(false); }
+  else if (a === "down") { m.index = (m.index + 1) % N; AudioSys.ui(false); }
+  else if (a === "left" || a === "right") {
+    if (label === "Capture") {
+      applyDebug("telemetryCapture", DEBUG.telemetryCapture ? 0 : 1);
+      saveSettings();
+      AudioSys.ui(false);
+    } else if (label === "Sample rate") {
+      const vals = TELEMETRY_RATE_PRESETS, n = vals.length;
+      const idx = Math.max(0, vals.indexOf(DEBUG.telemetryInterval));
+      applyDebug("telemetryInterval", vals[(idx + (a === "right" ? 1 : -1) + n) % n]);
+      saveSettings();
+      AudioSys.ui(false);
+    }
+  }
+  else if (a === "confirm") {
+    if (label === "Copy log") copyTelemetry();
+    else if (label === "Back") gotoScreen("options", MENU_OPTIONS.indexOf("Telemetry"));
+  }
+  else if (a === "back") gotoScreen("options", MENU_OPTIONS.indexOf("Telemetry"));
+  else if (a === "pause") closePause();
+}
+
 // --- CS018 P2: the debug panel's row model, scroll window and direct numeric entry ---
 // Every index below is DERIVED from DEBUG_ROWS (which is itself derived from the registry). There is no
 // literal row count, no "dumpRow = N" offset and no assumption that m.index maps onto DEBUG_VARS — that
 // mapping is exactly what section headers break, and it is what CS015 P5's "derive the index" lesson was
 // about in the first place. The registry can grow to 32 entries with headers interleaved and none of this
 // needs an edit.
-function debugFirstRow() { return DEBUG_ROWS.findIndex(r => r.kind !== "header"); }
+function debugFirstRow() { return DEBUG_ROWS.findIndex(r => r.kind !== "header" && !r.hidden); }
 // The registry entry under the cursor, or null when the cursor is on a header / Dump / Back. The one place
 // "is a value row selected?" is answered — the keydown numeric-entry gate, the ◄► step and the renderer all
 // ask through it.
@@ -6067,14 +6129,16 @@ function debugSelectedVar() {
   const r = DEBUG_ROWS[game.menu.index];
   return r && r.kind === "var" ? r.e : null;
 }
-// The next SELECTABLE row in `dir`, wrapping. Headers are skipped entirely (FLAG-j) so one can never become
-// the selection — including on the wrap from the last row back to the first, and vice versa. Walks at most
-// one full lap, so an all-headers registry (impossible: Dump and Back are always appended) returns `from`.
+// The next SELECTABLE row in `dir`, wrapping. Headers are skipped entirely (FLAG-j), and so — CS040 P6 —
+// are `hidden` rows (spec §4.5's telemetryInterval/telemetryCapture): unreachable by ↑↓, same treatment
+// a header gets, so a cursor can never land on a knob this screen no longer shows. Walks at most one
+// full lap, so an all-skipped registry (impossible: Dump and Back are always appended and never hidden)
+// returns `from`.
 function debugStep(from, dir) {
   const n = DEBUG_ROWS.length;
   for (let k = 1; k <= n; k++) {
     const i = ((from + dir * k) % n + n) % n;
-    if (DEBUG_ROWS[i].kind !== "header") return i;
+    if (DEBUG_ROWS[i].kind !== "header" && !DEBUG_ROWS[i].hidden) return i;
   }
   return from;
 }
@@ -6188,9 +6252,6 @@ function menuDebug(a) {
       // the keydown listener both hand it the frame and the keyboard while Bench.running.
       else if (r.label === "Run benchmark battery") Bench.start();
       else if (r.label === "Copy benchmark results") benchCopyResults();
-      // CS037 P4: the telemetry export. Reachable at gameover through the same panel (see the keydown
-      // listener's secret-code gate), which is the whole point — resetRun() clears the buffer.
-      else if (r.label === "Copy telemetry log") copyTelemetry();
     }
     else if (r && r.kind === "back") debugReturn();
   }
@@ -12882,6 +12943,7 @@ function drawMenu() {
   else if (s === "profiles") drawProfiles();     // CS031 P4: the roster screen
   else if (s === "slots") drawSlots();           // CS032 P3: the save/load slots screen
   else if (s === "credits") drawCredits();       // CS038 P1: the Credits screen
+  else if (s === "telemetry") drawTelemetryMenu(); // CS040 P6: the Telemetry sub-screen
   else if (s === "debug") drawDebug();   // CS015 P4: hidden, secret-code-only
   drawModal();  // CS016 P3: LAST, unconditionally — it must paint over whichever panel raised it
 }
@@ -13194,6 +13256,35 @@ function drawCredits() {
   if (game.menu.linkMsg) drawText(game.menu.linkMsg, cx, CREDITS_MSG_Y, CREDITS_MSG_SIZE, COLOR.dim);
 }
 
+// CS040 P6 (spec §4.2): the Telemetry sub-screen's render. Follows drawSound's value-row layout
+// (left-aligned label + value + ◄► chevrons on the focused row) for the two ◄►-adjusted rows, and
+// drawDebug's action-row style (centered, ▶ marker, no chevrons) for "Copy log" and "Back". Reuses
+// Telemetry.msg for the copy-status line — the same channel the debug panel's own row used to show.
+function drawTelemetryMenu() {
+  const { x, y } = menuPanel(680, 360, "TELEMETRY");
+  const m = game.menu;
+  let cy = y + 100;
+  ["Capture", "Sample rate"].forEach((label, i) => {
+    const sel = m.index === i;
+    drawText(label, x + 40, cy + 6, 18, sel ? COLOR.text : COLOR.menuIdle, "left");
+    const ox = x + 220;
+    const val = label === "Capture" ? (DEBUG.telemetryCapture ? "ON" : "OFF") : telemetryRateLabel(DEBUG.telemetryInterval);
+    ctx.font = "16px monospace";
+    const w = ctx.measureText(val).width;
+    drawText(val, ox, cy + 6, 16, sel ? COLOR.text : COLOR.menuIdle, "left");
+    if (sel) { drawText("◄", ox - 20, cy + 7, 16, COLOR.text); drawText("►", ox + w + 16, cy + 7, 16, COLOR.text); }
+    cy += 46;
+  });
+  cy += 14;
+  const copySel = m.index === TELEMETRY_ROWS.indexOf("Copy log");
+  drawText((copySel ? "▶ " : "   ") + "Copy log", VIEW_W / 2, cy + 6, 18, copySel ? COLOR.text : COLOR.menuIdle);
+  cy += 46;
+  const backSel = m.index === TELEMETRY_ROWS.indexOf("Back");
+  drawText((backSel ? "▶ " : "   ") + "Back", VIEW_W / 2, cy + 6, 22, backSel ? COLOR.text : COLOR.menuIdle);
+  if (Telemetry.msg) drawText(Telemetry.msg, VIEW_W / 2, y + 300, 13, COLOR.dim);
+  drawMenuHint("↑↓ move    ◄► adjust    ENTER / A select    ESC / B back", VIEW_W / 2, y + 332);
+}
+
 // Hidden Debug Options panel renderer (CS015 P4) — generic over DEBUG_ROWS, following drawSound's value-row
 // layout (left-aligned label + value + ◄► chevrons on the focused row) plus a centered Back row. CS017 P2
 // added one more row between the values and Back: "Dump difficulty log" — an ACTION row, rendered like Back
@@ -13215,6 +13306,7 @@ function drawDebug() {
   let cy = y + DEBUG_ROWS_Y;
   for (let i = top; i < end; i++) {
     const r = DEBUG_ROWS[i], sel = m.index === i;
+    if (r.hidden) continue;   // CS040 P6 (spec §4.5): telemetryInterval/telemetryCapture — no row, no space spent
     if (r.kind === "header") {
       drawText("— " + r.label + " —", x + 40, cy + 6, 15, COLOR.dim, "left");   // never selectable, never a cursor
     } else if (r.kind === "var") {

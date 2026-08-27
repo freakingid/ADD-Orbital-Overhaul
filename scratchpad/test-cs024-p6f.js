@@ -284,7 +284,8 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
   }
 
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7, "A: DEBUG_ROWS is the registry plus the seven trailer rows");
+  // CS040 P6 repoint: +7 -> +6 — "Copy telemetry log" moved off this panel onto Options' Telemetry screen.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "A: DEBUG_ROWS is the registry plus the six trailer rows");
 
   // The two saturation helpers exist and are pure predicates over pieces.
   eq(typeof X.saturatedClump, "function", "A: saturatedClump(g) exists");

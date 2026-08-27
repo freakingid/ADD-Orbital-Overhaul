@@ -1118,7 +1118,8 @@ function stepProbe(X, p, dt = 1 / 60) {
   hasKnob(X, "magnetPushKick", { def: 120, min: 0, max: 600, step: 10 }, { assert, eq });
   hasKnob(X, "magnetPushSpread", { def: 45, min: 0, max: 180, step: 5 }, { assert, eq });
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7, "K: DEBUG_ROWS is the registry plus its seven trailer rows");
+  // CS040 P6 repoint: +7 -> +6 — "Copy telemetry log" moved off this panel onto Options' Telemetry screen.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6, "K: DEBUG_ROWS is the registry plus its six trailer rows");
   for (const id of ["magnetPushKick", "magnetPushSpread"])
     assert(!X.LEVERS.some(l => l.id === id), `K: ...${id} specifically is not in it`);
 

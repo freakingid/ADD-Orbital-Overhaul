@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.39 · Changeset: CS040 · Phase: P5 · Registry: 110 · Levers: 18
+Version: 1.0.0.39 · Changeset: CS040 · Phase: P6 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS040
 
@@ -67,6 +67,27 @@ Version: 1.0.0.39 · Changeset: CS040 · Phase: P5 · Registry: 110 · Levers: 1
   `ringWrapped=false` over exactly the log that flag exists to catch. **Six other-phase tests repaired**:
   five schema neighbours (`test-cs037-p4`, `test-cs038-p3`, `test-cs039-p2`, `test-cs039-p3`,
   `test-cs040-p1` — whose §F predicted this phase in writing) and one unrelated, below.
+- P6 — Telemetry controls moved off the hidden debug panel onto a new Options "Telemetry" sub-screen:
+  `MENU_OPTIONS` gains "Telemetry" before "Back" (5 rows → 6, CS038 P1's Credits-insert precedent).
+  Three rows — Capture (ON/OFF), Sample rate (preset cycle `[5, 10, 15]`, label minutes DERIVED from
+  `TELEMETRY_MAX`, not hardcoded), Copy log (calls the existing, untouched `copyTelemetry()`). Capture
+  stays session-only — `DEBUG.telemetryCapture` is still the CS038 P3 `sessionSwitch` registry entry,
+  written through the same `applyDebug()` path the debug panel used, so the never-persists contract is
+  unchanged. `telemetryInterval`'s registry `def` stays 15. Debug panel: `telemetryInterval` and
+  `telemetryCapture` STAY in `DEBUG_VARS`/`DEBUG_ENTRIES` (Telemetry.tick()/flush() and the CSV
+  fingerprint still read them there) but their `DEBUG_ROWS` var-rows carry a new `hidden: true`,
+  skipped by `debugStep`/`debugFirstRow` (unreachable by ↑↓) and by `drawDebug`'s render loop — chosen
+  over filtering them out of `DEBUG_ROWS` entirely so every OTHER entry's index is undisturbed (dozens
+  of phase-local tests navigate the panel by `DEBUG_VARS` index). "Copy telemetry log" the action row
+  is removed outright (trailer 7 → 6). Registry 110 and `LEVERS` 18 both unmoved — no knob change.
+  **Sixteen other-phase tests repaired**: `test-cs010-p4`/`test-cs016-p2`/`test-cs038-p1` (the
+  `MENU_OPTIONS` exact-order/position pins), `test-cs018-p2` (CS018 P2's own row-model test — extended
+  its header-exclusion idiom to also exclude `hidden`), `test-cs037-p4` (§G's own claim — "debug panel
+  only, never Options" — is exactly what this phase's spec overrides; repointed to Options' Telemetry
+  screen), and eleven trailer-row pins (`test-cs015-p4`, `test-cs017-p2`, `test-cs019-p1`,
+  `test-cs020-p1b`, `test-cs024-p1`, `test-cs024-p6c`, `test-cs024-p6f`, `test-cs025-p1/p2`,
+  `test-cs026-p4/p5` — `DEBUG_VARS.length + 7` → `+ 6`, plus the Back-row index literal in
+  `test-cs015-p4`/`test-cs017-p2`).
 
 ## Phase ledger — CS039 (closed; full narrative in `log/CS039.md`)
 
@@ -127,6 +148,15 @@ decision verbatim: `log/CS039.md`.
   already due, and gets exactly one row — with a no-death control frame on the same setup that does land
   its scheduled row. A live export was eyeballed end-to-end: 49 columns, `v4` header, `hp=0` final row,
   `finalRowIsGameOver=true`, envelope persisted at `v:4`.
+- **CS040 P6:** full suite 171 files, 171 passed, 0 failed, 0 skipped (the extra file over P5's 170 is
+  `test-cs040-p6.js`; the sixteen repaired pins are counted in this total, not separately). `node --check`
+  passes on the extracted script. `test-cs040-p6.js` §B drives Capture ON through the real Telemetry
+  screen, saves, and rebuilds a fresh module instance over the same store to confirm the reload comes
+  back OFF (CS038 P3's launch test, repointed to the new control surface); §D patches a rebuilt copy's
+  `TELEMETRY_MAX` literal in the SOURCE (a closed-over `const` can't be reassigned from outside) to
+  prove the minutes figure is computed, not baked in; §F drives 130+ panel `down` presses confirming
+  the cursor never lands on either hidden var row. New LEVERS count: **18** (unmoved). New
+  `MENU_OPTIONS` length: **6**.
 - **`scratchpad/_harness.js` gained one additive option, `ctxLog`** — an array the 2D-context stub
   records method calls and tracked property writes into, so a draw contract can be MEASURED against the
   real draw path. Same shape and same justification as CS036 P2's `listeners`: three suite files

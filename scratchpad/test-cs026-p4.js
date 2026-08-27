@@ -230,8 +230,9 @@ let X = null;
   eq(X.DELIVERY_FLOAT_RISE, 150, "B: ...and DELIVERY_FLOAT_RISE carries the same 150 forward, unchanged");
 
   // CS037 P2 repoint: +4 -> +6 — the benchmark instrument's Run/Copy action rows joined the trailer.
-  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 7,
-    "B: DEBUG_ROWS is still registry + its seven trailer rows");
+  // CS040 P6 repoint: +7 -> +6 — "Copy telemetry log" moved off this panel onto Options' Telemetry screen.
+  eq(X.DEBUG_ROWS.length, X.DEBUG_VARS.length + 6,
+    "B: DEBUG_ROWS is still registry + its six trailer rows");
 })();
 
 // ================= (C) FloatText behaviour =====================
