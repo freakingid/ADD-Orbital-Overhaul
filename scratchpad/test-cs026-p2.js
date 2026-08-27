@@ -668,7 +668,8 @@ let X = null;
       || id === "towReleaseLockout" || id === "towReleaseSpeed"           // CS037 P7.1 (tow release separation)
       || id === "telemetryCapture"                                        // CS038 P3 (telemetry opt-in switch)
       || id.startsWith("healthGap")                                       // CS040 P2 (pity health cadence)
-      || id === "healthBankMax";                                          // CS040 P3 (health bank cap)
+      || id === "healthBankMax"                                           // CS040 P3 (health bank cap)
+      || id === "hubDryWeightMult";                                       // CS040 P4 (hub relief mult)
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",
       `J: exactly THREE rows were added by THIS phase, in that order (all added since: ${added.join(", ")})`);
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRows.includes(id)).join(","), oldRows.join(","),

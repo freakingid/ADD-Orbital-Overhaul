@@ -59,7 +59,8 @@ const RETIRED_DEFS = {
   // NARROWED BY CS040 P2: +4 more (healthGapLowOk/HighOk/LowHurt/HighHurt, POWERUPS) — a later
   // phase's rows, not P5's; the live count moves with them.
   // NARROWED AGAIN BY CS040 P3: +1 more (healthBankMax, POWERUPS), for the same reason.
-  eq(X.DEBUG_ENTRIES.length, 109, "A: DEBUG_ENTRIES.length is the live 109");
+  // NARROWED AGAIN BY CS040 P4: +1 more (hubDryWeightMult, POWERUPS), for the same reason.
+  eq(X.DEBUG_ENTRIES.length, 110, "A: DEBUG_ENTRIES.length is the live 110");
 
   // No section header is emptied — CELEBRATION/DELIVERY/HUNTER all keep other rows.
   let section = null; const rowsOf = { CELEBRATION: [], DELIVERY: [], HUNTER: [] };
@@ -186,7 +187,8 @@ const RETIRED_DEFS = {
     // NARROWED BY CS040 P2: its four healthGap* POWERUPS rows are a later phase's, not P5's — strip
     // them from X before comparing, same as every other later-phase repoint elsewhere in the suite.
     const LATER_IDS = new Set(["healthGapLowOk", "healthGapHighOk", "healthGapLowHurt", "healthGapHighHurt",
-      "healthBankMax"]);   // NARROWED AGAIN BY CS040 P3, same reasoning
+      "healthBankMax",     // NARROWED AGAIN BY CS040 P3, same reasoning
+      "hubDryWeightMult"]); // NARROWED AGAIN BY CS040 P4, same reasoning
     const xIds = X.DEBUG_VARS.filter(v => !v.header).map(v => v.id).filter(id => !LATER_IDS.has(id));
     const oldIdsSansRetired = oldIds.filter(id => !RETIRED_IDS.includes(id));
     eq(xIds.join(","), oldIdsSansRetired.join(","),

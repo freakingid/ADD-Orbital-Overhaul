@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.39 · Changeset: CS040 · Phase: P3 · Registry: 109 · Levers: 18
+Version: 1.0.0.39 · Changeset: CS040 · Phase: P4 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS040
 
@@ -36,6 +36,19 @@ Version: 1.0.0.39 · Changeset: CS040 · Phase: P3 · Registry: 109 · Levers: 1
   POWERUPS knob (`healthBankMax`, min 0 disables the mechanic); Registry 108 → 109, `LEVERS` unmoved
   at 18. **Fourteen other-phase pins narrowed again** — the same trailing-registry-row family P2
   repaired, plus `test-cs026-p3` §G TRAP 5 (`resetRun()` gained `game.healthBank = 0;`).
+- P4 — The recycle hub (`game.deliveryCount === 8`) is a supply-starvation escape hatch (FORK-CS040-C,
+  resolved c1/weighted). `dropPowerup()` gains an optional fifth parameter, `hubBias` (default `false`),
+  passed `true` only by the hub's own call. While set, any budgeted type at `game.powerBudget[type] ===
+  0` — `rapid`/`triple`/`magnet`/`engine`, **never** `guard` — has its roll weight multiplied by the new
+  `DEBUG.hubDryWeightMult` (4, a registry knob, `def` from `HUB_DRY_WEIGHT_MULT`). `destroyHunter()`'s
+  large-core drop and `destroySaucer()`'s drop pass no fifth argument and stay byte-identical to today's
+  unbiased roll — biasing kill-gated emitters would defeat the point (a dry player isn't killing
+  anything). Composes with, does not replace, guard's existing `chainGuardMinTow` eligibility gate and
+  `guardDropWeight()`'s pity substitution (both read unchanged); guard is explicitly excluded from the
+  dry set even though `game.powerBudget.guard` normally rests at 0 — that 0 is guard's resting state,
+  not starvation. Registry 109 → 110, `LEVERS` unmoved at 18. **Thirteen other-phase pins narrowed
+  again** — the same trailing-registry-row family P2/P3 repaired (no new `resetRun()` line this time,
+  so `test-cs026-p3` was untouched).
 
 ## Phase ledger — CS039 (closed; full narrative in `log/CS039.md`)
 
@@ -77,6 +90,16 @@ decision verbatim: `log/CS039.md`.
   `node --check` passes on the extracted script. ⚠ The suite is only green **after** the phase's commit
   lands: `test-cs024-p6.js` §H TRAP 2 pins `damageShip` byte-for-byte against `git show HEAD`, so a
   phase that edits that function is red on a dirty tree by construction. Nothing else in the file fails.
+- **CS040 P4:** full suite 169 files, 169 passed, 0 failed, 0 skipped (the extra file over P3's 168 is
+  `test-cs040-p4.js`; the thirteen narrowed pins are counted in this total, not separately). `node
+  --check` passes on the extracted script. The new test's statistics are all seeded (`withSeed`) at
+  N large enough that the tolerance bands don't flake: §B shows a hub-biased roll is byte-identical to
+  an unbiased one under the same seed once no budget sits at 0; §C shows a dry `rapid` budget moves
+  only the hub roll's share, matching the weighted formula, and leaves the plain roll untouched; §D
+  drives `destroyHunter()`/`destroySaucer()` at full dryness and confirms their rapid share stays flat
+  (~30%), proving no hub bias leaks into the kill-gated emitters; §E pins guard's share to
+  `guardDropWeight()` alone against a computed "wrongly-dried" alternative far enough away to catch a
+  regression, confirming guard never enters the dry set even while its own budget rests at 0.
 - **`scratchpad/_harness.js` gained one additive option, `ctxLog`** — an array the 2D-context stub
   records method calls and tracked property writes into, so a draw contract can be MEASURED against the
   real draw path. Same shape and same justification as CS036 P2's `listeners`: three suite files

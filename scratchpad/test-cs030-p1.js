@@ -209,7 +209,8 @@ const src = scriptSource();
     // knobs and the four hunter-pulse knobs are all retired outright to plain constants (spec §4).
     // REPOINTED BY CS040 P2: +4 more (healthGapLowOk/HighOk/LowHurt/HighHurt).
     // REPOINTED BY CS040 P3: +1 more (healthBankMax, the health bank's cap).
-    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1 - 12 + 4 + 1, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture, CS038 P5's twelve retirements, CS040 P2's four and CS040 P3's one later — a data-only collector adds no knob");
+    // REPOINTED BY CS040 P4: +1 more (hubDryWeightMult, the hub relief multiplier).
+    eq(X.DEBUG_ENTRIES.length, OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1 - 12 + 4 + 1 + 1, "G: ⛔ DEBUG_ENTRIES.length unchanged from P1's own parent bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture, CS038 P5's twelve retirements, CS040 P2's four, CS040 P3's one and CS040 P4's one later — a data-only collector adds no knob");
     eq(X.LEVERS.length, OLD.LEVERS.length, "G: ⛔ LEVERS.length unchanged");
   }
 

@@ -1131,6 +1131,11 @@ const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (mat
 const HEALTH_BANK_MAX = 2;
 const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
 const POWERUP_HEALTH_MAX_DIST = 520;
+// CS040 P4 (spec §2.2, FORK-CS040-C c1): the recycle hub's dry-weapon relief multiplier. Applied only
+// at the hub's dropPowerup() call — see dropPowerup(x, y, vx, vy, hubBias) — to the weight of any
+// budgeted type (rapid/triple/magnet/engine, NOT guard) currently sitting at game.powerBudget[type] === 0.
+// This const is only the registry row's `def` source; the live value is DEBUG.hubDryWeightMult.
+const HUB_DRY_WEIGHT_MULT = 4;
 // Weapon caps. Triple's cap (12) is also the combined Rapid+Triple cap — the higher of the two,
 // not the product (24), to keep bullet clutter from fighting Pillar 1 (vector clarity).
 const RAPID_MAX_BULLETS  = 8;       // Rapid Fire bullet cap (2x base MAX_BULLETS)
@@ -4145,6 +4150,13 @@ const DEBUG_VARS = [
   // clean A/B for the whole mechanic, the magnetPushKick-at-0 idiom.
   { id: "healthBankMax", label: "Health bank charges", unit: "",
     def: HEALTH_BANK_MAX, min: 0, max: 5, step: 1 },
+  // CS040 P4 (spec §2.2, FORK-CS040-C c1): the recycle hub's dry-weapon relief multiplier, `def`
+  // deriving from HUB_DRY_WEIGHT_MULT (the standing idiom). Not a lever — this is a supply-starvation
+  // escape hatch, not a difficulty ramp — so no floor/ceil/steps triple, no ▼/↳ glyph, no indent, no
+  // LEVERS entry, same reasoning as the healthGap rows above. min 1 disables the bias outright (every
+  // weight multiplies by 1, byte-identical to today's roll), the magnetPushKick-at-0 idiom.
+  { id: "hubDryWeightMult", label: "Hub dry-weapon weight x", unit: "",
+    def: HUB_DRY_WEIGHT_MULT, min: 1, max: 20, step: 1 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -9655,7 +9667,7 @@ function healthGapRoll() {
 // vector. No chance gate here — the three emitters (destroySaucer, destroyHunter's large core,
 // the recycle hub) each decide WHEN to call this; this only decides WHAT drops. Health is NOT in
 // this pool — it spawns ambiently via spawnHealthPowerup.
-function dropPowerup(x, y, vx = 0, vy = 0) {
+function dropPowerup(x, y, vx = 0, vy = 0, hubBias = false) {
   // weighted roll over POWERUP_DROP_WEIGHTS (favors the shot powerups), NOT a flat pick over
   // POWERUP_DROP_TYPES — the two structures are deliberately separate (Scoop drops but isn't a budgeted effect).
   // CS017 P6: "guard" is CONDITIONAL — it only enters the roll while the player is towing at least
@@ -9665,8 +9677,15 @@ function dropPowerup(x, y, vx = 0, vy = 0) {
   // CS035 P6 (spec §5.3): guard's weight is no longer the flat table entry — weightOf(k) substitutes
   // guardDropWeight() for it, in BOTH the total and the walk, composing with (not replacing) the
   // eligible() gate above. Every non-guard key still reads POWERUP_DROP_WEIGHTS[k] unchanged.
+  // CS040 P4 (spec §2.2, FORK-CS040-C c1): hubBias is passed true ONLY by the recycle hub's own call
+  // site. While set, any budgeted type at game.powerBudget[type] === 0 has its weight multiplied by
+  // DEBUG.hubDryWeightMult, composing with (not replacing) guard's pity substitution below. Guard is
+  // deliberately excluded from the dry set — its budget resting at 0 is normal, not starvation.
+  // ⛔ destroyHunter()'s and destroySaucer()'s drops never pass hubBias — those are kill-gated, and
+  // biasing them would defeat the whole point: a dry player isn't killing anything to trigger them.
   const eligible = k => k !== "guard" || game.chain.length >= DEBUG.chainGuardMinTow;
-  const weightOf = k => k === "guard" ? guardDropWeight() : POWERUP_DROP_WEIGHTS[k];
+  const isDry = k => hubBias && k !== "guard" && game.powerBudget[k] === 0;
+  const weightOf = k => (k === "guard" ? guardDropWeight() : POWERUP_DROP_WEIGHTS[k]) * (isDry(k) ? DEBUG.hubDryWeightMult : 1);
   let total = 0;
   for (const k in POWERUP_DROP_WEIGHTS) if (eligible(k)) total += weightOf(k);
   let r = Math.random() * total, type;
@@ -12111,7 +12130,8 @@ function update(dt) {
         // visit" rule. The former 12/16/20 latches are deleted, not restructured.
         if (game.deliveryCount === 8) {
           const a = rand(0, TAU);
-          dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DEBUG.dockPowerupSpeed, Math.sin(a) * DEBUG.dockPowerupSpeed);
+          // CS040 P4 (spec §2.2): the hub's own call passes hubBias=true — the resupply relief valve.
+          dropPowerup(game.dock.x, game.dock.y, Math.cos(a) * DEBUG.dockPowerupSpeed, Math.sin(a) * DEBUG.dockPowerupSpeed, true);
         }
         // Salvage King (lifetime MAX): best canisters delivered in one game. game.stats.delivered only
         // climbs within a run, so Math.max here tracks the per-game best and keeps the all-time record.

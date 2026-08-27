@@ -389,7 +389,8 @@ let X = null;
     // REPOINTED BY CS040 P2: +4 more (healthGapLowOk/HighOk/LowHurt/HighHurt, the pity-driven ambient
     // Health cadence knobs) — same idiom again, named rather than wildcarded.
     // REPOINTED BY CS040 P3: +1 more (healthBankMax, the health bank's cap) — same idiom again.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 28, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS037 P2's four, CS037 P4's one, CS037 P7's two, CS037 P7.1's two, CS038 P3's one, CS040 P2's four and CS040 P3's one, less CS036 P2's one retirement and CS038 P5's twelve, plus CS036 P5's one addition (measured, not counted)");
+    // REPOINTED BY CS040 P4: +1 more (hubDryWeightMult, the hub relief multiplier) — same idiom again.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 29, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS037 P2's four, CS037 P4's one, CS037 P7's two, CS037 P7.1's two, CS038 P3's one, CS040 P2's four, CS040 P3's one and CS040 P4's one, less CS036 P2's one retirement and CS038 P5's twelve, plus CS036 P5's one addition (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 
