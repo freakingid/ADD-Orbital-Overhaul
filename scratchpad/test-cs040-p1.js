@@ -138,17 +138,17 @@ function armed(X, hp) {
   eq(g.nextRepair, X.REPAIR_MILESTONE * 5, "F: nextRepair advanced once per crossing");
   eq(healthOnField(g), 4, "F: one Health powerup per crossing");
 
-  // The COLUMN outlives its counter by design: CS040 P5 removes it from TELEMETRY_FIELDS. P1's only
-  // claim is that the cell is a literal 0 and never the empty string a deleted counter would serialise
-  // to. This does NOT assert the column list — that belongs to whichever phase owns the schema.
+  // ⛔ REPOINTED BY CS040 P5, WHICH THIS BLOCK ITSELF PREDICTED. P1 left the column emitting a literal
+  // 0 so the cell could never be the empty string a deleted counter serialises to, and said P5 owned
+  // dropping it. P5 has: the column is gone from TELEMETRY_FIELDS entirely and nothing stands in for
+  // it. So the successor claim — no orphaned column, no placeholder cell — is what is asserted now.
   X.applyDebug("telemetryCapture", 1);
   X.Telemetry.push();
   const row = X.Telemetry.rows[X.Telemetry.rows.length - 1];
-  eq(row.scoreRepairBonus, 0, "F: the row's scoreRepairBonus cell is a literal 0");
+  assert(!("scoreRepairBonus" in row), "F: a pushed row carries no scoreRepairBonus key");
   const cells = X.telemetryCSV([row]).split("\n").filter(l => l.length && !l.startsWith("#"));
-  const col = cells[0].split(",").indexOf("scoreRepairBonus");
-  assert(col >= 0, "F: (sanity) the column is still in the header this phase");
-  eq(cells[1].split(",")[col], "0", "F: ...and it exports as \"0\", not as an empty cell");
+  eq(cells[0].split(",").indexOf("scoreRepairBonus"), -1, "F: ⛔ and no such column in the export header");
+  eq(cells[1].split(",").length, cells[0].split(",").length, "F: ...leaving no stray cell behind either");
 })();
 
 A.report();

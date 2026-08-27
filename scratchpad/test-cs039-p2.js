@@ -28,12 +28,16 @@ const P1_FIELDS = [
   "dmgHunter3", "dmgHunter2", "dmgHunter1",
   "dmgUfoBodyLarge", "dmgUfoBodySmall", "dmgUfoShotLarge", "dmgUfoShotSmall",
 ];
+// ⛔ NARROWED BY CS040 P5: scoreRepairBonus LEAVES this list — CS040 P1 deleted the counter and P5
+// dropped the column outright, so P2's fourteen are thirteen. The list is still every column P2 (and
+// GATE T) actually added; it is no longer a contiguous run, because P5 legitimately inserted four
+// instantaneous columns after cargoMax and two more further down. §A checks RELATIVE order instead.
 const NEW_FIELDS = [
   "chainLen", "cargoMax",
   "delivered", "deliveryScore", "cargoDamageEvents", "cargoSevers",
   "debrisKills", "hunterKills", "saucerKills", "hunterCoalesced",
   "deflects", "hitsTaken",
-  "scoreRepairBonus", "scoreScoopBonus",
+  "scoreScoopBonus",
 ];
 // ⛔ cargoDamageEvents IS NOT IN THIS LIST, and its absence is the point — it is the guard-drop PITY
 // counter and it DECREASES (§H). It sat here for the whole of CS039 and §F passed anyway, because §F
@@ -43,18 +47,25 @@ const CUMULATIVE_FIELDS = [
   "delivered", "deliveryScore", "cargoSevers",
   "debrisKills", "hunterKills", "saucerKills", "hunterCoalesced",
   "deflects", "hitsTaken",
-  "scoreRepairBonus", "scoreScoopBonus",
+  "scoreScoopBonus",   // CS040 P5: scoreRepairBonus left with its column
 ];
 
-// ================= (A) TELEMETRY_FIELDS shape: +14, in order, flags still trailing ================
-console.log("(A) TELEMETRY_FIELDS grew by exactly 14, ahead of debugRun/resumedRun, nothing else moved");
+// ================= (A) TELEMETRY_FIELDS shape: P2's columns, in order, flags still trailing =======
+// ⛔ NARROWED BY CS040 P5: the absolute COUNT and the contiguous-slice compare are gone. Both were
+// claims about the whole schema, which this phase does not own — a later phase adding a column
+// falsifies them without touching anything P2 built. What P2 owns and still asserts: its own columns
+// are all present, in their own relative order, after the untouched P1 prefix and before the flags.
+console.log("(A) P2's columns are all present in order, after P1's prefix and before the two flags");
 {
   const X = buildGame();
-  eq(X.TELEMETRY_FIELDS.length, P1_FIELDS.length + 14 + 2, "A: field count is P1's 30 + 14 (13 from P2, cargoSevers from GATE T)");
   eq(X.TELEMETRY_FIELDS.slice(0, P1_FIELDS.length).join(","), P1_FIELDS.join(","),
     "A: every pre-existing field keeps its name and position");
-  eq(X.TELEMETRY_FIELDS.slice(P1_FIELDS.length, P1_FIELDS.length + 14).join(","), NEW_FIELDS.join(","),
-    "A: the 14 new fields land in the documented order, right after the old tail");
+  let at = P1_FIELDS.length - 1;
+  for (const f of NEW_FIELDS) {
+    const i = X.TELEMETRY_FIELDS.indexOf(f);
+    assert(i > at, `A: ${f} is present and still follows the field before it`);
+    at = i;
+  }
   eq(X.TELEMETRY_FIELDS[X.TELEMETRY_FIELDS.indexOf("cargoDamageEvents") + 1], "cargoSevers",
     "A: cargoSevers sits immediately after the pity counter it is the run total of — read together or not at all");
   eq(X.TELEMETRY_FIELDS[X.TELEMETRY_FIELDS.length - 2], "debugRun", "A: debugRun is still second-to-last");
@@ -143,22 +154,25 @@ console.log("(F) the eleven cumulative counters never decrease across a multi-sa
   }
 }
 
-// ================= (G) envelope: v:3 written; older blobs read empty, a v:3 blob reads back ========
-console.log("(G) the persistence envelope is v:3, and a stale v:1 or v:2 blob resolves to an empty buffer");
+// ================= (G) envelope: v:4 written; older blobs read empty, a v:4 blob reads back ========
+// REPOINTED BY CS040 P5: the row shape changed again (six columns in, scoreRepairBonus out), so the
+// envelope moved 3 -> 4 for the third time and for the same stated reason — a stale blob would export
+// the literal string "undefined" in the columns it does not carry.
+console.log("(G) the persistence envelope is v:4, and a stale v:1, v:2 or v:3 blob resolves to empty");
 {
   const store = {};
   const X = buildGame({ store });
   X.startGame();
   X.applyDebug("telemetryCapture", 1);
   X.applyDebug("telemetryInterval", 1);
-  run(X, 2);
+  run(X, 4.5);   // CS040 P5 (FORK-CS040-D): one write per four snapshots, so a 2 s run writes nothing
   assert(X.Telemetry.rows.length >= 1, "G: (setup) at least one row landed");
 
   const key = X.Profiles.keyFor(X.TELEMETRY_KEY);
-  assert(key in store, "G: the write lands under Profiles.keyFor(afd_telemetry_v1)");
+  assert(key in store, "G: the write lands under Profiles.keyFor(afd_telemetry_v1)");   // CS040 P5: needs a full cycle
   eq(Object.keys(store).length, 1, "G: ...and it is the only key touched");
   const env = JSON.parse(store[key]);
-  eq(env.v, 3, "G: write() stamps the envelope v:3");
+  eq(env.v, 4, "G: write() stamps the envelope v:4");
 
   // A seeded v:1 blob (pre-CS039 shape, none of the new keys) reads back empty under the
   // known-value-else-default rule — a v1 row can't be exported without an "undefined" column.
@@ -173,11 +187,16 @@ console.log("(G) the persistence envelope is v:3, and a stale v:1 or v:2 blob re
   const W = buildGame({ store: v2Store });
   eq(W.Telemetry.read().length, 0, "G: ⛔ a v:2 blob (43 keys, no cargoSevers) ALSO reads empty — never exported with an undefined column");
 
-  // A seeded v:3 blob round-trips.
+  // ⛔ AND SO DOES v:3 — CS040 P5's six new columns are to v:3 what cargoSevers was to v:2.
+  const v3Store = { [key]: JSON.stringify({ v: 3, rows: [{ t: 1, chainLen: 2, cargoSevers: 4 }] }) };
+  const V = buildGame({ store: v3Store });
+  eq(V.Telemetry.read().length, 0, "G: ⛔ a v:3 blob (44 keys, none of P5's six) ALSO reads empty");
+
+  // A seeded v:4 blob round-trips.
   const freshRows = [{ t: 1, level: 1, score: 0, chainLen: 2, cargoMax: 8, cargoSevers: 4 }];
-  const v3Store = { [key]: JSON.stringify({ v: 3, rows: freshRows }) };
-  const Z = buildGame({ store: v3Store });
-  eq(Z.Telemetry.read().length, 1, "G: a v:3 blob reads back its rows");
+  const v4Store = { [key]: JSON.stringify({ v: 4, rows: freshRows }) };
+  const Z = buildGame({ store: v4Store });
+  eq(Z.Telemetry.read().length, 1, "G: a v:4 blob reads back its rows");
   eq(Z.Telemetry.read()[0].chainLen, 2, "G: ...with their content intact");
 
   // read() and write() key off the SAME expression, at both sites.

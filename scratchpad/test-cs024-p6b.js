@@ -700,10 +700,18 @@ function evalSlice(literal) {
   // so what remains is the part that can and does: the powerup surface itself, named symbol by symbol
   // rather than implied by geometry. (P6c's own file re-pins the registry.)
   try {
-    // ⛔ FLAG-CS029-a: this range now SPANS the CS029 rename, so both the pre-rename and post-rename
-    // paths are passed as pathspecs — git's default rename detection is relied on to keep the -U0 hunk
-    // structure intact across the mv. Verified after the CS029 P1 rename; see the phase's commit.
-    const diff = execFileSync("git", ["diff", "-U0", PRE_P6B_REF, "--",
+    // ⛔ FLAG-CS029-a: this range SPANS the CS029 rename, so both the pre-rename and post-rename paths
+    // are passed as pathspecs and rename detection is what keeps the -U0 hunk structure intact across
+    // the mv. Without it the diff degenerates to "whole old file deleted, whole new file added" and
+    // every symbol pin below fires on the OLD file's own lines.
+    //   ⛔ THE THRESHOLD IS EXPLICIT AS OF CS040 P5, AND THAT IS A REPAIR, NOT A LOOSENING. Git's
+    // default is -M50%, and similarity here is (8586 - 765 common lines) / (size of today's file):
+    // 7821/14574 = 53.7% at CS040 P4 and 7821/14680 = 53.3% one phase later. The build crossed under
+    // 50% mid-CS040 simply by growing, and the pin started reporting four failures that had nothing to
+    // do with powerups. The rename is a FACT (git log shows the mv) and the pathspec admits exactly
+    // one deletion and one addition, so there is no wrong pair to match; 20% just stops an arithmetic
+    // accident from silently turning this pin into noise until the file passes ~39,000 lines.
+    const diff = execFileSync("git", ["diff", "-U0", "--find-renames=20%", PRE_P6B_REF, "--",
       "asteroids-deluxe.html", "orbital-overhaul.html"],
       { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
     assert(diff.length > 0, "G: TRAP 5 — the diff against the pre-P6b build is non-empty");

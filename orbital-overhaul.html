@@ -4231,10 +4231,11 @@ const DEBUG_VARS = [
   //   No shipped constant backs the default. "How often do we snapshot" has no meaning outside this
   // knob, so this entry IS the source of truth for it — the earlyWorldLevels idiom, not the
   // DEBRIS_BOUNCE_RESTITUTION one.
-  //   ⛔ min is 1, not 0. The buffer is a 400-row ring and the tick fires at most once per frame, so a
-  // sub-second interval would burn the whole ring inside seven seconds of play and the oldest rows —
-  // the ones a post-mortem wants — would be the first gone. Telemetry.tick() independently refuses a
-  // non-positive interval, so the guard and the bound agree rather than relying on each other.
+  //   ⛔ min is 1, not 0. The buffer is an 800-row ring (CS040 P5, was 400) and the tick fires at most
+  // once per frame, so a sub-second interval would burn the whole ring inside fourteen seconds of play
+  // and the oldest rows — the ones a post-mortem wants — would be the first gone. Telemetry.tick()
+  // independently refuses a non-positive interval, so the guard and the bound agree rather than
+  // relying on each other.
   { id: "telemetryInterval", label: "Telemetry snapshot interval", unit: "s",
     def: 15, min: 1, max: 120, step: 1 },
   // CS038 P3 (spec §3): telemetry capture is OPT-IN, off by default and off at every launch.
@@ -5104,7 +5105,18 @@ function dumpDifficultyLog() {
 // loop() never calls update() while the battery runs, so a real frame cannot reach this during one;
 // the guard is written explicitly rather than left implicit because update(dt) is the one function
 // CLAUDE.md's Test rules say headless tests drive directly, bypassing loop().
-const TELEMETRY_MAX = 400;      // per-run ring; oldest rolls off (spec §5.3)
+const TELEMETRY_MAX = 800;      // per-run ring; oldest rolls off (spec §5.3)
+// CS040 P5 (FORK-CS040-D): 400 -> 800. The 2026-08-26 capture overran the 400-row ring and lost its
+// first 21.5 minutes and waves 1-7 SILENTLY — noticing it took arithmetic on t[0]. Coverage is now
+// 67 min at a 5 s interval, 133 at 10 s, 200 at 15 s. The wrap is no longer silent either: the ring
+// latches `wrapped` on the first dropped row and the export reports it as `# ringWrapped=`.
+// ⛔ THE RING DOUBLING AND THE PERSIST CADENCE ARE ONE CHANGE, NOT TWO. Doubling the ring alone
+// doubles the JSON.stringify payload on EVERY snapshot — an untested surface (CS037's benchmark
+// measured update and draw, not this). One write per four snapshots of a doubled payload is HALF the
+// pre-CS040 write volume per unit of game time, at a risk of losing at most three rows to a hard
+// crash. Undoing either half alone gets the arithmetic wrong in the other direction.
+// ⛔ The game-over flush persists REGARDLESS of where the counter stands — see Telemetry.flush().
+const TELEMETRY_PERSIST_EVERY = 4;
 // ⛔ ONE SOURCE OF TRUTH for the row shape AND the CSV column order, exactly as DIFFLOG_FIELDS is.
 // SIX "remaining uses" columns, not seven, and that asymmetry is spec C10 rather than an omission:
 // powerBudget holds five (rapid/triple/magnet/engine/guard), scoop is a persistent LEVEL on
@@ -5118,27 +5130,42 @@ const TELEMETRY_FIELDS = [
   "dmgHunter3", "dmgHunter2", "dmgHunter1",
   "dmgUfoBodyLarge", "dmgUfoBodySmall", "dmgUfoShotLarge", "dmgUfoShotSmall",
   "chainLen", "cargoMax",
+  "hunterCount", "debrisCount", "garbageCount", "healthBanked",
   "delivered", "deliveryScore", "cargoDamageEvents", "cargoSevers",
   "debrisKills", "hunterKills", "saucerKills", "hunterCoalesced",
-  "deflects", "hitsTaken",
-  "scoreRepairBonus", "scoreScoopBonus",
+  "deflects", "hitsTaken", "hpWasted",
+  "scoreScoopBonus", "scoopHits",
   "debugRun", "resumedRun",
 ];
-// CS039 P2: thirteen columns added above, ahead of the two trailing flags; GATE T added a fourteenth
-// (`cargoSevers`). THREE kinds, not two, and the names do not tell you which:
-//   INSTANTANEOUS — `chainLen`/`cargoMax`, state at the sample instant (like hp/speed), the DiffLog
-//     expressions verbatim.
+// CS039 P2 added thirteen columns ahead of the two trailing flags and GATE T a fourteenth
+// (`cargoSevers`); CS040 P5 retired `scoreRepairBonus` and added six more, for 49.
+// THREE kinds, not two, and the names do not tell you which:
+//   INSTANTANEOUS — `chainLen`/`cargoMax` (the DiffLog expressions verbatim) and CS040 P5's
+//     `hunterCount`/`debrisCount`/`garbageCount`/`healthBanked`: state at the sample instant, like
+//     hp/speed. ⛔ THE THREE POPULATION COLUMNS CARRY THE BUILD'S OWN INVERTED VOCABULARY ON PURPOSE
+//     (CLAUDE.md's table): `game.debris` holds GARBAGE SATELLITES — the enemies you shoot — and
+//     `game.garbage` holds towable DEBRIS, the salvage you tow. So `debrisCount` counts Garbage
+//     Satellites, matching `debrisKills` and the `dmgDebris*` family above, and `garbageCount` counts
+//     towable Debris. Renaming either to "fix" it would put this column list at odds with every other
+//     column in it.
 //   CUMULATIVE — every other column here, a per-run counter (like the *Picked/dmgFrom* families
-//     above), monotone non-decreasing within a run.
-//   ⛔ NEITHER — `cargoDamageEvents` ALONE. It is a SAWTOOTH and it DECREASES. It is the chain-guard
-//     drop-weight PITY counter, zeroed in dropPowerup() the instant a guard is SELECTED to drop
-//     (CS035 P6 / FORK-T — not on pickup, so it can reset with no matching guardPicked increment).
-//     It counts severs SINCE THE LAST GUARD DROP, never the run. Do not "restore" it to the
-//     cumulative group: it was described as cumulative here, in the P2 spec, in test-cs039-p2's
-//     §F and in TELEMETRY-ANALYSIS-GUIDE.md §3 for the whole of CS039, and the first real capture
-//     (GATE T) showed 7 decreases in 53 rows with the LAST ROW READING 0.
-//     `cargoSevers` is the run total, incremented on the same line the pity counter is, and is the
-//     column an analysis should read. Both are emitted: guardDropWeight() needs the pity value.
+//     above), monotone non-decreasing within a run. CS040 P5's `hpWasted` joins this group: healing
+//     thrown away at the hull cap with the bank ALSO full.
+//   ⛔ NEITHER — `cargoDamageEvents` AND `scoopHits`. BOTH ARE SAWTOOTHS AND BOTH DECREASE. Any
+//     monotonicity check must exclude the two BY NAME.
+//     · `cargoDamageEvents` is the chain-guard drop-weight PITY counter, zeroed in dropPowerup() the
+//       instant a guard is SELECTED to drop (CS035 P6 / FORK-T — not on pickup, so it can reset with
+//       no matching guardPicked increment). It counts severs SINCE THE LAST GUARD DROP, never the
+//       run. Do not "restore" it to the cumulative group: it was described as cumulative here, in the
+//       P2 spec, in test-cs039-p2's §F and in TELEMETRY-ANALYSIS-GUIDE.md §3 for the whole of CS039,
+//       and the first real capture (GATE T) showed 7 decreases in 53 rows with the LAST ROW READING 0.
+//       `cargoSevers` is the run total, incremented on the same line the pity counter is, and is the
+//       column an analysis should read. Both are emitted: guardDropWeight() needs the pity value.
+//     · `scoopHits` (CS040 P5, spec §3.3) is the SECOND one, and it is here because of the first.
+//       damageShip() zeroes it every time a scoop LEVEL IS ACTUALLY LOST, so it counts non-lethal
+//       hits SINCE THE LAST LEVEL LOSS, not the run — the same shape as the pity counter above, from
+//       a different mechanism. There is no cumulative twin: nothing in the build counts scoop hits
+//       across a run, and none was added to serve this column.
 // ⛔ A NEW KEY, additive, owned by CS037 P4. Nothing below reads, writes, renames or version-bumps any
 // of the five existing keys — afd_settings_v1, afd_achievements_v2, afd_scores_v1, afd_profiles_v1,
 // afd_saves_v1 are untouched by this whole section (spec §5.6).
@@ -5149,15 +5176,25 @@ const TELEMETRY_FIELDS = [
 // rather than throwing or partially trusting a bad blob. LAZY like SaveSlots: nothing reads it at boot.
 // ⛔ IT FAILS SILENTLY, and that is the one place it deliberately differs from SaveSlots.write()'s
 // boolean return. That exception exists because Save is a player-initiated act with an expectation of
-// success (CS032 §4.4); this is a background write every 15 s that nobody is watching, so a quota or
-// privacy-mode failure must cost the run nothing.
+// success (CS032 §4.4); this is a background write every fourth snapshot that nobody is watching, so
+// a quota or privacy-mode failure must cost the run nothing.
 const TELEMETRY_KEY = "afd_telemetry_v1";
 const Telemetry = {
   rows: [],
   acc: 0,     // game-time seconds accrued since the last snapshot
   msg: "",    // the export's ONE visible channel — drawDebug draws it in the panel's footer band
+  // CS040 P5 (spec §3.6/§3.7). Three per-run pieces of state, all cleared by reset() with the rows:
+  //   wrapped       — latched the first time the ring drops a row. The export's `# ringWrapped=` line.
+  //   endFlushed    — latched by flush(), so the export can say whether the LAST ROW IS THE DEATH.
+  //   sincePersist  — snapshots since the last write(), for the every-fourth cadence (FORK-CS040-D).
+  // ⛔ ALL THREE RESET WITH THE BUFFER. A stale `wrapped` would claim a fresh run had already eaten
+  // its own opening minutes, and a stale `sincePersist` would put the first write of a new run
+  // somewhere between one and four snapshots in.
+  wrapped: false,
+  endFlushed: false,
+  sincePersist: 0,
 
-  reset() { this.rows = []; this.acc = 0; },
+  reset() { this.rows = []; this.acc = 0; this.wrapped = false; this.endFlushed = false; this.sincePersist = 0; },
 
   // Once per playing frame, from update()'s cleanup block. `acc -= iv` rather than `acc = 0` so the
   // cadence cannot drift: dt is clamped to 0.05 s and the knob's min is 1 s, so one subtraction
@@ -5181,10 +5218,31 @@ const Telemetry = {
     this.push();
   },
 
+  // CS040 P5 (spec §3.5) — THE GAME-OVER FLUSH. Both CS039 captures ended up to one whole interval
+  // short of the run they were recording, with the killing blow — the single most interesting frame in
+  // the log — never sampled. killShip() calls this on the frame it sets game.stats.gameEnded, so the
+  // last row of a completed run IS the death.
+  // ⛔ acc IS ZEROED, NOT DECREMENTED, AND THAT IS THE ANTI-DOUBLE-PUSH. killShip() runs in the
+  // collision pass; Telemetry.tick() runs later in the SAME frame's cleanup block and would push a
+  // second, near-identical row if acc had already crossed the interval. Zeroed, tick()'s next
+  // `acc += dt` lands at most 0.05 s — far under the knob's 1 s minimum — so the flush is the frame's
+  // only row.
+  // ⛔ IT ALWAYS PERSISTS, wherever the every-fourth counter stands. This is precisely the row that
+  // cannot be left to a later snapshot which, the run being over, will never come.
+  // The gates are tick()'s own two minus the interval: capture off means no row here either, so an
+  // off session still leaves afd_telemetry_v1 untouched (CS038 P3's contract, unchanged).
+  flush() {
+    if (Bench.running) return;
+    if (!DEBUG.telemetryCapture) return;
+    this.endFlushed = true;
+    this.push(true);
+    this.acc = 0;
+  },
+
   // ⛔ Math.hypot is CORRECT here and is not a wrap-aware-helper miss. The wrap-aware rule covers
   // world-space distance, aiming and link math between two POSITIONS; this is the magnitude of one
   // velocity vector, which has no seam to cross (spec §5.2 names this expression).
-  push() {
+  push(persistNow = false) {
     const s = game.stats, b = game.powerBudget, sh = game.ship;
     this.rows.push({
       t: s.gameTime, level: game.wave, score: game.score,
@@ -5201,6 +5259,14 @@ const Telemetry = {
       chainLen: game.chain.length,        // the DiffLog expression, verbatim
       cargoMax: game.cargoMax,            // the live runtime cap, NOT payloadSlots(game.wave)
                                            // recomputed — the two must never be two sources of truth
+      // CS040 P5 (spec §3.1): three live populations and the health reserve, all instantaneous, all
+      // sampled on the post-cull seam tick() already stands on. ⛔ INVERTED VOCABULARY, DELIBERATELY:
+      // debrisCount counts GARBAGE SATELLITES (game.debris) and garbageCount counts towable DEBRIS
+      // (game.garbage) — see the kinds block above TELEMETRY_KEY and CLAUDE.md's table.
+      hunterCount: game.hunters.length,
+      debrisCount: game.debris.length,
+      garbageCount: game.garbage.length,
+      healthBanked: game.healthBank,
       delivered: s.delivered,
       deliveryScore: s.deliveryScore,
       cargoDamageEvents: s.cargoDamageEvents,  // ⛔ SAWTOOTH — pity counter, resets on a guard DROP
@@ -5211,44 +5277,66 @@ const Telemetry = {
       hunterCoalesced: s.hunterCoalesced,
       deflects: s.deflects,
       hitsTaken: s.hitsTaken,
-      // ⛔ CS040 P1: the counter behind this column is DELETED (the full-HP milestone no longer pays),
-      // so the column emits a literal 0 — never s.scoreRepairBonus, which would now serialise as an
-      // empty cell. TELEMETRY_FIELDS is deliberately untouched this phase: CS040 P5 owns the schema
-      // change that drops the column outright. Until then the 0 is the honest value, not a placeholder.
-      scoreRepairBonus: 0,
+      hpWasted: s.hpWasted,               // CS040 P3's counter: healing discarded with the bank ALSO full
       scoreScoopBonus: s.scoreScoopBonus,
+      // ⛔ A SAWTOOTH, the second in this row — damageShip() zeroes it on every scoop LEVEL LOSS, so it
+      // reads "hits since the last loss", never the run. Read the kinds block above TELEMETRY_KEY
+      // before treating it as a counter. (CS040 P1's scoreRepairBonus column stood between these two
+      // and is GONE: P1 deleted the counter, P5 dropped the column, and nothing emits a stand-in.)
+      scoopHits: game.scoopHits,
       debugRun: game.debugRun, resumedRun: game.resumedRun,
     });
-    while (this.rows.length > TELEMETRY_MAX) this.rows.shift();   // drop oldest, keep the cap
-    this.write();   // ⛔ every snapshot, so a crash loses at most one interval (spec §5.6)
+    // CS040 P5: the wrap latch is set HERE, at the one place a row is actually dropped, so
+    // `# ringWrapped=` can never report a complete log for a ring that quietly ate its opening minutes.
+    while (this.rows.length > TELEMETRY_MAX) { this.rows.shift(); this.wrapped = true; }
+    // FORK-CS040-D: one write per TELEMETRY_PERSIST_EVERY snapshots rather than one per snapshot, so a
+    // crash costs at most three rows. `persistNow` is the game-over flush overriding the counter — and
+    // it resets the counter too, because the buffer genuinely HAS just been persisted.
+    // ⛔ The increment is unconditional (it is the left operand, always evaluated) — a forced write
+    // must not also leave the ordinary cadence a snapshot short.
+    if (++this.sincePersist >= TELEMETRY_PERSIST_EVERY || persistNow) { this.sincePersist = 0; this.write(); }
   },
 
-  // ⛔ THE ENVELOPE IS v:3, AND THE P2 SPEC'S "REUSE v2, ONE SHAPE PER CHANGESET" ⛔ WAS DELIBERATELY
-  // OVERRIDDEN AT GATE T (Paul's call; DECISIONS.md). Do not "restore" v:2 on the strength of that
-  // line — it was written before anyone knew a column would be needed after P3 shipped, and the two
-  // rules it sits between point opposite ways. P2 bumped v1 -> v2 for ONE stated reason: a stale blob
-  // missing the new keys makes telemetryCSV emit the literal string "undefined", and "silently
-  // dropping a stale run beats exporting a corrupt one." A 14th column under a reused v:2 recreates
-  // exactly that, against a v:2 blob that by then existed in the wild (GATE T's own capture). The
-  // reason won over the letter. ⛔ THE KEY NAME STILL DOES NOT CHANGE — it stays afd_telemetry_v1;
-  // the `_v1` in the key and the `v:` in the envelope are different things (P2 §3, still binding).
-  read() {
-    const ls = storageOK(); if (!ls) return [];
+  // ⛔ THE ENVELOPE IS v:4 — CS040 P5 CHANGED THE ROW SHAPE, SO THE ENVELOPE MOVED WITH IT. That is
+  // the standing rule (CLAUDE.md, Telemetry): a row-shape change bumps the envelope's `v`, NEVER the
+  // storage key name. It stays afd_telemetry_v1; the `_v1` in the key and the `v:` in the envelope are
+  // different things (P2 §3, still binding). A v:3 blob has scoreRepairBonus and none of P5's six new
+  // keys, so accepting one would export the literal string "undefined" in six columns — exactly the
+  // failure P2 bumped v1 -> v2 to prevent and GATE T bumped v2 -> v3 to prevent again. Silently
+  // dropping a stale run beats exporting a corrupt one, every time this has come up.
+  //   (History, so v:2 is not "restored" on the strength of a line still in the P2 spec: that spec's
+  // "reuse v2, one shape per changeset" was deliberately overridden at GATE T — Paul's call,
+  // DECISIONS.md — for this same reason, and P5 is the third time the reason has won over the letter.)
+  // ⛔ CS040 P5 also puts `wrapped` and `endFlushed` in the envelope, and they are NOT decoration.
+  // telemetryHeaderLines() reports both, and a "storage" export — the morning after a capture, live
+  // buffer empty — has no other way to know them. Reading the live latches there would print
+  // `ringWrapped=false` over a run that wrapped, which is the single failure mode the line exists to
+  // kill. Both are read back defensively (`!!`), so a hand-edited or partial blob degrades to false.
+  //   readEnvelope() is the whole-blob face and read() is its rows-only one, so the validation lives
+  // in exactly one place and the two can never drift.
+  readEnvelope() {
+    const nil = () => ({ rows: [], wrapped: false, endFlushed: false });
+    const ls = storageOK(); if (!ls) return nil();
     try {
       const raw = ls.getItem(Profiles.keyFor(TELEMETRY_KEY));
-      if (!raw) return [];
+      if (!raw) return nil();
       const data = JSON.parse(raw);
-      if (!data || data.v !== 3 || !Array.isArray(data.rows)) return [];
-      return data.rows.slice();
-    } catch (e) { return []; }   // corrupt / unreadable — an empty buffer, never a throw
+      if (!data || data.v !== 4 || !Array.isArray(data.rows)) return nil();
+      return { rows: data.rows.slice(), wrapped: !!data.wrapped, endFlushed: !!data.endFlushed };
+    } catch (e) { return nil(); }   // corrupt / unreadable — an empty buffer, never a throw
   },
+  read() { return this.readEnvelope().rows; },
   write() {
     const ls = storageOK(); if (!ls) return;
-    try { ls.setItem(Profiles.keyFor(TELEMETRY_KEY), JSON.stringify({ v: 3, rows: this.rows })); }
-    catch (e) { /* quota / privacy mode / disabled — a background write, silent by design */ }
+    try {
+      ls.setItem(Profiles.keyFor(TELEMETRY_KEY), JSON.stringify({
+        v: 4, rows: this.rows, wrapped: this.wrapped, endFlushed: this.endFlushed,
+      }));
+    } catch (e) { /* quota / privacy mode / disabled — a background write, silent by design */ }
   },
 };
-// CS039 P3 (spec §1, FORK-D/E/F) — THE LEVER FINGERPRINT. Seven `#` lines above the CSV header, so
+// CS039 P3 (spec §1, FORK-D/E/F) — THE LEVER FINGERPRINT. `#` lines above the CSV header (seven at
+// P3, nine since CS040 P5's ringWrapped/finalRowIsGameOver pair), so
 // two logs can be told apart without asking what the debug panel looked like when each was captured.
 //
 // ⛔ THE CARRIER IS `#` COMMENT LINES, AND THAT IS THE WHOLE COMPATIBILITY STORY (FORK-D). pandas
@@ -5276,6 +5364,12 @@ function telemetryHeaderLines(rows, from) {
   // already forgave, so a knob that genuinely IS different does not print as 0.35000000000000003.
   const fmt = v => String(Math.round(v * 1e6) / 1e6);
   const on = overridesOn();
+  // CS040 P5 (spec §3.6): the two new lines describe THE BUFFER THE ROWS CAME FROM, not this session.
+  // telemetryExportRows() resolves `from` to "storage" exactly when the live ring is empty and the
+  // persisted one is not — the morning after a capture — and the live latches are both false then, so
+  // reading them would report a wrapped, death-terminated run as neither. The envelope carries both
+  // for that case; the live module IS the meta object for its own rows.
+  const meta = from === "storage" ? Telemetry.readEnvelope() : Telemetry;
   const changed = [];
   for (const e of DEBUG_ENTRIES) {
     // The master toggle gets its own `overrides=` line and is skipped HERE on purpose: resolved
@@ -5294,11 +5388,20 @@ function telemetryHeaderLines(rows, from) {
     if (!(d <= 1e-9 * Math.max(1, Math.abs(def)))) changed.push(e.id + "=" + fmt(live));
   }
   return [
-    "# orbital-overhaul telemetry v3",                    // the envelope's own `v`, not a second version
+    "# orbital-overhaul telemetry v4",                    // the envelope's own `v`, not a second version
     "# build=" + GAME_VERSION,
     "# overrides=" + (on ? "ON" : "OFF"),
     "# telemetryInterval=" + DEBUG.telemetryInterval,     // the RESOLVED value tick() reads, not debugShown
     "# rows=" + rows.length,
+    // ⛔ ringWrapped true means THE OPENING OF THE RUN IS MISSING and every "since the start" reading
+    // below is wrong. The 2026-08-26 capture wrapped and lost its first 21.5 minutes and waves 1-7 in
+    // silence; noticing it took arithmetic on t[0]. One boolean removes the format's most misleading
+    // failure mode, so it goes ABOVE source=, where it cannot be skimmed past.
+    "# ringWrapped=" + (meta.wrapped ? "true" : "false"),
+    // ...and its counterpart at the other end: is the last row the death, or does the log stop up to
+    // one interval short of it? Marked HERE and never as a column (spec §3.5) — a per-run fact does
+    // not belong repeated 800 times.
+    "# finalRowIsGameOver=" + (meta.endFlushed ? "true" : "false"),
     "# source=" + from,
     "# levers=" + (changed.length ? changed.join(" ") : "none"),
   ];
@@ -10731,6 +10834,10 @@ function killShip() { // hull destroyed (0 HP): a true, permanent game over — 
   // Achievements (F9): a game just ended — flag it so end-of-game checks (Waste Not) can fire,
   // run a final evaluation, and flush lifetime progress to storage.
   game.stats.gameEnded = true;
+  // CS040 P5 (spec §3.5): the game-over flush, on the same line as the flag it belongs to so the two
+  // can never drift apart. One final row, carrying the killing blow the interval clock would otherwise
+  // have missed by up to a whole interval; gated inside flush() by telemetryCapture and nothing else.
+  Telemetry.flush();
   // Daredevil / Wave Rider (lifetime, once-per-game — FLAG A-12-a: these conditions are inherently
   // once-per-game, so per-event ≡ per-game). Read the same per-game state the weekly Glass Cannon /
   // Shield Surfer read, from their monotonic counters, so this can only tally a genuine event.

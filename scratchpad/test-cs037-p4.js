@@ -100,10 +100,11 @@ console.log("(A) interval timing against game time, with a pause interposed");
   eq(X.Telemetry.rows.length, 5, "A: at a 5 s interval, 15 s of play adds three rows");
 
   // The row carries every column TELEMETRY_FIELDS names, and nothing else.
-  // CS039 P2 appended 13 columns (chainLen/cargoMax + eleven counters) ahead of the two trailing
-  // flags, and GATE T a 14th (cargoSevers) — 30 -> 44. This phase's own scope (the SIX remaining-use
-  // + TEN dmg columns below) is unaffected; only the total width moved.
-  eq(X.TELEMETRY_FIELDS.length, 44, "A: the row is 44 columns wide");
+  // ⛔ NARROWED BY CS040 P5: the WIDTH LITERAL IS GONE. CS039 P2 took it 30 -> 43, GATE T -> 44 and
+  // CS040 P5 -> 49 (six added, scoreRepairBonus retired), and a literal here is a global count this
+  // phase does not own — the schema's own file (test-cs040-p5.js §A) pins the number and the order.
+  // What P4 owns and still asserts is that push()'s row and TELEMETRY_FIELDS ARE ONE SHAPE.
+  assert(X.TELEMETRY_FIELDS.length > 0, "A: there are columns at all");
   const row = X.Telemetry.rows[0];
   for (const f of X.TELEMETRY_FIELDS)
     assert(f in row, `A: the row carries the "${f}" column`);
@@ -140,32 +141,35 @@ console.log("(A) interval timing against game time, with a pause interposed");
   eq(csv[1].split(",").length, X.TELEMETRY_FIELDS.length, "A: ...and each data line has one cell per column");
 }
 
-// ================= (B) the 400-row cap rolls the OLDEST off ======================================
-console.log("(B) the 400-row cap");
+// ================= (B) the 800-row cap rolls the OLDEST off ======================================
+// REPOINTED BY CS040 P5 (FORK-CS040-D): the ring is 800 rows, not 400 — the 2026-08-26 capture
+// overran the old one and lost waves 1-7 in silence. The cap's BEHAVIOUR is what this file owns and
+// it is unchanged; only the number moved, so every literal below moved with it.
+console.log("(B) the 800-row cap");
 {
   const X = buildGame();
-  eq(X.TELEMETRY_MAX, 400, "B: the cap is 400 rows");
+  eq(X.TELEMETRY_MAX, 800, "B: the cap is 800 rows");
   X.startGame();
-  for (let i = 0; i < 450; i++) { X.game.score = i; X.Telemetry.push(); }
-  eq(X.Telemetry.rows.length, 400, "B: the buffer never exceeds the cap");
+  for (let i = 0; i < 850; i++) { X.game.score = i; X.Telemetry.push(); }
+  eq(X.Telemetry.rows.length, 800, "B: the buffer never exceeds the cap");
   eq(X.Telemetry.rows[0].score, 50, "B: ⛔ the OLDEST rows rolled off (row 0 is the 51st push)");
-  eq(X.Telemetry.rows[399].score, 449, "B: ...and the newest is retained");
+  eq(X.Telemetry.rows[799].score, 849, "B: ...and the newest is retained");
   let monotonic = true;
   for (let i = 1; i < X.Telemetry.rows.length; i++)
     if (X.Telemetry.rows[i].score !== X.Telemetry.rows[i - 1].score + 1) monotonic = false;
   assert(monotonic, "B: the surviving rows are a contiguous, in-order tail — not a shuffled or holed set");
 
   // Driven through real time rather than by hand, the cap holds the same way. The hull is topped up
-  // every frame because a death would end the run and stop the clock long before 420 s of PLAY elapse —
+  // every frame because a death would end the run and stop the clock long before 820 s of PLAY elapse —
   // this section is measuring the ring, not survivability.
   X.startGame();
   X.applyDebug("telemetryInterval", 1);
   X.applyDebug("telemetryCapture", 1);
-  for (let i = 0; i < Math.round(420 / DT); i++) { X.game.ship.hp = X.SHIP_MAX_HP; X.update(DT); }
-  eq(X.game.state, "playing", "B: (setup) the run survived the whole 420 s");
-  eq(X.Telemetry.rows.length, 400, "B: 420 s at a 1 s interval still caps at 400");
+  for (let i = 0; i < Math.round(820 / DT); i++) { X.game.ship.hp = X.SHIP_MAX_HP; X.update(DT); }
+  eq(X.game.state, "playing", "B: (setup) the run survived the whole 820 s");
+  eq(X.Telemetry.rows.length, 800, "B: 820 s at a 1 s interval still caps at 800");
   assert(X.Telemetry.rows[0].t > 15, "B: ...and the surviving window is the RECENT one, not the opening one");
-  close(X.Telemetry.rows[399].t, X.game.stats.gameTime, "B: ...ending at the present", 1.01);
+  close(X.Telemetry.rows[799].t, X.game.stats.gameTime, "B: ...ending at the present", 1.01);
 }
 
 // ================= (C) cleared at resetRun(), from BOTH entry points =============================
@@ -347,19 +351,24 @@ console.log("(F) the localStorage round trip");
     X.applyDebug("telemetryCapture", 1);
     X.startGame();
     X.applyDebug("telemetryInterval", 1);
-    run(X, 3);
+    // ⛔ REPOINTED BY CS040 P5 (FORK-CS040-D): the write is now one per FOUR snapshots, not one per
+    // snapshot, so this runs to the end of a full cycle. What P4 owns — that a snapshot's rows reach
+    // localStorage and read() gets them back — is unchanged and is asserted at exactly that seam.
+    run(X, 4.5);
+    eq(X.Telemetry.rows.length, X.TELEMETRY_PERSIST_EVERY, "F: (setup) one full persist cycle of snapshots");
     assert(KEY in store, "F: ⛔ a snapshot WRITES — the run survives a crash or a refresh");
     const env = JSON.parse(store[KEY]);
-    eq(env.v, 3, "F: the envelope is versioned"); // CS039 P2 bumped the shape to v:2; GATE T to v:3
+    eq(env.v, 4, "F: the envelope is versioned"); // P2 bumped the shape to v:2; GATE T to v:3; CS040 P5 to v:4
     assert(Array.isArray(env.rows), "F: ...and carries a rows array");
     eq(env.rows.length, X.Telemetry.rows.length, "F: ...holding every buffered row");
     eq(JSON.stringify(X.Telemetry.read()), JSON.stringify(X.Telemetry.rows),
       "F: read() round-trips what push() wrote");
 
-    // Every snapshot rewrites it, so the store tracks the buffer rather than lagging behind.
+    // A later write rewrites the WHOLE envelope rather than appending, so the store tracks the buffer
+    // rather than accumulating. (CS040 P5: "later" is now the next cycle's fourth snapshot.)
     const n = X.Telemetry.rows.length;
-    run(X, 2);
-    eq(JSON.parse(store[KEY]).rows.length, X.Telemetry.rows.length, "F: each later snapshot rewrites the envelope");
+    run(X, 4);
+    eq(JSON.parse(store[KEY]).rows.length, X.Telemetry.rows.length, "F: a later write rewrites the envelope whole");
     assert(X.Telemetry.rows.length > n, "F: (setup) more rows landed");
 
     // Absent / corrupt / wrong version / wrong shape — all resolve to an EMPTY buffer, never a throw.
@@ -369,13 +378,13 @@ console.log("(F) the localStorage round trip");
     eq(X.Telemetry.read().length, 0, "F: an UNPARSEABLE blob reads as an empty buffer");
     store[KEY] = JSON.stringify({ v: 1, rows: [{ score: 1 }] }); // stale pre-CS039-P2 shape
     eq(X.Telemetry.read().length, 0, "F: ⛔ a WRONG-VERSION envelope reads as empty — never partially trusted");
-    store[KEY] = JSON.stringify({ v: 3, rows: "not an array" });
+    store[KEY] = JSON.stringify({ v: 4, rows: "not an array" });
     eq(X.Telemetry.read().length, 0, "F: a non-array rows field reads as empty");
     store[KEY] = JSON.stringify({ rows: [{ score: 1 }] });
     eq(X.Telemetry.read().length, 0, "F: a missing version reads as empty");
     store[KEY] = "null";
     eq(X.Telemetry.read().length, 0, "F: a null blob reads as empty");
-    store[KEY] = JSON.stringify({ v: 3, rows: [{ score: 7 }] });
+    store[KEY] = JSON.stringify({ v: 4, rows: [{ score: 7 }] });
     eq(X.Telemetry.read().length, 1, "F: ...and a VALID envelope reads back");
     eq(X.Telemetry.read()[0].score, 7, "F: ...with its rows intact");
   }
@@ -388,7 +397,7 @@ console.log("(F) the localStorage round trip");
     X.applyDebug("telemetryCapture", 1);
     X.startGame();
     X.applyDebug("telemetryInterval", 1);
-    run(X, 2);
+    run(X, 4.5);   // CS040 P5: one full persist cycle, so a write has actually happened
     assert(KEY + ":p3" in store, "F: ⛔ a non-legacy profile writes the SUFFIXED key");
     assert(!(KEY in store), "F: ...and never the bare one");
     eq(X.Telemetry.read().length, X.Telemetry.rows.length, "F: ...and reads back through the same router");
@@ -441,14 +450,19 @@ console.log("(F) the localStorage round trip");
   // The idiom itself, asserted on the source so a later edit cannot quietly drop a guard.
   {
     const tele = bodyOf(stripped, "const Telemetry = {");
-    assert(/read\(\)\s*\{\s*const ls = storageOK\(\); if \(!ls\) return \[\];/.test(tele),
-      "F: read() is storageOK()-guarded, the SaveSlots idiom verbatim");
+    // ⛔ REPOINTED BY CS040 P5: read() is now the rows-only FACE of readEnvelope(), which is where the
+    // guard, the parse and the known-value-else-default validation moved — one implementation, so the
+    // whole-blob and rows-only readers can never drift. The idiom itself is unchanged, one level down.
+    assert(/readEnvelope\(\)\s*\{[\s\S]{0,120}const ls = storageOK\(\); if \(!ls\) return nil\(\);/.test(tele),
+      "F: readEnvelope() is storageOK()-guarded, the SaveSlots idiom verbatim");
+    assert(/read\(\)\s*\{ return this\.readEnvelope\(\)\.rows; \}/.test(tele),
+      "F: ...and read() is exactly that reader's rows, never a second parse of its own");
     assert(/write\(\)\s*\{\s*const ls = storageOK\(\); if \(!ls\) return;/.test(tele),
       "F: write() likewise");
     eq((tele.match(/Profiles\.keyFor\(TELEMETRY_KEY\)/g) || []).length, 2,
       "F: ⛔ keyFor() at BOTH the read and the write site — localStorage is never keyed directly");
     eq((tele.match(/catch \(e\)/g) || []).length, 2, "F: both storage paths are try/catch-wrapped");
-    assert(/data\.v !== 3/.test(tele), "F: known-value-else-default is on the ENVELOPE's version"); // CS039 P2: v:1 -> v:2; GATE T: -> v:3
+    assert(/data\.v !== 4/.test(tele), "F: known-value-else-default is on the ENVELOPE's version"); // P2: v:1 -> v:2; GATE T: -> v:3; CS040 P5: -> v:4
   }
 }
 
@@ -489,7 +503,7 @@ console.log("(G) the clipboard export, and its reachability at game over");
     Y.startGame();
     Y.applyDebug("telemetryInterval", 1);
     Y.applyDebug("telemetryCapture", 1);
-    run(Y, 3);
+    run(Y, 4.5);   // CS040 P5: a full persist cycle, so there IS a persisted copy to fall back to
     eq(Y.telemetryExportRows().from, "this run", "G: a live buffer exports as 'this run'");
     const persisted = Y.Telemetry.rows.length;
     Y.Telemetry.rows = [];                       // the shape a refresh leaves behind
@@ -598,8 +612,11 @@ console.log("(H) benchmark mode does not write to the buffer, and P2's five guar
   // resumed-run targeted merge write), so it carries the seal guard for the same reason save() does. A
   // count, not a list, is what this pin has always been; the number moves when the seal legitimately
   // grows, and a DROPPED guard still reads as a shortfall.
-  eq((stripped.match(/if \(Bench\.running\) return;/g) || []).length, 9,
-    "H: ⛔ P2's five seal guards + benchCopyResults' + PlayPeaks.sample()'s + tick()'s + CS037 P6's mergeUnlock() — nine in all, none dropped");
+  //   ⛔ RAISED AGAIN BY CS040 P5 — 9 -> 10. Telemetry.flush() (the game-over row) is a second entry
+  // point into push(), reachable from killShip(), so it carries tick()'s two gates verbatim rather
+  // than inheriting them. Same reasoning, third time.
+  eq((stripped.match(/if \(Bench\.running\) return;/g) || []).length, 10,
+    "H: ⛔ P2's five seal guards + benchCopyResults' + PlayPeaks.sample()'s + tick()'s + CS037 P6's mergeUnlock() + CS040 P5's flush() — ten in all, none dropped");
   assert(stripped.includes("if (Bench.running) { Bench.frame(); requestAnimationFrame(loop); return; }"),
     "H: loop() still runs neither update() nor draw() during a battery");
 

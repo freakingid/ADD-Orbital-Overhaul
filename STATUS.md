@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.39 · Changeset: CS040 · Phase: P4 · Registry: 110 · Levers: 18
+Version: 1.0.0.39 · Changeset: CS040 · Phase: P5 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS040
 
@@ -49,6 +49,24 @@ Version: 1.0.0.39 · Changeset: CS040 · Phase: P4 · Registry: 110 · Levers: 1
   not starvation. Registry 109 → 110, `LEVERS` unmoved at 18. **Thirteen other-phase pins narrowed
   again** — the same trailing-registry-row family P2/P3 repaired (no new `resetRun()` line this time,
   so `test-cs026-p3` was untouched).
+- P5 — Telemetry v4: 44 → **49** columns, `TELEMETRY_FIELDS` and `Telemetry.push()` edited in lockstep.
+  Out: `scoreRepairBonus`. In: instantaneous `hunterCount`/`debrisCount`/`garbageCount`/`healthBanked`
+  after `cargoMax`, cumulative `hpWasted` beside `hitsTaken`, and ⛔ **`scoopHits` — the schema's SECOND
+  SAWTOOTH**, zeroed by `damageShip()` on every scoop level loss, so it reads "hits since the last
+  loss". Documented as one in the `TELEMETRY_FIELDS` kinds block and in `test-cs040-p5.js` (P8 owns the
+  guide's §3), and every monotonicity walk now excludes it and `cargoDamageEvents` **by name**. New
+  `Telemetry.flush()` — `Bench`/capture-gated, called from `killShip()` on the line below
+  `game.stats.gameEnded = true` — pushes the death row and zeroes `acc`, so `tick()` cannot double-push
+  later in the same frame. Header block 7 → 9 lines: `# ringWrapped=` (latched where the ring drops a
+  row, cleared in `reset()`) and `# finalRowIsGameOver=`, both above `source=`; version line at v4.
+  FORK-CS040-D: `TELEMETRY_MAX` 400 → **800** and `TELEMETRY_PERSIST_EVERY` = 4, with the flush writing
+  whatever the counter stands at. Envelope `v: 3 → 4`; key name untouched. Registry 110 and `LEVERS` 18
+  both unmoved — no knob this phase. **Judgment call, flagged not assumed:** the envelope also carries
+  `wrapped`/`endFlushed`, read back by the new `readEnvelope()` (`read()` is now its rows-only face) so
+  a `source=storage` export reports the STORED run — otherwise the morning-after export prints
+  `ringWrapped=false` over exactly the log that flag exists to catch. **Six other-phase tests repaired**:
+  five schema neighbours (`test-cs037-p4`, `test-cs038-p3`, `test-cs039-p2`, `test-cs039-p3`,
+  `test-cs040-p1` — whose §F predicted this phase in writing) and one unrelated, below.
 
 ## Phase ledger — CS039 (closed; full narrative in `log/CS039.md`)
 
@@ -100,6 +118,15 @@ decision verbatim: `log/CS039.md`.
   (~30%), proving no hub bias leaks into the kill-gated emitters; §E pins guard's share to
   `guardDropWeight()` alone against a computed "wrongly-dried" alternative far enough away to catch a
   regression, confirming guard never enters the dry set even while its own budget rests at 0.
+- **CS040 P5:** full suite 170 files, 170 passed, 0 failed, 0 skipped (the extra file over P4's 169 is
+  `test-cs040-p5.js`; the six repaired pins are counted in this total, not separately). `node --check`
+  passes on the extracted script. `test-cs040-p5.js` §C drives a **real** scoop level loss through
+  `damageShip()` and asserts the strictly decreasing step, then re-runs the whole cumulative walk over a
+  span containing that loss so the exclusion is proved rather than asserted. §D kills the ship with a
+  real `DebrisSatellite` contact inside `update()`'s own collision pass, on a frame a snapshot was
+  already due, and gets exactly one row — with a no-death control frame on the same setup that does land
+  its scheduled row. A live export was eyeballed end-to-end: 49 columns, `v4` header, `hp=0` final row,
+  `finalRowIsGameOver=true`, envelope persisted at `v:4`.
 - **`scratchpad/_harness.js` gained one additive option, `ctxLog`** — an array the 2D-context stub
   records method calls and tracked property writes into, so a draw contract can be MEASURED against the
   real draw path. Same shape and same justification as CS036 P2's `listeners`: three suite files
@@ -114,12 +141,20 @@ decision verbatim: `log/CS039.md`.
 
 ## Known issues
 
-- **⛔ CS040 P5 MUST remove the `scoreRepairBonus` telemetry column.** P1 deleted the counter behind
-  it but left `TELEMETRY_FIELDS` alone by instruction, so `Telemetry.push()` now emits a **literal 0**
-  for that column with a comment saying so. Left reading the deleted counter it would have serialised
-  as an **empty cell** (`Array.join` renders `undefined` as `""`), and `test-cs039-p2` §F's
-  monotonicity walk would have gone red on `NaN`. The 0 is honest — the value can no longer be
-  anything else — but the column is dead weight until P5 drops it.
+- **⛔ A FIXED-REF DIFF PIN CROSSED GIT'S RENAME THRESHOLD MID-CHANGESET, and every phase from here on
+  should know it exists.** `test-cs024-p6b.js` §G TRAP 5 diffs the build against `79222e5`, a commit
+  *before* the CS029 `asteroids-deluxe.html` → `orbital-overhaul.html` rename, and relied on git's
+  **default** `-M50%` to keep it one renamed file rather than a whole-file delete plus a whole-file add.
+  Similarity is 7,821 common lines over the file's current size: 53.7% at CS040 P4, 53.3% at P5 — and
+  under 50% the moment the file grew past ~15,600 lines. It went red on four assertions that have
+  nothing to do with powerups, purely because the build got longer. **Repaired by pinning the threshold
+  explicitly (`--find-renames=20%`)**, which buys until roughly 39,000 lines; the rename is a fact in
+  `git log` and the pathspec admits exactly one deletion and one addition, so there is no wrong pair to
+  match. ⛔ **Any other fixed-ref pin reaching back past CS029 has the same latent failure** — none was
+  found this phase, but nobody has swept for one.
+- **`test-cs037-p4.js` §H's `Bench.running` guard count is now 10** (was 9). `Telemetry.flush()` is a
+  second entry point into `push()`, so it carries `tick()`'s two gates verbatim rather than inheriting
+  them. The count is a pin, not a list, and it moves when the seal legitimately grows.
 - **Two other-phase tests were repaired by CS040 P1, both narrowings rather than deletions.**
   `test-cs020-p1.js` §J now excludes `score` from its bit-identical cross-build loop (PRE_FIX_REF
   still pays the retired full-hull bonus; the gap is pinned at exactly `crossings ×

@@ -69,7 +69,10 @@ console.log("(C) capture ON: update(1/60) past the interval lands rows and write
   X.startGame();
   X.applyDebug("telemetryInterval", 1);
   X.applyDebug("telemetryCapture", 1);
-  run(X, 3);
+  // ⛔ REPOINTED BY CS040 P5 (FORK-CS040-D): the envelope is written once per FOUR snapshots now, so a
+  // 3 s run would land rows and no write at all. This section's claim is the CAPTURE GATE — rows land
+  // and storage is reached when it is on — not the cadence, which is test-cs040-p5.js §E's.
+  run(X, 4.5);
   assert(X.Telemetry.rows.length >= 2, "C: rows land once capture is ON");
   assert(X.TELEMETRY_KEY in store, "C: ...and the envelope is written");
   const env = JSON.parse(store[X.TELEMETRY_KEY]);
@@ -144,7 +147,7 @@ console.log("(F) telemetryExportRows() reads storage regardless of the capture s
   X.startGame();
   eq(X.DEBUG.telemetryCapture, 0, "F: (setup) capture is OFF this session");
   // Seed the store as if a PRIOR session (capture on, back then) wrote it.
-  store[X.TELEMETRY_KEY] = JSON.stringify({ v: 3, rows: [{ score: 7 }, { score: 8 }] }); // CS039 P2: v:2; GATE T: v:3
+  store[X.TELEMETRY_KEY] = JSON.stringify({ v: 4, rows: [{ score: 7 }, { score: 8 }] }); // P2: v:2; GATE T: v:3; CS040 P5: v:4
   eq(X.Telemetry.rows.length, 0, "F: (setup) the live buffer is empty — nothing accrued this (OFF) session");
 
   const exp = X.telemetryExportRows();

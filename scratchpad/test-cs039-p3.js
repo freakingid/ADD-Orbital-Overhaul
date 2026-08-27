@@ -23,12 +23,15 @@ const leversOf = (X) => hdr(X).find(l => l.startsWith(LEV)).slice(LEV.length);
 const tokensOf = (X) => { const v = leversOf(X); return v === "none" ? [] : v.split(" "); };
 const entry = (X, id) => X.DEBUG_ENTRIES.find(e => e.id === id);
 
-// ================= (A) the seven lines, in order, on a fresh boot =================================
-console.log("(A) a fresh boot's header: seven lines, every one a `#` key=value, levers=none");
+// ================= (A) the nine lines, in order, on a fresh boot =================================
+// REPOINTED BY CS040 P5 (spec §3.6): the block went from seven lines to nine — ringWrapped and
+// finalRowIsGameOver were inserted between rows= and source=, and the version line reads v4. P3 owns
+// the block's SHAPE and still asserts it; the two new lines' own behaviour is test-cs040-p5.js §F/§G.
+console.log("(A) a fresh boot's header: nine lines, every one a `#` key=value, levers=none");
 {
   const X = buildGame();
   const lines = hdr(X, [], "this run");
-  eq(lines.length, 7, "A: exactly seven header lines");
+  eq(lines.length, 9, "A: exactly nine header lines");
   for (const l of lines) assert(l.startsWith("# "), `A: every line is a # comment ("${l}")`);
 
   // The override state is READ off the build, not assumed — and cross-checked against the registry's
@@ -36,16 +39,18 @@ console.log("(A) a fresh boot's header: seven lines, every one a `#` key=value, 
   const on = X.overridesOn();
   eq(on, entry(X, X.DEBUG_OVERRIDE_ID).def !== 0, "A: a fresh boot's overrides state IS the registry def");
 
-  eq(lines[0], "# orbital-overhaul telemetry v3", "A: line 1 names the format and the envelope's v");
+  eq(lines[0], "# orbital-overhaul telemetry v4", "A: line 1 names the format and the envelope's v");
   eq(lines[1], "# build=" + X.GAME_VERSION, "A: line 2 is GAME_VERSION, read off the build");
   eq(lines[2], "# overrides=" + (on ? "ON" : "OFF"), "A: line 3 is the master toggle's live state");
   eq(lines[3], "# telemetryInterval=" + X.DEBUG.telemetryInterval, "A: line 4 is the RESOLVED interval");
   eq(lines[4], "# rows=0", "A: line 5 counts the rows handed in");
-  eq(lines[5], "# source=this run", "A: line 6 is the source string handed in");
-  eq(lines[6], "# levers=none", "A: ⛔ line 7 on an untouched registry is `none`");
+  eq(lines[5], "# ringWrapped=false", "A: line 6 is CS040 P5's ring-wrap flag");
+  eq(lines[6], "# finalRowIsGameOver=false", "A: line 7 is its game-over counterpart");
+  eq(lines[7], "# source=this run", "A: line 8 is the source string handed in");
+  eq(lines[8], "# levers=none", "A: ⛔ line 9 on an untouched registry is `none`");
 
   eq(hdr(X, [1, 2, 3], "storage")[4], "# rows=3", "A: rows= tracks the array it was given");
-  eq(hdr(X, [], "storage")[5], "# source=storage", "A: source= tracks the string it was given");
+  eq(hdr(X, [], "storage")[7], "# source=storage", "A: source= tracks the string it was given");
 }
 
 // ================= (B) one edited knob, overrides ON: EFFECTIVE value, and only that knob ==========
@@ -131,18 +136,18 @@ console.log("(E) telemetryCSV prepends the block; the first non-# line is exactl
   const lines = csv.split("\n").filter(l => l.length);
 
   const block = lines.filter(l => l.startsWith("#"));
-  eq(block.length, 7, "E: seven comment lines and no more");
+  eq(block.length, 9, "E: nine comment lines and no more");   // CS040 P5: was seven
   eq(block.join("\n"), hdr(X, X.Telemetry.rows, "this run").join("\n"),
     "E: the block IS telemetryHeaderLines' output, verbatim");
-  eq(lines.slice(0, 7).join("\n"), block.join("\n"), "E: ⛔ prepended — every # line comes first");
+  eq(lines.slice(0, 9).join("\n"), block.join("\n"), "E: ⛔ prepended — every # line comes first");
 
   const firstData = lines.findIndex(l => !l.startsWith("#"));
   eq(lines[firstData], X.TELEMETRY_FIELDS.join(","), "E: ⛔ the first non-# line IS the field header");
-  eq(lines.length, 7 + 1 + X.Telemetry.rows.length, "E: block + header + one line per row");
+  eq(lines.length, 9 + 1 + X.Telemetry.rows.length, "E: block + header + one line per row");
   for (let i = firstData + 1; i < lines.length; i++)
     eq(lines[i].split(",").length, X.TELEMETRY_FIELDS.length, `E: data line ${i} still has one cell per column`);
 
-  eq(X.telemetryCSV(X.Telemetry.rows).split("\n")[5], "# source=unknown",
+  eq(X.telemetryCSV(X.Telemetry.rows).split("\n")[7], "# source=unknown",
     "E: a bare call states an unknown source rather than printing `undefined`");
 }
 
@@ -213,7 +218,7 @@ console.log("(G) the clipboard path and the download fallback are handed the sam
   assert(/downloaded telemetry csv/i.test(X.Telemetry.msg), "G: ...and the outcome is stated");
   const src = X.telemetryExportRows();
   eq(downloaded, X.telemetryCSV(src.rows, src.from), "G: the downloaded text is the fingerprinted CSV");
-  assert(downloaded.startsWith("# orbital-overhaul telemetry v3\n"), "G: ...header block and all");
+  assert(downloaded.startsWith("# orbital-overhaul telemetry v4\n"), "G: ...header block and all");
   assert(downloaded.includes("\n# source=this run\n"), "G: ⛔ with the source telemetryExportRows resolved");
 
   // The clipboard branch is unreachable here (no clipboard API in the sandbox), so its half is pinned
