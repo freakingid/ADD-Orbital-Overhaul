@@ -6,8 +6,11 @@ findings instead of rediscovering the schema.
 
 **Written after:** the first full analysis (196-row run, waves 1–13, `orbital-overhaul.html` @
 `76eeca7` / CS038). Covers the **v1 schema** (30 columns, CS037 P4), the **v2 schema** (43 columns +
-`#` header, CS039 P1–P3) and the **v3 schema** (44 columns, CS039 GATE T). A v2 log still parses
-fine — it is simply missing `cargoSevers`, and §3 says what to do instead.
+`#` header, CS039 P1–P3), the **v3 schema** (44 columns, CS039 GATE T) and the **v4 schema** (49
+columns + 9-line header, CS040 P5). A v2 log still parses fine — it is simply missing
+`cargoSevers`, and §3 says what to do instead. A v3 log parses fine too — it is missing the six
+CS040 columns (§3's v4 section) and the two new header lines (§3's header-block subsection); do not
+attempt to backfill either.
 
 ---
 
@@ -45,13 +48,24 @@ the write-up — carry the build's own names and gloss them once.
   unpaused, unfrozen playing frame. **Menu, pause and level-ceremony seconds are not in `t`.** Two
   rows are therefore always comparable; you never need to correct for idle time.
 - **Per-run.** `resetRun()` clears the buffer. A log is one run, never two.
-- **Ring buffer, `TELEMETRY_MAX = 400`.** At 15 s that is 100 minutes. Past that, the OLDEST rows
-  roll off silently. **Always check whether the log is truncated** (§2).
-- **Persisted** to `afd_telemetry_v1` in localStorage on every snapshot, so a crash or refresh keeps
-  the data. The export prefers the live buffer and falls back to the stored one.
+- **Ring buffer, `TELEMETRY_MAX = 800` (CS040 P5, was 400).** At 15 s that is 200 minutes. Past
+  that, the OLDEST rows roll off — **no longer silently as of v4**: the ring latches `wrapped` the
+  first time it drops a row, and the export's `# ringWrapped=` header line reports it. **Always
+  check that line before trusting a total** (§2).
+- **Persisted every `TELEMETRY_PERSIST_EVERY` (4th) snapshot** to `afd_telemetry_v1` in
+  localStorage — CS040 P5 traded per-snapshot writes for a quadrupled-payload, one-fourth-frequency
+  write (the ring doubling alone would have doubled every write's `JSON.stringify` cost; this holds
+  it at roughly the pre-CS040 volume). A crash can lose at most three snapshots. **The game-over
+  flush (v4) always persists regardless of where that counter stands** — see the header-block
+  subsection below for `finalRowIsGameOver`. The export prefers the live buffer and falls back to
+  the stored one.
 - **Opt-in since CS038 P3.** `DEBUG.telemetryCapture` defaults OFF and is off at every launch. A run
   with capture off produces nothing; it does not produce a partial log.
-- **Exported by hand** from the debug panel's "Copy telemetry log" row, reachable at game over.
+- **Exported by hand.** Through CS040 P5, from the debug panel's "Copy telemetry log" row. **As of
+  CS040 P6, telemetry has its own Options → Telemetry submenu** (Capture ON/OFF, a sample-rate
+  preset cycle, and "Copy log") — the debug-panel action row is gone, but `DEBUG.telemetryInterval`/
+  `telemetryCapture` are unchanged underneath and still never persist (session-only by design).
+  Either surface produces the identical CSV.
 
 ---
 
@@ -62,29 +76,33 @@ Six checks. Each has caught something real.
 1. **Cadence.** `df['t'].diff()` should be tight around the interval (σ ≈ 0.002 s). A gap that is a
    clean multiple of the interval means dropped snapshots; a ragged one means something is wrong
    with the clock. Report either.
-2. **Truncation.** If `len(df) == 400` (or whatever `TELEMETRY_MAX` currently is) **and** `t[0]` is
-   noticeably greater than the interval, the run's opening rolled off the ring. Every cumulative
-   column then starts from a non-zero, unknown baseline and *all* whole-run totals are lower bounds.
-   Say so prominently — this is the single most misleading failure mode.
-   If `t[0] ≈ interval`, the log is complete from the run's start.
+2. **Truncation.** **In a v4 log, lead with `# ringWrapped=` from the header block — this is now the
+   METHOD, not a fallback.** `true` means the run's opening rolled off the ring and every cumulative
+   column starts from a non-zero, unknown baseline, so *all* whole-run totals are lower bounds; say
+   so prominently, it is the single most misleading failure mode in this schema. `false` means the
+   log is complete from the run's start, full stop — no arithmetic needed.
+   For a v1–v3 log, which carries no such flag, fall back to the old arithmetic: if
+   `len(df) == 400` (or whatever `TELEMETRY_MAX` was for that build) **and** `t[0]` is noticeably
+   greater than the interval, the run's opening rolled off the ring. If `t[0] ≈ interval`, the log
+   is complete from the run's start.
 
-   **Capacity is interval-dependent.** `TELEMETRY_MAX = 400` rows, so the ring's wall-clock capacity
-   scales with `telemetryInterval`:
+   **Capacity is interval-dependent, and it doubled at CS040 P5** (`TELEMETRY_MAX` 400 → 800):
 
-   | Interval | Capacity |
-   |---|---|
-   | 5 s | 33 min |
-   | 10 s | 67 min |
-   | 15 s (default) | 100 min |
+   | Interval | Capacity (v1–v3, `TELEMETRY_MAX=400`) | Capacity (v4, `TELEMETRY_MAX=800`) |
+   |---|---|---|
+   | 5 s | 33 min | 67 min |
+   | 10 s | 67 min | 133 min |
+   | 15 s (default) | 100 min | 200 min |
 
-   **Practical rule:** any run expected to run past ~30 minutes needs interval 15 (or a raised
-   `TELEMETRY_MAX`) to avoid wrapping. The 08-26 capture wrapped and silently lost its first 21.5
-   minutes and waves 1–7 — `t[0]` was 1290 with `rows = 400`.
-3. **Monotonicity.** Every cumulative column (`score`, all `*Picked`, all `dmg*`, and in v2/v3 the
-   kill/delivery/bonus counters) must be non-decreasing. A decrease means a schema misread or a
-   corrupt export — **with exactly one sanctioned exception: `cargoDamageEvents` legitimately
-   decreases** and must be excluded from this check, or it reports a failure on every real log
-   (§3). It is the only such column; anything else dropping is a genuine problem.
+   **Practical rule:** any run expected to run past ~30 minutes wants a v4 build, interval 15, or
+   both. The 08-26 capture (a v3 build) wrapped and silently lost its first 21.5 minutes and waves
+   1–7 — `t[0]` was 1290 with `rows = 400` — which is the failure `ringWrapped` exists to make
+   loud instead of silent.
+3. **Monotonicity.** Every cumulative column (`score`, all `*Picked`, all `dmg*`, and in v2+ the
+   kill/delivery/bonus counters, and in v4 `hpWasted`) must be non-decreasing. A decrease means a
+   schema misread or a corrupt export — **with exactly two sanctioned exceptions, both sawtooths:
+   `cargoDamageEvents` (v2+) and `scoopHits` (v4).** Both must be excluded from this check by name,
+   or it reports a failure on every real log (§3). Nothing else dropping is ever legitimate.
 4. **Flags.** `debugRun` and `resumedRun`. A `debugRun` row was played with knob overrides in force;
    a `resumedRun` row belongs to a run that loaded a save, meaning `score` contains a baked-in
    pre-load component that cannot be separated out. **Either flag being true anywhere makes the run
@@ -165,7 +183,7 @@ before you total anything.
 | `hunterCoalesced` | Hunters born from neglected scrap — the Kessler loop firing |
 | `deflects` | hits absorbed by the shield (HP that was *not* taken) |
 | `hitsTaken` | non-lethal hits that deducted HP — same population as the `dmg*` sums |
-| `scoreRepairBonus` | cumulative `REPAIR_FULL_BONUS` (milestone hit at full HP) |
+| `scoreRepairBonus` | ⛔ **REMOVED in v4** (CS040 P1/P5) — see the v4 section below. Present in v2/v3 only. |
 | `scoreScoopBonus` | cumulative `SCOOP_MAX_BONUS` (scoop picked at max level) |
 
 **Neither — one column, and it DECREASES:**
@@ -194,17 +212,89 @@ for c in d.cargoDamageEvents:
 print(f'severs >= {sev} across {resets} guard drops')   # v2: a FLOOR, never a total
 ```
 
-### v2/v3 — the `#` header block
+### v4 — the CS040 additions (49 columns total)
 
-Seven `#`-prefixed lines above the CSV header. Skip them with `pd.read_csv(path, comment='#')`, but
-**read them first** — they are the run's provenance:
+CS040 P1 deleted the score-milestone HP repair outright (§4's constants table and its two
+behavioural facts explain why) and P5 built the six-column telemetry footprint of the healing
+rework that replaced it. **Net change from v3's 44: −1 (`scoreRepairBonus`, removed) + 6 (below) =
+49.** The full, ordered column list — grep `TELEMETRY_FIELDS` in `orbital-overhaul.html` rather than
+trusting this list across builds:
 
 ```
-# orbital-overhaul telemetry v3
-# build=1.0.0.38
+t, level, score, hp, speed,
+rapidLeft, tripleLeft, magnetLeft, engineLeft, guardLeft, scoopLevel,
+rapidPicked, triplePicked, healthPicked, magnetPicked, enginePicked, scoopPicked, guardPicked,
+dmgDebris3, dmgDebris2, dmgDebris1,
+dmgHunter3, dmgHunter2, dmgHunter1,
+dmgUfoBodyLarge, dmgUfoBodySmall, dmgUfoShotLarge, dmgUfoShotSmall,
+chainLen, cargoMax,
+hunterCount, debrisCount, garbageCount, healthBanked,
+delivered, deliveryScore, cargoDamageEvents, cargoSevers,
+debrisKills, hunterKills, saucerKills, hunterCoalesced,
+deflects, hitsTaken, hpWasted,
+scoreScoopBonus, scoopHits,
+debugRun, resumedRun
+```
+
+**Instantaneous — four new columns, inserted after `cargoMax`:**
+
+| Column | Meaning |
+|---|---|
+| `hunterCount` | live Hunters at the sample instant (`game.hunters.length`) |
+| `debrisCount` | live **Garbage Satellites** at the sample instant (`game.debris.length`) — **inverted vocabulary, on purpose** |
+| `garbageCount` | live towable **Debris** at the sample instant (`game.garbage.length`) — **inverted vocabulary, on purpose** |
+| `healthBanked` | spare whole Health charges currently held, `0..DEBUG.healthBankMax` |
+
+⛔ **Restating the inverted vocabulary because these three columns are exactly where it bites.** The
+build's own names are inverted from the canonical terms (CLAUDE.md's vocabulary table): `game.debris`
+holds **Garbage Satellites** — the enemies you shoot, which split and drop Debris — and `game.garbage`
+holds towable **Debris**, the salvage you tow to the dock. So `debrisCount` is a count of Garbage
+Satellites (matching `debrisKills` and the `dmgDebris*` family already in this schema), and
+`garbageCount` is a count of towable Debris. Do not "fix" the column names — they carry the build's
+own naming convention deliberately, the same as every other column in this dictionary. **This closes
+the "enemy population" blind spot §10 named as the most obvious next column** — it now exists, in
+exactly the three-integer shape §10 asked for.
+
+**Cumulative — one new column, `hpWasted`, inserted beside `hitsTaken`:**
+
+`hpWasted` is healing thrown away because the hull was already full **and** the health bank was also
+full — CS040 P3's banking mechanic applies what room remains, banks one whole charge for any
+leftover at all, and only counts toward `hpWasted` when a pickup lands with *both* full. It answers a
+question v1–v3 could not: is healing scarce, or is it arriving mistimed? Read it against
+`healthPicked`:
+
+- **Near zero, relative to `healthPicked × POWERUP_HEALTH_AMOUNT`.** The bank cap (`healthBankMax`)
+  is sufficient for how bursty this run's healing pickups actually were — nothing to retune.
+- **Large, and rising in calm stretches.** Health cadence (the pity-driven ambient timer, §4) is
+  outrunning damage while the player is safe, so pickups are landing at/near the cap with the bank
+  already full. **The fix is to widen the bank (`healthBankMax`), not to slow the cadence** — the
+  cadence is deliberately faster while hurt (§4) and slowing it globally would blunt the rescue case
+  the whole rework exists for.
+
+**Neither — a SECOND sawtooth, `scoopHits`, inserted after `scoreScoopBonus`:**
+
+⛔ **The schema now has TWO sawtooths, not one.** `scoopHits` mirrors `cargoDamageEvents`'s shape from
+a different mechanism: `damageShip()` zeros it every time a scoop LEVEL IS ACTUALLY LOST, so it reads
+"non-lethal hits since the last scoop-level loss," never the run total. **It resets on scoop level
+loss, specifically — not on any hit, not on a scoop pickup.** There is no cumulative twin for it in
+this schema; nothing in the build counts scoop hits across a whole run, and none was added to serve
+this column. **§2's monotonicity check and §9's starter-script `CUM` list must exclude BOTH
+`cargoDamageEvents` and `scoopHits` by name** — either one left in will report a failure on every
+real log.
+
+### v2/v3/v4 — the `#` header block
+
+**Nine** `#`-prefixed lines above the CSV header as of v4 (seven through v3). Skip them with
+`pd.read_csv(path, comment='#')`, but **read them first** — they are the run's provenance:
+
+```
+# orbital-overhaul telemetry v4
+# build=1.0.0.40
 # overrides=OFF
 # telemetryInterval=15
 # rows=196
+# ringWrapped=false
+# finalRowIsGameOver=true
 # source=this run
 # levers=none
 ```
@@ -214,8 +304,22 @@ master overrides toggle. `levers=none` with `overrides=OFF` means stock tuning e
 edits sitting in it. Any lever listed means **this run is not comparable to a stock run** on whatever
 that lever controls; lead the report with it.
 
+⛔ **`ringWrapped` (v4) — read this BEFORE anything else in the header.** `true` means the ring
+dropped rows and every cumulative total below is a lower bound over an unknown-length missing
+opening (§2.2). It is the single most load-bearing line in the block, which is why it sits directly
+above `finalRowIsGameOver` rather than buried near the bottom.
+
+`finalRowIsGameOver` (v4) — `true` means the last row in this log **is** the death frame (CS040 P5's
+game-over flush), so the killing blow is actually visible in the data for the first time in this
+schema's history. `false` means the log stops up to one sampling interval short of the end — either
+the run is still in progress, or it ended in a way the flush didn't catch (a menu quit rather than a
+death; `quitToTitle()` does not flush).
+
 `source=storage` means the export came from the persisted envelope rather than a live buffer —
-usually a run recovered after a crash or refresh, still valid but worth noting.
+usually a run recovered after a crash or refresh, still valid but worth noting. **In a v4 log, a
+`source=storage` export reads `ringWrapped`/`finalRowIsGameOver` from the stored envelope, not the
+live session's latches** — the envelope carries both for exactly this case (the morning after a
+capture, live buffer empty).
 
 ---
 
@@ -230,10 +334,8 @@ Re-grep these; do not trust the values below across builds.
 | `HUNTER_DAMAGE` | {3:60, 2:45, 1:30} | Hunter hits by tier |
 | `DMG_BULLET` | 15 | saucer shot, both sizes |
 | saucer body | 20 small / 35 medium | ramming a saucer |
-| `POWERUP_HEALTH_AMOUNT` | 25 | HP per health pickup |
-| `REPAIR_MILESTONE` | 10000 | score interval that grants a repair |
-| `REPAIR_AMOUNT` | 25 | HP per milestone, if not already full |
-| `REPAIR_FULL_BONUS` | 2500 | score paid instead, if already full |
+| `POWERUP_HEALTH_AMOUNT` | 25 | HP per health pickup (also the size of one banked charge) |
+| `REPAIR_MILESTONE` | 10000 | score interval that now SPAWNS a Health pickup (CS040 P1) — see the behavioural facts below |
 | `SCOOP_MAX_LEVEL` | 5 | scoop ceiling |
 | `SCOOP_HITS_PER_LEVEL` | 5 | hits that cost one scoop level |
 | `SCOOP_MAX_BONUS` | 500 | score paid when a scoop pickup lands at max |
@@ -241,8 +343,25 @@ Re-grep these; do not trust the values below across builds.
 | `ENGINE_BURN_SECONDS` | 10.0 | thrust-seconds per engine pickup |
 | `DEBUG.chainGuardIntercepts` | 3 | intercepts per guard pickup |
 | `POWERUP_DROP_WEIGHTS` | rapid 30, triple 30, scoop 20, magnet 10, engine 10; guard's `20` is a placeholder, never read as a weight | expected drop mix |
-| `POWERUP_HEALTH_GAP` | [18, 26] s | ambient health spawn cadence |
+| `DEBUG.healthBankMax` | 2 (`def` from `HEALTH_BANK_MAX`) | spare Health charges the bank can hold, `0` disables banking |
+| `DEBUG.healthGapLowOk / HighOk` | 22 / 30 s (`def` from `HEALTH_GAP_LOW_OK` / `HEALTH_GAP_HIGH_OK`) | ambient health roll range at full hull |
+| `DEBUG.healthGapLowHurt / HighHurt` | 6 / 10 s (`def` from `HEALTH_GAP_LOW_HURT` / `HEALTH_GAP_HIGH_HURT`) | ambient health roll range at zero hull |
+| `DEBUG.hubDryWeightMult` | 4 (`def` from `HUB_DRY_WEIGHT_MULT`) | multiplier on a zero-budget type's roll weight, recycle-hub drop only |
 | `CARGO_CAP_MAX` | 24 | tow cap ceiling |
+
+⛔ **`REPAIR_AMOUNT` and `REPAIR_FULL_BONUS` are DELETED (CS040 P1), not retuned — do not look for
+them or treat their absence as a build regression.** Every 10,000-point milestone used to add +25 HP
+directly, or pay 2,500 points instead if the hull was already full; as of CS040 both of those arms
+are gone. A crossing below max HP now calls the same `spawnHealthPowerup()` the ambient timer uses
+— it places a pickup, it does not heal — and a crossing at max HP does nothing at all, not even a
+sound. See the second behavioural fact below for why this changed and what replaced it.
+
+⛔ **`POWERUP_HEALTH_GAP` is RETIRED (CS040 P2) — ambient cadence is now a function of hull, not a
+flat `[18, 26]` roll.** `healthGapRoll()` lerps between the `HEALTH_GAP_*` pairs above on
+`game.ship.hp / SHIP_MAX_HP`: roughly 6–10 s between spawns near zero hull, 22–30 s near full hull.
+A telemetry column cannot see the roll directly, but `hp` is sampled every row, so a rough cadence
+estimate is recoverable by bucketing `t`-gaps between consecutive Health pickups (`d_health` deltas
+in §5) against the `hp` reading at the start of each gap.
 
 **Guard's real weight is dynamic, not the table's `20`.** `dropPowerup()`'s `weightOf()`
 indirection substitutes `guardDropWeight() = min(chainGuardDropMax, chainGuardDropBase +
@@ -258,9 +377,31 @@ plausible slot — it is never actually evaluated as a weight.
 1. **Powerup budgets BANK.** A same-type pickup *adds* to the remaining budget; nothing decays on a
    clock. So a `*Left` column is a stockpile with memory, and a good phase silently converts into a
    buffer spent one or two waves later.
-2. **Health is time-gated; everything else is kill-gated.** `spawnHealthPowerup` runs on an ambient
-   18–26 s timer. Every other powerup drops from a kill or a dock event. This asymmetry is the
-   single most useful structural fact in the whole schema — see §7.
+2. ⛔ **REWRITTEN FOR v4 (CS040) — "health is time-gated, everything else is kill-gated" is now
+   WRONG in both halves, not just retuned.** This used to be the single most useful structural fact
+   in the whole schema (§7 built a trap on it, "health rate rising is not good news" — that trap is
+   also rewritten, see §7) and both halves changed at once, so it needs restating rather than
+   patching:
+   - **Health is no longer purely time-gated.** The ambient timer survives, but as of CS040 P2 its
+     own cadence is **hull-gated** — a pity curve that fires roughly every 6–10 s near zero hull and
+     22–30 s near full hull (`healthGapRoll()`, §4), not a flat roll. On top of that, as of CS040 P1
+     the 10,000-point score milestone is **also** a Health source: below max HP a crossing calls the
+     exact same `spawnHealthPowerup()` the ambient timer uses, making Health additionally
+     **score-gated**. Two independent triggers now feed the same pickup type.
+   - **Everything else is still kill- or dock-gated, unchanged** — Rapid/Triple/Magnet/Engine/Scoop
+     drop from a Saucer kill, a large Hunter core, or the recycle dock's every-10th-Debris latch,
+     exactly as before CS040. **What's new here (CS040 P4) is that the recycle HUB's own drop — the
+     one that fires at `game.deliveryCount === 8`, distinct from the every-10-Debris drop above —
+     is additionally delivery-gated with a dry-budget bias:** any budgeted type sitting at zero
+     (`rapid`/`triple`/`magnet`/`engine`, never `guard`) gets its roll weight multiplied by
+     `DEBUG.hubDryWeightMult` (4) on that one call only. Kill-gated drops (Saucer, large-Hunter-core)
+     are completely unaffected by this bias — see the hub-resupply discussion in the GDD's Powerups
+     section for the full mechanic.
+   - **Net effect:** Health's "share of pickups" trend (§6 item 9, §7's old trap) can no longer be
+     read as a pure inverse of kill rate. A rising Health share can now mean falling kills (the old
+     reading), rising score (a new, independent driver), or both at once — decompose before
+     concluding either way. `hpWasted` and `healthBanked` (§3's v4 section) are the columns built to
+     help separate "health is genuinely scarce" from "health is arriving but mistimed."
 
 ---
 
@@ -292,14 +433,23 @@ In v2, assert this equals `hitsTaken`. Disagreement means a constant moved or a 
 
 **HP balance:**
 `healing_applied = hp_end − SHIP_MAX_HP + total_damage`.
-Health pickups can supply at most `healthPicked × 25`; the remainder came from score milestones.
-Milestones crossed = `floor(final_score / REPAIR_MILESTONE)`. Milestones that did *not* heal fired
-`REPAIR_FULL_BONUS` instead. In v1 this is an estimate; in v2 `scoreRepairBonus` measures it directly
-and the estimate should be dropped.
+⛔ **v1–v3 only, and the milestone half is dead in v4.** In v1–v3, Health pickups supply at most
+`healthPicked × 25` and the remainder came from score milestones — a milestone that healed added
++25 HP directly, and one that didn't fired `REPAIR_FULL_BONUS` (2,500 points) instead
+(`milestones crossed = floor(final_score / REPAIR_MILESTONE)`, estimated in v1, measured directly by
+`scoreRepairBonus` in v2/v3). **As of v4 (CS040 P1), a milestone never heals directly** — it only
+spawns a Health pickup below max HP, which the player then has to fly to and collect like any other
+Health pickup, so `healthPicked` alone accounts for every point of applied healing again. Use
+`hpWasted` (§3's v4 section) for what a v4 run threw away rather than trying to reconstruct a
+milestone-healing estimate that no longer exists.
 
-**Score decomposition (v2 only):**
-`score = deliveryScore + scoreRepairBonus + scoreScoopBonus + residual`, where the residual is kills
-and everything else. Report all four shares — this is the thing v1 could not do.
+**Score decomposition:**
+⛔ **v1–v3:** `score = deliveryScore + scoreRepairBonus + scoreScoopBonus + residual`, where the
+residual is kills and everything else. **v4 (CS040 P1 deleted `scoreRepairBonus` — milestone healing
+is gone, so the counter had no consumer left):**
+`score = deliveryScore + scoreScoopBonus + residual`, three terms instead of four. Report every
+present share — this is the thing v1 could not do at all, and v4 does with one fewer term than
+v2/v3.
 
 **Delivery economy has a fixed incentive floor at 8 (v2/v3).** The recycle hub drops exactly ONE
 powerup per dock visit, latched at `game.deliveryCount === 8` (CS037 P7 collapsed the former
@@ -403,15 +553,27 @@ than the coefficients.
   interval." It is a sample, and 15 s apart the samples are effectively independent draws.
 - **Score is a composite.** In v1 it silently contains delivery payouts, kill scores,
   `REPAIR_FULL_BONUS` and `SCOOP_MAX_BONUS`. Any "throughput" claim built on v1 `score` is really a
-  claim about a mixture. Say so. In v2, decompose instead.
-- **Health rate rising is not good news.** Because health is time-gated and everything else is
-  kill-gated, health's *share* of pickups rises automatically whenever kills dry up. A wave where
-  health pickups go up and everything else goes down is a wave in trouble, not a wave being generous.
-- **`cargoDamageEvents` is a sawtooth and its last row is meaningless.** The one column in the
-  schema that decreases; totalling it, differencing it as if cumulative, or reading the final row as
-  a run total all give wrong answers. Read `cargoSevers` (v3) or reconstruct a floor (v2). See §3 —
-  this was wrong in this document, in the build's own comment and in the P2 test simultaneously,
-  which is why it gets a trap entry as well as a schema entry.
+  claim about a mixture. Say so. In v2/v3, decompose into four terms (§5); in v4, three
+  (`scoreRepairBonus` is gone with the milestone-heal mechanism it measured).
+- ⛔ **REWRITTEN FOR v4 — "health rate rising is not good news" no longer has a single cause.** The
+  old reasoning (health is time-gated, everything else is kill-gated, so health's *share* rises
+  automatically whenever kills dry up) is only half true as of CS040 — see §4's rewritten second
+  behavioural fact for the full mechanism. As of v4, a rising health-pickup rate can mean: kills
+  drying up (the original reading, still valid), score climbing fast enough to trip milestones
+  often (a new, independent driver — `spawnHealthPowerup()` is also called from the score-milestone
+  arm below max HP), or both together. **Do not read a rising health share as "a wave in trouble"
+  without checking the kill-rate columns in the same window** — it may just be a wave paying well.
+  `hpWasted`/`healthBanked` help separate a genuine scarcity signal from a supply-timing one.
+- **`cargoDamageEvents` AND `scoopHits` (v4) are both sawtooths, and both have meaningless last
+  rows.** Two columns in the schema decrease; totalling either, differencing either as if
+  cumulative, or reading either's final row as a run total all give wrong answers. For
+  `cargoDamageEvents`, read `cargoSevers` (v3+) or reconstruct a floor (v2 — §3). `scoopHits` has no
+  cumulative twin at all — there is no better number to substitute, only the sawtooth itself,
+  useful for "how close is the current scoop level to dropping," not for a run total. This was
+  wrong for `cargoDamageEvents` in this document, in the build's own comment and in the P2 test
+  simultaneously, which is why it gets a trap entry as well as a schema entry — `scoopHits` is
+  documented correctly from the day it shipped, so it does not repeat that history, but the shape
+  of the mistake is exactly the kind this trap entry exists to prevent a second time.
 - **Ring truncation makes every total a lower bound.** See §2.2.
 - **15 s aliasing.** Anything faster than the interval is invisible: an i-frame window, a chain
   sever and recovery, a powerup picked and fully spent. Absence of a change between two rows is not
@@ -475,17 +637,27 @@ PICK = ['rapid','triple','health','magnet','engine','scoop','guard']
 V2   = ['chainLen','cargoMax','delivered','deliveryScore','cargoDamageEvents','debrisKills',
         'hunterKills','saucerKills','hunterCoalesced','deflects','hitsTaken',
         'scoreRepairBonus','scoreScoopBonus']
+V4   = ['hunterCount','debrisCount','garbageCount','healthBanked','hpWasted','scoopHits']
 v2 = all(c in d.columns for c in V2)
 v3 = v2 and 'cargoSevers' in d.columns          # CS039 GATE T's 44th column
-# ⛔ cargoDamageEvents is a SAWTOOTH (§3) — never in a cumulative list, never totalled from the last row.
-CUM_V2 = [c for c in V2[2:] if c != 'cargoDamageEvents'] + (['cargoSevers'] if v3 else [])
+v4 = v3 and all(c in d.columns for c in V4)     # CS040 P5 — scoreRepairBonus is GONE in v4
+# ⛔ cargoDamageEvents AND scoopHits (v4) are BOTH SAWTOOTHS (§3) — never in a cumulative list,
+# never totalled from the last row.
+CUM_V2 = [c for c in V2[2:] if c != 'cargoDamageEvents' and c != 'scoreRepairBonus'] \
+         + (['cargoSevers'] if v3 else []) \
+         + ([c for c in V4 if c != 'scoopHits'] if v4 else [])
 
 # --- verification -------------------------------------------------------
 iv = d['t'].diff().median()
+schema = 'v4' if v4 else 'v3' if v3 else 'v2' if v2 else 'v1'
 print(f'rows={len(d)}  t={d.t.iloc[0]:.1f}->{d.t.iloc[-1]:.1f}  '
-      f'interval={iv:.3f} (sd {d.t.diff().std():.4f})  schema={"v2" if v2 else "v1"}')
-if len(d) >= 400 and d.t.iloc[0] > iv * 1.5:
-    print('!! RING TRUNCATED — opening rows rolled off; all totals are LOWER BOUNDS')
+      f'interval={iv:.3f} (sd {d.t.diff().std():.4f})  schema={schema}')
+ring_wrapped_line = next((l for l in hdr if l.startswith('# ringWrapped=')), None)
+if ring_wrapped_line is not None:
+    if ring_wrapped_line.endswith('true'):
+        print('!! RING TRUNCATED (# ringWrapped=true) — opening rows rolled off; all totals are LOWER BOUNDS')
+elif len(d) >= 400 and d.t.iloc[0] > iv * 1.5:   # pre-v4 fallback — no header flag to trust
+    print('!! RING TRUNCATED (inferred) — opening rows rolled off; all totals are LOWER BOUNDS')
 cum = ['score'] + [p+'Picked' for p in PICK] + DMG + (CUM_V2 if v2 else [])
 bad = [c for c in cum if c in d and (d[c].diff().dropna() < 0).any()]
 print('non-monotonic:', bad or 'none',
@@ -514,17 +686,23 @@ print('total hits (reconstructed):', sum(fin[k]/UNIT[k] for k in DMG),
       '| hitsTaken:', d.hitsTaken.iloc[-1] if v2 else 'n/a (v1)')
 
 # --- HP + score books ---------------------------------------------------
-MAXHP, HEAL, MILE, RB, SB = 250, 25, 10000, 2500, 500
+MAXHP, HEAL, MILE = 250, 25, 10000
 heal = d.hp.iloc[-1] - MAXHP + d.dmgTot.iloc[-1]
-print(f'\nhealing applied {heal}  (pickups supply <= {d.healthPicked.iloc[-1]*HEAL})'
-      f'  milestones crossed {d.score.iloc[-1]//MILE}')
+print(f'\nhealing applied {heal}  (pickups supply <= {d.healthPicked.iloc[-1]*HEAL})')
+if not v4:   # v1-v3: a milestone could heal directly; v4 deleted that arm (CS040 P1)
+    print(f'  milestones crossed {d.score.iloc[-1]//MILE}')
 print(f'at full HP: {(d.hp==MAXHP).mean()*100:.1f}% of samples'
       f' | scoop at max: {(d.scoopLevel==d.scoopLevel.max()).mean()*100:.1f}%')
+if v4:
+    print(f'  healthBanked (final) {int(d.healthBanked.iloc[-1])}  '
+          f'| hpWasted (cumulative) {int(d.hpWasted.iloc[-1])}')
 if v2:
     s = d.score.iloc[-1]
-    for k in ['deliveryScore','scoreRepairBonus','scoreScoopBonus']:
+    terms = ['deliveryScore', 'scoreScoopBonus'] if v4 else \
+            ['deliveryScore', 'scoreRepairBonus', 'scoreScoopBonus']
+    for k in terms:
         print(f'  {k:18s} {int(d[k].iloc[-1]):>8d}  {d[k].iloc[-1]/s*100:5.1f}% of score')
-    resid = s - d[['deliveryScore','scoreRepairBonus','scoreScoopBonus']].iloc[-1].sum()
+    resid = s - d[terms].iloc[-1].sum()
     print(f'  {"residual (kills+)":18s} {int(resid):>8d}  {resid/s*100:5.1f}%')
 
 # --- wave table ---------------------------------------------------------
@@ -557,9 +735,9 @@ print('killpu vs dscore:', round(d.killpu.corr(d.dscore, method="spearman"), 3),
 
 ---
 
-## 10. Known blind spots (as of v2)
+## 10. Known blind spots (as of v4)
 
-Even with the CS039 columns, the log still cannot see:
+Even with the CS039/CS040 columns, the log still cannot see:
 
 - **Anything sub-interval.** 15 s is the resolution floor. Chain severs, i-frames, brief full-cargo
   states and powerups picked-and-spent inside one interval are invisible except as counter deltas.
@@ -567,11 +745,13 @@ Even with the CS039 columns, the log still cannot see:
   the dock" is unanswerable.
 - **Shots fired.** Budgets spent can be inferred (`picked × grant − Δstock`), but shots that missed,
   accuracy, and time-to-kill cannot.
-- **Enemy population — confirmed top priority.** How many Garbage Satellites or Hunters were *alive*
-  at the sample instant: three integers, `game.hunters.length`, `game.debris.length` (Garbage
-  Satellites — inverted vocabulary, §0), `game.garbage.length` (Debris). `DiffLog` logs `hunterCount`
-  once per level; the telemetry log does not carry any of the three at all. This is the most obvious
-  next column if the analysis keeps wanting it.
-- **No row is flushed at game over**, so the killing blow — whatever spiked in the final interval —
-  is never in the log.
+- ✅ **CLOSED (CS040 P5). Enemy population.** How many Garbage Satellites, Hunters and towable
+  Debris were *alive* at the sample instant is now three real columns — `hunterCount`,
+  `debrisCount` (Garbage Satellites — inverted vocabulary, §0/§3), `garbageCount` (Debris) — all
+  instantaneous, sampled every row. This was the most obvious next column and it shipped.
+- ✅ **CLOSED (CS040 P5). No row is flushed at game over.** `killShip()` now calls
+  `Telemetry.flush()` on the frame it sets `game.stats.gameEnded`, so a completed run's last row IS
+  the death frame — the killing blow is visible in the data for the first time. `# finalRowIsGameOver=`
+  in the header block says whether a given log's last row actually is the death (§3) — a log can
+  still end short of it (a menu quit, a run still in progress).
 - **What the player was doing.** No input, no thrust state, no fire state.

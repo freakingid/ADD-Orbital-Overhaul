@@ -593,6 +593,46 @@ the panel shows" is exactly the reasoning that would revert this to something mi
 a fingerprint listing shown-but-inert edits would be believed. A `sessionSwitch` row
 (`telemetryCapture`) is the one exception, by design — see Debug registry, above.
 
+⛔ **`scoopHits` (CS040 P5) is a SAWTOOTH, the schema's second one, not a cumulative
+counter.** `damageShip()` zeroes `game.scoopHits` on every scoop level loss, so the
+telemetry column reads "non-lethal hits since the last level loss," never a run total —
+the exact shape `cargoDamageEvents` already has, from a different mechanism. Both must be
+excluded BY NAME from any monotonicity check or cumulative total; see
+`TELEMETRY-ANALYSIS-GUIDE.md` §2/§3/§7.
+
+⛔ **`DEBUG.telemetryCapture` remains session-only and non-persisted, even after CS040 P6
+gave it an Options-screen home.** The Options → Telemetry submenu (Capture ON/OFF, sample
+rate, Copy log) is a **control surface** over the same `sessionSwitch` registry entry the
+debug panel used — it is not a settings store, does not add a field to `afd_settings_v1`,
+and does not change the CS038 P3 contract that capture defaults OFF and is OFF at every
+launch. Don't "fix" this into persisting on the theory that a real menu implies a real
+setting; the whole point of `sessionSwitch` is that this one doesn't.
+
+### Healing (CS040)
+
+⛔ **`applyPowerup()`'s health arm is the ONLY place HP is ever added to the hull.** A
+Health pickup applies what room remains up to `POWERUP_HEALTH_AMOUNT` and banks a whole
+spare charge (`game.healthBank`, spent automatically on the next damage event) for any
+leftover — there is no other writer of `game.ship.hp` in the upward direction anywhere in
+the build. The score milestone (`REPAIR_MILESTONE`, every 10,000 points) does **not**
+heal; it only ever *spawns* a Health pickup for the player to go collect, gated on the
+hull being below `SHIP_MAX_HP` — at full hull a crossing does nothing at all, not even a
+sound. Do not add a second HP source, and do not read a milestone crossing as healing.
+
+⛔ **`REPAIR_AMOUNT` and `REPAIR_FULL_BONUS` are DELETED, not parked — do not restore
+either.** Before CS040 P1 a milestone added +25 HP directly (`REPAIR_AMOUNT`) or, if
+already at full hull, paid 2,500 score instead (`REPAIR_FULL_BONUS`). Both constants and
+every reader of them are gone from the build; there is no "old mode" flag and no
+commented-out fallback to reactivate. A future session that wants a score-paid milestone
+bonus back is proposing new design, not restoring dead code — surface it, don't silently
+resurrect the constants.
+
+Two more constants stand alongside these, unrenamed and unremoved: `game.healthBank` (0..
+`DEBUG.healthBankMax`, additive in the save envelope, no schema bump) and the pity-driven
+ambient cadence (`healthGapRoll()`, replacing the flat `POWERUP_HEALTH_GAP`) — see
+`DIFFICULTY-LEVERS.md` §4 for their knobs and `ORBITAL-OVERHAUL-GDD.md` §2.7/§2.14 for the
+shipped behaviour.
+
 ### Achievement celebration panel
 
 ⛔ **`game.pendingAch` is a flushed bucket, never filtered by `game.wave`.** In a

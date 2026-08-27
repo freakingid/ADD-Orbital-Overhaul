@@ -1,227 +1,93 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.39 · Changeset: CS040 · Phase: P6 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS040 · Phase: P8 (closed) · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS040
 
-- P1 — The score milestone no longer heals or pays: below `SHIP_MAX_HP` a crossing calls
-  `spawnHealthPowerup()` (the ambient placement path, reused) and pings; at exactly `SHIP_MAX_HP` it
-  does nothing and makes no sound (FORK-CS040-A). `game.nextRepair` still advances on every crossing.
-  `REPAIR_AMOUNT`, `REPAIR_FULL_BONUS` and `game.stats.scoreRepairBonus` deleted outright, zero
-  consumers left. `REPAIR_MILESTONE` stays 10,000 (FORK-CS040-B). GDD §2's two milestone/health
-  bullets and §2.12's hull-full parenthetical corrected in place.
-- P2 — Ambient Health spawn cadence is now pity-driven instead of a flat `[18, 26]` gap.
-  `POWERUP_HEALTH_GAP` retired outright; `healthGapRoll()` (mirrors `guardDropWeight()`'s shape)
-  lerps `[HEALTH_GAP_LOW_HURT, HEALTH_GAP_HIGH_HURT]` (6–10s at zero hull) to
-  `[HEALTH_GAP_LOW_OK, HEALTH_GAP_HIGH_OK]` (22–30s at full hull) on `game.ship.hp / SHIP_MAX_HP`.
-  Both existing re-roll sites (resetRun seed, ambient spawn) repointed; no re-roll added on the
-  damage path (would let a player farm spawns by tanking hits). Four new POWERUPS registry knobs
-  (`healthGapLowOk/HighOk/LowHurt/HighHurt`), not levers — same "flat knob off a shipped const"
-  treatment as `engineBurnSeconds`. Registry 104 → 108; `LEVERS.length` unmoved at 18.
-  **Thirteen other-phase test files needed narrowing repairs** (same idiom CS040 P1 used on
-  `test-cs020-p1`/`test-cs039-p1`): each asserts an exact registry order/count/diff against its own
-  parent SHA, and a new trailing POWERUPS row falsifies all of them the same way. Widened by name,
-  not wildcarded — `test-cs024-p6b/c`, `test-cs025-p1/p2/p5`, `test-cs026-p2/p3/p5/p6`,
-  `test-cs027-p2/p6`, `test-cs029-p4`, `test-cs030-p1`, `test-cs038-p5`.
-- P3 — Health BANKS instead of evaporating at the cap. `applyPowerup()`'s health arm now applies only
-  what the hull has room for and banks the remainder as a WHOLE charge worth `POWERUP_HEALTH_AMOUNT`
-  (`game.healthBank`, 0..`DEBUG.healthBankMax`); past the cap the leftover HP lands in the new
-  cumulative `game.stats.hpWasted` (P5's telemetry column is its only planned consumer). One charge
-  auto-spends per damage event at `damageShip()`'s single hull-reduction site, beside the `dmgFrom*`
-  switch and BELOW the `s.hp <= 0` exit — so a lethal hit is never rescued, and the counters above it
-  still read the trough the hit caused. New `AudioSys.bankspend()` for that moment: a swelling sine
-  dyad with a 0.12 s pre-delay, so it is not masked by `hit()` and cannot be confused with `powerup()`
-  or `shieldPing()`. HUD tell (FLAG-CS040-d, overridden to required): a segmented pip row under the
-  "HULL" label, `drawRingSegments()` at `HUD_BANK_PIP_R`/`_DY`, always drawn, stroke-only, measured
-  clear of the CARGO cluster. `healthBank` is additive in the save envelope, no schema bump. One new
-  POWERUPS knob (`healthBankMax`, min 0 disables the mechanic); Registry 108 → 109, `LEVERS` unmoved
-  at 18. **Fourteen other-phase pins narrowed again** — the same trailing-registry-row family P2
-  repaired, plus `test-cs026-p3` §G TRAP 5 (`resetRun()` gained `game.healthBank = 0;`).
-- P4 — The recycle hub (`game.deliveryCount === 8`) is a supply-starvation escape hatch (FORK-CS040-C,
-  resolved c1/weighted). `dropPowerup()` gains an optional fifth parameter, `hubBias` (default `false`),
-  passed `true` only by the hub's own call. While set, any budgeted type at `game.powerBudget[type] ===
-  0` — `rapid`/`triple`/`magnet`/`engine`, **never** `guard` — has its roll weight multiplied by the new
-  `DEBUG.hubDryWeightMult` (4, a registry knob, `def` from `HUB_DRY_WEIGHT_MULT`). `destroyHunter()`'s
-  large-core drop and `destroySaucer()`'s drop pass no fifth argument and stay byte-identical to today's
-  unbiased roll — biasing kill-gated emitters would defeat the point (a dry player isn't killing
-  anything). Composes with, does not replace, guard's existing `chainGuardMinTow` eligibility gate and
-  `guardDropWeight()`'s pity substitution (both read unchanged); guard is explicitly excluded from the
-  dry set even though `game.powerBudget.guard` normally rests at 0 — that 0 is guard's resting state,
-  not starvation. Registry 109 → 110, `LEVERS` unmoved at 18. **Thirteen other-phase pins narrowed
-  again** — the same trailing-registry-row family P2/P3 repaired (no new `resetRun()` line this time,
-  so `test-cs026-p3` was untouched).
-- P5 — Telemetry v4: 44 → **49** columns, `TELEMETRY_FIELDS` and `Telemetry.push()` edited in lockstep.
-  Out: `scoreRepairBonus`. In: instantaneous `hunterCount`/`debrisCount`/`garbageCount`/`healthBanked`
-  after `cargoMax`, cumulative `hpWasted` beside `hitsTaken`, and ⛔ **`scoopHits` — the schema's SECOND
-  SAWTOOTH**, zeroed by `damageShip()` on every scoop level loss, so it reads "hits since the last
-  loss". Documented as one in the `TELEMETRY_FIELDS` kinds block and in `test-cs040-p5.js` (P8 owns the
-  guide's §3), and every monotonicity walk now excludes it and `cargoDamageEvents` **by name**. New
-  `Telemetry.flush()` — `Bench`/capture-gated, called from `killShip()` on the line below
-  `game.stats.gameEnded = true` — pushes the death row and zeroes `acc`, so `tick()` cannot double-push
-  later in the same frame. Header block 7 → 9 lines: `# ringWrapped=` (latched where the ring drops a
-  row, cleared in `reset()`) and `# finalRowIsGameOver=`, both above `source=`; version line at v4.
-  FORK-CS040-D: `TELEMETRY_MAX` 400 → **800** and `TELEMETRY_PERSIST_EVERY` = 4, with the flush writing
-  whatever the counter stands at. Envelope `v: 3 → 4`; key name untouched. Registry 110 and `LEVERS` 18
-  both unmoved — no knob this phase. **Judgment call, flagged not assumed:** the envelope also carries
-  `wrapped`/`endFlushed`, read back by the new `readEnvelope()` (`read()` is now its rows-only face) so
-  a `source=storage` export reports the STORED run — otherwise the morning-after export prints
-  `ringWrapped=false` over exactly the log that flag exists to catch. **Six other-phase tests repaired**:
-  five schema neighbours (`test-cs037-p4`, `test-cs038-p3`, `test-cs039-p2`, `test-cs039-p3`,
-  `test-cs040-p1` — whose §F predicted this phase in writing) and one unrelated, below.
-- P6 — Telemetry controls moved off the hidden debug panel onto a new Options "Telemetry" sub-screen:
-  `MENU_OPTIONS` gains "Telemetry" before "Back" (5 rows → 6, CS038 P1's Credits-insert precedent).
-  Three rows — Capture (ON/OFF), Sample rate (preset cycle `[5, 10, 15]`, label minutes DERIVED from
-  `TELEMETRY_MAX`, not hardcoded), Copy log (calls the existing, untouched `copyTelemetry()`). Capture
-  stays session-only — `DEBUG.telemetryCapture` is still the CS038 P3 `sessionSwitch` registry entry,
-  written through the same `applyDebug()` path the debug panel used, so the never-persists contract is
-  unchanged. `telemetryInterval`'s registry `def` stays 15. Debug panel: `telemetryInterval` and
-  `telemetryCapture` STAY in `DEBUG_VARS`/`DEBUG_ENTRIES` (Telemetry.tick()/flush() and the CSV
-  fingerprint still read them there) but their `DEBUG_ROWS` var-rows carry a new `hidden: true`,
-  skipped by `debugStep`/`debugFirstRow` (unreachable by ↑↓) and by `drawDebug`'s render loop — chosen
-  over filtering them out of `DEBUG_ROWS` entirely so every OTHER entry's index is undisturbed (dozens
-  of phase-local tests navigate the panel by `DEBUG_VARS` index). "Copy telemetry log" the action row
-  is removed outright (trailer 7 → 6). Registry 110 and `LEVERS` 18 both unmoved — no knob change.
-  **Sixteen other-phase tests repaired**: `test-cs010-p4`/`test-cs016-p2`/`test-cs038-p1` (the
-  `MENU_OPTIONS` exact-order/position pins), `test-cs018-p2` (CS018 P2's own row-model test — extended
-  its header-exclusion idiom to also exclude `hidden`), `test-cs037-p4` (§G's own claim — "debug panel
-  only, never Options" — is exactly what this phase's spec overrides; repointed to Options' Telemetry
-  screen), and eleven trailer-row pins (`test-cs015-p4`, `test-cs017-p2`, `test-cs019-p1`,
-  `test-cs020-p1b`, `test-cs024-p1`, `test-cs024-p6c`, `test-cs024-p6f`, `test-cs025-p1/p2`,
-  `test-cs026-p4/p5` — `DEBUG_VARS.length + 7` → `+ 6`, plus the Back-row index literal in
-  `test-cs015-p4`/`test-cs017-p2`).
+- P1 — Score milestone no longer heals or pays: below `SHIP_MAX_HP` a crossing calls
+  `spawnHealthPowerup()` and pings; at `SHIP_MAX_HP` it does nothing. `REPAIR_AMOUNT`/
+  `REPAIR_FULL_BONUS`/`game.stats.scoreRepairBonus` deleted outright.
+- P2 — Ambient Health spawn cadence is pity-driven off missing hull (`healthGapRoll()`), not a flat
+  `[18, 26]` s roll; `POWERUP_HEALTH_GAP` retired. Four new POWERUPS knobs; registry 104 → 108.
+- P3 — Health BANKS instead of evaporating at the cap: `applyPowerup()` banks one whole charge
+  (`game.healthBank`, cap `DEBUG.healthBankMax`) for any leftover, auto-spent one per damage event;
+  overflow counts in `game.stats.hpWasted`. New stroke-only HUD pip row under "HULL". Registry
+  108 → 109.
+- P4 — The recycle hub's own drop (`deliveryCount === 8`) biases toward a dry powerup budget
+  (`hubBias`, `DEBUG.hubDryWeightMult` = 4) — a supply-starvation relief valve, composing with
+  guard's existing eligibility gate and pity weight. Registry 109 → 110.
+- P5 — Telemetry v4: 44 → 49 columns. Out: `scoreRepairBonus`. In: `hunterCount`/`debrisCount`/
+  `garbageCount`/`healthBanked` (instantaneous), `hpWasted` (cumulative), `scoopHits` (a second
+  sawtooth). New `Telemetry.flush()` at `killShip()` — a completed run's last row is the death
+  frame. Header block 7 → 9 lines (`ringWrapped`/`finalRowIsGameOver`). `TELEMETRY_MAX` 400 → 800,
+  persist every 4th snapshot. Envelope `v: 3 → 4`; key name unchanged.
+- P6 — Telemetry controls moved off the hidden debug panel onto Options → Telemetry (Capture,
+  Sample rate, Copy log); `MENU_OPTIONS` 5 rows → 6. Debug panel's telemetry rows hidden
+  (`hidden: true`, not removed — `Telemetry` still reads them there). Capture stays session-only.
+- GATE T (closed) — a completely clean gate. None of the seven new knobs needed to move; the
+  healing rework, hub resupply and Options telemetry flow all read right.
+- P7 — Tuning pass: a no-op, per the phase's own sanctioned outcome for a clean gate. No commit.
+- P8 — Closing. `GAME_VERSION` → 1.0.0.40, `TELEMETRY-ANALYSIS-GUIDE.md` v4 section, `CLAUDE.md`/
+  `DIFFICULTY-LEVERS.md`/GDD sweep, `DECISIONS.md` pointer, both planning docs archived.
 
-## Phase ledger — CS039 (closed; full narrative in `log/CS039.md`)
-
-- P1 — Five new per-run counters on `game.stats` (`hunterKills`, `hitsTaken`, `deliveryScore`,
-  `scoreRepairBonus`, `scoreScoopBonus`), each flat and incremented at one site. Nothing reads
-  them yet — no output changed.
-- P2 — Thirteen new telemetry columns built from P1's counters plus `chainLen`/`cargoMax`.
-  Persistence envelope `v: 1 → 2`; storage key `afd_telemetry_v1` unchanged.
-- P3 — A seven-line `#`-comment lever fingerprint prepended to the telemetry CSV export
-  (`build`/`overrides`/`telemetryInterval`/`rows`/`source`/`levers`), reporting **effective**,
-  not edited, lever values.
-- GATE T (closed) — First real capture (`LEVEL-5-TELEMETRY.csv`, waves 1–5). Confirmed the `#`
-  carrier survives a clipboard round-trip and killed a standing ~14% delivery-income estimate
-  (measured refund share 3.75%; Hunter kills ~56% of score). Caught `cargoDamageEvents`
-  misdocumented as cumulative in four places at once (it is a pity counter that resets on each
-  guard drop) — fixed at the gate with a new `game.stats.cargoSevers` (44th column) and envelope
-  `v: 2 → 3`, a deliberate override of P2's own "one shape per changeset" rule.
-- P4 — Closing. `GAME_VERSION` → 1.0.0.39, `CLAUDE.md` gained a Telemetry pin and the
-  `afd_telemetry_v1` Save-data entry (closing two-changeset-old doc debt), GDD checked and left
-  untouched (telemetry is a dev instrument with no shipped player-facing behavior beyond what's
-  already documented), `IMPLEMENTATION-PHASES-CS039.md` archived, STATUS.md pruned.
-
-Full narrative for every phase and the gate, including the fork resolutions and the GATE T
-decision verbatim: `log/CS039.md`.
+Full narrative for every phase and the gate: `log/CS040.md`.
 
 ## Working / verified
 
-- **CS040 P1:** full suite 166 files, 166 passed, 0 failed, 0 skipped (baseline before the phase was
-  165/165/0/0 — the extra file is `test-cs040-p1.js`). `node --check` passes on the extracted script.
-  The new test is non-vacuous against the parent build at `1ee9eed`, checked directly: that build
-  heals +25 HP and spawns nothing on the same crossing.
-- **CS040 P2:** full suite 167 files, 167 passed, 0 failed, 0 skipped (the extra file over P1's 166
-  is `test-cs040-p2.js`; the thirteen narrowed pins listed above are counted in this total, not
-  separately). `node --check` passes on the extracted script. `test-cs040-p2.js` §B–§E sample the
-  roll at full hull, zero hull, half hull and five points in between, confirming the range narrows
-  monotonically as hull drops; §F confirms all four registry knobs and that none reached `LEVERS`.
-- **CS040 P3:** full suite 168 files, 168 passed, 0 failed, 0 skipped (the extra file over P2's 167 is
-  `test-cs040-p3.js`; the fourteen narrowed pins are counted in this total, not separately).
-  `node --check` passes on the extracted script. ⚠ The suite is only green **after** the phase's commit
-  lands: `test-cs024-p6.js` §H TRAP 2 pins `damageShip` byte-for-byte against `git show HEAD`, so a
-  phase that edits that function is red on a dirty tree by construction. Nothing else in the file fails.
-- **CS040 P4:** full suite 169 files, 169 passed, 0 failed, 0 skipped (the extra file over P3's 168 is
-  `test-cs040-p4.js`; the thirteen narrowed pins are counted in this total, not separately). `node
-  --check` passes on the extracted script. The new test's statistics are all seeded (`withSeed`) at
-  N large enough that the tolerance bands don't flake: §B shows a hub-biased roll is byte-identical to
-  an unbiased one under the same seed once no budget sits at 0; §C shows a dry `rapid` budget moves
-  only the hub roll's share, matching the weighted formula, and leaves the plain roll untouched; §D
-  drives `destroyHunter()`/`destroySaucer()` at full dryness and confirms their rapid share stays flat
-  (~30%), proving no hub bias leaks into the kill-gated emitters; §E pins guard's share to
-  `guardDropWeight()` alone against a computed "wrongly-dried" alternative far enough away to catch a
-  regression, confirming guard never enters the dry set even while its own budget rests at 0.
-- **CS040 P5:** full suite 170 files, 170 passed, 0 failed, 0 skipped (the extra file over P4's 169 is
-  `test-cs040-p5.js`; the six repaired pins are counted in this total, not separately). `node --check`
-  passes on the extracted script. `test-cs040-p5.js` §C drives a **real** scoop level loss through
-  `damageShip()` and asserts the strictly decreasing step, then re-runs the whole cumulative walk over a
-  span containing that loss so the exclusion is proved rather than asserted. §D kills the ship with a
-  real `DebrisSatellite` contact inside `update()`'s own collision pass, on a frame a snapshot was
-  already due, and gets exactly one row — with a no-death control frame on the same setup that does land
-  its scheduled row. A live export was eyeballed end-to-end: 49 columns, `v4` header, `hp=0` final row,
-  `finalRowIsGameOver=true`, envelope persisted at `v:4`.
-- **CS040 P6:** full suite 171 files, 171 passed, 0 failed, 0 skipped (the extra file over P5's 170 is
-  `test-cs040-p6.js`; the sixteen repaired pins are counted in this total, not separately). `node --check`
-  passes on the extracted script. `test-cs040-p6.js` §B drives Capture ON through the real Telemetry
-  screen, saves, and rebuilds a fresh module instance over the same store to confirm the reload comes
-  back OFF (CS038 P3's launch test, repointed to the new control surface); §D patches a rebuilt copy's
-  `TELEMETRY_MAX` literal in the SOURCE (a closed-over `const` can't be reassigned from outside) to
-  prove the minutes figure is computed, not baked in; §F drives 130+ panel `down` presses confirming
-  the cursor never lands on either hidden var row. New LEVERS count: **18** (unmoved). New
-  `MENU_OPTIONS` length: **6**.
-- **`scratchpad/_harness.js` gained one additive option, `ctxLog`** — an array the 2D-context stub
-  records method calls and tracked property writes into, so a draw contract can be MEASURED against the
-  real draw path. Same shape and same justification as CS036 P2's `listeners`: three suite files
-  (`test-cs009-p2`, `test-cs012-p2`, `test-cs038-p6`) each hand-rolled a whole sandbox for want of it,
-  which the test rules bar for new files. Pass nothing and the stub is byte-identical to before.
-- Telemetry: five counters agree with their sibling populations (`hitsTaken` reconstructs exactly
-  from the `dmgFrom*` sums; `hunterKills` counts all three tiers); thirteen new columns present on
-  every pushed row; `cargoSevers` never moves when the pity counter resets. Confirmed via
-  `test-cs039-p1/p2/p3.js` and a real captured run (GATE T).
-- CS038 (Credits, low-hull glow retune, telemetry opt-in switch, voice repeat suppression):
-  confirmed working end-to-end at that changeset's close — see `log/CS038.md`.
+- Full suite: **171 files, 171 passed, 0 failed, 0 skipped** on this phase's closing run;
+  `node --check` passes on the extracted script. `test-registry.js` confirms registry **110**,
+  headers **11**, `LEVERS` **18**, `POWERUP_DROP_TYPES` **5**.
+- Healing: `applyPowerup()`'s health arm confirmed as the sole upward writer of `game.ship.hp`;
+  the milestone's spawn-only behavior, the pity cadence's monotonic narrowing toward full hull, and
+  the bank's auto-spend-below-death-check ordering are each driven through real `update()`/
+  `damageShip()` calls in their phase's own test, not reimplemented.
+- Recycle-hub bias: a seeded roll confirms the hub's dry-budget bias is byte-identical to an
+  unbiased roll once no budget sits at zero, and that `destroyHunter()`/`destroySaucer()` stay
+  completely unweighted at full dryness.
+- Telemetry v4: a live export was eyeballed end-to-end — 49 columns, `v4` header, `hp=0` final row,
+  `finalRowIsGameOver=true`, envelope persisted at `v:4`. `scoopHits`'s decreasing step and
+  `cargoDamageEvents`'s exclusion are both proven against a real scoop-level loss, not asserted.
+- Options telemetry submenu: Capture ON survives a save/reload cycle correctly reading back OFF
+  (session-only, confirmed against a rebuilt module instance over the same store); the minutes
+  figure in the Sample rate label is computed from `TELEMETRY_MAX`, not baked in; the panel cursor
+  never lands on either now-hidden debug row across 130+ navigation presses.
+- CS039 (Telemetry instrumentation, GATE T's `cargoDamageEvents` fix) and CS038 (Credits, low-hull
+  glow retune, telemetry opt-in switch, voice repeat suppression): confirmed working end-to-end at
+  their own changesets' close — see `log/CS039.md`/`log/CS038.md`.
 
 ## Known issues
 
-- **⛔ A FIXED-REF DIFF PIN CROSSED GIT'S RENAME THRESHOLD MID-CHANGESET, and every phase from here on
+- **⛔ A FIXED-REF DIFF PIN CROSSED GIT'S RENAME THRESHOLD MID-CS040, and every phase from here on
   should know it exists.** `test-cs024-p6b.js` §G TRAP 5 diffs the build against `79222e5`, a commit
-  *before* the CS029 `asteroids-deluxe.html` → `orbital-overhaul.html` rename, and relied on git's
-  **default** `-M50%` to keep it one renamed file rather than a whole-file delete plus a whole-file add.
-  Similarity is 7,821 common lines over the file's current size: 53.7% at CS040 P4, 53.3% at P5 — and
-  under 50% the moment the file grew past ~15,600 lines. It went red on four assertions that have
-  nothing to do with powerups, purely because the build got longer. **Repaired by pinning the threshold
-  explicitly (`--find-renames=20%`)**, which buys until roughly 39,000 lines; the rename is a fact in
-  `git log` and the pathspec admits exactly one deletion and one addition, so there is no wrong pair to
-  match. ⛔ **Any other fixed-ref pin reaching back past CS029 has the same latent failure** — none was
-  found this phase, but nobody has swept for one.
-- **`test-cs037-p4.js` §H's `Bench.running` guard count is now 10** (was 9). `Telemetry.flush()` is a
-  second entry point into `push()`, so it carries `tick()`'s two gates verbatim rather than inheriting
-  them. The count is a pin, not a list, and it moves when the seal legitimately grows.
-- **Two other-phase tests were repaired by CS040 P1, both narrowings rather than deletions.**
-  `test-cs020-p1.js` §J now excludes `score` from its bit-identical cross-build loop (PRE_FIX_REF
-  still pays the retired full-hull bonus; the gap is pinned at exactly `crossings ×
-  REPAIR_FULL_BONUS`, read off the pre-fix module, since HEAD has neither symbol left).
-  `test-cs039-p1.js` lost §E and one of its five `NEW_FIELDS` — the counter it pinned is gone.
-  `test-f2.js` §(e/f) was repointed to the new contract and its two constants dropped from the
-  hand-rolled return list.
-- **⛔ GDD debt for CS040 P8 (the doc sweep): health banking is player-facing shipped behaviour and is
-  not in the GDD yet.** §2's healing bullets, §2.14's powerup section and §3.2's HUD inventory all need
-  the bank, the auto-spend and the HULL pip row written in. P3's prompt scoped no doc edit and P8 owns
-  the sweep, so this is deferred deliberately, not forgotten. FLAG-CS040-f (always-drawn vs
-  only-when-non-zero pips) is GATE T's call and may change what gets written.
-- **CLAUDE.md documentation debt: one item remains, one closed this phase.** `afd_telemetry_v1`
-  now documented as the sixth Save-data key (closed CS039 P4, flagged CS037 P4). Still open:
-  `Achievements.save()` is no longer `afd_achievements_v2`'s only writer, and `mergeUnlock()` goes
-  unnoted (flagged CS037 P6, not telemetry-adjacent — deferred again).
-- **GATE T's own capture is waves 1–5, not the wave 10+ a deeper analysis wants, and predates
-  `cargoSevers`.** T4 (does tow length collapse with score rate?) is an n=1 finding on that log
-  and answered "no, the opposite" — wants a second, v3-build capture to generalize. A candidate
-  second log (`LEVEL-10-TELEMETRY.csv`) is sitting untracked at the repo root but has not been
-  analyzed as part of this changeset.
-- **The late-wave frame hiccup's cause remains unmeasured** (CS037 Gate A null result — every
-  entity population cleared the benchmark's ceiling by >12×, so the actual cause is still open).
-- **Two unseeded-test flakes stand:** `test-cs035-p3` §F (~5%), `test-f6` §F (~1.7%). A rerun is
-  the standing way to tell either from a real regression.
+  *before* the CS029 `asteroids-deluxe.html` → `orbital-overhaul.html` rename, relying on git's
+  rename-detection to keep it one renamed file rather than a whole-file delete plus add. Repaired by
+  pinning the threshold explicitly (`--find-renames=20%`), which buys until roughly 39,000 lines.
+  **Any other fixed-ref pin reaching back past CS029 has the same latent failure** — none found so
+  far, but nobody has swept for one.
+- **`test-cs037-p4.js` §H's `Bench.running` guard count is now 10** (was 9 pre-CS039). The count is
+  a pin, not a list, and it moves when the seal legitimately grows.
+- **CLAUDE.md documentation debt: one item remains.** `Achievements.save()` is no longer
+  `afd_achievements_v2`'s only writer, and `mergeUnlock()` goes unnoted (flagged CS037 P6, not
+  telemetry- or healing-adjacent — deferred again).
+- **CS039 GATE T's own capture is waves 1–5, not the wave 10+ a deeper analysis wants, and predates
+  `cargoSevers`/the whole CS040 healing rework.** A second, deeper capture on the v4 build (waves
+  10+, ideally spanning a delivery-hub-relief episode) would both generalize GATE T's n=1 tow-length
+  finding and give the healing rework's `hpWasted`/`healthBanked`/`hunterCount` columns their first
+  real-play validation beyond CS040's own GATE T session.
+- **The late-wave frame hiccup's cause remains unmeasured** (CS037 Gate A null result).
+- **Two unseeded-test flakes stand:** `test-cs035-p3` §F (~5%), `test-f6` §F (~1.7%). A rerun is the
+  standing way to tell either from a real regression.
 - **⛔ FLAG-CS036-a stands.** `saveSettings()` writes a full snapshot of every debug knob, and
   `loadSettings()` re-applies it over the registry defaults with `debugOverride` defaulting ON —
   any installation that has ever saved settings is not running shipped defaults. Clear "Overrides
   Applied" (or reset all debug knobs) before any future gate's numeric questions.
 - **Four moving-`HEAD` test pins survive, passing vacuously on a clean tree:** `test-cs023-p3.js`
   (the `debrisBounce` line count and the byte-strict `shieldDeflect`/`shieldBounce` compare),
-  `test-cs024-p6.js` §H TRAP 2, and `test-cs025-p4.js` TRAP 3. Each needs a fixed SHA chosen and
-  the intervening diffs named.
+  `test-cs024-p6.js` §H TRAP 2, and `test-cs025-p4.js` TRAP 3. Each needs a fixed SHA chosen and the
+  intervening diffs named.
 - **`navigator.clipboard` is unavailable on `file://` in several browsers.** The benchmark's and
-  telemetry's copy rows both fall back to a CSV Blob download and say which happened (now also
-  true of P3's fingerprinted export). Untested in a real browser.
-- **Carried forward, unaffected by CS039** — full detail in each item's own changeset log:
+  telemetry's copy rows (now reachable from both the debug panel and Options → Telemetry) both fall
+  back to a CSV Blob download and say which happened. Untested in a real browser.
+- **Carried forward, unaffected by CS040** — full detail in each item's own changeset log:
   parking at the Recycle dock no longer cleans up around the ship (CS035 P2's lockout, dock-apron
   question below); `FLAG-CS032-a`, `drawTitleMenu()` calling `SaveSlots.count()` every frame
   (deliberate, CS032 §4.3); the slots-screen LOAD-mode cursor landing on "Options" (CS032);
@@ -238,20 +104,20 @@ None.
 
 ## Next up
 
-- `CS039-VOICE-WORKLIST.md` (written CS038 P7) records which voice events most need line
-  alternatives and why, in priority order, for Paul's next `tools/voice-robot-lab.html` session —
-  no `phon` composed there, per the standing rule. Still unconsumed.
+- **CS041 is not yet started.**
+- `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
+  alternatives and why, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
-- A second, deeper telemetry capture on the v3 build (waves 10+) would turn GATE T's T4 finding
-  (mean tow length rising, not collapsing, as score rate falls) from n=1 into something
-  actionable — see Known issues above.
+- A second, deeper telemetry capture on the v4 build (waves 10+) would turn CS039 GATE T's T4
+  finding (mean tow length rising, not collapsing, as score rate falls) from n=1 into something
+  actionable, and would be the first real-play look at CS040's `hpWasted`/`healthBanked`/
+  `hunterCount` columns outside GATE T's own session — see Known issues above.
 
 ## Playtest asks (open only — answered ones move to the log)
 
 - **H6, H10 and H11 come back**, all three under FLAG-CS036-a's remedy: clear the debug overrides
   first, then ask for **numbers** — `levelEndFade`/`levelEndGracePulseEnd` for the ship pulse, and
-  `hunterPulseMin`/`Max`/`Grow`/`Shrink` (plain constants as of CS038 P5, still askable) for the
-  heartbeat.
+  `hunterPulseMin`/`Max`/`Grow`/`Shrink` for the heartbeat.
 - **Does the caption expiring mid-freeze read right?** With captions on, Dan's "Level N" caption
   ages during the frozen tail instead of holding, so it can vanish while the field is still
   stopped. Never asked at a gate.
@@ -270,7 +136,8 @@ None.
 - **G20 says the game is no longer too easy**, and CS036's H1 says the level end now reads as a
   deliberate beat. Hunter volatility remains the answer to the former.
 - **CS037 (C+F together) rated 5/10** — balanced, does not push late-wave play toward small hauls.
-- **GATE T's measurement: Hunters carry the run, not delivery.** ~56% of score and 65% of damage
-  in the one analysed run came from Hunters; delivery income (26%) and the two refund bonuses
-  (4%) are minority streams. Not yet a design call — a measurement worth having next time the
-  score mix comes up.
+- **CS039 GATE T's measurement: Hunters carry the run, not delivery.** ~56% of score and 65% of
+  damage in that one analysed run came from Hunters; delivery income (26%) and the two refund
+  bonuses (4%) were minority streams. **CS040 removed one of those two refund-bonus terms
+  (`scoreRepairBonus`) outright**, so the score composition has shifted again since that
+  measurement — not yet re-run, a candidate for the next telemetry capture above.

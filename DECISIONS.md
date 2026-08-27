@@ -13,3 +13,10 @@ waiting on a planning doc, per this file's own retire rule above.)
 
 (CS039's GATE T entry retired into `log/CS039.md` at CS039 P4, verbatim, per
 this file's own retire rule.)
+
+(CS040's five scope-boundary calls — `balanceEra` declined, shield instrumentation
+declined, and scoop redesign/`CARGO_TURN`/sever-linked scoop loss/shots-fired
+telemetry/dock-proximity telemetry all deferred, not rejected — were decided directly
+inside `PLANNED-FEATURES-CS040.md` §0's Scope section rather than off-cycle, so they
+retired straight into `log/CS040.md` at the CS040 P8 closing phase instead of passing
+through this file first, the same reading CS033's procedural note applied.)

@@ -169,6 +169,9 @@ with the level, on purpose.
 | `dockBaseScore` / `dockBonusStep` | Flat knobs (50 / 25), promoted from frozen `DOCK_BASE_SCORE`/`DOCK_BONUS_STEP` CS037 P7, **DELIVERY** section | **The per-piece delivery payout is a reward curve, not a pressure axis** — same reasoning as the `deliveryFloat*` row above. `50 + 25×(n−1)` pays more the longer a single haul runs; scaling it by level would conflate "how much a haul is worth" with "how hard the level is." Both stay anchored to their shipped constant as the `def` (the `debrisBounceRestitution` idiom) — CS037 P7's own gate left both unmoved. |
 | `towReleaseLockout` / `towReleaseSpeed` | Flat knobs (1.0 s / 120 px/s), CS037 P7.1, **SHIP** section | **A hit-recovery detail on the tow-release mechanism (§2.10), not a difficulty ramp.** They govern how long pickup is shut off and how hard released Debris is thrown clear after a damage hit dumps the whole tow — a fixed window and a fixed speed at every level, the same spirit as `HIT_STUN_DURATION` itself (which `towReleaseLockout` derives its `def` from). Nothing about the release should get harder or easier to recover from as the run goes on. |
 | `hunterVolatileAge` / `hunterPulseMin` / `hunterPulseMax` / `hunterPulseGrow` / `hunterPulseShrink` | Flat knobs (60 s / 80% / 150% / 900 %/s / 20 %/s), CS035 P4, defaults retuned at CS035's gate (P7, G15/G16) and again at CS036 P4 (spec §2 — harder punch, slower settle; `hunterPulseGrow`'s bound raised 300 -> 5000 %/s so the ceiling stops binding), **HUNTER** section | **Hunter volatility is a flat rule at every wave, same spirit as the frozen turn rates above.** A large core that has lived `hunterVolatileAge` seconds starts a visible size heartbeat (pulse min/max, grow/shrink rate) — the same clock and the same tell at level 1 as at level 90. This is deliberate: the mechanism that removes "leave large Hunters alone forever" as a dominant strategy (CS035 P5's damage sources) is meant to apply everywhere at once, not ramp in — so none of these five is levered, and `LEVERS` does not grow past 18. |
+| `healthGapLowOk` / `healthGapHighOk` / `healthGapLowHurt` / `healthGapHighHurt` | Flat knobs (22 / 30 / 6 / 10 s, `def` from `HEALTH_GAP_LOW_OK`/`HIGH_OK`/`LOW_HURT`/`HIGH_HURT`), CS040 P2, GATE T confirmed all four unmoved, **POWERUPS** section | **The ambient Health roll's cadence is pressure-driven off the ship's own hull, not off `game.wave`.** `healthGapRoll()` lerps between the hurt pair and the ok pair on `game.ship.hp / SHIP_MAX_HP` — the *shape* of the response is difficulty-adjacent (health arrives faster while hurt), but the mechanism it rides is hull, a per-run player state, not the level clock every other lever reads. Levering it would make an already-pressure-responsive system also escalate with depth, doubling up on the same signal two different ways. All four anchor to their own shipped constants as the `def` (the `debrisBounceRestitution` idiom). |
+| `healthBankMax` | Flat knob (2, `def` from `HEALTH_BANK_MAX`), CS040 P3, GATE T confirmed unmoved, **POWERUPS** section | **A reserve CEILING, the same shape as `hunterCapMax`/`heldClumpMax` above, not a pressure axis.** It caps how many spare Health charges `game.healthBank` can hold; 0 disables banking outright for a same-session A/B. Nothing about "how many charges the bank can hold" should get harder or easier as the run goes on — it is a capacity guarantee on a player resource, not a threat the player faces. |
+| `hubDryWeightMult` | Flat knob (4, `def` from `HUB_DRY_WEIGHT_MULT`), CS040 P4, GATE T confirmed unmoved, **POWERUPS** section | **A supply-starvation relief valve on the recycle hub's own drop, not a difficulty ramp.** Read at `dropPowerup()`'s hub call only (`hubBias`) — it multiplies a zero-budget non-guard type's roll weight by this factor, so the hub biases toward whatever the player has actually run dry of. It does not scale with `game.wave` and is not meant to: the hub is a fixed relief mechanism at a fixed dock-visit count (`game.deliveryCount === 8`), not a threat that should intensify with depth. |
 
 ## 5. Explicit ceilings
 
@@ -224,6 +227,14 @@ here, in the same commit that can grow it.**
   field.
 
 ## 6. Retune log
+
+- **CS040 GATE T (between P6 and P7). A completely clean gate — none of the seven new
+  knobs moved, and no lever moved.** `healthGapLowOk`/`HighOk`/`LowHurt`/`HighHurt`,
+  `healthBankMax` and `hubDryWeightMult` all confirmed at their shipped defaults; the P7
+  tuning pass accordingly committed nothing (a no-op P7, an explicitly sanctioned outcome
+  of that phase's own prompt). None of the seven is a `LEVERS` entry — see §4's table for
+  each and its reasoning. This is the fifth clean-gate closing phase on record (CS020 P2,
+  CS022 P4, CS024 P7, CS025 P5, and now CS040's own gate).
 
 - **CS026 P6 (the CS026 gate). ⛔ NOT a clean gate — but NO LEVER MOVED, and
   nothing on this document's subject moved either.** Six of the eight questions
