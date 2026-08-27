@@ -1106,8 +1106,10 @@ function stepProbe(X, p, dt = 1 / 60) {
     // appending to the same section legitimately falsifies (P6 appends sweepPowerupCap/dockPowerupSpeed
     // there). What survives is that nothing was inserted BETWEEN magnetPushKick and magnetPushSpread.
     // WIDENED BY CS040 P2: its four healthGap* rows also land in POWERUPS, after dockPowerupSpeed.
+    // WIDENED BY CS040 P3: and healthBankMax, appended after those four. Same reasoning again.
     for (const id of ids.slice(spread + 1, gl))
-      assert(id === "sweepPowerupCap" || id === "dockPowerupSpeed" || id.startsWith("healthGap"),
+      assert(id === "sweepPowerupCap" || id === "dockPowerupSpeed" || id.startsWith("healthGap")
+        || id === "healthBankMax",
         `K: every POWERUPS row after magnetPushSpread was appended by a LATER phase (found ${id})`);
   }
 
@@ -1182,7 +1184,8 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id === "dockBaseScore" || id === "dockBonusStep"              // CS037 P7 (the delivery score knobs)
       || id === "towReleaseLockout" || id === "towReleaseSpeed"         // CS037 P7.1 (tow release separation)
       || id === "telemetryCapture"                                      // CS038 P3 (the telemetry opt-in switch)
-      || id.startsWith("healthGap");                                    // CS040 P2 (pity-driven health cadence)
+      || id.startsWith("healthGap")                                     // CS040 P2 (pity-driven health cadence)
+      || id === "healthBankMax";                                        // CS040 P3 (the health bank's cap)
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))

@@ -767,9 +767,10 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // WIDENED BY CS035 P6, same reasoning as CS025 P2's own widening above it: its two SMD volume
     // knobs (sweepPowerupCap, dockPowerupSpeed) also land in POWERUPS, after magnetPushSpread.
     // WIDENED BY CS040 P2: its four healthGap* rows also land in POWERUPS, after dockPowerupSpeed.
+    // WIDENED BY CS040 P3: and healthBankMax, appended after those four. Same reasoning again.
     for (const id of ids.slice(at + 1, gl))
       assert(id.startsWith("magnetPush") || id === "sweepPowerupCap" || id === "dockPowerupSpeed"
-        || id.startsWith("healthGap"),
+        || id.startsWith("healthGap") || id === "healthBankMax",
         `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
@@ -843,7 +844,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "dockBaseScore" || id === "dockBonusStep"        // CS037 P7 (the delivery score knobs)
       || id === "towReleaseLockout" || id === "towReleaseSpeed"  // CS037 P7.1 (tow release separation)
       || id === "telemetryCapture"                                // CS038 P3 (the telemetry opt-in switch)
-      || id.startsWith("healthGap");                              // CS040 P2 (the pity-driven health cadence)
+      || id.startsWith("healthGap")                               // CS040 P2 (the pity-driven health cadence)
+      || id === "healthBankMax";                                  // CS040 P3 (the health bank's cap)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

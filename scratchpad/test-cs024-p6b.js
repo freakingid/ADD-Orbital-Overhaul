@@ -665,7 +665,10 @@ function evalSlice(literal) {
       // CS040 P2 repoint: and the pity-driven Health cadence's four knobs (healthGapLowOk/HighOk/
       // LowHurt/HighHurt, POWERUPS, appended after dockPowerupSpeed) — CS040 P2's rows, not P6b's. Same
       // reasoning a twelfth time.
-      .replace(/,healthGapLowOk,healthGapHighOk,healthGapLowHurt,healthGapHighHurt/, "");
+      .replace(/,healthGapLowOk,healthGapHighOk,healthGapLowHurt,healthGapHighHurt/, "")
+      // CS040 P3 repoint: and healthBankMax (POWERUPS, appended right after those four) — the health
+      // bank's cap, CS040 P3's row, not P6b's. Same reasoning a thirteenth time.
+      .replace(/,healthBankMax/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it

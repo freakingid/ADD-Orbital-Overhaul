@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.39 · Changeset: CS040 · Phase: P2 · Registry: 108 · Levers: 18
+Version: 1.0.0.39 · Changeset: CS040 · Phase: P3 · Registry: 109 · Levers: 18
 
 ## Phase ledger — CS040
 
@@ -22,6 +22,20 @@ Version: 1.0.0.39 · Changeset: CS040 · Phase: P2 · Registry: 108 · Levers: 1
   parent SHA, and a new trailing POWERUPS row falsifies all of them the same way. Widened by name,
   not wildcarded — `test-cs024-p6b/c`, `test-cs025-p1/p2/p5`, `test-cs026-p2/p3/p5/p6`,
   `test-cs027-p2/p6`, `test-cs029-p4`, `test-cs030-p1`, `test-cs038-p5`.
+- P3 — Health BANKS instead of evaporating at the cap. `applyPowerup()`'s health arm now applies only
+  what the hull has room for and banks the remainder as a WHOLE charge worth `POWERUP_HEALTH_AMOUNT`
+  (`game.healthBank`, 0..`DEBUG.healthBankMax`); past the cap the leftover HP lands in the new
+  cumulative `game.stats.hpWasted` (P5's telemetry column is its only planned consumer). One charge
+  auto-spends per damage event at `damageShip()`'s single hull-reduction site, beside the `dmgFrom*`
+  switch and BELOW the `s.hp <= 0` exit — so a lethal hit is never rescued, and the counters above it
+  still read the trough the hit caused. New `AudioSys.bankspend()` for that moment: a swelling sine
+  dyad with a 0.12 s pre-delay, so it is not masked by `hit()` and cannot be confused with `powerup()`
+  or `shieldPing()`. HUD tell (FLAG-CS040-d, overridden to required): a segmented pip row under the
+  "HULL" label, `drawRingSegments()` at `HUD_BANK_PIP_R`/`_DY`, always drawn, stroke-only, measured
+  clear of the CARGO cluster. `healthBank` is additive in the save envelope, no schema bump. One new
+  POWERUPS knob (`healthBankMax`, min 0 disables the mechanic); Registry 108 → 109, `LEVERS` unmoved
+  at 18. **Fourteen other-phase pins narrowed again** — the same trailing-registry-row family P2
+  repaired, plus `test-cs026-p3` §G TRAP 5 (`resetRun()` gained `game.healthBank = 0;`).
 
 ## Phase ledger — CS039 (closed; full narrative in `log/CS039.md`)
 
@@ -58,6 +72,16 @@ decision verbatim: `log/CS039.md`.
   separately). `node --check` passes on the extracted script. `test-cs040-p2.js` §B–§E sample the
   roll at full hull, zero hull, half hull and five points in between, confirming the range narrows
   monotonically as hull drops; §F confirms all four registry knobs and that none reached `LEVERS`.
+- **CS040 P3:** full suite 168 files, 168 passed, 0 failed, 0 skipped (the extra file over P2's 167 is
+  `test-cs040-p3.js`; the fourteen narrowed pins are counted in this total, not separately).
+  `node --check` passes on the extracted script. ⚠ The suite is only green **after** the phase's commit
+  lands: `test-cs024-p6.js` §H TRAP 2 pins `damageShip` byte-for-byte against `git show HEAD`, so a
+  phase that edits that function is red on a dirty tree by construction. Nothing else in the file fails.
+- **`scratchpad/_harness.js` gained one additive option, `ctxLog`** — an array the 2D-context stub
+  records method calls and tracked property writes into, so a draw contract can be MEASURED against the
+  real draw path. Same shape and same justification as CS036 P2's `listeners`: three suite files
+  (`test-cs009-p2`, `test-cs012-p2`, `test-cs038-p6`) each hand-rolled a whole sandbox for want of it,
+  which the test rules bar for new files. Pass nothing and the stub is byte-identical to before.
 - Telemetry: five counters agree with their sibling populations (`hitsTaken` reconstructs exactly
   from the `dmgFrom*` sums; `hunterKills` counts all three tiers); thirteen new columns present on
   every pushed row; `cargoSevers` never moves when the pity counter resets. Confirmed via
@@ -80,6 +104,11 @@ decision verbatim: `log/CS039.md`.
   `test-cs039-p1.js` lost §E and one of its five `NEW_FIELDS` — the counter it pinned is gone.
   `test-f2.js` §(e/f) was repointed to the new contract and its two constants dropped from the
   hand-rolled return list.
+- **⛔ GDD debt for CS040 P8 (the doc sweep): health banking is player-facing shipped behaviour and is
+  not in the GDD yet.** §2's healing bullets, §2.14's powerup section and §3.2's HUD inventory all need
+  the bank, the auto-spend and the HULL pip row written in. P3's prompt scoped no doc edit and P8 owns
+  the sweep, so this is deferred deliberately, not forgotten. FLAG-CS040-f (always-drawn vs
+  only-when-non-zero pips) is GATE T's call and may change what gets written.
 - **CLAUDE.md documentation debt: one item remains, one closed this phase.** `afd_telemetry_v1`
   now documented as the sixth Save-data key (closed CS039 P4, flagged CS037 P4). Still open:
   `Achievements.save()` is no longer `afd_achievements_v2`'s only writer, and `mergeUnlock()` goes

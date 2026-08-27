@@ -236,6 +236,14 @@ function topLevelNames(src) {
 //                 is, for exactly this reason). Purely additive — a caller that passes nothing gets the
 //                 byte-identical stub every existing suite file has always built against.
 //   pads          () => the array navigator.getGamepads() returns. Default null = () => [], as before.
+//   ctxLog        an ARRAY the 2D-context stub records into: every method call as [name, ...args] and
+//                 every tracked property WRITE as [prop, value] — the bespoke recording-ctx shape
+//                 test-cs009-p2/test-cs012-p2/test-cs038-p6 each hand-rolled a sandbox to get. Added
+//                 by CS040 P3 for the same reason CS036 P2 added `listeners`: measuring a draw
+//                 contract (where did that arc land, and did anything fill?) against the REAL draw
+//                 path is otherwise only reachable by hand-rolling a fourth sandbox, which the test
+//                 rules bar. Purely additive — pass nothing and the stub is byte-identical to the one
+//                 every existing suite file has always built against, log branch never taken.
 //
 // Two probes ride along with the harvested list and are absent from an explicit `exports`:
 //   probe(name)   "does this identifier exist at all?" without the return statement throwing
@@ -275,7 +283,11 @@ function FakeAudioContext() {
 // stubs are what made `"·".repeat(Infinity)` throw inside the real menu renderer.
 const defaultMeasure = state => s => ({ width: (parseFloat(state.font) || 10) * 0.6 * String(s).length });
 
-function makeCtxStub(measure) {
+// CS040 P3: the props a recording caller gets WRITES logged for. Reads are untouched — a getter that
+// logged would fire on the stub's own internals and drown the log.
+const CTX_TRACKED = ["fillStyle", "strokeStyle", "font", "textAlign", "lineWidth", "shadowBlur",
+  "shadowColor", "globalAlpha"];
+function makeCtxStub(measure, log) {
   const state = { fillStyle: null, strokeStyle: null, font: null, textAlign: null, lineWidth: null,
     shadowBlur: 0, shadowColor: null, globalAlpha: 1 };
   return new Proxy(state, {
@@ -284,9 +296,12 @@ function makeCtxStub(measure) {
       if (p === "measureText") return (measure || defaultMeasure)(t);
       if (p === "createLinearGradient" || p === "createRadialGradient") return () => ({ addColorStop: () => {} });
       if (p in t) return t[p];
-      return () => {};
+      // A recording caller gets the call and its arguments, PLUS a snapshot of the style state the
+      // call was made under — glowStroke() sets shadowBlur, strokes and resets it inside one
+      // statement, so a stroke's own glow is unrecoverable from the write log alone.
+      return log ? (...args) => { log.push([p, ...args, { ...t }]); } : () => {};
     },
-    set(t, p, v) { t[p] = v; return true; }
+    set(t, p, v) { t[p] = v; if (log && CTX_TRACKED.includes(p)) log.push([p, v]); return true; }
   });
 }
 
@@ -294,14 +309,14 @@ function buildGame(opts = {}) {
   const {
     source = null, exports: exportList = null, extraExports = [],
     audio = true, measureText = null, store = null, strip = false,
-    listeners = null, pads = null,
+    listeners = null, pads = null, ctxLog = null,
   } = opts;
 
   const raw = source === null ? scriptSource() : source;
   const src = strip ? execSource(raw) : raw;
   const names = (exportList || [...topLevelNames(raw), ...PROBES]).concat(extraExports);
 
-  const ctx = makeCtxStub(measureText);
+  const ctx = makeCtxStub(measureText, ctxLog);
   const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => ctx };
   const documentStub = { getElementById: () => canvasStub, createElement: () => canvasStub };
   const windowStub = {

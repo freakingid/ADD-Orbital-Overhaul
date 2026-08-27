@@ -678,7 +678,8 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
       "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",
       "hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink",
       "chainGuardDropBase", "chainGuardDropPity", "chainGuardDropMax", "sweepPowerupCap", "dockPowerupSpeed",
-      "healthGapLowOk", "healthGapHighOk", "healthGapLowHurt", "healthGapHighHurt"]);
+      "healthGapLowOk", "healthGapHighOk", "healthGapLowHurt", "healthGapHighHurt",
+      "healthBankMax"]);   // REPOINTED BY CS040 P3: the health bank's cap joins the excluded set
     const laterIdsOld = new Set(["deliveryFloatLife", "deliveryFloatRise"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));

@@ -812,6 +812,10 @@ let X = null;
       "Telemetry.reset();",
       "Achievements.resumeBaseline = null;",
       "game.towLockoutT = 0;",
+      // NARROWED AGAIN BY CS040 P3 — `game.healthBank = 0;`, the health bank's per-run reset (spec
+      // §1.4), another NEW CS016-P3-rule field sitting beside the scoop resets. Same treatment:
+      // filtered out by name, so any OTHER new line here still fails this trap.
+      "game.healthBank = 0;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu

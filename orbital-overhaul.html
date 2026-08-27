@@ -487,6 +487,12 @@ const HUD_CARGO_CX = 1232;      // CARGO ring center x (76px right of HULL — 1
 const HUD_RING_CY = 74;         // both rings share this center y
 const HUD_RING_LABEL_Y = 122;   // y of the "HULL"/"CARGO" text labels beneath the rings
 const HUD_SHIELD_R_GAP = 9;     // shield arc radius = HUD_RING_R - this (concentric, inside HULL ring)
+// CS040 P3 (spec §1.5): the banked-Health pip row, tucked UNDER the "HULL" label. PLAIN CONSTANTS, not
+// registry rows — pure presentation, tuned by eye, exactly the CAPTION_LINGER / CS038 P5 category.
+// ⛔ Sized to stay INSIDE the HULL cluster's own footprint: r + stroke spans x 1143..1169, and the CARGO
+// ring's left edge is 1200, so the 16 px of air between the two clusters is untouched. See the draw site.
+const HUD_BANK_PIP_R  = 11;     // radius of the segmented banked-charge pip ring
+const HUD_BANK_PIP_DY = 17;     // its center y, measured DOWN from HUD_RING_LABEL_Y
 // The HULL ring's center glyph — the player's own ship, so the ring is unmistakably theirs. This is the
 // L1949 hull poly [[16,0],[-11,-9],[-6,0],[-11,9]] scaled to 55% (drawPoly takes no scale, and scaling
 // the context would scale the glow blur too — CS009 P2, spec §3). Drawn nose-up via angle -Math.PI/2.
@@ -1115,6 +1121,14 @@ const HEALTH_GAP_HIGH_OK   = 30;  // roll ceiling at full hull
 const HEALTH_GAP_LOW_HURT  = 6;   // roll floor at zero hull
 const HEALTH_GAP_HIGH_HURT = 10;  // roll ceiling at zero hull
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
+// CS040 P3 (spec §1.4): the health BANK's cap — how many spare charges the ship may carry.
+// ⛔ A CHARGE IS A WHOLE CHARGE, worth POWERUP_HEALTH_AMOUNT, never a partial-HP reserve: a pickup at
+// 240/250 applies 10 HP and banks a FULL charge. That is deliberate, not a rounding accident — a
+// fractional bank is unreadable to the player (the HUD pips can only show whole units) and untunable
+// for us. This const is only the registry row's `def` source; the LIVE cap is DEBUG.healthBankMax,
+// which applyPowerup(), resumeFromSave()'s clamp and the HUD pip row all read (the standing
+// chainGuardIntercepts idiom).
+const HEALTH_BANK_MAX = 2;
 const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
 const POWERUP_HEALTH_MAX_DIST = 520;
 // Weapon caps. Triple's cap (12) is also the combined Rapid+Triple cap — the higher of the two,
@@ -1559,6 +1573,33 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
     o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.21);
+  },
+
+  // CS040 P3 (spec §1.4): a BANKED Health charge auto-spending itself on a hit. Deliberately unlike
+  // every other voice on this bus in two ways at once, because it has to be told apart from the two
+  // sounds nearest it in MEANING: powerup() (the pickup — triangle, two SEQUENTIAL notes, instant
+  // attack) and shieldPing() (the milestone spawn kept by FORK-CS040-A — one sine FALLING 1400->500).
+  //   1. It SWELLS in (setValueAtTime + a linear ramp UP) where every other voice here attacks at full
+  //      gain and only decays. That rise is the "the hull answered" reading.
+  //   2. It is a DYAD — two sines a fifth apart sounding together, both bending gently UP.
+  // The 0.12 s pre-delay is the other half of the tell: hit() fires on the very same frame, and a chime
+  // stacked exactly on that thud is masked by it. The offset lives INSIDE the method so the game side
+  // stays a plain call — no timer, no state, nothing for the damage path to carry.
+  bankspend() {
+    if (!this.ctx) return;
+    const t = this.now() + 0.12;
+    [[523, 587], [784, 880]].forEach(([f0, f1]) => { // C5->D5 under G5->A5: a fifth, both rising
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.linearRampToValueAtTime(f1, t + 0.22);
+      g.gain.setValueAtTime(0.0001, t);                  // an exponential ramp may not start FROM zero
+      g.gain.linearRampToValueAtTime(0.10, t + 0.09);    // ...the swell
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+      o.connect(g).connect(this.sfx);
+      o.start(t); o.stop(t + 0.35);
+    });
   },
 
   secretArm() { // CS015 P4: the debug secret code armed a capture window — 3 quick ASCENDING blips
@@ -4097,6 +4138,13 @@ const DEBUG_VARS = [
     def: HEALTH_GAP_LOW_HURT, min: 1, max: 60, step: 1 },
   { id: "healthGapHighHurt", label: "Health gap high (zero hull)", unit: "s",
     def: HEALTH_GAP_HIGH_HURT, min: 1, max: 60, step: 1 },
+  // CS040 P3 (spec §1.4): the health bank's cap, `def` deriving from HEALTH_BANK_MAX (the standing
+  // idiom). Not a lever, for the same reason the four rows above aren't — banking is health PACING,
+  // not a difficulty ramp. min 0 DISABLES banking outright (nothing ever banks, every leftover HP
+  // lands in game.stats.hpWasted instead, and the HUD pip row renders zero segments): the gate's
+  // clean A/B for the whole mechanic, the magnetPushKick-at-0 idiom.
+  { id: "healthBankMax", label: "Health bank charges", unit: "",
+    def: HEALTH_BANK_MAX, min: 0, max: 5, step: 1 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -8548,6 +8596,13 @@ function resetGameStats() {
     // written before CS040 still carries the key; it orphans harmlessly under the known-value-else-
     // default rule, which is exactly why removing a field needs no migration shim.
     scoreScoopBonus: 0,      // cumulative SCOOP_MAX_BONUS awarded (max-level scoop pickup cash-in)
+    // CS040 P3 (spec §1.4): HP from a Health pickup that landed with the hull full AND the bank
+    // already at its cap — healing that arrived at the WRONG TIME, which is a different complaint
+    // from healing that was never offered, and telling those two apart is the whole reason this
+    // counter exists. Cumulative for the run, integer HP, incremented at exactly ONE site
+    // (applyPowerup's health arm). Nothing reads it this phase: its consumer is P5's telemetry
+    // column (FLAG-CS040-a), which is how HEALTH_BANK_MAX eventually gets tuned.
+    hpWasted: 0,
     gameEnded: false         // set at game over so end-of-game achievements can evaluate
   };
 }
@@ -8605,6 +8660,11 @@ const game = {
   scoopLevel: 0,                                       // PERSISTENT scoop upgrade level 0..SCOOP_MAX_LEVEL (v3.3 P3; NOT a budgeted effect)
   scoopHits: 0,                                        // running non-lethal-hit tally; every SCOOP_HITS_PER_LEVEL costs a level
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
+  healthBank: 0,                                       // CS040 P3: WHOLE spare Health charges held, 0..DEBUG.healthBankMax,
+                                                        // each worth POWERUP_HEALTH_AMOUNT. Banked at a pickup the hull has no
+                                                        // room for; spent one-per-hit in damageShip(). Declared in BOTH this
+                                                        // literal and resetRun() per the standing CS016 P3 rule — a field that
+                                                        // lands in only one of the two is `undefined` for a whole run.
   sweepPause: 0,                                       // CS018 P9: sec of Super-Mega-Delivery coalescence
                                                         // pause remaining (0 = coalescence live). Set by
                                                         // superMegaDelivery(), ticked+consumed at the
@@ -8905,6 +8965,7 @@ function buildSaveEntry() {
     nextRepair: game.nextRepair,
     scoopLevel: game.scoopLevel,
     scoopHits: game.scoopHits,
+    healthBank: game.healthBank,   // CS040 P3: ADDITIVE — a new key in the existing envelope, no schema bump
     powerBudget: { ...game.powerBudget },
     stats: { ...game.stats, powerUsed: { ...game.stats.powerUsed } },
     debugRun: game.debugRun,
@@ -9005,6 +9066,7 @@ function resetRun(wave, debugRun) {
                                    // the field must exist in both places (the CS016 P3 rule), and carrying a
                                    // stale `true` out of a previous run would swallow the first fill's kick.
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
+  game.healthBank = 0;             // CS040 P3: the spare-charge reserve is PER-RUN — a fresh run starts empty
   game.healthTimer = healthGapRoll();
   game.sweepPause = 0;             // CS018 P9: no sweep coalescence-pause carries into a fresh run
   game.cargoMax = CARGO_BASE;      // pre-level-1 default; nextWave() below immediately overwrites it via payloadSlots(game.wave) (8 at level 1) — CS018 P5
@@ -9110,6 +9172,13 @@ function resumeFromSave(entry) {
   game.nextRepair = num(e.nextRepair, game.nextRepair);
   game.scoopLevel = num(e.scoopLevel, game.scoopLevel);
   game.scoopHits  = num(e.scoopHits, game.scoopHits);
+  // CS040 P3 (spec §1.4): additive state, restored through the same known-value-else-default num()
+  // idiom as its neighbours. Clamped against the LIVE cap (DEBUG.healthBankMax — the same expression
+  // applyPowerup() and the HUD read) rather than the HEALTH_BANK_MAX const, so a slot saved with the
+  // knob raised can never resume holding more charges than the HUD has pips to show. A save written
+  // before this field existed carries no key at all: num() falls through to the 0 resetRun() just
+  // set, which is exactly right — no migration shim, which is the whole point of that rule.
+  game.healthBank = Math.max(0, Math.min(DEBUG.healthBankMax, num(e.healthBank, game.healthBank)));
   // HP is set on the Ship resetRun() just constructed. Clamped into [1, SHIP_MAX_HP]: a slot is only
   // ever written mid-play so a real one is always in range, but a value outside it would resume either
   // an unkillable ship or an already-dead one that no damage path is holding the death for.
@@ -9728,7 +9797,22 @@ function applyPowerup(type) {
     return;
   }
   if (type === "health") {
-    game.ship.hp = Math.min(SHIP_MAX_HP, game.ship.hp + POWERUP_HEALTH_AMOUNT);
+    // CS040 P3 (spec §1.4): apply what the hull has room for; BANK the remainder. Before this phase a
+    // pickup taken at full hull gave nothing at all — Math.min clamped it and ~305 HP (run A) and
+    // ~205 HP (run B) of healing evaporated at the cap across the two measured captures.
+    // ⛔ THE BANK STORES WHOLE CHARGES, NOT LEFTOVER HP. Any remainder at all — 1 HP or 25 — banks
+    //   ONE charge worth the full POWERUP_HEALTH_AMOUNT: a pickup at 240/250 applies 10 and banks a
+    //   full charge. See HEALTH_BANK_MAX for why a fractional reserve was rejected outright.
+    // ⛔ `leftover` is nevertheless the honest quantity to WASTE when the bank is also full: what was
+    //   thrown away there really is the unapplied HP, not a notional charge.
+    const room = Math.max(0, SHIP_MAX_HP - game.ship.hp);   // hp is clamped at max everywhere; never negative
+    const applied = Math.min(POWERUP_HEALTH_AMOUNT, room);
+    game.ship.hp += applied;
+    const leftover = POWERUP_HEALTH_AMOUNT - applied;
+    if (leftover > 0) {
+      if (game.healthBank < DEBUG.healthBankMax) game.healthBank++;
+      else game.stats.hpWasted += leftover;
+    }
   } else {
     // CS009 P5: check BEFORE the += — this is what distinguishes a bank (effect already running) from
     // a fresh pickup (it wasn't). A fresh pickup arms no badge.
@@ -10525,6 +10609,25 @@ function damageShip(amount, srcX, srcY, srcTag) {
     case "ufoBodySmall": game.stats.dmgFromUfoBodySmall += amount; break;
     case "ufoShotLarge": game.stats.dmgFromUfoShotLarge += amount; break;
     case "ufoShotSmall": game.stats.dmgFromUfoShotSmall += amount; break;
+  }
+  // CS040 P3 (spec §1.4) — THE BANKED-CHARGE AUTO-SPEND, at the ONE site the hull is ever reduced.
+  // It sits with the dmgFrom* attribution above for that exact reason: every real HP-dealing hit
+  // passes through here once, so the spend needs no second call site and must never grow one.
+  // ⛔ ONE CHARGE PER DAMAGE EVENT (FLAG-CS040-b), never a drain back to full. A single hit must not
+  //   evaporate the whole reserve — that is what makes two charges read as two saves, not one.
+  // ⛔ It writes s.hp DIRECTLY and rings its own voice. It must NOT re-enter damageShip(), and must
+  //   not re-fire the hit SFX, the knockback or the shake: the hit already happened, and this is the
+  //   hull's answer to it, not a second event.
+  // ⛔ It is BELOW the `s.hp <= 0` exit on purpose, so the reserve never rescues a LETHAL hit — a
+  //   bank is a repair, not an extra life, and killShip() has already run by the time we could.
+  // The counters above deliberately read the PRE-spend hull: hitsTaken / dmgThisWave / everBelowHalf /
+  // dmgFrom* all describe the HIT, and the trough it caused was real whether or not a charge answers
+  // it. The `hp < SHIP_MAX_HP` guard is the spec's own wording ("at the point hull drops below max"),
+  // and it also means a 0-damage call could never burn a charge for nothing.
+  if (s.hp < SHIP_MAX_HP && game.healthBank > 0) {
+    game.healthBank--;
+    s.hp = Math.min(SHIP_MAX_HP, s.hp + POWERUP_HEALTH_AMOUNT);
+    AudioSys.bankspend();
   }
   for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
   AudioSys.hit();
@@ -14115,6 +14218,28 @@ function drawHUD() {
   drawPoly(HUD_SHIP_GLYPH, HUD_HULL_CX, HUD_RING_CY, -Math.PI / 2, hullColor);
   ctx.globalAlpha = 1;   // ALWAYS restore — a leaked alpha would tint the rest of the frame
   drawText("HULL", HUD_HULL_CX, HUD_RING_LABEL_Y, 13, COLOR.dim, "center");
+  // CS040 P3 (spec §1.5; FLAG-CS040-d, overridden from "defer" to "required"): THE BANKED-CHARGE TELL
+  // — a short segmented pip row tucked under the "HULL" label, one segment per possible charge, with
+  // game.healthBank of them lit. A banked charge is invisible state that spends itself, so without
+  // this the whole mechanic is unreadable. It is the SCOOP row's idiom verbatim: one drawRingSegments()
+  // call, segment count DERIVED from the live cap and never hardcoded, and ALWAYS DRAWN — dim track at
+  // zero, the same always-shown-muted convention every other persistent readout in this HUD follows
+  // (FLAG-CS040-f; GATE T decides whether that reads as clutter).
+  // ⛔ STROKE ONLY. drawRingSegments never fills, and no fill dot goes back in — GDD §3.2's no-fills
+  //   rule is exactly why the old SCOOP pip row lost its own dot.
+  // ⛔ NOT ON THE SHIP, and a future reader should not retry it: CS025 P3 put a magnet-blue scoop tell
+  //   on the hull and CS025 P5 backed it out WHOLE at the playtest gate as unreadable against the hull
+  //   stroke (the do-not-re-add comment still stands at the Ship draw). Persistent state lives in the
+  //   HUD corners in this game.
+  // ⛔ NOT a ring outside HUD_RING_R either, for a second and independent reason: HUD_HULL_CX and
+  //   HUD_CARGO_CX are 76 px apart with only 16 px of air between the two ring EDGES, and a concentric
+  //   ring at HUD_RING_R + n eats that air from both sides until the two clusters read as one object.
+  //   Beneath the label at HUD_BANK_PIP_R the row spans x 1143..1169 against the CARGO ring's 1200 left
+  //   edge — measured off the running build, not estimated (test-cs040-p3.js §G re-measures it).
+  // At DEBUG.healthBankMax = 0 (banking switched off) there are no segments and this draws nothing,
+  // which is the honest rendering of a mechanic that is not running.
+  drawRingSegments(HUD_HULL_CX, HUD_RING_LABEL_Y + HUD_BANK_PIP_DY, HUD_BANK_PIP_R,
+    DEBUG.healthBankMax, game.healthBank, POWERUP_COLOR.health, COLOR.dim);
 
   // CARGO ring (top-right, beside HULL). FORK-2 A: game.cargoMax is NOT a constant — it steps
   // 8->24 at level boundaries per payloadSlots(game.wave) (CS018 P5), so the fraction and

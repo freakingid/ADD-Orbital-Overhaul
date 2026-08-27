@@ -662,7 +662,9 @@ let X = null;
   // CS038 P5 repoint: -12 (celebrationScrollStep/celebrationEmblemSize, the six delivery-floater
   // knobs, hunterPulseMin/Max/Grow/Shrink — all twelve were non-lever knobs themselves, retired to
   // plain constants outright per spec §4). The first repoint on this pin to remove more than one row.
-  eq(nonLever.length, 54, "G: 54 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1 + CS038 P3/P5 + CS040 P2's registry");
+  // CS040 P3 repoint: +1 more (healthBankMax, POWERUPS — the health bank's cap). Not a lever, spec
+  // §1.4: a pacing cap with no chain and no floor/ceil/steps triple. Same reasoning a seventeenth time.
+  eq(nonLever.length, 55, "G: 55 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1 + CS038 P3/P5 + CS040 P2/P3's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);
