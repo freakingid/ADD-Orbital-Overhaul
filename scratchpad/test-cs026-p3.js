@@ -845,11 +845,16 @@ let X = null;
     // list. That is a REMOVAL from an existing line rather than an added one, which DROPPED_LINES cannot
     // express either; restore it by name, exactly as foldMenuReset restores an edited line. Any other
     // change to that line still fails this trap.
+    // NARROWED AGAIN BY CS040 P2 — game.healthTimer's seed switched from the flat
+    // rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]) to healthGapRoll(), the pity-driven cadence.
+    // Same treatment: fold that one call back to its parent form by name; any other edit to that line
+    // still fails this trap.
     const foldResetRun = t => t
       .replace(/^  game\.lastScoreId = null;\s*$/m, "  game.entry = null; game.lastScoreId = null;")
       .replace("function resetRun(wave, debugRun) {", "function startGame() {")
       .replace("  game.debugRun = debugRun;", "  game.debugRun = DEBUG.startLevel > 1;")
       .replace("  game.wave = wave;", "  game.wave = DEBUG.startLevel - 1;")
+      .replace("  game.healthTimer = healthGapRoll();", "  game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
       "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear, CS037 P7.1's towLockoutT clear and CS038 P1's linkMsg menu field");

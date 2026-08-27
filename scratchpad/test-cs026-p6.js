@@ -667,6 +667,8 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
     // no-op) — but deliveryFloatRise is P6's OWN row, present in OLD, and CS038 P5 retires it outright.
     // Same shape as deliveryFloatLife below: present-in-OLD, absent-in-X, so it joins laterIdsOld, not
     // laterIdsX.
+    // REPOINTED BY CS040 P2: the pity-driven Health cadence's four POWERUPS rows join the excluded set —
+    // later phase's rows, named rather than wildcarded, exactly as every repoint above.
     const laterIdsX = new Set(["celebrationScrollStep", "celebrationEmblemSize",
       "benchRampStep", "benchRampInterval", "benchSettleFrames", "benchMaxCount", "telemetryInterval",
       "telemetryCapture",
@@ -675,7 +677,8 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
       "dockBounceSpeed", "dockPingCooldown",
       "levelEndHold", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd",
       "hunterVolatileAge", "hunterPulseMin", "hunterPulseMax", "hunterPulseGrow", "hunterPulseShrink",
-      "chainGuardDropBase", "chainGuardDropPity", "chainGuardDropMax", "sweepPowerupCap", "dockPowerupSpeed"]);
+      "chainGuardDropBase", "chainGuardDropPity", "chainGuardDropMax", "sweepPowerupCap", "dockPowerupSpeed",
+      "healthGapLowOk", "healthGapHighOk", "healthGapLowHurt", "healthGapHighHurt"]);
     const laterIdsOld = new Set(["deliveryFloatLife", "deliveryFloatRise"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));

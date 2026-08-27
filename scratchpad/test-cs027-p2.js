@@ -365,7 +365,8 @@ function compareBuilds(L, R, tag) {
     // separation's two SHIP knobs) — same idiom.
     // REPOINTED BY CS038 P5: −12 — celebrationScrollStep/celebrationEmblemSize, the six delivery-floater
     // knobs and the four hunter-pulse knobs are all retired outright to plain constants (spec §4).
-    eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1 - 12, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture and CS038 P5's twelve retirements later)");
+    // REPOINTED BY CS040 P2: +4 more (healthGapLowOk/HighOk/LowHurt/HighHurt).
+    eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1 - 12 + 4, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture, CS038 P5's twelve retirements and CS040 P2's four later)");
     assert(Object.keys(OLD).length > 500, "E: ...and the harvest re-ran against the parent's own symbol set");
   }
 })();

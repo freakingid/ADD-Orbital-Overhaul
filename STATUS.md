@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.39 · Changeset: CS040 · Phase: P1 · Registry: 104 · Levers: 18
+Version: 1.0.0.39 · Changeset: CS040 · Phase: P2 · Registry: 108 · Levers: 18
 
 ## Phase ledger — CS040
 
@@ -9,6 +9,19 @@ Version: 1.0.0.39 · Changeset: CS040 · Phase: P1 · Registry: 104 · Levers: 1
   `REPAIR_AMOUNT`, `REPAIR_FULL_BONUS` and `game.stats.scoreRepairBonus` deleted outright, zero
   consumers left. `REPAIR_MILESTONE` stays 10,000 (FORK-CS040-B). GDD §2's two milestone/health
   bullets and §2.12's hull-full parenthetical corrected in place.
+- P2 — Ambient Health spawn cadence is now pity-driven instead of a flat `[18, 26]` gap.
+  `POWERUP_HEALTH_GAP` retired outright; `healthGapRoll()` (mirrors `guardDropWeight()`'s shape)
+  lerps `[HEALTH_GAP_LOW_HURT, HEALTH_GAP_HIGH_HURT]` (6–10s at zero hull) to
+  `[HEALTH_GAP_LOW_OK, HEALTH_GAP_HIGH_OK]` (22–30s at full hull) on `game.ship.hp / SHIP_MAX_HP`.
+  Both existing re-roll sites (resetRun seed, ambient spawn) repointed; no re-roll added on the
+  damage path (would let a player farm spawns by tanking hits). Four new POWERUPS registry knobs
+  (`healthGapLowOk/HighOk/LowHurt/HighHurt`), not levers — same "flat knob off a shipped const"
+  treatment as `engineBurnSeconds`. Registry 104 → 108; `LEVERS.length` unmoved at 18.
+  **Thirteen other-phase test files needed narrowing repairs** (same idiom CS040 P1 used on
+  `test-cs020-p1`/`test-cs039-p1`): each asserts an exact registry order/count/diff against its own
+  parent SHA, and a new trailing POWERUPS row falsifies all of them the same way. Widened by name,
+  not wildcarded — `test-cs024-p6b/c`, `test-cs025-p1/p2/p5`, `test-cs026-p2/p3/p5/p6`,
+  `test-cs027-p2/p6`, `test-cs029-p4`, `test-cs030-p1`, `test-cs038-p5`.
 
 ## Phase ledger — CS039 (closed; full narrative in `log/CS039.md`)
 
@@ -40,6 +53,11 @@ decision verbatim: `log/CS039.md`.
   165/165/0/0 — the extra file is `test-cs040-p1.js`). `node --check` passes on the extracted script.
   The new test is non-vacuous against the parent build at `1ee9eed`, checked directly: that build
   heals +25 HP and spawns nothing on the same crossing.
+- **CS040 P2:** full suite 167 files, 167 passed, 0 failed, 0 skipped (the extra file over P1's 166
+  is `test-cs040-p2.js`; the thirteen narrowed pins listed above are counted in this total, not
+  separately). `node --check` passes on the extracted script. `test-cs040-p2.js` §B–§E sample the
+  roll at full hull, zero hull, half hull and five points in between, confirming the range narrows
+  monotonically as hull drops; §F confirms all four registry knobs and that none reached `LEVERS`.
 - Telemetry: five counters agree with their sibling populations (`hitsTaken` reconstructs exactly
   from the `dmgFrom*` sums; `hunterKills` counts all three tiers); thirteen new columns present on
   every pushed row; `cargoSevers` never moves when the pity counter resets. Confirmed via

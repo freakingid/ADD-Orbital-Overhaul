@@ -1107,7 +1107,13 @@ const POWERUP_DROP_WEIGHTS = { rapid: 30, triple: 30, scoop: 20, magnet: 10, eng
 // live value is DEBUG.sweepPowerupCap (POWERUPS section), which superMegaDelivery() reads. The old
 // "fixed, not configurable" pin is superseded by that gate decision; see the knob for the shipped 24.
 const SWEEP_POWERUP_CAP = 48;
-const POWERUP_HEALTH_GAP = [18, 26]; // sec between ambient Health spawns (saucer-like cadence)
+// CS040 P2 (spec §1.3): pity-driven ambient Health cadence, replacing the flat [18, 26] gap.
+// healthGapRoll() interpolates between these on missing hull — same "pressure-driven, clamped
+// at both ends" shape as guardDropWeight().
+const HEALTH_GAP_LOW_OK    = 22;  // roll floor at full hull
+const HEALTH_GAP_HIGH_OK   = 30;  // roll ceiling at full hull
+const HEALTH_GAP_LOW_HURT  = 6;   // roll floor at zero hull
+const HEALTH_GAP_HIGH_HURT = 10;  // roll ceiling at zero hull
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
 const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
 const POWERUP_HEALTH_MAX_DIST = 520;
@@ -4079,6 +4085,18 @@ const DEBUG_VARS = [
     def: 24, min: 0, max: 64, step: 1 },
   { id: "dockPowerupSpeed", label: "Dock powerup speed", unit: "px/s",
     def: 180, min: 40, max: 400, step: 10 },
+  // CS040 P2 (spec §1.3): the pity-driven ambient Health cadence's four playtest knobs, each `def`
+  // deriving from its shipped const (the standing idiom). Not a lever — Health cadence is a powerup
+  // pacing pity mechanism, not a difficulty ramp — so no floor/ceil/steps triple, no ▼/↳ glyph, no
+  // indent, no LEVERS entry, same reasoning as engineBurnSeconds above.
+  { id: "healthGapLowOk", label: "Health gap low (full hull)", unit: "s",
+    def: HEALTH_GAP_LOW_OK, min: 1, max: 60, step: 1 },
+  { id: "healthGapHighOk", label: "Health gap high (full hull)", unit: "s",
+    def: HEALTH_GAP_HIGH_OK, min: 1, max: 60, step: 1 },
+  { id: "healthGapLowHurt", label: "Health gap low (zero hull)", unit: "s",
+    def: HEALTH_GAP_LOW_HURT, min: 1, max: 60, step: 1 },
+  { id: "healthGapHighHurt", label: "Health gap high (zero hull)", unit: "s",
+    def: HEALTH_GAP_HIGH_HURT, min: 1, max: 60, step: 1 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -8987,7 +9005,7 @@ function resetRun(wave, debugRun) {
                                    // the field must exist in both places (the CS016 P3 rule), and carrying a
                                    // stale `true` out of a previous run would swallow the first fill's kick.
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
-  game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
+  game.healthTimer = healthGapRoll();
   game.sweepPause = 0;             // CS018 P9: no sweep coalescence-pause carries into a fresh run
   game.cargoMax = CARGO_BASE;      // pre-level-1 default; nextWave() below immediately overwrites it via payloadSlots(game.wave) (8 at level 1) — CS018 P5
   game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
@@ -9551,6 +9569,17 @@ function maxBullets() {
 function guardDropWeight() {
   return Math.min(DEBUG.chainGuardDropMax,
     DEBUG.chainGuardDropBase + DEBUG.chainGuardDropPity * game.stats.cargoDamageEvents);
+}
+
+// CS040 P2 (spec §1.3): ambient Health spawn gap, dynamic and pity-driven — the timer re-rolls only
+// where it re-rolls today (resetRun's seed, the ambient spawn site). No re-roll on the damage path:
+// that would let a player farm spawns by tanking hits. Clamped at both ends by construction (frac is
+// clamp01'd, and lerp between two fixed bounds cannot overshoot either).
+function healthGapRoll() {
+  const frac = clamp01(game.ship.hp / SHIP_MAX_HP);
+  const lo = DEBUG.healthGapLowHurt + (DEBUG.healthGapLowOk - DEBUG.healthGapLowHurt) * frac;
+  const hi = DEBUG.healthGapHighHurt + (DEBUG.healthGapHighOk - DEBUG.healthGapHighHurt) * frac;
+  return rand(lo, hi);
 }
 
 // v3.6 P3: unconditionally roll a random weapon/utility powerup and launch it on the given
@@ -12084,7 +12113,7 @@ function update(dt) {
   game.healthTimer -= dt;
   if (game.healthTimer <= 0) {
     if (!game.powerups.some(p => p.type === "health")) spawnHealthPowerup();
-    game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);
+    game.healthTimer = healthGapRoll();
   }
 
   // --- Collisions: player bullets vs targets ---
@@ -14211,7 +14240,7 @@ function drawHUD() {
   // powerup (wrap-aware nearest-scan, not find-first — correct even if a second ever coexists).
   // Drawn only in the low-health state AND when a health powerup actually exists on the field;
   // hidden otherwise, per FLAG-8a (no force-spawn, so the pointer can legitimately have nothing to
-  // point at for up to POWERUP_HEALTH_GAP's 26s).
+  // point at for up to HEALTH_GAP_HIGH_OK's 30s).
   if (game.state === "playing" && !game.ship.dead && game.ship.hp <= LOW_HP_THRESHOLD) {
     let nearest = null, bestD = Infinity;
     for (const p of game.powerups) {

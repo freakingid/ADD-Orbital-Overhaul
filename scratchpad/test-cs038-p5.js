@@ -56,7 +56,9 @@ const RETIRED_DEFS = {
     assert(!X.DEBUG_VARS.some(v => v.id === id), `A: ⛔ ${id} is gone from DEBUG_VARS`);
     eq(X.DEBUG[id], undefined, `A: ...and DEBUG.${id} is undefined`);
   }
-  eq(X.DEBUG_ENTRIES.length, 104, "A: DEBUG_ENTRIES.length is the live 104");
+  // NARROWED BY CS040 P2: +4 more (healthGapLowOk/HighOk/LowHurt/HighHurt, POWERUPS) — a later
+  // phase's rows, not P5's; the live count moves with them.
+  eq(X.DEBUG_ENTRIES.length, 108, "A: DEBUG_ENTRIES.length is the live 108");
 
   // No section header is emptied — CELEBRATION/DELIVERY/HUNTER all keep other rows.
   let section = null; const rowsOf = { CELEBRATION: [], DELIVERY: [], HUNTER: [] };
@@ -180,7 +182,10 @@ const RETIRED_DEFS = {
     const OLD = buildGame({ source: ps });
     const X = buildGame();
     const oldIds = OLD.DEBUG_VARS.filter(v => !v.header).map(v => v.id);
-    const xIds = X.DEBUG_VARS.filter(v => !v.header).map(v => v.id);
+    // NARROWED BY CS040 P2: its four healthGap* POWERUPS rows are a later phase's, not P5's — strip
+    // them from X before comparing, same as every other later-phase repoint elsewhere in the suite.
+    const LATER_IDS = new Set(["healthGapLowOk", "healthGapHighOk", "healthGapLowHurt", "healthGapHighHurt"]);
+    const xIds = X.DEBUG_VARS.filter(v => !v.header).map(v => v.id).filter(id => !LATER_IDS.has(id));
     const oldIdsSansRetired = oldIds.filter(id => !RETIRED_IDS.includes(id));
     eq(xIds.join(","), oldIdsSansRetired.join(","),
       "F: ⛔ the live registry is the parent's, minus EXACTLY the twelve retired ids, same order");
