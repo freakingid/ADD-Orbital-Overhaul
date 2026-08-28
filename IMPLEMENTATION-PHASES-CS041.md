@@ -1,7 +1,7 @@
 # IMPLEMENTATION-PHASES-CS041.md
 
 **Reads with:** `PLANNED-FEATURES-CS041.md` (spec). Every `§` reference below points there unless it says "GDD §".
-**Base:** `89662b4`, `GAME_VERSION 1.0.0.40` → **unchanged unless FORK-CS041-A says otherwise at GATE C.**
+**Base:** `89662b4`, `GAME_VERSION 1.0.0.40` → **UNCHANGED. FORK-CS041-A resolved at GATE C: a docs-only changeset does not bump.**
 
 **Standing rules for every phase:**
 
@@ -12,7 +12,7 @@
 - **⛔ Every ⛔ and ⚠ marker survives WITH ITS REASONING.** Tightening the wording is allowed. Reducing a marker's *why* to its *what* is not.
 - **⛔ Run `node scratchpad/run-all.js` before committing. 171/171, 0 skips.** A docs-only phase that moves that number has broken one of the four prose pins (§1.3b) — fix the trim, never the test.
 - **⛔ Do not edit anything under `log/` or `archive/`.** Adding a *new* file to `log/` is fine (FORK-CS041-C).
-- Forks are **not** resolved inside a session. **All four forks in §3 are OPEN.** If a prompt hits one, stop and report.
+- Forks are **not** resolved inside a session. **All four forks in §3 are now RESOLVED** (-D at P1, -A and -B at GATE C, -C by the plan). A *new* fork surfacing mid-phase still stops the session.
 
 **⛔ The four literal prose pins — memorise these before touching the GDD (§1.3b):**
 
@@ -31,17 +31,20 @@
 |---|---|---|---|
 | P1 | Read contract — GDD §0 index, CLAUDE.md rule, CLAUDE.md ceiling | Opus, `ultrathink` | |
 | P2 | GDD §3's Constants cell → a pointer (~21 KB, no judgment call) | Sonnet, standard | |
-| **GATE C** | **blocking — did Lever A work? is the trim still wanted?** | — | ⛔ |
-| P3 | The trim rule + ONE worked section (GDD §2.14 Powerups) | Opus, `ultrathink` | |
-| **GATE D** | **blocking — diff review: is the rule right?** | — | ⛔ |
-| P4 | GDD §3 Code Architecture Map, the rest | Opus, `ultrathink` | |
-| P5 | GDD §2.16 + §2.19 (menus, debug panel) | Opus, `ultrathink` | |
-| P6 | GDD §2.10 + §2.5 (salvage/chain/dock, Hunters) | Opus, `ultrathink` | |
-| P7 | GDD §2.8 + §2.17 (audio, achievements) | Opus, `ultrathink` | |
-| P8 | GDD §2.4/§2.7/§2.11/§2.12/§2.13/§2.18/§2.21/§2.22, then §2.20 last | Opus, `ultrathink` | |
+| **GATE C** | **CLOSED — Lever A worked; Lever C re-scoped to a STALENESS SWEEP** | — | ✅ |
+| P3 | The staleness rule + the identifier audit + §3's remaining rows | Opus, `ultrathink` | |
+| **GATE D** | **blocking — diff review: is the sweep rule right?** | — | ⛔ |
+| P4 | The §2 sections CS024/CS038/CS040 left stale | Opus, `ultrathink` | |
+| P5 | The remainder the audit flags | Opus, `ultrathink` | |
 | P9 | Closing — STATUS.md, log/CS041.md, archive, §0 re-measure | Sonnet, standard | |
 
-⛔ **P3–P8 are CONDITIONAL on GATE C.** If the gate says Lever A solved the problem, the changeset closes at P9 with them unbuilt — the same shape as CS040's no-op P7, and an equally good outcome (FORK-CS041-B).
+⛔ **P6, P7 and P8 are DROPPED by GATE C.** The original P3–P8 were a 30–40% prose trim of eight
+sections; GATE C replaced that with a three-session correctness sweep (below). Their prompts are in
+this file's git history at `76e9810` and earlier — not restored, not partially revived.
+
+⛔ **GATE C is CLOSED and both its forks are resolved.** FORK-CS041-B: the specced Lever C is **not**
+wanted; a narrowed **staleness sweep** is (P3–P5). FORK-CS041-A: **no `GAME_VERSION` bump** — the
+build stays byte-identical at `1.0.0.40` and both live version pins stay un-repointed.
 
 ---
 
@@ -140,59 +143,93 @@ Run the full suite: 171/171, 0 skips. Report bytes before/after for the cell and
 
 ---
 
-## GATE C — blocking. Did Lever A work? Is the trim still wanted?
+## GATE C — CLOSED
 
-**Not a code phase.** Nothing after this starts until Paul signs off.
+Answered by Paul after P2. All five questions settled; both open forks resolved.
 
-Questions:
+| # | question | answer |
+|---|---|---|
+| 1 | Did GDD §0 point at the right subsections? | **Fine.** The read contract works. |
+| 2 | Was anything missed that "read §1–§3" would have caught? | **Nothing.** |
+| 3 | Is the trim worth 6+ sessions (FORK-CS041-B)? | **Not as specced.** Re-scoped to a **staleness sweep** — P3–P5 below. |
+| 4 | Does a docs-only changeset bump `GAME_VERSION` (FORK-CS041-A)? | **No.** Stays `1.0.0.40`; both live version pins stay un-repointed. |
+| 5 | Does §0 carry per-subsection sizes (FORK-CS041-D)? | **Yes** — already resolved at P1. |
 
-1. **Run one real, normal phase of other work under the new read contract.** Did GDD §0 point at the right subsections? This is the gate's central question and it needs a genuine phase, not a hypothetical — a dry read does not test whether §0's "when you are touching…" phrasing actually catches a cross-cutting mechanic.
-2. Did anything get **missed** that the old blunt "read §1–§3" rule would have caught?
-3. Is the remaining per-session load acceptable — **is the trim still worth 6+ sessions** (FORK-CS041-B)?
-4. **FORK-CS041-A:** does a docs-only changeset bump `GAME_VERSION`? Needed before P9 either way.
-5. FORK-CS041-D, if P1 had to defer it: does §0 carry per-subsection sizes?
+**Why the re-scope.** P2 found **three dead "standing rules"** inside §3's Constants row — a
+`RAMP_WAVES` pacing rule, a "TWO clocks" rule that flatly contradicted `CLAUDE.md`'s ⛔ *"One clock.
+All difficulty scaling derives from `game.wave`"*, and a `garbageLifetime` density rule whose knobs
+CS024 deleted. None were narration; all three read as live tuning instructions, and the old blunt
+rule shipped them to every session for sixteen changesets. **The value in §2/§3 is not bytes, it is
+lies.** A 30–40% prose trim is now worth ~8–12 KB per phase and six risky sessions; a correctness
+sweep is worth more and costs three.
 
-⛔ **A "no, the trim is not needed" answer closes the changeset at P9 with P3–P8 unbuilt.** That is a good outcome, not a failure.
+**The evidence base, measured at GATE C** — every backticked identifier in §2/§3 checked against the
+build with comments and string literals stripped by a character scanner (never a regex; see
+`CLAUDE.md`'s Test rules): **156 distinct plausible build identifiers named in §2/§3 have ZERO live
+occurrence.** Reproduce with the audit described in P3.
 
 ---
 
-## P3 — The trim rule, and one worked section
+## P3 — The staleness rule, the audit, and §3
 
-**Commit:** `cs041 p3: trim rule + GDD §2.14 worked example`
+**Commit:** `cs041 p3: staleness rule + identifier audit + §3 sweep`
 
 ```
-Fresh clone. ⛔ CONDITIONAL ON GATE C -- if the gate did not greenlight Lever C, this phase does not
-run. ⛔ NO BUILD EDIT.
+Fresh clone. ⛔ NO BUILD EDIT.
 
-⛔ ONE SECTION ONLY: GDD §2.14 Powerups (44,904 bytes, 10 ⛔, 2 ⚠). Do not touch §2.14.1 or §2.14.2
--- they are their own subsections and belong to a later phase. Do not touch any other section, no
-matter how obviously trimmable it looks while you are in the file.
+⛔ THIS IS A CORRECTNESS SWEEP, NOT A SIZE TRIM. The KEEP/MOVE rule in PLANNED-FEATURES-CS041.md
+§2.4 is NOT in force — GATE C replaced it. Byte reduction is a side effect and is never the goal;
+a phase that removes 400 bytes and is right has succeeded.
 
-§2.14 is the deliberate choice of worked example: large, marker-dense, heavily cross-referenced
-(38 inbound § refs), and it contains both kinds of history in the same bullets.
+THE RULE:
 
-1. Apply the KEEP/MOVE rule in PLANNED-FEATURES-CS041.md §2.4, in full. Read it before editing.
-   The one-line test for a borderline sentence: DOES A SESSION THAT HAS NEVER READ log/ MAKE A
-   WORSE DECISION WITHOUT THIS? Yes -> keep. No -> move.
+  REMOVE a sentence only if it is FALSE about the current build:
+    - it names a deleted identifier as though live,
+    - it describes machinery that no longer exists,
+    - it states a tuning rule whose knobs are gone,
+    - or it contradicts a CLAUDE.md ⛔/⚠ or a later GDD section.
 
-   ⛔ PROTECTIVE HISTORY IS NOT NARRATION. A record of a decision that was made, reversed, or
-   re-decided, whose purpose is to stop it being re-opened, STAYS. §2.14's own "THERE IS NO ON-SHIP
-   TELL FOR ANY OF THIS, AND THAT IS A DECISION RATHER THAN AN OMISSION" bullet is exactly this
-   shape -- it reads as history and is load-bearing. Deleting that class of sentence is the single
-   worst thing this changeset could do.
+  KEEP everything that is merely OLD. Narration, phase attribution, multi-hop retune chains,
+  "as of CSxxx", "for the first time", "still" — ALL STAY. If it is true, it stays, however
+  wordy. Protective history stays, unchanged from §2.4's definition of it.
 
-2. Cut narration appends to log/GDD-TRIM-CS041.md under a "## GDD §2.14" heading, with enough
-   context that a reader can tell what it was attached to.
+  ⛔ A STATEMENT THAT AN IDENTIFIER WAS DELETED IS TRUE AND STAYS. "GARBAGE_DECAY was removed in
+  CS024 P3" is correct AND protective; the audit flags it precisely because the name has no live
+  occurrence, which is the reason the sentence exists. THE AUDIT GENERATES CANDIDATES, NOT
+  VERDICTS. Every hit needs a context read before anything happens to it.
 
-3. ⛔ Write the rule you actually applied into the top of log/GDD-TRIM-CS041.md, including any case
-   where you had to extend or narrow §2.4's rule to make a real decision. GATE D reviews THAT as
-   much as the diff -- the rule is the deliverable, the section is the evidence.
+  ⛔ VERIFY BEFORE REMOVING. Grep the identifier in orbital-overhaul.html; a hit only inside
+  comments or string literals is dead. Record the verification alongside the cut text.
 
-4. Record in STATUS.md: bytes before/after, and every borderline call you made, so GATE D can check
-   the judgment rather than just the size.
+  A false statement with an obvious current-state replacement MAY be corrected inline. One
+  without goes, replaced by a pointer to the section that owns the current behaviour. If the
+  correction would require inventing design, DO NOT -- record it in STATUS.md (FLAG-CS041-d).
 
-⛔ Do NOT proceed to a second section however well this goes. GATE D exists because the same wrong
-rule applied to eight more sections is eight sections of damage.
+1. Write the audit as a committed tool, not a throwaway: scratchpad/gdd-audit.js (or .py) that
+   extracts the classic <script> block, strips comments and string literals with a CHARACTER
+   SCANNER, collects every backticked identifier per GDD section, and reports the ones with zero
+   live occurrence. ⛔ NEVER a regex comment strip -- CLAUDE.md's Test rules say why, and the
+   build's own line comments contain /*.
+
+   It is a REPORTING tool. It must not edit the GDD, and it is not wired into run-all.js.
+
+2. Apply the rule to "## 3. Code Architecture Map" -- everything EXCEPT P2's Constants row, which
+   is done (~75.6 KB remaining, 13 ⛔). Expect the per-row "Notes for modification" column to be
+   where both the protective content AND the staleness live. §3 is first because P2 already
+   proved it carries this defect.
+
+   ⛔ §3.1-§3.4 are NOT in this phase. §3's own table only.
+
+3. Cut text appends to log/GDD-TRIM-CS041.md under "## GDD §3 — the rest of the Code Map", each
+   entry carrying the verification that made it a removal.
+
+4. ⛔ Write the rule you ACTUALLY applied into that file's header, including every case where you
+   had to extend or narrow it. GATE D reviews the rule as much as the diff.
+
+5. STATUS.md: bytes before/after, the audit's per-section counts, and every borderline call.
+
+⛔ Do NOT proceed to a §2 section however well this goes. GATE D exists because the same wrong rule
+applied to more sections is more damage.
 
 Run the full suite: 171/171, 0 skips.
 ```
@@ -201,53 +238,59 @@ Run the full suite: 171/171, 0 skips.
 
 ## GATE D — blocking. Diff review.
 
-**Not a code phase.** A **diff review, not a playtest** — read `git show` for P3.
+**Not a code phase.** Read `git show` for P3.
 
-1. Is the KEEP/MOVE rule drawing the line in the right place?
-2. Is anything **protective** missing from the trimmed §2.14?
-3. Is the size reduction worth the reading loss?
-4. Does the rule as written in `log/GDD-TRIM-CS041.md` generalise to §2.16, §2.10, §2.20?
+1. Is "remove what is FALSE, keep what is merely OLD" drawing the line in the right place?
+2. Is anything **protective** missing? Did a true "X was deleted" sentence get cut as though stale?
+3. Does the rule as written in `log/GDD-TRIM-CS041.md`'s header generalise to §2.19, §2.13, §2.10?
+4. Is the audit tool trustworthy — are its candidates mostly real, or is the false-positive rate
+   high enough that it is steering the sweep wrongly?
 
-⛔ This is the only thing between a correct rule and eight more sections trimmed wrongly. If the answer is "nearly right", **fix the rule and re-run P3 on the same section** before unlocking P4.
+⛔ If the answer is "nearly right", **fix the rule and re-run P3 on §3** before unlocking P4.
 
 ---
 
-## P4–P8 — Bulk trim
+## P4–P5 — The rest of the sweep
 
-**Commits:** `cs041 p4: GDD §3 trim` · `p5: §2.16 + §2.19` · `p6: §2.10 + §2.5` · `p7: §2.8 + §2.17` · `p8: remaining §2.x`
+**Commits:** `cs041 p4: §2 staleness sweep — the CS024/CS038/CS040 fallout` · `p5: §2 staleness sweep — the remainder`
 
 ```
 Fresh clone. ⛔ CONDITIONAL ON GATE D. ⛔ NO BUILD EDIT.
 
-Each phase: apply the rule as GATE D approved it (log/GDD-TRIM-CS041.md's header is the source of
-truth for the rule, NOT the original §2.4 -- the gate may have amended it) to that phase's named
-sections and NOTHING ELSE.
+Apply the rule as GATE D approved it -- log/GDD-TRIM-CS041.md's header is the source of truth,
+not P3's prompt, since the gate may have amended it.
 
-P4 -- GDD §3 Code Architecture Map, everything except P2's Constants cell (~72 KB remaining,
-       13 ⛔). Same table-of-sections shape throughout; expect the per-row "Notes for modification"
-       column to be where the protective content lives.
-P5 -- §2.16 Pause Menu/Options/Rebinding (47.0 KB) + §2.19 Debug Options (31.6 KB).
-P6 -- §2.10 Salvage/Tow Chain/Dock (41.5 KB, 16 ⛔ -- the densest prohibition set in §2) + §2.5
-       Hunter Satellites (30.8 KB).
-P7 -- §2.8 Audio (41.3 KB) + §2.17 Achievements (28.5 KB).
-       ⛔ §2.8 carries the voice/music contracts CLAUDE.md also pins. Where the GDD merely restates
-       a CLAUDE.md ⛔, the GDD copy may go -- but VERIFY the CLAUDE.md pin actually says it first.
-       ⛔ §2.17: achievement `id` values are SAVE DATA. Never reword one, even in prose.
-P8 -- §2.4, §2.7, §2.11, §2.12, §2.13, §2.18, §2.21, §2.22 (~85 KB combined), THEN §2.20
-       Achievement Celebration Panel LAST.
-       ⛔ §2.20 is 21.8 KB carrying 27 ⛔ markers -- the highest density in the file. It may be
-       almost entirely protective. A SMALL reduction there is the CORRECT outcome (FLAG-CS041-e);
-       do not manufacture a bigger one.
+P4 -- the sections the audit ranks worst, all of them CS024/CS038/CS040 fallout:
+       §2.19 Debug Options (32 candidates -- retired registry rows: PHASE_LEN, TIER_STEPS, the
+         ORBIT_* family, saucer*Pressure, wavePressure, and CS038 P5's twelve presentation knobs
+         celebrationScrollStep/celebrationEmblemSize/deliveryFloat*/hunterPulse*)
+       §2.13 Level Progression (13 -- RAMP_WAVES, difficultyFactor, levelDef, stepAt, JUNK_CYCLE,
+         LEVEL_MAX, leverScale: the pre-odometer world)
+       §2.14 + §2.14.1 + §2.14.2 (19 -- POWERUP_DURATION, MAGNET_DURATION, POWERUP_DROP_CHANCE,
+         powerFx/powerMode/powerDuration, SCOOP_MAGNET_*)
+       §2.10 + §2.10.1 + §2.10.2 (18 -- GARBAGE_DECAY/FADE/SEVER_DECAY, garbageLifetime,
+         HUD_COMBO_*, DELIVERY_FLOAT_DY, LEVER_DOCK_SIZE)
+       §2.5 + §2.5.1 (15 -- HUNTER_CAP_STEPS, LARGE_HUNTER_MAX, HUNTER_SMALL_GARBAGE, lerpColor,
+         clumpHot, makeClumpHull, garbageAttractDelay)
+
+       ⛔ §2.7 and §2.12 both still name REPAIR_AMOUNT / REPAIR_FULL_BONUS / POWERUP_HEALTH_GAP,
+       deleted only last changeset. CLAUDE.md carries an explicit ⛔ that those two constants are
+       "DELETED, not parked -- do not restore either". CHECK THE CONTEXT FIRST: a sentence saying
+       they are gone is TRUE and STAYS. Do these two in P4 as well; they are small and current.
+
+P5 -- everything else the audit flags, and §3.1-§3.4. Then re-run the audit and report what is
+       left, with a one-line reason per surviving candidate. A candidate that survives because the
+       sentence correctly says "this was deleted" is the EXPECTED outcome, not a miss.
 
 Every phase:
-  - cut narration appends to log/GDD-TRIM-CS041.md under a per-section heading
-  - the four prose pins still match (they live in §2.4/§2.11/§3.2 -- P8 and P4 are the risky ones)
+  - cut text appends to log/GDD-TRIM-CS041.md under a per-section heading, with its verification
+  - the four prose pins still match
   - full suite 171/171, 0 skips
   - STATUS.md: one ledger line, bytes before/after, borderline calls
 
-⛔ If a phase finds its sections are mostly protective and trims little, SAY SO AND STOP. A phase
-that reports "12% and here is why the rest must stay" is doing the job correctly. Do not pad the
-number.
+⛔ If a phase finds its sections are accurate and removes little, SAY SO AND STOP. A phase that
+reports "four false sentences, here they are, the rest is true" is doing the job correctly.
+⛔ Do not pad the number. Do not trim for size. Removing a true sentence is the failure mode.
 ```
 
 ---
@@ -257,18 +300,20 @@ number.
 **Commit:** `cs041 p9: doc sweep + close`
 
 ```
-Fresh clone. ⛔ NO BUILD EDIT unless FORK-CS041-A resolved to "bump" at GATE C -- in which case the
-ONLY build edit is GAME_VERSION, plus the two live version pins (test-cs016-p5.js,
-test-cs021-p4.js). If FORK-CS041-A resolved to "no bump", the build and both pins stay untouched
-and the version line in STATUS.md stays 1.0.0.40.
+Fresh clone. ⛔ NO BUILD EDIT -- FORK-CS041-A resolved to "no bump" at GATE C. orbital-overhaul.html
+is untouched, test-cs016-p5.js and test-cs021-p4.js keep their current version pins, and STATUS.md's
+version line stays 1.0.0.40. ⛔ Do not "tidy" the version up for ritual's sake; the build is
+byte-identical to CS040's and must keep saying so in every high-score record and leaderboard row.
 
 1. ⛔ RE-MEASURE GDD §0's per-subsection sizes against the trimmed file and correct every one
-   (FLAG-CS041-c) -- if FORK-CS041-D put sizes in §0, P4-P8 invalidated all of them. Then add the
+   (FLAG-CS041-c) -- §0 CARRIES SIZES (FORK-CS041-D, yes), P2 already re-measured §3 by hand, and
+   P3-P5 invalidate more. Re-measure ALL 35 rows; do not spot-fix. Then add the
    re-measure to CLAUDE.md's standing closing-phase checklist so this cannot silently rot.
 2. CLAUDE.md: confirm the P1 read contract still describes reality after the trim. Confirm the
    size-ceiling rule's threshold still looks right against the current file (FLAG-CS041-b).
-3. log/CS041.md: full narrative, both gates verbatim, the final trim rule, before/after byte
-   table per section, and the GDD version-history entry.
+3. log/CS041.md: full narrative, both gates verbatim (GATE C's re-scope of Lever C especially --
+   it is the changeset's real story), the final staleness rule, before/after byte table per
+   section, and the GDD version-history entry.
 4. STATUS.md rolled and reset.
 5. Archive PLANNED-FEATURES-CS041.md and IMPLEMENTATION-PHASES-CS041.md.
    ⛔ log/GDD-TRIM-CS041.md is NOT archived -- it stays in log/ as the record of what was cut.
@@ -282,7 +327,7 @@ Run the full suite. ⛔ ZERO SKIPS. Report any skip with its reason.
 
 ## Model guidance
 
-**Opus + `ultrathink` for P1 and every trim phase (P3–P8).** The trim is a judgment call on every sentence — "is this protective or narrative?" — made a few thousand times, against a file whose whole failure mode is that the wrong answer is invisible until a future session re-litigates a settled decision. This is not a mechanical pass and must not be run as one.
+**Opus + `ultrathink` for P1 and every sweep phase (P3–P5).** The sweep is a judgment call on every flagged sentence — "is this false, or merely old?" — against a file whose whole failure mode is that the wrong answer is invisible until a future session acts on a rule that stopped being true. The audit makes the *candidates* mechanical; deciding each one is not, and must not be run as though it were. ⛔ The specific trap: an audit hit is often a sentence that is CORRECT precisely because it says the identifier is gone.
 
 **Sonnet, standard, for P2 and P9.** P2 is a bounded replacement of one identified cell against an explicit keep-list. P9 is a checklist.
 

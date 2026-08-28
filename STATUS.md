@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS041 · Phase: P2 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS041 · Phase: GATE C (closed) · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS041
 
@@ -20,6 +20,13 @@ Version: 1.0.0.40 · Changeset: CS041 · Phase: P2 · Registry: 110 · Levers: 1
   `log/GDD-TRIM-CS041.md` (FORK-CS041-C). §3's ⛔ count is **unchanged at 13**, ⚠ at 1. §0's §3 size
   row re-measured 94.2 → 73.8 KB.
 
+- GATE C (closed) — **Lever A worked; Lever C is re-scoped, not cancelled.** Items 1, 2 and 5 came
+  back clean: the read contract points at the right subsections and missed nothing. **FORK-CS041-A:
+  NO `GAME_VERSION` bump** — the build is byte-identical to CS040's and must keep saying so in every
+  high-score record and leaderboard row; both live version pins stay un-repointed. **FORK-CS041-B:
+  the specced 30–40% prose trim is NOT wanted** — replaced by a **staleness sweep** (P3–P5, GATE D
+  retained after P3), on the evidence that §2/§3's problem is wrongness, not size. **P6–P8 dropped.**
+
 Full narrative: `log/CS041.md` (written at P9).
 
 ## Working / verified
@@ -39,9 +46,24 @@ Full narrative: `log/CS041.md` (written at P9).
 
 ## Known issues
 
-- **⛔ P3–P8 ARE CONDITIONAL ON GATE C.** Lever C (the §2/§3 prose trim) is not authorised. If GATE C
-  finds Lever A solved the problem, the changeset closes at P9 with P3–P8 unbuilt — a good outcome,
-  the same shape as CS040's no-op P7 (FORK-CS041-B).
+- **⛔ P3–P5 ARE THE SWEEP; P6–P8 NO LONGER EXIST.** GATE D is still blocking after P3, for the same
+  reason it always was: the same wrong rule applied to more sections is more damage. **The sweep's
+  failure mode is the inverse of the trim's** — not "cut something protective" but "cut a true
+  sentence because an audit flagged the dead identifier inside it."
+- **⛔ The sweep must not be run as a size trim.** Byte reduction is a side effect. A phase that
+  removes four false sentences and reports "the rest is true" has succeeded; padding the number is
+  the way this goes wrong.
+- **⛔ THE STALENESS IS NOT LOCALISED TO §3 — MEASURED AT GATE C.** Every backticked identifier in
+  §2/§3 was checked against the build with comments and string literals removed by a **character
+  scanner** (never a regex — `CLAUDE.md`'s Test rules say why): **156 distinct plausible build
+  identifiers named in §2/§3 have ZERO live occurrence.** Worst sections: **§3** (100), **§2.19**
+  (32), **§2.14 + .1 + .2** (19), **§2.10 + .1 + .2** (18), **§2.13** (13), **§2.5 + .1** (15).
+  ⛔ **These are CANDIDATES, not verdicts** — a sentence saying "`GARBAGE_DECAY` was removed in
+  CS024 P3" is true, protective, and flagged by the audit for exactly the reason it exists. Each hit
+  needs a context read. Two clusters worth naming: §2.19 and §2.10/§2.20 still document **CS038 P5's
+  twelve retired presentation knobs** (`celebrationScrollStep`, `deliveryFloat*`, `hunterPulse*`) as
+  live debug rows; and **§2.7 and §2.12 both still name `REPAIR_AMOUNT`/`REPAIR_FULL_BONUS`/
+  `POWERUP_HEALTH_GAP`**, deleted last changeset, against an explicit CLAUDE.md ⛔.
 - **⛔ P2 FOUND THREE STALE "STANDING RULES" INSIDE §3's CONSTANTS ROW — this is GATE C evidence.**
   All three were verified dead against the build before removal, and are preserved verbatim with
   their notes in `log/GDD-TRIM-CS041.md`. (1) *"Early-game pacing tunes from `RAMP_WAVES` + the
@@ -120,14 +142,14 @@ Full narrative: `log/CS041.md` (written at P9).
 
 ## Open questions (blocking)
 
-None. **GATE C is blocking for P3 onward** and carries FORK-CS041-A, -B and -C.
+None. GATE C is closed; FORK-CS041-A, -B and -D are resolved and -C was settled by the plan.
 
 ## Next up
 
-- **GATE C — blocking, and next.** Both cheap wins have landed (FLAG-CS041-a satisfied), so the gate
-  now has what it was scheduled to see. Its central question needs *one real, normal phase of other
-  work* run under the new read contract — not a dry read. Item 5 (FORK-CS041-D) is already answered;
-  items 1–4 stand, and P2's three stale rules (Known issues) are direct evidence for item 3.
+- **P3 — the staleness rule, the audit tool, and §3's remaining rows** (Opus, `ultrathink`). The
+  prompt is written into `IMPLEMENTATION-PHASES-CS041.md`. The audit prototype used at GATE C is
+  saved at `scratchpad/gdd-audit.py`; P3 turns it into the committed reporting tool.
+- **Then GATE D**, blocking, a diff review of P3 before §2 is touched.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
