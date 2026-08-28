@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS041 · Phase: P1 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS041 · Phase: P2 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS041
 
@@ -10,6 +10,15 @@ Version: 1.0.0.40 · Changeset: CS041 · Phase: P1 · Registry: 110 · Levers: 1
   your phase names", with the full contract stated once under the map. `CLAUDE.md` gains its own
   50 KB ceiling and a `RATIONALE.md` pressure valve (FLAG-CS041-b). No GDD content deleted; no build
   edit. Measured GDD load for a typical phase: **~505 KB → ~33–46 KB** (see Working / verified).
+
+- P2 — GDD §3's **Constants** row becomes a pointer. Its two content cells held **22,852 bytes** on
+  one line — an append-only changelog of every tuning constant since v1.1, plus a "Notes for
+  modification" cell. Replaced by **3,140 bytes**: the constants block's grouping, the standing
+  rules, and a one-line index of every retired constant NAME so a grep for `GARBAGE_DECAY` finds
+  "deleted, see `log/`" rather than silence. **Saving 19,712 bytes (19.2 KB).** §3 body 94,200 →
+  75,608 bytes; GDD 544,406 → 524,764. Cut text preserved verbatim in the new
+  `log/GDD-TRIM-CS041.md` (FORK-CS041-C). §3's ⛔ count is **unchanged at 13**, ⚠ at 1. §0's §3 size
+  row re-measured 94.2 → 73.8 KB.
 
 Full narrative: `log/CS041.md` (written at P9).
 
@@ -33,6 +42,28 @@ Full narrative: `log/CS041.md` (written at P9).
 - **⛔ P3–P8 ARE CONDITIONAL ON GATE C.** Lever C (the §2/§3 prose trim) is not authorised. If GATE C
   finds Lever A solved the problem, the changeset closes at P9 with P3–P8 unbuilt — a good outcome,
   the same shape as CS040's no-op P7 (FORK-CS041-B).
+- **⛔ P2 FOUND THREE STALE "STANDING RULES" INSIDE §3's CONSTANTS ROW — this is GATE C evidence.**
+  All three were verified dead against the build before removal, and are preserved verbatim with
+  their notes in `log/GDD-TRIM-CS041.md`. (1) *"Early-game pacing tunes from `RAMP_WAVES` + the
+  saucer floor/ceiling pairs"* — `ramp`/`difficultyFactor`/`RAMP_WAVES` were deleted by CS024 P4
+  and `SAUCER_AIM_ERR_*` has zero build occurrences. (2) *"As of CS017 P3 there are TWO clocks"* —
+  **this directly contradicted `CLAUDE.md`'s ⛔ "One clock. All difficulty scaling derives from
+  `game.wave`. No parallel clocks."**; the cycle clock died at CS018 P4 and its replacement at
+  CS024 P4. (3) *"Debris density tunes from decay (`DEBUG.garbageLifetime`)…"* — CS024 P3 deleted
+  decay outright and CS024 P5 retired `garbageAttractDelay`. **The point for GATE C: these were not
+  narration, they read as live tuning instructions, and the blunt "read §1–§3" rule delivered all
+  three to every session for sixteen changesets.** Writing current-state replacements was NOT done
+  — that is new GDD content and P2 was not scoped to author it; the replacement points at §2.10.1 /
+  §2.5.1 / `DIFFICULTY-LEVERS.md` instead. **§3 may hold more of these; P4 is where to look.**
+- **P2's saving was 19.2 KB, not the plan's projected ~21 KB, and the plan's figure counted two
+  cells as one.** §2.3 measured "the Constants cell" at 22,520 chars; that is the whole row —
+  18,211 in the *Contents* cell and 4,288 in the *Notes for modification* cell. Both were replaced
+  (the invariants §2.3 named as "buried in the cell" all lived in the second one). The replacement
+  is 3,140 B rather than ≤1.5 KB because the prompt's own ⛔ retired-constant-NAMES line is ~1.1 KB
+  of that on its own; the remaining ~2 KB is grouping + the standing rules + history pointers.
+- **§0's `**3.** Code Architecture Map` size row was re-measured at P2 (94.2 → 73.8 KB).** Strictly
+  outside "one table cell plus STATUS.md", but P2 invalidated the row it had just shipped, and
+  FLAG-CS041-c's P9 re-measure is a sweep, not a licence to ship a known-stale index for six phases.
 - **§0 is 9.8 KB, not the prompt's 3–4 KB target, and this was a deliberate call.** 35 rows leave
   ~90 B/row at 4 KB, of which number + name + size already spends ~55 — about five words for the
   "touching…" line, which is exactly the "§2.14 Powerups — powerups" uselessness the prompt names as
@@ -89,15 +120,14 @@ Full narrative: `log/CS041.md` (written at P9).
 
 ## Open questions (blocking)
 
-None for P2. **GATE C is blocking for P3 onward** and carries FORK-CS041-A, -B and -C.
+None. **GATE C is blocking for P3 onward** and carries FORK-CS041-A, -B and -C.
 
 ## Next up
 
-- **P2 — GDD §3's Constants cell → a pointer** (~21 KB from one table cell; Sonnet, standard). It is
-  scheduled before GATE C so the gate sees both cheap wins before ruling on the expensive one
-  (FLAG-CS041-a).
-- **Then GATE C**, whose central question needs *one real, normal phase of other work* run under the
-  new contract — not a dry read. Its item 5 (FORK-CS041-D) is already answered.
+- **GATE C — blocking, and next.** Both cheap wins have landed (FLAG-CS041-a satisfied), so the gate
+  now has what it was scheduled to see. Its central question needs *one real, normal phase of other
+  work* run under the new read contract — not a dry read. Item 5 (FORK-CS041-D) is already answered;
+  items 1–4 stand, and P2's three stale rules (Known issues) are direct evidence for item 3.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
