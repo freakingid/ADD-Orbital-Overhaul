@@ -117,13 +117,24 @@ things before this table existed.
 | `STATUS.md` | Build reality, current changeset only. One page. | Always |
 | `PLANNED-FEATURES-CS0##.md` | Spec for what's being built now. | When in-flight |
 | `IMPLEMENTATION-PHASES-CS0##.md` | Build order + phase prompts. | When in-flight |
-| `ORBITAL-OVERHAUL-GDD.md` | Design intent + shipped behavior. §2 = shipped only. | §1–§3 before code |
+| `ORBITAL-OVERHAUL-GDD.md` | Design intent + shipped behavior. §2 = shipped only. | §0 + §1 always; then the §2.x/§3.x your phase names — see below |
 | `DIFFICULTY-LEVERS.md` | The `LEVERS` table, documented. | Touching difficulty |
 | `EXTERNAL-FILES.md` | Runtime files the shipped game loads. | Adding one |
 | `RATIONALE.md` | Why the rules in this file exist. | On demand only |
 | `DECISIONS.md` | Judgment calls made off-cycle (outside the phase flow) where no plan doc covered the question. | On demand only |
 | `log/CS0##.md` | Per-changeset narrative build log **and** that changeset's version-history entry. | **Never by default** |
 | `archive/` | Spent planning docs. | **Never by default** |
+
+⛔ **The GDD is read by named subsection, not in bulk (CS041 P1).** Read **§0 +
+§1 always** — §0 is a ~10 KB index whose third column says *what you might be
+editing*, not what each section is called — then read the **§2.x/§3.x
+subsections your phase names**, plus any §0 row that names the thing you are
+about to touch. A cross-cutting mechanic is listed under every subsection that
+owns a piece of it; if two rows name it, read both. **A broad phase reads more,
+up to all of §2/§3** — this replaced a blunt "read §1–§3 before code" default,
+it does not cap you. §4–§7 are pulled by name. ⛔ **If §0 has no row for what
+you are editing, that is a defect in §0** — record it in `STATUS.md` rather
+than working around it silently.
 
 ⛔ **`log/` and `archive/` are not session context.** Pull one file in only when a
 question genuinely needs project history, and say you did.
@@ -162,6 +173,30 @@ What shipped, what moved, what's open. Reasoning goes in `log/CS0##.md`.
 shell redirect (`>>`, `cat <<EOF`), verify the written entry actually begins a
 new paragraph. A missing trailing newline once fused years of entries into a
 single 160 KB line.
+
+---
+
+## CLAUDE.md's own ceiling (CS041 P1)
+
+⛔ **This file stays under 50 KB.** It auto-loads every session,
+unconditionally — the one document with no opt-out — so every byte here is a tax
+on every phase, and unlike `STATUS.md` (~400 lines, rolled into `log/` each
+changeset) it has never had a bound. Measured at CS041 P1's close: **47.1 KB /
+836 lines** — roughly two changesets' growth of headroom at CS040's rate.
+`### Audio` (5.3 KB) is the only section over ~4 KB today, and so the valve's
+first candidate whenever it is next edited. **The 50 KB threshold is a first
+guess (FLAG-CS041-b)**; revisit it once it has actually bound something, and prefer
+moving the number deliberately over letting the file drift past it quietly.
+
+**The valve is this file's own header rule turned on itself** — *states rules,
+not reasons; reasons live in `RATIONALE.md`*. Past the ceiling, a section over
+**~4 KB** moves its **reasoning** into `RATIONALE.md` under an `#anchor` and
+keeps its **rule** here, naming that anchor. Nothing is deleted — it relocates
+to a document already on an on-demand contract.
+
+⚠ **The valve fires when an over-size section is next edited, never as a
+standing cleanup sweep**, and a section under ~4 KB is not a candidate however
+long the file gets. Adding this rule trimmed nothing (CS041 P1 was forbidden to).
 
 ---
 
