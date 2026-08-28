@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS041 · Phase: GATE C (closed) · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS041 · Phase: P3 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS041
 
@@ -27,6 +27,16 @@ Version: 1.0.0.40 · Changeset: CS041 · Phase: GATE C (closed) · Registry: 110
   the specced 30–40% prose trim is NOT wanted** — replaced by a **staleness sweep** (P3–P5, GATE D
   retained after P3), on the evidence that §2/§3's problem is wrongness, not size. **P6–P8 dropped.**
 
+- P3 — Staleness sweep of GDD §3's table (everything but P2's Constants row), plus the audit as a
+  committed tool (`scratchpad/gdd-audit.py`; reporting only, not wired into `run-all.js`). **Six of
+  the twelve candidate-carrying rows were wrong; five were fixed by CORRECTION, not removal, so §3
+  went 75,608 → 75,451 bytes — a net −157.** That is the shape of a correctness sweep and is the
+  intended outcome. One large removal (Helpers, 2,915 → 1,497: five paragraphs specifying
+  `difficultyFactor`/`ramp`/`leverScale`/`cycleValue`/`wavePressure`/`bonusSpawnChance`, all
+  deleted, one of which instructed "use these for any new wave-scaled value"). **§3's ⛔ count went
+  13 → 22** — nine new "X is GONE" prohibitions; ⚠ unchanged at 1; **no marker removed.** Rule as
+  applied, three amendments, both false-positive classes and every cut: `log/GDD-TRIM-CS041.md`.
+
 Full narrative: `log/CS041.md` (written at P9).
 
 ## Working / verified
@@ -53,6 +63,28 @@ Full narrative: `log/CS041.md` (written at P9).
 - **⛔ The sweep must not be run as a size trim.** Byte reduction is a side effect. A phase that
   removes four false sentences and reports "the rest is true" has succeeded; padding the number is
   the way this goes wrong.
+- **⛔ P3's HEADLINE FOR GATE D: THE AUDIT'S FALSE-POSITIVE RATE FOR "REMOVE THIS" IS VERY HIGH, BY
+  DESIGN.** §3 went 100 candidates → 98 across six swept rows, because nearly every candidate sits
+  inside a sentence that correctly says the identifier is gone. **A gate reading the count as a
+  progress bar will conclude the phase failed; it did not.** Two false-positive classes are now
+  documented: identifiers held as **string literals** (`debugOverride` is `const DEBUG_OVERRIDE_ID =
+  "debugOverride"`, and the scanner strips string contents), and **name collisions** (`ramp` shows 4
+  live hits, all a local arrow function in `AudioSys.lowhpSet`, while the difficulty `ramp()` really
+  is gone — so an identifier can be dead *despite* live hits). Never trust the count; read the site.
+- **⛔ SEVEN §3 ROWS WERE NOT SWEPT AND THAT IS NOT A CLEAN BILL OF HEALTH.** Canvas/scaling,
+  AudioSys, MusicSys, VoiceSys, Input, Chain physics and Main loop carry zero candidates, which only
+  means nothing in them names a dead identifier. **The audit cannot see prose-level staleness** — a
+  wrong ordering claim, a superseded rule stated in words. If GATE D wants those covered, that is a
+  different and much more expensive pass, and it should be scoped deliberately.
+- **The decay clock was stated as live in THREE separate §3 rows** (Constants, fixed at P2; game
+  object; Flow functions; and a fourth in `update(dt)`). One deletion — CS024 P3's — left four
+  independent false claims behind. **Expect the same multiplicity in §2**, where the same changeset
+  is documented across §2.10, §2.10.1 and §2.5.1.
+- **⛔ DOC/BUILD DISAGREEMENT FOUND, NOT FIXED (FLAG-CS041-d).** GDD §3's Achievements row gives the
+  weekly rotation as `(isoYear*52+isoWeek) % 16`; the build's own header comment at line 99 says
+  `% 15`. §2.17 documents 16 weekly achievements, so the GDD looks right and the build's COMMENT
+  looks stale — but correcting a build comment is a build edit, which this changeset forbids
+  everywhere. Someone should confirm the live pool size and fix whichever is wrong.
 - **⛔ THE STALENESS IS NOT LOCALISED TO §3 — MEASURED AT GATE C.** Every backticked identifier in
   §2/§3 was checked against the build with comments and string literals removed by a **character
   scanner** (never a regex — `CLAUDE.md`'s Test rules say why): **156 distinct plausible build
@@ -146,10 +178,12 @@ None. GATE C is closed; FORK-CS041-A, -B and -D are resolved and -C was settled 
 
 ## Next up
 
-- **P3 — the staleness rule, the audit tool, and §3's remaining rows** (Opus, `ultrathink`). The
-  prompt is written into `IMPLEMENTATION-PHASES-CS041.md`. The audit prototype used at GATE C is
-  saved at `scratchpad/gdd-audit.py`; P3 turns it into the committed reporting tool.
-- **Then GATE D**, blocking, a diff review of P3 before §2 is touched.
+- **GATE D — blocking, and next.** A diff review of P3 (`git show`), before any §2 section is
+  touched. Its four questions are in `IMPLEMENTATION-PHASES-CS041.md`; P3 adds a fifth in practice —
+  **are the three rule amendments in `log/GDD-TRIM-CS041.md`'s header right?** (correct-inline over
+  remove; extend an existing "Gone:" list rather than rewrite the history clause; an incomplete
+  "Gone:" list is itself a defect).
+- **Then P4** — §2.19, §2.13, §2.14.x, §2.10.x, §2.5.x, plus §2.7/§2.12's `REPAIR_*` mentions.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.

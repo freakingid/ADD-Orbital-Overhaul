@@ -71,3 +71,224 @@ All tuning values (SHIP_*, BULLET_*, SHIELD_*, `DEBRIS_*`, scores) + v1.1 salvag
 ```text
 **Change balance here first.** Never hardcode magic numbers deeper in the file. `WORLD_*` = the wrap boundary; `VIEW_*` = the screen — keep the distinction (see §2.11). **Debris density tunes from decay (`DEBUG.garbageLifetime`, the governor for every piece as of CS015 P6, live-tunable — was the frozen `GARBAGE_DECAY`, singles-only, pre-P6), coalescence (`GARBAGE_MAGNET_RANGE`, `GARBAGE_COALESCE_DELAY`, `HUNTER_COALESCE_COUNT`), the drop-volume constants, and the `nextWave` count. `garbageLifetime` must stay a wide-enough multiple of `garbageAttractDelay` or nothing clumps — tighter at the CS015 P6 defaults (10s/3s) than the old 22s/3s pairing (§2.10.1).** **Early-game pacing tunes from `RAMP_WAVES` + the saucer floor/ceiling pairs — every wave-scaled value is `ramp(floor, ceil, wave)` (§2.13).** **As of CS017 P3 there are TWO clocks and you must know which one a lever is on before retuning it: the four SAWTOOTH levers (Garbage Satellite count, Garbage Satellite speed at both sites, Hunter speed, Hunter turn rate) sample `game.cycleWave` and pass through `cycleValue(x, game.cycle)`; every FROZEN lever (the whole saucer group, and the Kessler/player-ability/economy groups) still samples the absolute `game.wave`. That asymmetry is deliberate — see §2.13 before "fixing" it.** **CS021 P1/P1b: an `ORBIT_*` block (`ORBIT_LEVEL_EVERY` with the Level Progression constants; `ORBIT_INNER_RADIUS`, `ORBIT_RADIUS_STEP`, `ORBIT_RING_COUNT`, `ORBIT_RADIUS_STEP_PAD`, `ORBIT_DENSITY[]`, `ORBIT_GAP_MULT`/`_FLOOR`/`_STEP`, `ORBIT_SAFETY_MARGIN`, `ORBIT_ANG_VEL`, `ORBIT_FAST_MULT`, `ORBIT_FAST_RING` in their own block) plus `SHIELD_BOUNCE_RESTITUTION`/`SHIELD_BOUNCE_MIN` with the shield constants — the orbit-archetype spec [RETIRED — CS024]. The radii are **fitted to this world, not derived from satellite size**: the outermost satellite edge (676 px) must stay inside the wrap-clean budget `WORLD_H/2 − 20` (~700 px), so raising the ring geometry means raising `WORLD_H`/`WORLD_W` first. Ten of these are live debug knobs whose `def`s derive from them (§2.19) — retune the const, never the `def`. CS021 P4: `HUD_COMBO_X/Y/SIZE` with the CS009 HUD knobs (§2.10).** **CS022 P1/P3: a `WORLD_SIZE_*` block joins the world-size constants (`WORLD_SIZE_FIELD` 4, `WORLD_SIZE_ORBIT` 16, `WORLD_SIZE_MAX`) — `WORLD_W`/`WORLD_H` are now `let`, set by `worldSizeFor(level)`'s archetype read rather than fixed at load (§2.11.1). `ORBIT_INNER_RADIUS`/`ORBIT_RADIUS_STEP` move to 460/276 and `ORBIT_DENSITY[3]` halves to 0.42 (the orbit-archetype spec [RETIRED — CS024]). `ORBIT_RADIUS_STEP_PAD` is RETIRED — left defined as a historical value (the `DEBRIS_COUNT_MAX` precedent, CS018 P3) with zero remaining readers now that `orbitRadiusStepFor` holds the step fixed rather than the outer edge.** **⛔ CS024 REPLACED THE WHOLE DIFFICULTY BLOCK.** Out: `levelDef`/`stepAt`/`TIER_STEPS`, `PHASE_LEN`, `LEVEL_MAX`, `JUNK_CYCLE`, `HUNTER_CAP_STEPS`, `ramp`/`difficultyFactor`/`RAMP_WAVES`, `leverScale`/`LEVER_POWERUP_SIZE`/`LEVER_DOCK_SIZE`, `SAUCER_SMALL_CHANCE_FLOOR/CEIL`, the whole `ORBIT_*` block, the bonus-Debris constants (`BONUS_CANISTER_PIECES/_SCORE`, `BONUS_SPAWN_CHANCE_EARLY/LATE`, `BONUS_RING_PAD`), `GARBAGE_DECAY`/`GARBAGE_FADE`, `POWERUP_DURATION`/`MAGNET_DURATION`, `LARGE_HUNTER_MAX`, and the dead set (`CARGO_GROW_PER`, `DEBRIS_SPEED_PER_WAVE`, `DEBRIS_COUNT_MAX/_HARD_MAX`, the `SAUCER_GAP_*`/`SAUCER_FIRE_MULT_*`/`SAUCER_AIM_ERR_*`/`SAUCER_ACCURACY_RAMP_SCALE` group, `ORBIT_RADIUS_STEP_PAD`, `GARBAGE_CLUMP_MAXSPD`). In: the **lever odometer** section — `LEVERS`, `buildLeverOrder()` (a load-time structural guard, in the style of the `SCOOP_WIDTH[0]` assertion), `LEVER_ORDER`, `leverValues(table, wave)`, `leverState(wave)` — followed by `payloadSlots(n)` (a fixed curve, marked as outside the odometer), plus `MUSIC_INTENSITY_WAVES`/`musicIntensity(wave)` (the renamed `RAMP_WAVES`/`difficultyFactor`, curve byte-identical, kept solely for the music), `GARBAGE_SOFT_MAX` (220) / `GARBAGE_HARD_MAX` (300), `HELD_CLUMP_RING_PAD` (6), `ENGINE_BURN_SECONDS` (10.0), and `FREQ_JITTER` (0.25, frozen at `jitteredInterval()`'s site). `POWERUP_RADIUS` is **30** and `DOCK_RADIUS` **88** — the retired size levers' 2×, baked in; do not restore 1×. `DEBRIS_SPEED_CAP` stays.
 ```
+
+---
+
+## GDD §3 — the rest of the Code Map (CS041 P3)
+
+⛔ **The rule this phase actually applied** — GATE C replaced the original Lever C KEEP/MOVE rule
+with a **correctness sweep**, and this is the rule as executed, amendments included:
+
+> **REMOVE a sentence only if it is FALSE about the current build** — it names a deleted identifier
+> as though live, describes machinery that no longer exists, states a tuning rule whose knobs are
+> gone, or contradicts a `CLAUDE.md` ⛔/⚠ or a later GDD section.
+> **KEEP everything that is merely OLD.** Narration, phase attribution, retune chains, "as of
+> CSxxx" — all stay. Byte reduction is a side effect, never the goal.
+> ⛔ **A statement that an identifier was DELETED is TRUE and STAYS.**
+> ⛔ **Verify against the build before removing.** A hit only inside comments or string literals is
+> dead.
+
+**Three amendments the work forced, all for GATE D to rule on:**
+
+1. **"Corrected inline" was used more than "removed", and it makes rows BIGGER.** Where a false
+   claim had an obvious current-state replacement, the fix was to state the truth, not to delete
+   the sentence. Five of this phase's six rows grew. §3 net: **75,608 → 75,451 bytes, −157.** That
+   is the honest shape of a correctness sweep and should not be read as a failed trim.
+2. **A false claim is often best fixed by extending a correction that already exists elsewhere in
+   the same row**, rather than rewriting the history clause that carries it. Rows 1299, 1300 and
+   1301 each already had a "CS024: … Gone: …" list that had simply been left incomplete. Extending
+   that list preserves the narration AND closes the grep hole.
+3. **A "Gone:" list is a grep landing pad and is load-bearing.** Row 1301's omission of `levelDef`
+   and `Garbage.decay` meant a grep for either landed only on the sentence that ADDED it. Treat an
+   incomplete Gone list as itself a staleness defect.
+
+⛔ **The audit's false-positive rate for "should be removed" is very high, BY DESIGN, and GATE D
+should not read that as the tool failing.** §3 went from 100 candidates to 98 across six swept rows,
+because nearly every candidate sits inside a sentence that correctly says the identifier is gone.
+Two false-positive classes are worth naming for later phases:
+
+- **String-literal identifiers.** `debugOverride` is flagged, but the build holds it as
+  `const DEBUG_OVERRIDE_ID = "debugOverride"` — the scanner strips string contents, so a registry
+  `id` reads as dead. The §3 Benchmark row's ⛔ about it is TRUE and was kept.
+- **Name collisions with unrelated locals.** `ramp` shows 4 live occurrences and the difficulty
+  `ramp()` is nonetheless gone — all four are a local arrow function inside `AudioSys.lowhpSet`
+  that ramps a Web Audio param. This cuts the other way: an identifier can be dead *despite* live
+  hits. Never trust the count alone; read the site.
+
+⛔ **The audit cannot see prose-level staleness.** Seven §3 rows (Canvas/scaling, AudioSys, MusicSys,
+VoiceSys, Input, Chain physics, Main loop) carry zero candidates and were therefore not swept. That
+is not a clean bill of health — it means nothing in them names a dead identifier.
+
+### Row-by-row
+
+| row | before | after | what happened |
+|---|---|---|---|
+| **Helpers** | 2,915 | 1,497 | the only large removal — five paragraphs specifying deleted helpers |
+| **Entity classes** | 7,603 | 7,702 | one correction: `drawBonusRing` & friends named in the CS024 loss list |
+| **game object** | 6,982 | 7,597 | three corrections: the decay clock, `commitEntry`, the CS017 cycle clock |
+| **Flow functions** | 11,815 | 12,006 | two: the decay claim, and three names missing from "Gone:" |
+| **Menu / Options / Rebinding** | 10,008 | 10,304 | one: `DIFFICULTY_ROWS` and the two deleted expiry toggles |
+| **update(dt)** | 4,096 | 4,156 | four: decay, `powerFx`, `ramp(...)`, the whole bonus-Debris pickup block |
+
+⛔ §3's ⛔ count went **13 → 22** — nine new standing prohibitions, all of the form "X is GONE, do
+not reintroduce it". ⚠ unchanged at 1. **No marker was removed.**
+
+### The cuts, verbatim
+
+
+#### Row: **Helpers**
+
+**Why:** Contents column listed difficultyFactor/ramp/leverScale/wavePressure as live helpers; the row's OWN Notes column ends by declaring all four GONE (CS024 P4). Zero live occurrences in the build.
+
+```text
+- `rand`, `randSign`, **`difficultyFactor`/`ramp`** (v1.5), **`leverScale`** (v3.4 P2), **`wavePressure`** (CS017 P4), `wrap`
+```
+
+```text
++ `rand`, `randSign`, `wrap`
+```
+
+**Why:** CORRECTED INLINE, not cut: the constant is live (2 occurrences) but its stated purpose is gone. The build says so at its definition — 'All gone. COLOR.garbageBonus SURVIVES — the debug panel's uncommitted-entry tint reads it.'
+
+```text
+- CS017 P5 adds **`garbageBonus`** `#ffe23a`, the rare bonus Debris's hot-yellow tell, deliberately kept in the salvage hue family so it never reads as a hazard — §2.10)
+```
+
+```text
++ **`garbageBonus`** `#ffe23a` was CS017 P5's bonus-Debris tell and SURVIVES that feature's CS024 P3 removal as the debug panel's uncommitted-entry tint — §2.19)
+```
+
+**Why:** Five paragraphs specifying deleted helpers (difficultyFactor, ramp, leverScale, cycleValue, wavePressure, bonusSpawnChance) — all zero live occurrences. The first actively instructed 'use these for any new wave-scaled value', which is now the wrong instruction, not merely an old one.
+
+```text
+-  **`difficultyFactor(wave)`** = `1−e^(−(wave−1)/RAMP_WAVES)` (0→1 ramp); **`ramp(floor, ceil, wave)`** interpolates any threat parameter through it — use these for any new wave-scaled value (§2.13). **`leverScale(lever, wave)`** (v3.4 P2) wraps `ramp` for a **difficulty lever** `{enabled, start, floor}` — pinned at `start` when disabled, else ramps `start`→`floor` (clamped, never below `floor`); see §2.13 and `DIFFICULTY-LEVERS.md`. **`cycleValue(base, cycle)`** (CS017 P1, beside `leverScale`) = `base × (1 + cycle × CYCLE_GAIN)` — the FORK-CS017-A spiral term; unused this phase, wired by P3 (§2.13). **`wavePressure()`** (CS017 P4, beside `difficultyFactor`) = `min(1, game.waveTime / DEBUG.saucerPressureSecs)` — the FORK-CS017-B time-in-level pressure term, `0` at a level's start rising to `1`; composes on top of (never replaces) a lever's wave-based `ramp()` value at the two frozen saucer sites (§2.13). **`bonusSpawnChance()`** (CS017 P5, directly after `cycleValue`) returns the bonus Debris's per-wave spawn probability, easing `BONUS_SPAWN_CHANCE_EARLY` → `BONUS_SPAWN_CHANCE_LATE` **linearly** across `game.cycleWave` (§2.10). It is the one lever that deliberately does **not** ramp on `difficultyFactor` — its two constants are defined as the cycle's exact endpoints and the shipped curve is asymptotic, so a `ramp()` version would never reach the value `BONUS_SPAWN_CHANCE_LATE` claims to be; the deviation is argued at the function and registered in `DIFFICULTY-LEVERS.md` §2.6.
+```
+
+```text
++ (removed outright)
+```
+
+**Why:** KEPT AND EXTENDED, not cut: the ⛔ is true and protective. Extended to name cycleValue/bonusSpawnChance, which were gone but unlisted, and to carry the instruction the deleted difficultyFactor paragraph used to give.
+
+```text
+- **⛔ CS024 P4: `difficultyFactor`, `ramp`, `leverScale` and `wavePressure` are GONE.** The curve survives only as `musicIntensity(wave)` (up in the odometer block, not here), and nothing else interpolates on a wave-driven curve any more — every scaling quantity reads `liveLevers(game.wave)` at the point of use.
+```
+
+```text
++ **⛔ CS024 P4: `difficultyFactor`, `ramp`, `leverScale` and `wavePressure` are GONE**, as are CS017's `cycleValue` and CS017 P5's `bonusSpawnChance` (retired with the bonus Debris, CS024 P3). The curve survives only as `musicIntensity(wave)` (up in the odometer block, not here), and nothing else interpolates on a wave-driven curve any more — every scaling quantity reads `liveLevers(game.wave)` at the point of use. **⛔ A new wave-scaled value is a LEVER, never a reintroduced ramp helper** (§2.13, `DIFFICULTY-LEVERS.md`).
+```
+
+
+#### Row: **Entity classes**
+
+**Why:** KEPT the CS017 P5 paragraph (true history) but extended the CS024 correction: it said Garbage 'loses bonus' without naming drawBonusRing/BONUS_RING_PAD/BONUS_CANISTER_*, so a grep for drawBonusRing landed ONLY on the sentence that says it was added. That silence is what the retired-name rule exists to prevent.
+
+```text
+- `Garbage` loses `decay` and `bonus` and both blink-out render branches, and
+```
+
+```text
++ `Garbage` loses `decay` and `bonus` — and with `bonus`, `drawBonusRing()`, `BONUS_RING_PAD` and `BONUS_CANISTER_PIECES`/`_SCORE` — and both blink-out render branches, and
+```
+
+
+#### Row: **game object**
+
+**Why:** The v3.3 P4 clause states 'a single carries a `decay` clock again (`GARBAGE_DECAY`, singles only)' as current; CS024 P3 deleted decay outright (0 live occurrences) and the row's own CS024 list did not mention it. Corrected by extending the existing CS024 list rather than rewriting the history clause.
+
+```text
+- **CS024:** out — `game.orbitLayout`, `game.hunterTimer`, `game.powerFx`.
+```
+
+```text
++ **CS024:** out — `game.orbitLayout`, `game.hunterTimer`, `game.powerFx`, and (P3) the `Garbage.decay` clock, `GARBAGE_DECAY` and `game.stats.garbageDecayed`'s successor machinery — **loose Debris is permanent**, so the v3.3 P4 sentence above is history, not the current shape (§2.10.1).
+```
+
+**Why:** `commitEntry` has zero occurrences anywhere in the build. CS034 P7 replaced the initials-entry commit with a direct write at the seam (build line 11680: `game.lastScoreId = HighScores.add(run).id`). The sentence named a function that no longer exists as the live write path.
+
+```text
+- armed/cleared at the `dying → gameover` seam and in `commitEntry` (§2.18).
+```
+
+```text
++ armed/cleared at the `dying → gameover` seam, where `HighScores.add(run).id` sets it (§2.18). **⛔ `commitEntry` is GONE — CS034 P7 deleted the initials-entry flow outright**, so gameover has no input mode of its own (§2.9).
+```
+
+**Why:** 'CS017 P1 adds cycle/cycleWave/waveTime — the difficulty cycle clock' stood with no removal note anywhere in the row. cycle/cycleWave have zero live occurrences; the build's own comment says they were 'retired outright (FORK-CS018-A)'. Left uncorrected this contradicted CLAUDE.md's ⛔ one-clock invariant, the same defect P2 found in the Constants row.
+
+```text
+- All three are inert this phase — no lever reads them yet.**
+```
+
+```text
++ All three were inert at that phase. **⛔ `cycle` and `cycleWave` are GONE — CS018 P4 retired the cycle clock (FORK-CS018-A) and CS024 P4's odometer replaced its replacement; only `waveTime` survives.** `CLAUDE.md` pins the rule this leaves behind: ONE clock, `game.wave`, no parallel clocks (§2.13).**
+```
+
+
+#### Row: **Flow functions**
+
+**Why:** Present-tense 'a single NOW decays via GARBAGE_DECAY' — deleted CS024 P3, zero live occurrences, and the row's own CS024 'Gone:' list did not cover it. This is the third row in §3 to state the retired decay clock as live (Constants row at P2, game object, here).
+
+```text
+- and a single now decays via `GARBAGE_DECAY` in `Garbage.update()` (§2.5.1/§2.10).
+```
+
+```text
++ and a single decayed via `GARBAGE_DECAY` in `Garbage.update()` — **⛔ deleted by CS024 P3; loose Debris is permanent and `Garbage.update()` counts nothing down** (§2.5.1/§2.10.1).
+```
+
+**Why:** The 'Gone:' list is this row's grep landing pad and omitted three names the same changeset deleted. levelDef appeared only under '[RETIRED — CS024]' phrasing about its archetype COLUMN, which does not tell a reader the function itself is gone.
+
+```text
+- `activeRingsFor`, `maxOrbitSpeed`, `updateDebrisDrift`, `bonusSpawnChance`, `HunterSatellite.spawnCore`, `powerMode`, `powerDuration`.
+```
+
+```text
++ `activeRingsFor`, `maxOrbitSpeed`, `updateDebrisDrift`, `bonusSpawnChance`, `HunterSatellite.spawnCore`, `powerMode`, `powerDuration`, `levelDef` (with the whole level table — P4), and `Garbage.decay`/`GARBAGE_DECAY` (P3).
+```
+
+
+#### Row: **Menu / Options / Rebinding**
+
+**Why:** CORRECTED INLINE: present-tense 'persists' was false (CS024 P6 deleted both settings; build says 'shotPowerupMode / magnetMode / chainGuardMode STOOD HERE'), and the row went on to give DIFFICULTY_ROWS as ["shot","magnet","autoshield","back"] with no correction anywhere. Live value is ["autoshield", "back"]. History sentences kept; only the tense fixed and the supersession stated.
+
+```text
+- with the two powerup-expiry toggles; `settings {shotPowerupMode,magnetMode}` persists into `afd_settings_v1` (§2.14/§2.16).
+```
+
+```text
++ with the two powerup-expiry toggles; `settings {shotPowerupMode,magnetMode}` persisted into `afd_settings_v1` (§2.14/§2.16). **⛔ CS024 P6 made every powerup count-based and DELETED both toggles — `shotPowerupMode`/`magnetMode`/`chainGuardMode` are gone from `settings`, and `DIFFICULTY_ROWS` is now `["autoshield", "back"]`, so the four-entry array in the next sentence is history, not the current shape** (§2.14).
+```
+
+
+#### Row: **update(dt)**
+
+**Why:** Two false claims in one clause: `Garbage.update()` counts down GARBAGE_DECAY (deleted CS024 P3) and a `powerFx` countdown step (deleted CS024 P6). Both zero live occurrences; `powerBudget` is live with 28. Row 1300 already carried the powerFx removal, so update(dt) contradicted the game-object row.
+
+```text
+- also the pickup pass above now **scoops** `pieces > 1` clumps, and `Garbage.update()` counts down `GARBAGE_DECAY` for singles) → **powerup pickup + `powerFx` countdown** (v1.7)
+```
+
+```text
++ also the pickup pass above now **scoops** `pieces > 1` clumps; **⛔ CS024 P3 then deleted `Garbage.decay`/`GARBAGE_DECAY` — loose Debris is permanent and nothing counts down here**, §2.10.1) → **powerup pickup + `powerBudget` decrement** (v1.7; **⛔ `powerFx` is GONE — CS024 P6 made every effect count-based**, §2.14)
+```
+
+**Why:** 'now sets ... via ramp(...)' — the difficulty ramp() was deleted CS024 P4. NOTE THE TRAP: `ramp` shows 4 live occurrences, but all four are a local arrow function inside AudioSys.lowhpSet that ramps a Web Audio param. Name collision, not survival — checked before cutting.
+
+```text
+- The **saucer spawn block** now sets the next gap and the small/big roll via `ramp(...)` off `game.wave` (v1.5/F10 — §2.6, §2.13).
+```
+
+```text
++ The **saucer spawn block** sets the next gap and the small/big roll off `game.wave` (v1.5/F10 — §2.6, §2.13); **⛔ it reads `liveLevers(game.wave)` now, NOT `ramp(...)` — CS024 P4 deleted `ramp` (§2.13).**
+```
+
+**Why:** A full paragraph specifying a pickup-pass branch that no longer exists. `bonus` and BONUS_CANISTER_SCORE have zero live occurrences; the build's tombstone at line 12103 quotes the exact deleted line. Replaced by a one-line 'gone' note rather than silence, so a future grep still lands.
+
+```text
+-  **CS017 P5: the pickup pass gained ONE block and no restructuring** — a `if (g.bonus)` payout at the top of the capture branch, above the single/clump split (so both paths trip it) and inside the capture gate (so only a real scoop counts): it clears the flag, calls `addScore(BONUS_CANISTER_SCORE)` and pushes a `FloatText`. The `take = min(room, g.pieces)` clump-intake loop below it is **unchanged** — a bonus piece of Debris is an ordinary multi-piece `Garbage` and needs no new intake (§2.10).
+```
+
+```text
++  **⛔ CS017 P5's `if (g.bonus)` payout block is GONE** — CS024 P3 removed the bonus Debris entirely, taking `Garbage.bonus`, `BONUS_CANISTER_SCORE` and this pickup-pass branch with it; the build carries a tombstone at the old site. The `take = min(room, g.pieces)` clump-intake loop is unchanged and was never part of it (§2.10).
+```

@@ -1,62 +1,143 @@
-import re,sys,collections
-html=open('orbital-overhaul.html',encoding='utf-8').read()
-# --- extract the classic script block (largest <script> without type=module)
-blocks=[]
-for m in re.finditer(r'<script(?P<attr>[^>]*)>',html):
-    if 'type="module"' in m.group('attr') or 'src=' in m.group('attr'): continue
-    end=html.index('</script>',m.end())
-    blocks.append(html[m.end():end])
-src=max(blocks,key=len)
-# --- character scanner: strip // and /* */ comments, keep string contents out too
+#!/usr/bin/env python3
+# scratchpad/gdd-audit.py — CS041 P3. REPORTING ONLY: never edits the GDD, never runs under
+# run-all.js (which globs test-*.js).
+#
+# Answers one question: which identifiers does ORBITAL-OVERHAUL-GDD.md §2/§3 name in backticks
+# that no longer exist in the build? Those are staleness CANDIDATES.
+#
+# ⛔ A CANDIDATE IS NOT A VERDICT. "GARBAGE_DECAY was removed in CS024 P3" is TRUE and PROTECTIVE,
+#    and this tool flags it for exactly the reason the sentence exists. Every hit needs a context
+#    read before anything happens to it. --detail exists to make that read cheap.
+# ⛔ The comment/string strip is a CHARACTER SCANNER, never a regex. CLAUDE.md's Test rules say
+#    why: a line comment in this build contains /*, so a block-comment regex run first eats live
+#    code. 67% of the script block is comment or string, so getting this wrong is not subtle.
+#    Template literals keep their ${...} expressions — identifiers used only there are still live.
+#
+# Usage:  python3 scratchpad/gdd-audit.py                 per-section candidate counts
+#         python3 scratchpad/gdd-audit.py --detail 3      one line per hit, with context
+#         python3 scratchpad/gdd-audit.py --detail 2.19 --all   include implausible names too
+
+import re, sys, collections
+
+GDD, BUILD = 'ORBITAL-OVERHAUL-GDD.md', 'orbital-overhaul.html'
+
+
+def classic_script(html):
+    """The one classic <script> block. The CS033 module bridge tag and any src= tag are skipped."""
+    best = ''
+    for m in re.finditer(r'<script(?P<attr>[^>]*)>', html):
+        if 'type="module"' in m.group('attr') or 'src=' in m.group('attr'):
+            continue
+        body = html[m.end():html.index('</script>', m.end())]
+        if len(body) > len(best):
+            best = body
+    return best
+
+
 def strip(s):
-    out=[];i=0;n=len(s)
-    while i<n:
-        c=s[i]
-        if c=='/' and i+1<n and s[i+1]=='/':
-            while i<n and s[i]!='\n': i+=1
-        elif c=='/' and i+1<n and s[i+1]=='*':
-            i+=2
-            while i+1<n and not(s[i]=='*' and s[i+1]=='/'): i+=1
-            i+=2
+    """Drop // and /* */ comments and string CONTENTS; keep ${...} inside template literals."""
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == '/' and i + 1 < n and s[i + 1] == '/':
+            while i < n and s[i] != '\n':
+                i += 1
+        elif c == '/' and i + 1 < n and s[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (s[i] == '*' and s[i + 1] == '/'):
+                i += 1
+            i += 2
         elif c in '"\'`':
-            q=c; out.append(' '); i+=1
-            while i<n and s[i]!=q:
-                if s[i]=='\\': i+=1
-                i+=1
-            i+=1
+            q, i = c, i + 1
+            out.append(' ')
+            while i < n and s[i] != q:
+                if s[i] == '\\':
+                    i += 2
+                    continue
+                if q == '`' and s[i] == '$' and i + 1 < n and s[i + 1] == '{':
+                    depth, i = 1, i + 2
+                    while i < n and depth:
+                        if s[i] == '{':
+                            depth += 1
+                        elif s[i] == '}':
+                            depth -= 1
+                            if not depth:
+                                break
+                        out.append(s[i])
+                        i += 1
+                i += 1
+            i += 1
         else:
-            out.append(c); i+=1
+            out.append(c)
+            i += 1
     return ''.join(out)
-live=strip(src)
-print("script %d chars -> live %d chars (%.0f%% is comment/string)" % (len(src),len(live),100*(1-len(live)/len(src))),file=sys.stderr)
-# --- identifiers the GDD names
-gdd=open('ORBITAL-OVERHAUL-GDD.md',encoding='utf-8').read()
-lines=gdd.split('\n')
-hdr=[(i,re.match(r'^#{2,4} (\S+)',l).group(1)) for i,l in enumerate(lines) if re.match(r'^#{2,4} ',l)]
-def sec_of(idx):
-    cur='pre'
-    for i,n in hdr:
-        if i<=idx: cur=n
-        else: break
-    return cur
-cand=collections.defaultdict(set)
-for i,l in enumerate(lines):
-    s=sec_of(i)
-    if not (s.startswith('2') or s.startswith('3')): continue
-    if s=='3' and i<70: continue
-    for tok in re.findall(r'`([^`\n]{2,60})`',l):
-        for name in re.findall(r'\b([A-Za-z_$][A-Za-z0-9_$]{3,})\b',tok):
-            cand[name].add(s)
-IGNORE=re.compile(r'^(true|false|null|undefined|this|const|let|function|return|else|break|Math|Infinity|NaN|Object|Array|JSON|window|document|navigator|localStorage|performance|requestAnimationFrame|href|width|height|text|size|type|name|value|index|scroll|back|pause|title|playing|dying|gameover|entry|full|small|closed|craft|piece|guard|rapid|triple|magnet|engine|scoop|health|level|drop|tier|noise|zen|retro|ambient|derelict|drift|warehouse|main|goal|initials)$')
-dead=[]
-for name,secs in cand.items():
-    if IGNORE.match(name): continue
-    if re.search(r'\b'+re.escape(name)+r'\b',live): continue
-    dead.append((name,sorted(secs)))
-dead.sort(key=lambda x:(x[1],x[0]))
-bysec=collections.defaultdict(list)
-for name,secs in dead:
-    for s in secs: bysec[s].append(name)
-print("GDD names %d distinct identifiers in §2/§3; %d have ZERO live (non-comment, non-string) occurrence in the build\n" % (len(cand),len(dead)))
-for s in sorted(bysec,key=lambda x:[int(p) for p in x.rstrip('.').split('.')]):
-    print("§%-8s %2d  %s" % (s,len(bysec[s]),", ".join(sorted(bysec[s]))))
+
+
+def plausible(name):
+    """A real build identifier looks like UPPER_SNAKE or camelCase. Prose in backticks does not."""
+    return bool(re.fullmatch(r'[A-Z][A-Z0-9]*(_[A-Z0-9]+)+', name)
+                or re.fullmatch(r'[a-z][a-z0-9]*([A-Z][A-Za-z0-9]*)+', name))
+
+
+def main():
+    args = sys.argv[1:]
+    want = args[args.index('--detail') + 1] if '--detail' in args else None
+    every = '--all' in args
+
+    live = strip(classic_script(open(BUILD, encoding='utf-8').read()))
+    lines = open(GDD, encoding='utf-8').read().split('\n')
+
+    heads = [(i, re.match(r'^#{2,4} (\S+)', l).group(1).rstrip('.'))
+             for i, l in enumerate(lines) if re.match(r'^#{2,4} ', l)]
+
+    def section_of(idx):
+        cur = 'pre'
+        for i, num in heads:
+            if i > idx:
+                break
+            cur = num
+        return cur
+
+    hits = collections.defaultdict(list)          # section -> [(name, lineno, row)]
+    seen = collections.defaultdict(set)
+    for i, line in enumerate(lines):
+        sec = section_of(i)
+        if not (sec[0] in '23'):
+            continue
+        if sec == '0' or (sec == '3' and i < 70):  # §0's own index rows are not GDD prose
+            continue
+        row = line.split(' | ')[0][1:].strip() if line.startswith('| **') else ''
+        for quoted in re.findall(r'`([^`\n]{2,60})`', line):
+            for name in re.findall(r'\b([A-Za-z_$][A-Za-z0-9_$]{3,})\b', quoted):
+                if not every and not plausible(name):
+                    continue
+                if name.endswith('_') or re.search(r'\b' + re.escape(name) + r'\b', live):
+                    continue
+                if name in seen[(sec, i)]:
+                    continue
+                seen[(sec, i)].add(name)
+                hits[sec].append((name, i + 1, row))
+
+    order = sorted(hits, key=lambda s: [int(p) for p in s.split('.')])
+    if want:
+        want = want.lstrip('§').rstrip('.')
+        got = hits.get(want, [])
+        grouped = collections.defaultdict(set)
+        for name, ln, row in got:
+            grouped[(ln, row)].add(name)
+        for (ln, row) in sorted(grouped):
+            names = grouped[(ln, row)]
+            print('L%-6d %-42s %s' % (ln, (row or '—')[:42], ', '.join(sorted(names))))
+        print('\n%d rows/lines carry candidates in §%s; %d distinct names\n'
+              % (len(grouped), want, len({n for n, _, _ in got})))
+        return
+    total = {n for v in hits.values() for n, _, _ in v}
+    print('%d distinct identifiers named in GDD §2/§3 have ZERO live occurrence in the build.'
+          % len(total))
+    print('⛔ Candidates, not verdicts — read the context before touching one.\n')
+    for sec in order:
+        names = sorted({n for n, _, _ in hits[sec]})
+        print('§%-8s %3d  %s' % (sec, len(names), ', '.join(names)))
+
+
+main()
