@@ -122,6 +122,7 @@ things before this table existed.
 | `EXTERNAL-FILES.md` | Runtime files the shipped game loads. | Adding one |
 | `RATIONALE.md` | Why the rules in this file exist. | On demand only |
 | `DECISIONS.md` | Judgment calls made off-cycle (outside the phase flow) where no plan doc covered the question. | On demand only |
+| `TODO.md` | Hand-curated backlog — not a plan doc, not session-authoritative. | Starting a new changeset, or when idle |
 | `log/CS0##.md` | Per-changeset narrative build log **and** that changeset's version-history entry. | **Never by default** |
 | `archive/` | Spent planning docs. | **Never by default** |
 
