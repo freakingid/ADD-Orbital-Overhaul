@@ -1,242 +1,70 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS041 · Phase: P5 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS041 · Phase: P9 (closed) · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS041
 
-- P1 — The read contract. GDD gains `## 0. How to read this document` (9.8 KB, additive, before §1):
-  one row per §2.x/§3.x subsection — all 35 — carrying the section number, its name, an approximate
-  size, and a "read this when you are touching…" line phrased as *what you might be editing*.
-  `CLAUDE.md`'s document map row goes from "§1–§3 before code" to "§0 + §1 always; then the §2.x/§3.x
-  your phase names", with the full contract stated once under the map. `CLAUDE.md` gains its own
-  50 KB ceiling and a `RATIONALE.md` pressure valve (FLAG-CS041-b). No GDD content deleted; no build
-  edit. Measured GDD load for a typical phase: **~505 KB → ~33–46 KB** (see Working / verified).
+- P1 — GDD gains `## 0. How to read this document`: a 35-row index, one row per §2.x/§3.x
+  subsection, letting a session load only what its phase names instead of §1–§3 in full.
+  `CLAUDE.md`'s document map switches to the named-subsection contract; `CLAUDE.md` gains its own
+  50 KB ceiling (FLAG-CS041-b). No GDD content deleted; no build edit.
+- P2 — GDD §3's Constants row (22.5 KB append-only changelog) replaced by a 3.1 KB pointer,
+  preserving three since-dead "standing rules" it had shipped as live instructions — one directly
+  contradicted `CLAUDE.md`'s "one clock" invariant. This finding triggered GATE C.
+- GATE C (closed) — Lever A (§0) and the read contract confirmed working; Lever C's specced
+  30–40% prose trim declined, re-scoped to a **staleness sweep** (P3–P5); FORK-CS041-A resolved to
+  **no version bump**. Full text: `log/CS041.md`.
+- P3 — Staleness rule (remove only what is FALSE, keep what is merely OLD) plus a committed,
+  reporting-only identifier audit (`scratchpad/gdd-audit.py`); applied to GDD §3's table. 6 of 12
+  candidate rows corrected, 0 removed outright; §3's ⛔ count 13 → 22.
+- GATE D (closed) — rule ratified as written; no re-run of P3 required.
+- P4 — Swept §2.19/§2.13/§2.14+.1+.2/§2.10+.1+.2/§2.5+.1/§2.7/§2.12 (the CS024/CS038/CS040
+  fallout). 105 candidates → 9 real, 9 corrections, 0 removals. Found `POWERUP_HEALTH_GAP` and
+  CS038 P5's twelve retired knobs each live-as-written in multiple places; narrowed FLAG-8a.
+- P5 — Swept the remainder (§2.4/§2.6/§2.8/§2.9/§2.11+.1/§2.16/§2.17/§2.18/§2.20+.1/§2.23/
+  §3.1–§3.4). 41 candidates → 7 real, 7 corrections, 0 removals. Resolved FLAG-CS041-d (the weekly
+  pool modulus was right in number, wrong in stated structure). Found and fixed a GDD citation of a
+  deleted test file.
+- P9 — Closing. Re-measured all 35 of GDD §0's size rows (drift ≤0.5 KB per row, byte-neutral
+  overall); added the re-measure to `CLAUDE.md`'s closing-phase rules. Confirmed `CLAUDE.md`'s read
+  contract still describes reality and its own ceiling still has headroom (48.4 KB / ~1.6 KB left).
+  `STATUS.md` rolled and reset. Both planning docs archived; `log/GDD-TRIM-CS041.md` stays in `log/`.
 
-- P2 — GDD §3's **Constants** row becomes a pointer. Its two content cells held **22,852 bytes** on
-  one line — an append-only changelog of every tuning constant since v1.1, plus a "Notes for
-  modification" cell. Replaced by **3,140 bytes**: the constants block's grouping, the standing
-  rules, and a one-line index of every retired constant NAME so a grep for `GARBAGE_DECAY` finds
-  "deleted, see `log/`" rather than silence. **Saving 19,712 bytes (19.2 KB).** §3 body 94,200 →
-  75,608 bytes; GDD 544,406 → 524,764. Cut text preserved verbatim in the new
-  `log/GDD-TRIM-CS041.md` (FORK-CS041-C). §3's ⛔ count is **unchanged at 13**, ⚠ at 1. §0's §3 size
-  row re-measured 94.2 → 73.8 KB.
-
-- GATE C (closed) — **Lever A worked; Lever C is re-scoped, not cancelled.** Items 1, 2 and 5 came
-  back clean: the read contract points at the right subsections and missed nothing. **FORK-CS041-A:
-  NO `GAME_VERSION` bump** — the build is byte-identical to CS040's and must keep saying so in every
-  high-score record and leaderboard row; both live version pins stay un-repointed. **FORK-CS041-B:
-  the specced 30–40% prose trim is NOT wanted** — replaced by a **staleness sweep** (P3–P5, GATE D
-  retained after P3), on the evidence that §2/§3's problem is wrongness, not size. **P6–P8 dropped.**
-
-- P3 — Staleness sweep of GDD §3's table (everything but P2's Constants row), plus the audit as a
-  committed tool (`scratchpad/gdd-audit.py`; reporting only, not wired into `run-all.js`). **Six of
-  the twelve candidate-carrying rows were wrong; five were fixed by CORRECTION, not removal, so §3
-  went 75,608 → 75,451 bytes — a net −157.** That is the shape of a correctness sweep and is the
-  intended outcome. One large removal (Helpers, 2,915 → 1,497: five paragraphs specifying
-  `difficultyFactor`/`ramp`/`leverScale`/`cycleValue`/`wavePressure`/`bonusSpawnChance`, all
-  deleted, one of which instructed "use these for any new wave-scaled value"). **§3's ⛔ count went
-  13 → 22** — nine new "X is GONE" prohibitions; ⚠ unchanged at 1; **no marker removed.** Rule as
-  applied, three amendments, both false-positive classes and every cut: `log/GDD-TRIM-CS041.md`.
-
-- GATE D (closed) — **PASSES as written; all three of P3's amendments ratified unchanged.** Correct
-  inline over remove; extend an existing "Gone:" list rather than rewrite its history clause; an
-  incomplete "Gone:" list is itself a staleness defect. No re-run of P3 was required.
-
-- P4 — Staleness sweep of the CS024/CS038/CS040 fallout: §2.19, §2.13, §2.14+.1+.2, §2.10+.1+.2,
-  §2.5+.1, §2.7, §2.12. **105 candidates → 9 false claims → 9 corrections, 0 removals**, on 9 changed
-  lines. Swept sections 183,573 → 185,626 bytes (**+2,053**); whole-GDD delta is the same +2,053, so
-  nothing outside them moved. §2.7 and §2.10.2 came back **clean** — every candidate there is a
-  sentence correctly saying the identifier is gone. The nine: `clampShown`'s carrier count and a dead
-  `garbageAttractDelay` exemplar (§2.19); the JUNK chain named as `speedLarge/Medium/Small` instead
-  of `junkSpeed*`, contradicting the next bullet (§2.13); `POWERUP_HEALTH_GAP` alive in two places
-  (§2.14); the six `deliveryFloat*` and four `hunterPulse*` CS038 P5 retirements still written as
-  `DEBUG.*` rows (§2.10, §2.5); `COLOR.clumpHot` as a live comparand and **FLAG-8a's invalidated
-  premise** (§2.12). Every cut preserved verbatim with its verification in `log/GDD-TRIM-CS041.md`.
-  Three new false-positive classes documented there. **No build edit; suite 171/171, 0 skips.**
-
-- P5 — The rest of the sweep: §2.4, §2.6, §2.8, §2.9, §2.11+.1, §2.16, §2.17, §2.18, §2.20+.1, §2.23,
-  §3.1–§3.4. **41 candidates → 7 false claims → 7 corrections, 0 removals**, on 9 changed lines.
-  Swept sections 199,349 → 200,932 bytes (**+1,583**); whole-GDD delta the same, so nothing outside
-  moved. **Nine of fifteen sections came back clean.** The seven: `stepTime` for `tStep` in the frozen
-  `scheduleStep` description (§2.8); the weekly pool modulus written as a literal `% 16` when the build
-  derives it from `WEEKLY.length` (§2.17); CS038 P5's last two retired knobs still called `DEBUG_VARS`
-  rows (§2.20); `damageShip`'s call signature wrong in both names and arity (§3.1); the low-health glow
-  still described as `createRadialGradient` corner fills after CS038 GATE A, and a fill-count
-  justification resting on a deleted feature **and a test file that does not exist** (§3.2); and
-  §3.3 telling a future session to put new effects on the deleted `game.powerFx`, against a CLAUDE.md
-  ⛔ that names it. **⛔ FLAG-CS041-d RESOLVED** (below). Full accounting of all 292 surviving audit
-  hits — every one with a reason, none unexplained — in `log/GDD-TRIM-CS041.md`. **No build edit;
-  suite 171/171, 0 skips.**
-
-Full narrative: `log/CS041.md` (written at P9).
+Full narrative for every phase and both gates: `log/CS041.md`.
 
 ## Working / verified
 
-- Full suite: **171 files, 171 passed, 0 failed, 0 skipped**. No test file touched this phase.
-- **`orbital-overhaul.html` is byte-identical to CS040's** — `git diff --stat` shows the GDD and
-  `log/GDD-TRIM-CS041.md` only. FORK-CS041-A holds: no version bump, no version pin re-pointed.
-- The four literal prose pins all still match, re-checked after P5's nine edits: §3.2 still reads
-  "plus two deliberate exceptions", the file nowhere says "three", no `§2.13.1` cross-reference
-  exists, and §2.4/§2.11's banner prose is intact. ⚠ **P5 edited the pinned line itself twice** (both
-  §3.2 corrections land on L1324) — both were written to leave the count at two, and the pin was
-  re-verified after.
-- **Every `scratchpad/*.js` citation in the GDD was checked for existence** (new check, P5): 7
-  distinct cited files exist; exactly one was dangling (`test-cs017-p5.js`, §3.2) and it is now named
-  as missing rather than cited as evidence. **Not a systemic problem** — worth re-running, cheaply,
-  at any future doc sweep.
-- §0's coverage is machine-checked, not eyeballed: all 35 §2.x/§3.x headings have exactly one row,
-  no row names a section that does not exist, and **every index name is an exact prefix of its real
-  heading** — names are the heading's own, minus its trailing version/changeset stamp.
-- **Measured read contract, old vs new.** Old rule (§1–§3): 1.9 + 395 + 107 = **~505 KB**. New rule
-  for a representative phase — §0 (9.8) + §1 (1.9) + two named subsections, e.g. §2.14 Powerups
-  (25.8) + §2.14.2 Chain Guard (8.8) = **~46 KB**; a lighter phase, e.g. §2.21 (8.8) + §2.22 (12.9),
-  = **~33 KB**. **A ~91–94% reduction**, with nothing deleted.
-- GDD 534,526 → 544,406 bytes (+9,880, all of it §0 and the §5.1 clause) **at P1**. `CLAUDE.md`
-  46,161 → 48,268 bytes (47.1 KB / 836 lines), inside its new 50 KB ceiling with ~2.9 KB of
-  headroom — untouched since P1.
-- **GDD running total: 534,526 (pre-CS041) → 526,660 bytes**, a net **−7,866** across P1–P4.
-  Measured off each commit, not summed from the ledger: **+9,926** (P1 §0 index) **−19,688**
-  (P2 Constants cell) **−157** (P3 §3 sweep) **+2,053** (P4 §2 corrections). ⚠ P1's and P2's own
-  ledger lines above quote per-*section* figures that differ from these whole-file deltas by tens of
-  bytes; both are right about their own subject. ⛔ **The headline number of this changeset is
-  neither** — it is the per-session read contract (~505 KB → ~33–46 KB) plus the count of false
-  statements removed from the file.
+- Full suite: **171 files, 171 passed, 0 failed, 0 skipped** at close. `orbital-overhaul.html` is
+  byte-identical to CS040's across the whole changeset — no phase's diff touches it.
+- The four literal prose pins (§1.3b) all still match, re-checked after every phase's edits.
+- Headline result: per-session GDD load for a representative phase, old rule vs new — **~505 KB →
+  ~33–46 KB**, a ~91–94% reduction, with nothing deleted. GDD whole-file size: 534,526 → 528,243
+  bytes (net **+3,717** — P1's additive index outweighs the sweep's net −16,209 across P2–P5).
+- The staleness sweep's own result: ~246 audit candidates across P3–P5, 16 real (a ~93–94%
+  false-positive rate, as GATE C's own sample predicted) — every real hit was a defect byte-counting
+  would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
 
-- **⛔ P3–P5 ARE THE SWEEP; P6–P8 NO LONGER EXIST.** GATE D is **closed** (passed as written, P4).
-  **The sweep's failure mode is the inverse of the trim's** — not "cut something protective" but "cut
-  a true sentence because an audit flagged the dead identifier inside it." P4 removed nothing at all
-  and that was the right outcome; **P5 should expect the same."
-- **⛔ The sweep must not be run as a size trim.** Byte reduction is a side effect. A phase that
-  removes four false sentences and reports "the rest is true" has succeeded; padding the number is
-  the way this goes wrong.
-- **⛔ THE AUDIT'S FALSE-POSITIVE RATE FOR "REMOVE THIS" IS VERY HIGH, BY DESIGN — CONFIRMED TWICE.**
-  P4: **105 candidates, 9 false claims — a ~91% false-positive rate**, and §2.14's candidate count
-  went **UP** (15 → 19) on a phase that made §2.14 more accurate, because the corrections are written
-  in the GDD's own slash-glob style. ⛔ **Never read the count as a progress bar.** P3's finding,
-  which still stands: §3 went 100 candidates → 98 across six swept rows, because nearly every candidate sits
-  inside a sentence that correctly says the identifier is gone. **A gate reading the count as a
-  progress bar will conclude the phase failed; it did not.** Two false-positive classes are now
-  documented: identifiers held as **string literals** (`debugOverride` is `const DEBUG_OVERRIDE_ID =
-  "debugOverride"`, and the scanner strips string contents), and **name collisions** (`ramp` shows 4
-  live hits, all a local arrow function in `AudioSys.lowhpSet`, while the difficulty `ramp()` really
-  is gone — so an identifier can be dead *despite* live hits). Never trust the count; read the site.
-- **⛔ SEVEN §3 ROWS WERE NOT SWEPT AND THAT IS NOT A CLEAN BILL OF HEALTH.** Canvas/scaling,
-  AudioSys, MusicSys, VoiceSys, Input, Chain physics and Main loop carry zero candidates, which only
-  means nothing in them names a dead identifier. **The audit cannot see prose-level staleness** — a
-  wrong ordering claim, a superseded rule stated in words. Covering them is a
-  different and much more expensive pass, and it should be scoped deliberately — GATE D did not ask
-  for it. **The same caveat now applies to §2**: §2.7 and §2.10.2 "came back clean" only in the sense
-  that nothing in them names a dead identifier.
-- **The decay clock was stated as live in THREE separate §3 rows** (Constants, fixed at P2; game
-  object; Flow functions; and a fourth in `update(dt)`). One deletion — CS024 P3's — left four
-  independent false claims behind. **P4 confirmed the multiplicity prediction, for different
-  deletions:** `POWERUP_HEALTH_GAP` (CS040 P2) was live in **two** §2.14 sites, and CS038 P5's twelve
-  retired presentation knobs in **two** more (§2.10's six `deliveryFloat*`, §2.5's four
-  `hunterPulse*`). The decay clock itself was clean everywhere in §2 — §2.10, §2.10.1 and §2.5.1 all
-  describe it correctly as deleted. **One deletion leaving N false claims is the pattern; which
-  deletions did it is not predictable from the changeset.**
-- **✅ FLAG-CS041-d RESOLVED (P5) — and the answer was "neither literal is the mechanism."** The live
-  `poolIndex()` is `((year*52 + week) % this.WEEKLY.length + this.WEEKLY.length) % this.WEEKLY.length`
-  — the modulus is **derived from the pool**, never a literal, plus a negative guard the GDD omitted.
-  `WEEKLY.length` counted from the live table is **16**, pinned by `scratchpad/test-f9.js:111`. So the
-  GDD's number was right and its structure was wrong; §2.17 now names `WEEKLY.length`. ⛔ **Two stale
-  `% 15` comments confirmed and NOT fixed, both needing a one-line edit this changeset forbids:**
-  `orbital-overhaul.html:99` (a build edit) and `scratchpad/test-f9.js:11` (a test edit — its header
-  comment only; the assertions at 111/155/162 all correctly use 16). **Neither is load-bearing today;
-  both will mislead the next reader.** Worth folding into whatever changeset next touches either file.
-- **⛔ ONE §3 ROW FLAGGED FOR A FUTURE PASS, DELIBERATELY NOT TOUCHED (P5).** §3's Entities row
-  (L1301) still reads "**v3.4 (P2):** `Powerup.radius` and `Dock.radius` are now each `BASE_RADIUS *
-  leverScale(LEVER, game.wave)`" — present tense inside a dated stamp, and `leverScale` died at
-  CS024 P4 with the 2× baked into `POWERUP_RADIUS` 30 / `DOCK_RADIUS` 88. **§3's rows are P3's
-  territory and P3 was ratified at GATE D**; re-opening a swept row on a judgment call P3 made
-  differently is not P5's to do. §2.10 L287 and §2.14 L480 both carry loud ⛔ "the 2× is BAKED IN —
-  do not restore" bullets, so the protective statement exists and only this cross-reference lags.
-- **⛔ A DOC CITED A TEST FILE THAT DOES NOT EXIST (found and fixed, P5).** GDD §3.2's fill-count
-  argument rested on `scratchpad/test-cs017-p5.js`, deleted with the bonus-Debris feature at CS024 P4.
-  **A new systematic check ran over the whole GDD: 7 distinct cited test files exist, that was the only
-  dangling one.** ⛔ **The audit cannot see this class at all** — it checks identifiers, not paths.
-  Cheap to re-run; worth doing at any future doc sweep.
-- **⛔ THE STALENESS IS NOT LOCALISED TO §3 — MEASURED AT GATE C.** Every backticked identifier in
-  §2/§3 was checked against the build with comments and string literals removed by a **character
-  scanner** (never a regex — `CLAUDE.md`'s Test rules say why): **156 distinct plausible build
-  identifiers named in §2/§3 have ZERO live occurrence.** Worst sections: **§3** (100), **§2.19**
-  (32), **§2.14 + .1 + .2** (19), **§2.10 + .1 + .2** (18), **§2.13** (13), **§2.5 + .1** (15).
-  ⛔ **These are CANDIDATES, not verdicts** — a sentence saying "`GARBAGE_DECAY` was removed in
-  CS024 P3" is true, protective, and flagged by the audit for exactly the reason it exists. Each hit
-  needs a context read. **Both clusters this item named are now resolved, and they resolved
-  OPPOSITE ways (P4)** — worth keeping as the clearest example of why the count is not a verdict.
-  (1) The CS038 P5 presentation-knob cluster was **real**: §2.10's six `deliveryFloat*` and §2.5's
-  four `hunterPulse*` were genuinely written as live `DEBUG.*` rows and were corrected. §2.20's
-  `celebrationScrollStep`/`celebrationEmblemSize` are P5's, untouched here. (2) The
-  `REPAIR_AMOUNT`/`REPAIR_FULL_BONUS`/`POWERUP_HEALTH_GAP` cluster was **almost entirely a false
-  positive**: §2.7 and §2.12 both already say those two constants are DELETED, in §2.12's case
-  quoting CLAUDE.md's ⛔ nearly verbatim. Only `POWERUP_HEALTH_GAP` was actually live-as-written, and
-  in §2.14 rather than in either section the item pointed at.
-- **⛔ P4 FOUND AN OPEN FLAG WHOSE PREMISE A LATER CHANGESET SILENTLY INVALIDATED — NARROWED, NOT
-  CLOSED.** §2.12's **FLAG-8a** said the ambient health cadence `POWERUP_HEALTH_GAP` (a flat 18–26 s)
-  "was **not** shortened" for the low-health warning, so a player could wait "up to 26 s" with the
-  alarm running and nothing to point at. **CS040 P2 shortened exactly that**, and nobody noticed
-  because CS040 was rewriting §2.7 and §2.14, not §2.12. Derived against the live build: at
-  `LOW_HP_THRESHOLD` (0.4 hull) the gap now rolls **12.4–18.0 s**, tightening to **6–10 s** at zero
-  hull. ⛔ **The flag stays OPEN** — no force-spawn was ever added, the wait is still real, and the
-  shortening arrived as a side effect of a healing rework that was never validated against this
-  warning. **This is the class of defect the sweep exists to find**, and the audit found it only
-  incidentally: the flag's *reasoning* went stale, and the dead identifier inside it was the tell.
-- **⛔ THREE NEW FALSE-POSITIVE CLASSES (P4), all in `log/GDD-TRIM-CS041.md`.** (1) **Ids synthesized
-  by concatenation** — `leverKnob()` builds `id + "Floor"`, so all **54** lever registry ids
-  (18 levers × 3) are invisible to the scanner and read as dead. (2) **Metasyntactic placeholders** —
-  `` `<leverId>Floor` ``, `` `{ leverId: number }` ``. (3) **Glob and slash notation** — `` `ufoFireFreq*` ``,
-  `` `POWERUP_HEALTH_MIN/MAX_DIST` `` tokenize into dead fragments while the full names are live.
-  ⚠ Class 3 means **writing a correct sentence in the GDD's house style can RAISE the candidate
-  count**, which is what happened to §2.14.
-- **⛔ A STATUS.md PLAYTEST ASK NAMES FOUR KNOBS THAT NO LONGER EXIST (found P4, not fixed).** The
-  open **H6/H10/H11** ask below tells Paul to clear the debug overrides and read numbers off
-  `hunterPulseMin`/`Max`/`Grow`/`Shrink` — retired to plain constants by CS038 P5, so there are no
-  panel rows to read. The *question* is still live; the instruction is not. **Left for P9's doc
-  sweep** rather than rewritten here, since P4's scope is the GDD and rewording a playtest ask is
-  Paul's call. **The wider point: the staleness is not confined to the GDD.**
-- **⛔ P2 FOUND THREE STALE "STANDING RULES" INSIDE §3's CONSTANTS ROW — this is GATE C evidence.**
-  All three were verified dead against the build before removal, and are preserved verbatim with
-  their notes in `log/GDD-TRIM-CS041.md`. (1) *"Early-game pacing tunes from `RAMP_WAVES` + the
-  saucer floor/ceiling pairs"* — `ramp`/`difficultyFactor`/`RAMP_WAVES` were deleted by CS024 P4
-  and `SAUCER_AIM_ERR_*` has zero build occurrences. (2) *"As of CS017 P3 there are TWO clocks"* —
-  **this directly contradicted `CLAUDE.md`'s ⛔ "One clock. All difficulty scaling derives from
-  `game.wave`. No parallel clocks."**; the cycle clock died at CS018 P4 and its replacement at
-  CS024 P4. (3) *"Debris density tunes from decay (`DEBUG.garbageLifetime`)…"* — CS024 P3 deleted
-  decay outright and CS024 P5 retired `garbageAttractDelay`. **The point for GATE C: these were not
-  narration, they read as live tuning instructions, and the blunt "read §1–§3" rule delivered all
-  three to every session for sixteen changesets.** Writing current-state replacements was NOT done
-  — that is new GDD content and P2 was not scoped to author it; the replacement points at §2.10.1 /
-  §2.5.1 / `DIFFICULTY-LEVERS.md` instead. **§3 may hold more of these; P4 is where to look.**
-- **P2's saving was 19.2 KB, not the plan's projected ~21 KB, and the plan's figure counted two
-  cells as one.** §2.3 measured "the Constants cell" at 22,520 chars; that is the whole row —
-  18,211 in the *Contents* cell and 4,288 in the *Notes for modification* cell. Both were replaced
-  (the invariants §2.3 named as "buried in the cell" all lived in the second one). The replacement
-  is 3,140 B rather than ≤1.5 KB because the prompt's own ⛔ retired-constant-NAMES line is ~1.1 KB
-  of that on its own; the remaining ~2 KB is grouping + the standing rules + history pointers.
-- **§0's `**3.** Code Architecture Map` size row was re-measured at P2 (94.2 → 73.8 KB).** Strictly
-  outside "one table cell plus STATUS.md", but P2 invalidated the row it had just shipped, and
-  FLAG-CS041-c's P9 re-measure is a sweep, not a licence to ship a known-stale index for six phases.
-- **§0 is 9.8 KB, not the prompt's 3–4 KB target, and this was a deliberate call.** 35 rows leave
-  ~90 B/row at 4 KB, of which number + name + size already spends ~55 — about five words for the
-  "touching…" line, which is exactly the "§2.14 Powerups — powerups" uselessness the prompt names as
-  the whole risk. The ⛔ on that column beat the soft target. **GATE C should say whether it wants
-  §0 shorter**; the compressible fat is the header prose (~1.3 KB), not the rows.
-- **The old read rule was stated in a second place, and it was corrected: GDD §5.1 item 5.** It read
-  "This GDD (§1–§3 before writing code)". Left alone it would have contradicted CLAUDE.md on the one
-  rule this changeset ships. Reworded, not deleted — a rule change, the same one, not GDD content
-  loss. **Flagged because P1's scope was "additive plus one rule change" and this is a second site
-  for that rule.**
-- **GDD §3's Code Architecture Map has no row for the `Telemetry` module** (CS039/CS040), though it
-  does have one for `Benchmark`. Telemetry is documented — §2.19 and §2.16 — but a session using §3
-  as the "where does this live" map will not find it. §0's §2.19/§2.16 rows name telemetry so the
-  gap is not load-bearing today. **Not fixed: §3 content belongs to P4, and P1 deletes and adds no
-  GDD content outside §0.**
-- **⛔ FORK-CS041-A, -B and -C remain OPEN.** Only -D was resolved (Paul, at this session: §0 carries
-  sizes). GATE C item 5 is therefore already answered and can be struck.
-- **⛔ §0's sizes go stale the moment any section is edited (FLAG-CS041-c).** P9 re-measures every
-  row. If P3–P8 run, all 35 are invalidated.
+- **⛔ Three P5 findings still want attention in a future changeset, none touchable this phase under
+  NO BUILD EDIT:** two stale `% 15` comments (`orbital-overhaul.html:99`, a build edit; and
+  `scratchpad/test-f9.js:11`, a header-comment-only test edit — its assertions already use 16
+  correctly); and GDD §3's Entities row still describing `Powerup.radius`/`Dock.radius` via the dead
+  `leverScale()` inside a "v3.4 (P2)" stamp, left alone deliberately since §3's rows are P3's
+  territory and were ratified at GATE D.
+- **⛔ FLAG-8a stands, narrowed but still open (found P4).** The ambient low-health Health cadence
+  now rolls 12.4–18.0 s at the low-hull threshold (tightened from CS040 P2's healing rework,
+  confirmed against the live build), down from the "up to 26 s" the flag originally complained
+  about — but no force-spawn exists and the wait is still real.
+- **⛔ A `STATUS.md` playtest ask (below) names four knobs — `hunterPulseMin`/`Max`/`Grow`/`Shrink` —
+  retired to plain constants by CS038 P5, so there is nothing to read off the debug panel for them
+  (found P4, not rewritten here).** The underlying question (does the heartbeat feel right?) is
+  still live; only the instruction for how to answer it is stale. Rewording it is a small edit but
+  changes what Paul is asked to go do, so it is left as-is rather than silently rewritten.
+- **⛔ Seven §3 rows and both of §2's "came back clean" sections were never actually swept for
+  prose-level staleness, only for dead identifiers** (Canvas/scaling, AudioSys, MusicSys, VoiceSys,
+  Input, Chain physics, Main loop in §3; §2.7 and §2.10.2 in §2). The identifier audit cannot see a
+  wrong ordering claim or a superseded rule stated in words with no dead name in it. Covering this
+  is a different, more expensive pass and was not GATE D's ask.
 - **⛔ A FIXED-REF DIFF PIN CROSSED GIT'S RENAME THRESHOLD MID-CS040.** `test-cs024-p6b.js` §G TRAP 5
   diffs against `79222e5`, a commit *before* the CS029 `asteroids-deluxe.html` → `orbital-overhaul.html`
   rename. Repaired by pinning `--find-renames=20%`, good to roughly 39,000 lines. **Any other
@@ -274,28 +102,26 @@ Full narrative: `log/CS041.md` (written at P9).
 
 ## Open questions (blocking)
 
-None. GATE C is closed; FORK-CS041-A, -B and -D are resolved and -C was settled by the plan.
+None.
 
 ## Next up
 
-- **P9 — closing, and next. The sweep is DONE (P3, P4, P5).** ⛔ **NO BUILD EDIT; the version stays
-  1.0.0.40** (FORK-CS041-A). Its six items are in `IMPLEMENTATION-PHASES-CS041.md`; the load-bearing
-  one is **item 1 — re-measure ALL 35 of §0's per-subsection size rows** (FLAG-CS041-c), which P2/P3/
-  P4/P5 have all invalidated, then add that re-measure to CLAUDE.md's standing closing checklist.
-  ⛔ **`log/GDD-TRIM-CS041.md` is NOT archived** — it stays in `log/` as the record of what was cut.
-- **Three P5 findings want a decision at P9 or later**, all recorded above: the two stale `% 15`
-  comments (build + test), §3's `BASE_RADIUS`/`leverScale` row, and STATUS.md's own H6/H10/H11
-  playtest ask naming four knobs that no longer exist.
-- **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
+- **CS042 is not yet started.**
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
+- **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - A second, deeper telemetry capture on the v4 build (waves 10+) — see Known issues.
+- The three P5 findings above (two stale `% 15` comments, the §3 `leverScale` cross-reference) and
+  the stale playtest-ask knob names are each a one-line fix for whatever changeset next touches the
+  file they live in.
 
 ## Playtest asks (open only — answered ones move to the log)
 
 - **H6, H10 and H11 come back**, all three under FLAG-CS036-a's remedy: clear the debug overrides
   first, then ask for **numbers** — `levelEndFade`/`levelEndGracePulseEnd` for the ship pulse, and
-  `hunterPulseMin`/`Max`/`Grow`/`Shrink` for the heartbeat.
+  `hunterPulseMin`/`Max`/`Grow`/`Shrink` for the heartbeat. ⛔ **The four Hunter-pulse names are
+  stale** (retired to plain constants, CS038 P5) — see Known issues; ask about the heartbeat feel
+  directly rather than by knob name until this is reworded.
 - **Does the caption expiring mid-freeze read right?** With captions on, Dan's "Level N" caption ages
   during the frozen tail instead of holding, so it can vanish while the field is still stopped.
 - **Does the dock apron read as pressure or as litter?** CS035 P2's lockout means a parked ship no

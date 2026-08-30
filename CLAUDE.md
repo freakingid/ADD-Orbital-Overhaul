@@ -144,6 +144,14 @@ question genuinely needs project history, and say you did.
 its changeset's entry to `log/CS0##.md` under `## GDD version history`, not to a
 central changelog.
 
+⛔ **A closing phase re-measures every row of GDD §0's size column against the
+just-finished changeset's GDD, before writing `STATUS.md`'s headline number
+(CS041 P9).** Any phase that edits GDD content invalidates §0's sizes — they are
+snapshotted numbers, not live formulas. A changeset that touched no GDD content
+skips this with a one-line note in `STATUS.md` saying so; otherwise every one of
+the ~35 rows gets re-measured and corrected, not just the sections that phase
+named.
+
 ---
 
 ## STATUS.md format
@@ -182,11 +190,14 @@ single 160 KB line.
 unconditionally — the one document with no opt-out — so every byte here is a tax
 on every phase, and unlike `STATUS.md` (~400 lines, rolled into `log/` each
 changeset) it has never had a bound. Measured at CS041 P1's close: **47.1 KB /
-836 lines** — roughly two changesets' growth of headroom at CS040's rate.
-`### Audio` (5.3 KB) is the only section over ~4 KB today, and so the valve's
-first candidate whenever it is next edited. **The 50 KB threshold is a first
-guess (FLAG-CS041-b)**; revisit it once it has actually bound something, and prefer
-moving the number deliberately over letting the file drift past it quietly.
+836 lines**. Re-measured at CS041 P9's close (this file's own closing-checklist
+edit included): **48.4 KB / 846 lines** — **~1.6 KB of headroom left, roughly a
+quarter of a changeset's growth at CS040's rate**, down from P1's "roughly two
+changesets'." `### Audio` (5.3 KB) is still the only section over ~4 KB, and so
+the valve's first candidate whenever it is next edited. **The 50 KB threshold is
+still a first guess (FLAG-CS041-b) and has not yet bound anything**, but P9's
+re-measure means the next changeset that adds a paragraph here should check this
+number rather than assume P1's headroom still holds.
 
 **The valve is this file's own header rule turned on itself** — *states rules,
 not reasons; reasons live in `RATIONALE.md`*. Past the ceiling, a section over
