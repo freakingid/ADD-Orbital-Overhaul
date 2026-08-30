@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS041 · Phase: P3 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS041 · Phase: P4 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS041
 
@@ -37,13 +37,32 @@ Version: 1.0.0.40 · Changeset: CS041 · Phase: P3 · Registry: 110 · Levers: 1
   13 → 22** — nine new "X is GONE" prohibitions; ⚠ unchanged at 1; **no marker removed.** Rule as
   applied, three amendments, both false-positive classes and every cut: `log/GDD-TRIM-CS041.md`.
 
+- GATE D (closed) — **PASSES as written; all three of P3's amendments ratified unchanged.** Correct
+  inline over remove; extend an existing "Gone:" list rather than rewrite its history clause; an
+  incomplete "Gone:" list is itself a staleness defect. No re-run of P3 was required.
+
+- P4 — Staleness sweep of the CS024/CS038/CS040 fallout: §2.19, §2.13, §2.14+.1+.2, §2.10+.1+.2,
+  §2.5+.1, §2.7, §2.12. **105 candidates → 9 false claims → 9 corrections, 0 removals**, on 9 changed
+  lines. Swept sections 183,573 → 185,626 bytes (**+2,053**); whole-GDD delta is the same +2,053, so
+  nothing outside them moved. §2.7 and §2.10.2 came back **clean** — every candidate there is a
+  sentence correctly saying the identifier is gone. The nine: `clampShown`'s carrier count and a dead
+  `garbageAttractDelay` exemplar (§2.19); the JUNK chain named as `speedLarge/Medium/Small` instead
+  of `junkSpeed*`, contradicting the next bullet (§2.13); `POWERUP_HEALTH_GAP` alive in two places
+  (§2.14); the six `deliveryFloat*` and four `hunterPulse*` CS038 P5 retirements still written as
+  `DEBUG.*` rows (§2.10, §2.5); `COLOR.clumpHot` as a live comparand and **FLAG-8a's invalidated
+  premise** (§2.12). Every cut preserved verbatim with its verification in `log/GDD-TRIM-CS041.md`.
+  Three new false-positive classes documented there. **No build edit; suite 171/171, 0 skips.**
+
 Full narrative: `log/CS041.md` (written at P9).
 
 ## Working / verified
 
 - Full suite: **171 files, 171 passed, 0 failed, 0 skipped**. No test file touched this phase.
-- The four literal prose pins (§1.3b) all still match — §0 adds no text that collides with them
-  (it says "the two sanctioned fill exceptions", never "three deliberate exceptions").
+- **`orbital-overhaul.html` is byte-identical to CS040's** — `git diff --stat` shows the GDD and
+  `log/GDD-TRIM-CS041.md` only. FORK-CS041-A holds: no version bump, no version pin re-pointed.
+- The four literal prose pins all still match, re-checked after P4's nine edits: §3.2 still reads
+  "plus two deliberate exceptions", the file nowhere says "three", no `§2.13.1` cross-reference
+  exists, and §2.4/§2.11's banner prose is intact. None of P4's corrections is near one of them.
 - §0's coverage is machine-checked, not eyeballed: all 35 §2.x/§3.x headings have exactly one row,
   no row names a section that does not exist, and **every index name is an exact prefix of its real
   heading** — names are the heading's own, minus its trailing version/changeset stamp.
@@ -51,20 +70,31 @@ Full narrative: `log/CS041.md` (written at P9).
   for a representative phase — §0 (9.8) + §1 (1.9) + two named subsections, e.g. §2.14 Powerups
   (25.8) + §2.14.2 Chain Guard (8.8) = **~46 KB**; a lighter phase, e.g. §2.21 (8.8) + §2.22 (12.9),
   = **~33 KB**. **A ~91–94% reduction**, with nothing deleted.
-- GDD 534,526 → 544,406 bytes (+9,880, all of it §0 and the §5.1 clause). `CLAUDE.md` 46,161 →
-  48,268 bytes (47.1 KB / 836 lines), inside its new 50 KB ceiling with ~2.9 KB of headroom.
+- GDD 534,526 → 544,406 bytes (+9,880, all of it §0 and the §5.1 clause) **at P1**. `CLAUDE.md`
+  46,161 → 48,268 bytes (47.1 KB / 836 lines), inside its new 50 KB ceiling with ~2.9 KB of
+  headroom — untouched since P1.
+- **GDD running total: 534,526 (pre-CS041) → 526,660 bytes**, a net **−7,866** across P1–P4.
+  Measured off each commit, not summed from the ledger: **+9,926** (P1 §0 index) **−19,688**
+  (P2 Constants cell) **−157** (P3 §3 sweep) **+2,053** (P4 §2 corrections). ⚠ P1's and P2's own
+  ledger lines above quote per-*section* figures that differ from these whole-file deltas by tens of
+  bytes; both are right about their own subject. ⛔ **The headline number of this changeset is
+  neither** — it is the per-session read contract (~505 KB → ~33–46 KB) plus the count of false
+  statements removed from the file.
 
 ## Known issues
 
-- **⛔ P3–P5 ARE THE SWEEP; P6–P8 NO LONGER EXIST.** GATE D is still blocking after P3, for the same
-  reason it always was: the same wrong rule applied to more sections is more damage. **The sweep's
-  failure mode is the inverse of the trim's** — not "cut something protective" but "cut a true
-  sentence because an audit flagged the dead identifier inside it."
+- **⛔ P3–P5 ARE THE SWEEP; P6–P8 NO LONGER EXIST.** GATE D is **closed** (passed as written, P4).
+  **The sweep's failure mode is the inverse of the trim's** — not "cut something protective" but "cut
+  a true sentence because an audit flagged the dead identifier inside it." P4 removed nothing at all
+  and that was the right outcome; **P5 should expect the same."
 - **⛔ The sweep must not be run as a size trim.** Byte reduction is a side effect. A phase that
   removes four false sentences and reports "the rest is true" has succeeded; padding the number is
   the way this goes wrong.
-- **⛔ P3's HEADLINE FOR GATE D: THE AUDIT'S FALSE-POSITIVE RATE FOR "REMOVE THIS" IS VERY HIGH, BY
-  DESIGN.** §3 went 100 candidates → 98 across six swept rows, because nearly every candidate sits
+- **⛔ THE AUDIT'S FALSE-POSITIVE RATE FOR "REMOVE THIS" IS VERY HIGH, BY DESIGN — CONFIRMED TWICE.**
+  P4: **105 candidates, 9 false claims — a ~91% false-positive rate**, and §2.14's candidate count
+  went **UP** (15 → 19) on a phase that made §2.14 more accurate, because the corrections are written
+  in the GDD's own slash-glob style. ⛔ **Never read the count as a progress bar.** P3's finding,
+  which still stands: §3 went 100 candidates → 98 across six swept rows, because nearly every candidate sits
   inside a sentence that correctly says the identifier is gone. **A gate reading the count as a
   progress bar will conclude the phase failed; it did not.** Two false-positive classes are now
   documented: identifiers held as **string literals** (`debugOverride` is `const DEBUG_OVERRIDE_ID =
@@ -74,12 +104,18 @@ Full narrative: `log/CS041.md` (written at P9).
 - **⛔ SEVEN §3 ROWS WERE NOT SWEPT AND THAT IS NOT A CLEAN BILL OF HEALTH.** Canvas/scaling,
   AudioSys, MusicSys, VoiceSys, Input, Chain physics and Main loop carry zero candidates, which only
   means nothing in them names a dead identifier. **The audit cannot see prose-level staleness** — a
-  wrong ordering claim, a superseded rule stated in words. If GATE D wants those covered, that is a
-  different and much more expensive pass, and it should be scoped deliberately.
+  wrong ordering claim, a superseded rule stated in words. Covering them is a
+  different and much more expensive pass, and it should be scoped deliberately — GATE D did not ask
+  for it. **The same caveat now applies to §2**: §2.7 and §2.10.2 "came back clean" only in the sense
+  that nothing in them names a dead identifier.
 - **The decay clock was stated as live in THREE separate §3 rows** (Constants, fixed at P2; game
   object; Flow functions; and a fourth in `update(dt)`). One deletion — CS024 P3's — left four
-  independent false claims behind. **Expect the same multiplicity in §2**, where the same changeset
-  is documented across §2.10, §2.10.1 and §2.5.1.
+  independent false claims behind. **P4 confirmed the multiplicity prediction, for different
+  deletions:** `POWERUP_HEALTH_GAP` (CS040 P2) was live in **two** §2.14 sites, and CS038 P5's twelve
+  retired presentation knobs in **two** more (§2.10's six `deliveryFloat*`, §2.5's four
+  `hunterPulse*`). The decay clock itself was clean everywhere in §2 — §2.10, §2.10.1 and §2.5.1 all
+  describe it correctly as deleted. **One deletion leaving N false claims is the pattern; which
+  deletions did it is not predictable from the changeset.**
 - **⛔ DOC/BUILD DISAGREEMENT FOUND, NOT FIXED (FLAG-CS041-d).** GDD §3's Achievements row gives the
   weekly rotation as `(isoYear*52+isoWeek) % 16`; the build's own header comment at line 99 says
   `% 15`. §2.17 documents 16 weekly achievements, so the GDD looks right and the build's COMMENT
@@ -92,10 +128,38 @@ Full narrative: `log/CS041.md` (written at P9).
   (32), **§2.14 + .1 + .2** (19), **§2.10 + .1 + .2** (18), **§2.13** (13), **§2.5 + .1** (15).
   ⛔ **These are CANDIDATES, not verdicts** — a sentence saying "`GARBAGE_DECAY` was removed in
   CS024 P3" is true, protective, and flagged by the audit for exactly the reason it exists. Each hit
-  needs a context read. Two clusters worth naming: §2.19 and §2.10/§2.20 still document **CS038 P5's
-  twelve retired presentation knobs** (`celebrationScrollStep`, `deliveryFloat*`, `hunterPulse*`) as
-  live debug rows; and **§2.7 and §2.12 both still name `REPAIR_AMOUNT`/`REPAIR_FULL_BONUS`/
-  `POWERUP_HEALTH_GAP`**, deleted last changeset, against an explicit CLAUDE.md ⛔.
+  needs a context read. **Both clusters this item named are now resolved, and they resolved
+  OPPOSITE ways (P4)** — worth keeping as the clearest example of why the count is not a verdict.
+  (1) The CS038 P5 presentation-knob cluster was **real**: §2.10's six `deliveryFloat*` and §2.5's
+  four `hunterPulse*` were genuinely written as live `DEBUG.*` rows and were corrected. §2.20's
+  `celebrationScrollStep`/`celebrationEmblemSize` are P5's, untouched here. (2) The
+  `REPAIR_AMOUNT`/`REPAIR_FULL_BONUS`/`POWERUP_HEALTH_GAP` cluster was **almost entirely a false
+  positive**: §2.7 and §2.12 both already say those two constants are DELETED, in §2.12's case
+  quoting CLAUDE.md's ⛔ nearly verbatim. Only `POWERUP_HEALTH_GAP` was actually live-as-written, and
+  in §2.14 rather than in either section the item pointed at.
+- **⛔ P4 FOUND AN OPEN FLAG WHOSE PREMISE A LATER CHANGESET SILENTLY INVALIDATED — NARROWED, NOT
+  CLOSED.** §2.12's **FLAG-8a** said the ambient health cadence `POWERUP_HEALTH_GAP` (a flat 18–26 s)
+  "was **not** shortened" for the low-health warning, so a player could wait "up to 26 s" with the
+  alarm running and nothing to point at. **CS040 P2 shortened exactly that**, and nobody noticed
+  because CS040 was rewriting §2.7 and §2.14, not §2.12. Derived against the live build: at
+  `LOW_HP_THRESHOLD` (0.4 hull) the gap now rolls **12.4–18.0 s**, tightening to **6–10 s** at zero
+  hull. ⛔ **The flag stays OPEN** — no force-spawn was ever added, the wait is still real, and the
+  shortening arrived as a side effect of a healing rework that was never validated against this
+  warning. **This is the class of defect the sweep exists to find**, and the audit found it only
+  incidentally: the flag's *reasoning* went stale, and the dead identifier inside it was the tell.
+- **⛔ THREE NEW FALSE-POSITIVE CLASSES (P4), all in `log/GDD-TRIM-CS041.md`.** (1) **Ids synthesized
+  by concatenation** — `leverKnob()` builds `id + "Floor"`, so all **54** lever registry ids
+  (18 levers × 3) are invisible to the scanner and read as dead. (2) **Metasyntactic placeholders** —
+  `` `<leverId>Floor` ``, `` `{ leverId: number }` ``. (3) **Glob and slash notation** — `` `ufoFireFreq*` ``,
+  `` `POWERUP_HEALTH_MIN/MAX_DIST` `` tokenize into dead fragments while the full names are live.
+  ⚠ Class 3 means **writing a correct sentence in the GDD's house style can RAISE the candidate
+  count**, which is what happened to §2.14.
+- **⛔ A STATUS.md PLAYTEST ASK NAMES FOUR KNOBS THAT NO LONGER EXIST (found P4, not fixed).** The
+  open **H6/H10/H11** ask below tells Paul to clear the debug overrides and read numbers off
+  `hunterPulseMin`/`Max`/`Grow`/`Shrink` — retired to plain constants by CS038 P5, so there are no
+  panel rows to read. The *question* is still live; the instruction is not. **Left for P9's doc
+  sweep** rather than rewritten here, since P4's scope is the GDD and rewording a playtest ask is
+  Paul's call. **The wider point: the staleness is not confined to the GDD.**
 - **⛔ P2 FOUND THREE STALE "STANDING RULES" INSIDE §3's CONSTANTS ROW — this is GATE C evidence.**
   All three were verified dead against the build before removal, and are preserved verbatim with
   their notes in `log/GDD-TRIM-CS041.md`. (1) *"Early-game pacing tunes from `RAMP_WAVES` + the
@@ -178,12 +242,13 @@ None. GATE C is closed; FORK-CS041-A, -B and -D are resolved and -C was settled 
 
 ## Next up
 
-- **GATE D — blocking, and next.** A diff review of P3 (`git show`), before any §2 section is
-  touched. Its four questions are in `IMPLEMENTATION-PHASES-CS041.md`; P3 adds a fifth in practice —
-  **are the three rule amendments in `log/GDD-TRIM-CS041.md`'s header right?** (correct-inline over
-  remove; extend an existing "Gone:" list rather than rewrite the history clause; an incomplete
-  "Gone:" list is itself a defect).
-- **Then P4** — §2.19, §2.13, §2.14.x, §2.10.x, §2.5.x, plus §2.7/§2.12's `REPAIR_*` mentions.
+- **P5 — the remainder of the sweep, and next.** Everything the audit still flags outside P4's
+  twelve sections — §2.4, §2.6, §2.8, §2.9, §2.11, §2.11.1, §2.16, §2.17, §2.18, §2.20, §2.20.1,
+  §2.23 — plus §3.1–§3.4. Then re-run the audit and report what survives, one line per surviving
+  candidate. ⛔ **A candidate that survives because the sentence correctly says "this was deleted" is
+  the EXPECTED outcome, not a miss** — P4 finished at ~91% survival and was correct to.
+  ⛔ **Do not re-sweep P4's twelve sections**; their surviving candidates are accounted for above and
+  in `log/GDD-TRIM-CS041.md`.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.

@@ -292,3 +292,207 @@ not reintroduce it". ⚠ unchanged at 1. **No marker was removed.**
 ```text
 +  **⛔ CS017 P5's `if (g.bonus)` payout block is GONE** — CS024 P3 removed the bonus Debris entirely, taking `Garbage.bonus`, `BONUS_CANISTER_SCORE` and this pickup-pass branch with it; the build carries a tombstone at the old site. The `take = min(room, g.pieces)` clump-intake loop is unchanged and was never part of it (§2.10).
 ```
+
+---
+
+## GDD §2 — the CS024 / CS038 / CS040 fallout (CS041 P4)
+
+⛔ **The rule, as GATE D ratified it** (unchanged from P3's header above; all three amendments
+approved as written): remove only what is FALSE about the current build, keep what is merely OLD, a
+statement that an identifier was DELETED is TRUE and stays, verify against the build before touching
+anything — and, per the amendments, prefer **correcting inline** over removing, prefer **extending an
+existing "Gone:" list** over rewriting the history clause that carries it, and treat an **incomplete
+"Gone:" list as itself a defect**.
+
+**The shape of this phase: 105 candidates across twelve sections, 9 false claims, 9 corrections, 0
+removals.** Every one of the nine was fixed in place. Nothing was deleted from §2 this phase, so
+this file records **replaced** text rather than cut text — each entry gives the exact string that
+left the GDD and what replaced it. The twelve swept sections grew 183,573 → 185,626 bytes
+(**+2,053**) across **9 changed lines**, and the whole-file delta is the same +2,053 — so every byte
+of change is inside the swept sections and nothing else moved. That growth is the correct shape for
+a correctness sweep and is not a failed trim.
+
+**Two sections came back CLEAN.** §2.7 (4 candidates) and §2.10.2 (1) hold no false claim at all —
+every candidate sits inside a sentence that correctly says the identifier is gone. §2.7 is the
+notable one: it is the section CS040 P1/P2 rewrote, and it is accurate down to the numbers.
+
+### New false-positive classes found (for P5, and for anyone re-running the audit)
+
+P3 documented two (string-literal ids; name collisions with unrelated locals). This phase adds
+three more, all of which produced candidates that must never be acted on:
+
+1. **Ids synthesized by concatenation.** `coalescePauseFloor`/`Ceil`/`Steps` are real, live registry
+   ids that appear nowhere as a literal token — `leverKnob()` builds them as `id + "Floor"`. Every
+   lever's three rows are invisible to the scanner. **Eighteen levers × 3 = 54 registry ids in this
+   class.**
+2. **Metasyntactic placeholders.** `` `<leverId>Floor` `` and `` `{ leverId: number }` `` are prose
+   variables, not identifiers.
+3. **Glob and slash notation.** `` `DEBUG_ROW*` ``, `` `ufoFireFreq*` ``, `` `POWERUP_HEALTH_MIN/MAX_DIST` ``
+   tokenize into fragments (`DEBUG_ROW`, `ufoFireFreq`, `MAX_DIST`) that are dead as written while the
+   full names are live. ⚠ This phase's own corrections **added four instances** of this class
+   (`HEALTH_GAP_LOW_OK`/`HIGH_OK`/`LOW_HURT`/`HIGH_HURT`, `DELIVERY_FLOAT_RISE`/`_SIZE`/…,
+   `HUNTER_PULSE_*`) because slash-globbing is the GDD's house style and matching it was the right
+   call — so §2.14's candidate count went **up**, 15 → 19, on a phase that made §2.14 more accurate.
+   ⛔ **A gate reading that number as a regression will be reading it wrong.**
+
+### §2.19 Debug Options — 32 candidates, 2 false claims
+
+**(1) `clampShown`'s carrier count, verbatim:**
+
+```text
+Exactly one entry carries it (`orbitCount`, below); the other 43 are byte-unchanged by its addition.
+```
+
+FALSE two ways, and misleading in a third. `orbitCount` went with the ORBIT section at CS024 P1
+(§2.19's own bullet says so, twelve lines further down — the row it points at with "below" does not
+exist); 43 was CS021's registry size and the registry is 110; and the present-tense "exactly one"
+frames a standing mechanism as a one-off curiosity. **Verified:** `clampShown` has 9 live
+occurrences, and `leverKnob()` emits it on every lever's `Steps` row — plus `hunterCapMax`,
+`hunterCapLevelsPerStep`, `heldClumpMax` and three of the four BENCHMARK controls. Replaced with a
+rule-shaped statement (any integer-valued row) rather than a fresh inventory, which is what went
+stale the first time.
+
+**(2) A dead exemplar cited as live, verbatim:**
+
+```text
+Same `unit:"ms"` + `toNative` idiom as `autoShieldRegenPause`/`garbageAttractDelay`:
+```
+
+`garbageAttractDelay` was removed by CS024 P5 — §2.19 says so in two other places. The other
+exemplar, `autoShieldRegenPause`, is live (1 hit) and was kept. Surgical: the dead half dropped.
+
+**Kept, all TRUE and protective:** the `[RETIRED CS024 P3]` Debris-lifetime bullet, the
+`[RETIRED CS018 P7]` saucer-pressure bullet, the `[RETIRED CS024 P1]` ORBIT bullet, the CS024
+rebuild's "Gone:" list, CS038 P5's twelve-knob retirement sentence, `levelEndHold`'s retirement,
+`chainGuardTime`'s deletion, and the closing Structure line's whole `are all deleted` clause.
+`debugOverride` is P3's string-literal class (`const DEBUG_OVERRIDE_ID = "debugOverride"`).
+
+### §2.13 Level Progression — 13 candidates, 1 false claim
+
+**Verbatim:**
+
+```text
+`junkCount → speedLarge → speedMedium → speedSmall` would not move small-satellite speed until roughly level 96.
+```
+
+The JUNK chain's dependents are `junkSpeedLarge`/`junkSpeedMedium`/`junkSpeedSmall` — named
+correctly in the very next bullet, so the section disagreed with itself and neither `speedLarge` nor
+its siblings would ever be found by a grep. Corrected to the real ids (3 live hits each). The
+counterfactual it illustrates is untouched.
+
+**Verified and kept:** `**There is no `LEVEL_MAX`**` — the audit flagging a sentence whose entire job
+is to say the identifier does not exist. `` `{ leverId: number }` `` is class 2 above. The whole
+`[RETIRED CS024 P4]` bullet (`levelDef`, `LEVEL_MAX`, `JUNK_CYCLE`, `HUNTER_CAP_STEPS`, `RAMP_WAVES`,
+`difficultyFactor`, `leverScale`) is protective. **`Seven levers are INVERTED` was re-derived against
+the live table and is exactly right** — 7 of 18, and the named seven are the seven.
+
+### §2.14 Powerups (+ .1, .2) — 19 candidates, 2 false claims, both `POWERUP_HEALTH_GAP`
+
+The constant is **ABSENT from the build entirely** — 0 occurrences, comments and strings included —
+deleted by CS040 P2 in favour of `healthGapRoll()`. It survived in two places in §2.14:
+
+**(1) The Health bullet, verbatim:**
+
+```text
+**Health** spawns *ambiently* on a saucer-like timer (`POWERUP_HEALTH_GAP` = 18–26 s between spawns), one at a time
+```
+
+**(2) The Structure line, listing it among live tuning constants, verbatim:**
+
+```text
+`POWERUP_HEALTH_GAP`, `POWERUP_HEALTH_AMOUNT`, `POWERUP_HEALTH_MIN/MAX_DIST`,
+```
+
+Both corrected against the live `healthGapRoll()` (3 hits) and the four `HEALTH_GAP_*` constants
+(2 hits each), with the numbers taken from §2.7's own already-correct account of the same mechanism
+rather than re-derived. Per amendment 2, the Structure line's fix **extended its existing
+`POWERUP_DROP_CHANCE is gone` clause** rather than opening a new one, so a grep for
+`POWERUP_HEALTH_GAP` still lands somewhere that explains it.
+
+**Kept:** `⛔ EVERY EFFECT IS COUNT-BASED. TIMED EXPIRY IS GONE (CS024 P6)` and its deletion list
+(`powerMode`, `powerDuration`, `game.powerFx`, `POWERUP_DURATION`, `MAGNET_DURATION`,
+`DEBUG.chainGuardTime`); the three orphaned settings keys; `MAGNET_RANGE_MULT` as the replaced
+constant; `leverScale`'s deletion. §2.14.1's `SCOOP_MAGNET_*` bullet correctly records CS025 P3
+shipping them and CS025 P5 backing them out. §2.14.2's `chainGuardTime`/`chainGuardMode` are both
+explicit deletion statements.
+
+### §2.10 Salvage / Tow Chain / Dock (+ .1, .2) — 18 candidates, 1 false claim
+
+**Verbatim:**
+
+```text
+- **Rise, hold and fade (CS034 P8 split; CS035 P1 retune).** `DEBUG.deliveryFloatRise` is **150 px/s**;
+```
+
+CS038 P5 retired all six `deliveryFloat*` rows off the debug registry to plain constants. **Verified:
+values are byte-identical** (`DELIVERY_FLOAT_RISE = 150`, `_HOLD = 0.00`, `_FADE = 1.20`) — only the
+home moved, so the numbers in the bullet were right and were kept. Corrected the `DEBUG.` prefix and
+added a ⛔ naming all six retired row names, so a grep for `deliveryFloatHold` still lands.
+`deliveryFloatLife`'s CS034 P8 retirement clause was already there and correct; it stays.
+
+**Kept:** `⛔ NO DEBRIS EVER AGES OUT (CS024 P3)` and its four-name deletion list; both `leverScale`
+bullets (§2.10's `⛔ Dock size … do not "restore" 44` is one of the densest protective passages in
+the file); `HUD_COMBO_X/Y/SIZE are gone with it`; `DELIVERY_FLOAT_DY` in a "Through CS026" past-tense
+clause. §2.10.1's two `bornOfScrap` mentions are both explicit history-of-a-deleted-flag — the second
+one is *about* why the flag was a worse idea than the ceiling that replaced it. §2.10.2's `LEVEL_MAX`
+says the clamp "went with the table."
+
+### §2.5 Hunter Satellites (+ .1) — 15 candidates, 1 false claim
+
+**Verbatim:**
+
+```text
+While volatile, `this.pulseScale` (init 100) grows at `DEBUG.hunterPulseGrow` (**900 %/s**, CS036 P4, bound raised 300→5000) and shrinks at `DEBUG.hunterPulseShrink` (**20 %/s**), clamped at `DEBUG.hunterPulseMin`/`hunterPulseMax` (**80 / 150 %**, CS036 P4, was 87/125) and flipping direction on each clamp
+```
+
+Same CS038 P5 retirement, other half. **Verified byte-identical values** (`HUNTER_PULSE_MIN = 80`,
+`MAX = 150`, `GROW = 900`, `SHRINK = 20`). Corrected to the constants; the `bound raised 300→5000`
+parenthetical went with the fix, because it describes a **registry row's `max`** and there is no
+registry row any more — that is a fact about a panel that no longer has this knob, not a fact about
+the pulse. The CS036 P4 retune attribution and the `was 87/125` history both stay.
+
+⚠ **Consequence outside this file, flagged not fixed:** `STATUS.md`'s open playtest ask **H6/H10/H11**
+tells Paul to "clear the debug overrides first, then ask for numbers — `hunterPulseMin`/`Max`/`Grow`/
+`Shrink` for the heartbeat." Those four rows have not existed since CS038 P5, so that half of the
+instruction cannot be followed. The *question* (does the heartbeat read right?) is still live.
+
+**Kept:** `spawnCore()`/`game.hunterTimer` "removed outright"; `HUNTER_CAP_STEPS` and
+`LARGE_HUNTER_MAX = 100` as the two things `largeHunterCap()` replaced; `HUNTER_SMALL_GARBAGE` as the
+flat constant the per-tier table replaced; `spawnCore()` "died in CS024 P3". §2.5.1's
+`GARBAGE_COALESCE_DELAY`/`garbageAttractDelay` are named as what `coalescePause` replaced;
+`makeClumpHull` and `COLOR.clumpHot`/`lerpColor` are all inside explicit "deleted entirely" clauses.
+
+### §2.12 Health, Damage & Knockback — 4 candidates, 2 false claims
+
+**(1) A deleted palette entry named as a live comparand, verbatim:**
+
+```text
+(`COLOR.lowhp` = `#ff4040`, distinct from `COLOR.hp`, `COLOR.clumpHot`, and the low-HP bar fill `#ff7060`)
+```
+
+`clumpHot` is **ABSENT** (0 occurrences, comments included) — deleted v3.6 P1a, as §2.5.1 says at
+length. Corrected to name the two live comparands and record the third as deleted, so the name stays
+greppable.
+
+**(2) ⛔ THE MOST CONSEQUENTIAL FIND OF THE PHASE — an OPEN flag whose premise CS040 P2 silently
+invalidated. Verbatim:**
+
+```text
+  - **FLAG-8a (open, deliberate — sharper as of v3.5 P3):** `POWERUP_HEALTH_GAP` (18–26 s ambient spawn cadence) was **not** shortened and no force-spawn was added for this warning. A player can sit in the low-health state with the alarm running and nothing on the field to point at for up to 26 s. The v3.5 P3 urgency scaling mitigates this somewhat, but a louder/more urgent alarm with nothing to point at near the end of that window is a sharper version of the same gap — still left open pending playtest, not force-fixed here.
+```
+
+Half of this flag stopped being true at CS040 P2 and nobody noticed, because the changeset that
+broke it was rewriting §2.7 and §2.14, not §2.12. The flat 18–26 s roll is gone; `healthGapRoll()`
+reads hull. **Derived against the live build:** at `LOW_HP_THRESHOLD` (100 of `SHIP_MAX_HP` 250 =
+0.4 hull) the gap rolls **12.4–18.0 s** — `lo = 6 + (22−6)×0.4`, `hi = 10 + (30−10)×0.4` — tightening
+toward **6–10 s** at zero hull. So "was not shortened" is false, and the stated worst case of 26 s
+is roughly a third too pessimistic exactly where the flag applies.
+
+⛔ **The flag was NARROWED, not closed, and this was a deliberate call.** Its other half is still
+true — no force-spawn exists — the wait is still real, and the shortening arrived as a side effect
+of a healing rework that was never validated against this warning. Closing it on the strength of a
+number nobody playtested would be the sweep overreaching. The corrected text says all of that.
+
+**Kept:** the `⛔ REPAIR_AMOUNT/REPAIR_FULL_BONUS are DELETED (CS040 P1), not parked` line, which
+restates a CLAUDE.md ⛔ verbatim and is the single most protective sentence among this phase's
+candidates.
