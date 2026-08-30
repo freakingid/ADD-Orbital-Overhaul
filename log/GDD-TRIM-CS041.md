@@ -496,3 +496,197 @@ number nobody playtested would be the sweep overreaching. The corrected text say
 **Kept:** the `⛔ REPAIR_AMOUNT/REPAIR_FULL_BONUS are DELETED (CS040 P1), not parked` line, which
 restates a CLAUDE.md ⛔ verbatim and is the single most protective sentence among this phase's
 candidates.
+
+---
+
+## GDD §2 remainder + §3.1–§3.4 (CS041 P5)
+
+Same rule, same three GATE-D-ratified amendments as P4 above.
+
+**Shape: 41 candidates across fifteen sections, 7 false claims, 7 corrections, 0 removals.** The
+swept sections grew 199,349 → 200,932 bytes (**+1,583**) across 9 changed lines; whole-file delta is
+the same +1,583, so nothing outside them moved. **Nine of the fifteen sections came back clean**:
+§2.4, §2.6, §2.9, §2.11.1, §2.16, §2.18, §2.20.1, §2.23, §3.4.
+
+⛔ **§3 proper (the Code Architecture Map's rows, L1294–L1303) was P3's and was NOT re-swept.** Its
+surviving candidates are accounted for in the audit below; one of them is flagged for a future pass.
+
+### §2.8 Audio — 6 candidates, 1 false claim
+
+```text
+`scheduleStep` clamps a note's start to `max(stepTime, currentTime)` so a stalled frame can never schedule into the past.
+```
+
+The clamp is right; the identifier is not. The live code is `scheduleStep(step, tStep)` clamping
+`Math.max(tStep, AudioSys.ctx.currentTime)` — there is no `stepTime` anywhere in the build (0
+occurrences, comments included). ⚠ **Borderline, corrected deliberately:** the *semantics* were
+never wrong, so this is a grep-landing-pad fix (amendment 3) rather than a falsehood fix — and it
+matters more than usual here because CLAUDE.md pins `scheduleStep()` as **not to be modified**, so
+its description is the only thing a session is allowed to work from.
+
+**Kept:** `setInterval` inside the ⛔ **prohibition** "No `setTimeout`/`setInterval` for note timing,
+ever" — ⛔ **a new false-positive class: an API named in order to FORBID it.** `difficultyFactor` is
+named as the pre-CS024-P4 name of `musicIntensity`. `padRoot`/`padThird` are `name:"padRoot"` string
+keys in the `derelict` track data — P3's string-literal class — and the GDD's claim about them
+(detuned sawtooths) is verified correct against `type:"sawtooth", detune:12`. `game.powerFx` at L242
+is named as **deleted**, which is the exact opposite of §3.3's use of the same identifier below.
+
+### §2.17 Achievements — 2 candidates, 1 false claim, and **FLAG-CS041-d is RESOLVED**
+
+```text
+the pool index is **`(isoYear × 52 + isoWeek) % 16`** and the active set is the 5 consecutive pool entries from that index, **wrapping** around the 16.
+```
+
+⛔ **STATUS.md's FLAG-CS041-d asked which of the GDD (`% 16`) and the build's line-99 comment
+(`% 15`) was right. Answer: NEITHER IS THE MECHANISM.** The live code is
+
+```js
+poolIndex(year, week) { return ((year * 52 + week) % this.WEEKLY.length + this.WEEKLY.length) % this.WEEKLY.length; }
+```
+
+— the modulus is **derived from `WEEKLY.length`**, never a literal, and it carries a `(x % n + n) % n`
+negative guard the GDD omitted. **`WEEKLY.length` counted from the live table = 16**, and
+`scratchpad/test-f9.js:111` pins it (`WEEKLY.length === 16`). So the GDD's *number* was right, its
+*structure* was wrong, and the difference is load-bearing: a 17th weekly achievement re-indexes every
+week automatically, with no constant to bump. Corrected to name `WEEKLY.length` so the disagreement
+cannot recur.
+
+⛔ **Two stale comments confirmed and NOT fixed — both out of scope, both worth a future one-liner.**
+(1) `orbital-overhaul.html:99` says `% 15`: a **build edit**, forbidden all changeset. (2)
+`scratchpad/test-f9.js:11`'s header comment also says `% 15` — a **test edit**, and this phase
+touches no test file. Neither is an assertion; `test-f9.js`'s actual assertions at lines 111/155/162
+all correctly use 16.
+
+**Kept:** `colW` at L632 — present in the build only in two comments, and the GDD names it while
+describing the **pre-CS015-P2 layout bug that was fixed**, which is the same thing the build's own
+comment at line 13719 does.
+
+### §2.20 Achievement Celebration Panel — 2 candidates, 1 false claim
+
+```text
+  `celebrationScrollStep` (px per up/down press, default 60) and `celebrationEmblemSize` (emblem
+  radius px, default 32).
+```
+
+Introduced by the words "Two `DEBUG_VARS` knobs:". **CS038 P5 retired both to plain constants** —
+`CELEB_SCROLL_STEP = 60`, `CELEB_EMBLEM_SIZE = 32`, values unchanged. This is the **third and last**
+of the twelve-knob CS038 P5 cluster STATUS.md predicted; P4 corrected the other two (§2.10's six
+`deliveryFloat*`, §2.5's four `hunterPulse*`). All twelve are now accounted for in the GDD.
+
+### §3.1 Collision conventions — 2 candidates, 1 false claim
+
+```text
+- **Unshielded contact/bullet hits call `damageShip(amount, hazardX, hazardY)`** (v1.3)
+```
+
+The live signature is `damageShip(amount, srcX, srcY, srcTag)`. Both position names were wrong **and
+a fourth parameter was missing** — `srcTag` (CS037 P1), one of ten source-attribution keys,
+observational only, stamped on the non-lethal branch. ⛔ **This is a "read before wiring a new
+hazard" section and CLAUDE.md's New-enemies rule sends you here**, so a wrong call signature is the
+most directly actionable falsehood found in either sweep phase. Corrected to the real signature with
+`srcTag`'s contract named.
+
+### §3.2 Rendering conventions — 2 candidates, 2 false claims
+
+⚠ **This line carries a literal test pin (`plus two deliberate exceptions` / never "three"). Both
+corrections were written to leave the count at two, and the pin was re-checked after.**
+
+**(1) The low-health glow's geometry, verbatim:**
+
+```text
+**(2, CS010 P3)** The **low-health corner glow** (§2.12) — four `createRadialGradient` corner fills in `COLOR.lowhp`, drawn first inside `drawHUD()`,
+```
+
+`createRadialGradient` is **ABSENT from the build** (0 occurrences). **CS038 GATE A replaced the four
+radial corner fills with four `createLinearGradient` bands**, one inward from each edge, overlapping
+at the corners under source-over — and CLAUDE.md carries that as a ⚠ SETTLED with the fill exception
+and the no-`shadowBlur`/no-`globalAlpha` contract explicitly carried over. The GDD had not caught up.
+Corrected, with the old shape recorded so the change is greppable.
+
+**(2) A justification resting on a deleted feature and a deleted test file, verbatim:**
+
+```text
+**CS017 P5's bonus-Debris tell adds NO new exception — the count stays at two:** the tell is a colour swap (`COLOR.garbageBonus` passed into the existing `drawCanister()`) plus `Garbage.drawBonusRing()`, a full-turn `drawRingArc()` — i.e. a stroked `ctx.arc` through `glowStroke`, the same primitive the HUD gauges use, with no `closePath()` and no fill. Asserted in `scratchpad/test-cs017-p5.js` section (G): a recording canvas proxy counts every method the real `Garbage.draw()` calls, on all four branches (bonus/plain × clump/single), and `fill`/`fillRect`/`fillText`/`rect` appear in none of them.
+```
+
+Three separate problems. The **bonus-Debris feature was deleted at CS024 P4**; `Garbage.drawBonusRing()`
+went with it; and ⛔ **the cited test file `scratchpad/test-cs017-p5.js` DOES NOT EXIST** — the
+clause's entire evidentiary basis is a dangling reference. The *conclusion* (the count is two) is
+still true and is what the pin protects, so it was preserved while the reasoning was rewritten.
+
+⛔ **One live detail rescued in the process: `COLOR.garbageBonus` SURVIVES the feature's deletion** —
+the build's own comment at line 601 says "All gone. COLOR.garbageBonus SURVIVES — the debug panel's
+uncommitted-entry tint reads it." It is now that tint's only reader. Recorded in the GDD so a future
+orphan-hunting pass does not delete it.
+
+**A systematic check, run because of this find:** every `scratchpad/*.js` citation in the whole GDD
+was tested for existence. **7 distinct cited test files exist; this was the only dangling one.** Not
+a systemic problem.
+
+### §3.3 Known safe extension points — 1 candidate, 1 false claim
+
+```text
+*v1.7 (F6) is the worked example:* weapon caps flow through `maxBullets()` (not the raw `MAX_BULLETS`) and Triple Shot's spread lives in the fire block; timed effects live in `game.powerFx` and count down in `update()`;
+```
+
+⛔ **The single most actively harmful sentence found in either phase.** §3.3's entire job is to tell a
+future session how to add a thing safely, and this told it to put a new effect on `game.powerFx` —
+a field **deleted at CS024 P6**, against a CLAUDE.md ⛔ that reads *"Ask 'did an effect end?' through
+`powerActive(type)`, never `powerFx`."* A session following §3.3 literally would have written the one
+thing CLAUDE.md forbids by name. Corrected to the count-based contract
+(`game.powerBudget[type]` + `powerActive(type)`).
+
+**`maxBullets()`/`MAX_BULLETS` in the same sentence were verified live and correct** and were kept —
+the sentence was half right, which is exactly why it survived four changesets.
+
+### Borderline calls — two false-ish claims deliberately LEFT
+
+Both are **dated changelog clauses whose correction already exists, prominently, in the same
+section** — amendment 2 says extend an existing correction rather than rewrite the history clause,
+and here the correction is already written, so the right action is none.
+
+1. **§2.11 L367** — `> New tuning constants live in the "Larger world & scrolling camera" block …
+   v2.1 adds `BOUNDARY_DASH`/`BOUNDARY_GAP`/`BOUNDARY_WIDTH`/`BOUNDARY_GLOW` to the same block.` The
+   four are deleted — and L347, twenty lines above in the same section, is a whole bullet titled
+   **"World-boundary line (v2.1) — removed (v3.6 P1b)"** naming all four as gone.
+2. **§2.16 L585** — `v3.0 P5 adds … the persisted `settings` object `{shotPowerupMode, magnetMode}`.`
+   Both keys are orphaned — and L545 carries a ⛔ **"CS024 P6 ORPHANED THREE KEYS AND DID NOT REMOVE
+   THEM"** naming all three.
+
+⚠ **If a future pass disagrees, the fix is to extend those two lines, not to rewrite them.**
+
+### ⛔ Full audit accounting — every surviving candidate, with its reason
+
+Re-run after P5's edits: **152 distinct identifiers, 292 candidate hits across §2/§3.** Every one is
+accounted for; **none is an unexplained survivor.**
+
+| Class | Hits | Why it survives |
+|---|---:|---|
+| **STRING** | 196 | Present in the build only as a string literal, an object key or a comment — the scanner strips all three. Includes every `DEBUG_VARS` `id` (`debugOverride` is `const DEBUG_OVERRIDE_ID = "debugOverride"`) and every `MUSIC_TRACKS` layer `name`. |
+| **PROTECTIVE** | 57 | The sentence correctly states the identifier is deleted / retired / replaced. ⛔ **This is the sweep working, not failing.** |
+| **REVIEW→resolved** | 23 | Read individually this phase; all resolved to PROTECTIVE, GLOB or a recorded borderline. Listed below. |
+| **GLOB** | 14 | Glob/slash notation (`ufoFireFreq*`, `HUD_COMBO_X/Y/SIZE`, `POWERUP_HEALTH_MIN/MAX_DIST`) tokenizing into fragments while the full names are live. |
+| **PLACEHOLDER** | 2 | Metasyntactic prose variables — `` `<leverId>Floor` ``, `` `{ leverId: number }` ``. |
+
+The 23 that needed a read, and how each resolved:
+
+- **§2.10 L291** `HUD_COMBO_SIZE`, `HUD_COMBO_Y` — GLOB; the line reads "`HUD_COMBO_X/Y/SIZE` are gone with it."
+- **§2.11 L367** `BOUNDARY_DASH`/`GAP`/`GLOW`/`WIDTH` (4) — **recorded borderline #1 above; left deliberately.**
+- **§2.19 L702** `hunterPulseMin` — PROTECTIVE; it is inside CS038 P5's own retirement sentence.
+- **§2.19 L742** `DEBUG_ROW` — GLOB (`DEBUG_ROW*`); `DEBUG_ROWS`/`DEBUG_ROW_STEP` are both live.
+- **§2.20.1 L973** `junkCountFloor` — synthesized lever id (`leverKnob()` builds `id + "Floor"`); live.
+- **§3 L1294** `DEBRIS_SPEED_PER_WAVE`, `LEVER_DOCK_SIZE`, `LEVER_POWERUP_SIZE`, `PHASE_LEN`,
+  `POWERUP_DROP_CHANCE`, `POWERUP_HEALTH_GAP`, `SAUCER_ACCURACY_RAMP_SCALE` (7) — PROTECTIVE. This is
+  **P2's retired-constant NAME index**, whose whole purpose is to be the thing a grep lands on. ✅ It
+  already lists `POWERUP_HEALTH_GAP` and `REPAIR_AMOUNT`/`REPAIR_FULL_BONUS`, so §3 and P4's corrected
+  §2.14 now agree.
+- **§3 L1302** `nextExtraLife`, `respawnTimer`, `satelliteTimer` (3) — PROTECTIVE ("v1.3 removes …").
+- **§3 L1303** `destroyAsteroid`, `maybeDropPowerup` (2) — PROTECTIVE ("was `destroyAsteroid`", "was
+  `maybeDropPowerup`"). `gapMult` — a parameter name inside the retired ORBIT block's description.
+- **§3 L1301** `BASE_RADIUS` — ⚠ **the one flagged for a future pass.** The clause reads
+  "**v3.4 (P2):** `Powerup.radius` and `Dock.radius` are now each `BASE_RADIUS * leverScale(LEVER,
+  game.wave)`" — present tense inside a dated stamp, and `leverScale` died at CS024 P4 with the 2×
+  baked into the constants. ⛔ **NOT touched: §3's rows are P3's territory, P3 was ratified at GATE D,
+  and re-opening a swept row on a judgment call P3 made differently is not P5's to do.** §2.10 L287
+  and §2.14 L480 both carry loud ⛔ "the 2× is BAKED IN — do not restore" bullets, so the protective
+  statement exists; only this one cross-reference lags.

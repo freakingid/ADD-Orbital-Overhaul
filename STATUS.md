@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS041 · Phase: P4 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS041 · Phase: P5 · Registry: 110 · Levers: 18
 
 ## Phase ledger — CS041
 
@@ -53,6 +53,20 @@ Version: 1.0.0.40 · Changeset: CS041 · Phase: P4 · Registry: 110 · Levers: 1
   premise** (§2.12). Every cut preserved verbatim with its verification in `log/GDD-TRIM-CS041.md`.
   Three new false-positive classes documented there. **No build edit; suite 171/171, 0 skips.**
 
+- P5 — The rest of the sweep: §2.4, §2.6, §2.8, §2.9, §2.11+.1, §2.16, §2.17, §2.18, §2.20+.1, §2.23,
+  §3.1–§3.4. **41 candidates → 7 false claims → 7 corrections, 0 removals**, on 9 changed lines.
+  Swept sections 199,349 → 200,932 bytes (**+1,583**); whole-GDD delta the same, so nothing outside
+  moved. **Nine of fifteen sections came back clean.** The seven: `stepTime` for `tStep` in the frozen
+  `scheduleStep` description (§2.8); the weekly pool modulus written as a literal `% 16` when the build
+  derives it from `WEEKLY.length` (§2.17); CS038 P5's last two retired knobs still called `DEBUG_VARS`
+  rows (§2.20); `damageShip`'s call signature wrong in both names and arity (§3.1); the low-health glow
+  still described as `createRadialGradient` corner fills after CS038 GATE A, and a fill-count
+  justification resting on a deleted feature **and a test file that does not exist** (§3.2); and
+  §3.3 telling a future session to put new effects on the deleted `game.powerFx`, against a CLAUDE.md
+  ⛔ that names it. **⛔ FLAG-CS041-d RESOLVED** (below). Full accounting of all 292 surviving audit
+  hits — every one with a reason, none unexplained — in `log/GDD-TRIM-CS041.md`. **No build edit;
+  suite 171/171, 0 skips.**
+
 Full narrative: `log/CS041.md` (written at P9).
 
 ## Working / verified
@@ -60,9 +74,15 @@ Full narrative: `log/CS041.md` (written at P9).
 - Full suite: **171 files, 171 passed, 0 failed, 0 skipped**. No test file touched this phase.
 - **`orbital-overhaul.html` is byte-identical to CS040's** — `git diff --stat` shows the GDD and
   `log/GDD-TRIM-CS041.md` only. FORK-CS041-A holds: no version bump, no version pin re-pointed.
-- The four literal prose pins all still match, re-checked after P4's nine edits: §3.2 still reads
+- The four literal prose pins all still match, re-checked after P5's nine edits: §3.2 still reads
   "plus two deliberate exceptions", the file nowhere says "three", no `§2.13.1` cross-reference
-  exists, and §2.4/§2.11's banner prose is intact. None of P4's corrections is near one of them.
+  exists, and §2.4/§2.11's banner prose is intact. ⚠ **P5 edited the pinned line itself twice** (both
+  §3.2 corrections land on L1324) — both were written to leave the count at two, and the pin was
+  re-verified after.
+- **Every `scratchpad/*.js` citation in the GDD was checked for existence** (new check, P5): 7
+  distinct cited files exist; exactly one was dangling (`test-cs017-p5.js`, §3.2) and it is now named
+  as missing rather than cited as evidence. **Not a systemic problem** — worth re-running, cheaply,
+  at any future doc sweep.
 - §0's coverage is machine-checked, not eyeballed: all 35 §2.x/§3.x headings have exactly one row,
   no row names a section that does not exist, and **every index name is an exact prefix of its real
   heading** — names are the heading's own, minus its trailing version/changeset stamp.
@@ -116,11 +136,27 @@ Full narrative: `log/CS041.md` (written at P9).
   `hunterPulse*`). The decay clock itself was clean everywhere in §2 — §2.10, §2.10.1 and §2.5.1 all
   describe it correctly as deleted. **One deletion leaving N false claims is the pattern; which
   deletions did it is not predictable from the changeset.**
-- **⛔ DOC/BUILD DISAGREEMENT FOUND, NOT FIXED (FLAG-CS041-d).** GDD §3's Achievements row gives the
-  weekly rotation as `(isoYear*52+isoWeek) % 16`; the build's own header comment at line 99 says
-  `% 15`. §2.17 documents 16 weekly achievements, so the GDD looks right and the build's COMMENT
-  looks stale — but correcting a build comment is a build edit, which this changeset forbids
-  everywhere. Someone should confirm the live pool size and fix whichever is wrong.
+- **✅ FLAG-CS041-d RESOLVED (P5) — and the answer was "neither literal is the mechanism."** The live
+  `poolIndex()` is `((year*52 + week) % this.WEEKLY.length + this.WEEKLY.length) % this.WEEKLY.length`
+  — the modulus is **derived from the pool**, never a literal, plus a negative guard the GDD omitted.
+  `WEEKLY.length` counted from the live table is **16**, pinned by `scratchpad/test-f9.js:111`. So the
+  GDD's number was right and its structure was wrong; §2.17 now names `WEEKLY.length`. ⛔ **Two stale
+  `% 15` comments confirmed and NOT fixed, both needing a one-line edit this changeset forbids:**
+  `orbital-overhaul.html:99` (a build edit) and `scratchpad/test-f9.js:11` (a test edit — its header
+  comment only; the assertions at 111/155/162 all correctly use 16). **Neither is load-bearing today;
+  both will mislead the next reader.** Worth folding into whatever changeset next touches either file.
+- **⛔ ONE §3 ROW FLAGGED FOR A FUTURE PASS, DELIBERATELY NOT TOUCHED (P5).** §3's Entities row
+  (L1301) still reads "**v3.4 (P2):** `Powerup.radius` and `Dock.radius` are now each `BASE_RADIUS *
+  leverScale(LEVER, game.wave)`" — present tense inside a dated stamp, and `leverScale` died at
+  CS024 P4 with the 2× baked into `POWERUP_RADIUS` 30 / `DOCK_RADIUS` 88. **§3's rows are P3's
+  territory and P3 was ratified at GATE D**; re-opening a swept row on a judgment call P3 made
+  differently is not P5's to do. §2.10 L287 and §2.14 L480 both carry loud ⛔ "the 2× is BAKED IN —
+  do not restore" bullets, so the protective statement exists and only this cross-reference lags.
+- **⛔ A DOC CITED A TEST FILE THAT DOES NOT EXIST (found and fixed, P5).** GDD §3.2's fill-count
+  argument rested on `scratchpad/test-cs017-p5.js`, deleted with the bonus-Debris feature at CS024 P4.
+  **A new systematic check ran over the whole GDD: 7 distinct cited test files exist, that was the only
+  dangling one.** ⛔ **The audit cannot see this class at all** — it checks identifiers, not paths.
+  Cheap to re-run; worth doing at any future doc sweep.
 - **⛔ THE STALENESS IS NOT LOCALISED TO §3 — MEASURED AT GATE C.** Every backticked identifier in
   §2/§3 was checked against the build with comments and string literals removed by a **character
   scanner** (never a regex — `CLAUDE.md`'s Test rules say why): **156 distinct plausible build
@@ -242,13 +278,14 @@ None. GATE C is closed; FORK-CS041-A, -B and -D are resolved and -C was settled 
 
 ## Next up
 
-- **P5 — the remainder of the sweep, and next.** Everything the audit still flags outside P4's
-  twelve sections — §2.4, §2.6, §2.8, §2.9, §2.11, §2.11.1, §2.16, §2.17, §2.18, §2.20, §2.20.1,
-  §2.23 — plus §3.1–§3.4. Then re-run the audit and report what survives, one line per surviving
-  candidate. ⛔ **A candidate that survives because the sentence correctly says "this was deleted" is
-  the EXPECTED outcome, not a miss** — P4 finished at ~91% survival and was correct to.
-  ⛔ **Do not re-sweep P4's twelve sections**; their surviving candidates are accounted for above and
-  in `log/GDD-TRIM-CS041.md`.
+- **P9 — closing, and next. The sweep is DONE (P3, P4, P5).** ⛔ **NO BUILD EDIT; the version stays
+  1.0.0.40** (FORK-CS041-A). Its six items are in `IMPLEMENTATION-PHASES-CS041.md`; the load-bearing
+  one is **item 1 — re-measure ALL 35 of §0's per-subsection size rows** (FLAG-CS041-c), which P2/P3/
+  P4/P5 have all invalidated, then add that re-measure to CLAUDE.md's standing closing checklist.
+  ⛔ **`log/GDD-TRIM-CS041.md` is NOT archived** — it stays in `log/` as the record of what was cut.
+- **Three P5 findings want a decision at P9 or later**, all recorded above: the two stale `% 15`
+  comments (build + test), §3's `BASE_RADIUS`/`leverScale` row, and STATUS.md's own H6/H10/H11
+  playtest ask naming four knobs that no longer exist.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
