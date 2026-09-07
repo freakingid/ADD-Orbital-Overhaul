@@ -1,5 +1,8 @@
 # Orbital Overhaul — STATUS
 Version: 1.0.0.40 · Changeset: CS041 · Phase: P9 (closed) · Registry: 110 · Levers: 18
+Since close: one **off-cycle GDD accuracy pass** (2026-09-07, doc-only, no build edit) — see the entry below.
+⛔ **Resuming that work? `TODO.md`'s "RESUME HERE" block at the top is the entry point** — it names the next
+step and what it is blocked on. This file has the findings; that block has the direction.
 
 ## Phase ledger — CS041
 
@@ -29,6 +32,13 @@ Version: 1.0.0.40 · Changeset: CS041 · Phase: P9 (closed) · Registry: 110 · 
   contract still describes reality and its own ceiling still has headroom (48.4 KB / ~1.6 KB left).
   `STATUS.md` rolled and reset. Both planning docs archived; `log/GDD-TRIM-CS041.md` stays in `log/`.
 
+- **Off-cycle (2026-09-07) — GDD accuracy pass, doc-only.** Not a phase and not CS042: Paul asked for the GDD to be
+  brought up to the current build so it can be compared against the Orbital Overhaul 2 design document. Swept the parts
+  CS041 never reached — front matter, §4, §6 — plus the two §2 sections and one §3 row it flagged as unswept. ⛔ **No build byte changed; suite 171/171, 0 skips.** GDD 528,243 → 542,427 bytes.
+  Added `scratchpad/gdd-sizes.py` — reporting-only sibling of `gdd-audit.py`, `--check` diffs §0's size
+  table against the document and exits non-zero on drift, so the CS041 P9 closing-phase re-measure is one
+  command instead of 35 manual counts. **Not committed** — see Next up.
+
 Full narrative for every phase and both gates: `log/CS041.md`.
 
 ## Working / verified
@@ -45,12 +55,16 @@ Full narrative for every phase and both gates: `log/CS041.md`.
 
 ## Known issues
 
-- **⛔ Three P5 findings still want attention in a future changeset, none touchable this phase under
-  NO BUILD EDIT:** two stale `% 15` comments (`orbital-overhaul.html:99`, a build edit; and
-  `scratchpad/test-f9.js:11`, a header-comment-only test edit — its assertions already use 16
-  correctly); and GDD §3's Entities row still describing `Powerup.radius`/`Dock.radius` via the dead
-  `leverScale()` inside a "v3.4 (P2)" stamp, left alone deliberately since §3's rows are P3's
-  territory and were ratified at GATE D.
+- **⛔ Stale COMMENTS in the build and the suite — four now, all needing a build/test edit this
+  doc-only pass could not make.** Two stale `% 15` comments (`orbital-overhaul.html:99`;
+  `scratchpad/test-f9.js:11`'s header — its assertions already use 16 correctly), and two found by
+  the off-cycle GDD pass: the `settings` object's comment claims `voiceStyle`/`captions` are "NOT
+  persisted yet (later phase)" when CS011 P3 shipped both (`saveSettings`/`loadSettings` write and
+  restore them additively), and `orbital-overhaul.html:54` still calls `RAMP_WAVES` "the single knob"
+  for difficulty when CS024 P4 retired the ramp and renamed the constant `MUSIC_INTENSITY_WAVES`,
+  which now drives only music intensity. ✅ **The fifth item of this group is DONE:** GDD §3's Entities
+  row no longer states the dead `leverScale()` sizing in the present tense — it is past-tensed and
+  points at the CS024 note in its own row.
 - **⛔ FLAG-8a stands, narrowed but still open (found P4).** The ambient low-health Health cadence
   now rolls 12.4–18.0 s at the low-hull threshold (tightened from CS040 P2's healing rework,
   confirmed against the live build), down from the "up to 26 s" the flag originally complained
@@ -60,11 +74,23 @@ Full narrative for every phase and both gates: `log/CS041.md`.
   (found P4, not rewritten here).** The underlying question (does the heartbeat feel right?) is
   still live; only the instruction for how to answer it is stale. Rewording it is a small edit but
   changes what Paul is asked to go do, so it is left as-is rather than silently rewritten.
-- **⛔ Seven §3 rows and both of §2's "came back clean" sections were never actually swept for
-  prose-level staleness, only for dead identifiers** (Canvas/scaling, AudioSys, MusicSys, VoiceSys,
-  Input, Chain physics, Main loop in §3; §2.7 and §2.10.2 in §2). The identifier audit cannot see a
-  wrong ordering claim or a superseded rule stated in words with no dead name in it. Covering this
-  is a different, more expensive pass and was not GATE D's ask.
+- **⛔ Prose-level staleness: narrowed by the off-cycle pass, not closed.** ✅ Swept and clean:
+  **§2.7** and **§2.10.2** (every constant re-checked against the build; no false claim found).
+  ✅ Swept and corrected: §3's **Main loop** row, which omitted both load-bearing `Capture`
+  integration points (`Capture.timeScale` on `dt`, `Capture.afterDraw()` after `draw()`) and the
+  `Bench.running` early-return. ⛔ **Still unswept: six §3 rows** — Canvas/scaling, AudioSys,
+  MusicSys, VoiceSys, Input, Chain physics. The identifier audit cannot see a wrong ordering claim or
+  a superseded rule stated in words with no dead name in it, which is exactly the class every real
+  find below turned out to be.
+- **The off-cycle pass's own result: 6 false claims and 1 documentation gap, none findable by the
+  identifier audit.** In §2.10, "lower-mass scrap (planned for Hunter Satellites, F4) **will** tow
+  more easily" (it shipped — `HUNTER_SMALL_MASS` 0.5) and a tow cap described as growing "from
+  `CARGO_BASE` (12)" when CS018 P5 made it level-granted from **8**. In §2.8, voice style and
+  captions called "not yet built" when CS011 P3 shipped both. In §6, three entries built on retired
+  knobs (`GARBAGE_DECAY`, `POWERUP_DROP_CHANCE`, `RAMP_WAVES`-as-difficulty). **The gap: the player's
+  Ship Rotation preference** (`settings.shipTurnScale`, 50–150%, on the Controls screen, with the
+  FLAG-10a "Return to Defaults does not reset it" call) **was documented nowhere in §2** — only in
+  §3 and §3.4. It is now §2.1's own bullet, cross-referenced from §2.16, and both §0 rows name it.
 - **⛔ A FIXED-REF DIFF PIN CROSSED GIT'S RENAME THRESHOLD MID-CS040.** `test-cs024-p6b.js` §G TRAP 5
   diffs against `79222e5`, a commit *before* the CS029 `asteroids-deluxe.html` → `orbital-overhaul.html`
   rename. Repaired by pinning `--find-renames=20%`, good to roughly 39,000 lines. **Any other
@@ -107,6 +133,12 @@ None.
 ## Next up
 
 - **CS042 is not yet started.**
+- **The GDD's front matter and §4 are no longer changelogs — keep them that way.** Both carried
+  per-round status text that nobody's checklist reached, so both aged silently: the front-matter
+  build stamp was sixteen changesets out of date and two of §4's four blockquotes still read "in
+  progress" for rounds that shipped and archived. Each now carries a ⛔ rule saying it must not grow
+  back. **The structural fix is that a closing phase already re-measures §0** — extending that same
+  checklist to re-read the build stamp is the cheap way to stop this recurring, and is not yet done.
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
 - **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
