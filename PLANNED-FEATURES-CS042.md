@@ -671,8 +671,31 @@ speed-neutral.
   alone here: raising it changes a force the chain solver feeds on and pulls in §3.4's re-validation
   properly. **Available later; not part of this proposal.**
 
-⛔ **FLAG-CS042-k — what value does `CARGO_COAST` take?** 0.03 doubles a full haul's coast; 0.01 is
-barely felt; 0.06 makes a full haul drift further than an empty ship. **G6 answers it from the lab.**
+⛔ **FLAG-CS042-k — what value does `CARGO_COAST` take? STILL OPEN, and the lab did not answer it.**
+0.03 doubles a full haul's coast; 0.01 is barely felt; 0.06 makes a full haul drift further than an
+empty ship.
+
+⚠ **GATE A returned a null result on this question (2026-09-08).** Three passes through
+`tools/handling-lab.html` produced no value Paul trusts; the final findings block came back as the
+shipped defaults with every step unrecorded, and his own read was *"I am not feeling super confident
+about how this testing went… we might be coming back to this problem in a different changeset."*
+⛔ **Treat that as evidence about the instrument, not about him.** A mock ship on an empty field has
+no enemies, no dock, no chain to lose and nothing to be late for — which is most of what makes a haul
+feel heavy. Inertia may simply not be judgeable outside a real run.
+
+**Two ways forward. This is a plan decision, not a phase's to make.**
+
+1. ⭐ **Ship the knob at zero and tune it in the real game.** `CARGO_COAST` and `DEBUG.cargoCoast`
+   both default to **0.0**, which is byte-equivalent behaviour to today — nothing changes for a player
+   until the knob is moved. The value then becomes a **GATE C playtest question** instead of a lab
+   one, answered under real pressure. Smallest possible risk, and it converts an unanswerable question
+   into an answerable one.
+2. **Defer §6.7 entirely to its own changeset**, and cut P7 down to §6.5's burn condition, which is
+   decided, independent of everything here, and one line.
+
+⛔ **Either way §6.5 ships in CS042 and §6.3's three models do not.** FLAG-CS042-f (no drag change) and
+FLAG-CS042-j (no `CARGO_TURN`) are both closed, and Model B unedited is G6's answer — none of that
+depends on FLAG-CS042-k.
 
 ### 6.6 `tools/handling-lab.html`
 

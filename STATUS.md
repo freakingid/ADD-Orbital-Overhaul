@@ -62,6 +62,17 @@ carried forward and still live.
 
 ## Known issues
 
+- **⛔ GATE A's handling question came back NULL (2026-09-08). `CARGO_COAST` has no value and
+  FLAG-CS042-k stays open.** Paul's third findings block was the shipped defaults with every protocol
+  step unrecorded, and his own note was that he is *"not feeling super confident about how this testing
+  went"* and that this may return in a later changeset. ⛔ **Read that as a verdict on the instrument.**
+  A mock ship on an empty field has no enemies, no dock, no chain to lose and nothing to be late for,
+  which is most of what makes a haul feel heavy — inertia may not be judgeable outside a real run.
+  **Do not send him back to the lab for a fourth pass without changing something structural.**
+  Spec §6.7 now carries the two ways forward: ship the knob at 0.0 (byte-equivalent to today) and make
+  the value a GATE C playtest question, or defer §6.7 to its own changeset and cut P7 to §6.5 alone.
+  **P7 is blocked on that choice; nothing else in CS042 is blocked at all.**
+
 - **⛔ §6.7 `CARGO_COAST` is PROPOSED and unratified. Paul approved the mechanism on 2026-09-08; the
   value is FLAG-CS042-k and nothing ships until he signs off.** His goal, verbatim: *"I just want the
   ship to experience heavier effect on inertia from more debris mass, and I want the engine powerup to
