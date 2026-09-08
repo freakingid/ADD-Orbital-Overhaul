@@ -600,6 +600,80 @@ is the point — an Engine is no longer wasted by a flight it could not help.
 after the thrust it paid for, clamped at 0. It is not moved to the timer block; "seconds of laden
 forward thrust" is only measurable there.
 
+### 6.7 `CARGO_COAST` — PROPOSED, awaiting Paul's sign-off (2026-09-08)
+
+⚠ **This subsection was not in the reviewed plan.** It was surfaced at GATE A, after two tuning passes
+in the lab failed to produce what Paul was asking for, and he approved the direction. **The mechanism
+is settled below; the VALUE is open (FLAG-CS042-k).** Nothing here ships until he signs off.
+
+**The problem §6.1–§6.6 never named.** Paul's goal, in his own words: *"I just want the ship to
+experience heavier effect on inertia from more debris mass, and I want the engine powerup to
+significantly ease up on that heavier effect. The more debris, the more mass, and the more effect."*
+
+⛔ **Drag in this build reads no mass at all.** `Ship.update`'s decay is
+`Math.pow(1 - SHIP_DRAG, dt)`, with no cargo term, so an empty ship and a 24-node haul both bleed to a
+tenth of their speed in **5.35 s**. Coasting, stopping and turning around are *identical* laden or
+empty. Mass changes how fast you reach your ceiling (`CARGO_THRUST`) and where the ceiling is
+(`CARGO_MAXSPD`), and then stops mattering. **Neither of those is inertia** — a clamp does not make a
+ship feel heavy, and §6.3's three models all tune the clamp.
+
+⛔ **§6.3's base-drag raise is pointed the wrong way for this goal, and does not ship.** Higher drag
+makes the ship stop *sooner*, which is less momentum, not more — it works against Pillar 2 as well as
+against the goal. Paul flew `SHIP_DRAG` 0.45 at GATE A and kept the shipped 0.35. **FLAG-CS042-f
+closes as "no change."**
+
+**The mechanism — one constant, one line.** Cargo *divides* the drag rate, the inverse of Model C:
+
+```
+λ_eff = λ_base / (1 + cargo × CARGO_COAST)
+```
+
+which is the build's existing idiom with one term added, in the one place drag is applied:
+
+```js
+const drag = Math.pow(1 - SHIP_DRAG, dt / (1 + cargo * CARGO_COAST));   // cargo is already in scope
+```
+
+⛔ **`cargo` is `chainMass()`, so the Engine eases this for free and for the right reason** — the same
+single sum that already feeds `thrustMul`, `maxSp` and the momentum tug (§6.4: `ENGINE_MASS_MULT`
+remains the Engine's one and only effect, and this does not change that).
+
+**What it does, at `CARGO_COAST` 0.03 and `ENGINE_MASS_MULT` 0.35, every other constant shipped:**
+
+| chain | top speed | coast to 10%, today | coast, laden | coast, +Engine | stop distance, today | laden |
+|---|---|---|---|---|---|---|
+| 0 | 520 | 5.35 s | 5.35 s | 5.35 s | 1086 px | 1086 px |
+| 8 | 406 | 5.35 s | 6.63 s | 5.79 s | 849 px | 1052 px |
+| 16 | 333 | 5.35 s | 7.91 s | 6.24 s | 696 px | 1031 px |
+| 24 | 283 | 5.35 s | **9.19 s** | **6.69 s** | 590 px | **1016 px** |
+
+⛔ **Not one shipped speed number moves.** The cap binds at every chain length today and still does, so
+this is **purely additive**: it changes only how the ship carries momentum. That is what makes it the
+smallest mechanism that answers the goal, and it is why `CARGO_MAXSPD` is **kept, not retired** —
+Model C's structural change is unnecessary. **Model B (§6.3) is G6's answer** and needs no edit at all.
+
+⛔ **The minimum version is ONE constant and ONE line, with every other value left shipped.** At
+`CARGO_COAST` 0.03 and `ENGINE_MASS_MULT` at its **shipped 0.5**, no top speed moves, the tug is
+untouched, and the Engine already gives back **50%** of the added coast (9.19 s → 7.27 s) purely
+because `chainMass()` is the sum it halves. Nothing else in §6 has to change for the goal to be met.
+Moving `ENGINE_MASS_MULT` to 0.35 raises that to **65%** (→ 6.69 s) and is a **separate, optional
+decision** — it also lifts Engine-on top speed and softens the tug, so unlike `CARGO_COAST` it is not
+speed-neutral.
+
+**Costs and risks.**
+- One new tuning constant plus `DEBUG.cargoCoast` (registry 110 → 111; `scratchpad/test-registry.js`
+  owns that count). Not a lever — a handling constant like `CARGO_THRUST`, so no `LEVERS` entry (§2.13).
+- ⚠ **Peak ship speed is unchanged**, so the stressor GDD §3.4's stability envelope actually measures
+  (worst-case link stretch, driven by ship speed) is unchanged. The ship spends *longer* at speed,
+  which is not what the envelope bounds. A re-validation run is cheap and should still be done.
+- ⚠ **The momentum tug still clamps at 1.4, reached at 14 nodes**, so from 14 to 24 the yank does not
+  grow. That is a second, separate violation of "the more debris, the more effect", deliberately left
+  alone here: raising it changes a force the chain solver feeds on and pulls in §3.4's re-validation
+  properly. **Available later; not part of this proposal.**
+
+⛔ **FLAG-CS042-k — what value does `CARGO_COAST` take?** 0.03 doubles a full haul's coast; 0.01 is
+barely felt; 0.06 makes a full haul drift further than an empty ship. **G6 answers it from the lab.**
+
 ### 6.6 `tools/handling-lab.html`
 
 ⛔ **Nothing in §6.3 ships a number that this lab did not produce.** All three models are analytic and
@@ -668,11 +742,12 @@ least one prior gate.
 | **FLAG-CS042-c** | Is `DEBUG.healthSpawnLock` = 12 s right, or should it scale with wave? | **Flat 12 s.** One clock is `game.wave`; a second scaling rule needs a reason. |
 | **FLAG-CS042-d** | Milestone hull gate threshold. | ⛔ **RESOLVED — 70%**, and §4.5's reserve threshold is the same number by design. |
 | **FLAG-CS042-e** | Should ◄/► repeat in menus? | ⛔ **RESOLVED — no.** Up/down only. |
-| **FLAG-CS042-f** | `SHIP_DRAG` value. | **0.45 default**, decided at G7 with the lab. |
+| **FLAG-CS042-f** | `SHIP_DRAG` value. | ⛔ **RESOLVED — no change (0.35).** 0.45 was flown at GATE A and rejected; §6.7 explains why raising drag is pointed the wrong way for the goal. |
 | **FLAG-CS042-g** | Engine wear-off: taper or sputter? | ⛔ **CLOSED — neither.** Full effect until the tank runs out (§6.4). |
 | **FLAG-CS042-h** | Sever-linked scoop loss. | ⛔ **RESOLVED** as FORK-S1 above. |
 | **FLAG-CS042-i** | Do §2's five changes ship together? | **All five**, each behind a knob, so the gate can subtract rather than guess. |
-| **FLAG-CS042-j** | Does `CARGO_TURN` ship above 0.0? | **OPEN — G6.** In the lab; not pre-committed. |
+| **FLAG-CS042-j** | Does `CARGO_TURN` ship above 0.0? | ⛔ **RESOLVED — no.** Flown at GATE A, kept at 0.0. |
+| **FLAG-CS042-k** | `CARGO_COAST` value (§6.7). | **OPEN — G6.** Mechanism approved 2026-09-08; value from the lab. |
 
 ---
 

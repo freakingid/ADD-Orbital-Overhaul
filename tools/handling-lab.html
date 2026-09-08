@@ -101,31 +101,31 @@
     imports; this file carries its own copies of the real integration and chain physics.</p>
 
   <div class="outcome">
-    <b>You are dialling two outcomes, not picking constants.</b><br>
-    1. <b>How heavy is a full chain?</b> &mdash; the speed a 24-node haul settles at with no Engine.<br>
-    2. <b>How much does the Engine give back?</b> &mdash; that speed's gain when the Engine is lit.<br>
-    Set those two by flying. The lab solves <b>CARGO_THRUST</b> (or <b>CARGO_DRAG</b>) and
-    <b>ENGINE_MASS_MULT</b> backwards from them. Copy the Findings block at the bottom and hand it back.
+    <b>Inertia, not top speed.</b> A speed clamp does not make a ship feel heavy.
+    ⛔ <b>Today an empty ship and a 24-node haul both stop in 5.35 s</b> &mdash; drag reads no mass at
+    all, so mass changes your ceiling and then stops mattering.<br><br>
+    1. <b>How heavy is a full chain?</b> &mdash; how long a 24-node haul takes to stop.<br>
+    2. <b>How much does the Engine give back?</b> &mdash; how much of that it removes.<br>
+    The lab solves <b>CARGO_COAST</b> (&sect;6.7, proposed) and <b>ENGINE_MASS_MULT</b> backwards from
+    them. ⛔ <b>No shipped speed moves</b> &mdash; the cap still binds everywhere, so this only changes
+    how the ship carries momentum. Copy the Findings block and hand it back.
   </div>
 
-  <h2>The two dials</h2>
-  <label>full-chain speed &mdash; 24 nodes, no Engine (px/s)
-    <div class="row"><input type="range" id="tSpeed" min="80" max="400" step="1">
+  <h2>The two dials &mdash; inertia, not top speed</h2>
+  <label>full-chain coast &mdash; seconds for a 24-node haul to bleed to a tenth of its speed
+    <div class="row"><input type="range" id="tSpeed" min="3" max="20" step="0.05">
       <span class="val" id="tSpeedVal"></span></div>
   </label>
-  <label>Engine gain at a full chain (%)
-    <div class="row"><input type="range" id="tGain" min="0" max="200" step="5">
+  <label>Engine gives back &mdash; % of that added coast the Engine removes
+    <div class="row"><input type="range" id="tGain" min="0" max="100" step="5">
       <span class="val" id="tGainVal"></span></div>
   </label>
-  <div class="kv"><span>achieved: speed / gain</span><span id="tAchieved">&mdash;</span></div>
-  <div class="kv"><span>today, for reference</span><span>283 px/s &middot; +30%</span></div>
-  <div class="kv"><span>heavier than today above</span><span id="tCross">&mdash;</span></div>
-  <label class="row" style="margin-top:8px"><input type="checkbox" id="freeCap">
-    &nbsp;let the solver lower CARGO_MAXSPD to make room for the Engine <span class="num">(unticking restores 0.035)</span></label>
-  <p class="hint">⛔ That box has a side effect worth seeing: lowering CARGO_MAXSPD raises the speed cap
-    at <i>every</i> chain length, and today's cap is the only thing making a SHORT chain heavy. Leave it
-    off and short chains stay exactly as heavy as they are now; turn it on and the Engine gets more
-    room at a full chain, at the cost of light chains getting faster than today.</p>
+  <div class="kv"><span>achieved: coast / relief</span><span id="tAchieved">&mdash;</span></div>
+  <div class="kv"><span>today, empty AND full</span><span>5.35 s &middot; no relief to give</span></div>
+  <div class="kv"><span>top speed vs today</span><span id="tCross">&mdash;</span></div>
+  <p class="hint">⛔ CARGO_MAXSPD is deliberately NOT in this loop any more. It is a ceiling, not
+    inertia, and every shipped speed stays exactly where it is &mdash; the row above should read
+    "identical to today" the whole time you work.</p>
   <p class="hint" id="tWarn"></p>
 
   <h2>Test protocol</h2>
@@ -206,6 +206,7 @@ const COLOR = {
 const SHIPPED = {
   shipThrust: 340, shipDrag: 0.35, shipMaxSpeed: 520,
   cargoThrust: 0.07, cargoMaxspd: 0.035, cargoDrag: 0.03, // cargoDrag has no shipped value: 0.03 is §6.3's proposal
+  cargoCoast: 0.0,                       // §6.7, PROPOSED. 0.0 IS the shipped build: drag reads no mass today
   cargoMass: 0.10, cargoTurn: 0.0,
   engineMassMult: 0.5, engineBurnSeconds: 10.0,
 };
@@ -284,7 +285,9 @@ function solve(rawMass, eng, model, P) {
   const lb = lambdaBase(P);
   const accel = P.shipThrust / (1 + cargo * P.cargoThrust);
   const cap = model === "C" ? P.shipMaxSpeed : P.shipMaxSpeed / (1 + cargo * P.cargoMaxspd);
-  const lambda = model === "C" ? lb * (1 + cargo * P.cargoDrag) : lb;
+  // ⛔ §6.7: cargo DIVIDES the decay rate — a laden ship takes longer to stop, which is what inertia
+  // is. This is the inverse of model C's cargoDrag term, and the two compose rather than replace.
+  const lambda = (model === "C" ? lb * (1 + cargo * P.cargoDrag) : lb) / (1 + cargo * P.cargoCoast);
   const dragT = accel / lambda;                     // where drag alone would settle the ship
   const terminal = Math.min(cap, dragT);
   const limit = cap <= dragT ? "CAP" : "DRAG";
@@ -293,6 +296,9 @@ function solve(rawMass, eng, model, P) {
   return {
     cargo, accel, cap, lambda, dragT, terminal, limit, t90,
     half: Math.LN2 / lambda,
+    coast: Math.log(10) / lambda,        // seconds to bleed to a tenth of your speed — "can I stop?"
+    stopPx: 0.9 * terminal / lambda,     // how far you travel doing it — the tangible one
+    tug: Math.min(1.4, cargo * P.cargoMass),
     turn: SHIP_TURN / (1 + cargo * P.cargoTurn),
   };
 }
@@ -310,63 +316,37 @@ function dragTerminalAt(mass, model, P) {
   const l = model === "C" ? lb * (1 + mass * P.cargoDrag) : lb;
   return a / l;
 }
-const snap = (v, grid) => Math.round(v / grid) * grid;
+const snap = (v, grid) => Math.round(Math.round(v / grid) * grid * 1e6) / 1e6;
 
-// Writes CARGO_THRUST (A/B) or CARGO_DRAG (C), then ENGINE_MASS_MULT, then lifts the speed cap out
-// of the way if it would clip either target. Returns a warning string, or "".
-function solveTargets(targetSpeed, targetGainPct) {
+// Writes CARGO_COAST from the coast target, then ENGINE_MASS_MULT from the relief target.
+// Both are closed form: coast = ln(10)/lambda and lambda = lambda_base / (1 + cargo * CARGO_COAST).
+function solveTargets(targetCoast, reliefPct) {
   const N = CARGO_CAP_MAX;
   const lb = lambdaBase(P);
+  const coastEmpty = Math.log(10) / lb;          // 5.35 s at the shipped SHIP_DRAG, and mass-blind today
   let warn = "";
 
-  // 1. Heaviness. Closed form in both structures: the penalty that puts a full chain at targetSpeed.
-  if (model === "C") {
-    const a = P.shipThrust / (1 + N * P.cargoThrust);
-    P.cargoDrag = Math.max(0, Math.min(0.3, snap((a / (targetSpeed * lb) - 1) / N, 0.005)));
-  } else {
-    P.cargoThrust = Math.max(0, Math.min(0.3, snap((P.shipThrust / (targetSpeed * lb) - 1) / N, 0.005)));
+  // At or below the empty ship's own coast there is no cargo effect to solve for, and no relief to
+  // give either — so ENGINE_MASS_MULT is left exactly where the user put it rather than reset.
+  if (targetCoast <= coastEmpty + 1e-6) {
+    P.cargoCoast = 0;
+    return "A full chain coasts exactly as long as an empty one — that is the shipped build, and it " +
+      "is why cargo does not feel heavy. Raise the coast dial.";
   }
+  // 1. Heaviness: the cargo term that stretches a full chain's coast to the target.
+  P.cargoCoast = Math.max(0, Math.min(0.1,
+    snap((targetCoast * lb / Math.log(10) - 1) / N, 0.002)));
 
-  // 2. Relief. Find the effective mass that lands on the target speed, then express it as a
-  //    fraction of the raw full chain — that fraction IS ENGINE_MASS_MULT.
-  const want = targetSpeed * (1 + targetGainPct / 100);
-  if (dragTerminalAt(0, model, P) < want) {
-    warn = "That gain needs a faster ship than an EMPTY one can reach (" +
-      dragTerminalAt(0, model, P).toFixed(0) + " px/s). Lower the gain, or raise SHIP_THRUST.";
-    P.engineMassMult = 0;
-  } else {
-    let lo = 0, hi = N;                       // dragTerminalAt is monotonically decreasing in mass
-    for (let i = 0; i < 60; i++) {
-      const mid = (lo + hi) / 2;
-      if (dragTerminalAt(mid, model, P) > want) lo = mid; else hi = mid;
-    }
-    P.engineMassMult = Math.max(0.01, Math.min(1, snap((lo + hi) / 2 / N, 0.01)));
-  }
-
-  // 3. The cap must not clip either target, or the dials stop meaning anything. Only intervene if
-  //    it actually binds — otherwise CARGO_MAXSPD keeps whatever value it was given.
-  if (model !== "C") {
-    const capE = P.shipMaxSpeed / (1 + N * P.engineMassMult * P.cargoMaxspd);
-    if (capE < want) {
-      // ⛔ This lift is OPT-IN, and the reason is the whole of the "vs today" column. CARGO_MAXSPD is
-      // the ONLY thing making a short chain heavy today — the ship is cap-limited at every length —
-      // so lowering it to give the Engine room silently makes light chains FASTER than they are now,
-      // which is the opposite of "cargo is heavier". Off by default; the warning says what it costs.
-      if (freeCap) {
-        const cm = (P.shipMaxSpeed / want - 1) / (N * Math.max(0.01, P.engineMassMult));
-        P.cargoMaxspd = Math.max(0, Math.min(0.15, Math.floor(cm / 0.005) * 0.005));
-      } else {
-        warn = "The speed cap clips the Engine to +" +
-          ((capE / targetSpeed - 1) * 100).toFixed(0) + "% at a full chain, short of the +" +
-          targetGainPct + "% asked for. Tick the box above to buy the room from CARGO_MAXSPD, " +
-          "and watch what the “vs today” column does to short chains.";
-      }
-    }
-  }
-  if (want > P.shipMaxSpeed) {
-    warn = "The Engine's target (" + want.toFixed(0) + " px/s) is above SHIP_MAX_SPEED (" +
-      P.shipMaxSpeed + "), so the cap clips it. Raise SHIP_MAX_SPEED or lower the gain.";
-  }
+  // 2. Relief: the Engine removes reliefPct of the coast the cargo added.
+  const laden = Math.log(10) / (lb / (1 + N * P.cargoCoast));
+  const wantCoast = laden - (reliefPct / 100) * (laden - coastEmpty);
+  if (P.cargoCoast < 1e-6) return warn;
+  const emm = ((Math.log(10) / wantCoast) === 0 ? 1 :
+    (lb / (Math.log(10) / wantCoast) - 1) / (N * P.cargoCoast));
+  P.engineMassMult = Math.max(0, Math.min(1, snap(emm, 0.01)));
+  if (reliefPct >= 99.5) warn = "At 100% the Engine cancels the cargo's coast penalty outright " +
+    "(ENGINE_MASS_MULT 0), which also removes its thrust and tug penalties. That is stronger than " +
+    "§6.4 intends — the Engine halves mass, it does not delete it.";
   return warn;
 }
 
@@ -514,6 +494,7 @@ const SLIDERS = [
   { id: "cargoThrust", label: "CARGO_THRUST (thrust divisor per unit mass)", min: 0, max: 0.3, step: 0.005, dec: 3 },
   { id: "cargoMaxspd", label: "CARGO_MAXSPD (cap divisor per unit mass) &mdash; models A/B", min: 0, max: 0.15, step: 0.005, dec: 3, only: "AB" },
   { id: "cargoDrag", label: "CARGO_DRAG (drag-rate multiplier per unit mass) &mdash; model C", min: 0, max: 0.3, step: 0.005, dec: 3, only: "C" },
+  { id: "cargoCoast", label: "CARGO_COAST (&sect;6.7 &mdash; cargo DIVIDES drag; 0.0 is the shipped build)", min: 0, max: 0.1, step: 0.002, dec: 3 },
   { id: "cargoMass", label: "CARGO_MASS (momentum-tug mass factor)", min: 0, max: 0.4, step: 0.005, dec: 3 },
   { id: "cargoTurn", label: "CARGO_TURN (turn divisor per unit mass &mdash; ships dormant at 0)", min: 0, max: 0.2, step: 0.005, dec: 3 },
   { id: "engineMassMult", label: "ENGINE_MASS_MULT (lower is stronger)", min: 0.1, max: 1.0, step: 0.05, dec: 2 },
@@ -600,14 +581,6 @@ function syncChainUI() {
 const tSpeedEl = document.getElementById("tSpeed");
 const tGainEl = document.getElementById("tGain");
 let tSpeed = 0, tGain = 0;              // seeded from the shipped build at boot, not invented
-let freeCap = false;
-document.getElementById("freeCap").addEventListener("change", e => {
-  freeCap = e.target.checked;
-  // Unticking must UNDO the lift, or a lowered cap survives silently and the box stops meaning
-  // anything. The checkbox is really "who owns CARGO_MAXSPD — the solver, or the shipped value".
-  if (!freeCap) P.cargoMaxspd = SHIPPED.cargoMaxspd;
-  applyDials();
-});
 function applyDials() {
   tSpeed = parseFloat(tSpeedEl.value);
   tGain = parseFloat(tGainEl.value);
@@ -618,54 +591,43 @@ function applyDials() {
 tSpeedEl.addEventListener("input", applyDials);
 tGainEl.addEventListener("input", applyDials);
 function syncDialLabels() {
-  document.getElementById("tSpeedVal").textContent = tSpeedEl.value;
-  document.getElementById("tGainVal").textContent = "+" + tGainEl.value + "%";
+  document.getElementById("tSpeedVal").textContent = parseFloat(tSpeedEl.value).toFixed(2) + "s";
+  document.getElementById("tGainVal").textContent = tGainEl.value + "%";
 }
 // The dials are also a READOUT: hand-editing a constant slider must move them back, or the panel
 // starts lying. Skipped while a dial has focus, so a drag is never fought by its own write-back.
-// ⛔ The verdict the "cargo is heavier" goal actually needs. Three distinct cases, and the middle
-// one is the trap: a config can be heavier at a full chain while being LIGHTER everywhere else,
-// which is what happens when CARGO_MAXSPD is lowered to give the Engine room. Comparing only the
-// full-chain number cannot see it.
+// ⛔ §6.7's central claim, checked live: adding CARGO_COAST must not move a single shipped top speed.
+// The cap binds at every chain length today and still should, so anything other than "identical to
+// today" here means the configuration is doing something beyond changing inertia.
 function weightVerdict() {
-  let worstLighter = 0, atNode = 0, firstHeavier = null;
+  let worst = 0, atNode = 0;
   for (let k = 25; k <= CARGO_CAP_MAX * 100; k++) {
     const n = k / 100;
     const d = solve(n, false, model, P).terminal - solve(n, false, "A", SHIPPED).terminal;
-    if (d > worstLighter) { worstLighter = d; atNode = n; }
-    if (firstHeavier === null && d < -0.5) firstHeavier = n;
+    if (Math.abs(d) > Math.abs(worst)) { worst = d; atNode = n; }
   }
-  if (worstLighter > 0.5) return { kind: "lighter", by: worstLighter, at: atNode };
-  if (firstHeavier === null) return { kind: "same" };
-  return { kind: "heavier", above: firstHeavier };
-}
-// A full chain first reaches N nodes at this level (payloadSlots: 8 through level 4, +2/level, 24 at 12).
-function levelForNodes(n) {
-  for (let l = 1; l <= 12; l++) if ((l <= 4 ? 8 : Math.min(24, 8 + 2 * (l - 4))) >= n) return l;
-  return null;
+  if (Math.abs(worst) <= 0.5) return { kind: "same" };
+  return { kind: worst > 0 ? "faster" : "slower", by: Math.abs(worst), at: atNode };
 }
 function verdictText(v) {
-  if (v.kind === "lighter") return "LIGHTER by up to " + v.by.toFixed(0) + " px/s (at " +
-    v.at.toFixed(0) + " nodes)";
   if (v.kind === "same") return "identical to today";
-  const lv = levelForNodes(v.above);
-  return v.above <= 1 ? "every chain length" :
-    "above " + v.above.toFixed(0) + " nodes" + (lv ? " (level " + lv + ")" : "") + ", equal below";
+  return (v.kind === "faster" ? "FASTER" : "slower") + " by up to " + v.by.toFixed(0) +
+    " px/s (at " + v.at.toFixed(0) + " nodes)";
 }
 
 function syncDialsFromConstants() {
   const a = solve(CARGO_CAP_MAX, false, model, P), b = solve(CARGO_CAP_MAX, true, model, P);
-  const g = (b.terminal / a.terminal - 1) * 100;
+  const empty = solve(0, false, model, P).coast;
+  const relief = a.coast > empty + 1e-6 ? (a.coast - b.coast) / (a.coast - empty) * 100 : 0;
   document.getElementById("tAchieved").textContent =
-    a.terminal.toFixed(0) + " px/s · +" + g.toFixed(0) + "%";
+    a.coast.toFixed(2) + "s · " + relief.toFixed(0) + "% back";
   const v = weightVerdict();
   const cx = document.getElementById("tCross");
   cx.textContent = verdictText(v);
-  cx.className = v.kind === "lighter" ? "bad" : v.kind === "same" ? "" :
-    (v.above > 8 ? "bad" : "ok");
+  cx.className = v.kind === "same" ? "ok" : "bad";
   const act = document.activeElement;
-  if (act !== tSpeedEl) { tSpeedEl.value = Math.round(a.terminal); }
-  if (act !== tGainEl) { tGainEl.value = Math.round(g / 5) * 5; }
+  if (act !== tSpeedEl) { tSpeedEl.value = a.coast.toFixed(2); }
+  if (act !== tGainEl) { tGainEl.value = Math.round(relief / 5) * 5; }
   syncDialLabels();
 }
 
@@ -738,15 +700,18 @@ const STEPS = [
   },
   {
     id: "heavy", title: "How heavy is a full chain?",
-    todo: "24 nodes, Engine off. Fly a lap, turn, stop. Drag the <b>full-chain speed</b> dial until a full haul feels as heavy as you want it to.",
-    read: "today a full haul runs at 283 px/s. Lower is heavier. The dial writes CARGO_THRUST for you.",
+    todo: "24 nodes, Engine off. Get up to speed, then <b>let go and try to stop</b>. Turn round and burn back. " +
+      "Drag the <b>full-chain coast</b> dial until a full haul feels as heavy as you want it to.",
+    read: "today a full haul stops in 5.35 s and 590 px — the same 5.35 s an EMPTY ship takes, which is the bug. " +
+      "The dial writes CARGO_COAST. Watch the sweep's stop-px column climb while top speed does not move.",
     setup() { setChainLength(24); setEngine(false); },
     recordDial: "speed",
   },
   {
     id: "relief", title: "How much does the Engine give back?",
-    todo: "Still 24 nodes. Press <b>E</b> on and off while holding thrust. Drag the <b>Engine gain</b> dial until the difference is as big as you want it.",
-    read: "today the Engine is worth +30% at a full chain. The dial writes ENGINE_MASS_MULT for you.",
+    todo: "Still 24 nodes. Press <b>E</b> on and off and try the same stop each time.",
+    read: "0% means the Engine changes nothing about stopping; 100% means a full haul stops like an empty ship. " +
+      "The dial writes ENGINE_MASS_MULT, which also eases thrust and the tug — one knob, by design (§6.4).",
     setup() { setChainLength(24); setEngine(true); },
     recordDial: "gain",
   },
@@ -856,27 +821,28 @@ function renderProtocol() {
 // ---------- tables ----------
 const SWEEP_ROWS = [0, 4, 8, 12, 16, 20, 24];
 function buildSweep() {
-  const cols = '<th>accel</th><th>terminal</th><th>limit</th><th>t90</th><th>half-life</th><th>turn &deg;/s</th>';
-  let h = '<tr><th class="n" rowspan="2">nodes</th><th class="grp" colspan="7">no Engine</th>' +
-    '<th class="grp" colspan="6">Engine</th><th class="grp" rowspan="2">Engine gain<br>on terminal</th></tr>' +
-    "<tr>" + cols + '<th>vs today</th>' + cols + "</tr>";
-  const cellsFor = r =>
+  // ⛔ Inertia first. accel and top speed are here for reference; COAST, STOP and TUG are the columns
+  // that answer "does more debris mean more effect", and each is shown against the shipped build.
+  const grp = '<th>accel</th><th>top spd</th><th>coast</th><th>stop px</th><th>tug</th>';
+  let h = '<tr><th class="n" rowspan="2">nodes</th><th class="grp" colspan="6">no Engine</th>' +
+    '<th class="grp" colspan="5">Engine</th><th class="grp" rowspan="2">Engine gives<br>back</th></tr>' +
+    "<tr>" + grp + '<th>coast vs today</th>' + grp + "</tr>";
+  const cells = r =>
     "<td>" + r.accel.toFixed(0) + "</td><td>" + r.terminal.toFixed(0) + "</td>" +
-    '<td class="lim ' + (r.limit === "DRAG" ? "drag" : "") + '">' + r.limit + "</td>" +
-    "<td>" + r.t90.toFixed(2) + "</td><td>" + r.half.toFixed(2) + "</td>" +
-    "<td>" + (r.turn * 180 / Math.PI).toFixed(0) + "</td>";
+    "<td>" + r.coast.toFixed(2) + "s</td><td>" + r.stopPx.toFixed(0) + "</td>" +
+    "<td>" + r.tug.toFixed(2) + "</td>";
   for (const n of SWEEP_ROWS) {
     const a = solve(n, false, model, P), b = solve(n, true, model, P);
-    const gain = (b.terminal / a.terminal - 1) * 100;
+    const t = solve(n, false, "A", SHIPPED);
+    const empty = solve(0, false, model, P).coast;
+    const relief = a.coast > empty + 1e-6 ? (a.coast - b.coast) / (a.coast - empty) * 100 : 0;
+    const dc = a.coast - t.coast;
     const hl = n === nodes ? ' class="hl"' : "";
-    // ⛔ "vs today" is the column whose absence let a config through that was LIGHTER than the shipped
-    // game below 16 nodes while claiming to make cargo heavier. Negative = heavier than today.
-    const d = a.terminal - solve(n, false, "A", SHIPPED).terminal;
-    const dCell = '<td class="' + (d > 0.5 ? "bad" : d < -0.5 ? "ok" : "") + '">' +
-      (n === 0 ? "&mdash;" : (d >= 0 ? "+" : "") + d.toFixed(0)) + "</td>";
-    h += "<tr" + hl + '><td class="n">' + n + "</td>" + cellsFor(a) + dCell + cellsFor(b) +
-      '<td class="gain' + (gain < 0.5 ? " zero" : "") + '">' +
-      (gain >= 0 ? "+" : "") + gain.toFixed(0) + "%</td></tr>";
+    h += "<tr" + hl + '><td class="n">' + n + "</td>" + cells(a) +
+      '<td class="' + (dc > 0.05 ? "ok" : dc < -0.05 ? "bad" : "") + '">' +
+      (n === 0 ? "&mdash;" : (dc >= 0 ? "+" : "") + dc.toFixed(2) + "s") + "</td>" +
+      cells(b) +
+      '<td class="gain' + (relief < 1 ? " zero" : "") + '">' + relief.toFixed(0) + "%</td></tr>";
   }
   document.getElementById("sweep").innerHTML = h;
 }
@@ -981,14 +947,17 @@ function buildFindings() {
   const achE = solve(CARGO_CAP_MAX, true, model, P);
   L.push("CS042 GATE A — tools/handling-lab.html findings");
   L.push("");
+  const empty = solve(0, false, model, P);
+  const relief = ach.coast > empty.coast + 1e-6 ? (ach.coast - achE.coast) / (ach.coast - empty.coast) * 100 : 0;
   L.push("THE TWO OUTCOMES (full chain, 24 nodes)");
-  L.push("  cargo heaviness:     " + ach.terminal.toFixed(0) + " px/s   (today 283)");
-  L.push("  Engine gives back:   +" + ((achE.terminal / ach.terminal - 1) * 100).toFixed(0) +
-    "%  ->  " + achE.terminal.toFixed(0) + " px/s   (today +30%)");
-  L.push("  chain tug:           " + Math.min(1.4, CARGO_CAP_MAX * P.cargoMass).toFixed(2) +
-    ", falling to " + Math.min(1.4, CARGO_CAP_MAX * P.engineMassMult * P.cargoMass).toFixed(2) +
-    " with the Engine lit");
-  L.push("  heavier than today:  " + verdictText(weightVerdict()));
+  L.push("  coast to a stop:     " + ach.coast.toFixed(2) + " s, " + ach.stopPx.toFixed(0) +
+    " px   (today 5.35 s, 590 px — and 5.35 s empty too)");
+  L.push("  Engine gives back:   " + relief.toFixed(0) + "%  ->  " + achE.coast.toFixed(2) +
+    " s   (empty ship is " + empty.coast.toFixed(2) + " s)");
+  L.push("  chain tug:           " + ach.tug.toFixed(2) +
+    ", falling to " + achE.tug.toFixed(2) + " with the Engine lit");
+  L.push("  top speed vs today:  " + verdictText(weightVerdict()) +
+    "   (§6.7 expects 'identical to today')");
   L.push("");
   L.push("ANSWERS");
   L.push("  model (G6):          " + (A("model") || model + " (default, unchanged)"));
@@ -1007,6 +976,8 @@ function buildFindings() {
   L.push("const CARGO_THRUST = " + P.cargoThrust.toFixed(3) + ";");
   if (model === "C") L.push("const CARGO_DRAG = " + P.cargoDrag.toFixed(3) + ";      // replaces CARGO_MAXSPD");
   else L.push("const CARGO_MAXSPD = " + P.cargoMaxspd.toFixed(3) + ";");
+  L.push("const CARGO_COAST = " + P.cargoCoast.toFixed(3) + ";" +
+    (P.cargoCoast > 0 ? "     // NEW — §6.7, cargo divides drag" : "     // 0 = shipped, no inertia change"));
   L.push("const CARGO_MASS = " + P.cargoMass.toFixed(3) + ";");
   L.push("const CARGO_TURN = " + P.cargoTurn.toFixed(3) + ";" +
     (P.cargoTurn === 0 ? "        // still dormant" : "        // NOT dormant — G6 says yes"));
@@ -1174,9 +1145,8 @@ syncChainUI();
 // starting position is the thing being changed, not a proposal. setModel("B") follows: B keeps the
 // build's own structure, and the dials do the work that picking a model used to.
 const ship24 = solve(CARGO_CAP_MAX, false, "A", SHIPPED);
-const ship24E = solve(CARGO_CAP_MAX, true, "A", SHIPPED);
-tSpeedEl.value = Math.round(ship24.terminal);
-tGainEl.value = Math.round((ship24E.terminal / ship24.terminal - 1) * 100 / 5) * 5;
+tSpeedEl.value = ship24.coast.toFixed(2);   // 5.35 s — and it is 5.35 s empty too, which is the problem
+tGainEl.value = 0;
 syncDialLabels();
 renderProtocol();
 setModel("B");

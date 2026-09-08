@@ -16,6 +16,15 @@ carried forward and still live.
   answer, and the Findings block is the single artefact GATE A hands back. Reference grid and ship
   trail carry the motion read, since the camera is locked to the ship. No build byte; no test
   (`tools/` has never carried suite coverage).
+- P0 follow-up 3 (2026-09-08) — ⛔ **`CARGO_COAST` proposed (spec §6.7, NEW, awaiting Paul's
+  sign-off), and the lab repointed from top speed to inertia.** Root cause of three failed tuning
+  passes: `Ship.update`'s drag is `Math.pow(1 - SHIP_DRAG, dt)` with **no cargo term**, so an empty
+  ship and a 24-node haul both bleed to a tenth of their speed in **5.35 s**. Coasting, stopping and
+  turning are identical laden or empty — mass sets the ceiling and then stops mattering, and every
+  §6.3 model tunes the ceiling. §6.7 adds one term, `dt / (1 + cargo * CARGO_COAST)`, so cargo
+  **divides** the decay rate. The lab's two dials are now full-chain coast and the Engine's share of
+  it, the sweep leads with coast / stop-distance / tug against today, and the verdict line checks
+  §6.7's central claim that **no shipped top speed moves**. FLAG-CS042-k opens for the value.
 - P0 follow-up 2 (2026-09-08) — ⛔ **the lab gained the view whose absence let a wrong answer
   through: a "vs today" column and a three-case weight verdict** (identical / heavier above N /
   LIGHTER by X at N). Paul's second pass read as a good result at a full chain and was in fact
@@ -52,6 +61,24 @@ carried forward and still live.
   would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
+
+- **⛔ §6.7 `CARGO_COAST` is PROPOSED and unratified. Paul approved the mechanism on 2026-09-08; the
+  value is FLAG-CS042-k and nothing ships until he signs off.** His goal, verbatim: *"I just want the
+  ship to experience heavier effect on inertia from more debris mass, and I want the engine powerup to
+  significantly ease up on that heavier effect. The more debris, the more mass, and the more effect."*
+  - ⛔ **The minimum version is one constant and one line.** `CARGO_COAST` 0.03 with **every other
+    value left shipped** moves no top speed at any chain length, leaves the tug alone, stretches a
+    full haul's coast 5.35 s → 9.19 s, and the Engine already returns **50%** of that purely because
+    `chainMass()` is the sum it halves. Moving `ENGINE_MASS_MULT` 0.5 → 0.35 raises the relief to 65%
+    but is **not** speed-neutral, so it is a separate decision.
+  - ⛔ **§6.3's base-drag raise does not ship and is pointed the wrong way for this goal** — higher
+    drag stops the ship sooner, which is less momentum. FLAG-CS042-f closes as "no change (0.35)".
+    §6.3's Model C is likewise unnecessary: it increases drag with cargo, which reads as friction
+    rather than mass. **Model B, unedited, is G6's answer.**
+  - ⚠ **The momentum tug still clamps at 1.4, reached at 14 nodes**, so from 14 to 24 the yank does
+    not grow — a second violation of "more debris, more effect", deliberately left out of §6.7
+    because raising it feeds the chain solver and pulls in GDD §3.4's stability re-validation. Offered
+    and declined at this round; still available.
 
 - **CS042 GATE A, handling half: second pass run, one decision outstanding.** Paul's pass 2 answered
   Model **B**, `SHIP_DRAG` **0.35 (unchanged — he flew 0.45 and kept the shipped value, so
@@ -177,7 +204,13 @@ None.
 - **CS042 P1 next** — `tools/sfx-lab.html` (spec §1.6), Fable 5.1 at Medium, no `ultrathink`. Its
   copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. P0/P1/P2 are all labs and all feed GATE A,
   where Paul works the three of them in one sitting.
-- **P7 has collapsed to two constants and one burn condition.** On pass 2 with the cap lift off:
+- **P7, if §6.7 is ratified in its minimum form: one new constant, one line, one debug row, plus the
+  burn condition.** `CARGO_COAST` + `DEBUG.cargoCoast` (registry 110 → 111, `test-registry.js` owns
+  the count) and §6.5's fuel change. Every existing handling constant stays shipped. ⛔ **The plan set
+  P7 to XHigh because Model C rebuilds the speed penalty; that reason is gone twice over now** — the
+  effort call is Paul's, not a phase's.
+- **Superseded by the above, kept for the reasoning: P7 under pass 2's shape was two constants and one
+  burn condition.** On pass 2 with the cap lift off:
   `CARGO_THRUST` 0.07 → 0.085, `ENGINE_MASS_MULT` 0.5 → **0.35** (0.34 and 0.35 differ by one point of
   Engine gain once the cap governs, and 0.35 sits on the knob's own 0.05 step, so nothing needs
   widening), and §6.5's burn condition. `SHIP_DRAG`, `CARGO_MAXSPD`, `CARGO_MASS` and `CARGO_TURN` all
