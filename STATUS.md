@@ -1,50 +1,28 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS041 · Phase: P9 (closed) · Registry: 110 · Levers: 18
-Since close: one **off-cycle GDD accuracy pass** (2026-09-07, doc-only, no build edit) — see the entry below.
-⛔ **Resuming that work? `TODO.md`'s "RESUME HERE" block at the top is the entry point** — it names the next
-step and what it is blocked on. This file has the findings; that block has the direction.
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P0 · Registry: 110 · Levers: 18
+⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
+carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
+are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
+carried forward and still live.
 
-## Phase ledger — CS041
+## Phase ledger — CS042
 
-- P1 — GDD gains `## 0. How to read this document`: a 35-row index, one row per §2.x/§3.x
-  subsection, letting a session load only what its phase names instead of §1–§3 in full.
-  `CLAUDE.md`'s document map switches to the named-subsection contract; `CLAUDE.md` gains its own
-  50 KB ceiling (FLAG-CS041-b). No GDD content deleted; no build edit.
-- P2 — GDD §3's Constants row (22.5 KB append-only changelog) replaced by a 3.1 KB pointer,
-  preserving three since-dead "standing rules" it had shipped as live instructions — one directly
-  contradicted `CLAUDE.md`'s "one clock" invariant. This finding triggered GATE C.
-- GATE C (closed) — Lever A (§0) and the read contract confirmed working; Lever C's specced
-  30–40% prose trim declined, re-scoped to a **staleness sweep** (P3–P5); FORK-CS041-A resolved to
-  **no version bump**. Full text: `log/CS041.md`.
-- P3 — Staleness rule (remove only what is FALSE, keep what is merely OLD) plus a committed,
-  reporting-only identifier audit (`scratchpad/gdd-audit.py`); applied to GDD §3's table. 6 of 12
-  candidate rows corrected, 0 removed outright; §3's ⛔ count 13 → 22.
-- GATE D (closed) — rule ratified as written; no re-run of P3 required.
-- P4 — Swept §2.19/§2.13/§2.14+.1+.2/§2.10+.1+.2/§2.5+.1/§2.7/§2.12 (the CS024/CS038/CS040
-  fallout). 105 candidates → 9 real, 9 corrections, 0 removals. Found `POWERUP_HEALTH_GAP` and
-  CS038 P5's twelve retired knobs each live-as-written in multiple places; narrowed FLAG-8a.
-- P5 — Swept the remainder (§2.4/§2.6/§2.8/§2.9/§2.11+.1/§2.16/§2.17/§2.18/§2.20+.1/§2.23/
-  §3.1–§3.4). 41 candidates → 7 real, 7 corrections, 0 removals. Resolved FLAG-CS041-d (the weekly
-  pool modulus was right in number, wrong in stated structure). Found and fixed a GDD citation of a
-  deleted test file.
-- P9 — Closing. Re-measured all 35 of GDD §0's size rows (drift ≤0.5 KB per row, byte-neutral
-  overall); added the re-measure to `CLAUDE.md`'s closing-phase rules. Confirmed `CLAUDE.md`'s read
-  contract still describes reality and its own ceiling still has headroom (48.4 KB / ~1.6 KB left).
-  `STATUS.md` rolled and reset. Both planning docs archived; `log/GDD-TRIM-CS041.md` stays in `log/`.
-
-- **Off-cycle (2026-09-07) — GDD accuracy pass, doc-only.** Not a phase and not CS042: Paul asked for the GDD to be
-  brought up to the current build so it can be compared against the Orbital Overhaul 2 design document. Swept the parts
-  CS041 never reached — front matter, §4, §6 — plus the two §2 sections and one §3 row it flagged as unswept. ⛔ **No build byte changed; suite 171/171, 0 skips.** GDD 528,243 → 542,427 bytes.
-  Added `scratchpad/gdd-sizes.py` — reporting-only sibling of `gdd-audit.py`, `--check` diffs §0's size
-  table against the document and exits non-zero on drift, so the CS041 P9 closing-phase re-measure is one
-  command instead of 35 manual counts. **Not committed** — see Next up.
-
-Full narrative for every phase and both gates: `log/CS041.md`.
+- P0 — `tools/handling-lab.html` (spec §6.6): a flyable mock ship on a real verlet tow chain of 0–24
+  nodes, a live A/B/C model selector, ten constant sliders seeded from the shipped values, a live
+  **binding-limit** readout, the 0/4/8/12/16/20/24 sweep table headlined by Engine gain %, an `X`-key
+  A/B against shipped, a copy-out block, and a pinned recompute of §6.2/§6.3. Three spec defects found
+  — see Known issues. No build byte; no test (`tools/` has never carried suite coverage).
 
 ## Working / verified
 
-- Full suite: **171 files, 171 passed, 0 failed, 0 skipped** at close. `orbital-overhaul.html` is
-  byte-identical to CS040's across the whole changeset — no phase's diff touches it.
+- **P0:** full suite **171 files, 171 passed, 0 failed, 0 skipped, 0 timed out** (exit 0);
+  `orbital-overhaul.html` is byte-identical to `47b1249` (md5 `3087c476…` on both sides), and
+  `tools/` carries no suite coverage by long-standing practice,
+  so P0 ships no test. The lab's analytics were cross-checked against an independent recompute and
+  against a discrete 1/60 s integration of the build's own step order (within 0.7%, the expected
+  offset from the cap being applied before drag).
+- Carried from CS041's close: **171 files, 171 passed, 0 failed, 0 skipped**. `orbital-overhaul.html`
+  has been byte-identical since CS040 — neither CS041 nor the off-cycle pass touched it.
 - The four literal prose pins (§1.3b) all still match, re-checked after every phase's edits.
 - Headline result: per-session GDD load for a representative phase, old rule vs new — **~505 KB →
   ~33–46 KB**, a ~91–94% reduction, with nothing deleted. GDD whole-file size: 534,526 → 528,243
@@ -54,6 +32,21 @@ Full narrative for every phase and both gates: `log/CS041.md`.
   would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
+
+- **⛔ CS042 P0 measured three defects in `PLANNED-FEATURES-CS042.md` §6. P7 must not paste that
+  section's numbers.** The lab recomputes both published tables from the build's own arithmetic; where
+  they disagree, the lab is right (P0's standing rule). **§6.2** is exact at 0, 4 and 24 nodes and wrong
+  in its **12-node Engine cells** — accel **239** not 243 (**+30%**, not +31%), top speed **430** not
+  424 (**+17%**, not +16%). **§6.3's Model C table** is exact at 0 and 24 nodes and wrong at 4 and 12:
+  at 4 nodes both Engine states are still **cap-limited at 520**, so the Engine gain is **+0%**, not the
+  claimed +19%; at 12 nodes it is **315 / 471 (+49%)**, not 249 / 340 (+37%). **The qualitative claim
+  fails with it** — under Model C at the shipped `SHIP_DRAG` 0.35 the cap binds out to **4.7 nodes**
+  (9.4 with Engine), not "only when unloaded". That sentence is true only at the *proposed* `SHIP_DRAG`
+  **0.45**, where the cap stops binding at 0.9 nodes. ⛔ **Model C and the base-drag raise are therefore
+  one decision, not two — G7 cannot take C alone and get §6.3's stated behaviour.** Separately, §6.3's
+  Model B instruction to "raise `CARGO_THRUST` **and** `CARGO_MAXSPD`" is backwards on the second:
+  raising `CARGO_MAXSPD` lowers the cap and binds it harder. At shipped values Model A's crossover sits
+  near **31 nodes**, past the 24-node tow cap, which is why "the clamp binds nearly everywhere" is right.
 
 - **⛔ Stale COMMENTS in the build and the suite — four now, all needing a build/test edit this
   doc-only pass could not make.** Two stale `% 15` comments (`orbital-overhaul.html:99`;
@@ -132,7 +125,13 @@ None.
 
 ## Next up
 
-- **CS042 is not yet started.**
+- **CS042 P1 next** — `tools/sfx-lab.html` (spec §1.6), Fable 5.1 at Medium, no `ultrathink`. Its
+  copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. P0/P1/P2 are all labs and all feed GATE A,
+  where Paul works the three of them in one sitting.
+- **At GATE A, the handling lab answers G6 and G7.** `CARGO_TURN` is in the lab and is **not**
+  pre-committed to shipping above 0.0 (FLAG-CS042-j). The lab's `C + drag .45` preset is the one that
+  reproduces §6.3's *intent*; note it puts a full 24-node haul at **123 px/s** terminal, which is a
+  playability question the analytics cannot settle.
 - **The GDD's front matter and §4 are no longer changelogs — keep them that way.** Both carried
   per-round status text that nobody's checklist reached, so both aged silently: the front-matter
   build stamp was sixteen changesets out of date and two of §4's four blockquotes still read "in

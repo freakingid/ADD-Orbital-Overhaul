@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Handling Lab — Orbital Overhaul</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050a12; color: #a8d4ff;
+    font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; }
+  #left { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
+  #canvasWrap { flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    padding: 10px 10px 0; }
+  canvas { background: #050a12; border: 1px solid #223347; }
+  #tables { padding: 10px 14px 24px; }
+  #panel { flex: 0 0 372px; padding: 16px; overflow-y: auto; border-left: 1px solid #223347;
+    box-sizing: border-box; }
+  h1 { font-size: 16px; color: #9fd8ff; margin: 0 0 4px; }
+  h2 { font-size: 12px; color: #70ffa0; text-transform: uppercase; letter-spacing: 0.05em;
+    margin: 20px 0 8px; border-bottom: 1px solid #223347; padding-bottom: 4px; }
+  p.sub { color: #3a5a80; margin: 0 0 12px; }
+  label { display: block; margin: 9px 0 2px; color: #a8d4ff; }
+  label.off { opacity: 0.34; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { flex: 1 1 auto; min-width: 0; }
+  .val { width: 56px; text-align: right; color: #70ffa0; font-variant-numeric: tabular-nums; }
+  .val.moved { color: #ffcf5a; }
+  button { background: #12203a; color: #a8d4ff; border: 1px solid #3a5a80; border-radius: 4px;
+    padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #70ffa0; color: #70ffa0; }
+  button.active { background: #1a3a2a; border-color: #70ffa0; color: #70ffa0; }
+  .btnRow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btnRow button { flex: 1 1 auto; }
+  .hint { color: #3a5a80; font-size: 11px; margin-top: 6px; }
+  pre { background: #0a1220; border: 1px solid #223347; padding: 8px; font-size: 11px;
+    white-space: pre-wrap; margin: 0; }
+  #copyBtn { margin-top: 6px; width: 100%; }
+  #copyBtn.copied { border-color: #ffcf5a; color: #ffcf5a; }
+  table { border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+  th, td { border: 1px solid #223347; padding: 2px 6px; text-align: right; white-space: nowrap; }
+  th { color: #70ffa0; font-weight: normal; text-transform: uppercase; letter-spacing: 0.04em; }
+  th.grp { color: #9fd8ff; background: #0a1220; text-align: center; }
+  td.n, th.n { color: #9fd8ff; text-align: center; }
+  td.lim { color: #ffcf5a; text-align: center; }
+  td.lim.drag { color: #70ffa0; }
+  td.gain { color: #ffcf5a; font-size: 12px; }
+  td.gain.zero { color: #3a5a80; }
+  tr.hl td { background: #0d1626; }
+  .ok { color: #70ffa0; }
+  .bad { color: #ff6a6a; }
+  .kv { display: flex; justify-content: space-between; gap: 8px; }
+  .kv span:last-child { color: #70ffa0; font-variant-numeric: tabular-nums; }
+  .big { font-size: 15px; }
+  #binding { color: #ffcf5a; }
+  #binding.drag { color: #70ffa0; }
+  .note { color: #ffcf5a; font-size: 11px; margin: 8px 0 0; }
+  .scroller { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div id="left">
+  <div id="canvasWrap"><canvas id="cv" width="900" height="540"></canvas></div>
+  <div id="tables">
+    <h2>Chain-length sweep — analytic, at the current sliders</h2>
+    <div class="scroller"><table id="sweep"></table></div>
+    <p class="hint">Steady-state values for a chain of N mass-1.0 nodes under continuous forward
+      thrust. <b>accel</b> = SHIP_THRUST / (1 + cargo x CARGO_THRUST). <b>terminal</b> = the smaller of
+      the speed cap and thrust / drag-rate. <b>t90</b> = seconds from rest to 90% of terminal.
+      <b>half-life</b> = coast time to lose half your speed with the engine off.
+      <b>gain</b> = the Engine's effect on terminal speed, which is the number CS042 G7 is deciding on.</p>
+
+    <h2>Spec check — PLANNED-FEATURES-CS042 &sect;6.2 and &sect;6.3, recomputed</h2>
+    <div class="scroller"><table id="specA"></table></div>
+    <div class="scroller" style="margin-top:12px"><table id="specC"></table></div>
+    <div id="specProse"></div>
+    <p class="hint">These two tables are pinned to the <i>shipped</i> constants (and &sect;6.3's proposed
+      CARGO_DRAG 0.03) regardless of the sliders, so they stay a fixed audit of the spec.
+      <b>Standing rule (P0): where the lab and the spec disagree, the lab is right and the spec is
+      wrong.</b></p>
+  </div>
+</div>
+
+<div id="panel">
+  <h1>Handling Lab</h1>
+  <p class="sub">CS042 P0 &mdash; drag, cargo mass and Engine relief across chain lengths
+    (PLANNED-FEATURES-CS042 &sect;6). Standalone design harness: not part of the game build, no
+    imports; this file carries its own copies of the real integration and chain physics.
+    Click the canvas, then fly.</p>
+
+  <h2>Model (&sect;6.3)</h2>
+  <div class="btnRow" id="modelRow"></div>
+  <p class="hint" id="modelWhat"></p>
+
+  <h2>Live</h2>
+  <div class="kv big"><span>Binding limit</span><span id="binding">&mdash;</span></div>
+  <div class="kv"><span>speed / terminal</span><span id="liveSpeed">&mdash;</span></div>
+  <div class="kv"><span>effective accel</span><span id="liveAccel">&mdash;</span></div>
+  <div class="kv"><span>speed cap</span><span id="liveCap">&mdash;</span></div>
+  <div class="kv"><span>drag would settle at</span><span id="liveDragT">&mdash;</span></div>
+  <div class="kv"><span>coast half-life</span><span id="liveHalf">&mdash;</span></div>
+  <div class="kv"><span>t90 from rest</span><span id="liveT90">&mdash;</span></div>
+  <div class="kv"><span>turn rate</span><span id="liveTurn">&mdash;</span></div>
+  <div class="kv"><span>towed mass (effective)</span><span id="liveMass">&mdash;</span></div>
+  <div class="kv"><span>cap stops binding above</span><span id="liveCross">&mdash;</span></div>
+  <p class="hint">Keys: <b>&larr; &rarr;</b> / A D turn &middot; <b>&uarr;</b> / W thrust &middot;
+    <b>E</b> Engine &middot; <b>T</b> auto-thrust &middot; <b>R</b> reset ship &middot;
+    <b>X</b> A/B against shipped &middot; <b>1 2 3</b> model &middot; <b>[ ]</b> chain &plusmn;1.</p>
+
+  <h2>Chain &amp; Engine</h2>
+  <label>chain nodes (mass 1.0 each)
+    <div class="row"><input type="range" id="nodes" min="0" max="24" step="1">
+      <span class="val" id="nodesVal"></span></div>
+  </label>
+  <div class="btnRow">
+    <button id="engineBtn">Engine: OFF</button>
+    <button id="abBtn">A/B: edited</button>
+  </div>
+  <label class="row" style="margin-top:8px"><input type="checkbox" id="burnFuel">
+    &nbsp;burn the tank (otherwise the Engine runs forever)</label>
+  <label class="row"><input type="checkbox" id="burnLaden">
+    &nbsp;&sect;6.5 burn condition: thrusting AND chain non-empty</label>
+  <div class="kv"><span>fuel left</span><span id="fuelLeft">&mdash;</span></div>
+  <div class="kv"><span>wall time on this tank</span><span id="fuelWall">&mdash;</span></div>
+
+  <h2>Constants</h2>
+  <div id="sliders"></div>
+
+  <h2>Presets</h2>
+  <div class="btnRow" id="presetRow"></div>
+  <p class="hint">Presets overwrite the sliders. "Shipped" is the load state, so
+    <b>A, untouched</b> is always one click away.</p>
+
+  <h2>Copy out</h2>
+  <pre id="copyOut"></pre>
+  <button id="copyBtn">Copy constants block</button>
+</div>
+
+<script>
+"use strict";
+
+// ---- Copied from orbital-overhaul.html (this lab intentionally DUPLICATES rather than imports —
+// no build step is a house rule, and drift here can only ever produce a bad PREVIEW, never a bad
+// BUILD). Sources: Ship.update()'s integration, chainMass(), shipTurnRate(), updateChain(),
+// wrapNode(), shortDelta(), drawPoly/glowStroke, and the SHIP_HULL / canister polys. ----
+const TAU = Math.PI * 2;
+const SHIP_TURN = 4.2;          // rad/s design default; settings.shipTurnScale is 1.0 here
+const SHIP_RADIUS = 13;
+const SHIP_HULL = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
+const CHAIN_LINK = 20;          // px between chain nodes
+const CHAIN_ITER = 4;           // verlet constraint relaxation passes/frame
+const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
+const CARGO_CAP_MAX = 24;
+const COLOR = {
+  ship: "#9fd8ff", garbage: "#c8ff50", dim: "#3a5a80", text: "#a8d4ff",
+  hot: "#ffcf5a", good: "#70ffa0", star: "#1d3350",
+};
+
+// The shipped values every slider is seeded from (GDD §2.1, §2.10.2, §2.14).
+const SHIPPED = {
+  shipThrust: 340, shipDrag: 0.35, shipMaxSpeed: 520,
+  cargoThrust: 0.07, cargoMaxspd: 0.035, cargoDrag: 0.03, // cargoDrag has no shipped value: 0.03 is §6.3's proposal
+  cargoMass: 0.10, cargoTurn: 0.0,
+  engineMassMult: 0.5, engineBurnSeconds: 10.0,
+};
+
+const FIELD_W = 1600, FIELD_H = 1200;   // the lab's own wrapping field (half-width > a 480 px chain)
+
+function shortDelta(ax, ay, bx, by) {   // shortest vector a -> b on the wrapping field
+  let dx = bx - ax, dy = by - ay;
+  if (dx > FIELD_W / 2) dx -= FIELD_W; if (dx < -FIELD_W / 2) dx += FIELD_W;
+  if (dy > FIELD_H / 2) dy -= FIELD_H; if (dy < -FIELD_H / 2) dy += FIELD_H;
+  return [dx, dy];
+}
+function wrapPoint(p) {
+  if (p.x < 0) p.x += FIELD_W; if (p.x > FIELD_W) p.x -= FIELD_W;
+  if (p.y < 0) p.y += FIELD_H; if (p.y > FIELD_H) p.y -= FIELD_H;
+}
+function wrapNode(n) {                  // shift px/py too so implied velocity survives (§3.4)
+  if (n.x < 0) { n.x += FIELD_W; n.px += FIELD_W; }
+  if (n.x > FIELD_W) { n.x -= FIELD_W; n.px -= FIELD_W; }
+  if (n.y < 0) { n.y += FIELD_H; n.py += FIELD_H; }
+  if (n.y > FIELD_H) { n.y -= FIELD_H; n.py -= FIELD_H; }
+}
+function wrapOffset(coord, ref, size) {
+  const d = coord - ref;
+  if (d > size / 2) return -size;
+  if (d < -size / 2) return size;
+  return 0;
+}
+function glowStroke(color, width = 1.6, blur = 10) {
+  ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.shadowColor = color; ctx.shadowBlur = blur;
+  ctx.stroke(); ctx.shadowBlur = 0;
+}
+function drawPoly(points, x, y, angle, color, closed = true) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+  ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed) ctx.closePath();
+  glowStroke(color); ctx.restore();
+}
+function drawCanister(x, y, angle, color) {
+  drawPoly([[7, -5], [7, 5], [-7, 5], [-7, -5]], x, y, angle, color);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+  ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0);
+  glowStroke(color, 1, 5); ctx.restore();
+}
+// ---- end copied game math ----
+
+// ---------- lab state ----------
+const P = Object.assign({}, SHIPPED);    // ⛔ seeded from shipped, so "A, untouched" is honest
+let model = "A";
+let nodes = 0;
+let engineOn = false;
+let autoThrust = false;
+let burnFuel = false, burnLaden = false;
+let fuel = 0, fuelWall = 0;
+let abBaseline = false, abStash = null;
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+const ship = { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0, angle: -Math.PI / 2, thrusting: false };
+let chain = [];
+let trail = [];
+
+// ---------- the three models, as pure analytics ----------
+// λ (per-second continuous decay) from the build's per-second fraction: (1-d)^dt === e^(-λ dt).
+function lambdaBase(P) { return -Math.log(Math.max(1e-6, 1 - P.shipDrag)); }
+
+// Effective towed mass, exactly as chainMass() computes it: Σ node.mass, halved while Engine fuel remains.
+function effMass(rawMass, eng, P) { return eng ? rawMass * P.engineMassMult : rawMass; }
+
+// One row of physics for a given raw towed mass. `model` picks the whole speed-penalty structure.
+function solve(rawMass, eng, model, P) {
+  const cargo = effMass(rawMass, eng, P);
+  const lb = lambdaBase(P);
+  const accel = P.shipThrust / (1 + cargo * P.cargoThrust);
+  const cap = model === "C" ? P.shipMaxSpeed : P.shipMaxSpeed / (1 + cargo * P.cargoMaxspd);
+  const lambda = model === "C" ? lb * (1 + cargo * P.cargoDrag) : lb;
+  const dragT = accel / lambda;                     // where drag alone would settle the ship
+  const terminal = Math.min(cap, dragT);
+  const limit = cap <= dragT ? "CAP" : "DRAG";
+  // v(t) = (a/λ)(1 - e^(-λt)); time to 90% of the terminal actually reached.
+  const t90 = -Math.log(Math.max(1e-9, 1 - 0.9 * terminal / dragT)) / lambda;
+  return {
+    cargo, accel, cap, lambda, dragT, terminal, limit, t90,
+    half: Math.LN2 / lambda,
+    turn: SHIP_TURN / (1 + cargo * P.cargoTurn),
+  };
+}
+
+// Smallest node count at which the cap stops being the binding limit (0.01-node resolution).
+function crossover(eng, model, P) {
+  for (let k = 0; k <= CARGO_CAP_MAX * 100; k++) {
+    if (solve(k / 100, eng, model, P).limit === "DRAG") return k / 100;
+  }
+  return null;
+}
+
+// ---------- simulation: the build's own integration shape ----------
+function chainMassRaw() { return chain.reduce((s, n) => s + n.mass, 0); }
+function engineActive() { return engineOn && (!burnFuel || fuel > 0); }
+function chainMassEff() { return effMass(chainMassRaw(), engineActive(), P); }
+function chainAnchor() {
+  return { x: ship.x - Math.cos(ship.angle) * 12, y: ship.y - Math.sin(ship.angle) * 12 };
+}
+
+function stepShip(dt) {
+  const cargo = chainMassEff();
+  const s = solve(chainMassRaw(), engineActive(), model, P);
+  const turn = (SHIP_TURN / (1 + cargo * P.cargoTurn)) * dt;
+  if (keys.left) ship.angle -= turn;
+  if (keys.right) ship.angle += turn;
+
+  ship.thrusting = keys.thrust || autoThrust;
+  if (ship.thrusting) {
+    const mul = 1 / (1 + cargo * P.cargoThrust);
+    ship.vx += Math.cos(ship.angle) * P.shipThrust * mul * dt;
+    ship.vy += Math.sin(ship.angle) * P.shipThrust * mul * dt;
+    const sp = Math.hypot(ship.vx, ship.vy);
+    if (sp > s.cap) { ship.vx *= s.cap / sp; ship.vy *= s.cap / sp; }
+    // Engine burn — the build decrements INSIDE this branch, after the thrust it paid for.
+    if (burnFuel && engineOn && (!burnLaden || chain.length > 0)) fuel = Math.max(0, fuel - dt);
+  }
+  // Drag. e^(-λ dt) is exactly the build's Math.pow(1 - SHIP_DRAG, dt) for models A/B, and is the
+  // one line Model C changes: λ picks up the cargo term instead of the speed cap doing it.
+  const d = Math.exp(-s.lambda * dt);
+  ship.vx *= d; ship.vy *= d;
+  ship.x += ship.vx * dt; ship.y += ship.vy * dt;
+  wrapPoint(ship);
+}
+
+function updateChain(dt) {                 // ported from updateChain(), §3.4 order preserved
+  if (chain.length === 0) return;
+  const damp = Math.pow(0.18, dt);
+  for (const n of chain) {
+    const vx = (n.x - n.px) * damp, vy = (n.y - n.py) * damp;
+    n.px = n.x; n.py = n.y;
+    n.x += vx; n.y += vy;
+    n.spin += n.spinRate * dt;
+  }
+  const a0 = chainAnchor();
+  const [tdx, tdy] = shortDelta(a0.x, a0.y, chain[0].x, chain[0].y);
+  const td = Math.hypot(tdx, tdy);
+  if (td > CHAIN_LINK) {                   // pre-constraint stretch is the honest force signal
+    const massFactor = Math.min(1.4, chainMassEff() * P.cargoMass);
+    const f = CHAIN_TUG * (td - CHAIN_LINK) * massFactor;
+    ship.vx += (tdx / td) * f * dt;
+    ship.vy += (tdy / td) * f * dt;
+  }
+  for (let iter = 0; iter < CHAIN_ITER; iter++) {
+    const a = chainAnchor();
+    for (let i = 0; i < chain.length; i++) {
+      const leader = i === 0 ? a : chain[i - 1];
+      const n = chain[i];
+      const [dx, dy] = shortDelta(leader.x, leader.y, n.x, n.y);
+      const dd = Math.hypot(dx, dy) || 0.0001;
+      const diff = (dd - CHAIN_LINK) / dd;
+      if (i === 0) { n.x -= dx * diff; n.y -= dy * diff; }
+      else {
+        n.x -= dx * diff * 0.5; n.y -= dy * diff * 0.5;
+        leader.x += dx * diff * 0.5; leader.y += dy * diff * 0.5;
+      }
+    }
+  }
+  chain.forEach(wrapNode);
+}
+
+function setChainLength(n) {
+  nodes = Math.max(0, Math.min(CARGO_CAP_MAX, n | 0));
+  while (chain.length > nodes) chain.pop();
+  while (chain.length < nodes) {
+    const prev = chain.length ? chain[chain.length - 1] : chainAnchor();
+    const x = prev.x - Math.cos(ship.angle) * CHAIN_LINK;
+    const y = prev.y - Math.sin(ship.angle) * CHAIN_LINK;
+    chain.push({ x, y, px: x, py: y, spin: Math.random() * TAU, spinRate: (Math.random() - 0.5) * 2, mass: 1.0 });
+  }
+  chain.forEach(wrapNode);
+}
+
+function resetShip() {
+  ship.x = FIELD_W / 2; ship.y = FIELD_H / 2;
+  ship.vx = 0; ship.vy = 0; ship.angle = -Math.PI / 2;
+  chain = []; trail = []; setChainLength(nodes);
+}
+
+// ---------- input ----------
+const keys = { left: false, right: false, thrust: false };
+const stars = [];
+for (let i = 0; i < 320; i++) stars.push({ x: Math.random() * FIELD_W, y: Math.random() * FIELD_H, r: Math.random() < 0.2 ? 1.6 : 1 });
+
+window.addEventListener("keydown", e => {
+  if (e.target instanceof HTMLInputElement && e.key.startsWith("Arrow")) return; // let sliders keep arrows
+  const k = e.key.toLowerCase();
+  if (k === "arrowleft" || k === "a") { keys.left = true; e.preventDefault(); }
+  if (k === "arrowright" || k === "d") { keys.right = true; e.preventDefault(); }
+  if (k === "arrowup" || k === "w") { keys.thrust = true; e.preventDefault(); }
+  if (k === "e") setEngine(!engineOn);
+  if (k === "t") { autoThrust = !autoThrust; }
+  if (k === "r") resetShip();
+  if (k === "x") toggleAB();
+  if (k === "1") setModel("A");
+  if (k === "2") setModel("B");
+  if (k === "3") setModel("C");
+  if (k === "[") { setChainLength(nodes - 1); syncChainUI(); }
+  if (k === "]") { setChainLength(nodes + 1); syncChainUI(); }
+});
+window.addEventListener("keyup", e => {
+  const k = e.key.toLowerCase();
+  if (k === "arrowleft" || k === "a") keys.left = false;
+  if (k === "arrowright" || k === "d") keys.right = false;
+  if (k === "arrowup" || k === "w") keys.thrust = false;
+});
+cv.addEventListener("mousedown", () => { if (document.activeElement) document.activeElement.blur(); });
+
+// ---------- panel wiring ----------
+const SLIDERS = [
+  { id: "shipThrust", label: "SHIP_THRUST (px/s&sup2;)", min: 100, max: 800, step: 5, dec: 0 },
+  { id: "shipDrag", label: "SHIP_DRAG (fraction of speed lost per second)", min: 0.05, max: 0.9, step: 0.01, dec: 2 },
+  { id: "shipMaxSpeed", label: "SHIP_MAX_SPEED (px/s)", min: 200, max: 900, step: 5, dec: 0 },
+  { id: "cargoThrust", label: "CARGO_THRUST (thrust divisor per unit mass)", min: 0, max: 0.3, step: 0.005, dec: 3 },
+  { id: "cargoMaxspd", label: "CARGO_MAXSPD (cap divisor per unit mass) &mdash; models A/B", min: 0, max: 0.15, step: 0.005, dec: 3, only: "AB" },
+  { id: "cargoDrag", label: "CARGO_DRAG (drag-rate multiplier per unit mass) &mdash; model C", min: 0, max: 0.3, step: 0.005, dec: 3, only: "C" },
+  { id: "cargoMass", label: "CARGO_MASS (momentum-tug mass factor)", min: 0, max: 0.4, step: 0.005, dec: 3 },
+  { id: "cargoTurn", label: "CARGO_TURN (turn divisor per unit mass &mdash; ships dormant at 0)", min: 0, max: 0.2, step: 0.005, dec: 3 },
+  { id: "engineMassMult", label: "ENGINE_MASS_MULT (lower is stronger)", min: 0.1, max: 1.0, step: 0.05, dec: 2 },
+  { id: "engineBurnSeconds", label: "ENGINE_BURN_SECONDS (tank, seconds of thrust)", min: 1, max: 60, step: 0.5, dec: 1 },
+];
+const slidersDiv = document.getElementById("sliders");
+for (const s of SLIDERS) {
+  const lab = document.createElement("label");
+  lab.id = "lab_" + s.id;
+  lab.innerHTML = s.label +
+    '<div class="row"><input type="range" id="sl_' + s.id + '" min="' + s.min + '" max="' + s.max +
+    '" step="' + s.step + '"><span class="val" id="v_' + s.id + '"></span></div>';
+  slidersDiv.appendChild(lab);
+  const el = lab.querySelector("input");
+  el.addEventListener("input", () => { P[s.id] = parseFloat(el.value); syncSliders(); refresh(); });
+}
+function syncSliders() {
+  for (const s of SLIDERS) {
+    document.getElementById("sl_" + s.id).value = P[s.id];
+    const v = document.getElementById("v_" + s.id);
+    v.textContent = P[s.id].toFixed(s.dec);
+    v.classList.toggle("moved", Math.abs(P[s.id] - SHIPPED[s.id]) > 1e-9);
+    const label = document.getElementById("lab_" + s.id);
+    const dead = (s.only === "AB" && model === "C") || (s.only === "C" && model !== "C");
+    label.classList.toggle("off", dead || abBaseline);
+    // While the A/B baseline is showing, the constants are the shipped ones by definition —
+    // editing them there would make "shipped" mean whatever was last dragged.
+    document.getElementById("sl_" + s.id).disabled = dead || abBaseline;
+  }
+}
+
+const MODELS = {
+  A: "A &mdash; today. Cargo divides the speed CAP; drag is fixed. Thrust changes are invisible wherever the cap binds.",
+  B: "B &mdash; same structure as A, heavier cargo. The point is to push the ship over into DRAG-limited, which needs CARGO_THRUST up and/or CARGO_MAXSPD DOWN (raising CARGO_MAXSPD lowers the cap and binds it harder).",
+  C: "C &mdash; cargo penalises DRAG, not top speed. CARGO_MAXSPD is retired; terminal speed becomes thrust / drag-rate and SHIP_MAX_SPEED is a flat safety rail.",
+};
+const modelRow = document.getElementById("modelRow");
+for (const m of ["A", "B", "C"]) {
+  const b = document.createElement("button");
+  b.textContent = "Model " + m;
+  b.addEventListener("click", () => setModel(m));
+  modelRow.appendChild(b);
+}
+function setModel(m) {
+  if (abBaseline && m !== "A") return;   // the baseline is Model A at shipped values, by definition
+  model = m;
+  [...modelRow.children].forEach((b, i) => {
+    b.classList.toggle("active", "ABC"[i] === m);
+    b.disabled = abBaseline && "ABC"[i] !== "A";
+  });
+  document.getElementById("modelWhat").innerHTML = MODELS[m];
+  syncSliders(); refresh();
+}
+
+const PRESETS = [
+  { name: "Shipped (A)", model: "A", set: {} },
+  { name: "B start .10/.02", model: "B", set: { cargoThrust: 0.10, cargoMaxspd: 0.02 } },
+  { name: "C &sect;6.3", model: "C", set: { cargoDrag: 0.03, shipDrag: 0.35 } },
+  { name: "C + drag .45", model: "C", set: { cargoDrag: 0.03, shipDrag: 0.45 } },
+];
+const presetRow = document.getElementById("presetRow");
+for (const pr of PRESETS) {
+  const b = document.createElement("button");
+  b.innerHTML = pr.name;
+  b.addEventListener("click", () => {
+    if (abBaseline) { abBaseline = false; abStash = null; syncAB(); }
+    Object.assign(P, SHIPPED, pr.set);
+    setModel(pr.model); syncSliders(); refresh();
+  });
+  presetRow.appendChild(b);
+}
+
+const nodesEl = document.getElementById("nodes");
+nodesEl.addEventListener("input", () => { setChainLength(parseInt(nodesEl.value, 10)); syncChainUI(); refresh(); });
+function syncChainUI() {
+  nodesEl.value = nodes;
+  document.getElementById("nodesVal").textContent = nodes;
+}
+
+const engineBtn = document.getElementById("engineBtn");
+engineBtn.addEventListener("click", () => setEngine(!engineOn));
+function setEngine(on) {
+  engineOn = on;
+  if (on) { fuel = P.engineBurnSeconds; fuelWall = 0; }
+  engineBtn.textContent = "Engine: " + (on ? "ON" : "OFF");
+  engineBtn.classList.toggle("active", on);
+  refresh();
+}
+document.getElementById("burnFuel").addEventListener("change", e => {
+  burnFuel = e.target.checked; if (burnFuel && engineOn) { fuel = P.engineBurnSeconds; fuelWall = 0; }
+});
+document.getElementById("burnLaden").addEventListener("change", e => { burnLaden = e.target.checked; });
+
+const abBtn = document.getElementById("abBtn");
+abBtn.addEventListener("click", toggleAB);
+function toggleAB() {
+  if (!abBaseline) {
+    abStash = { P: Object.assign({}, P), model };
+    Object.assign(P, SHIPPED);
+    abBaseline = true;
+    model = "A";
+  } else {
+    Object.assign(P, abStash.P);
+    model = abStash.model;
+    abBaseline = false;
+    abStash = null;
+  }
+  syncAB(); setModel(model); syncSliders(); refresh();
+}
+function syncAB() {
+  abBtn.textContent = abBaseline ? "A/B: SHIPPED" : "A/B: edited";
+  abBtn.classList.toggle("active", abBaseline);
+}
+
+document.getElementById("copyBtn").addEventListener("click", () => {
+  const btn = document.getElementById("copyBtn");
+  const text = document.getElementById("copyOut").textContent;
+  const done = () => {
+    btn.classList.add("copied"); btn.textContent = "Copied!";
+    setTimeout(() => { btn.classList.remove("copied"); btn.textContent = "Copy constants block"; }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+  else {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta); done();
+  }
+});
+
+// ---------- tables ----------
+const SWEEP_ROWS = [0, 4, 8, 12, 16, 20, 24];
+function buildSweep() {
+  const cols = '<th>accel</th><th>terminal</th><th>limit</th><th>t90</th><th>half-life</th><th>turn &deg;/s</th>';
+  let h = '<tr><th class="n" rowspan="2">nodes</th><th class="grp" colspan="6">no Engine</th>' +
+    '<th class="grp" colspan="6">Engine</th><th class="grp" rowspan="2">Engine gain<br>on terminal</th></tr>' +
+    "<tr>" + cols + cols + "</tr>";
+  const cellsFor = r =>
+    "<td>" + r.accel.toFixed(0) + "</td><td>" + r.terminal.toFixed(0) + "</td>" +
+    '<td class="lim ' + (r.limit === "DRAG" ? "drag" : "") + '">' + r.limit + "</td>" +
+    "<td>" + r.t90.toFixed(2) + "</td><td>" + r.half.toFixed(2) + "</td>" +
+    "<td>" + (r.turn * 180 / Math.PI).toFixed(0) + "</td>";
+  for (const n of SWEEP_ROWS) {
+    const a = solve(n, false, model, P), b = solve(n, true, model, P);
+    const gain = (b.terminal / a.terminal - 1) * 100;
+    const hl = n === nodes ? ' class="hl"' : "";
+    h += "<tr" + hl + '><td class="n">' + n + "</td>" + cellsFor(a) + cellsFor(b) +
+      '<td class="gain' + (gain < 0.5 ? " zero" : "") + '">' +
+      (gain >= 0 ? "+" : "") + gain.toFixed(0) + "%</td></tr>";
+  }
+  document.getElementById("sweep").innerHTML = h;
+}
+
+// ⛔ Spec check. Pinned to the shipped constants — these two tables never move with the sliders.
+const SPEC_62 = [
+  { n: 0, a: 340, ae: 340, ga: 0, t: 520, te: 520, gt: 0 },
+  { n: 4, a: 266, ae: 298, ga: 12, t: 456, te: 486, gt: 7 },
+  { n: 12, a: 185, ae: 243, ga: 31, t: 366, te: 424, gt: 16 },
+  { n: 24, a: 127, ae: 185, ga: 46, t: 283, te: 366, gt: 29 },
+];
+const SPEC_63 = [
+  { n: 0, t: 520, te: 520, g: 0 },
+  { n: 4, t: 337, te: 401, g: 19 },
+  { n: 12, t: 249, te: 340, g: 37 },
+  { n: 24, t: 171, te: 315, g: 84 },
+];
+function cell(labV, specV, tol, dec) {
+  const ok = Math.abs(labV - specV) <= tol;
+  return '<td class="' + (ok ? "ok" : "bad") + '">' + labV.toFixed(dec) +
+    (ok ? " &check;" : " &ne; " + specV) + "</td>";
+}
+function buildSpecTables() {
+  const S = SHIPPED;
+  let h = '<tr><th class="grp" colspan="7">&sect;6.2 &mdash; Model A at the shipped constants (lab value, then the spec\'s if it differs)</th></tr>' +
+    '<tr><th class="n">nodes</th><th>accel</th><th>accel, Engine</th><th>gain</th><th>top speed</th><th>top, Engine</th><th>gain</th></tr>';
+  let bad62 = 0;
+  for (const r of SPEC_62) {
+    const a = solve(r.n, false, "A", S), b = solve(r.n, true, "A", S);
+    const ga = (b.accel / a.accel - 1) * 100, gt = (b.cap / a.cap - 1) * 100;
+    // Gains carry a 1.0-point tolerance and one decimal: the spec rounds them, and a rounding
+    // direction is not a disagreement. Anything flagged below is off by more than a rounding.
+    const checks = [[a.accel, r.a, 1, 0], [b.accel, r.ae, 1, 0], [ga, r.ga, 1.0, 1],
+                    [a.cap, r.t, 1, 0], [b.cap, r.te, 1, 0], [gt, r.gt, 1.0, 1]];
+    h += '<tr><td class="n">' + r.n + "</td>";
+    for (const c of checks) { if (Math.abs(c[0] - c[1]) > c[2]) bad62++; h += cell(c[0], c[1], c[2], c[3]); }
+    h += "</tr>";
+  }
+  document.getElementById("specA").innerHTML = h;
+
+  const C = Object.assign({}, SHIPPED, { cargoDrag: 0.03, shipDrag: 0.35 });
+  h = '<tr><th class="grp" colspan="6">&sect;6.3 &mdash; Model C at CARGO_DRAG 0.03, SHIP_DRAG 0.35</th></tr>' +
+    '<tr><th class="n">nodes</th><th>terminal</th><th>limit</th><th>terminal, Engine</th><th>limit</th><th>gain</th></tr>';
+  let bad63 = 0;
+  for (const r of SPEC_63) {
+    const a = solve(r.n, false, "C", C), b = solve(r.n, true, "C", C);
+    const g = (b.terminal / a.terminal - 1) * 100;
+    h += '<tr><td class="n">' + r.n + "</td>";
+    if (Math.abs(a.terminal - r.t) > 1) bad63++;
+    h += cell(a.terminal, r.t, 1, 0);
+    h += '<td class="lim ' + (a.limit === "DRAG" ? "drag" : "") + '">' + a.limit + "</td>";
+    if (Math.abs(b.terminal - r.te) > 1) bad63++;
+    h += cell(b.terminal, r.te, 1, 0);
+    h += '<td class="lim ' + (b.limit === "DRAG" ? "drag" : "") + '">' + b.limit + "</td>";
+    if (Math.abs(g - r.g) > 1.0) bad63++;
+    h += cell(g, r.g, 1.0, 1);
+    h += "</tr>";
+  }
+  document.getElementById("specC").innerHTML = h;
+
+  // Prose claims in §6.3, and the one qualitative claim that fails.
+  const lb = lambdaBase(SHIPPED);
+  const x0 = crossover(false, "C", C), x0e = crossover(true, "C", C);
+  const D45 = Object.assign({}, C, { shipDrag: 0.45 });
+  const x45 = crossover(false, "C", D45);
+  const a24 = solve(24, false, "A", SHIPPED), b24 = solve(24, true, "A", SHIPPED);
+  const rows = [
+    ["&lambda; = &minus;ln(0.65)", lb.toFixed(3) + "/s", "0.431/s", Math.abs(lb - 0.431) < 0.001],
+    ["unloaded thrust &divide; drag", (SHIPPED.shipThrust / lb).toFixed(0), "789", Math.abs(SHIPPED.shipThrust / lb - 789) < 1],
+    ["coast half-life at drag 0.35", (Math.LN2 / lb).toFixed(2) + " s", "1.61 s", true],
+    ["coast half-life at drag 0.45", (Math.LN2 / -Math.log(0.55)).toFixed(2) + " s", "1.16 s", true],
+    ["Model A, 24 nodes: drag would settle at", a24.dragT.toFixed(0), "294", Math.abs(a24.dragT - 294) < 1],
+    ["Model A, 24 nodes: the cap is", a24.cap.toFixed(0), "283", Math.abs(a24.cap - 283) < 1],
+    ["Model A, 24 nodes + Engine: cap moves to", b24.cap.toFixed(0), "366", Math.abs(b24.cap - 366) < 1],
+    ["Model C: SHIP_MAX_SPEED binds only when unloaded",
+      "binds to " + x0.toFixed(1) + " nodes (" + x0e.toFixed(1) + " with Engine)", "unloaded only", false],
+    ["&hellip; the same claim at the proposed SHIP_DRAG 0.45",
+      "binds to " + x45.toFixed(1) + " nodes", "unloaded only", x45 < 1.0],
+  ];
+  let ph = "<p class='hint' style='margin-top:12px'>&sect;6.3's prose, checked:</p><div class='scroller'><table>" +
+    '<tr><th class="grp" style="text-align:left">claim</th><th class="grp">lab</th><th class="grp">spec</th><th class="grp"></th></tr>';
+  for (const r of rows) {
+    ph += '<tr><td style="text-align:left">' + r[0] + "</td><td>" + r[1] + "</td><td>" + r[2] +
+      '</td><td class="' + (r[3] ? "ok" : "bad") + '">' + (r[3] ? "&check;" : "&times;") + "</td></tr>";
+  }
+  ph += "</table></div>";
+  ph += '<p class="note">' + (bad62 + bad63 === 0 ? "All numeric cells agree." :
+    bad62 + " cell(s) of &sect;6.2 and " + bad63 + " of &sect;6.3 disagree with the spec, plus the " +
+    "“binds only when unloaded” claim above. Under CS042 P0's standing rule these are spec defects, " +
+    "not lab defects &mdash; the model here is the build's own arithmetic.") + "</p>";
+  document.getElementById("specProse").innerHTML = ph;
+}
+
+function buildCopyOut() {
+  const t0 = solve(0, false, model, P), t12 = solve(12, false, model, P), t24 = solve(24, false, model, P);
+  const e24 = solve(24, true, model, P), e12 = solve(12, true, model, P);
+  const x = crossover(false, model, P);
+  const L = [];
+  L.push("// tools/handling-lab.html — Model " + model + " (PLANNED-FEATURES-CS042 §6.3)");
+  L.push("const SHIP_THRUST = " + P.shipThrust + ";");
+  L.push("const SHIP_DRAG = " + P.shipDrag.toFixed(2) + ";        // coast half-life " +
+    (Math.LN2 / lambdaBase(P)).toFixed(2) + " s");
+  L.push("const SHIP_MAX_SPEED = " + P.shipMaxSpeed + ";" +
+    (model === "C" ? "   // safety rail; binds up to " + (x === null ? ">24" : x.toFixed(1)) + " nodes" : ""));
+  L.push("const CARGO_THRUST = " + P.cargoThrust.toFixed(3) + ";");
+  if (model === "C") L.push("const CARGO_DRAG = " + P.cargoDrag.toFixed(3) + ";      // replaces CARGO_MAXSPD");
+  else L.push("const CARGO_MAXSPD = " + P.cargoMaxspd.toFixed(3) + ";");
+  L.push("const CARGO_MASS = " + P.cargoMass.toFixed(3) + ";");
+  L.push("const CARGO_TURN = " + P.cargoTurn.toFixed(3) + ";" +
+    (P.cargoTurn === 0 ? "        // still dormant" : "        // NOT dormant — G6 must say yes"));
+  L.push("const ENGINE_MASS_MULT = " + P.engineMassMult.toFixed(2) + ";");
+  L.push("const ENGINE_BURN_SECONDS = " + P.engineBurnSeconds.toFixed(1) + ";");
+  L.push("// terminal " + t0.terminal.toFixed(0) + " / " + t12.terminal.toFixed(0) + " / " +
+    t24.terminal.toFixed(0) + " px/s at 0 / 12 / 24 nodes (" + t0.limit + " / " + t12.limit + " / " + t24.limit + ")");
+  L.push("// Engine gain +0% / +" + ((e12.terminal / t12.terminal - 1) * 100).toFixed(0) + "% / +" +
+    ((e24.terminal / t24.terminal - 1) * 100).toFixed(0) + "% at 0 / 12 / 24 nodes");
+  document.getElementById("copyOut").textContent = L.join("\n");
+}
+
+// ---------- readouts ----------
+function refresh() {
+  const raw = chainMassRaw();
+  const s = solve(raw, engineActive(), model, P);
+  const b = document.getElementById("binding");
+  b.textContent = s.limit === "CAP" ? "CAP (" + s.cap.toFixed(0) + ")" : "DRAG (" + s.dragT.toFixed(0) + ")";
+  b.classList.toggle("drag", s.limit === "DRAG");
+  document.getElementById("liveSpeed").textContent =
+    Math.hypot(ship.vx, ship.vy).toFixed(0) + " / " + s.terminal.toFixed(0) + " px/s";
+  document.getElementById("liveAccel").textContent = s.accel.toFixed(0) + " px/s²";
+  document.getElementById("liveCap").textContent = s.cap.toFixed(0) + " px/s";
+  document.getElementById("liveDragT").textContent = s.dragT.toFixed(0) + " px/s";
+  document.getElementById("liveHalf").textContent = s.half.toFixed(2) + " s";
+  document.getElementById("liveT90").textContent = s.t90.toFixed(2) + " s";
+  document.getElementById("liveTurn").textContent = (s.turn * 180 / Math.PI).toFixed(0) + " °/s";
+  document.getElementById("liveMass").textContent = s.cargo.toFixed(1) + " (raw " + raw.toFixed(0) + ")";
+  const x = crossover(false, model, P);
+  document.getElementById("liveCross").textContent = x === null ? "never (cap binds to 24)" : x.toFixed(1) + " nodes";
+  document.getElementById("fuelLeft").textContent = burnFuel && engineOn ? fuel.toFixed(1) + " s" : "—";
+  document.getElementById("fuelWall").textContent = burnFuel && engineOn ? fuelWall.toFixed(1) + " s" : "—";
+  buildSweep();
+  buildCopyOut();
+}
+
+// ---------- render ----------
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const cx = cv.width / 2, cy = cv.height / 2;
+  const toScreen = p => ({
+    x: cx + p.x + wrapOffset(p.x, ship.x, FIELD_W) - ship.x,
+    y: cy + p.y + wrapOffset(p.y, ship.y, FIELD_H) - ship.y,
+  });
+
+  ctx.fillStyle = COLOR.star;
+  for (const st of stars) {
+    const p = toScreen(st);
+    if (p.x < -4 || p.x > cv.width + 4 || p.y < -4 || p.y > cv.height + 4) continue;
+    ctx.fillRect(p.x, p.y, st.r, st.r);
+  }
+
+  for (let i = 0; i < trail.length; i++) {          // drift tell: where the ship has actually been
+    const p = toScreen(trail[i]);
+    ctx.globalAlpha = 0.05 + 0.35 * (i / trail.length);
+    ctx.fillStyle = COLOR.dim;
+    ctx.fillRect(p.x, p.y, 1.5, 1.5);
+  }
+  ctx.globalAlpha = 1;
+
+  if (chain.length) {
+    const a = toScreen(chainAnchor());
+    let prev = a;
+    for (const n of chain) {
+      const p = toScreen(n);
+      if (Math.hypot(p.x - prev.x, p.y - prev.y) <= 120) {
+        ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y);
+        ctx.globalAlpha = 0.7; glowStroke(COLOR.ship, 1.2, 6); ctx.globalAlpha = 1;
+      }
+      prev = p;
+    }
+    for (const n of chain) { const p = toScreen(n); drawCanister(p.x, p.y, n.spin, COLOR.garbage); }
+  }
+
+  drawPoly(SHIP_HULL, cx, cy, ship.angle, COLOR.ship);
+  if (ship.thrusting) drawPoly([[-8, -4], [-16, 0], [-8, 4]], cx, cy, ship.angle, COLOR.hot, false);
+  if (engineActive()) {
+    ctx.beginPath(); ctx.arc(cx, cy, 22, 0, TAU);
+    ctx.globalAlpha = 0.55; glowStroke("#7fffd4", 1.2, 8); ctx.globalAlpha = 1;
+  }
+
+  // velocity vector, so the difference between "where I point" and "where I go" is visible
+  const sp = Math.hypot(ship.vx, ship.vy);
+  if (sp > 1) {
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + ship.vx * 0.12, cy + ship.vy * 0.12);
+    ctx.globalAlpha = 0.6; glowStroke(COLOR.good, 1, 5); ctx.globalAlpha = 1;
+  }
+
+  // on-canvas HUD — the binding limit has to be visible while flying, not looked up (§6.6 item 4)
+  const s = solve(chainMassRaw(), engineActive(), model, P);
+  ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = COLOR.text;
+  ctx.fillText("Model " + model + (abBaseline ? "   [A/B: SHIPPED BASELINE]" : "") +
+    "   chain " + chain.length + "   Engine " + (engineActive() ? "ON" : "off") +
+    (autoThrust ? "   auto-thrust" : ""), 12, 22);
+  ctx.fillStyle = s.limit === "CAP" ? COLOR.hot : COLOR.good;
+  ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText("BINDING LIMIT: " + s.limit, 12, 46);
+  ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLOR.dim;
+  ctx.fillText("cap " + s.cap.toFixed(0) + "   drag settles at " + s.dragT.toFixed(0) +
+    "   terminal " + s.terminal.toFixed(0), 12, 64);
+
+  // speed bar against terminal
+  const w = 260, bx = 12, by = 76;
+  ctx.strokeStyle = COLOR.dim; ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by, w, 8);
+  ctx.fillStyle = sp > s.terminal * 0.99 ? COLOR.hot : COLOR.good;
+  ctx.fillRect(bx, by, Math.min(1, sp / Math.max(1, s.terminal)) * w, 8);
+  ctx.fillStyle = COLOR.text;
+  ctx.fillText(sp.toFixed(0) + " px/s", bx + w + 8, by + 8);
+
+  if (abBaseline) {
+    ctx.fillStyle = COLOR.hot;
+    ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillText("X to return to the edited values", 12, cv.height - 12);
+  }
+}
+
+// ---------- loop ----------
+let last = performance.now(), acc = 0, uiAcc = 0;
+function loop(now) {
+  let dt = (now - last) / 1000; last = now;
+  if (dt > 0.05) dt = 0.05;                 // the build's own main-loop clamp
+  stepShip(dt);
+  updateChain(dt);
+  if (burnFuel && engineOn && fuel > 0) fuelWall += dt;
+  acc += dt;
+  if (acc > 0.02) { trail.push({ x: ship.x, y: ship.y }); acc = 0; if (trail.length > 240) trail.shift(); }
+  draw();
+  uiAcc += dt;
+  if (uiAcc > 0.1) { uiAcc = 0; refresh(); }
+  requestAnimationFrame(loop);
+}
+
+// ---------- boot ----------
+syncChainUI();
+setModel("A");
+syncSliders();
+syncAB();
+buildSpecTables();
+refresh();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
