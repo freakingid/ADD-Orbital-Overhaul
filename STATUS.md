@@ -10,8 +10,12 @@ carried forward and still live.
 - P0 — `tools/handling-lab.html` (spec §6.6): a flyable mock ship on a real verlet tow chain of 0–24
   nodes, a live A/B/C model selector, ten constant sliders seeded from the shipped values, a live
   **binding-limit** readout, the 0/4/8/12/16/20/24 sweep table headlined by Engine gain %, an `X`-key
-  A/B against shipped, a copy-out block, and a pinned recompute of §6.2/§6.3. Three spec defects found
-  — see Known issues. No build byte; no test (`tools/` has never carried suite coverage).
+  A/B against shipped, and a pinned recompute of §6.2/§6.3. Three spec defects found — see Known
+  issues. ⛔ **The lab is driven by a six-step protocol panel** (feel today → model → base drag →
+  is a full haul playable → `CARGO_TURN` → Engine strength); each step arms the lab and records one
+  answer, and the Findings block is the single artefact GATE A hands back. Reference grid and ship
+  trail carry the motion read, since the camera is locked to the ship. No build byte; no test
+  (`tools/` has never carried suite coverage).
 
 ## Working / verified
 

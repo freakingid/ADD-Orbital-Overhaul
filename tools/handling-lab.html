@@ -54,6 +54,21 @@
   #binding.drag { color: #70ffa0; }
   .note { color: #ffcf5a; font-size: 11px; margin: 8px 0 0; }
   .scroller { overflow-x: auto; }
+  .step { border: 1px solid #223347; border-left: 3px solid #223347; border-radius: 3px;
+    padding: 7px 9px; margin: 0 0 7px; background: #070d18; }
+  .step.cur { border-left-color: #70ffa0; background: #0a1626; }
+  .step.done { border-left-color: #ffcf5a; }
+  .step .st { color: #9fd8ff; font-weight: 600; }
+  .step .st .num { color: #3a5a80; }
+  .step.done .st::after { content: " \2713"; color: #ffcf5a; }
+  .step .todo { color: #a8d4ff; margin: 4px 0 0; }
+  .step .read { color: #3a5a80; font-size: 11px; margin: 3px 0 0; }
+  .step .ansRow { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
+  .step button { padding: 3px 8px; font-size: 12px; }
+  .step .got { color: #ffcf5a; font-variant-numeric: tabular-nums; }
+  .outcome { border: 1px solid #3a5a80; border-radius: 3px; padding: 8px 10px; margin: 0 0 12px;
+    background: #0a1220; }
+  .outcome b { color: #70ffa0; }
 </style>
 </head>
 <body>
@@ -83,8 +98,19 @@
   <h1>Handling Lab</h1>
   <p class="sub">CS042 P0 &mdash; drag, cargo mass and Engine relief across chain lengths
     (PLANNED-FEATURES-CS042 &sect;6). Standalone design harness: not part of the game build, no
-    imports; this file carries its own copies of the real integration and chain physics.
-    Click the canvas, then fly.</p>
+    imports; this file carries its own copies of the real integration and chain physics.</p>
+
+  <div class="outcome">
+    <b>Five numbers to come away with.</b><br>
+    a model letter &middot; <b>SHIP_DRAG</b> &middot; <b>CARGO_DRAG</b> (model C) or
+    <b>CARGO_MAXSPD</b> (A/B) &middot; <b>CARGO_TURN</b> &middot; <b>ENGINE_MASS_MULT</b>.<br>
+    Work the six steps below in order. Each one sets the lab up for you and records its answer.
+    The Findings block at the bottom of this panel is the whole deliverable &mdash; copy it and
+    hand it back.
+  </div>
+
+  <h2>Test protocol</h2>
+  <div id="protocol"></div>
 
   <h2>Model (&sect;6.3)</h2>
   <div class="btnRow" id="modelRow"></div>
@@ -118,6 +144,8 @@
     &nbsp;burn the tank (otherwise the Engine runs forever)</label>
   <label class="row"><input type="checkbox" id="burnLaden">
     &nbsp;&sect;6.5 burn condition: thrusting AND chain non-empty</label>
+  <label class="row"><input type="checkbox" id="gridOn" checked>
+    &nbsp;200 px reference grid (the camera is locked to the ship)</label>
   <div class="kv"><span>fuel left</span><span id="fuelLeft">&mdash;</span></div>
   <div class="kv"><span>wall time on this tank</span><span id="fuelWall">&mdash;</span></div>
 
@@ -129,9 +157,9 @@
   <p class="hint">Presets overwrite the sliders. "Shipped" is the load state, so
     <b>A, untouched</b> is always one click away.</p>
 
-  <h2>Copy out</h2>
+  <h2>Findings &mdash; hand this back</h2>
   <pre id="copyOut"></pre>
-  <button id="copyBtn">Copy constants block</button>
+  <button id="copyBtn">Copy findings</button>
 </div>
 
 <script>
@@ -151,7 +179,7 @@ const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
 const CARGO_CAP_MAX = 24;
 const COLOR = {
   ship: "#9fd8ff", garbage: "#c8ff50", dim: "#3a5a80", text: "#a8d4ff",
-  hot: "#ffcf5a", good: "#70ffa0", star: "#1d3350",
+  hot: "#ffcf5a", good: "#70ffa0",
 };
 
 // The shipped values every slider is seeded from (GDD §2.1, §2.10.2, §2.14).
@@ -346,8 +374,20 @@ function resetShip() {
 
 // ---------- input ----------
 const keys = { left: false, right: false, thrust: false };
+// The camera is locked to the ship, so the starfield and the grid ARE the motion reference —
+// without them a 520 px/s ship and a parked one look identical. Three brightness tiers, and a
+// 200 px grid that divides the field exactly (1600/200, 1200/200) so it is continuous at the seam.
 const stars = [];
-for (let i = 0; i < 320; i++) stars.push({ x: Math.random() * FIELD_W, y: Math.random() * FIELD_H, r: Math.random() < 0.2 ? 1.6 : 1 });
+for (let i = 0; i < 620; i++) {
+  const t = Math.random();
+  stars.push({
+    x: Math.random() * FIELD_W, y: Math.random() * FIELD_H,
+    r: t < 0.12 ? 2.4 : t < 0.45 ? 1.7 : 1.2,
+    c: t < 0.12 ? "#cfe6ff" : t < 0.45 ? "#7fa8d8" : "#46648c",
+  });
+}
+const GRID = 200;
+let showGrid = true;
 
 window.addEventListener("keydown", e => {
   if (e.target instanceof HTMLInputElement && e.key.startsWith("Arrow")) return; // let sliders keep arrows
@@ -441,17 +481,19 @@ const PRESETS = [
   { name: "C &sect;6.3", model: "C", set: { cargoDrag: 0.03, shipDrag: 0.35 } },
   { name: "C + drag .45", model: "C", set: { cargoDrag: 0.03, shipDrag: 0.45 } },
 ];
+function applyPreset(i) {
+  const pr = PRESETS[i];
+  if (abBaseline) { abBaseline = false; abStash = null; syncAB(); }
+  Object.assign(P, SHIPPED, pr.set);
+  setModel(pr.model); syncSliders(); refresh();
+}
 const presetRow = document.getElementById("presetRow");
-for (const pr of PRESETS) {
+PRESETS.forEach((pr, i) => {
   const b = document.createElement("button");
   b.innerHTML = pr.name;
-  b.addEventListener("click", () => {
-    if (abBaseline) { abBaseline = false; abStash = null; syncAB(); }
-    Object.assign(P, SHIPPED, pr.set);
-    setModel(pr.model); syncSliders(); refresh();
-  });
+  b.addEventListener("click", () => applyPreset(i));
   presetRow.appendChild(b);
-}
+});
 
 const nodesEl = document.getElementById("nodes");
 nodesEl.addEventListener("input", () => { setChainLength(parseInt(nodesEl.value, 10)); syncChainUI(); refresh(); });
@@ -473,6 +515,7 @@ document.getElementById("burnFuel").addEventListener("change", e => {
   burnFuel = e.target.checked; if (burnFuel && engineOn) { fuel = P.engineBurnSeconds; fuelWall = 0; }
 });
 document.getElementById("burnLaden").addEventListener("change", e => { burnLaden = e.target.checked; });
+document.getElementById("gridOn").addEventListener("change", e => { showGrid = e.target.checked; });
 
 const abBtn = document.getElementById("abBtn");
 abBtn.addEventListener("click", toggleAB);
@@ -509,6 +552,122 @@ document.getElementById("copyBtn").addEventListener("click", () => {
     document.execCommand("copy"); document.body.removeChild(ta); done();
   }
 });
+
+// ---------- the test protocol ----------
+// ⛔ The lab's job is to send Paul away with five numbers, in an order that does not double back.
+// Each step arms the lab for its own question and records exactly one answer; buildFindings() below
+// is the only thing that has to leave this file.
+const answers = {};
+let curStep = 0;
+
+const STEPS = [
+  {
+    id: "feel", title: "Feel the shipped game",
+    todo: "Fly with an empty chain, then press <b>]</b> up to 24 nodes and fly again. This is what you are changing.",
+    read: "BINDING LIMIT never leaves CAP, at any chain length. That is the whole complaint.",
+    setup() { applyPreset(0); setChainLength(0); setEngine(false); },
+    choices: [["ok", "seen it"]],
+  },
+  {
+    id: "model", title: "Pick the model", tag: "G6",
+    todo: "12 nodes towed. Click each of the three below and fly it. Watch BINDING LIMIT flip from CAP to DRAG. " +
+      "<b>Each button loads that model's starting constants</b> — B is identical to A until they move.",
+    read: "Sweep table, 12-node row, gain column: A gives +17%, B about +29%, C gives +49%.",
+    setup() { setChainLength(12); setEngine(false); },
+    choices: [["A", "A — today"], ["B", "B — heavier cargo"], ["C", "C — cargo drags"]],
+    // Picking a model loads its preset: Model B at the shipped constants IS Model A, and flying
+    // that would answer the question wrongly.
+    onPick(v) { applyPreset(v === "A" ? 0 : v === "B" ? 1 : 2); },
+  },
+  {
+    id: "drag", title: "Set base drag", tag: "G7 / FLAG-CS042-f",
+    todo: "Empty chain. Tap thrust and let go. <b>Does the ship still drift enough to be this game?</b> Drag the SHIP_DRAG slider until it does.",
+    read: "coast half-life: 1.61 s at 0.35, 1.16 s at the proposed 0.45.",
+    setup() { setChainLength(0); setEngine(false); },
+    record: "shipDrag",
+  },
+  {
+    id: "haul", title: "Is a full haul playable?",
+    todo: "24 nodes, Engine off, fly a lap. Shipped today is 283 px/s; model C at drag 0.45 is 123 px/s.",
+    read: "terminal in Live, and the 24-node row of the sweep. If it is too slow, ease CARGO_THRUST or CARGO_DRAG and answer again.",
+    setup() { setChainLength(24); setEngine(false); },
+    choices: [["playable", "playable"], ["too slow", "too slow"]],
+  },
+  {
+    id: "turn", title: "CARGO_TURN", tag: "G6 / FLAG-CS042-j",
+    todo: "24 nodes. Raise CARGO_TURN and turn hard, then drop it back to 0. <b>Nothing is pre-committed here.</b>",
+    read: "turn rate: 241 &deg;/s at 0.0, and it falls as the slider rises.",
+    setup() { setChainLength(24); setEngine(false); },
+    record: "cargoTurn",
+  },
+  {
+    id: "engine", title: "Engine strength", tag: "feeds G8",
+    todo: "24 nodes. Press <b>E</b> on and off while holding thrust. Lower ENGINE_MASS_MULT is stronger.",
+    read: "the gain column's 24-node row: +30% under A, +84% under C at 0.5.",
+    setup() { setChainLength(24); setEngine(true); },
+    record: "engineMassMult",
+  },
+];
+
+const protoDiv = document.getElementById("protocol");
+function syncProtocolLabels() {   // cheap per-frame update; never rebuilds the DOM under the cursor
+  for (const st of STEPS) {
+    if (st.record && st._btn) st._btn.textContent = "Record " + st.record + " = " + P[st.record].toFixed(3);
+  }
+}
+function renderProtocol() {
+  protoDiv.innerHTML = "";
+  STEPS.forEach((st, i) => {
+    const d = document.createElement("div");
+    d.className = "step" + (i === curStep ? " cur" : "") + (answers[st.id] !== undefined ? " done" : "");
+    const head = document.createElement("div");
+    head.className = "st";
+    head.innerHTML = '<span class="num">' + (i + 1) + ".</span> " + st.title +
+      (st.tag ? ' <span class="num">(' + st.tag + ")</span>" : "");
+    d.appendChild(head);
+    const todo = document.createElement("p"); todo.className = "todo"; todo.innerHTML = st.todo; d.appendChild(todo);
+    const read = document.createElement("p"); read.className = "read"; read.innerHTML = "Read: " + st.read; d.appendChild(read);
+    const row = document.createElement("div"); row.className = "ansRow";
+    const go = document.createElement("button");
+    go.textContent = "Set up";
+    go.addEventListener("click", () => { curStep = i; st.setup(); renderProtocol(); refresh(); });
+    row.appendChild(go);
+    if (st.choices) {
+      for (const [val, label] of st.choices) {
+        const b = document.createElement("button");
+        b.textContent = label;
+        b.classList.toggle("active", answers[st.id] === val);
+        b.addEventListener("click", () => {
+          answers[st.id] = val;
+          if (st.onPick) st.onPick(val);
+          curStep = Math.min(STEPS.length - 1, i + 1);
+          renderProtocol(); refresh();
+        });
+        row.appendChild(b);
+      }
+    }
+    if (st.record) {
+      const b = document.createElement("button");
+      b.textContent = "Record " + st.record + " = " + P[st.record].toFixed(3);
+      st._btn = b;
+      b.addEventListener("click", () => {
+        answers[st.id] = P[st.record];
+        curStep = Math.min(STEPS.length - 1, i + 1);
+        renderProtocol(); refresh();
+      });
+      row.appendChild(b);
+    }
+    if (answers[st.id] !== undefined) {
+      const got = document.createElement("span");
+      got.className = "got";
+      got.textContent = "answer: " +
+        (typeof answers[st.id] === "number" ? answers[st.id].toFixed(3) : answers[st.id]);
+      row.appendChild(got);
+    }
+    d.appendChild(row);
+    protoDiv.appendChild(d);
+  });
+}
 
 // ---------- tables ----------
 const SWEEP_ROWS = [0, 4, 8, 12, 16, 20, 24];
@@ -622,12 +781,24 @@ function buildSpecTables() {
   document.getElementById("specProse").innerHTML = ph;
 }
 
-function buildCopyOut() {
+function buildFindings() {
   const t0 = solve(0, false, model, P), t12 = solve(12, false, model, P), t24 = solve(24, false, model, P);
   const e24 = solve(24, true, model, P), e12 = solve(12, true, model, P);
   const x = crossover(false, model, P);
+  const A = id => answers[id];
+  const missing = STEPS.filter(st => A(st.id) === undefined).map((st, i) => st.title);
   const L = [];
-  L.push("// tools/handling-lab.html — Model " + model + " (PLANNED-FEATURES-CS042 §6.3)");
+  L.push("CS042 GATE A — tools/handling-lab.html findings");
+  L.push("");
+  L.push("model (G6):            " + (A("model") || "UNANSWERED"));
+  L.push("SHIP_DRAG (G7):        " + (A("drag") !== undefined ? A("drag").toFixed(2) : "UNANSWERED"));
+  L.push("24-node haul:          " + (A("haul") || "UNANSWERED"));
+  L.push("CARGO_TURN (G6):       " + (A("turn") !== undefined ? A("turn").toFixed(3) : "UNANSWERED"));
+  L.push("ENGINE_MASS_MULT:      " + (A("engine") !== undefined ? A("engine").toFixed(2) : "UNANSWERED"));
+  if (missing.length) L.push("");
+  if (missing.length) L.push("still open: " + missing.join("; "));
+  L.push("");
+  L.push("// ---- constants as the sliders now stand ----");
   L.push("const SHIP_THRUST = " + P.shipThrust + ";");
   L.push("const SHIP_DRAG = " + P.shipDrag.toFixed(2) + ";        // coast half-life " +
     (Math.LN2 / lambdaBase(P)).toFixed(2) + " s");
@@ -638,9 +809,10 @@ function buildCopyOut() {
   else L.push("const CARGO_MAXSPD = " + P.cargoMaxspd.toFixed(3) + ";");
   L.push("const CARGO_MASS = " + P.cargoMass.toFixed(3) + ";");
   L.push("const CARGO_TURN = " + P.cargoTurn.toFixed(3) + ";" +
-    (P.cargoTurn === 0 ? "        // still dormant" : "        // NOT dormant — G6 must say yes"));
+    (P.cargoTurn === 0 ? "        // still dormant" : "        // NOT dormant — G6 says yes"));
   L.push("const ENGINE_MASS_MULT = " + P.engineMassMult.toFixed(2) + ";");
   L.push("const ENGINE_BURN_SECONDS = " + P.engineBurnSeconds.toFixed(1) + ";");
+  L.push("");
   L.push("// terminal " + t0.terminal.toFixed(0) + " / " + t12.terminal.toFixed(0) + " / " +
     t24.terminal.toFixed(0) + " px/s at 0 / 12 / 24 nodes (" + t0.limit + " / " + t12.limit + " / " + t24.limit + ")");
   L.push("// Engine gain +0% / +" + ((e12.terminal / t12.terminal - 1) * 100).toFixed(0) + "% / +" +
@@ -669,7 +841,8 @@ function refresh() {
   document.getElementById("fuelLeft").textContent = burnFuel && engineOn ? fuel.toFixed(1) + " s" : "—";
   document.getElementById("fuelWall").textContent = burnFuel && engineOn ? fuelWall.toFixed(1) + " s" : "—";
   buildSweep();
-  buildCopyOut();
+  buildFindings();
+  syncProtocolLabels();
 }
 
 // ---------- render ----------
@@ -681,18 +854,29 @@ function draw() {
     y: cy + p.y + wrapOffset(p.y, ship.y, FIELD_H) - ship.y,
   });
 
-  ctx.fillStyle = COLOR.star;
+  if (showGrid) {
+    ctx.strokeStyle = "#16283f"; ctx.lineWidth = 1; ctx.beginPath();
+    const ox = -(((ship.x % GRID) + GRID) % GRID) + (cv.width / 2) % GRID;
+    const oy = -(((ship.y % GRID) + GRID) % GRID) + (cv.height / 2) % GRID;
+    for (let x = ox - GRID; x < cv.width + GRID; x += GRID) { ctx.moveTo(x, 0); ctx.lineTo(x, cv.height); }
+    for (let y = oy - GRID; y < cv.height + GRID; y += GRID) { ctx.moveTo(0, y); ctx.lineTo(cv.width, y); }
+    ctx.stroke();
+  }
+
   for (const st of stars) {
     const p = toScreen(st);
     if (p.x < -4 || p.x > cv.width + 4 || p.y < -4 || p.y > cv.height + 4) continue;
+    ctx.fillStyle = st.c;
     ctx.fillRect(p.x, p.y, st.r, st.r);
   }
 
   for (let i = 0; i < trail.length; i++) {          // drift tell: where the ship has actually been
     const p = toScreen(trail[i]);
-    ctx.globalAlpha = 0.05 + 0.35 * (i / trail.length);
-    ctx.fillStyle = COLOR.dim;
-    ctx.fillRect(p.x, p.y, 1.5, 1.5);
+    const f = i / trail.length;
+    ctx.globalAlpha = 0.18 + 0.82 * f;
+    ctx.fillStyle = f > 0.75 ? "#ffcf5a" : COLOR.good;
+    const r = 1.6 + 1.8 * f;
+    ctx.fillRect(p.x - r / 2, p.y - r / 2, r, r);
   }
   ctx.globalAlpha = 1;
 
@@ -750,10 +934,14 @@ function draw() {
   ctx.fillStyle = COLOR.text;
   ctx.fillText(sp.toFixed(0) + " px/s", bx + w + 8, by + 8);
 
+  ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLOR.good;
+  const cs = STEPS[curStep];
+  ctx.fillText("STEP " + (curStep + 1) + " of " + STEPS.length + ": " + cs.title +
+    (answers[cs.id] !== undefined ? "  \u2713" : ""), 12, cv.height - 12);
   if (abBaseline) {
     ctx.fillStyle = COLOR.hot;
-    ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
-    ctx.fillText("X to return to the edited values", 12, cv.height - 12);
+    ctx.fillText("X to return to the edited values", 320, cv.height - 12);
   }
 }
 
@@ -766,7 +954,7 @@ function loop(now) {
   updateChain(dt);
   if (burnFuel && engineOn && fuel > 0) fuelWall += dt;
   acc += dt;
-  if (acc > 0.02) { trail.push({ x: ship.x, y: ship.y }); acc = 0; if (trail.length > 240) trail.shift(); }
+  if (acc > 0.016) { trail.push({ x: ship.x, y: ship.y }); acc = 0; if (trail.length > 300) trail.shift(); }
   draw();
   uiAcc += dt;
   if (uiAcc > 0.1) { uiAcc = 0; refresh(); }
@@ -775,6 +963,7 @@ function loop(now) {
 
 // ---------- boot ----------
 syncChainUI();
+renderProtocol();
 setModel("A");
 syncSliders();
 syncAB();
