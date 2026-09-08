@@ -828,6 +828,10 @@ bad *build*.
 - **`tools/emblem-lab.html`** — the Achievements celebration panel's `ACH_EMBLEM` polylines: six tier
   rungs (Bronze…Diamond) plus the weekly/lifetime pool marks, same `SAT_ART` contract, pasted into
   `drawEmblem()` verbatim (GDD §2.20).
+- **`tools/ceremony-lab.html`** — the level-end and game-over sequences as scrubbable timelines over
+  the real chrome (CS042 §3). Per-beat duration, gate-vs-timer, fades, join and freeze; five presets
+  and an `X` A/B against shipped. ⛔ Two join rules, because a gate has no known end — see the model's
+  own header. Its copy-out block is P5's whole scope.
 - **`tools/dock-float-lab.html`** — the delivery "+pts" floater column: anchor, cadence, and the
   three placement models (CS029 P3). Its `slotY()` header records why the model-B rule as first
   written does not hold.

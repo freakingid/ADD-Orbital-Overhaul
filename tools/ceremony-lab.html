@@ -1,0 +1,1400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ceremony Lab — Orbital Overhaul</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050a12; color: #a8d4ff;
+    font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; }
+  #left { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
+  #canvasWrap { flex: 0 0 auto; padding: 10px 12px 0; }
+  #cv { display: block; width: 100%; max-width: 1280px; height: auto;
+    background: #050a12; border: 1px solid #223347; }
+  #rulerWrap { padding: 10px 12px 0; }
+  #ruler { display: block; width: 100%; max-width: 1280px; height: auto;
+    background: #070d18; border: 1px solid #223347; cursor: col-resize; }
+  #beats { padding: 12px 12px 28px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+  #panel { flex: 0 0 384px; padding: 16px; overflow-y: auto; border-left: 1px solid #223347;
+    box-sizing: border-box; }
+  h1 { font-size: 16px; color: #9fd8ff; margin: 0 0 4px; }
+  h2 { font-size: 12px; color: #70ffa0; text-transform: uppercase; letter-spacing: 0.05em;
+    margin: 20px 0 8px; border-bottom: 1px solid #223347; padding-bottom: 4px; }
+  p.sub { color: #3a5a80; margin: 0 0 12px; }
+  button { background: #12203a; color: #a8d4ff; border: 1px solid #3a5a80; border-radius: 4px;
+    padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #70ffa0; color: #70ffa0; }
+  button.active { background: #1a3a2a; border-color: #70ffa0; color: #70ffa0; }
+  button.moved { border-color: #ffcf5a; color: #ffcf5a; }
+  #abBtn { background: #3a2a12; border-color: #ffcf5a; color: #ffcf5a; }
+  .btnRow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btnRow button { flex: 1 1 auto; }
+  .hint { color: #3a5a80; font-size: 11px; margin-top: 6px; }
+  pre { background: #0a1220; border: 1px solid #223347; padding: 8px; font-size: 11px;
+    white-space: pre; overflow-x: auto; margin: 0; }
+  #copyBtn { margin-top: 6px; width: 100%; }
+  #copyBtn.copied { border-color: #ffcf5a; color: #ffcf5a; }
+  .kv { display: flex; justify-content: space-between; gap: 8px; }
+  .kv span:last-child { color: #70ffa0; font-variant-numeric: tabular-nums; }
+  .kv.big { font-size: 15px; }
+  .kv span.warn { color: #ffcf5a; }
+  .outcome { border: 1px solid #3a5a80; border-radius: 3px; padding: 8px 10px; margin: 0 0 12px;
+    background: #0a1220; }
+  .outcome b { color: #70ffa0; }
+  .outcome ol { margin: 6px 0 0; padding-left: 18px; }
+  .outcome li { margin: 3px 0; }
+  .chk { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+
+  /* one beat = one card */
+  .card { border: 1px solid #223347; border-left: 3px solid #3a5a80; border-radius: 3px;
+    background: #070d18; padding: 7px 9px 9px; width: 234px; box-sizing: border-box; }
+  .card.frozen { border-left-color: #6f92bd; }
+  .card.live   { border-left-color: #70ffa0; }
+  .card.off    { opacity: 0.4; }
+  .card.cur    { background: #0d1a2c; box-shadow: 0 0 0 1px #70ffa0 inset; }
+  .card h3 { margin: 0 0 5px; font-size: 12px; color: #9fd8ff; font-weight: 600; }
+  .card h3 .num { color: #3a5a80; }
+  .card .desc { color: #3a5a80; font-size: 11px; margin: 0 0 6px; }
+  .card .sub { color: #3a5a80; font-size: 11px; margin: 7px 0 2px;
+    border-top: 1px solid #16233a; padding-top: 5px; }
+  .fld { display: flex; align-items: center; gap: 5px; margin: 3px 0; }
+  .fld > span.lbl { flex: 0 0 78px; color: #6f92bd; font-size: 11px; }
+  .fld input[type=number] { width: 54px; background: #0a1220; color: #70ffa0; border: 1px solid #223347;
+    border-radius: 3px; padding: 2px 4px; font: inherit; font-variant-numeric: tabular-nums; }
+  .fld select { background: #0a1220; color: #a8d4ff; border: 1px solid #223347; border-radius: 3px;
+    padding: 2px 3px; font: inherit; font-size: 11px; }
+  .fld input.moved, .fld select.moved { color: #ffcf5a; border-color: #6a5222; }
+  .fld button { padding: 2px 6px; font-size: 11px; flex: 1 1 auto; }
+  .fld .unit { color: #3a5a80; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="left">
+  <div id="canvasWrap"><canvas id="cv" width="1280" height="720"></canvas></div>
+  <div id="rulerWrap"><canvas id="ruler" width="1280" height="150"></canvas></div>
+  <div id="beats"></div>
+</div>
+
+<div id="panel">
+  <h1>Ceremony Lab</h1>
+  <p class="sub">CS042 P2 &mdash; the level-end and game-over sequences
+    (PLANNED-FEATURES-CS042 &sect;3). A standalone design harness: not part of the game build and no
+    imports, so it carries its own copies of the chrome it draws. ⛔ <b>It changes nothing.</b>
+    The ceremony edit is P5, and P5's scope is the Findings block at the bottom of this panel
+    &mdash; not this lab's opinion and not the implementer's.</p>
+
+  <div class="outcome">
+    <b>The report is "clunky" and "not smooth".</b> That is a judgement about pacing, and pacing
+    cannot be guessed into constants &mdash; so &sect;3.2/&sect;3.3 name five suspects instead.
+    Watch for each, then set the beats until it stops happening.
+    <ol>
+      <li><b>Two indefinite gates in a row</b> &mdash; the announcement, then the panel, whenever
+        anything unlocked. <b>U</b> shows the sequence with and without.</li>
+      <li><b>The panel is a hard cut</b> at both ends. There is no fade anywhere in it.</li>
+      <li><b>The freeze lifts mid-banner</b> &mdash; the field moves under a label still being read.</li>
+      <li><b>The announcement waits forever.</b> No auto-advance, by design.</li>
+      <li><b>Game over arrives in one frame</b> &mdash; title, score, ten rows and footer together,
+        under a hard-cut modal that is already covering them.</li>
+    </ol>
+  </div>
+
+  <h2>Sequence</h2>
+  <div class="btnRow" id="tabRow"></div>
+  <p class="hint" id="tabWhat"></p>
+
+  <h2>Transport</h2>
+  <div class="btnRow">
+    <button id="playBtn">Play</button>
+    <button id="resetBtn">Reset</button>
+    <button id="abBtn">A/B: edited</button>
+  </div>
+  <div class="btnRow" style="margin-top:6px" id="speedRow"></div>
+  <label class="chk"><input type="checkbox" id="autoGates">
+    <span>auto-resolve gates while playing</span></label>
+  <label class="chk"><input type="checkbox" id="unlockedBox" checked>
+    <span>an achievement unlocked &mdash; <b>U</b></span></label>
+  <div class="fld"><span class="lbl">unlocks</span>
+    <input type="number" id="unlockN" min="1" max="8" step="1" value="3">
+    <span class="unit">rows in the panel</span></div>
+
+  <h2>Live</h2>
+  <div class="kv big"><span>playhead</span><span id="rdT">&mdash;</span></div>
+  <div class="kv"><span>beat</span><span id="rdBeat">&mdash;</span></div>
+  <div class="kv"><span>field</span><span id="rdField">&mdash;</span></div>
+  <div class="kv"><span>sequence total</span><span id="rdTotal">&mdash;</span></div>
+  <div class="kv"><span>&hellip; vs shipped</span><span id="rdVs">&mdash;</span></div>
+  <p class="hint">⛔ <b>A gated beat has no duration.</b> Its number is an <i>assumed dwell</i>, used
+    only so the timeline can be scrubbed &mdash; it is never a proposal for a timer, and it is
+    never reported as a change. In Play the playhead parks at a gate and waits for <b>ENTER</b>,
+    which is the only honest way to feel one.</p>
+
+  <h2>Presets</h2>
+  <div class="btnRow" id="presetRow"></div>
+  <p class="hint" id="presetWhy"></p>
+  <p class="hint">A preset overwrites <b>both</b> sequences from a fresh shipped copy, so it can
+    never inherit a stray edit. "Current (shipped)" is the load state, and <b>X</b> A/Bs against it
+    without losing your work.</p>
+
+  <h2>Keys</h2>
+  <p class="hint"><b>Space</b> play/pause &middot; <b>ENTER</b> resolve a gate &middot;
+    <b>&larr; &rarr;</b> step 0.05 s &middot; <b>Home</b> reset &middot; <b>T</b> swap sequence &middot;
+    <b>X</b> A/B against shipped &middot; <b>U</b> unlocks on/off &middot; <b>1&ndash;5</b> preset.
+    Click or drag the ruler to scrub.</p>
+
+  <h2>Findings &mdash; hand this back</h2>
+  <pre id="copyOut"></pre>
+  <button id="copyBtn">Copy findings</button>
+  <p class="hint">⛔ This block is P5's spec. Its <b>CHANGES FROM SHIPPED</b> section is the whole of
+    what that phase implements; if it says NONE, the shipped ceremony is the answer and there is
+    nothing for P5 to do.</p>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================================================
+// Copied from orbital-overhaul.html. ⛔ This lab DUPLICATES the slice of the ceremony it draws
+// and imports nothing (spec §3.1). It is NOT a PORT-ME BLOCK: tools/lowhp-glow-lab.html is the
+// one lab that copies a block byte-for-byte, and it earns that because it studies exact pixels.
+// This one studies PACING, so drift here can only ever produce a slightly-off preview.
+// Sources: drawText, drawMenuHint, glowStroke, drawPoly, drawEmblem + ACH_EMBLEM, menuPanel, the
+// CELEB_* geometry block, drawScoreTable, drawStarfield, drawLevelBanner/drawLevelDone, the death
+// spectacle's flash + shockwave, and Ship.draw()'s level-end alpha pulse with its accumulator.
+// ============================================================================================
+const VIEW_W = 1280, VIEW_H = 720;
+const TAU = Math.PI * 2;
+
+const COLOR = {
+  ship: "#9fd8ff", satellite: "#6fe8d8", text: "#a8d4ff", dim: "#3a5a80",
+  menuIdle: "#6f92bd", garbage: "#c8ff50", chain: "#8aa0ff", dock: "#70ffa0", ach: "#ffcf5a"
+};
+const TIER_NAMES = ["Bronze", "Silver", "Gold", "Titanium", "Platinum", "Diamond"];
+const TIER_COLOR = ["#c8823c", "#c0c8d2", "#ffcf5a", "#e8d8b0", "#dfe8f2", "#ffffff"];
+
+// Enough of the mark set to make the panel read honestly at its real size. The full eight, and
+// the authoring of them, belong to tools/emblem-lab.html — that data's own instrument.
+const ACH_EMBLEM = {
+  tier: [
+    [ { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33]], closed: false } ],
+    [ { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.572,-0.33],[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33]], closed: false } ],
+    [ { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.33,-0.572],[0.572,-0.33],[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572]], closed: false } ],
+    [ { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572],[0,-0.66],[0.33,-0.572],[0.572,-0.33]], closed: true } ],
+    [ { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572],[0,-0.66],[0.33,-0.572],[0.572,-0.33]], closed: true },
+      { pts: [[0.547,0.355],[0.665,0.665],[0.355,0.547]], closed: false },
+      { pts: [[-0.355,0.547],[-0.665,0.665],[-0.547,0.355]], closed: false },
+      { pts: [[-0.547,-0.355],[-0.665,-0.665],[-0.355,-0.547]], closed: false },
+      { pts: [[0.355,-0.547],[0.665,-0.665],[0.547,-0.355]], closed: false } ],
+    [ { pts: [[0,-0.42],[-0.28,0.26],[0,0.04],[0.28,0.26]], closed: true },
+      { pts: [[0.66,0],[0.572,0.33],[0.33,0.572],[0,0.66],[-0.33,0.572],[-0.572,0.33],[-0.66,0],[-0.572,-0.33],[-0.33,-0.572],[0,-0.66],[0.33,-0.572],[0.572,-0.33]], closed: true },
+      { pts: [[0.94,0],[0.665,0.665],[0,0.94],[-0.665,0.665],[-0.94,0],[-0.665,-0.665],[0,-0.94],[0.665,-0.665]], closed: true } ]
+  ],
+  weekly: [
+    { pts: [[-0.46,-0.62],[0.46,-0.62],[0.1,0],[0.46,0.62],[-0.46,0.62],[-0.1,0]], closed: true },
+    { pts: [[-0.56,-0.78],[0.56,-0.78]], closed: false },
+    { pts: [[-0.56,0.78],[0.56,0.78]], closed: false }
+  ],
+  lifetime: [
+    { pts: [[-0.68,-0.68],[0.68,-0.68],[0.68,0.68],[-0.68,0.68]], closed: true },
+    { pts: [[-0.34,0.02],[-0.08,0.32],[0.4,-0.34]], closed: false }
+  ]
+};
+
+// The celebration panel's real geometry — 820x560 at its real screen position (GDD §2.20).
+const CELEB_PANEL_W = 820, CELEB_PANEL_H = 560;
+const CELEB_PANEL_X = (VIEW_W - CELEB_PANEL_W) / 2;
+const CELEB_PANEL_Y = (VIEW_H - CELEB_PANEL_H) / 2;
+const CELEB_SUB_Y = CELEB_PANEL_Y + 82;
+const CELEB_ROW_X = CELEB_PANEL_X + 40;
+const CELEB_ROW0_Y = CELEB_PANEL_Y + 168;
+const CELEB_ROW_STEP = 84;
+const CELEB_DESC_DY = 26;
+const CELEB_NAME_SIZE = 22, CELEB_DESC_SIZE = 14;
+const CELEB_EMBLEM_SIZE = 32, CELEB_EMBLEM_DY = 4, CELEB_EMBLEM_GAP = 24;
+const CELEB_ROW_CLIP_TOP = CELEB_ROW0_Y - 44;
+const CELEB_ROW_CLIP_BOTTOM = CELEB_PANEL_Y + 484;
+const CELEB_ROW_VISIBLE_H = CELEB_ROW_CLIP_BOTTOM - CELEB_ROW_CLIP_TOP;
+const CELEB_HINT_Y = CELEB_PANEL_Y + 522;
+const CELEB_HINT = "↑↓ scroll    ENTER / A / ESC / B  continue";
+
+// The announcement / banner / game-over chrome, at the shipped values.
+const LEVEL_BANNER_SIZE = 72, LEVEL_BANNER_Y = 24;
+const LEVEL_DONE_HINT = "ENTER / A  continue", LEVEL_DONE_HINT_DY = 44;
+const MENU_HINT_SIZE = 16;
+const GAMEOVER_HINT = "ENTER / A play again    ESC / B menu";
+const GAMEOVER_HINT_SIZE = 20, GAMEOVER_HINT_Y = VIEW_H / 2 + 290;
+const HS_GAMEOVER_ROWS = 10;
+const DEATH_SHOCKWAVE_SPEED = 700, DEATH_SHOCKWAVE_WIDTH = 4;
+const DEATH_FLASH_TIME = 0.22, DEATH_FLASH_ALPHA = 0.8;
+
+// Starfield — the build's own two layers, densities and colours.
+const STAR_DENSITY = 80, STAR_PARALLAX_FACTOR = 0.5;
+const STAR_BRIGHT_MIN = 0.35, STAR_BRIGHT_MAX = 1.0;
+const STAR_NEAR_DENSITY = 22, STAR_NEAR_BRIGHT_MIN = 0.55, STAR_NEAR_BRIGHT_MAX = 1.0;
+const FIELD_W = 2560, FIELD_H = 1440;   // the shipped orbit world (GDD §2.11.1)
+
+const SHIP_HULL = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
+const CHAIN_LINK = 20;
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+function rand(a, b) { return a + Math.random() * (b - a); }
+function fmtCommas(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+function shortDelta(ax, ay, bx, by) {
+  let dx = bx - ax, dy = by - ay;
+  if (dx > FIELD_W / 2) dx -= FIELD_W; if (dx < -FIELD_W / 2) dx += FIELD_W;
+  if (dy > FIELD_H / 2) dy -= FIELD_H; if (dy < -FIELD_H / 2) dy += FIELD_H;
+  return [dx, dy];
+}
+function wrapPoint(p) {
+  if (p.x < 0) p.x += FIELD_W; if (p.x > FIELD_W) p.x -= FIELD_W;
+  if (p.y < 0) p.y += FIELD_H; if (p.y > FIELD_H) p.y -= FIELD_H;
+}
+function drawText(str, x, y, size, color, align) {
+  ctx.font = size + "px monospace";
+  ctx.textAlign = align || "center";
+  ctx.fillStyle = color || COLOR.text;
+  ctx.shadowColor = color || COLOR.text;
+  ctx.shadowBlur = 8;
+  ctx.fillText(str, x, y);
+  ctx.shadowBlur = 0;
+}
+function drawMenuHint(text, cx, y, size) {
+  drawText(text, cx, y, size || MENU_HINT_SIZE, COLOR.menuIdle, "center");
+}
+function glowStroke(color, width, blur) {
+  ctx.strokeStyle = color; ctx.lineWidth = width === undefined ? 1.6 : width;
+  ctx.shadowColor = color; ctx.shadowBlur = blur === undefined ? 10 : blur;
+  ctx.stroke(); ctx.shadowBlur = 0;
+}
+function drawPoly(points, x, y, angle, color, closed) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+  ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed !== false) ctx.closePath();
+  glowStroke(color); ctx.restore();
+}
+function drawEmblem(cx, cy, r, tierIdx, pool) {
+  const tiered = typeof tierIdx === "number";   // ⛔ typeof, never truthiness — tier 0 IS Bronze
+  const color = tiered ? TIER_COLOR[tierIdx] : COLOR.ach;
+  const polys = tiered ? ACH_EMBLEM.tier[tierIdx] : ACH_EMBLEM[pool];
+  for (const pl of polys) drawPoly(pl.pts.map(p => [p[0] * r, p[1] * r]), cx, cy, 0, color, pl.closed);
+}
+// menuPanel() FILLS before it strokes. That near-opaque fill is what puts the panel in front of
+// whatever is under it, and it is why the shipped panel needs no separate dimming pass.
+function menuPanel(w, h, title) {
+  const x = (VIEW_W - w) / 2, y = (VIEW_H - h) / 2;
+  ctx.fillStyle = "rgba(2,6,14,0.95)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = COLOR.satellite; ctx.lineWidth = 2;
+  ctx.shadowColor = COLOR.satellite; ctx.shadowBlur = 12;
+  ctx.strokeRect(x, y, w, h);
+  ctx.shadowBlur = 0;
+  drawText(title, VIEW_W / 2, y + 46, 32, COLOR.text);
+  return { x: x, y: y };
+}
+
+// ---------- the mock field ----------
+// A level-end field carries NO Garbage Satellites — clearing the last one is what ended the level.
+// What is left is everything the ceremony is protecting the player from: loose Debris, live
+// Hunters, and whatever is still on the tow chain.
+const stars = [], starsNear = [];
+{
+  const n = Math.round(STAR_DENSITY * (FIELD_W * FIELD_H) / (VIEW_W * VIEW_H));
+  for (let i = 0; i < n; i++)
+    stars.push({ x: Math.random() * FIELD_W, y: Math.random() * FIELD_H,
+                 s: rand(1, 1.8), a: rand(STAR_BRIGHT_MIN, STAR_BRIGHT_MAX) });
+  for (let i = 0; i < Math.round(STAR_NEAR_DENSITY); i++)
+    starsNear.push({ x: Math.random() * VIEW_W, y: Math.random() * VIEW_H,
+                     s: rand(1.2, 2.2), a: rand(STAR_NEAR_BRIGHT_MIN, STAR_NEAR_BRIGHT_MAX) });
+}
+function drawStarfield(cam) {
+  for (const st of stars) {
+    const d = shortDelta(cam.x, cam.y, st.x, st.y);
+    if (Math.abs(d[0]) > VIEW_W / 2 || Math.abs(d[1]) > VIEW_H / 2) continue;
+    ctx.fillStyle = "rgba(120, 160, 210, " + st.a + ")";
+    ctx.fillRect(d[0] + VIEW_W / 2, d[1] + VIEW_H / 2, st.s, st.s);
+  }
+  const px = ((cam.x * STAR_PARALLAX_FACTOR) % VIEW_W + VIEW_W) % VIEW_W;
+  const py = ((cam.y * STAR_PARALLAX_FACTOR) % VIEW_H + VIEW_H) % VIEW_H;
+  for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) {
+    const ox = tx * VIEW_W - px, oy = ty * VIEW_H - py;
+    for (const st of starsNear) {
+      const sx = st.x + ox, sy = st.y + oy;
+      if (sx < -4 || sx > VIEW_W + 4 || sy < -4 || sy > VIEW_H + 4) continue;
+      ctx.fillStyle = "rgba(160, 195, 235, " + st.a + ")";
+      ctx.fillRect(sx, sy, st.s, st.s);
+    }
+  }
+}
+
+const field = { ship: null, chain: [], garbage: [], hunters: [], parts: [],
+                cam: { x: 0, y: 0 }, deathX: null, deathY: null };
+function resetField() {
+  const cx = FIELD_W / 2, cy = FIELD_H / 2;
+  field.ship = { x: cx, y: cy, vx: 74, vy: -22, angle: -0.3, spin: 0.16 };
+  field.chain = [];
+  for (let i = 1; i <= 7; i++) field.chain.push({ x: cx - i * CHAIN_LINK, y: cy + i * 3 });
+  field.garbage = [];
+  for (let i = 0; i < 16; i++) field.garbage.push({
+    x: cx + rand(-620, 620), y: cy + rand(-340, 340),
+    vx: rand(-34, 34), vy: rand(-34, 34), angle: rand(0, TAU), spin: rand(-1.1, 1.1) });
+  field.hunters = [];
+  for (let i = 0; i < 3; i++) {
+    const r = [26, 18, 12][i];
+    field.hunters.push({
+      x: cx + rand(-560, 560), y: cy + rand(-300, 300), r: r,
+      angle: rand(0, TAU), speed: 40 + i * 26,
+      shape: [[r * 1.35, 0], [0, -r * 0.8], [-r * 0.75, 0], [0, r * 0.8]],
+      inner: r > 14 ? [[r * 0.5, 0], [0, -r * 0.4], [-r * 0.4, 0], [0, r * 0.4]] : null });
+  }
+  field.parts = [];
+  field.deathX = null; field.deathY = null;
+  field.cam.x = cx; field.cam.y = cy;
+}
+resetField();
+
+function stepField(dt) {
+  if (dt <= 0) return;
+  const s = field.ship;
+  if (s) {
+    s.angle += s.spin * dt;
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    wrapPoint(s);
+    // A lag rope, not the build's verlet solver. This lab studies pacing; a trailing haul only
+    // has to read as "the field is / is not moving". tools/handling-lab.html owns the real chain.
+    let px = s.x, py = s.y;
+    for (const n of field.chain) {
+      const d = shortDelta(n.x, n.y, px, py);
+      const len = Math.hypot(d[0], d[1]) || 1;
+      const pull = ((len - CHAIN_LINK) / len) * Math.min(1, dt * 9);
+      n.x += d[0] * pull; n.y += d[1] * pull;
+      wrapPoint(n); px = n.x; py = n.y;
+    }
+  }
+  for (const g of field.garbage) { g.x += g.vx * dt; g.y += g.vy * dt; g.angle += g.spin * dt; wrapPoint(g); }
+  for (const h of field.hunters) {
+    if (s) {
+      const d = shortDelta(h.x, h.y, s.x, s.y);
+      let turn = Math.atan2(d[1], d[0]) - h.angle;
+      while (turn > Math.PI) turn -= TAU;
+      while (turn < -Math.PI) turn += TAU;
+      h.angle += Math.max(-0.8 * dt, Math.min(0.8 * dt, turn));
+    }
+    h.x += Math.cos(h.angle) * h.speed * dt; h.y += Math.sin(h.angle) * h.speed * dt;
+    wrapPoint(h);
+  }
+  for (const p of field.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+}
+function blowUpShip() {
+  const s = field.ship; if (!s) return;
+  for (let i = 0; i < 22; i++) {
+    const a = rand(0, TAU), sp = rand(40, 220);
+    field.parts.push({ x: s.x, y: s.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+                       a: a, life: rand(0.7, 2.4) });
+  }
+  field.deathX = s.x; field.deathY = s.y;
+  field.ship = null;
+  field.chain = [];
+}
+
+function drawFieldWorld(shipAlpha) {
+  const cam = field.cam;
+  drawStarfield(cam);
+  ctx.save();
+  ctx.translate(VIEW_W / 2 - cam.x, VIEW_H / 2 - cam.y);
+  for (const g of field.garbage) {
+    const d = shortDelta(cam.x, cam.y, g.x, g.y);
+    if (Math.abs(d[0]) > VIEW_W / 2 + 40 || Math.abs(d[1]) > VIEW_H / 2 + 40) continue;
+    drawPoly([[7, -5], [7, 5], [-7, 5], [-7, -5]], cam.x + d[0], cam.y + d[1], g.angle, COLOR.garbage);
+  }
+  if (field.ship) {
+    let px = field.ship.x, py = field.ship.y;
+    for (const n of field.chain) {
+      const d = shortDelta(px, py, n.x, n.y);
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + d[0], py + d[1]);
+      glowStroke(COLOR.chain, 1.2, 6);
+      px += d[0]; py += d[1];
+      drawPoly([[7, -5], [7, 5], [-7, 5], [-7, -5]], px, py, 0.3, COLOR.garbage);
+    }
+  }
+  for (const h of field.hunters) {
+    const d = shortDelta(cam.x, cam.y, h.x, h.y);
+    if (Math.abs(d[0]) > VIEW_W / 2 + 60 || Math.abs(d[1]) > VIEW_H / 2 + 60) continue;
+    drawPoly(h.shape, cam.x + d[0], cam.y + d[1], h.angle, COLOR.satellite);
+    if (h.inner) drawPoly(h.inner, cam.x + d[0], cam.y + d[1], h.angle, COLOR.satellite);
+  }
+  for (const p of field.parts) {
+    if (p.life <= 0) continue;
+    ctx.globalAlpha = Math.min(1, p.life);
+    drawPoly([[-5, 0], [5, 0]], p.x, p.y, p.a, COLOR.ship, false);
+    ctx.globalAlpha = 1;
+  }
+  if (field.ship) {
+    // ⛔ SET-DRAW-RESTORE, the build's own idiom: the alpha pulse is the level-end protection
+    // tell and nothing else in the frame may inherit it.
+    ctx.globalAlpha = shipAlpha;
+    drawPoly(SHIP_HULL, field.ship.x, field.ship.y, field.ship.angle, COLOR.ship);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+// ---------- mock content for the two things the ceremony puts on screen ----------
+const MOCK_UNLOCKS = [
+  { name: "Salvage Baron",  desc: "Deliver 250 pieces of Debris across all runs.", tierIdx: 2, pool: "lifetime" },
+  { name: "Untouchable",    desc: "Clear a level without taking a scratch.",       tierIdx: 0, pool: "lifetime" },
+  { name: "Weekly Hauler",  desc: "Deliver 40 pieces this week.",                  tierIdx: null, pool: "weekly" },
+  { name: "Lineage Ender",  desc: "Destroy a full Hunter lineage, all thirteen.",  tierIdx: 4, pool: "lifetime" },
+  { name: "Deep Field",     desc: "Reach level 20.",                               tierIdx: 3, pool: "lifetime" },
+  { name: "Chain Gang",     desc: "Tow a full 24-node haul to the Recycle dock.",  tierIdx: 5, pool: "lifetime" },
+  { name: "First Contact",  desc: "Destroy your first Hunter Satellite.",          tierIdx: null, pool: "lifetime" },
+  { name: "Scrap Merchant", desc: "Bank 100,000 points in one run.",               tierIdx: 1, pool: "lifetime" }
+];
+const MOCK_SCORES = [
+  { name: "PAUL",  score: 184250, wave: 22, delivered: 411, hot: false },
+  { name: "PAUL",  score: 151900, wave: 19, delivered: 372, hot: true  },
+  { name: "GUEST", score: 133400, wave: 18, delivered: 298, hot: false },
+  { name: "PAUL",  score: 120875, wave: 17, delivered: 341, hot: false },
+  { name: "DAN",   score:  98600, wave: 15, delivered: 260, hot: false },
+  { name: "GUEST", score:  87225, wave: 14, delivered: 233, hot: false },
+  { name: "PAUL",  score:  71400, wave: 12, delivered: 198, hot: false },
+  { name: "DAN",   score:  63050, wave: 11, delivered: 176, hot: false },
+  { name: "GUEST", score:  55800, wave: 10, delivered: 155, hot: false },
+  { name: "PAUL",  score:  41325, wave:  9, delivered: 121, hot: false }
+];
+const MOCK_WAVE = 7, MOCK_SCORE = 151900;
+
+function ramp(age, fade) {
+  if (age <= 0) return 0;
+  if (fade <= 0) return 1;
+  return Math.min(1, age / fade);
+}
+// drawScoreTable's five columns, unchanged (§2.18). `rowStep` is the LAB's own addition — the
+// game-over stack's per-row stagger — and is 0 for the shipped look, where all ten land together.
+function drawScoreTable(cx, topY, age, rowStep, rowFade) {
+  const colRank = cx - 230, colName = cx - 170, colScore = cx + 10,
+        colWave = cx + 130, colDeliv = cx + 230;
+  drawText("#", colRank, topY, 13, COLOR.dim, "left");
+  drawText("NAME", colName, topY, 13, COLOR.dim, "left");
+  drawText("SCORE", colScore, topY, 13, COLOR.dim, "right");
+  drawText("LEVEL", colWave, topY, 13, COLOR.dim, "right");
+  drawText("DELIVERED", colDeliv, topY, 13, COLOR.dim, "right");
+  const base = ctx.globalAlpha;
+  for (let i = 0; i < HS_GAMEOVER_ROWS; i++) {
+    const r = MOCK_SCORES[i], ry = topY + 22 + i * 18;
+    const rowA = rowStep > 0 ? ramp(age - i * rowStep, rowFade) : 1;
+    if (rowA <= 0) continue;
+    ctx.globalAlpha = base * rowA;
+    if (!r) { drawText((i + 1) + ".", colRank, ry, 13, COLOR.dim, "left"); continue; }
+    const col = r.hot ? COLOR.ach : COLOR.text;
+    drawText((i + 1) + ".", colRank, ry, 13, col, "left");
+    drawText(r.name, colName, ry, 13, col, "left");
+    drawText(fmtCommas(r.score), colScore, ry, 13, col, "right");
+    drawText(String(r.wave), colWave, ry, 13, col, "right");
+    drawText(String(r.delivered), colDeliv, ry, 13, col, "right");
+  }
+  ctx.globalAlpha = base;
+}
+
+// ============================================================================================
+// THE TIMELINE MODEL
+//
+// A sequence is an ordered list of beats. Each beat carries a duration (or, if it is input-gated,
+// an assumed dwell), a fade in and out with its own curve, whether the field is frozen or live
+// while it runs, and how it joins the beat before it.
+//
+// ⛔ A GATE HAS NO KNOWN END, AND THAT CONSTRAINS WHAT A JOIN CAN MEAN. Two rules, not one:
+//
+//   after a TIMED beat  — `overlap` seconds: the incoming beat starts early, both render through
+//                         the crossing, and the sequence gets that much shorter. The ordinary
+//                         cross-fade, and the build can compute it because both ends are known.
+//
+//   after a GATED beat  — `overlap` is NOT offered, because nothing can begin a known number of
+//                         seconds before a confirm nobody can predict. Only two joins are
+//                         implementable there, and both are: the outgoing beat's own FADE-OUT
+//                         runs AFTER the confirm (a dissolve out of the gate), and the incoming
+//                         beat may be drawn UNDER the gated one from its start (`under`), which
+//                         is what the shipped game-over stack already does.
+//
+// Getting this wrong is how a lab quietly proposes eating into an indefinite hold — a thing the
+// build cannot do — and hands that to the phase that has to implement it.
+// ============================================================================================
+const CURVES = {
+  linear: t => t,
+  easeIn: t => t * t,
+  easeOut: t => 1 - (1 - t) * (1 - t),
+  smooth: t => t * t * (3 - 2 * t)
+};
+const CURVE_NAMES = ["linear", "easeIn", "easeOut", "smooth"];
+
+// ⛔ SEEDED FROM THE SHIPPED NUMBERS (spec §3.2/§3.3), so "Current (shipped)" is honest and the
+// A/B has something true on the other side: levelBannerFade 0.5, levelBannerTime 2.2 (split here
+// into the frozen 1.70 and the live 0.50 tail, because the tail IS where the thaw sits),
+// levelEndGrace 3.0, levelEndFade 0.25 / levelEndGracePulseEnd 0.08, DEATH_DURATION 2.5, the
+// panel's hard cut at both ends, and the game-over stack already drawn under that panel.
+function shippedSequences() {
+  return {
+    A: [
+      { id: "clear", label: "Clear → arm", on: true,
+        desc: "The killing frame runs to its own end — this is where achievements bank.",
+        dur: 0.00, gate: false, dwell: 0, fadeIn: 0, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: false, protect: true },
+      { id: "announce", label: "“Level N Complete”", on: true,
+        desc: "Fades in over levelBannerFade, then holds. Fade-in only: nothing to fade out into.",
+        dur: 0, gate: true, dwell: 2.0, fadeIn: 0.50, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: true, protect: true },
+      { id: "panelA", label: "Achievements panel", on: true,
+        desc: "820×560. Hard cut in AND out — there is no fade anywhere in drawCelebration().",
+        dur: 0, gate: true, dwell: 4.0, fadeIn: 0, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: true, protect: true, needsUnlock: true, carryDone: false },
+      { id: "banner", label: "“Level N+1” — frozen part", on: true,
+        desc: "nextWave() has run: banner, Dan's line, music intensity, payload slots.",
+        dur: 1.70, gate: false, dwell: 0, fadeIn: 0.50, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: true, protect: true },
+      { id: "thaw", label: "Banner tail — field live", on: true,
+        desc: "The freeze lifts when the label starts fading out. Same label, still on screen.",
+        dur: 0.50, gate: false, dwell: 0, fadeIn: 0, curveIn: "linear", fadeOut: 0.50, curveOut: "linear",
+        overlap: 0, under: false, frozen: false, protect: true, thawMode: "switch", thawRamp: 0.40 },
+      { id: "grace", label: "Post-banner grace", on: true,
+        desc: "Live play, damage off, the ship pulsing 1.0 → 0.2 → 1.0 and speeding up as it runs out.",
+        dur: 3.00, gate: false, dwell: 0, fadeIn: 0, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: false, protect: true,
+        pulse: true, pulseFade: 0.25, pulseEnd: 0.08 }
+    ],
+    B: [
+      { id: "dying", label: "Death spectacle", on: true,
+        desc: "DEATH_DURATION. Input-inert and unskippable; reduced sim, white flash, shockwave.",
+        dur: 2.50, gate: false, dwell: 0, fadeIn: 0, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: false, protect: false },
+      { id: "handoff", label: "→ gameover", on: true,
+        desc: "RunResult built, leaderboard submitted, high score written. One frame today.",
+        dur: 0.00, gate: false, dwell: 0, fadeIn: 0, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: true, protect: false },
+      { id: "panelB", label: "Achievements panel", on: true,
+        desc: "The same 820×560 panel, the same hard cut, over a frozen field.",
+        dur: 0, gate: true, dwell: 4.0, fadeIn: 0, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: false, frozen: true, protect: false, needsUnlock: true },
+      { id: "stack", label: "GAME OVER stack", on: true,
+        desc: "Title, FINAL SCORE, ten rows and the footer. All in one frame, already under the panel.",
+        dur: 0, gate: true, dwell: 5.0, fadeIn: 0, curveIn: "linear", fadeOut: 0, curveOut: "linear",
+        overlap: 0, under: true, frozen: true, protect: false,
+        stagTitle: 0, stagScore: 0, stagTable: 0, stagFooter: 0, stagFade: 0, rowStep: 0 }
+    ]
+  };
+}
+
+// The five named variants (§3.4 item 3). Each is a delta on a FRESH shipped clone, so a preset can
+// never inherit a stray edit, and each one attacks a different suspect from the panel at the top.
+const PRESETS = [
+  { key: "Current (shipped)",
+    why: "The honest baseline. Every other preset is a delta on this, and X A/Bs against it.",
+    apply: function () {} },
+  { key: "Auto-advance",
+    why: "Suspect 4 — neither hold waits forever. The GAME OVER stack stays gated: nothing should restart a run on a timer.",
+    apply: function (s) {
+      s.A[1].gate = false; s.A[1].dur = 1.60; s.A[1].fadeOut = 0.35; s.A[1].curveOut = "easeIn";
+      s.A[2].gate = false; s.A[2].dur = 4.50;
+      s.B[2].gate = false; s.B[2].dur = 4.50;
+    } },
+  { key: "Cross-fade",
+    why: "Suspect 2 — no hard cuts left anywhere. Each gate dissolves out after the confirm, and the game-over stack arrives on its own rather than being uncovered.",
+    apply: function (s) {
+      s.A[1].fadeOut = 0.35; s.A[1].curveOut = "easeIn";
+      s.A[2].fadeIn = 0.35; s.A[2].curveIn = "easeOut";
+      s.A[2].fadeOut = 0.35; s.A[2].curveOut = "easeIn";
+      s.A[3].curveIn = "easeOut";
+      s.B[2].fadeIn = 0.35; s.B[2].curveIn = "easeOut";
+      s.B[2].fadeOut = 0.35; s.B[2].curveOut = "easeIn";
+      s.B[3].under = false; s.B[3].fadeIn = 0.40; s.B[3].curveIn = "easeOut";
+    } },
+  { key: "Merged",
+    why: "Suspect 1 — one press, not two. The level-end panel announces the completion itself, and the game-over panel stops being a second gate over a screen that is already there.",
+    apply: function (s) {
+      s.A[1].on = false;
+      s.A[2].carryDone = true; s.A[2].fadeIn = 0.40; s.A[2].curveIn = "easeOut";
+      s.B[2].gate = false; s.B[2].dur = 4.50; s.B[2].fadeOut = 0.50; s.B[2].curveOut = "easeIn";
+    } },
+  { key: "Compressed",
+    why: "Suspects 3 and 5 — a tail short enough that the freeze does not outstay the label, and a game-over stack that arrives in pieces instead of all at once.",
+    apply: function (s) {
+      s.A[1].gate = false; s.A[1].dur = 0.90; s.A[1].fadeIn = 0.30; s.A[1].fadeOut = 0.25;
+      s.A[3].dur = 1.00; s.A[3].fadeIn = 0.30;
+      s.A[4].dur = 0.40; s.A[4].fadeOut = 0.40; s.A[4].thawMode = "ramp"; s.A[4].thawRamp = 0.40;
+      s.A[5].dur = 1.50;
+      s.B[0].dur = 1.60;
+      s.B[3].under = false;
+      s.B[3].stagTitle = 0; s.B[3].stagScore = 0.12; s.B[3].stagTable = 0.24; s.B[3].stagFooter = 0.36;
+      s.B[3].stagFade = 0.18; s.B[3].rowStep = 0.03;
+    } }
+];
+
+// ---------- lab state ----------
+const SHIPPED = shippedSequences();
+let SEQ = shippedSequences();
+let presetName = "Current (shipped)";
+let tab = "A";
+let t = 0, playing = false, speed = 1;
+let autoGates = false, unlocked = true, unlockN = 3;
+let resolved = {};                 // gated beat id -> the player has pressed ENTER on it
+let abBaseline = false, abStash = null;
+let scrubbing = false;
+let pulsePhase = 0;                // accumulated in HALF-CYCLES, exactly as game.levelEndPulseT is
+
+function beats() { return SEQ[tab]; }
+function beatOn(b) { return b.on !== false && !(b.needsUnlock && !unlocked); }
+function shippedBeat(id) {
+  for (const k of ["A", "B"]) for (const b of SHIPPED[k]) if (b.id === id) return b;
+  return null;
+}
+function prevOn(list, i) {
+  for (let j = i - 1; j >= 0; j--) if (beatOn(list[j])) return list[j];
+  return null;
+}
+
+function layout(list) {
+  const out = [];
+  let prev = null;
+  for (const b of list) {
+    if (!beatOn(b)) continue;
+    const dur = b.gate ? b.dwell : b.dur;
+    let start;
+    if (!prev) start = 0;
+    else if (prev.gate) start = prev.end;                          // ⛔ a gate cannot be eaten into
+    else start = Math.max(prev.start, prev.end - (b.overlap || 0));
+    const o = { ref: b, gate: b.gate, start: start, end: start + dur,
+                rStart: (b.under && prev) ? prev.start : start,
+                // ⛔ a GATED beat's fade-out runs AFTER the confirm — it is the one dissolve out of
+                // an indefinite hold the build can actually implement.
+                rEnd: start + dur + (b.gate ? b.fadeOut : 0) };
+    out.push(o); prev = o;
+  }
+  const total = out.length ? Math.max.apply(null, out.map(o => o.rEnd)) : 0;
+  return { list: out, total: total };
+}
+function alphaOf(o, at) {
+  const b = o.ref;
+  const age = at - o.rStart, left = o.rEnd - at;
+  if (age < 0 || left <= 0) return 0;
+  let a = 1;
+  if (b.fadeIn > 0) a = Math.min(a, CURVES[b.curveIn](Math.min(1, age / b.fadeIn)));
+  if (b.fadeOut > 0) a = Math.min(a, CURVES[b.curveOut](Math.min(1, left / b.fadeOut)));
+  return Math.max(0, Math.min(1, a));
+}
+// The beat that OWNS the playhead — the last one whose LOGICAL window holds it. Ownership is
+// input and field state, which is why it reads start/end and not the render window: a stack drawn
+// under a panel is visible without owning anything.
+function ownerAt(lay, at) {
+  let owner = null;
+  for (const o of lay.list) if (at >= o.start && at < o.end) owner = o;
+  return owner;
+}
+function fieldRateAt(lay, at) {
+  const o = ownerAt(lay, at);
+  if (!o) return 1;                                   // past the sequence: normal play
+  if (o.ref.id === "dying") return 0.35;              // the death spectacle's reduced sim
+  if (o.ref.frozen) return 0;
+  if (o.ref.id === "thaw" && o.ref.thawMode === "ramp")
+    return o.ref.thawRamp > 0 ? Math.min(1, (at - o.start) / o.ref.thawRamp) : 1;
+  return 1;
+}
+function shipAlphaAt(lay, at) {
+  const o = ownerAt(lay, at);
+  if (!o || !o.ref.pulse) return 1;
+  const p = pulsePhase % 2;
+  const tri = p < 1 ? p : 2 - p;
+  return 1 - 0.8 * tri;                               // ⛔ the 0.2 floor and 1.0 ceiling are not knobs
+}
+function stepPulse(lay, at, dt) {
+  const o = ownerAt(lay, at);
+  if (!o || !o.ref.pulse) return;
+  const graceFrac = 1 - (o.end - at) / Math.max(0.0001, o.end - o.start);
+  const oneWay = o.ref.pulseFade + (o.ref.pulseEnd - o.ref.pulseFade) * graceFrac;
+  pulsePhase += dt / Math.max(0.0001, oneWay);
+}
+function gateHeldAt(lay, at) {
+  const o = ownerAt(lay, at);
+  if (!o || !o.gate || autoGates || resolved[o.ref.id]) return null;
+  return at >= o.start + o.ref.fadeIn ? o : null;
+}
+
+// ---------- drawing one frame of the ceremony ----------
+function drawPanelChrome(a, carryDone) {
+  const items = MOCK_UNLOCKS.slice(0, unlockN);
+  ctx.globalAlpha = a;
+  const p = menuPanel(CELEB_PANEL_W, CELEB_PANEL_H, "ACHIEVEMENTS UNLOCKED");
+  // ⛔ "Merged" is the only thing that touches this line. The shipped level-end sub-line is
+  // "During level N you earned:"; carrying the completion into it is what merging means.
+  drawText(carryDone ? "Level " + MOCK_WAVE + " Complete — you earned:"
+                     : "During level " + MOCK_WAVE + " you earned:",
+           VIEW_W / 2, CELEB_SUB_Y, 14, COLOR.dim);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(p.x, CELEB_ROW_CLIP_TOP, CELEB_PANEL_W, CELEB_ROW_VISIBLE_H);
+  ctx.clip();
+  items.forEach(function (it, i) {
+    const ry = CELEB_ROW0_Y + i * CELEB_ROW_STEP;
+    const r = CELEB_EMBLEM_SIZE;
+    drawEmblem(CELEB_ROW_X + r, ry + CELEB_EMBLEM_DY, r, it.tierIdx, it.pool);
+    const tiered = typeof it.tierIdx === "number";
+    const col = tiered ? TIER_COLOR[it.tierIdx] : COLOR.ach;
+    const tx = CELEB_ROW_X + 2 * r + CELEB_EMBLEM_GAP;
+    drawText(tiered ? it.name + " — " + TIER_NAMES[it.tierIdx] : it.name,
+             tx, ry, CELEB_NAME_SIZE, col, "left");
+    drawText(it.desc, tx, ry + CELEB_DESC_DY, CELEB_DESC_SIZE, COLOR.menuIdle, "left");
+  });
+  ctx.restore();
+  const overflow = (CELEB_ROW0_Y - CELEB_ROW_CLIP_TOP) + (items.length - 1) * CELEB_ROW_STEP
+                   + Math.max(CELEB_DESC_DY + CELEB_DESC_SIZE, CELEB_EMBLEM_DY + CELEB_EMBLEM_SIZE)
+                   - CELEB_ROW_VISIBLE_H;
+  if (overflow > 0) drawText("▼", VIEW_W / 2, CELEB_ROW_CLIP_BOTTOM + 10, 16, COLOR.menuIdle);
+  drawMenuHint(CELEB_HINT, VIEW_W / 2, CELEB_HINT_Y);
+  ctx.globalAlpha = 1;
+}
+
+function renderBeat(o, a, at) {
+  const b = o.ref, age = at - o.rStart;
+  if (b.id === "announce") {
+    const y = VIEW_H / 2 + LEVEL_BANNER_Y;
+    ctx.globalAlpha = a;
+    drawText("Level " + MOCK_WAVE + " Complete", VIEW_W / 2, y, LEVEL_BANNER_SIZE, COLOR.text);
+    drawMenuHint(LEVEL_DONE_HINT, VIEW_W / 2, y + LEVEL_DONE_HINT_DY);
+    ctx.globalAlpha = 1;
+  } else if (b.id === "panelA" || b.id === "panelB") {
+    drawPanelChrome(a, !!b.carryDone);
+  } else if (b.id === "banner" || b.id === "thaw") {
+    ctx.globalAlpha = a;
+    drawText("Level " + (MOCK_WAVE + 1), VIEW_W / 2, VIEW_H / 2 + LEVEL_BANNER_Y,
+             LEVEL_BANNER_SIZE, COLOR.text);
+    ctx.globalAlpha = 1;
+  } else if (b.id === "dying") {
+    // The build reads game.deathT counting DOWN from DEATH_DURATION; age is its mirror.
+    const frac = Math.max(0, 1 - age / Math.max(0.0001, b.dur));
+    if (field.deathX !== null && frac > 0) {
+      const d = shortDelta(field.cam.x, field.cam.y, field.deathX, field.deathY);
+      ctx.globalAlpha = a * frac;
+      ctx.beginPath();
+      ctx.arc(VIEW_W / 2 + d[0], VIEW_H / 2 + d[1], age * DEATH_SHOCKWAVE_SPEED, 0, TAU);
+      glowStroke(COLOR.ship, DEATH_SHOCKWAVE_WIDTH * frac + 0.5, 16);
+      ctx.globalAlpha = 1;
+    }
+    const flash = Math.max(0, (DEATH_FLASH_TIME - age) / DEATH_FLASH_TIME);
+    if (flash > 0) {
+      ctx.globalAlpha = flash * DEATH_FLASH_ALPHA * a;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.globalAlpha = 1;
+    }
+  } else if (b.id === "stack") {
+    const aT = a * ramp(age - b.stagTitle,  b.stagFade);
+    const aS = a * ramp(age - b.stagScore,  b.stagFade);
+    const aB = a * ramp(age - b.stagTable,  b.stagFade);
+    const aF = a * ramp(age - b.stagFooter, b.stagFade);
+    if (aT > 0) { ctx.globalAlpha = aT; drawText("GAME OVER", VIEW_W / 2, VIEW_H / 2 - 20, 56); }
+    if (aS > 0) { ctx.globalAlpha = aS; drawText("FINAL SCORE  " + fmtCommas(MOCK_SCORE), VIEW_W / 2, VIEW_H / 2 + 36, 26); }
+    if (aB > 0) { ctx.globalAlpha = aB; drawScoreTable(VIEW_W / 2, VIEW_H / 2 + 60, age - b.stagTable, b.rowStep, b.stagFade); }
+    if (aF > 0) { ctx.globalAlpha = aF; drawMenuHint(GAMEOVER_HINT, VIEW_W / 2, GAMEOVER_HINT_Y, GAMEOVER_HINT_SIZE); }
+    ctx.globalAlpha = 1;
+  }
+  // "clear" and "handoff" draw nothing. They are the frames the build spends on bookkeeping, and
+  // they are on the timeline so a duration can be given to a pause that has none today.
+}
+
+function drawFrame() {
+  const lay = layout(beats());
+  ctx.fillStyle = "#050a12";
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  drawFieldWorld(shipAlphaAt(lay, t));
+  for (const o of lay.list) {
+    const a = alphaOf(o, t);
+    if (a > 0) renderBeat(o, a, t);
+  }
+  // A held gate is a state the build genuinely sits in forever. Say so on the canvas, or a still
+  // frame reads as "the lab is stuck" rather than "this is the thing you are judging".
+  if (gateHeldAt(lay, t)) drawText("⏸  waiting on the player  —  ENTER", VIEW_W / 2, VIEW_H - 26, 15, COLOR.ach);
+  else if (!ownerAt(lay, t) && t > 0) drawText("normal play", VIEW_W / 2, VIEW_H - 26, 15, COLOR.dock);
+}
+
+// ---------- the ruler ----------
+const ruler = document.getElementById("ruler");
+const rctx = ruler.getContext("2d");
+const RUL_PAD = 8, RUL_TOP = 24, RUL_BAR = 24, RUL_GAP = 4, RUL_RIGHT = 74;
+function rulerX(at, total) {
+  const w = ruler.width - RUL_PAD - RUL_RIGHT;
+  return RUL_PAD + (total > 0 ? at / total : 0) * w;
+}
+function drawRuler() {
+  const lay = layout(beats());
+  const total = Math.max(0.0001, lay.total);
+  rctx.clearRect(0, 0, ruler.width, ruler.height);
+  rctx.font = "11px 'Segoe UI', system-ui, sans-serif";
+  rctx.lineWidth = 1;
+
+  rctx.strokeStyle = "#16233a"; rctx.fillStyle = "#3a5a80"; rctx.textAlign = "center";
+  const step = total > 16 ? 2 : 1;
+  for (let s = 0; s <= Math.ceil(total); s += step) {
+    const x = rulerX(Math.min(s, total), total);
+    rctx.beginPath(); rctx.moveTo(x, RUL_TOP - 8); rctx.lineTo(x, ruler.height - 6); rctx.stroke();
+    rctx.fillText(s + "s", x, RUL_TOP - 12);
+  }
+
+  lay.list.forEach(function (o, i) {
+    const y = RUL_TOP + i * (RUL_BAR + RUL_GAP);
+    const x0 = rulerX(o.rStart, total), x1 = rulerX(o.rEnd, total), w = Math.max(2, x1 - x0);
+    const live = !o.ref.frozen;
+    rctx.fillStyle = live ? "#0f2a1e" : "#101d31";
+    rctx.fillRect(x0, y, w, RUL_BAR);
+    rctx.strokeStyle = live ? "#70ffa0" : "#6f92bd";
+    rctx.strokeRect(x0 + 0.5, y + 0.5, w - 1, RUL_BAR - 1);
+    if (o.gate) {                                  // hatched: no duration, only an assumed dwell
+      rctx.save();
+      rctx.beginPath(); rctx.rect(x0, y, w, RUL_BAR); rctx.clip();
+      rctx.strokeStyle = "#ffcf5a"; rctx.globalAlpha = 0.4;
+      for (let hx = x0 - RUL_BAR; hx < x1 + RUL_BAR; hx += 7) {
+        rctx.beginPath(); rctx.moveTo(hx, y + RUL_BAR); rctx.lineTo(hx + RUL_BAR, y); rctx.stroke();
+      }
+      rctx.restore();
+    }
+    rctx.strokeStyle = "#ffffff"; rctx.globalAlpha = 0.5;     // the fades, drawn as the ramps they are
+    if (o.ref.fadeIn > 0) {
+      const fx = rulerX(Math.min(o.rEnd, o.rStart + o.ref.fadeIn), total);
+      rctx.beginPath(); rctx.moveTo(x0, y + RUL_BAR - 1); rctx.lineTo(fx, y + 1); rctx.stroke();
+    }
+    if (o.ref.fadeOut > 0) {
+      const fx = rulerX(Math.max(o.rStart, o.rEnd - o.ref.fadeOut), total);
+      rctx.beginPath(); rctx.moveTo(fx, y + 1); rctx.lineTo(x1, y + RUL_BAR - 1); rctx.stroke();
+    }
+    rctx.globalAlpha = 1;
+    rctx.fillStyle = "#a8d4ff"; rctx.textAlign = "left";
+    rctx.fillText((i + 1) + ". " + o.ref.label, x0 + 5, y + 16);
+    rctx.fillStyle = "#3a5a80"; rctx.textAlign = "right";
+    rctx.fillText(o.gate ? "GATE" : (o.end - o.start).toFixed(2) + "s", ruler.width - 4, y + 16);
+  });
+
+  const px = rulerX(Math.min(t, total), total);
+  rctx.strokeStyle = "#ffcf5a"; rctx.lineWidth = 1.5;
+  rctx.beginPath(); rctx.moveTo(px, RUL_TOP - 8); rctx.lineTo(px, ruler.height - 4); rctx.stroke();
+  rctx.fillStyle = "#ffcf5a"; rctx.textAlign = "left";
+  rctx.fillText(t.toFixed(2) + "s", Math.min(px + 4, ruler.width - 42), ruler.height - 6);
+}
+// ⛔ Seeking RE-DERIVES which gates the playhead is past rather than keeping a running record:
+// dragging backwards over a gate has to re-arm it, or a second pass sails straight through the
+// hold that is the whole point of the beat.
+function seek(to) {
+  t = Math.max(0, to);
+  resolved = {};
+  const lay = layout(beats());
+  for (const o of lay.list) if (o.gate && o.end <= t) resolved[o.ref.id] = true;
+}
+function scrubTo(clientX) {
+  const r = ruler.getBoundingClientRect();
+  const px = (clientX - r.left) * (ruler.width / r.width);
+  const total = Math.max(0.0001, layout(beats()).total);
+  const w = ruler.width - RUL_PAD - RUL_RIGHT;
+  seek(Math.max(0, Math.min(total, (px - RUL_PAD) / w * total)));
+  refreshLight();
+}
+ruler.addEventListener("mousedown", function (e) {
+  scrubbing = true; playing = false; syncTransport(); scrubTo(e.clientX);
+});
+window.addEventListener("mousemove", function (e) { if (scrubbing) scrubTo(e.clientX); });
+window.addEventListener("mouseup", function () { scrubbing = false; });
+
+// ---------- the beat editor ----------
+// ⛔ NUMBER AND SELECT EDITS NEVER REBUILD THIS DOM. Rebuilding under a focused <input> loses the
+// caret mid-keystroke, so only the button controls (which change WHICH controls exist) rebuild.
+const beatsEl = document.getElementById("beats");
+const cards = [];
+function markMoved(node, b, key) {
+  const sb = shippedBeat(b.id);
+  const same = !sb || (typeof sb[key] === "number" && typeof b[key] === "number"
+    ? Math.abs(sb[key] - b[key]) < 1e-9 : sb[key] === b[key]);
+  node.classList.toggle("moved", !same);
+}
+function fldRow(card, label) {
+  const row = document.createElement("div"); row.className = "fld";
+  if (label !== null) {
+    const lb = document.createElement("span"); lb.className = "lbl"; lb.textContent = label;
+    row.appendChild(lb);
+  }
+  card.appendChild(row);
+  return row;
+}
+function num(card, label, b, key, min, max, stp, unit) {
+  const row = fldRow(card, label);
+  const inp = document.createElement("input");
+  inp.type = "number"; inp.min = min; inp.max = max; inp.step = stp;
+  inp.value = (+b[key]).toFixed(2);
+  markMoved(inp, b, key);
+  inp.addEventListener("input", function () {
+    const v = parseFloat(inp.value);
+    if (isNaN(v)) return;
+    b[key] = Math.max(min, Math.min(max, v));
+    markMoved(inp, b, key);
+    refreshLight(); refreshFindings();
+  });
+  row.appendChild(inp);
+  if (unit) { const s = document.createElement("span"); s.className = "unit"; s.textContent = unit; row.appendChild(s); }
+}
+function sel(card, label, b, key) {
+  const row = fldRow(card, label);
+  const s = document.createElement("select");
+  for (const o of CURVE_NAMES) {
+    const op = document.createElement("option"); op.value = o; op.textContent = o; s.appendChild(op);
+  }
+  s.value = b[key];
+  markMoved(s, b, key);
+  s.addEventListener("change", function () {
+    b[key] = s.value; markMoved(s, b, key); refreshLight(); refreshFindings();
+  });
+  row.appendChild(s);
+}
+function toggle(card, b, key, onText, offText) {
+  const row = fldRow(card, null);
+  const btn = document.createElement("button");
+  btn.textContent = b[key] ? onText : offText;
+  btn.className = b[key] ? "active" : "";
+  markMoved(btn, b, key);
+  btn.addEventListener("click", function () { b[key] = !b[key]; rebuildAll(); });
+  row.appendChild(btn);
+}
+function subHead(card, text) {
+  const d = document.createElement("div"); d.className = "sub"; d.textContent = text; card.appendChild(d);
+}
+function buildEditor() {
+  beatsEl.innerHTML = "";
+  cards.length = 0;
+  const list = beats();
+  list.forEach(function (b, i) {
+    const card = document.createElement("div");
+    card.className = "card " + (b.frozen ? "frozen" : "live");
+    if (!beatOn(b)) card.classList.add("off");
+    cards.push({ el: card, ref: b });
+    const h = document.createElement("h3");
+    h.innerHTML = "<span class='num'>" + (i + 1) + ".</span> " + b.label;
+    card.appendChild(h);
+    const d = document.createElement("div"); d.className = "desc"; d.textContent = b.desc;
+    card.appendChild(d);
+
+    if (b.needsUnlock && !unlocked) {
+      const p = document.createElement("div"); p.className = "desc";
+      p.innerHTML = "<b>not in this run</b> — nothing unlocked. Press <b>U</b> to put it back.";
+      card.appendChild(p); beatsEl.appendChild(card); return;
+    }
+    if (b.id === "announce" || b.id === "panelA") toggle(card, b, "on", "in the sequence", "removed");
+    if (b.on === false) { beatsEl.appendChild(card); return; }
+
+    toggle(card, b, "gate", "input-gated (indefinite)", "timed");
+    if (b.gate) num(card, "dwell", b, "dwell", 0.2, 20, 0.1, "assumed");
+    else num(card, "duration", b, "dur", 0, 20, 0.05, "s");
+    num(card, "fade in", b, "fadeIn", 0, 3, 0.05, "s · 0 = cut");
+    sel(card, "curve in", b, "curveIn");
+    num(card, "fade out", b, "fadeOut", 0, 3, 0.05, "s · 0 = cut");
+    sel(card, "curve out", b, "curveOut");
+    toggle(card, b, "frozen", "field FROZEN", "field LIVE");
+
+    const prev = prevOn(list, i);
+    if (prev) {
+      subHead(card, "how it joins the beat before it");
+      if (prev.gate) {
+        const p = document.createElement("div"); p.className = "desc";
+        p.innerHTML = "after a <b>gate</b>: overlap is unavailable — nothing can start before a "
+          + "confirm nobody can predict. Its fade-out runs after the press.";
+        card.appendChild(p);
+        toggle(card, b, "under", "drawn UNDER the gate", "starts at the confirm");
+      } else {
+        num(card, "overlap", b, "overlap", 0, 6, 0.05, "s into prev");
+      }
+    }
+
+    if (b.id === "panelA") {
+      subHead(card, "Merged — the panel announces the completion itself");
+      toggle(card, b, "carryDone", "carries “Level N Complete”", "sub-line as shipped");
+    }
+    if (b.id === "thaw") {
+      subHead(card, "the thaw — how the field starts moving again");
+      const row = fldRow(card, null);
+      for (const m of ["switch", "ramp"]) {
+        const btn = document.createElement("button");
+        btn.textContent = m;
+        btn.className = b.thawMode === m ? "active" : "";
+        if (shippedBeat(b.id).thawMode !== b.thawMode && b.thawMode === m) btn.classList.add("moved");
+        btn.addEventListener("click", function () { b.thawMode = m; rebuildAll(); });
+        row.appendChild(btn);
+      }
+      if (b.thawMode === "ramp") num(card, "ramp over", b, "thawRamp", 0.05, 3, 0.05, "s to full");
+    }
+    if (b.id === "grace") {
+      subHead(card, "the protection pulse's own two knobs");
+      num(card, "levelEndFade", b, "pulseFade", 0.05, 1.50, 0.05, "s one-way");
+      num(card, "pulse end", b, "pulseEnd", 0.02, 0.50, 0.02, "s one-way");
+    }
+    if (b.id === "stack") {
+      subHead(card, "stagger — seconds after this beat becomes visible");
+      num(card, "GAME OVER", b, "stagTitle", 0, 4, 0.02, "s");
+      num(card, "FINAL SCORE", b, "stagScore", 0, 4, 0.02, "s");
+      num(card, "table", b, "stagTable", 0, 4, 0.02, "s");
+      num(card, "footer", b, "stagFooter", 0, 4, 0.02, "s");
+      num(card, "element fade", b, "stagFade", 0, 2, 0.02, "s · 0 = cut");
+      num(card, "row step", b, "rowStep", 0, 0.40, 0.01, "s per row");
+    }
+    beatsEl.appendChild(card);
+  });
+}
+function paintCurrent() {
+  const owner = ownerAt(layout(beats()), t);
+  for (const c of cards) c.el.classList.toggle("cur", !!owner && owner.ref === c.ref);
+}
+
+// ============================================================================================
+// THE FINDINGS BLOCK (§3.4 item 5) — ⛔ THIS IS P5'S SPEC, so it names what changed and nothing
+// it cannot back up. A gated beat's assumed dwell is never reported as a change; a stagger that
+// would run out of sight is reported as a warning rather than as a decision.
+// ============================================================================================
+function pad(s, n) { s = String(s); return s.length >= n ? s + " " : s + " ".repeat(n - s.length); }
+function fadeStr(o) {
+  const b = o.ref, bits = [];
+  bits.push(b.fadeIn > 0 ? "in " + b.fadeIn.toFixed(2) + " " + b.curveIn : "in CUT");
+  bits.push(b.fadeOut > 0 ? "out " + b.fadeOut.toFixed(2) + " " + b.curveOut
+                            + (b.gate ? " (after the press)" : "") : "out CUT");
+  if (b.under) bits.push("drawn under the previous beat");
+  else if (b.overlap > 0) bits.push("overlap " + b.overlap.toFixed(2));
+  return bits.join(" / ");
+}
+function seqBlock(key, title) {
+  const lay = layout(SEQ[key]);
+  const L = [];
+  L.push("=== SEQUENCE " + key + " — " + title + " " + "=".repeat(Math.max(3, 50 - title.length)));
+  L.push(" #  " + pad("beat", 27) + pad("when", 20) + pad("field", 9) + "transition");
+  lay.list.forEach(function (o, i) {
+    const b = o.ref;
+    const when = b.gate ? "GATE (assume " + b.dwell.toFixed(1) + ")"
+                        : o.start.toFixed(2) + "–" + o.end.toFixed(2) + " s";
+    L.push(" " + (i + 1) + "  " + pad(b.label, 27) + pad(when, 20)
+           + pad(b.frozen ? "frozen" : "live", 9) + fadeStr(o));
+  });
+  for (const b of SEQ[key]) {
+    if (beatOn(b)) continue;
+    L.push("    " + pad(b.label, 27) + "NOT IN THE SEQUENCE"
+           + (b.needsUnlock && !unlocked ? " — nothing unlocked this run" : " — removed"));
+  }
+  L.push("");
+  L.push(" total at the assumed dwells above: " + lay.total.toFixed(2) + " s"
+         + "   (shipped: " + layout(SHIPPED[key]).total.toFixed(2) + " s)");
+  return L;
+}
+function derivedA() {
+  const A = SEQ.A;
+  const banner = A.find(b => b.id === "banner"), thaw = A.find(b => b.id === "thaw");
+  const grace = A.find(b => b.id === "grace");
+  const L = [];
+  L.push(" derived for the build:");
+  L.push("   levelBannerTime = " + (banner.dur + thaw.dur).toFixed(2) + " s  (frozen "
+         + banner.dur.toFixed(2) + " + live tail " + thaw.dur.toFixed(2) + ")     [shipped 2.20]");
+  L.push("   levelBannerFade = " + banner.fadeIn.toFixed(2) + " s in / "
+         + thaw.fadeOut.toFixed(2) + " s out                    [shipped 0.50 / 0.50]");
+  L.push("   thaw            = " + thaw.thawMode.toUpperCase()
+         + (thaw.thawMode === "ramp" ? " over " + thaw.thawRamp.toFixed(2) + " s" : " (one frame)")
+         + ", at life <= " + thaw.dur.toFixed(2) + " s   [shipped SWITCH at 0.50]");
+  L.push("   levelEndGrace   = " + grace.dur.toFixed(2)
+         + " s                                  [shipped 3.00]");
+  L.push("   levelEndFade    = " + grace.pulseFade.toFixed(2) + " s  ·  levelEndGracePulseEnd = "
+         + grace.pulseEnd.toFixed(2) + " s    [shipped 0.25 / 0.08]");
+  // ⛔ The inequality that matters. updateLevelEndFreeze() tests `life <= levelBannerFade`, so the
+  // shipped thaw fires exactly when the label starts fading out. Splitting the two needs a SECOND
+  // threshold in that function, which is a real code change and must not go unsaid here.
+  if (Math.abs(thaw.dur - thaw.fadeOut) > 1e-9) {
+    L.push("   ⚠ the thaw no longer coincides with the label's fade-out. The shipped test is");
+    L.push("     `life <= levelBannerFade` — splitting them needs a SECOND threshold inside");
+    L.push("     updateLevelEndFreeze(), not a retuned knob.");
+  }
+  if (thaw.thawMode === "ramp") {
+    L.push("   ⚠ a RAMPED thaw is new mechanism, not a knob: today the freeze is a boolean and");
+    L.push("     the field goes from stopped to full speed in one frame.");
+  }
+  return L;
+}
+function derivedB() {
+  const B = SEQ.B;
+  const dying = B.find(b => b.id === "dying"), stack = B.find(b => b.id === "stack");
+  const L = [];
+  L.push(" derived for the build:");
+  L.push("   DEATH_DURATION  = " + dying.dur.toFixed(2)
+         + " s                                  [shipped 2.50]");
+  L.push("   stack stagger   = GAME OVER +" + stack.stagTitle.toFixed(2)
+         + " / FINAL SCORE +" + stack.stagScore.toFixed(2)
+         + " / table +" + stack.stagTable.toFixed(2) + " / footer +" + stack.stagFooter.toFixed(2));
+  L.push("   element fade    = " + (stack.stagFade > 0 ? stack.stagFade.toFixed(2) + " s" : "hard cut")
+         + "   ·  row step = " + (stack.rowStep > 0 ? stack.rowStep.toFixed(2) + " s" : "none")
+         + "      [shipped: all zero]");
+  const anyStagger = stack.stagTitle || stack.stagScore || stack.stagTable || stack.stagFooter || stack.rowStep;
+  if (anyStagger && stack.under) {
+    L.push("   ⚠ the stack is drawn UNDER the panel, so this stagger runs while the panel is");
+    L.push("     covering it and the player never sees it. Turn `under` off, or drop the stagger.");
+  }
+  return L;
+}
+// Every field a beat can carry, and the words the findings block uses for it. `dwell` is here so
+// the diff loop knows about it and can skip it deliberately, not by omission.
+const FIELDS = ["on", "gate", "dur", "dwell", "fadeIn", "curveIn", "fadeOut", "curveOut",
+                "overlap", "under", "frozen", "carryDone", "thawMode", "thawRamp",
+                "pulseFade", "pulseEnd",
+                "stagTitle", "stagScore", "stagTable", "stagFooter", "stagFade", "rowStep"];
+const FIELD_LABEL = {
+  on: "in the sequence", gate: "input-gated", dur: "duration", dwell: "assumed dwell",
+  fadeIn: "fade-in", curveIn: "fade-in curve", fadeOut: "fade-out", curveOut: "fade-out curve",
+  overlap: "overlap with the previous beat", under: "drawn under the previous beat",
+  frozen: "field frozen", carryDone: "panel carries the completion line",
+  thawMode: "thaw", thawRamp: "thaw ramp", pulseFade: "levelEndFade", pulseEnd: "levelEndGracePulseEnd",
+  stagTitle: "stagger GAME OVER", stagScore: "stagger FINAL SCORE", stagTable: "stagger the table",
+  stagFooter: "stagger the footer", stagFade: "stagger fade", rowStep: "table row step"
+};
+function fmtVal(v) {
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  if (typeof v === "number") return v.toFixed(2);
+  return String(v);
+}
+function changeLines() {
+  const out = [];
+  for (const k of ["A", "B"]) {
+    SEQ[k].forEach(function (b, i) {
+      const sb = shippedBeat(b.id);
+      if (!sb) return;
+      for (const f of FIELDS) {
+        if (!(f in sb) || !(f in b)) continue;
+        // ⛔ A gated beat's dwell and its unused duration are SCRUBBING ASSUMPTIONS, never
+        // proposals — reporting either would hand P5 a timer nobody asked for.
+        if (b.gate && (f === "dwell" || f === "dur")) continue;
+        if (!b.gate && f === "dwell") continue;
+        const same = typeof sb[f] === "number" && typeof b[f] === "number"
+          ? Math.abs(sb[f] - b[f]) < 1e-9 : sb[f] === b[f];
+        if (same) continue;
+        out.push(" " + k + (i + 1) + " " + pad(b.label + ":", 29)
+                 + FIELD_LABEL[f] + "  " + fmtVal(sb[f]) + " → " + fmtVal(b[f]));
+      }
+    });
+  }
+  return out;
+}
+function buildFindings() {
+  const L = [];
+  L.push("CS042 P2 — ceremony-lab findings              (hand this back; it is P5's spec)");
+  L.push("generated " + new Date().toISOString().slice(0, 19).replace("T", " "));
+  L.push("working preset: " + presetName + (abBaseline ? "   [A/B is SHOWING SHIPPED]" : ""));
+  L.push("panel present:  " + (unlocked ? "YES, " + unlockN + " unlock(s)"
+                                        : "NO — nothing unlocked, which is the common case"));
+  L.push("");
+  L.push.apply(L, seqBlock("A", "LEVEL END"));
+  L.push.apply(L, derivedA());
+  L.push("");
+  L.push.apply(L, seqBlock("B", "GAME OVER"));
+  L.push.apply(L, derivedB());
+  L.push("");
+  L.push("=== CHANGES FROM SHIPPED — this is what P5 implements =====================");
+  const ch = changeLines();
+  if (!ch.length) L.push(" NONE. The shipped ceremony is the answer and P5 has nothing to change.");
+  else L.push.apply(L, ch);
+  L.push("");
+  L.push("=== RENDERABILITY ========================================================");
+  L.push(" Every transition above is ctx.globalAlpha or geometry only — the mechanism");
+  L.push(" drawLevelBanner() and drawCaption() already use. No new fill and no new");
+  L.push(" shadowBlur: GDD §3.2's two sanctioned fill exceptions (drawText, the low-hull");
+  L.push(" glow) gain no third, and menuPanel()'s own backdrop fill is the shipped one.");
+  return L.join("\n");
+}
+
+// ---------- wiring ----------
+const el = function (id) { return document.getElementById(id); };
+function syncTransport() {
+  el("playBtn").textContent = playing ? "Pause" : "Play";
+  el("playBtn").className = playing ? "active" : "";
+  el("abBtn").textContent = abBaseline ? "A/B: SHIPPED" : "A/B: edited";
+}
+function refreshLight() {
+  drawRuler();
+  paintCurrent();
+  const lay = layout(beats());
+  const owner = ownerAt(lay, t);
+  el("rdT").textContent = t.toFixed(2) + " s";
+  el("rdBeat").textContent = owner ? owner.ref.label : "— normal play";
+  const rate = fieldRateAt(lay, t);
+  const held = gateHeldAt(lay, t);
+  const fieldEl = el("rdField");
+  fieldEl.textContent = (rate === 0 ? "FROZEN" : rate < 1 ? "thawing " + Math.round(rate * 100) + "%" : "live")
+    + (owner && owner.ref.protect ? " · protected" : "") + (held ? " · waiting" : "");
+  fieldEl.className = held ? "warn" : "";
+  el("rdTotal").textContent = lay.total.toFixed(2) + " s";
+  const d = lay.total - layout(SHIPPED[tab]).total;
+  el("rdVs").textContent = Math.abs(d) < 0.005 ? "identical" : (d > 0 ? "+" : "") + d.toFixed(2) + " s";
+  syncTransport();
+}
+function refreshFindings() { el("copyOut").textContent = buildFindings(); }
+function rebuildAll() { buildEditor(); refreshLight(); refreshFindings(); }
+
+function buildTabs() {
+  const row = el("tabRow"); row.innerHTML = "";
+  [["A", "Level End"], ["B", "Game Over"]].forEach(function (k) {
+    const b = document.createElement("button");
+    b.textContent = k[1];
+    b.className = tab === k[0] ? "active" : "";
+    b.addEventListener("click", function () { setTab(k[0]); });
+    row.appendChild(b);
+  });
+  el("tabWhat").innerHTML = tab === "A"
+    ? "&sect;3.2 &mdash; six beats from the last Garbage Satellite's death to normal play. Two of them wait on the player, and the field is stopped for most of it."
+    : "&sect;3.3 &mdash; four beats from killShip() to the restart. The last one arrives in a single frame, under a modal that is already covering it.";
+}
+function setTab(k) {
+  tab = k; playing = false; seek(0); resetForTab(); buildTabs(); rebuildAll();
+}
+function buildPresets() {
+  const row = el("presetRow"); row.innerHTML = "";
+  PRESETS.forEach(function (p, i) {
+    const b = document.createElement("button");
+    b.textContent = (i + 1) + ". " + p.key;
+    b.className = presetName === p.key ? "active" : "";
+    b.title = p.why;
+    b.addEventListener("click", function () { applyPreset(p); });
+    row.appendChild(b);
+  });
+  const cur = PRESETS.find(function (p) { return p.key === presetName; });
+  el("presetWhy").textContent = cur ? cur.why : "";
+}
+function applyPreset(p) {
+  SEQ = shippedSequences();
+  p.apply(SEQ);
+  presetName = p.key;
+  abBaseline = false; abStash = null;
+  playing = false; seek(0); resetForTab(); buildPresets(); rebuildAll();
+}
+function resetForTab() {
+  resetField();
+  pulsePhase = 0;
+}
+// ⛔ The A/B STASHES the edit and shows shipped, then puts the edit back. It never overwrites one
+// with the other: losing an hour of tuning to a comparison keypress is the failure mode.
+function toggleAB() {
+  if (!abBaseline) { abStash = JSON.parse(JSON.stringify(SEQ)); SEQ = shippedSequences(); abBaseline = true; }
+  else { if (abStash) SEQ = abStash; abStash = null; abBaseline = false; }
+  seek(t); rebuildAll();
+}
+
+el("playBtn").addEventListener("click", function () { playing = !playing; syncTransport(); });
+el("resetBtn").addEventListener("click", function () {
+  playing = false; seek(0); resetForTab(); refreshLight();
+});
+el("abBtn").addEventListener("click", toggleAB);
+el("autoGates").addEventListener("change", function (e) { autoGates = e.target.checked; refreshLight(); });
+el("unlockedBox").addEventListener("change", function (e) {
+  unlocked = e.target.checked; seek(t); rebuildAll();
+});
+el("unlockN").addEventListener("input", function (e) {
+  const v = parseInt(e.target.value, 10);
+  if (!isNaN(v)) unlockN = Math.max(1, Math.min(8, v));
+  refreshFindings();
+});
+{
+  const row = el("speedRow");
+  [0.25, 0.5, 1].forEach(function (s) {
+    const b = document.createElement("button");
+    b.textContent = s + "×";
+    b.className = speed === s ? "active" : "";
+    b.addEventListener("click", function () {
+      speed = s;
+      Array.prototype.forEach.call(row.children, function (c) {
+        c.className = c.textContent === s + "×" ? "active" : "";
+      });
+    });
+    row.appendChild(b);
+  });
+}
+el("copyBtn").addEventListener("click", function () {
+  const btn = el("copyBtn"), text = buildFindings();
+  const done = function () {
+    btn.textContent = "Copied"; btn.classList.add("copied");
+    setTimeout(function () { btn.textContent = "Copy findings"; btn.classList.remove("copied"); }, 1400);
+  };
+  // navigator.clipboard is unavailable on file:// in several browsers (STATUS.md, the benchmark
+  // and telemetry copy rows hit the same wall). Fall back, and SAY which happened.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text, btn, done); });
+  } else legacyCopy(text, btn, done);
+});
+function legacyCopy(text, btn, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  document.body.removeChild(ta);
+  if (ok) done();
+  else { btn.textContent = "Copy blocked — select the block above"; btn.classList.add("copied"); }
+}
+
+window.addEventListener("keydown", function (e) {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  const k = e.key;
+  if (k === " ") { playing = !playing; syncTransport(); e.preventDefault(); return; }
+  if (k === "Enter") {
+    const held = gateHeldAt(layout(beats()), t);
+    if (held) { resolved[held.ref.id] = true; t = held.end; refreshLight(); }
+    e.preventDefault(); return;
+  }
+  if (k === "ArrowLeft")  { seek(t - 0.05); refreshLight(); e.preventDefault(); return; }
+  if (k === "ArrowRight") { seek(t + 0.05); refreshLight(); e.preventDefault(); return; }
+  if (k === "Home") { playing = false; seek(0); resetForTab(); refreshLight(); return; }
+  if (k === "t" || k === "T") { setTab(tab === "A" ? "B" : "A"); return; }
+  if (k === "x" || k === "X") { toggleAB(); return; }
+  if (k === "u" || k === "U") {
+    unlocked = !unlocked; el("unlockedBox").checked = unlocked; seek(t); rebuildAll(); return;
+  }
+  if (k >= "1" && k <= "5") { const p = PRESETS[+k - 1]; if (p) applyPreset(p); return; }
+});
+
+// ---------- main loop ----------
+let last = (typeof performance !== "undefined" ? performance.now() : Date.now());
+function loop(now) {
+  const raw = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const lay = layout(beats());
+
+  let advance = 0;
+  if (playing) {
+    // A held gate PARKS the playhead. The field state still applies (every gate in the shipped
+    // ceremony sits over a frozen field), so a held frame looks exactly like the game does there.
+    if (gateHeldAt(lay, t)) advance = 0;
+    else {
+      advance = raw * speed;
+      t += advance;
+      if (t >= lay.total + 1.5) { t = lay.total + 1.5; playing = false; }
+    }
+  }
+  // The mock field runs on its own clock, scaled by whatever the current beat says about the
+  // freeze. ⛔ Scrubbing does NOT rewind it: it is decorative motion whose only job is letting
+  // "frozen" and "live" tell each other apart, and rewinding an entity field is a simulation this
+  // lab has no reason to own.
+  const dyingBeat = tab === "B" ? lay.list.find(function (o) { return o.ref.id === "dying"; }) : null;
+  if (dyingBeat && t >= dyingBeat.start && field.ship) blowUpShip();
+  else if (!dyingBeat && !field.ship) resetField();
+  stepField(raw * fieldRateAt(lay, t) * (playing ? speed : 1));
+  if (field.ship) { field.cam.x = field.ship.x; field.cam.y = field.ship.y; }
+  stepPulse(lay, t, advance);
+
+  drawFrame();
+  if (playing) refreshLight();
+  requestAnimationFrame(loop);
+}
+
+buildTabs();
+buildPresets();
+rebuildAll();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

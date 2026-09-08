@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P1 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P2 · Registry: 110 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -54,7 +54,30 @@ carried forward and still live.
   build byte; no `phon`; no test (`tools/` carries none). CLAUDE.md's tools list gained one entry —
   **49.1 KB / 848 lines after it, ~0.9 KB under the 50 KB ceiling** (HEAD was 48.9 KB, not P9's 48.4).
 
+- P2 — `tools/ceremony-lab.html` (spec §3.4): both sequences as scrubbable timelines over a mock
+  1280×720 frame carrying the real chrome — two-layer starfield, the "Level N Complete"
+  announcement, the celebration panel at its real 820×560 with real emblems, the "Level N+1" banner,
+  and the GAME OVER / FINAL SCORE / ten-row / footer stack. Per beat: duration or gate, fade in/out
+  with a curve each, join, frozen-vs-live, plus the beat-5 thaw as switch **or** ramp, the grace
+  pulse's own two knobs, and the game-over stack's per-element stagger. Five presets, `X` A/Bs
+  against shipped without discarding the edit, and a copy-out block that ends in **CHANGES FROM
+  SHIPPED** — P5's whole scope, empty when nothing moved. ⛔ **Two join rules, not one, because a
+  gate has no known end:** after a timed beat an overlap shortens the sequence; after a gate only a
+  post-confirm dissolve and "drawn under" are implementable, so overlap is not offered there. Two
+  spec/build divergences found — see Known issues. No build byte; no test (`tools/` carries none).
+  CLAUDE.md gained one tools entry — **49.5 KiB / 857 lines, 543 bytes under the 50 KB ceiling**.
+
 ## Working / verified
+
+- **P2:** full suite **171 files, 171 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, no flake
+  rerun needed); `orbital-overhaul.html` byte-identical (md5 `3087c476…`, same as P0 and P1).
+  The lab was exercised headless under stubbed DOM/canvas: every preset × both tabs × unlocked
+  on/off scrubbed end to end in 0.02 s steps — **10,275 frames drawn, 56,131 assertions, 0 failed**
+  — checking every beat's alpha and the field rate stay inside [0,1], that the findings block never
+  prints `undefined`/`NaN`, that shipped diffs to NONE while all four other presets diff to
+  something and to each other, that a gated beat's assumed dwell is never reported as a change, that
+  both join rules behave, and that the grace pulse sweeps its full 0.2→1.0 range.
+  ⚠ **Not yet opened in a browser** — pacing is what GATE A is for.
 
 - **P1:** full suite **171 files, 171 passed, 0 failed, 0 skipped** (exit 0, no flake rerun needed);
   `orbital-overhaul.html` byte-identical (md5 `3087c476…`, same as P0).
@@ -80,6 +103,20 @@ carried forward and still live.
   would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
+
+- **⛔ CS042 P2 found two divergences between `PLANNED-FEATURES-CS042.md` §3 and the build. P5 must
+  not paste §3.3's table as-is.** (1) **§3.3 lists the GAME OVER stack as beat 4, after the panel.
+  The build draws it BEFORE the panel, in the same frame as the handoff** — `draw()`'s
+  `game.state === "gameover"` block runs, then `drawCelebration()` draws the near-opaque 820×560
+  panel over it, covering everything but the footer. So the stack does not "arrive" at the panel's
+  dismissal; it is uncovered. §3.3's own clunk note ("behind another hard-cut modal") already
+  half-says this, but the table's ordering reads the other way and would mislead an implementer.
+  The lab models the build (`under: true` on that beat, and turning it off is itself a reportable
+  change). (2) **§3.4 item 2's per-beat control list has no stagger**, yet §3.3 names "no stagger"
+  as the game-over clunk — an instrument without it cannot answer its own question. The lab carries
+  four per-element delays, a shared element fade and a per-row table step on that one beat, all
+  zero at shipped. ⚠ **That is the one control not itemised in §3.4**, added deliberately rather
+  than by drift; if Paul does not want it in scope, the copy-out simply reports all zeros.
 
 - **⛔ §6.8 "one mass, one force" PROPOSED (2026-09-08), superseding §6.7 and §6.3's three models.**
   Paul asked for exactly two knobs — the cargo's effective mass and the Engine's effect on it — with
@@ -251,10 +288,21 @@ None.
 
 ## Next up
 
-- ⛔ **P2 is the next session** — `tools/ceremony-lab.html` (spec §3). **Opus 5, High, `ultrathink`.**
-  Its copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. **Nothing in CS042 is blocked.**
-- **GATE A is now partly spent.** Its handling half is closed by §6.8; its sound half has its instrument
-  (P1) and is waiting on Paul; its ceremony half still needs P2 built first.
+- ⛔ **GATE A is next, and all three instruments now exist.** Its handling half is closed by §6.8;
+  its sound half (`sfx-lab`) and its ceremony half (`ceremony-lab`) are both waiting on Paul in one
+  sitting. **Nothing in CS042 is blocked.** After it, **P3** — SFX foundation and the anchor trio
+  (§1.3/§1.4), **Opus 5, High, `ultrathink`**; its copy-paste prompt is in
+  `IMPLEMENTATION-PHASES-CS042.md`.
+- **What the ceremony lab wants back:** the **CHANGES FROM SHIPPED** section of its Findings block,
+  copied verbatim. It is the whole of P5's scope, and "NONE" is a legitimate answer that closes P5
+  as a no-op. ⛔ **A gated beat's assumed dwell is not an answer** — it exists so the timeline can
+  be scrubbed, and the lab deliberately never reports it as a change. Turning a gate into a timer
+  is what "Auto-advance" is for, and that *does* report.
+- **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
+  headroom**. P1's entry recorded 848 lines, which was wrong — HEAD measured 853 before this phase;
+  the byte figure was right, and the historical numbers are KiB, not KB. The next phase that adds a
+  paragraph there should re-measure rather than trust a remembered figure, and the valve
+  (`### Audio`, 5.3 KB) is still the first candidate if it fires.
 - **P1 hazards for P3/P4, recorded so the prompts can account for them:** (1) `powertag()`'s three
   candidates all carry a **0.16 s internal offset** (the `bankspend()` idiom) so the tag lands after
   `powerup()`'s second note; if P3 places the call anywhere but immediately after `AudioSys.powerup()`,
