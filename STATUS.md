@@ -62,6 +62,26 @@ carried forward and still live.
 
 ## Known issues
 
+- **⛔ §6.8 "one mass, one force" PROPOSED (2026-09-08), superseding §6.7 and §6.3's three models.**
+  Paul asked for exactly two knobs — the cargo's effective mass and the Engine's effect on it — with
+  the code deriving the rest "within reason for a ship and cargo flying in the relative weightlessness
+  of space". ⛔ **It collapses five constants into one:** `M = 1 + chainMass() × CARGO_UNIT_MASS`, then
+  acceleration, drag rate, turn rate and the momentum tug are all that one mass under one force.
+  `CARGO_THRUST`, `CARGO_MAXSPD`, `CARGO_TURN`, `CARGO_MASS` and §6.7's `CARGO_COAST` all retire;
+  `CHAIN_TUG` rescales 26 → 58 to preserve today's full-chain tug. `ENGINE_MASS_MULT` is unchanged and
+  is the second knob. Registry 110 → 111. **At `CARGO_UNIT_MASS` 0.07 acceleration is byte-identical to
+  today at every chain length**, while coast goes 5.3 s → 14.3 s and turn 241 → 90 °/s across 0 → 24
+  nodes, every column monotonic with no clamp anywhere.
+  - ⛔ **Two consequences needing Paul before it ships.** Terminal speed becomes mass-independent, so
+    a full haul can eventually reach 520 where today it is capped at 283 (**the top-speed penalty
+    disappears**); and rotation is penalised by construction, **reversing FLAG-CS042-j**, which he
+    closed at GATE A as "`CARGO_TURN` does not ship". FLAG-CS042-l (the value) and FLAG-CS042-m (the
+    turn reversal) are both open.
+  - ⛔ **GDD §3.4's stability envelope must be re-validated** — the tug changes form and a laden ship
+    sustains much higher speeds for much longer, which is what that envelope bounds.
+  - ⚠ **Answered in the real game, not the lab.** Paul's own read after three lab passes; the two
+    knobs go in the debug panel at values that reproduce today, and GATE C decides.
+
 - **⛔ GATE A's handling question came back NULL (2026-09-08). `CARGO_COAST` has no value and
   FLAG-CS042-k stays open.** Paul's third findings block was the shipped defaults with every protocol
   step unrecorded, and his own note was that he is *"not feeling super confident about how this testing

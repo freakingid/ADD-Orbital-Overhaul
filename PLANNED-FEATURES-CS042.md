@@ -697,6 +697,67 @@ feel heavy. Inertia may simply not be judgeable outside a real run.
 FLAG-CS042-j (no `CARGO_TURN`) are both closed, and Model B unedited is G6's answer — none of that
 depends on FLAG-CS042-k.
 
+### 6.8 One mass, one force — PROPOSED, supersedes §6.7 (2026-09-08)
+
+⚠ **Paul's direction, verbatim:** *"I just want to affect the 'effective mass' of the cargo, and the
+'effective thrust' added by the engine powerup, and have you or the game code calculate all that other
+business within reason for a ship and cargo flying in the relative weightlessness of space."*
+
+⛔ **This REPLACES §6.3's three models and §6.7's `CARGO_COAST`.** It is not another knob — it
+**collapses five handling constants into one**, and it is proposed for exactly that reason.
+
+**The model.** The ship has mass 1. Each towed node adds `CARGO_UNIT_MASS`. Total mass
+`M = 1 + chainMass() × CARGO_UNIT_MASS`, and **every handling term is that one mass under one force**:
+
+| quantity | today | under §6.8 | today's constant |
+|---|---|---|---|
+| acceleration | `SHIP_THRUST / (1 + cargo·CARGO_THRUST)` | `SHIP_THRUST / M` | `CARGO_THRUST` → **gone** |
+| drag rate | `λ₀`, mass-blind | `λ₀ / M` | `CARGO_COAST` (§6.7) → **gone, it was this all along** |
+| turn rate | `SHIP_TURN / (1 + cargo·CARGO_TURN)` | `SHIP_TURN / M` | `CARGO_TURN` → **gone** |
+| momentum tug | `CHAIN_TUG · stretch · min(1.4, cargo·CARGO_MASS)` | `CHAIN_TUG · stretch · (M−1)/M` | `CARGO_MASS` → **gone** |
+| top speed | `SHIP_MAX_SPEED / (1 + cargo·CARGO_MAXSPD)` | `SHIP_MAX_SPEED`, a flat rail | `CARGO_MAXSPD` → **gone** |
+
+⛔ **Five constants retire; `CARGO_UNIT_MASS` replaces all five.** `CHAIN_TUG` rescales **26 → 58** so a
+full chain tugs exactly as hard as it does today; it is a derived constant, not a knob.
+
+⛔ **The Engine is unchanged and `ENGINE_MASS_MULT` is the second knob.** It already multiplies
+`chainMass()`, so under one mass it eases acceleration, coasting, turning and the tug together — that
+is what "effective thrust added by the Engine" *is*, named by its cause. **§6.4 and FORK-CS042-C hold:
+with an empty chain `M = 1` and the Engine still does nothing at all.**
+
+**At `CARGO_UNIT_MASS` 0.07 — chosen so acceleration is byte-identical to today — and the shipped
+`ENGINE_MASS_MULT` 0.5:**
+
+| chain | mass | accel | coast to 10% | turn °/s | tug | Engine: accel / coast / turn |
+|---|---|---|---|---|---|---|
+| 0 | 1.00 | 340 *(same)* | 5.3 s *(same)* | 241 *(same)* | 0.00 | no effect, by design |
+| 8 | 1.56 | 218 *(same)* | **8.3 s** | **154** | 0.36 | +22% / −18% / 188 |
+| 16 | 2.12 | 160 *(same)* | **11.3 s** | **114** | 0.53 | +36% / −26% / 154 |
+| 24 | 2.68 | 127 *(same)* | **14.3 s** | **90** | 0.63 | +46% / −31% / 131 |
+
+Every column grows with every node, with **no clamp anywhere** — the tug's arbitrary `min(1.4, …)`
+becomes the physical asymptote `(M−1)/M`, which retires the 14-node flat spot §6.7 had to leave alone.
+
+⛔ **Two consequences that are NOT free, and Paul must see them before this ships.**
+
+1. **The top-speed penalty disappears.** `a/λ = SHIP_THRUST/λ₀` at every chain length, so terminal
+   speed is **mass-independent** and `SHIP_MAX_SPEED` binds always: a full haul can *eventually* reach
+   **520**, where today it is capped at 283. It takes 5.6 s to get there against 4.6 s to reach today's
+   283, and it cannot stop for 14 s once it does. **This is what "weightlessness" means** — mass limits
+   your agility, not your speed — but it is a real change and Pillar 5 is entitled to an opinion.
+2. **Rotation gets penalised, by construction.** 241 °/s empty → **90 °/s** at a full chain. ⚠ **This
+   reverses FLAG-CS042-j**, which Paul closed at GATE A as "`CARGO_TURN` does not ship". Under one mass
+   there is no way to exempt rotation without special-casing it back out.
+
+**Costs.** ⛔ **GDD §3.4's stability envelope must be re-validated**: the tug changes form and a laden
+ship now sustains far higher speeds for far longer, which is precisely what the envelope bounds.
+Registry 110 → 111 (`cargoUnitMass`; `engineMassMult` already exists). `CARGO_MAXSPD`'s comment is
+rewritten to record its retirement, not deleted (§6.3's own rule). No save-data change, no lever.
+
+⛔ **FLAG-CS042-k is superseded by FLAG-CS042-l: what value does `CARGO_UNIT_MASS` take?** 0.07 holds
+acceleration exactly where it is today and is the natural starting point. **Answered in the real game
+from the debug panel, not in the lab** — that was GATE A's whole lesson.
+
 ### 6.6 `tools/handling-lab.html`
 
 ⛔ **Nothing in §6.3 ships a number that this lab did not produce.** All three models are analytic and
@@ -770,7 +831,9 @@ least one prior gate.
 | **FLAG-CS042-h** | Sever-linked scoop loss. | ⛔ **RESOLVED** as FORK-S1 above. |
 | **FLAG-CS042-i** | Do §2's five changes ship together? | **All five**, each behind a knob, so the gate can subtract rather than guess. |
 | **FLAG-CS042-j** | Does `CARGO_TURN` ship above 0.0? | ⛔ **RESOLVED — no.** Flown at GATE A, kept at 0.0. |
-| **FLAG-CS042-k** | `CARGO_COAST` value (§6.7). | **OPEN — G6.** Mechanism approved 2026-09-08; value from the lab. |
+| **FLAG-CS042-k** | `CARGO_COAST` value (§6.7). | ⛔ **SUPERSEDED by §6.8** — `CARGO_COAST` is not a separate constant under one mass. |
+| **FLAG-CS042-l** | `CARGO_UNIT_MASS` value (§6.8). | **OPEN.** 0.07 holds today's acceleration. Answered in-game at GATE C, not in the lab. |
+| **FLAG-CS042-m** | §6.8 turns the cargo turn penalty on by construction, reversing FLAG-CS042-j. | **OPEN — needs Paul.** 90 °/s at a full chain against 241 empty. |
 
 ---
 
