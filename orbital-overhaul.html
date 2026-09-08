@@ -641,6 +641,13 @@ const CARGO_TURN = 0.0;         // PLAYTEST KNOB (CS010 §3, the proposed "inert
                                 // Raise it to make a heavy chain resist turning — the missing half of "mass = inertia".
                                 // Candidate values + turn-mult table: STATUS.md (CS010 P2).
 
+// CS042 P3 (spec §1.4): the cargo-cue pitch set, ported VERBATIM from tools/sfx-lab.html's copy-out
+// block (GATE A pick: cargofull A). It lives here with the other CARGO_* tuning constants because it
+// is cargo data, not synthesis machinery — AudioSys.cargofull() reads it forward, and cargolost() and
+// chainsever() both read it REVERSED, which is what makes "filling up" and "running out" a matched
+// pair by construction rather than by ear. ⛔ It was a `let` in the lab only; it is a const here.
+const CARGOFULL_FREQS = [330, 415, 494, 659]; // cargofull()'s pitches (Stepped arpeggio); cargolost() and chainsever() read it REVERSED — the pair is matched by construction
+
 // CS024 P2: was 44, permanently 2x via the (now-removed) v3.4 P2 leverScale mechanism, which
 // shipped with both its levers disabled and pinned at start=2.0 — baked in here rather than
 // restored to 1x (PLANNED-FEATURES-CS024 §1.6).
@@ -1578,6 +1585,93 @@ const AudioSys = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
     o.connect(g).connect(this.sfx);
     o.start(t); o.stop(t + 0.21);
+  },
+
+  // ============================================================================================
+  // CS042 P3 (spec §1.3) — THE EVENT-SFX RULE. Read this before adding the tenth one.
+  // ============================================================================================
+  // ⛔ An event SFX is fired at its TRIGGER SITE, immediately above the `VoiceSys.say()` call —
+  // never inside `_emit()`. `_emit()` is the one cooldown/priority/criticality gate; a sound placed
+  // inside it would inherit the drop, park and repeat-suppression rules, and the entire point of
+  // these sounds is that they play when the voice does not. The sound landing just *before* the
+  // voice is a consequence of that placement (`_schedule()` leads by 0.10 s), not a second
+  // mechanism.
+  //
+  // The three methods below are ported VERBATIM from tools/sfx-lab.html's copy-out block, picked by
+  // ear at the volume the game plays them at (GATE A: cargofull A · cargolost A · chainsever C).
+  // ⛔ Do not re-tune a gain or a duration here — the lab's only guarantee is that what was picked
+  // is what ships. AudioSys stays a flat bag of one-shot voices: each builds its own graph, each is
+  // this.ctx-guarded, each routes into this.sfx, and none of them sequences anything.
+
+  cargofull() { // CS042 §1.4 "Filling up" — a stepped climb that lands on a held top and latches shut
+    if (!this.ctx) return;
+    const t = this.now();
+    const F = CARGOFULL_FREQS, step = 0.075, tEnd = t + F.length * step;
+    F.forEach((f, i) => {
+      const last = i === F.length - 1, t0 = t + i * step;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, t0);
+      g.gain.setValueAtTime(last ? 0.14 : 0.10, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + (last ? 0.38 : 0.13));
+      o.connect(g).connect(this.sfx);
+      o.start(t0); o.stop(t0 + (last ? 0.4 : 0.14));
+    });
+    const latch = this.ctx.createOscillator(); // the "clunk" — the tank is sealed
+    const lg = this.ctx.createGain();
+    latch.type = "square";
+    latch.frequency.setValueAtTime(F[F.length - 1] / 2, tEnd + 0.05);
+    lg.gain.setValueAtTime(0.06, tEnd + 0.05);
+    lg.gain.exponentialRampToValueAtTime(0.001, tEnd + 0.11);
+    latch.connect(lg).connect(this.sfx);
+    latch.start(tEnd + 0.05); latch.stop(tEnd + 0.12);
+  },
+
+  cargolost() { // CS042 §1.4 "Running out" — cargofull's steps top-down, each softer, ending in an empty knock
+    if (!this.ctx) return;
+    const t = this.now();
+    const R = CARGOFULL_FREQS.slice().reverse(), step = 0.075, tEnd = t + R.length * step;
+    R.forEach((f, i) => {
+      const t0 = t + i * step;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, t0);
+      g.gain.setValueAtTime(0.13 - i * 0.02, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.13);
+      o.connect(g).connect(this.sfx);
+      o.start(t0); o.stop(t0 + 0.14);
+    });
+    const knock = this.ctx.createOscillator(); // the empty-tank knock, an octave under the bottom step
+    const kg = this.ctx.createGain();
+    knock.type = "square";
+    knock.frequency.setValueAtTime(R[R.length - 1] / 2, tEnd);
+    knock.frequency.exponentialRampToValueAtTime(R[R.length - 1] / 4, tEnd + 0.16);
+    kg.gain.setValueAtTime(0.09, tEnd);
+    kg.gain.exponentialRampToValueAtTime(0.001, tEnd + 0.22);
+    knock.connect(kg).connect(this.sfx);
+    knock.start(tEnd); knock.stop(tEnd + 0.23);
+  },
+
+  chainsever() { // CS042 §1.4 — a SMALLER cargolost: the whole reversed run at double speed, quiet, through a closed lowpass — heard at a distance
+    if (!this.ctx) return;
+    const t = this.now();
+    const R = CARGOFULL_FREQS.slice().reverse(), step = 0.035;
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = "lowpass"; filt.frequency.value = 900;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.07, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + R.length * step + 0.08);
+    R.forEach((f, i) => {
+      const t0 = t + i * step;
+      const o = this.ctx.createOscillator();
+      o.type = "square";
+      o.frequency.setValueAtTime(f, t0);
+      o.connect(filt);
+      o.start(t0); o.stop(t0 + step + 0.01);
+    });
+    filt.connect(g).connect(this.sfx);
   },
 
   // CS040 P3 (spec §1.4): a BANKED Health charge auto-spending itself on a hit. Deliberately unlike
@@ -10857,6 +10951,9 @@ function damageShip(amount, srcX, srcY, srcTag) {
     // auto-shield save above also sets it but KEEPS the cargo, and this block is unreachable from
     // that branch (it returns before here), so the two can never be confused.
     game.towLockoutT = DEBUG.towReleaseLockout;
+    // CS042 P3 (spec §1.3): total loss of the tow, sounded at the trigger site above the say().
+    // boom()/hit() already fired for the HIT further up; this is the PAYLOAD cue layered over it.
+    AudioSys.cargolost();
     VoiceSys.say("chain_lost");
   }
   // Scoop decays by DAMAGE, not time (v3.3 P3): every SCOOP_HITS_PER_LEVEL non-lethal hits costs one
@@ -11557,6 +11654,12 @@ function breakChain(i, src = null) { // node i destroyed; everything aft breaks 
   // (i indexes a live node), and `chain.length = i` above means the test reduces to i === 0 here:
   // node 0 cut loose is the whole load, which is chain_lost; anything aft of it is a PARTIAL loss and
   // keeps chain_broken. Written against the length so the rule reads the same at all three sites.
+  // CS042 P3 (spec §1.3): the SFX at the trigger site, above the say(). ⛔ It reads THE SAME
+  // `chain.length === 0` test the line below uses — one predicate, so the sound and the line can
+  // never disagree about which event happened. chainsever() is the deliberately SMALLER cue:
+  // partial loss versus total loss is the whole distinction it carries. boom() above stays — that
+  // is the canister dying, a different statement; these layer, they do not replace each other.
+  chain.length === 0 ? AudioSys.cargolost() : AudioSys.chainsever();
   VoiceSys.say(chain.length === 0 ? "chain_lost" : "chain_broken");
 }
 
@@ -12181,7 +12284,14 @@ function update(dt) {
       // single/clump branches so BOTH paths trip it, and inside the capture branch so only a real hook
       // counts. cargoMax is the RUNTIME cap (grows 12→24), so "full" is a moving target; the pickup gate
       // above blocks further hooks once full, so this trips exactly once and re-arms after a delivery.
-      if (game.chain.length === game.cargoMax) VoiceSys.say("cargo_full");
+      // CS042 P3 (spec §1.3): the SFX at the TRIGGER SITE, immediately above the say() — see the
+      // event-SFX rule block in AudioSys. cargofull() is unconditional here; the say() below it may
+      // be dropped, parked or repeat-suppressed by _emit()'s gate, and the sound plays either way.
+      // One predicate, one brace: both outputs read the SAME "the chain just became full" test.
+      if (game.chain.length === game.cargoMax) {
+        AudioSys.cargofull();
+        VoiceSys.say("cargo_full");
+      }
     }
   }
   // CS018 P9: a Super Mega Delivery pauses coalescence for DEBUG.sweepCoalescePause sec — without

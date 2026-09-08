@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P2 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P3 · Registry: 110 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -67,7 +67,29 @@ carried forward and still live.
   spec/build divergences found — see Known issues. No build byte; no test (`tools/` carries none).
   CLAUDE.md gained one tools entry — **49.5 KiB / 857 lines, 543 bytes under the 50 KB ceiling**.
 
+- P3 — **the first build byte of CS042.** Three `AudioSys` methods (`cargofull`/`cargolost`/
+  `chainsever`) and the `CARGOFULL_FREQS` constant they share, all **ported verbatim** from
+  `CS042-GATE-A.md`'s copy-out block (picks A · A · C) and pinned byte-for-byte against that file in
+  test §A — a re-tuned gain is the one failure a behavioural test could never see. ⛔ **The
+  event-SFX rule is now written into the build**, as a comment block above the first new method in
+  §1.3's own words: an event SFX fires at its **trigger site, immediately above the `say()`**, never
+  inside `_emit()`. P4 copies that placement nine more times. Three sites wired: the pickup that
+  fills the chain, `damageShip()`'s payload release, and `breakChain()`'s sever tail — the last
+  reading **the same `chain.length === 0` predicate** the `say()` on the next line uses, so sound and
+  line can never disagree. `boom()` stays; the cues layer. Nothing inside the voice channel moved
+  (§1.5), pinned against the parent. No registry row, no GDD edit (P11 owns §2.8).
+
 ## Working / verified
+
+- **P3:** full suite **172 files, 172 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, measured
+  after the commit — see the moving-`HEAD` pin note under Known issues), `node --check` clean.
+  `scratchpad/test-cs042-p3.js` is 104 assertions in seven sections. Its load-bearing ones (§C/§D/§E)
+  were **mutation-checked, not just run**: rewriting the pickup site as
+  `if (VoiceSys.say(...)) AudioSys.cargofull()` — what a call inside `_emit()` amounts to — turns
+  three of them red. §B swaps in a recording `AudioContext` and reads the scheduled pitches back, so
+  "reversed, faster, no closing knock" is measured rather than asserted from the source.
+  `test-cs023-p3.js`'s byte-strict `breakChain` compare was **widened** by exactly this phase's edit,
+  its own documented maintenance and the fourth such widening.
 
 - **P2:** full suite **171 files, 171 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, no flake
   rerun needed); `orbital-overhaul.html` byte-identical (md5 `3087c476…`, same as P0 and P1).
@@ -268,7 +290,11 @@ carried forward and still live.
 - **Four moving-`HEAD` test pins survive, passing vacuously on a clean tree:** `test-cs023-p3.js`
   (the `debrisBounce` line count and the byte-strict `shieldDeflect`/`shieldBounce` compare),
   `test-cs024-p6.js` §H TRAP 2, `test-cs025-p4.js` TRAP 3. Each needs a fixed SHA and the
-  intervening diffs named.
+  intervening diffs named. ⛔ **P3 paid the practical cost for the first time:** `test-cs024-p6.js`
+  §H TRAP 2 diffs `damageShip` against `HEAD`, so it went red the moment P3 edited that function and
+  stayed red until the commit landed. **Any phase touching `damageShip`, `shieldDeflect`,
+  `shieldBounce` or `debrisBounce` should expect it** — P6 and P9 both will. Re-running after the
+  commit is the tell; rerunning the file before it is not.
 - **`navigator.clipboard` is unavailable on `file://` in several browsers.** The benchmark's and
   telemetry's copy rows both fall back to a CSV Blob download and say which happened. Untested in a
   real browser.
@@ -306,9 +332,13 @@ None.
     and `drawLevelBanner()`'s deliberate one-expression alpha has to split, because the banner now
     wants easeOut in and linear out. ⛔ **B4 reverses CS034 P7** — the gameover block goes back to
     not drawing under the panel. Full reasoning in `CS042-GATE-A.md`.
-- **P3 is the next session** — SFX foundation and the anchor trio (§1.3/§1.4), **Opus 5, High,
-  `ultrathink`**; its copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. **Nothing in CS042
-  is blocked.**
+- **P4 is the next session** — the remaining nine sounds (§1.2/§1.4), **Sonnet 5, Medium**; its
+  copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. It copies P3's trigger-site placement
+  nine times, adds `POWERTAG_ROOT` beside `POWERUP_COLOR`, and is the one phase that **replaces** a
+  shipped sound (`shieldPing()` → `guardblock()` in `breakChain()`'s guard branch). ⛔ **Read
+  `CS042-GATE-A.md`'s "What this means for P3 and P4" note first** — `powertag()`'s 0.16 s offset,
+  `POWERTAG_ROOT.guard`'s absent caller and the `health` exclusion are all recorded there.
+  **Nothing in CS042 is blocked.**
 - **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
   headroom**. P1's entry recorded 848 lines, which was wrong — HEAD measured 853 before this phase;
   the byte figure was right, and the historical numbers are KiB, not KB. The next phase that adds a

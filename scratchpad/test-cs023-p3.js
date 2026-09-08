@@ -689,7 +689,10 @@ function saucerAt(X, x, y, small) {
       // WIDENED BY CS037 P5, and only by exactly its own edit: the tail now also carries P5's voice
       // SELECTION (spec §4.2 — i === 0 speaks the new chain_lost event, i > 0 keeps chain_broken), so
       // both halves of the pair are extended through the whole say() line INCLUDING its comment rather
-      // than stopping at the semicolon. The claim is unchanged in kind: every diff in breakChain is a
+      // than stopping at the semicolon. WIDENED AGAIN BY CS042 P3, same way and for the same reason:
+      // the sever tail now sounds its event too, on the line immediately above the say() and reading
+      // THE SAME `chain.length === 0` predicate (CS042 §1.3 — the SFX fires at the trigger site, never
+      // inside VoiceSys._emit()). The claim is unchanged in kind: every diff in breakChain is a
       // named one. ⛔ Do not collapse this into a substring or comment-insensitive compare — the final
       // eq() below is what makes the list exhaustive, and it is byte-strict on purpose.
       const OLD_TAIL = '  game.deliveryCount = 0;\n  VoiceSys.say("chain_broken"); // CS011 P5: choke point only — scatterChain() (ship death) stays silent';
@@ -701,9 +704,15 @@ function saucerAt(X, x, y, small) {
         '  // (i indexes a live node), and `chain.length = i` above means the test reduces to i === 0 here:\n' +
         '  // node 0 cut loose is the whole load, which is chain_lost; anything aft of it is a PARTIAL loss and\n' +
         '  // keeps chain_broken. Written against the length so the rule reads the same at all three sites.\n' +
+        '  // CS042 P3 (spec §1.3): the SFX at the trigger site, above the say(). ⛔ It reads THE SAME\n' +
+        '  // `chain.length === 0` test the line below uses — one predicate, so the sound and the line can\n' +
+        '  // never disagree about which event happened. chainsever() is the deliberately SMALLER cue:\n' +
+        '  // partial loss versus total loss is the whole distinction it carries. boom() above stays — that\n' +
+        '  // is the canister dying, a different statement; these layer, they do not replace each other.\n' +
+        '  chain.length === 0 ? AudioSys.cargolost() : AudioSys.chainsever();\n' +
         '  VoiceSys.say(chain.length === 0 ? "chain_lost" : "chain_broken");';
       assert(before.includes(OLD_TAIL), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the reset to an unconditional chain_broken");
-      assert(after.includes(NEW_TAIL), "A: TRAP 2/3 — ...and the current one carries the ticker release plus CS037 P5's chain_lost/chain_broken selection");
+      assert(after.includes(NEW_TAIL), "A: TRAP 2/3 — ...and the current one carries the ticker release, CS037 P5's chain_lost/chain_broken selection and CS042 P3's matching SFX line");
       // A THIRD known diff, added by CS035 P6 (spec §5.3): the sever path increments the chain-guard
       // drop-weight pity counter, on the unguarded break only — this is that path.
       // WIDENED BY CS039 GATE T, and only by exactly its own edit: the SAME event now also bumps
@@ -720,7 +729,7 @@ function saucerAt(X, x, y, small) {
       assert(before.includes(OLD_BOOM), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the sever to boom()");
       assert(after.includes(NEW_BOOM), "A: TRAP 2/3 — ...and the current one carries both sever counters before it");
       eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL).replace(OLD_BOOM, NEW_BOOM),
-        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit, CS035 P6's pity-counter edit (widened by CS039 GATE T's cargoSevers) and CS037 P5's voice selection are the ONLY diffs in breakChain; everything else is byte-unchanged");
+        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit, CS035 P6's pity-counter edit (widened by CS039 GATE T's cargoSevers), CS037 P5's voice selection and CS042 P3's event SFX are the ONLY diffs in breakChain; everything else is byte-unchanged");
     }
     assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY, srcTag) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");
