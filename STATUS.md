@@ -16,6 +16,15 @@ carried forward and still live.
   answer, and the Findings block is the single artefact GATE A hands back. Reference grid and ship
   trail carry the motion read, since the camera is locked to the ship. No build byte; no test
   (`tools/` has never carried suite coverage).
+- P0 follow-up (2026-09-08, same phase, Paul's direction) — ⛔ **the protocol was reframed around two
+  OUTCOMES instead of two constants**, after Paul stated the goal in one sentence: *"the only thing I
+  want this change to do is make it so cargo is heavier and the engine powerup makes a big difference
+  in offsetting that heaviness."* The lab now carries two dials — **full-chain speed** (24 nodes, no
+  Engine) and **Engine gain at a full chain** — and solves `CARGO_THRUST` (or `CARGO_DRAG`) and
+  `ENGINE_MASS_MULT` backwards from them, lifting the speed cap out of the way only if it would clip
+  a target. Both seed from what the shipped game actually does (283 px/s, +30%), so the starting
+  position is the thing being changed. Model B is now the default and picking a model is an optional
+  last step, not the first question.
 
 ## Working / verified
 
@@ -36,6 +45,23 @@ carried forward and still live.
   would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
+
+- **CS042 GATE A, handling half: first pass run, then re-opened by Paul.** His first sweep answered
+  Model **B**, `SHIP_DRAG` **0.45**, `CARGO_TURN` **0.000** (closing FLAG-CS042-j as "does not ship"),
+  and produced a full chain at **167 px/s** with an Engine gain of **+130%**. He then restated the
+  goal (above) and asked to re-run against the reframed protocol, so ⛔ **those numbers are indicative,
+  not decided.** Three things learned from them and worth keeping:
+  - **Model B reaches what §6.3 promised for Model C.** At `CARGO_THRUST` 0.10 with `SHIP_DRAG` 0.45
+    the cap stops binding above ~1.5 nodes, so the ship is drag-limited from the first piece of
+    Debris and thrust changes are visible. No new constant, nothing retired. He also raised the
+    thrust penalty and lowered the cap penalty, which is P0's corrected direction, not the spec's.
+  - ⛔ **`CARGO_MAXSPD` may not need to move at all.** The solver leaves it at the shipped 0.035
+    because the cap already clears both targets; his hand-tuned 0.02 was not required.
+  - ⛔ **`ENGINE_MASS_MULT` also drives the momentum tug**, via the same `chainMass()` sum. At 0.20 a
+    full chain's tug falls 1.40 → 0.48 while the Engine is lit (at the shipped 0.5 it only falls to
+    1.20). GDD §2.10 says the tug saturates at effective mass 14; at 0.20 that needs 70 raw nodes, so
+    it never saturates with the Engine up. The Engine stops being speed relief and becomes "the chain
+    stops fighting you". The lab now shows this live so it is a choice, not a surprise in P7.
 
 - **⛔ CS042 P0 measured three defects in `PLANNED-FEATURES-CS042.md` §6. P7 must not paste that
   section's numbers.** The lab recomputes both published tables from the build's own arithmetic; where
@@ -132,10 +158,15 @@ None.
 - **CS042 P1 next** — `tools/sfx-lab.html` (spec §1.6), Fable 5.1 at Medium, no `ultrathink`. Its
   copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. P0/P1/P2 are all labs and all feed GATE A,
   where Paul works the three of them in one sitting.
-- **At GATE A, the handling lab answers G6 and G7.** `CARGO_TURN` is in the lab and is **not**
-  pre-committed to shipping above 0.0 (FLAG-CS042-j). The lab's `C + drag .45` preset is the one that
-  reproduces §6.3's *intent*; note it puts a full 24-node haul at **123 px/s** terminal, which is a
-  playability question the analytics cannot settle.
+- **P7 is shaping up much smaller than the plan assumed.** On the first pass's shape it is four
+  constants and one burn condition: `SHIP_DRAG` (plus a new `DEBUG.shipDrag` row, registry 110 → 111,
+  `test-registry.js` owns that count), `CARGO_THRUST`, `ENGINE_MASS_MULT` (already a knob — bounds
+  0–1, **step 0.05**, so a solved def like 0.23 either snaps or the step tightens), and §6.5's burn
+  condition. No `CARGO_DRAG`, nothing retired, no restructuring. ⛔ **The plan set P7 to XHigh because
+  Model C rebuilds the speed penalty; if B ships, that reason is gone** — the effort call is Paul's,
+  not a phase's.
+- **If Model C does not ship, §6.3's Model C table stops mattering to the build but still ships wrong
+  numbers.** P11's doc pass should correct or strike it along with §6.2's 12-node Engine cells.
 - **The GDD's front matter and §4 are no longer changelogs — keep them that way.** Both carried
   per-round status text that nobody's checklist reached, so both aged silently: the front-matter
   build stamp was sixteen changesets out of date and two of §4's four blockquotes still read "in

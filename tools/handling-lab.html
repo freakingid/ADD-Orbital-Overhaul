@@ -101,13 +101,25 @@
     imports; this file carries its own copies of the real integration and chain physics.</p>
 
   <div class="outcome">
-    <b>Five numbers to come away with.</b><br>
-    a model letter &middot; <b>SHIP_DRAG</b> &middot; <b>CARGO_DRAG</b> (model C) or
-    <b>CARGO_MAXSPD</b> (A/B) &middot; <b>CARGO_TURN</b> &middot; <b>ENGINE_MASS_MULT</b>.<br>
-    Work the six steps below in order. Each one sets the lab up for you and records its answer.
-    The Findings block at the bottom of this panel is the whole deliverable &mdash; copy it and
-    hand it back.
+    <b>You are dialling two outcomes, not picking constants.</b><br>
+    1. <b>How heavy is a full chain?</b> &mdash; the speed a 24-node haul settles at with no Engine.<br>
+    2. <b>How much does the Engine give back?</b> &mdash; that speed's gain when the Engine is lit.<br>
+    Set those two by flying. The lab solves <b>CARGO_THRUST</b> (or <b>CARGO_DRAG</b>) and
+    <b>ENGINE_MASS_MULT</b> backwards from them. Copy the Findings block at the bottom and hand it back.
   </div>
+
+  <h2>The two dials</h2>
+  <label>full-chain speed &mdash; 24 nodes, no Engine (px/s)
+    <div class="row"><input type="range" id="tSpeed" min="80" max="400" step="1">
+      <span class="val" id="tSpeedVal"></span></div>
+  </label>
+  <label>Engine gain at a full chain (%)
+    <div class="row"><input type="range" id="tGain" min="0" max="200" step="5">
+      <span class="val" id="tGainVal"></span></div>
+  </label>
+  <div class="kv"><span>achieved: speed / gain</span><span id="tAchieved">&mdash;</span></div>
+  <div class="kv"><span>today, for reference</span><span>283 px/s &middot; +30%</span></div>
+  <p class="hint" id="tWarn"></p>
 
   <h2>Test protocol</h2>
   <div id="protocol"></div>
@@ -126,6 +138,7 @@
   <div class="kv"><span>t90 from rest</span><span id="liveT90">&mdash;</span></div>
   <div class="kv"><span>turn rate</span><span id="liveTurn">&mdash;</span></div>
   <div class="kv"><span>towed mass (effective)</span><span id="liveMass">&mdash;</span></div>
+  <div class="kv"><span>chain tug, full chain</span><span id="liveTug">&mdash;</span></div>
   <div class="kv"><span>cap stops binding above</span><span id="liveCross">&mdash;</span></div>
   <p class="hint">Keys: <b>&larr; &rarr;</b> / A D turn &middot; <b>&uarr;</b> / W thrust &middot;
     <b>E</b> Engine &middot; <b>T</b> auto-thrust &middot; <b>R</b> reset ship &middot;
@@ -275,6 +288,68 @@ function solve(rawMass, eng, model, P) {
     half: Math.LN2 / lambda,
     turn: SHIP_TURN / (1 + cargo * P.cargoTurn),
   };
+}
+
+// ⛔ THE BACKWARDS SOLVER. Paul's goal is stated as two outcomes — "cargo is heavier" and "the
+// Engine makes a big difference offsetting that heaviness" — so those are the inputs and the
+// constants are what falls out. Both are read at a FULL chain (CARGO_CAP_MAX nodes), which is where
+// heaviness and relief are both largest and therefore easiest to judge by flying.
+//
+// Cap-free terminal speed at a given EFFECTIVE towed mass. The cap is handled separately, because
+// bisecting through a clamped region stalls on a flat function.
+function dragTerminalAt(mass, model, P) {
+  const lb = lambdaBase(P);
+  const a = P.shipThrust / (1 + mass * P.cargoThrust);
+  const l = model === "C" ? lb * (1 + mass * P.cargoDrag) : lb;
+  return a / l;
+}
+const snap = (v, grid) => Math.round(v / grid) * grid;
+
+// Writes CARGO_THRUST (A/B) or CARGO_DRAG (C), then ENGINE_MASS_MULT, then lifts the speed cap out
+// of the way if it would clip either target. Returns a warning string, or "".
+function solveTargets(targetSpeed, targetGainPct) {
+  const N = CARGO_CAP_MAX;
+  const lb = lambdaBase(P);
+  let warn = "";
+
+  // 1. Heaviness. Closed form in both structures: the penalty that puts a full chain at targetSpeed.
+  if (model === "C") {
+    const a = P.shipThrust / (1 + N * P.cargoThrust);
+    P.cargoDrag = Math.max(0, Math.min(0.3, snap((a / (targetSpeed * lb) - 1) / N, 0.005)));
+  } else {
+    P.cargoThrust = Math.max(0, Math.min(0.3, snap((P.shipThrust / (targetSpeed * lb) - 1) / N, 0.005)));
+  }
+
+  // 2. Relief. Find the effective mass that lands on the target speed, then express it as a
+  //    fraction of the raw full chain — that fraction IS ENGINE_MASS_MULT.
+  const want = targetSpeed * (1 + targetGainPct / 100);
+  if (dragTerminalAt(0, model, P) < want) {
+    warn = "That gain needs a faster ship than an EMPTY one can reach (" +
+      dragTerminalAt(0, model, P).toFixed(0) + " px/s). Lower the gain, or raise SHIP_THRUST.";
+    P.engineMassMult = 0;
+  } else {
+    let lo = 0, hi = N;                       // dragTerminalAt is monotonically decreasing in mass
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (dragTerminalAt(mid, model, P) > want) lo = mid; else hi = mid;
+    }
+    P.engineMassMult = Math.max(0.01, Math.min(1, snap((lo + hi) / 2 / N, 0.01)));
+  }
+
+  // 3. The cap must not clip either target, or the dials stop meaning anything. Only intervene if
+  //    it actually binds — otherwise CARGO_MAXSPD keeps whatever value it was given.
+  if (model !== "C") {
+    const capE = P.shipMaxSpeed / (1 + N * P.engineMassMult * P.cargoMaxspd);
+    if (capE < want) {
+      const cm = (P.shipMaxSpeed / want - 1) / (N * Math.max(0.01, P.engineMassMult));
+      P.cargoMaxspd = Math.max(0, Math.min(0.15, Math.floor(cm / 0.005) * 0.005));
+    }
+  }
+  if (want > P.shipMaxSpeed) {
+    warn = "The Engine's target (" + want.toFixed(0) + " px/s) is above SHIP_MAX_SPEED (" +
+      P.shipMaxSpeed + "), so the cap clips it. Raise SHIP_MAX_SPEED or lower the gain.";
+  }
+  return warn;
 }
 
 // Smallest node count at which the cap stops being the binding limit (0.01-node resolution).
@@ -450,6 +525,8 @@ function syncSliders() {
     // editing them there would make "shipped" mean whatever was last dragged.
     document.getElementById("sl_" + s.id).disabled = dead || abBaseline;
   }
+  tSpeedEl.disabled = abBaseline;
+  tGainEl.disabled = abBaseline;
 }
 
 const MODELS = {
@@ -500,6 +577,35 @@ nodesEl.addEventListener("input", () => { setChainLength(parseInt(nodesEl.value,
 function syncChainUI() {
   nodesEl.value = nodes;
   document.getElementById("nodesVal").textContent = nodes;
+}
+
+const tSpeedEl = document.getElementById("tSpeed");
+const tGainEl = document.getElementById("tGain");
+let tSpeed = 0, tGain = 0;              // seeded from the shipped build at boot, not invented
+function applyDials() {
+  tSpeed = parseFloat(tSpeedEl.value);
+  tGain = parseFloat(tGainEl.value);
+  const warn = solveTargets(tSpeed, tGain);
+  document.getElementById("tWarn").innerHTML = warn ? "&#9888; " + warn : "";
+  syncSliders(); syncDialLabels(); refresh();
+}
+tSpeedEl.addEventListener("input", applyDials);
+tGainEl.addEventListener("input", applyDials);
+function syncDialLabels() {
+  document.getElementById("tSpeedVal").textContent = tSpeedEl.value;
+  document.getElementById("tGainVal").textContent = "+" + tGainEl.value + "%";
+}
+// The dials are also a READOUT: hand-editing a constant slider must move them back, or the panel
+// starts lying. Skipped while a dial has focus, so a drag is never fought by its own write-back.
+function syncDialsFromConstants() {
+  const a = solve(CARGO_CAP_MAX, false, model, P), b = solve(CARGO_CAP_MAX, true, model, P);
+  const g = (b.terminal / a.terminal - 1) * 100;
+  document.getElementById("tAchieved").textContent =
+    a.terminal.toFixed(0) + " px/s · +" + g.toFixed(0) + "%";
+  const act = document.activeElement;
+  if (act !== tSpeedEl) { tSpeedEl.value = Math.round(a.terminal); }
+  if (act !== tGainEl) { tGainEl.value = Math.round(g / 5) * 5; }
+  syncDialLabels();
 }
 
 const engineBtn = document.getElementById("engineBtn");
@@ -562,50 +668,51 @@ let curStep = 0;
 
 const STEPS = [
   {
-    id: "feel", title: "Feel the shipped game",
-    todo: "Fly with an empty chain, then press <b>]</b> up to 24 nodes and fly again. This is what you are changing.",
-    read: "BINDING LIMIT never leaves CAP, at any chain length. That is the whole complaint.",
-    setup() { applyPreset(0); setChainLength(0); setEngine(false); },
-    choices: [["ok", "seen it"]],
-  },
-  {
-    id: "model", title: "Pick the model", tag: "G6",
-    todo: "12 nodes towed. Click each of the three below and fly it. Watch BINDING LIMIT flip from CAP to DRAG. " +
-      "<b>Each button loads that model's starting constants</b> — B is identical to A until they move.",
-    read: "Sweep table, 12-node row, gain column: A gives +17%, B about +29%, C gives +49%.",
-    setup() { setChainLength(12); setEngine(false); },
-    choices: [["A", "A — today"], ["B", "B — heavier cargo"], ["C", "C — cargo drags"]],
-    // Picking a model loads its preset: Model B at the shipped constants IS Model A, and flying
-    // that would answer the question wrongly.
-    onPick(v) { applyPreset(v === "A" ? 0 : v === "B" ? 1 : 2); },
-  },
-  {
-    id: "drag", title: "Set base drag", tag: "G7 / FLAG-CS042-f",
-    todo: "Empty chain. Tap thrust and let go. <b>Does the ship still drift enough to be this game?</b> Drag the SHIP_DRAG slider until it does.",
-    read: "coast half-life: 1.61 s at 0.35, 1.16 s at the proposed 0.45.",
+    id: "drag", title: "Unloaded feel first", tag: "G7 / FLAG-CS042-f",
+    todo: "Empty chain. Tap thrust and let go. <b>Does the empty ship still drift enough to be this game?</b> " +
+      "Set SHIP_DRAG until it does. Do this first &mdash; every dial below is solved against it.",
+    read: "coast half-life: 1.61 s at the shipped 0.35, 1.16 s at 0.45. The empty ship's top speed stays 520 either way, up to about SHIP_DRAG 0.48.",
     setup() { setChainLength(0); setEngine(false); },
     record: "shipDrag",
   },
   {
-    id: "haul", title: "Is a full haul playable?",
-    todo: "24 nodes, Engine off, fly a lap. Shipped today is 283 px/s; model C at drag 0.45 is 123 px/s.",
-    read: "terminal in Live, and the 24-node row of the sweep. If it is too slow, ease CARGO_THRUST or CARGO_DRAG and answer again.",
+    id: "heavy", title: "How heavy is a full chain?",
+    todo: "24 nodes, Engine off. Fly a lap, turn, stop. Drag the <b>full-chain speed</b> dial until a full haul feels as heavy as you want it to.",
+    read: "today a full haul runs at 283 px/s. Lower is heavier. The dial writes CARGO_THRUST for you.",
     setup() { setChainLength(24); setEngine(false); },
-    choices: [["playable", "playable"], ["too slow", "too slow"]],
+    recordDial: "speed",
+  },
+  {
+    id: "relief", title: "How much does the Engine give back?",
+    todo: "Still 24 nodes. Press <b>E</b> on and off while holding thrust. Drag the <b>Engine gain</b> dial until the difference is as big as you want it.",
+    read: "today the Engine is worth +30% at a full chain. The dial writes ENGINE_MASS_MULT for you.",
+    setup() { setChainLength(24); setEngine(true); },
+    recordDial: "gain",
+  },
+  {
+    id: "tug", title: "Does the chain yank you enough?",
+    todo: "24 nodes, Engine off. Turn hard and burn against the load. CARGO_MASS is the pull-back. " +
+      "Then press <b>E</b>: the Engine cuts this too, because it lightens the same mass sum.",
+    read: "chain tug in Live, shown with the Engine off and on. It saturates at 1.40.",
+    setup() { setChainLength(24); setEngine(false); },
+    record: "cargoMass",
   },
   {
     id: "turn", title: "CARGO_TURN", tag: "G6 / FLAG-CS042-j",
-    todo: "24 nodes. Raise CARGO_TURN and turn hard, then drop it back to 0. <b>Nothing is pre-committed here.</b>",
-    read: "turn rate: 241 &deg;/s at 0.0, and it falls as the slider rises.",
+    todo: "24 nodes. Raise CARGO_TURN and turn hard, then decide. It ships dormant at 0.0 and nothing is pre-committed.",
+    read: "turn rate: 241 &deg;/s at 0.0, falling as the slider rises.",
     setup() { setChainLength(24); setEngine(false); },
     record: "cargoTurn",
   },
   {
-    id: "engine", title: "Engine strength", tag: "feeds G8",
-    todo: "24 nodes. Press <b>E</b> on and off while holding thrust. Lower ENGINE_MASS_MULT is stronger.",
-    read: "the gain column's 24-node row: +30% under A, +84% under C at 0.5.",
-    setup() { setChainLength(24); setEngine(true); },
-    record: "engineMassMult",
+    id: "model", title: "Structure — only if the dials cannot get there", tag: "G6",
+    todo: "The dials work under any model. <b>B keeps the build's own structure and needs no new constant</b>, " +
+      "which is why it is the default. Switch to C only if you want top speed to be purely emergent.",
+    read: "Sweep table: under B the cap stops binding after about 1 node, which is what makes the dials bite.",
+    setup() { setChainLength(24); setEngine(false); },
+    choices: [["B", "B — keep the structure"], ["C", "C — cargo drags"]],
+    optional: true,
+    onPick(v) { setModel(v); applyDials(); },
   },
 ];
 
@@ -613,6 +720,9 @@ const protoDiv = document.getElementById("protocol");
 function syncProtocolLabels() {   // cheap per-frame update; never rebuilds the DOM under the cursor
   for (const st of STEPS) {
     if (st.record && st._btn) st._btn.textContent = "Record " + st.record + " = " + P[st.record].toFixed(3);
+    if (st.recordDial && st._btn) st._btn.textContent = st.recordDial === "speed"
+      ? "Record full-chain speed = " + tSpeedEl.value
+      : "Record Engine gain = +" + tGainEl.value + "%";
   }
 }
 function renderProtocol() {
@@ -652,6 +762,19 @@ function renderProtocol() {
       st._btn = b;
       b.addEventListener("click", () => {
         answers[st.id] = P[st.record];
+        curStep = Math.min(STEPS.length - 1, i + 1);
+        renderProtocol(); refresh();
+      });
+      row.appendChild(b);
+    }
+    if (st.recordDial) {
+      const b = document.createElement("button");
+      st._btn = b;
+      b.textContent = st.recordDial === "speed"
+        ? "Record full-chain speed = " + tSpeedEl.value
+        : "Record Engine gain = +" + tGainEl.value + "%";
+      b.addEventListener("click", () => {
+        answers[st.id] = st.recordDial === "speed" ? parseFloat(tSpeedEl.value) : parseFloat(tGainEl.value);
         curStep = Math.min(STEPS.length - 1, i + 1);
         renderProtocol(); refresh();
       });
@@ -786,15 +909,25 @@ function buildFindings() {
   const e24 = solve(24, true, model, P), e12 = solve(12, true, model, P);
   const x = crossover(false, model, P);
   const A = id => answers[id];
-  const missing = STEPS.filter(st => A(st.id) === undefined).map((st, i) => st.title);
+  const missing = STEPS.filter(st => !st.optional && A(st.id) === undefined).map(st => st.title);
   const L = [];
+  const ach = solve(CARGO_CAP_MAX, false, model, P);
+  const achE = solve(CARGO_CAP_MAX, true, model, P);
   L.push("CS042 GATE A — tools/handling-lab.html findings");
   L.push("");
-  L.push("model (G6):            " + (A("model") || "UNANSWERED"));
-  L.push("SHIP_DRAG (G7):        " + (A("drag") !== undefined ? A("drag").toFixed(2) : "UNANSWERED"));
-  L.push("24-node haul:          " + (A("haul") || "UNANSWERED"));
-  L.push("CARGO_TURN (G6):       " + (A("turn") !== undefined ? A("turn").toFixed(3) : "UNANSWERED"));
-  L.push("ENGINE_MASS_MULT:      " + (A("engine") !== undefined ? A("engine").toFixed(2) : "UNANSWERED"));
+  L.push("THE TWO OUTCOMES (full chain, 24 nodes)");
+  L.push("  cargo heaviness:     " + ach.terminal.toFixed(0) + " px/s   (today 283)");
+  L.push("  Engine gives back:   +" + ((achE.terminal / ach.terminal - 1) * 100).toFixed(0) +
+    "%  ->  " + achE.terminal.toFixed(0) + " px/s   (today +30%)");
+  L.push("  chain tug:           " + Math.min(1.4, CARGO_CAP_MAX * P.cargoMass).toFixed(2) +
+    ", falling to " + Math.min(1.4, CARGO_CAP_MAX * P.engineMassMult * P.cargoMass).toFixed(2) +
+    " with the Engine lit");
+  L.push("");
+  L.push("ANSWERS");
+  L.push("  model (G6):          " + (A("model") || model + " (default, unchanged)"));
+  L.push("  SHIP_DRAG (G7):      " + (A("drag") !== undefined ? A("drag").toFixed(2) : "UNANSWERED"));
+  L.push("  CARGO_TURN (G6):     " + (A("turn") !== undefined ? A("turn").toFixed(3) : "UNANSWERED"));
+  L.push("  CARGO_MASS:          " + (A("tug") !== undefined ? A("tug").toFixed(3) : "UNANSWERED"));
   if (missing.length) L.push("");
   if (missing.length) L.push("still open: " + missing.join("; "));
   L.push("");
@@ -810,7 +943,9 @@ function buildFindings() {
   L.push("const CARGO_MASS = " + P.cargoMass.toFixed(3) + ";");
   L.push("const CARGO_TURN = " + P.cargoTurn.toFixed(3) + ";" +
     (P.cargoTurn === 0 ? "        // still dormant" : "        // NOT dormant — G6 says yes"));
-  L.push("const ENGINE_MASS_MULT = " + P.engineMassMult.toFixed(2) + ";");
+  L.push("const ENGINE_MASS_MULT = " + P.engineMassMult.toFixed(2) + ";" +
+    (Math.abs(P.engineMassMult / 0.05 - Math.round(P.engineMassMult / 0.05)) > 1e-9
+      ? "   // NOTE: DEBUG.engineMassMult steps 0.05; P7 tightens the step or snaps the def" : ""));
   L.push("const ENGINE_BURN_SECONDS = " + P.engineBurnSeconds.toFixed(1) + ";");
   L.push("");
   L.push("// terminal " + t0.terminal.toFixed(0) + " / " + t12.terminal.toFixed(0) + " / " +
@@ -836,12 +971,17 @@ function refresh() {
   document.getElementById("liveT90").textContent = s.t90.toFixed(2) + " s";
   document.getElementById("liveTurn").textContent = (s.turn * 180 / Math.PI).toFixed(0) + " °/s";
   document.getElementById("liveMass").textContent = s.cargo.toFixed(1) + " (raw " + raw.toFixed(0) + ")";
+  const tugOff = Math.min(1.4, CARGO_CAP_MAX * P.cargoMass);
+  const tugOn = Math.min(1.4, CARGO_CAP_MAX * P.engineMassMult * P.cargoMass);
+  document.getElementById("liveTug").textContent =
+    tugOff.toFixed(2) + " → " + tugOn.toFixed(2) + " with Engine";
   const x = crossover(false, model, P);
   document.getElementById("liveCross").textContent = x === null ? "never (cap binds to 24)" : x.toFixed(1) + " nodes";
   document.getElementById("fuelLeft").textContent = burnFuel && engineOn ? fuel.toFixed(1) + " s" : "—";
   document.getElementById("fuelWall").textContent = burnFuel && engineOn ? fuelWall.toFixed(1) + " s" : "—";
   buildSweep();
   buildFindings();
+  syncDialsFromConstants();
   syncProtocolLabels();
 }
 
@@ -963,8 +1103,16 @@ function loop(now) {
 
 // ---------- boot ----------
 syncChainUI();
+// ⛔ The dials seed from what the SHIPPED game actually does at a full chain (283 px/s, +30%), so the
+// starting position is the thing being changed, not a proposal. setModel("B") follows: B keeps the
+// build's own structure, and the dials do the work that picking a model used to.
+const ship24 = solve(CARGO_CAP_MAX, false, "A", SHIPPED);
+const ship24E = solve(CARGO_CAP_MAX, true, "A", SHIPPED);
+tSpeedEl.value = Math.round(ship24.terminal);
+tGainEl.value = Math.round((ship24E.terminal / ship24.terminal - 1) * 100 / 5) * 5;
+syncDialLabels();
 renderProtocol();
-setModel("A");
+setModel("B");
 syncSliders();
 syncAB();
 buildSpecTables();
