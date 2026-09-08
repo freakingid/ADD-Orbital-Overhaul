@@ -6,7 +6,7 @@
 // correct behaviour and also the bug. In the UNGUARDED path the node is destroyed, so an overlapping
 // body stops overlapping and the contact self-terminates — one contact, one break. In the GUARDED path
 // the node survives in place, still inside h.radius + 7, so the hazards-vs-chain scan re-fires the same
-// break every frame: one budget decrement, seven particles, a FloatText and a shieldPing per frame. At
+// break every frame: one budget decrement, seven particles, a FloatText and an absorb tell per frame. At
 // the default chainGuardIntercepts of 3, one large debris grazing the tow burned the whole budget in
 // THREE frames (~0.05 s) and severed the chain normally on frame four.
 //
@@ -223,11 +223,16 @@ function stageDebris(X, k, size = 3) {
 // Count absorb tells by OBJECT IDENTITY, sampled every frame. game.floaters/particles are REASSIGNED by
 // update()'s end-of-frame .filter(), and a FloatText lives only 1.1 s, so reading the array at the end
 // would miss (and a .push spy would not survive the reassignment) — the CS018 P8 identity-capture idiom.
+// CS042 P4: the guard branch's tell moved from AudioSys.shieldPing() (borrowed) to its own
+// AudioSys.guardblock(). The PRE-FIX build (a fixed historical SHA, `build({ src: preFixSrc() })`)
+// predates that phase and still only has shieldPing() — so this counts whichever of the two exists,
+// same "one absorb, one tell" claim either way.
 function makeTellCounter(X) {
   const seenF = new Set(), seenP = new Set();
   const c = { guarded: 0, sparks: 0, pings: 0 };
-  const realPing = X.AudioSys.shieldPing.bind(X.AudioSys);
-  X.AudioSys.shieldPing = function () { c.pings++; return realPing(); };
+  const tellName = typeof X.AudioSys.guardblock === "function" ? "guardblock" : "shieldPing";
+  const realPing = X.AudioSys[tellName].bind(X.AudioSys);
+  X.AudioSys[tellName] = function () { c.pings++; return realPing(); };
   c.sample = () => {
     for (const f of X.game.floaters) if (!seenF.has(f)) { seenF.add(f); if (f.text === "GUARDED") c.guarded++; }
     for (const p of X.game.particles) if (!seenP.has(p)) { seenP.add(p); if (p.color === X.POWERUP_COLOR.guard) c.sparks++; }
@@ -284,7 +289,8 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
   // The stamp is in the guard branch, AFTER the spend and the tell, and BEFORE the branch returns.
   const body = scriptSrc.slice(scriptSrc.indexOf("function breakChain("));
   const iSpend = body.indexOf("game.powerBudget.guard = Math.max");
-  const iTell = body.indexOf('AudioSys.shieldPing()');
+  // CS042 P4: the tell is now guardblock() — shieldPing() was the borrowed cue this phase replaced.
+  const iTell = body.indexOf('AudioSys.guardblock()');
   const iStamp = body.indexOf("if (src) src.guardT = DEBUG.chainGuardCooldown;");
   const iReturn = body.indexOf("return; // no node severed");
   const iSever = body.indexOf("chain.length = i");
@@ -480,7 +486,7 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
     assert(log.every(r => r.garbage === 0), "B1: no node ever fell loose into garbage");
     assert(log.every(r => r.deliveries === 0), "B1: deliveryCount untouched throughout");
     assert(c.guarded === 1, `B1: exactly ONE "GUARDED" floater across all 45 frames (got ${c.guarded})`);
-    assert(c.pings === 1, `B1: exactly ONE shieldPing across all 45 frames (got ${c.pings})`);
+    assert(c.pings === 1, `B1: exactly ONE absorb tell across all 45 frames (got ${c.pings})`);
     assert(c.sparks === GUARD_ABSORB_SPARKS,
       `B1: exactly one GUARD_ABSORB_SPARKS burst (${GUARD_ABSORB_SPARKS} guard-hued particles, got ${c.sparks})`);
     assert(spendFrames(log, 3).join(",") === "1", `B1: the single spend happened on frame 1 (got [${spendFrames(log, 3)}])`);
@@ -507,7 +513,7 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
     assert(g.powerBudget.guard === 3 - expected,
       `B2: the budget is ${3 - expected} (got ${g.powerBudget.guard}); the pre-fix build reads 0 by frame 3`);
     assert(c.guarded === expected, `B2: one "GUARDED" floater per absorbed event (${expected}, got ${c.guarded})`);
-    assert(c.pings === expected, `B2: one shieldPing per absorbed event (${expected}, got ${c.pings})`);
+    assert(c.pings === expected, `B2: one absorb tell per absorbed event (${expected}, got ${c.pings})`);
     assert(log.every(r => r.chain === 10 && r.garbage === 0),
       "B2: the chain survives all 60 frames with budget to spare — the whole point of the changeset");
     // The invariant that holds at ANY frame rate: consecutive spends are never closer than the cooldown.
@@ -563,7 +569,7 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
 
   assert(c.guarded === expected,
     `C: ${expected} absorb tells across 60 frames — one per cooldown, not one per frame (got ${c.guarded}); the pre-fix build machine-guns ~60`);
-  assert(c.pings === expected, `C: one shieldPing per tell (${expected}, got ${c.pings})`);
+  assert(c.pings === expected, `C: one absorb tell per event (${expected}, got ${c.pings})`);
   assert(c.sparks === expected * GUARD_ABSORB_SPARKS,
     `C: one ${GUARD_ABSORB_SPARKS}-particle burst per tell (got ${c.sparks})`);
   assert(log.every(r => r.chain === 10 && r.garbage === 0), "C: the chain is intact on every one of the 60 frames");

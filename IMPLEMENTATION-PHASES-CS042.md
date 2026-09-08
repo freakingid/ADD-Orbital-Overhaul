@@ -408,7 +408,7 @@ treating a failure as a regression.
 Commit on main with the subject named in P4. Do not push. Update STATUS.md.
 
 --- sfx-lab copy-out block follows ---
-[PASTE HERE]
+See file CS042-GATE-A.md
 ```
 
 ### What to build

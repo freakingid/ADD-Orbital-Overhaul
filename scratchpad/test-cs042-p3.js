@@ -347,12 +347,17 @@ console.log("(E) breakChain sounds chainsever on a partial break and cargolost o
     layChain(X, 6);
     X.game.powerBudget.guard = 3;
     assert(X.powerActive("guard"), "E: (setup) the Chain Guard is live");
-    const alog = spyAudio(X, SFX.concat(["shieldPing"]));
+    // WIDENED BY CS042 P4: the guard branch's own tell moved from the borrowed shieldPing() to its
+    // own guardblock() — exactly the change this comment already anticipated. Spy on whichever the
+    // build actually calls, since naming the tell is P4's scope, not P3's; P3's own claim is untouched
+    // — this branch still sounds neither payload cue.
+    const tellName = typeof X.AudioSys.guardblock === "function" ? "guardblock" : "shieldPing";
+    const alog = spyAudio(X, SFX.concat([tellName]));
     X.breakChain(2);
     eq(X.game.chain.length, 6, "E: the guard absorbed the break — nothing severed");
-    eq(countOf(alog, "shieldPing"), 1, "E: ...its own tell fired");
+    eq(countOf(alog, tellName), 1, "E: ...its own tell fired");
     eq(countOf(alog, "cargolost") + countOf(alog, "chainsever"), 0,
-      "E: ...and neither payload cue did — P3 adds no sound to the guard branch (that is P4's guardblock)");
+      "E: ...and neither payload cue did — P3 adds no sound to the guard branch (that was P4's guardblock)");
   }
 }
 

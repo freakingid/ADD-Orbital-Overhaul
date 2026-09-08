@@ -1674,6 +1674,185 @@ const AudioSys = {
     filt.connect(g).connect(this.sfx);
   },
 
+  // CS042 P4 (spec §1.4): the remaining nine event SFX, ported VERBATIM from tools/sfx-lab.html's
+  // copy-out block (GATE A picks: guardblock C · levelup C · hullfull A · hullrelief C · hullcritical A
+  // · powertag B · powerfade A · haulsize C · megadelivery C) — see the event-SFX rule block above
+  // cargofull(), which this phase applies nine more times. Do not re-tune a gain or a duration here.
+  // ⛔ powertag()'s `this.now() + 0.16` offset is LOAD-BEARING (GATE A note, P1 hazard 1): it is
+  // written to land after powerup()'s second note, so the call must sit immediately after
+  // AudioSys.powerup() at every call site — not necessarily immediately above a say().
+
+  guardblock() { // CS042 §1.4 — metallic, armoured: a square that drops fast (the hit) with one high sine partial that rings on (the plate)
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(1100, t);
+    o.frequency.exponentialRampToValueAtTime(700, t + 0.05);
+    g.gain.setValueAtTime(0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    o.connect(g).connect(this.sfx);
+    o.start(t); o.stop(t + 0.08);
+    const ring = this.ctx.createOscillator();
+    const rg = this.ctx.createGain();
+    ring.type = "sine"; ring.frequency.value = 3300;
+    rg.gain.setValueAtTime(0.06, t);
+    rg.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+    ring.connect(rg).connect(this.sfx);
+    ring.start(t); ring.stop(t + 0.27);
+  },
+
+  levelup() { // CS042 §1.4 — confident, rising: three square notes stacked in FOURTHS (D4 G4 C5), fast — open and bright, not achievement()'s major triad
+    if (!this.ctx) return;
+    const t = this.now();
+    [294, 392, 523].forEach((f, i) => {
+      const last = i === 2, t0 = t + i * 0.06;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(f, t0);
+      g.gain.setValueAtTime(0.08, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + (last ? 0.4 : 0.1));
+      o.connect(g).connect(this.sfx);
+      o.start(t0); o.stop(t0 + (last ? 0.41 : 0.11));
+    });
+  },
+
+  hullfull() { // CS042 §1.4 — soft, warm, settled: two sines a major third apart SWELL in and fade — quieter than powerup(), no attack
+    if (!this.ctx) return;
+    const t = this.now();
+    [330, 415].forEach(f => { // E4 + G#4
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.14);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+      o.connect(g).connect(this.sfx);
+      o.start(t); o.stop(t + 0.71);
+    });
+  },
+
+  hullrelief() { // CS042 §1.4 — an exhale: a suspended note steps DOWN onto a longer, resting one — tension released as an interval
+    if (!this.ctx) return;
+    const t = this.now();
+    [[494, 0, 0.16, 0.07], [440, 0.14, 0.55, 0.06]].forEach(([f, at, dur, g0]) => { // B4 falling to A4
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f, t + at);
+      g.gain.setValueAtTime(g0, t + at);
+      g.gain.exponentialRampToValueAtTime(0.001, t + at + dur);
+      o.connect(g).connect(this.sfx);
+      o.start(t + at); o.stop(t + at + dur + 0.01);
+    });
+  },
+
+  hullcritical() { // CS042 §1.4 — an alarm hit over the siren's fade-up: a hard square TRITONE stab, gone in 80 ms
+    if (!this.ctx) return;
+    const t = this.now();
+    [440, 622].forEach(f => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.09, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+      o.connect(g).connect(this.sfx);
+      o.start(t); o.stop(t + 0.1);
+    });
+  },
+
+  powertag(type) { // CS042 §1.4 — the root then its fifth, two quick sines: an upward flick that names the type by where it sits
+    if (!this.ctx) return;
+    const t = this.now() + 0.16;
+    (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(root => {
+      [root, root * 1.5].forEach((f, i) => {
+        const t0 = t + i * 0.055;
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = "sine";
+        o.frequency.setValueAtTime(f, t0);
+        g.gain.setValueAtTime(0.09, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.1);
+        o.connect(g).connect(this.sfx);
+        o.start(t0); o.stop(t0 + 0.11);
+      });
+    });
+  },
+
+  powerfade(type) { // CS042 §1.4 — powertag() inverted: the same triangle on the same root, sliding DOWN an octave as it goes; no chime before it
+    if (!this.ctx) return;
+    const t = this.now();
+    (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(f => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f / 2, t + 0.26);
+      g.gain.setValueAtTime(0.09, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      o.connect(g).connect(this.sfx);
+      o.start(t); o.stop(t + 0.29);
+    });
+  },
+
+  haulsize(n) { // CS042 §1.4 — the tier stinger: one square dyad hit PER TIER (5 = one, 20 = four), then a higher landing note — the player counts how big
+    if (!this.ctx) return;
+    const t = this.now();
+    const tier = Math.max(1, Math.min(4, Math.floor(n / 5)));
+    for (let i = 0; i < tier; i++) {
+      [440, 660].forEach(f => {
+        const t0 = t + i * 0.09;
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = "square";
+        o.frequency.setValueAtTime(f, t0);
+        g.gain.setValueAtTime(0.06, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.07);
+        o.connect(g).connect(this.sfx);
+        o.start(t0); o.stop(t0 + 0.08);
+      });
+    }
+    const tl = t + tier * 0.09 + 0.03;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(880, tl);
+    g.gain.setValueAtTime(0.11, tl);
+    g.gain.exponentialRampToValueAtTime(0.001, tl + 0.3);
+    o.connect(g).connect(this.sfx);
+    o.start(tl); o.stop(tl + 0.31);
+  },
+
+  megadelivery() { // CS042 §1.4 — the largest cue in the game: an eight-note sine bell run that dives and climbs back higher than it started, over a slow low pulse
+    if (!this.ctx) return;
+    const t = this.now();
+    [1568, 1319, 1047, 784, 1047, 1319, 1568, 2093].forEach((f, i) => {
+      const t0 = t + i * 0.09;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f, t0);
+      g.gain.setValueAtTime(0.09, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + (i === 7 ? 0.7 : 0.3));
+      o.connect(g).connect(this.sfx);
+      o.start(t0); o.stop(t0 + (i === 7 ? 0.71 : 0.31));
+    });
+    [0, 0.36, 0.72].forEach(at => { // the low pulse under the run
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(131, t + at);
+      g.gain.setValueAtTime(0.12, t + at);
+      g.gain.exponentialRampToValueAtTime(0.001, t + at + 0.3);
+      o.connect(g).connect(this.sfx);
+      o.start(t + at); o.stop(t + at + 0.31);
+    });
+  },
+
   // CS040 P3 (spec §1.4): a BANKED Health charge auto-spending itself on a hit. Deliberately unlike
   // every other voice on this bus in two ways at once, because it has to be told apart from the two
   // sounds nearest it in MEANING: powerup() (the pickup — triangle, two SEQUENTIAL notes, instant
@@ -7577,6 +7756,21 @@ const POWERUP_LABEL = {
   rapid: "RAPID", triple: "TRIPLE", health: "+HP", magnet: "MAGNET", engine: "ENGINE", scoop: "SCOOP",
   guard: "GUARD"
 };
+// CS042 P4 (spec §1.4): per-type roots for AudioSys.powertag()/powerfade() — the tag pitch each
+// powerup's collect/expire chime lands on. Ported VERBATIM from tools/sfx-lab.html's copy-out block
+// (GATE A pick: powertag B). Adding a powerup type later is a one-row edit here. ⛔ `health` has no
+// entry — it has no collect_ line by design (it speaks through the hull-full latch instead) and takes
+// no tag; the `|| POWERTAG_ROOT.scoop` fallback inside both methods is defensive code for an unknown
+// type, not licence to add one. `guard`'s doubled octave is data, not a second mechanism, and it has
+// no caller today — applyPowerup()'s collect/expire branches both exclude "guard".
+const POWERTAG_ROOT = {
+  rapid:  [1047],
+  triple: [831],
+  scoop:  [659],
+  magnet: [523],
+  engine: [330],
+  guard:  [262, 523]
+};
 
 // ---------- Entities ----------
 class Ship {
@@ -9551,6 +9745,9 @@ function nextWave() {
   // has already cleared it on the frame it calls this — which is exactly the shape a tidy-up pass adds
   // "harmlessly" and then P3 has to unpick. They are reset in resetRun() and nowhere else. A future
   // tidy-up pass that "notices" the omission is reading this comment for a reason.
+  // CS042 P4 (spec §1.3): the SFX at the TRIGGER SITE, immediately above sayLevel() — see the
+  // event-SFX rule block in AudioSys. Unconditional here; sayLevel()'s own gate may drop or park it.
+  AudioSys.levelup();
   VoiceSys.sayLevel(game.wave); // CS011 P4 — announces Level 1 too (VoiceSys.reset() ran just above in startGame)
   // CS025 P5 (gate Q6) — the VISUAL half of the level announcement, and the half that cannot be lost.
   // Same string sayLevel() speaks, but set unconditionally: no AudioSys.ctx guard (this is a render field,
@@ -10031,6 +10228,9 @@ function superMegaDelivery() {
   // untouched — its 5/10/15/20 chain would try dock_20 for a 24-piece visit) but claims the channel
   // AFTER this call, so the shared cooldown/priority gate drops it in dock_24's favor, same as any two
   // same-priority lines landing back to back.
+  // CS042 P4 (spec §1.3/§1.4): the SFX at the TRIGGER SITE, immediately above the say() — the largest
+  // cue in the game, for the biggest event in the game.
+  AudioSys.megadelivery();
   VoiceSys.say("dock_24");
 }
 
@@ -10070,6 +10270,9 @@ function applyPowerup(type) {
     }
     game.stats.powerupsPicked++;
     AudioSys.powerup();
+    // CS042 P4 (spec §1.4): the per-type tag, immediately after powerup() — its 0.16s offset is written
+    // to land after powerup()'s second note, so the call must stay right here.
+    AudioSys.powertag("scoop");
     VoiceSys.say("collect_scoop"); // CS010 P9: scoop is the early-return branch — hook the line HERE
     return;
   }
@@ -10107,6 +10310,10 @@ function applyPowerup(type) {
   else game.stats.powerUsed[type] = true;
   game.floaters.push(new FloatText(POWERUP_LABEL[type], game.ship.x, game.ship.y - 22, POWERUP_COLOR[type]));
   AudioSys.powerup();
+  // CS042 P4 (spec §1.4): the per-type tag, immediately after powerup() — its 0.16s offset is written
+  // to land after powerup()'s second note, so the call must stay right here. Same "health"/"guard"
+  // exclusion as the collect_ line below: health has no tag row, and guard has no caller today.
+  if (type !== "health" && type !== "guard") AudioSys.powertag(type);
   // CS010 P9: the four announcing types announce their pickup (Health has no collect line — it speaks via the
   // hull-full latch instead). A same-type BANK re-pickup re-fires collect_<type>; the §11e cooldown drops
   // the second line if it lands inside the window (a decided, acceptable behavior — see STATUS.md).
@@ -11624,12 +11831,14 @@ function breakChain(i, src = null) { // node i destroyed; everything aft breaks 
     // this was ever gated (there, the clock alone governed and nothing was spent). Clamped at 0.
     game.powerBudget.guard = Math.max(0, game.powerBudget.guard - 1);
     // The tell. Deliberately NOT boom() — that carries AudioSys.explosion() and would sound like the
-    // canister died. shieldPing() is the shipped "a hit was blocked" voice (the same one the ship's own
-    // shield uses), and the particles are pushed straight in, in the guard hue, so the burst reads as a
-    // deflection rather than a detonation. The persistent state tell is the guard-lit chain in drawChain.
+    // canister died. CS042 P4 (spec §1.4): guardblock() REPLACES the borrowed shieldPing() here — the
+    // ship's own shield used that same cue, making chain armour indistinguishable from it, which is
+    // exactly what §1.4's audit flagged. The particles are pushed straight in, in the guard hue, so the
+    // burst reads as a deflection rather than a detonation. The persistent state tell is the guard-lit
+    // chain in drawChain.
     for (let p = 0; p < GUARD_ABSORB_SPARKS; p++) game.particles.push(new Particle(hit.x, hit.y, POWERUP_COLOR.guard));
     game.floaters.push(new FloatText("GUARDED", hit.x, hit.y - 18, POWERUP_COLOR.guard));
-    AudioSys.shieldPing();
+    AudioSys.guardblock();
     VoiceSys.say("chain_guard"); // CS017 P7 — same single choke point: a multi-node hit speaks once
     // CS019 P1: this contact has now been paid for. Stamping the source is what stops it presenting the
     // SAME contact again next frame — nothing was severed here, so a body that was overlapping still is.
@@ -12007,7 +12216,9 @@ function update(dt) {
     // CS010 P9: Dan announces the crisis on the GENUINE rising edge only. The SIREN latch re-arms on
     // every unpause (openPause/quitToTitle tear it down), so gating the voice on lowHpVoiced — which
     // those menus DON'T touch — is what stops Dan re-announcing "Hull integrity is critical." per unpause.
-    if (!game.lowHpVoiced) { VoiceSys.say("health_low"); game.lowHpVoiced = true; }
+    // CS042 P4 (spec §1.3): the SFX at the TRIGGER SITE, immediately above the say() — an alarm hit
+    // punctuating the siren's own fade-up. Additive: lowhp(true) above is unchanged.
+    if (!game.lowHpVoiced) { AudioSys.hullcritical(); VoiceSys.say("health_low"); game.lowHpVoiced = true; }
   }
   else if (!lowHp && game.lowHpSiren) {
     // Falling edge — disengage. Reset the pulse phase, then arm the relief exhale ONLY IF THE SHIP IS
@@ -12022,6 +12233,9 @@ function update(dt) {
       game.hpReliefFlash = LOWHP_RELIEF_FLASH;   // relief, not death
       // CS010 P9: Dan's relief line is ADDITIVE to P3's visual exhale (both carry the falling edge —
       // parity with the four onset tells). Guarded on !ship.dead like the flash: death isn't relief.
+      // CS042 P4 (spec §1.3): the SFX at the TRIGGER SITE, immediately above the say() — the audible
+      // half of the exhale, same !ship.dead guard.
+      AudioSys.hullrelief();
       VoiceSys.say("health_relief");
     }
     game.lowHpVoiced = false;   // CS010 P9: the crisis is over — re-arm Dan for the NEXT low-HP episode
@@ -12031,7 +12245,9 @@ function update(dt) {
   // catches healing from ANY source (Health powerup AND addScore()'s repair milestone) for free. The
   // latch starts true at spawn (see startGame) so a fresh full-HP run doesn't blurt "brand new ship".
   const hpFull = game.ship.hp >= SHIP_MAX_HP && !game.ship.dead;
-  if (hpFull && !game.hpFullVoice) { VoiceSys.say("health_full"); game.hpFullVoice = true; }
+  // CS042 P4 (spec §1.3): the SFX at the TRIGGER SITE, immediately above the say() — soft and settled,
+  // quieter than powerup(); reassurance, not reward. Same edge, same latch.
+  if (hpFull && !game.hpFullVoice) { AudioSys.hullfull(); VoiceSys.say("health_full"); game.hpFullVoice = true; }
   else if (!hpFull) game.hpFullVoice = false;
   // v3.5 P3: HP-scaled urgency for the pulsed voice — a per-frame call (not edge-detected), safe no-op
   // via lowhpSet's own guards when the state isn't engaged or the voice isn't live. CS010 P3: the SAME t
@@ -12329,7 +12545,13 @@ function update(dt) {
   // one-line data edit plus deleting the `t !== "guard"` clause.
   for (const t of POWERUP_DROP_TYPES) {
     const active = powerActive(t);
-    if (!active && game.powerVoiced[t] && t !== "guard") VoiceSys.say("expire_" + t);
+    // CS042 P4 (spec §1.3/§1.4): the SFX at the TRIGGER SITE, immediately above the say() —
+    // powertag() inverted, same root, descending. Gated on the SAME falling-edge latch (powerVoiced[t])
+    // as the say() below, so it fires once per expiry, not once per frame; same "guard" exclusion.
+    if (!active && game.powerVoiced[t] && t !== "guard") {
+      AudioSys.powerfade(t);
+      VoiceSys.say("expire_" + t);
+    }
     game.powerVoiced[t] = active;
   }
   for (const k in game.powerBank) {
@@ -12474,6 +12696,10 @@ function update(dt) {
         // THE LATCH, no flag needed) and deliveryCount is intact at this instant. 1–4 pieces says nothing.
         // breakChain()/scatterChain() also zero deliveryCount but never reach here, so they stay silent.
         if (game.chain.length === 0) {
+          // CS042 P4 (spec §1.3): the SFX at the TRIGGER SITE, immediately above dockDelivery() — a
+          // tier stinger layered OVER the per-canister deliver() climb (unchanged), so the player
+          // hears how big the haul was.
+          AudioSys.haulsize(game.deliveryCount);
           VoiceSys.dockDelivery(game.deliveryCount);
           releaseDeliveryTicker(); // §6.3: released as an ordinary floater at the last canister
         }

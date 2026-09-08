@@ -684,6 +684,28 @@ function saucerAt(X, x, y, small) {
         '    game.powerBudget.guard = Math.max(0, game.powerBudget.guard - 1);';
       assert(before.includes(OLD_GATE), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did carry the powerMode gate (so this is not a vacuous pass)");
       assert(!after.includes(OLD_GATE) && after.includes(NEW_SPEND), "A: TRAP 2/3 — ...and the current one carries the unconditional spend instead");
+      // WIDENED BY CS042 P4 (spec §1.4): guardblock() REPLACES the borrowed shieldPing() as the guard
+      // branch's tell — the same replacement STATUS.md and CLAUDE.md's Audio section both record; the
+      // comment naming the borrow is rewritten to record the reversal, not deleted. Named here rather
+      // than folded into NEW_SPEND above because it is its own edit, at its own site, by its own phase.
+      const OLD_TELL = '    // The tell. Deliberately NOT boom() — that carries AudioSys.explosion() and would sound like the\n' +
+        '    // canister died. shieldPing() is the shipped "a hit was blocked" voice (the same one the ship\'s own\n' +
+        '    // shield uses), and the particles are pushed straight in, in the guard hue, so the burst reads as a\n' +
+        '    // deflection rather than a detonation. The persistent state tell is the guard-lit chain in drawChain.\n' +
+        '    for (let p = 0; p < GUARD_ABSORB_SPARKS; p++) game.particles.push(new Particle(hit.x, hit.y, POWERUP_COLOR.guard));\n' +
+        '    game.floaters.push(new FloatText("GUARDED", hit.x, hit.y - 18, POWERUP_COLOR.guard));\n' +
+        '    AudioSys.shieldPing();';
+      const NEW_TELL = '    // The tell. Deliberately NOT boom() — that carries AudioSys.explosion() and would sound like the\n' +
+        '    // canister died. CS042 P4 (spec §1.4): guardblock() REPLACES the borrowed shieldPing() here — the\n' +
+        '    // ship\'s own shield used that same cue, making chain armour indistinguishable from it, which is\n' +
+        '    // exactly what §1.4\'s audit flagged. The particles are pushed straight in, in the guard hue, so the\n' +
+        '    // burst reads as a deflection rather than a detonation. The persistent state tell is the guard-lit\n' +
+        '    // chain in drawChain.\n' +
+        '    for (let p = 0; p < GUARD_ABSORB_SPARKS; p++) game.particles.push(new Particle(hit.x, hit.y, POWERUP_COLOR.guard));\n' +
+        '    game.floaters.push(new FloatText("GUARDED", hit.x, hit.y - 18, POWERUP_COLOR.guard));\n' +
+        '    AudioSys.guardblock();';
+      assert(before.includes(OLD_TELL), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did carry the shieldPing() tell");
+      assert(after.includes(NEW_TELL), "A: TRAP 2/3 — ...and the current one carries guardblock() instead, with the borrow comment rewritten");
       // A SECOND known diff, added by CS029 P4 (§6.3) on top of CS024 P6's: the hostile break also
       // releases a pinned model-C delivery ticker, same as scatterChain's own new line above.
       // WIDENED BY CS037 P5, and only by exactly its own edit: the tail now also carries P5's voice
@@ -728,8 +750,8 @@ function saucerAt(X, x, y, small) {
         '  boom(hit.x, hit.y, 1, COLOR.garbage);';
       assert(before.includes(OLD_BOOM), "A: TRAP 2/3 — the pinned pre-P6 breakChain really did go straight from the sever to boom()");
       assert(after.includes(NEW_BOOM), "A: TRAP 2/3 — ...and the current one carries both sever counters before it");
-      eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TAIL, NEW_TAIL).replace(OLD_BOOM, NEW_BOOM),
-        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS029 P4's ticker-release edit, CS035 P6's pity-counter edit (widened by CS039 GATE T's cargoSevers), CS037 P5's voice selection and CS042 P3's event SFX are the ONLY diffs in breakChain; everything else is byte-unchanged");
+      eq(after, before.replace(OLD_GATE, NEW_SPEND).replace(OLD_TELL, NEW_TELL).replace(OLD_TAIL, NEW_TAIL).replace(OLD_BOOM, NEW_BOOM),
+        "A: TRAP 2/3 — CS024 P6's guard-spend edit, CS042 P4's guardblock replacement, CS029 P4's ticker-release edit, CS035 P6's pity-counter edit (widened by CS039 GATE T's cargoSevers), CS037 P5's voice selection and CS042 P3's event SFX are the ONLY diffs in breakChain; everything else is byte-unchanged");
     }
     assert(!scriptSrc.includes("SHIELD_HIT_COST") || bodyOf(hSrc, "function damageShip(amount, srcX, srcY, srcTag) {").includes("SHIELD_HIT_COST"),
       "A: TRAP 2 — SHIELD_HIT_COST's one use site (the auto-shield save) predates this phase");

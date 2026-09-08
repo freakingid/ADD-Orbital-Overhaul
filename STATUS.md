@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P3 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P4 · Registry: 110 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -79,7 +79,44 @@ carried forward and still live.
   line can never disagree. `boom()` stays; the cues layer. Nothing inside the voice channel moved
   (§1.5), pinned against the parent. No registry row, no GDD edit (P11 owns §2.8).
 
+- P4 — the remaining nine `AudioSys` methods (`guardblock`/`levelup`/`hullfull`/`hullrelief`/
+  `hullcritical`/`powertag`/`powerfade`/`haulsize`/`megadelivery`) plus `POWERTAG_ROOT`, all **ported
+  verbatim** from `CS042-GATE-A.md`'s copy-out block (picks C·C·A·C·A·B·A·C·C), applying P3's
+  trigger-site rule nine more times. ⛔ **One replacement, not an addition:** `breakChain()`'s guard
+  branch now calls `guardblock()` where it used to borrow `AudioSys.shieldPing()` — the comment
+  explaining the borrow is rewritten in place to record the reversal, per §1.4's own audit finding
+  that chain armour and the ship's shield were indistinguishable. Eight sites wired: `nextWave()`
+  (`levelup`, unconditional), the three hull edges in `update()` (`hullcritical`/`hullrelief`/
+  `hullfull`, same latches as their voice lines), `applyPowerup()`'s two arms (`powertag`, immediately
+  after `AudioSys.powerup()` — its 0.16s offset is load-bearing — excluding `health`/`guard` exactly
+  like the collect_ line), the `POWERUP_DROP_TYPES` falling-edge loop (`powerfade`, same latch as the
+  say(), so once per expiry not per frame, same `guard` exclusion), the dock pop that empties the
+  chain (`haulsize(game.deliveryCount)`), and `superMegaDelivery()` (`megadelivery`). No registry row,
+  no GDD edit (P11 owns §2.8).
+
 ## Working / verified
+
+- **P4:** full suite **173 files, 173 passed, 0 failed, 0 skipped, 0 timed out** (exit 0),
+  `node --check` clean. `scratchpad/test-cs042-p4.js` is 124 assertions in eight sections, same shape
+  as P3's: every one of the nine methods pinned byte-for-byte against `CS042-GATE-A.md` (§A);
+  `guardblock()` replacing `shieldPing()` verified both by call-count (§B) and textually — the source
+  no longer contains `AudioSys.shieldPing()` at all (§H); every trigger site driven through real code
+  (`nextWave`, `update`, `applyPowerup`, the expiry loop, a real dock-delivery visit, `breakChain`)
+  with the voice gate closed, asserting the sound still fires (§C–§F); `health`/`guard` invent no
+  `powertag`/`powerfade` caller (§E); the `expire_` latch fires `powerfade` once per expiry, not once
+  per frame (§E); headless no-throw (§G); and the standing traps — nothing named inside `VoiceSys`,
+  `powertag()` sits immediately after `AudioSys.powerup()` at both call sites, no registry row added,
+  `VOICE_LINES`/`VOICE_PRIORITY`/`VOICE_CRITICAL` byte-identical to the parent (§H).
+  ⛔ **P4 legitimately invalidated three pre-existing tests' assumptions about the guard-branch tell —
+  all three widened, not weakened, following the standing "moving-HEAD pin" precedent:**
+  `test-cs023-p3.js`'s byte-strict `breakChain` compare gained a fourth named diff (the
+  `shieldPing()` → `guardblock()` tell, alongside its comment rewrite); `test-cs019-p1.js`'s absorb-tell
+  counter now spies on whichever of `guardblock`/`shieldPing` the build under test actually has (the
+  PRE_FIX pinned historical build at `6928ff3` still only carries `shieldPing()`); and
+  `test-cs011-p4.js`'s "bare fake ctx" (§E) gained the minimal oscillator/gain/filter stubs every other
+  headless `AudioContext` fake in the suite already carries, since `nextWave()` now also fires
+  `AudioSys.levelup()` unconditionally whenever `ctx` is truthy — "bare" could no longer mean "has no
+  node factories at all" once a phase's SFX call reached a path `startGame()` itself walks.
 
 - **P3:** full suite **172 files, 172 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, measured
   after the commit — see the moving-`HEAD` pin note under Known issues), `node --check` clean.
@@ -332,12 +369,14 @@ None.
     and `drawLevelBanner()`'s deliberate one-expression alpha has to split, because the banner now
     wants easeOut in and linear out. ⛔ **B4 reverses CS034 P7** — the gameover block goes back to
     not drawing under the panel. Full reasoning in `CS042-GATE-A.md`.
-- **P4 is the next session** — the remaining nine sounds (§1.2/§1.4), **Sonnet 5, Medium**; its
-  copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. It copies P3's trigger-site placement
-  nine times, adds `POWERTAG_ROOT` beside `POWERUP_COLOR`, and is the one phase that **replaces** a
-  shipped sound (`shieldPing()` → `guardblock()` in `breakChain()`'s guard branch). ⛔ **Read
-  `CS042-GATE-A.md`'s "What this means for P3 and P4" note first** — `powertag()`'s 0.16 s offset,
-  `POWERTAG_ROOT.guard`'s absent caller and the `health` exclusion are all recorded there.
+- **✅ P4 is DONE.** The remaining nine sounds are ported and wired — see the P4 ledger entry and its
+  "Working / verified" writeup above. `shieldPing()` → `guardblock()` landed in `breakChain()`'s guard
+  branch, `POWERTAG_ROOT` sits beside `POWERUP_LABEL`, and `powertag()`'s 0.16 s offset and the
+  `health`/`guard` exclusions all came through as GATE A's note recorded them.
+- **P5 is the next session** — the ceremony edit (§3), **Opus 5, XHigh**; its copy-paste prompt is in
+  `IMPLEMENTATION-PHASES-CS042.md`. ⛔ **Requires the `ceremony-lab` copy-out block above (Cross-fade,
+  taken unedited) — that block IS P5's spec.** Read the six standing constraints in the phase doc
+  before touching `updateLevelEndFreeze()`; the freeze's documented failure mode is a hard hang.
   **Nothing in CS042 is blocked.**
 - **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
   headroom**. P1's entry recorded 848 lines, which was wrong — HEAD measured 853 before this phase;

@@ -112,7 +112,24 @@ function buildInstance(fakeCtor) {
 // ================= (E) Level 1 caption fires at startGame (captions-only path) =====================
 (function () {
   console.log("(E) startGame() with a bare fake ctx fires sayLevel(1) -> caption 'Level 1'");
-  function FakeCtx() { return { currentTime: 0, state: "running", resume() {} }; }
+  // CS042 P4: nextWave() now also fires AudioSys.levelup() unconditionally whenever ctx is truthy
+  // (guarded only on `!this.ctx`, like every AudioSys voice) — so "bare" can no longer mean "has no
+  // node factories at all". Widened with the minimal oscillator/gain/filter stubs every other headless
+  // AudioContext fake in this suite carries; the phase's own claim (voice stays OFF, no VoiceSys graph
+  // is ever built) is untouched, since that is gated on settings.voiceStyle, not on AudioSys.ctx.
+  function makeFakeNode() {
+    return new Proxy({
+      gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      type: "sine", connect() { return makeFakeNode(); }, disconnect() {}, start() {}, stop() {},
+    }, { get(t, p) { return p in t ? t[p] : () => makeFakeNode(); } });
+  }
+  function FakeCtx() {
+    return {
+      currentTime: 0, state: "running", resume() {},
+      createOscillator: makeFakeNode, createGain: makeFakeNode, createBiquadFilter: makeFakeNode,
+    };
+  }
   const A = buildInstance(FakeCtx);
   const { game, settings, voiceEnabled, AudioSys, startGame } = A;
   // AudioSys.ctx is created by AudioSys.init() on first call; force it directly per the phase's own
