@@ -288,16 +288,27 @@ None.
 
 ## Next up
 
-- ⛔ **GATE A is next, and all three instruments now exist.** Its handling half is closed by §6.8;
-  its sound half (`sfx-lab`) and its ceremony half (`ceremony-lab`) are both waiting on Paul in one
-  sitting. **Nothing in CS042 is blocked.** After it, **P3** — SFX foundation and the anchor trio
-  (§1.3/§1.4), **Opus 5, High, `ultrathink`**; its copy-paste prompt is in
-  `IMPLEMENTATION-PHASES-CS042.md`.
-- **What the ceremony lab wants back:** the **CHANGES FROM SHIPPED** section of its Findings block,
-  copied verbatim. It is the whole of P5's scope, and "NONE" is a legitimate answer that closes P5
-  as a no-op. ⛔ **A gated beat's assumed dwell is not an answer** — it exists so the timeline can
-  be scrubbed, and the lab deliberately never reports it as a change. Turning a gate into a timer
-  is what "Auto-advance" is for, and that *does* report.
+- ⛔ **GATE A IS ANSWERED (2026-09-08). Both copy-out blocks live verbatim in `CS042-GATE-A.md`**,
+  a root artefact on `CS039-VOICE-WORKLIST.md`'s precedent, with a "what this means for the phase"
+  note under each. ⛔ **P3, P4 and P5 read that file; it is their input and this bullet is not a
+  substitute for it.** Its handling third stays null and superseded by §6.8.
+  - **Sound (P3/P4):** all twelve picked — cargofull A · cargolost A · chainsever C · guardblock C ·
+    levelup C · hullfull A · hullrelief C · hullcritical A · powertag B · powerfade A · haulsize C ·
+    megadelivery C. Verified on recording: twelve methods, §1.4's order, every one `this.ctx`-guarded
+    and routed to `this.sfx`, `POWERTAG_ROOT` carrying the six keys §1.4 asks for. ⛔ **`health` is
+    deliberately absent from that table** (§1.4's own ⚠) and the `|| POWERTAG_ROOT.scoop` fallback
+    is not a licence to add `collect_health`.
+  - **Ceremony (P5): Cross-fade, taken unedited — fourteen changes, every one a transition.** No
+    duration, gate or knob moves; both totals stay at shipped. ⛔ **P5 is a rendering and lifecycle
+    change, not a timing one**, and three build invariants push back on it: `game.levelDone` and
+    `game.celebration` must still go null on the confirm (the freeze's hold/tail `if`/`else` and
+    `update()`'s early return read them), so a post-press dissolve needs its own render-only state;
+    and `drawLevelBanner()`'s deliberate one-expression alpha has to split, because the banner now
+    wants easeOut in and linear out. ⛔ **B4 reverses CS034 P7** — the gameover block goes back to
+    not drawing under the panel. Full reasoning in `CS042-GATE-A.md`.
+- **P3 is the next session** — SFX foundation and the anchor trio (§1.3/§1.4), **Opus 5, High,
+  `ultrathink`**; its copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. **Nothing in CS042
+  is blocked.**
 - **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
   headroom**. P1's entry recorded 848 lines, which was wrong — HEAD measured 853 before this phase;
   the byte figure was right, and the historical numbers are KiB, not KB. The next phase that adds a
