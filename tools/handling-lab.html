@@ -113,7 +113,7 @@
 
   <h2>The two dials &mdash; inertia, not top speed</h2>
   <label>full-chain coast &mdash; seconds for a 24-node haul to bleed to a tenth of its speed
-    <div class="row"><input type="range" id="tSpeed" min="3" max="20" step="0.05">
+    <div class="row"><input type="range" id="tSpeed" min="3" max="20" step="0.01">
       <span class="val" id="tSpeedVal"></span></div>
   </label>
   <label>Engine gives back &mdash; % of that added coast the Engine removes
@@ -340,7 +340,8 @@ function solveTargets(targetCoast, reliefPct) {
   // 2. Relief: the Engine removes reliefPct of the coast the cargo added.
   const laden = Math.log(10) / (lb / (1 + N * P.cargoCoast));
   const wantCoast = laden - (reliefPct / 100) * (laden - coastEmpty);
-  if (P.cargoCoast < 1e-6) return warn;
+  if (P.cargoCoast < 1e-6) return "There is no added coast for the Engine to give back yet — " +
+    "raise the full-chain coast dial above " + coastEmpty.toFixed(2) + "s first, then set this one.";
   const emm = ((Math.log(10) / wantCoast) === 0 ? 1 :
     (lb / (Math.log(10) / wantCoast) - 1) / (N * P.cargoCoast));
   P.engineMassMult = Math.max(0, Math.min(1, snap(emm, 0.01)));
@@ -509,7 +510,9 @@ for (const s of SLIDERS) {
     '" step="' + s.step + '"><span class="val" id="v_' + s.id + '"></span></div>';
   slidersDiv.appendChild(lab);
   const el = lab.querySelector("input");
-  el.addEventListener("input", () => { P[s.id] = parseFloat(el.value); syncSliders(); refresh(); });
+  el.addEventListener("input", () => {
+    P[s.id] = parseFloat(el.value); syncSliders(); syncDialsFromConstants(); refresh();
+  });
 }
 function syncSliders() {
   for (const s of SLIDERS) {
@@ -561,7 +564,7 @@ function applyPreset(i) {
   const pr = PRESETS[i];
   if (abBaseline) { abBaseline = false; abStash = null; syncAB(); }
   Object.assign(P, SHIPPED, pr.set);
-  setModel(pr.model); syncSliders(); refresh();
+  setModel(pr.model); syncSliders(); syncDialsFromConstants(); refresh();
 }
 const presetRow = document.getElementById("presetRow");
 PRESETS.forEach((pr, i) => {
@@ -615,7 +618,11 @@ function verdictText(v) {
     " px/s (at " + v.at.toFixed(0) + " nodes)";
 }
 
-function syncDialsFromConstants() {
+// ⛔ TEXT ONLY, and it is the only one of these two that refresh() may call. Anything here that
+// wrote a dial's value would fight the user: refresh() runs every 100 ms, so the moment a dial lost
+// focus — which is exactly what clicking the canvas to fly does — the user's setting was overwritten
+// by one re-derived from the constants, and that derivation is 0 while CARGO_COAST is still 0.
+function syncAchieved() {
   const a = solve(CARGO_CAP_MAX, false, model, P), b = solve(CARGO_CAP_MAX, true, model, P);
   const empty = solve(0, false, model, P).coast;
   const relief = a.coast > empty + 1e-6 ? (a.coast - b.coast) / (a.coast - empty) * 100 : 0;
@@ -625,10 +632,18 @@ function syncDialsFromConstants() {
   const cx = document.getElementById("tCross");
   cx.textContent = verdictText(v);
   cx.className = v.kind === "same" ? "ok" : "bad";
-  const act = document.activeElement;
-  if (act !== tSpeedEl) { tSpeedEl.value = a.coast.toFixed(2); }
-  if (act !== tGainEl) { tGainEl.value = Math.round(relief / 5) * 5; }
+}
+
+// Moves the dial POSITIONS. Called only when the constants change underneath them by some other
+// route — a hand-dragged constant slider, a preset, the A/B toggle. Never on a timer.
+function syncDialsFromConstants() {
+  const a = solve(CARGO_CAP_MAX, false, model, P), b = solve(CARGO_CAP_MAX, true, model, P);
+  const empty = solve(0, false, model, P).coast;
+  const relief = a.coast > empty + 1e-6 ? (a.coast - b.coast) / (a.coast - empty) * 100 : 0;
+  tSpeedEl.value = a.coast.toFixed(2);
+  tGainEl.value = Math.round(relief / 5) * 5;
   syncDialLabels();
+  syncAchieved();
 }
 
 const engineBtn = document.getElementById("engineBtn");
@@ -660,7 +675,7 @@ function toggleAB() {
     abBaseline = false;
     abStash = null;
   }
-  syncAB(); setModel(model); syncSliders(); refresh();
+  syncAB(); setModel(model); syncSliders(); syncDialsFromConstants(); refresh();
 }
 function syncAB() {
   abBtn.textContent = abBaseline ? "A/B: SHIPPED" : "A/B: edited";
@@ -1019,7 +1034,7 @@ function refresh() {
   document.getElementById("fuelWall").textContent = burnFuel && engineOn ? fuelWall.toFixed(1) + " s" : "—";
   buildSweep();
   buildFindings();
-  syncDialsFromConstants();
+  syncAchieved();
   syncProtocolLabels();
 }
 
