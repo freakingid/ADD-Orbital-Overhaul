@@ -823,6 +823,8 @@ bad *build*.
   speed-penalty models; the live **binding-limit** readout (cap or drag) is the whole question. It
   also carries a pinned recompute of the spec's own tables — the lab wins where they disagree.
 - **`tools/sat-art-lab.html`** — the twelve satellite craft's `SAT_ART` / `SAT_SCRAP` polylines.
+- **`tools/sfx-lab.html`** — three candidates per CS042 §1.4 `AudioSys` one-shot, auditioned alone and against the
+  build's neighbours (ported verbatim, its only port-in); the copy-out block is what P3/P4 paste (spec §1.6).
 - **`tools/emblem-lab.html`** — the Achievements celebration panel's `ACH_EMBLEM` polylines: six tier
   rungs (Bronze…Diamond) plus the weekly/lifetime pool marks, same `SAT_ART` contract, pasted into
   `drawEmblem()` verbatim (GDD §2.20).

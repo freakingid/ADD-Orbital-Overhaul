@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SFX Lab — Orbital Overhaul</title>
+<!--
+  tools/sfx-lab.html — CS042 P1 (spec §1.6). NOT SHIPPED CODE.
+
+  Three candidates for each of the twelve event sounds spec §1.4 adds to AudioSys. Every candidate is a
+  self-contained Web Audio graph written in the shipped AudioSys idiom (oscillator/gain/filter chain
+  scheduled at call time, `if (!this.ctx) return;` guarded, routed into `this.sfx`) so the copy-out
+  block at the bottom is paste-ready — it is what P3 and P4 port. The methods below are the SOURCE the
+  copy-out prints (`Function.prototype.toString`), so what you hear is byte-for-byte what gets pasted.
+
+  The ONLY port-in from the build is the neighbours the context buttons play — powerup(), deliver(),
+  explosion(), achievement(), pickup(), hit(), shieldPing(), lowhp() and the LOWHP_* constants they read —
+  copied verbatim from orbital-overhaul.html so the comparison is honest. Nothing here is a sample, a
+  sequencer, or an external asset; the context player's setTimeout staggering is lab chrome and is not
+  part of any candidate.
+
+  cargofull / cargolost are a PAIR: each cargolost candidate reads CARGOFULL_FREQS reversed, so the pair
+  is matched by construction. Picking one picks both. chainsever also reads CARGOFULL_FREQS (reversed,
+  then made smaller) and its audition button plays the picked cargolost first so "smaller" is judged.
+-->
+<style>
+  html, body { margin: 0; background: #050a12; color: #a8d4ff;
+    font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  #wrap { max-width: 1240px; margin: 0 auto; padding: 16px 18px 40px; }
+  h1 { font-size: 16px; color: #9fd8ff; margin: 0 0 4px; }
+  h2 { font-size: 12px; color: #70ffa0; text-transform: uppercase; letter-spacing: 0.05em;
+    margin: 22px 0 8px; border-bottom: 1px solid #223347; padding-bottom: 4px; }
+  p.sub { color: #3a5a80; margin: 0 0 12px; }
+  .hint { color: #3a5a80; font-size: 11px; margin-top: 6px; }
+  .note { color: #ffcf5a; font-size: 11px; }
+  button { background: #12203a; color: #a8d4ff; border: 1px solid #3a5a80; border-radius: 4px;
+    padding: 5px 9px; font: inherit; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: #70ffa0; color: #70ffa0; }
+  button.playing { border-color: #ffcf5a; color: #ffcf5a; }
+  button.ctx { border-style: dashed; }
+  select { background: #12203a; color: #a8d4ff; border: 1px solid #3a5a80; border-radius: 4px;
+    padding: 4px 6px; font: inherit; }
+  #vols { display: flex; gap: 28px; flex-wrap: wrap; margin: 6px 0 4px; }
+  #vols label { display: flex; align-items: center; gap: 8px; }
+  #vols input[type=range] { width: 180px; }
+  .val { width: 40px; text-align: right; color: #70ffa0; font-variant-numeric: tabular-nums; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid #223347; padding: 6px 8px; vertical-align: top; text-align: left; }
+  th { color: #70ffa0; font-weight: normal; text-transform: uppercase; letter-spacing: 0.04em;
+    font-size: 11px; }
+  td.name { color: #9fd8ff; white-space: nowrap; font-family: ui-monospace, Consolas, monospace; }
+  td.name small { display: block; color: #3a5a80; font-family: inherit; }
+  td.brief { color: #a8d4ff; max-width: 260px; }
+  td.brief em { color: #ffcf5a; font-style: normal; }
+  td.cand { white-space: nowrap; }
+  .cand label { display: block; margin-top: 4px; color: #3a5a80; font-size: 11px; cursor: pointer; }
+  .cand label.on { color: #70ffa0; }
+  .cand input[type=radio] { margin: 0 4px 0 0; vertical-align: -1px; }
+  .cand button { width: 100%; text-align: left; }
+  tr.pair td { background: #070d18; }
+  tr.dim td.name, tr.dim td.brief { opacity: 0.9; }
+  .args { margin-top: 6px; }
+  pre { background: #0a1220; border: 1px solid #223347; padding: 10px; font-size: 11px;
+    white-space: pre; overflow-x: auto; margin: 0; max-height: 520px; overflow-y: auto; }
+  #copyBtn { margin: 8px 0; }
+  #copyBtn.copied { border-color: #ffcf5a; color: #ffcf5a; }
+  #picks { color: #70ffa0; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .kbd { color: #9fd8ff; }
+</style>
+</head>
+<body>
+<div id="wrap">
+<h1>SFX Lab — twelve event sounds, three candidates each</h1>
+<p class="sub">CS042 spec §1.6. Audition each candidate alone, then <span class="kbd">in context</span> against
+the build's own neighbours. Pick one per row; the copy-out block at the bottom emits the picked twelve as
+finished <code>AudioSys</code> methods. Audio starts on the first click (browser gesture gate).
+Picks persist in this browser only.</p>
+
+<h2>Volume — the game's own categories</h2>
+<div id="vols">
+  <label>Master <input type="range" id="volMaster" min="0" max="1" step="0.05" value="1"><span class="val" id="volMasterV">1.00</span></label>
+  <label>SFX <input type="range" id="volSfx" min="0" max="1" step="0.05" value="1"><span class="val" id="volSfxV">1.00</span></label>
+  <span class="hint">Same two-stage bus as the build: voice → SFX gain → master gain → speakers. 1.00 = unity, the
+  loudness the game ships at. Set these to what you actually play at before judging anything.</span>
+</div>
+
+<h2>The twelve</h2>
+<table id="grid">
+  <thead><tr>
+    <th>method · event</th><th>character brief (§1.4)</th>
+    <th>candidate A</th><th>candidate B</th><th>candidate C</th><th>context</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="hint"><span class="note">cargofull ↔ cargolost</span> share one radio: each cargolost is its
+cargofull's frequencies reversed, by construction. A cargofull audition plays the pair (full, then lost).
+A chainsever audition plays the <em>picked</em> cargolost first, then the candidate, so "audibly smaller" is
+a comparison, not a guess. <span class="note">health</span> has no powertag row by design (no collect_ line).
+The powertag/powerfade roots are one shared table (<code>POWERTAG_ROOT</code>); the three candidates differ in
+how the root is voiced, not in the roots.</p>
+
+<h2>Copy-out — the twelve picked candidates, paste-ready</h2>
+<div id="picks"></div>
+<button id="copyBtn">Copy to clipboard</button>
+<pre id="out"></pre>
+<p class="hint">Constants go with the other tuning constants (<code>POWERTAG_ROOT</code> beside
+<code>POWERUP_COLOR</code>); the methods go inside <code>AudioSys</code> after <code>scooploss()</code>.
+Nothing else is needed — every method is <code>this.ctx</code>-guarded and routes into <code>this.sfx</code>.</p>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================================================
+// PORTED VERBATIM from orbital-overhaul.html — the neighbours, and the constants lowhp() reads.
+// These are the lab's only port-in. Do not edit them here; if the build's change, re-copy.
+// ============================================================================================
+const LOWHP_ROOT_FREQ        = 220;   // Hz — unchanged root pitch of the old constant-tone voice
+const LOWHP_HARMONIC_RATIO   = 1.5;   // a fifth above the root (2.0 would be an octave)
+const LOWHP_HARMONIC_GAIN_FRAC = 0.35; // harmonic partner's level as a fraction of the root's
+const LOWHP_PULSE_RATE_MIN   = 0.9;   // Hz — gentle "hey" pulse at the threshold (t=0)
+const LOWHP_PULSE_DEPTH      = 0.5;   // amplitude-LFO depth/offset — pulseGain swings ~0..1
+const LOWHP_GAIN_MIN         = 0.08;  // peak root gain at t=0 — in thrust's (0.10) neighborhood
+
+const AudioSys = {
+  ctx: null,
+  vol: { master: 1, sfx: 1 },
+  master: null, sfx: null,
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain(); this.master.gain.value = this.vol.master; this.master.connect(this.ctx.destination);
+    this.sfx    = this.ctx.createGain(); this.sfx.gain.value    = this.vol.sfx;    this.sfx.connect(this.master);
+  },
+  setVol(cat, v) {
+    this.vol[cat] = v;
+    const node = this[cat];
+    if (node) node.gain.value = v;
+  },
+  resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+  now() { return this.ctx ? this.ctx.currentTime : 0; },
+
+  explosion(size) { // size 1..3, bigger = deeper/longer
+    if (!this.ctx) return;
+    const t = this.now();
+    const dur = 0.25 + size * 0.15;
+    const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 1.6);
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = "lowpass";
+    filt.frequency.setValueAtTime(900 - size * 180, t);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(filt).connect(g).connect(this.sfx);
+    src.start(t);
+  },
+
+  shieldPing() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(1400, t);
+    o.frequency.exponentialRampToValueAtTime(500, t + 0.18);
+    g.gain.setValueAtTime(0.14, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    o.connect(g).connect(this.sfx);
+    o.start(t); o.stop(t + 0.21);
+  },
+
+  lowhp(on) {
+    if (!this.ctx) return;
+    if (on && !this.lowhpOsc) {
+      const root = this.ctx.createOscillator();
+      const harm = this.ctx.createOscillator();
+      const rootLevel = this.ctx.createGain();
+      const harmLevel = this.ctx.createGain();
+      const pulseGain = this.ctx.createGain();
+      const lfo = this.ctx.createOscillator();
+      const lfoGain = this.ctx.createGain();
+      root.type = "sine"; root.frequency.value = LOWHP_ROOT_FREQ;
+      harm.type = "sine"; harm.frequency.value = LOWHP_ROOT_FREQ * LOWHP_HARMONIC_RATIO;
+      rootLevel.gain.value = LOWHP_GAIN_MIN;
+      harmLevel.gain.value = LOWHP_GAIN_MIN * LOWHP_HARMONIC_GAIN_FRAC;
+      lfo.type = "sine"; lfo.frequency.value = LOWHP_PULSE_RATE_MIN;
+      lfoGain.gain.value = LOWHP_PULSE_DEPTH;
+      pulseGain.gain.value = LOWHP_PULSE_DEPTH;      // DC offset; lfo swings it ~0..2*depth (~0..1)
+      lfo.connect(lfoGain).connect(pulseGain.gain);
+      root.connect(rootLevel).connect(pulseGain);
+      harm.connect(harmLevel).connect(pulseGain);
+      pulseGain.connect(this.sfx);
+      root.start(); harm.start(); lfo.start();
+      this.lowhpOsc = { root, harm, lfo };
+      this.lowhpGain = { rootLevel, harmLevel, pulseGain, lfoGain };
+      this.lowhpT = null;   // forces lowhpSet's next call to actually ramp (idempotency guard)
+    } else if (!on && this.lowhpOsc) {
+      this.lowhpOsc.root.stop(); this.lowhpOsc.harm.stop(); this.lowhpOsc.lfo.stop();
+      this.lowhpOsc = null; this.lowhpGain = null; this.lowhpT = null;
+    }
+  },
+
+  pickup() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.exponentialRampToValueAtTime(620, t + 0.08);
+    g.gain.setValueAtTime(0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    o.connect(g).connect(this.sfx);
+    o.start(t); o.stop(t + 0.13);
+  },
+
+  deliver(count) { // pitch climbs with each canister in a delivery run
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "triangle";
+    o.frequency.value = 440 * Math.pow(1.06, Math.min(count, 20));
+    g.gain.setValueAtTime(0.13, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g).connect(this.sfx);
+    o.start(t); o.stop(t + 0.16);
+  },
+
+  hit() { // ship takes hull damage — a low, heavy descending thud (distinct from fire)
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(200, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.18);
+    g.gain.setValueAtTime(0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.connect(g).connect(this.sfx);
+    o.start(t); o.stop(t + 0.23);
+  },
+
+  powerup() { // collected a powerup — a bright two-note rising "power on" chime (distinct from pickup)
+    if (!this.ctx) return;
+    const t = this.now();
+    [660, 990].forEach((f, i) => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, t + i * 0.07);
+      const g0 = 0.12;
+      g.gain.setValueAtTime(g0, t + i * 0.07);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.14);
+      o.connect(g).connect(this.sfx);
+      o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.15);
+    });
+  },
+
+  achievement() { // an achievement unlocked — a short rising three-note fanfare (distinct from powerup)
+    if (!this.ctx) return;
+    const t = this.now();
+    [523, 659, 784].forEach((f, i) => { // C5 - E5 - G5 major triad
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, t + i * 0.09);
+      g.gain.setValueAtTime(0.11, t + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.2);
+      o.connect(g).connect(this.sfx);
+      o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.22);
+    });
+  },
+};
+// DOCK_OFFLOAD_INTERVAL in the build: seconds between canister pops at the dock. Context only.
+const DOCK_OFFLOAD_INTERVAL = 0.05;
+
+// ============================================================================================
+// The constants the copy-out emits. CARGOFULL_FREQS is `let` HERE ONLY so the lab can point it at
+// whichever cargofull candidate is being auditioned; in the build it is a const. Every
+// cargofull/cargolost/chainsever candidate reads it and nothing else — that is the "by construction".
+// ============================================================================================
+let CARGOFULL_FREQS = null;
+
+// Per-type roots for powertag()/powerfade() (spec §1.4): rapid high/bright · triple a third under ·
+// scoop mid · magnet mid-low · engine low · guard low with a doubled octave. Each entry is the list
+// of frequencies the tag voices, so "doubled octave" is data, not a special case in the method. Lives
+// beside POWERUP_COLOR in the build so a new powerup type is a one-row edit here too.
+const POWERTAG_ROOT = {
+  rapid:  [1047],        // C6
+  triple: [831],         // G#5 — a third under rapid
+  scoop:  [659],         // E5
+  magnet: [523],         // C5
+  engine: [330],         // E4
+  guard:  [262, 523]     // C4 + its octave
+};
+
+// ============================================================================================
+// THE CANDIDATES. Each entry's method is named exactly as it will be in AudioSys and is written in
+// the shipped idiom; the copy-out prints it with Function.prototype.toString. `freqs` on a cargofull
+// candidate is what CARGOFULL_FREQS becomes if that pair is picked.
+// ============================================================================================
+const CAND = {
+  cargofull: [
+    { label: "Stepped arpeggio", freqs: [330, 415, 494, 659],
+      cargofull() { // CS042 §1.4 "Filling up" — a stepped climb that lands on a held top and latches shut
+        if (!this.ctx) return;
+        const t = this.now();
+        const F = CARGOFULL_FREQS, step = 0.075, tEnd = t + F.length * step;
+        F.forEach((f, i) => {
+          const last = i === F.length - 1, t0 = t + i * step;
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "triangle";
+          o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(last ? 0.14 : 0.10, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + (last ? 0.38 : 0.13));
+          o.connect(g).connect(this.sfx);
+          o.start(t0); o.stop(t0 + (last ? 0.4 : 0.14));
+        });
+        const latch = this.ctx.createOscillator(); // the "clunk" — the tank is sealed
+        const lg = this.ctx.createGain();
+        latch.type = "square";
+        latch.frequency.setValueAtTime(F[F.length - 1] / 2, tEnd + 0.05);
+        lg.gain.setValueAtTime(0.06, tEnd + 0.05);
+        lg.gain.exponentialRampToValueAtTime(0.001, tEnd + 0.11);
+        latch.connect(lg).connect(this.sfx);
+        latch.start(tEnd + 0.05); latch.stop(tEnd + 0.12);
+      } },
+    { label: "Filter sweep", freqs: [165, 660],
+      cargofull() { // CS042 §1.4 "Filling up" — one continuous rise: two detuned saws glide up as the lowpass opens, then a hard stop
+        if (!this.ctx) return;
+        const t = this.now();
+        const [f0, f1] = CARGOFULL_FREQS, dur = 0.34;
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.Q.value = 4;
+        filt.frequency.setValueAtTime(260, t);
+        filt.frequency.exponentialRampToValueAtTime(3600, t + dur);
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.09, t);
+        g.gain.setValueAtTime(0.09, t + dur);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.05); // the stop — full, done
+        [0, 7].forEach(cents => {
+          const o = this.ctx.createOscillator();
+          o.type = "sawtooth"; o.detune.value = cents;
+          o.frequency.setValueAtTime(f0, t);
+          o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+          o.connect(filt);
+          o.start(t); o.stop(t + dur + 0.06);
+        });
+        filt.connect(g).connect(this.sfx);
+        const cap = this.ctx.createOscillator(); // the latch: a short high tick at the top
+        const cg = this.ctx.createGain();
+        cap.type = "sine"; cap.frequency.value = f1 * 2;
+        cg.gain.setValueAtTime(0.08, t + dur);
+        cg.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.09);
+        cap.connect(cg).connect(this.sfx);
+        cap.start(t + dur); cap.stop(t + dur + 0.1);
+      } },
+    { label: "Pulsed fill", freqs: [262, 330, 392, 523, 659, 784],
+      cargofull() { // CS042 §1.4 "Filling up" — quick sine pulses that climb and ACCELERATE, then hold a dyad at the top
+        if (!this.ctx) return;
+        const t = this.now();
+        const F = CARGOFULL_FREQS;
+        let t0 = t;
+        F.forEach((f, i) => {
+          const last = i === F.length - 1;
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.11, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + (last ? 0.3 : 0.05));
+          o.connect(g).connect(this.sfx);
+          o.start(t0); o.stop(t0 + (last ? 0.31 : 0.06));
+          if (last) { // the latch: the step below sounds WITH the top, a held dyad
+            const u = this.ctx.createOscillator();
+            const ug = this.ctx.createGain();
+            u.type = "sine"; u.frequency.setValueAtTime(F[F.length - 2], t0);
+            ug.gain.setValueAtTime(0.07, t0);
+            ug.gain.exponentialRampToValueAtTime(0.001, t0 + 0.3);
+            u.connect(ug).connect(this.sfx);
+            u.start(t0); u.stop(t0 + 0.31);
+          }
+          t0 += 0.10 - i * 0.012; // gaps shrink: the fill speeds up as it tops off
+        });
+      } },
+  ],
+  cargolost: [
+    { label: "Stepped arpeggio, reversed",
+      cargolost() { // CS042 §1.4 "Running out" — cargofull's steps top-down, each softer, ending in an empty knock
+        if (!this.ctx) return;
+        const t = this.now();
+        const R = CARGOFULL_FREQS.slice().reverse(), step = 0.075, tEnd = t + R.length * step;
+        R.forEach((f, i) => {
+          const t0 = t + i * step;
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "triangle";
+          o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.13 - i * 0.02, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.13);
+          o.connect(g).connect(this.sfx);
+          o.start(t0); o.stop(t0 + 0.14);
+        });
+        const knock = this.ctx.createOscillator(); // the empty-tank knock, an octave under the bottom step
+        const kg = this.ctx.createGain();
+        knock.type = "square";
+        knock.frequency.setValueAtTime(R[R.length - 1] / 2, tEnd);
+        knock.frequency.exponentialRampToValueAtTime(R[R.length - 1] / 4, tEnd + 0.16);
+        kg.gain.setValueAtTime(0.09, tEnd);
+        kg.gain.exponentialRampToValueAtTime(0.001, tEnd + 0.22);
+        knock.connect(kg).connect(this.sfx);
+        knock.start(tEnd); knock.stop(tEnd + 0.23);
+      } },
+    { label: "Filter sweep, reversed",
+      cargolost() { // CS042 §1.4 "Running out" — cargofull's sweep run backwards: saws slide down as the lowpass closes, draining out
+        if (!this.ctx) return;
+        const t = this.now();
+        const [f1, f0] = CARGOFULL_FREQS.slice().reverse(), dur = 0.42;
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.Q.value = 4;
+        filt.frequency.setValueAtTime(3600, t);
+        filt.frequency.exponentialRampToValueAtTime(180, t + dur);
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.10, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.1); // no stop — it just runs out
+        [0, 7].forEach(cents => {
+          const o = this.ctx.createOscillator();
+          o.type = "sawtooth"; o.detune.value = cents;
+          o.frequency.setValueAtTime(f1, t);
+          o.frequency.exponentialRampToValueAtTime(f0, t + dur);
+          o.connect(filt);
+          o.start(t); o.stop(t + dur + 0.11);
+        });
+        filt.connect(g).connect(this.sfx);
+      } },
+    { label: "Pulsed fill, reversed",
+      cargolost() { // CS042 §1.4 "Running out" — the pulses top-down, DECELERATING and fading: the tank emptying
+        if (!this.ctx) return;
+        const t = this.now();
+        const R = CARGOFULL_FREQS.slice().reverse();
+        let t0 = t;
+        R.forEach((f, i) => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.12 - i * 0.012, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
+          o.connect(g).connect(this.sfx);
+          o.start(t0); o.stop(t0 + 0.07);
+          t0 += 0.05 + i * 0.018; // gaps grow: the fill runs down and stalls
+        });
+      } },
+  ],
+  chainsever: [
+    { label: "Half the fall",
+      chainsever() { // CS042 §1.4 — a SMALLER cargolost: only the top half of the reversed steps, softer, no knock at the bottom
+        if (!this.ctx) return;
+        const t = this.now();
+        const R = CARGOFULL_FREQS.slice().reverse().slice(0, Math.ceil(CARGOFULL_FREQS.length / 2)), step = 0.06;
+        R.forEach((f, i) => {
+          const t0 = t + i * step;
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "triangle";
+          o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.08, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.1);
+          o.connect(g).connect(this.sfx);
+          o.start(t0); o.stop(t0 + 0.11);
+        });
+      } },
+    { label: "One notch down",
+      chainsever() { // CS042 §1.4 — a SMALLER cargolost: a single slide from the top step to the one below it — one notch lost, not the tank
+        if (!this.ctx) return;
+        const t = this.now();
+        const R = CARGOFULL_FREQS.slice().reverse();
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = "triangle";
+        o.frequency.setValueAtTime(R[0], t);
+        o.frequency.exponentialRampToValueAtTime(R[Math.min(1, R.length - 1)], t + 0.11);
+        g.gain.setValueAtTime(0.09, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        o.connect(g).connect(this.sfx);
+        o.start(t); o.stop(t + 0.15);
+      } },
+    { label: "Muffled drop",
+      chainsever() { // CS042 §1.4 — a SMALLER cargolost: the whole reversed run at double speed, quiet, through a closed lowpass — heard at a distance
+        if (!this.ctx) return;
+        const t = this.now();
+        const R = CARGOFULL_FREQS.slice().reverse(), step = 0.035;
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.frequency.value = 900;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.07, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + R.length * step + 0.08);
+        R.forEach((f, i) => {
+          const t0 = t + i * step;
+          const o = this.ctx.createOscillator();
+          o.type = "square";
+          o.frequency.setValueAtTime(f, t0);
+          o.connect(filt);
+          o.start(t0); o.stop(t0 + step + 0.01);
+        });
+        filt.connect(g).connect(this.sfx);
+      } },
+  ],
+  guardblock: [
+    { label: "Bell partials",
+      guardblock() { // CS042 §1.4 — metallic, armoured: three INHARMONIC sine partials struck at once, the high ones dying first (a struck plate, not the ship's sine chirp)
+        if (!this.ctx) return;
+        const t = this.now();
+        [[1, 0.12, 0.34], [2.76, 0.07, 0.18], [5.40, 0.04, 0.09]].forEach(([ratio, g0, dur]) => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(410 * ratio, t);
+          g.gain.setValueAtTime(g0, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+          o.connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + dur + 0.01);
+        });
+      } },
+    { label: "Clang",
+      guardblock() { // CS042 §1.4 — metallic, armoured: a narrow-band noise clang (high-Q bandpass) over a short square body — impact on armour
+        if (!this.ctx) return;
+        const t = this.now();
+        const dur = 0.22;
+        const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.2);
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        const bp = this.ctx.createBiquadFilter();
+        bp.type = "bandpass"; bp.frequency.value = 2400; bp.Q.value = 14;
+        const ng = this.ctx.createGain();
+        ng.gain.setValueAtTime(0.5, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        src.connect(bp).connect(ng).connect(this.sfx);
+        src.start(t);
+        const o = this.ctx.createOscillator(); // the body — a short, hard square thump under the clang
+        const g = this.ctx.createGain();
+        o.type = "square";
+        o.frequency.setValueAtTime(180, t);
+        o.frequency.exponentialRampToValueAtTime(120, t + 0.08);
+        g.gain.setValueAtTime(0.1, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+        o.connect(g).connect(this.sfx);
+        o.start(t); o.stop(t + 0.1);
+      } },
+    { label: "Armour plate",
+      guardblock() { // CS042 §1.4 — metallic, armoured: a square that drops fast (the hit) with one high sine partial that rings on (the plate)
+        if (!this.ctx) return;
+        const t = this.now();
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = "square";
+        o.frequency.setValueAtTime(1100, t);
+        o.frequency.exponentialRampToValueAtTime(700, t + 0.05);
+        g.gain.setValueAtTime(0.1, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+        o.connect(g).connect(this.sfx);
+        o.start(t); o.stop(t + 0.08);
+        const ring = this.ctx.createOscillator();
+        const rg = this.ctx.createGain();
+        ring.type = "sine"; ring.frequency.value = 3300;
+        rg.gain.setValueAtTime(0.06, t);
+        rg.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+        ring.connect(rg).connect(this.sfx);
+        ring.start(t); ring.stop(t + 0.27);
+      } },
+  ],
+  levelup: [
+    { label: "Brass fifth",
+      levelup() { // CS042 §1.4 — confident, rising: two lowpassed saws a fifth apart, the second held with an octave under it (brass, not achievement()'s triangle triad)
+        if (!this.ctx) return;
+        const t = this.now();
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.frequency.value = 1800;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.11, t);
+        g.gain.setValueAtTime(0.11, t + 0.12);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.62);
+        [[392, 0, 0.12], [587, 0.12, 0.5], [294, 0.12, 0.5]].forEach(([f, at, dur]) => { // G4, then D5 over D4
+          const o = this.ctx.createOscillator();
+          o.type = "sawtooth";
+          o.frequency.setValueAtTime(f, t + at);
+          o.connect(filt);
+          o.start(t + at); o.stop(t + at + dur);
+        });
+        filt.connect(g).connect(this.sfx);
+      } },
+    { label: "Gliss to hold",
+      levelup() { // CS042 §1.4 — confident, rising: one square sweeps up an octave and HOLDS, a triangle octave doubling it — a siren that resolves
+        if (!this.ctx) return;
+        const t = this.now();
+        [["square", 330, 660, 0.09], ["triangle", 660, 1320, 0.05]].forEach(([type, f0, f1, g0]) => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = type;
+          o.frequency.setValueAtTime(f0, t);
+          o.frequency.exponentialRampToValueAtTime(f1, t + 0.15);
+          g.gain.setValueAtTime(g0, t);
+          g.gain.setValueAtTime(g0, t + 0.15);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+          o.connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + 0.51);
+        });
+      } },
+    { label: "Quartal climb",
+      levelup() { // CS042 §1.4 — confident, rising: three square notes stacked in FOURTHS (D4 G4 C5), fast — open and bright, not achievement()'s major triad
+        if (!this.ctx) return;
+        const t = this.now();
+        [294, 392, 523].forEach((f, i) => {
+          const last = i === 2, t0 = t + i * 0.06;
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "square";
+          o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.08, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + (last ? 0.4 : 0.1));
+          o.connect(g).connect(this.sfx);
+          o.start(t0); o.stop(t0 + (last ? 0.41 : 0.11));
+        });
+      } },
+  ],
+  hullfull: [
+    { label: "Warm dyad swell",
+      hullfull() { // CS042 §1.4 — soft, warm, settled: two sines a major third apart SWELL in and fade — quieter than powerup(), no attack
+        if (!this.ctx) return;
+        const t = this.now();
+        [330, 415].forEach(f => { // E4 + G#4
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(f, t);
+          g.gain.setValueAtTime(0.001, t);
+          g.gain.linearRampToValueAtTime(0.06, t + 0.14);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+          o.connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + 0.71);
+        });
+      } },
+    { label: "Settling down",
+      hullfull() { // CS042 §1.4 — soft, warm, settled: a single sine drifts DOWN a fourth and comes to rest — the hull sighing into place
+        if (!this.ctx) return;
+        const t = this.now();
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = "sine";
+        o.frequency.setValueAtTime(440, t);
+        o.frequency.exponentialRampToValueAtTime(330, t + 0.4);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+        o.connect(g).connect(this.sfx);
+        o.start(t); o.stop(t + 0.76);
+      } },
+    { label: "Soft ding",
+      hullfull() { // CS042 §1.4 — soft, warm, settled: one lowpassed triangle ding with a long tail over a quiet sine an octave under
+        if (!this.ctx) return;
+        const t = this.now();
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.frequency.value = 1200;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.05, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+        const o = this.ctx.createOscillator();
+        o.type = "triangle"; o.frequency.value = 880;
+        o.connect(filt);
+        o.start(t); o.stop(t + 0.71);
+        filt.connect(g).connect(this.sfx);
+        const u = this.ctx.createOscillator();
+        const ug = this.ctx.createGain();
+        u.type = "sine"; u.frequency.value = 440;
+        ug.gain.setValueAtTime(0.035, t);
+        ug.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        u.connect(ug).connect(this.sfx);
+        u.start(t); u.stop(t + 0.61);
+      } },
+  ],
+  hullrelief: [
+    { label: "Breath out",
+      hullrelief() { // CS042 §1.4 — an exhale: a noise breath whose lowpass CLOSES as it fades — air leaving, no pitch at all
+        if (!this.ctx) return;
+        const t = this.now();
+        const dur = 0.5;
+        const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.Q.value = 1.5;
+        filt.frequency.setValueAtTime(2400, t);
+        filt.frequency.exponentialRampToValueAtTime(260, t + dur);
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.11, t + 0.06);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        src.connect(filt).connect(g).connect(this.sfx);
+        src.start(t);
+      } },
+    { label: "Sigh",
+      hullrelief() { // CS042 §1.4 — an exhale: a sine slides gently down with a slow vibrato — a voiced sigh
+        if (!this.ctx) return;
+        const t = this.now();
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        const lfo = this.ctx.createOscillator();
+        const lfoGain = this.ctx.createGain();
+        o.type = "sine";
+        o.frequency.setValueAtTime(520, t);
+        o.frequency.exponentialRampToValueAtTime(330, t + 0.5);
+        lfo.type = "sine"; lfo.frequency.value = 5.5;
+        lfoGain.gain.value = 9;
+        lfo.connect(lfoGain).connect(o.frequency);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.07, t + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        o.connect(g).connect(this.sfx);
+        o.start(t); lfo.start(t); o.stop(t + 0.61); lfo.stop(t + 0.61);
+      } },
+    { label: "Resolve",
+      hullrelief() { // CS042 §1.4 — an exhale: a suspended note steps DOWN onto a longer, resting one — tension released as an interval
+        if (!this.ctx) return;
+        const t = this.now();
+        [[494, 0, 0.16, 0.07], [440, 0.14, 0.55, 0.06]].forEach(([f, at, dur, g0]) => { // B4 falling to A4
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(f, t + at);
+          g.gain.setValueAtTime(g0, t + at);
+          g.gain.exponentialRampToValueAtTime(0.001, t + at + dur);
+          o.connect(g).connect(this.sfx);
+          o.start(t + at); o.stop(t + at + dur + 0.01);
+        });
+      } },
+  ],
+  hullcritical: [
+    { label: "Stab",
+      hullcritical() { // CS042 §1.4 — an alarm hit over the siren's fade-up: a hard square TRITONE stab, gone in 80 ms
+        if (!this.ctx) return;
+        const t = this.now();
+        [440, 622].forEach(f => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "square";
+          o.frequency.setValueAtTime(f, t);
+          g.gain.setValueAtTime(0.09, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+          o.connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + 0.1);
+        });
+      } },
+    { label: "Klaxon hit",
+      hullcritical() { // CS042 §1.4 — an alarm hit over the siren's fade-up: a highpassed noise crack over a low square thump — impact, then the siren
+        if (!this.ctx) return;
+        const t = this.now();
+        const dur = 0.12;
+        const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = "highpass"; hp.frequency.value = 1500;
+        const ng = this.ctx.createGain();
+        ng.gain.setValueAtTime(0.35, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        src.connect(hp).connect(ng).connect(this.sfx);
+        src.start(t);
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = "square";
+        o.frequency.setValueAtTime(110, t);
+        o.frequency.exponentialRampToValueAtTime(60, t + 0.16);
+        g.gain.setValueAtTime(0.16, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        o.connect(g).connect(this.sfx);
+        o.start(t); o.stop(t + 0.21);
+      } },
+    { label: "Double beep",
+      hullcritical() { // CS042 §1.4 — an alarm hit over the siren's fade-up: two fast square pips, high and identical — a cockpit alert, faster than the siren can pulse
+        if (!this.ctx) return;
+        const t = this.now();
+        [0, 0.1].forEach(at => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "square";
+          o.frequency.setValueAtTime(880, t + at);
+          g.gain.setValueAtTime(0.1, t + at);
+          g.gain.exponentialRampToValueAtTime(0.001, t + at + 0.06);
+          o.connect(g).connect(this.sfx);
+          o.start(t + at); o.stop(t + at + 0.07);
+        });
+      } },
+  ],
+  powertag: [
+    { label: "Pluck tag",
+      powertag(type) { // CS042 §1.4 — one short triangle tag on the type's root, timed to land just after powerup()'s second note (the 0.16 s offset is INSIDE, like bankspend())
+        if (!this.ctx) return;
+        const t = this.now() + 0.16;
+        (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(f => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "triangle";
+          o.frequency.setValueAtTime(f, t);
+          g.gain.setValueAtTime(0.1, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+          o.connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + 0.17);
+        });
+      } },
+    { label: "Root-fifth flick",
+      powertag(type) { // CS042 §1.4 — the root then its fifth, two quick sines: an upward flick that names the type by where it sits
+        if (!this.ctx) return;
+        const t = this.now() + 0.16;
+        (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(root => {
+          [root, root * 1.5].forEach((f, i) => {
+            const t0 = t + i * 0.055;
+            const o = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            o.type = "sine";
+            o.frequency.setValueAtTime(f, t0);
+            g.gain.setValueAtTime(0.09, t0);
+            g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.1);
+            o.connect(g).connect(this.sfx);
+            o.start(t0); o.stop(t0 + 0.11);
+          });
+        });
+      } },
+    { label: "Stamp",
+      powertag(type) { // CS042 §1.4 — a square on the root through a lowpass that snaps SHUT: a stamp on the powerup, bright then dull in 0.12 s
+        if (!this.ctx) return;
+        const t = this.now() + 0.16;
+        (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(f => {
+          const o = this.ctx.createOscillator();
+          const filt = this.ctx.createBiquadFilter();
+          const g = this.ctx.createGain();
+          o.type = "square"; o.frequency.setValueAtTime(f, t);
+          filt.type = "lowpass";
+          filt.frequency.setValueAtTime(f * 6, t);
+          filt.frequency.exponentialRampToValueAtTime(f, t + 0.12);
+          g.gain.setValueAtTime(0.08, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+          o.connect(filt).connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + 0.14);
+        });
+      } },
+  ],
+  powerfade: [
+    { label: "Pluck tag, inverted",
+      powerfade(type) { // CS042 §1.4 — powertag() inverted: the same triangle on the same root, sliding DOWN an octave as it goes; no chime before it
+        if (!this.ctx) return;
+        const t = this.now();
+        (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(f => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "triangle";
+          o.frequency.setValueAtTime(f, t);
+          o.frequency.exponentialRampToValueAtTime(f / 2, t + 0.26);
+          g.gain.setValueAtTime(0.09, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+          o.connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + 0.29);
+        });
+      } },
+    { label: "Fifth-root flick, inverted",
+      powerfade(type) { // CS042 §1.4 — powertag() inverted: the fifth then the root, the flick running downward
+        if (!this.ctx) return;
+        const t = this.now();
+        (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(root => {
+          [root * 1.5, root].forEach((f, i) => {
+            const t0 = t + i * 0.07;
+            const o = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            o.type = "sine";
+            o.frequency.setValueAtTime(f, t0);
+            g.gain.setValueAtTime(0.08, t0);
+            g.gain.exponentialRampToValueAtTime(0.001, t0 + (i ? 0.18 : 0.1));
+            o.connect(g).connect(this.sfx);
+            o.start(t0); o.stop(t0 + (i ? 0.19 : 0.11));
+          });
+        });
+      } },
+    { label: "Stamp, inverted",
+      powerfade(type) { // CS042 §1.4 — powertag() inverted: the square on the root drops an octave while the lowpass closes — the stamp wearing off
+        if (!this.ctx) return;
+        const t = this.now();
+        (POWERTAG_ROOT[type] || POWERTAG_ROOT.scoop).forEach(f => {
+          const o = this.ctx.createOscillator();
+          const filt = this.ctx.createBiquadFilter();
+          const g = this.ctx.createGain();
+          o.type = "square";
+          o.frequency.setValueAtTime(f, t);
+          o.frequency.exponentialRampToValueAtTime(f / 2, t + 0.22);
+          filt.type = "lowpass";
+          filt.frequency.setValueAtTime(f * 4, t);
+          filt.frequency.exponentialRampToValueAtTime(f / 2, t + 0.22);
+          g.gain.setValueAtTime(0.08, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+          o.connect(filt).connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + 0.25);
+        });
+      } },
+  ],
+  haulsize: [
+    { label: "Stacked chord",
+      haulsize(n) { // CS042 §1.4 — the tier stinger: one triangle note per 5 canisters, stacked in fifths and octaves and sounding TOGETHER, held longer the bigger the haul
+        if (!this.ctx) return;
+        const t = this.now();
+        const tier = Math.max(1, Math.min(4, Math.floor(n / 5)));
+        const dur = 0.25 + tier * 0.12;
+        [330, 495, 660, 990, 1320].slice(0, tier + 1).forEach(f => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "triangle";
+          o.frequency.setValueAtTime(f, t);
+          g.gain.setValueAtTime(0.07, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+          o.connect(g).connect(this.sfx);
+          o.start(t); o.stop(t + dur + 0.01);
+        });
+      } },
+    { label: "Sweep length",
+      haulsize(n) { // CS042 §1.4 — the tier stinger: a lowpassed saw sweeps UP, further and longer per tier, and lands on a stop note — the size is how far it climbs
+        if (!this.ctx) return;
+        const t = this.now();
+        const tier = Math.max(1, Math.min(4, Math.floor(n / 5)));
+        const dur = 0.12 + tier * 0.09, f0 = 330, f1 = f0 * Math.pow(2, tier * 5 / 12);
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.frequency.value = 2200;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.1, t);
+        g.gain.setValueAtTime(0.1, t + dur);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.3);
+        const o = this.ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(f0, t);
+        o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+        o.connect(filt).connect(g).connect(this.sfx);
+        o.start(t); o.stop(t + dur + 0.31);
+      } },
+    { label: "Counted hits",
+      haulsize(n) { // CS042 §1.4 — the tier stinger: one square dyad hit PER TIER (5 = one, 20 = four), then a higher landing note — the player counts how big
+        if (!this.ctx) return;
+        const t = this.now();
+        const tier = Math.max(1, Math.min(4, Math.floor(n / 5)));
+        for (let i = 0; i < tier; i++) {
+          [440, 660].forEach(f => {
+            const t0 = t + i * 0.09;
+            const o = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            o.type = "square";
+            o.frequency.setValueAtTime(f, t0);
+            g.gain.setValueAtTime(0.06, t0);
+            g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.07);
+            o.connect(g).connect(this.sfx);
+            o.start(t0); o.stop(t0 + 0.08);
+          });
+        }
+        const tl = t + tier * 0.09 + 0.03;
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = "triangle";
+        o.frequency.setValueAtTime(880, tl);
+        g.gain.setValueAtTime(0.11, tl);
+        g.gain.exponentialRampToValueAtTime(0.001, tl + 0.3);
+        o.connect(g).connect(this.sfx);
+        o.start(tl); o.stop(tl + 0.31);
+      } },
+  ],
+  megadelivery: [
+    { label: "Fanfare",
+      megadelivery() { // CS042 §1.4 — the largest cue in the game: four saws stack into a C-major chord under a noise crash, with a sub an octave under the root, ~1.2 s
+        if (!this.ctx) return;
+        const t = this.now();
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.frequency.value = 2600;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.09, t);
+        g.gain.setValueAtTime(0.09, t + 0.5);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+        [262, 330, 392, 523].forEach((f, i) => { // C4 E4 G4 C5, each entering and STAYING
+          const o = this.ctx.createOscillator();
+          o.type = "sawtooth";
+          o.frequency.setValueAtTime(f, t + i * 0.08);
+          o.connect(filt);
+          o.start(t + i * 0.08); o.stop(t + 1.21);
+        });
+        filt.connect(g).connect(this.sfx);
+        const sub = this.ctx.createOscillator();
+        const sg = this.ctx.createGain();
+        sub.type = "sine"; sub.frequency.value = 131;
+        sg.gain.setValueAtTime(0.14, t);
+        sg.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+        sub.connect(sg).connect(this.sfx);
+        sub.start(t); sub.stop(t + 1.11);
+        const dur = 0.5;
+        const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.4);
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = "highpass"; hp.frequency.value = 3000;
+        const ng = this.ctx.createGain();
+        ng.gain.setValueAtTime(0.18, t + 0.24);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.24 + dur);
+        src.connect(hp).connect(ng).connect(this.sfx);
+        src.start(t + 0.24);
+      } },
+    { label: "Rocket up",
+      megadelivery() { // CS042 §1.4 — the largest cue in the game: two detuned saws launch up three octaves as the lowpass opens, then land on a held major triad
+        if (!this.ctx) return;
+        const t = this.now();
+        const rise = 0.6;
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass"; filt.Q.value = 3;
+        filt.frequency.setValueAtTime(200, t);
+        filt.frequency.exponentialRampToValueAtTime(5000, t + rise);
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.1, t);
+        g.gain.setValueAtTime(0.1, t + rise);
+        g.gain.exponentialRampToValueAtTime(0.001, t + rise + 0.06);
+        [0, 9].forEach(cents => {
+          const o = this.ctx.createOscillator();
+          o.type = "sawtooth"; o.detune.value = cents;
+          o.frequency.setValueAtTime(110, t);
+          o.frequency.exponentialRampToValueAtTime(880, t + rise);
+          o.connect(filt);
+          o.start(t); o.stop(t + rise + 0.07);
+        });
+        filt.connect(g).connect(this.sfx);
+        [523, 659, 784, 1047].forEach(f => { // the landing: C5 E5 G5 C6 held
+          const o = this.ctx.createOscillator();
+          const cg = this.ctx.createGain();
+          o.type = "triangle"; o.frequency.setValueAtTime(f, t + rise);
+          cg.gain.setValueAtTime(0.08, t + rise);
+          cg.gain.exponentialRampToValueAtTime(0.001, t + rise + 0.7);
+          o.connect(cg).connect(this.sfx);
+          o.start(t + rise); o.stop(t + rise + 0.71);
+        });
+      } },
+    { label: "Cash-in bells",
+      megadelivery() { // CS042 §1.4 — the largest cue in the game: an eight-note sine bell run that dives and climbs back higher than it started, over a slow low pulse
+        if (!this.ctx) return;
+        const t = this.now();
+        [1568, 1319, 1047, 784, 1047, 1319, 1568, 2093].forEach((f, i) => {
+          const t0 = t + i * 0.09;
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.09, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + (i === 7 ? 0.7 : 0.3));
+          o.connect(g).connect(this.sfx);
+          o.start(t0); o.stop(t0 + (i === 7 ? 0.71 : 0.31));
+        });
+        [0, 0.36, 0.72].forEach(at => { // the low pulse under the run
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(131, t + at);
+          g.gain.setValueAtTime(0.12, t + at);
+          g.gain.exponentialRampToValueAtTime(0.001, t + at + 0.3);
+          o.connect(g).connect(this.sfx);
+          o.start(t + at); o.stop(t + at + 0.31);
+        });
+      } },
+  ],
+};
+
+// ============================================================================================
+// Row table — one per sound, in §1.4's order. `pair` links cargofull/cargolost's radios;
+// `arg` gives a row an argument selector; `ctx` is the context player (lab chrome, setTimeout
+// staggering is allowed HERE and nowhere inside a candidate).
+// ============================================================================================
+const POWERUP_TYPES = ["rapid", "triple", "scoop", "magnet", "engine", "guard"];
+const HAUL_TIERS = [5, 10, 15, 20];
+const SOUNDS = [
+  { name: "cargofull", serves: "cargo_full",
+    brief: "<em>Filling up.</em> Ascending, landing and latching — a tank topping off. The anchor sound.",
+    ctxLabel: "pickup() → cargofull", pairPlay: true,
+    ctx(k) { play("pickup"); at(0.05, () => cand("cargofull", k)); } },
+  { name: "cargolost", serves: "chain_lost", pair: "cargofull",
+    brief: "<em>Running out.</em> cargofull's frequencies REVERSED — matched by construction. Shares cargofull's pick.",
+    ctxLabel: "hit() + explosion(1) under cargolost",
+    ctx(k) { play("hit"); play("explosion", 1); cand("cargolost", k); } },
+  { name: "chainsever", serves: "chain_broken",
+    brief: "A <em>smaller</em> cargolost. Must be audibly lesser — partial loss vs total loss. Audition plays the picked cargolost first.",
+    ctxLabel: "explosion(1) under chainsever",
+    ctx(k) { play("explosion", 1); cand("chainsever", k); } },
+  { name: "guardblock", serves: "chain_guard",
+    brief: "Metallic, armoured. Distinguishable from the ship's own shield (shieldPing), which it borrows today.",
+    ctxLabel: "shieldPing() … then guardblock",
+    ctx(k) { play("shieldPing"); at(0.8, () => cand("guardblock", k)); } },
+  { name: "levelup", serves: "level",
+    brief: "Confident, rising. Distinct from achievement() — the two can land seconds apart at a level end.",
+    ctxLabel: "achievement() … then levelup",
+    ctx(k) { play("achievement"); at(0.7, () => cand("levelup", k)); } },
+  { name: "hullfull", serves: "health_full",
+    brief: "Soft, warm, settled. Quieter than powerup(); reassurance, not reward.",
+    ctxLabel: "powerup() … then hullfull",
+    ctx(k) { play("powerup"); at(0.8, () => cand("hullfull", k)); } },
+  { name: "hullrelief", serves: "health_relief",
+    brief: "An exhale. The audible half of the visual exhale flash, which has no partner today.",
+    ctxLabel: "lowhp(true) 1.6 s → lowhp(false) + hullrelief",
+    ctx(k) { play("lowhp", true); at(1.6, () => { play("lowhp", false); cand("hullrelief", k); }); } },
+  { name: "hullcritical", serves: "health_low",
+    brief: "An alarm hit punctuating the siren's fade-up. Additive — lowhp(true) is unchanged.",
+    ctxLabel: "lowhp(true) + hullcritical, siren off at 2.5 s",
+    ctx(k) { play("lowhp", true); cand("hullcritical", k); at(2.5, () => play("lowhp", false)); } },
+  { name: "powertag", serves: "collect_*", arg: "type",
+    brief: "A short tag note after the unchanged powerup() chime, on a per-type root (POWERTAG_ROOT).",
+    ctxLabel: "powerup() → powertag(type)",
+    ctx(k) { play("powerup"); cand("powertag", k); } },
+  { name: "powerfade", serves: "expire_*", arg: "type",
+    brief: "powertag() inverted: same root, descending, no preceding chime.",
+    ctxLabel: "powertag(type, picked) … 1.5 s … powerfade(type)",
+    ctx(k) { cand("powertag", picks.powertag); at(1.5, () => cand("powerfade", k)); } },
+  { name: "haulsize", serves: "dock_5/10/15/20", arg: "n",
+    brief: "A tier stinger over the per-canister deliver() climb — the player hears <em>how big</em>.",
+    ctxLabel: "n × deliver() at the dock cadence → haulsize(n)",
+    ctx(k) { const n = argOf("haulsize"); deliverRun(n, () => cand("haulsize", k)); } },
+  { name: "megadelivery", serves: "dock_24",
+    brief: "The largest cue in the game. The Super Mega Delivery is silent today.",
+    ctxLabel: "24 × deliver() → megadelivery",
+    ctx(k) { deliverRun(24, () => cand("megadelivery", k)); } },
+];
+
+// ---- picks ---------------------------------------------------------------------------------
+const PICK_KEY = "oo_sfx_lab_picks_v1";
+const picks = {};
+for (const s of SOUNDS) picks[s.name] = 0;
+try {
+  const saved = JSON.parse(localStorage.getItem(PICK_KEY) || "{}");
+  for (const s of SOUNDS) if ([0, 1, 2].includes(saved[s.name])) picks[s.name] = saved[s.name];
+} catch (e) { /* no storage — picks live for the page only */ }
+picks.cargolost = picks.cargofull;
+
+function setPick(name, k) {
+  picks[name] = k;
+  if (name === "cargofull" || name === "cargolost") { picks.cargofull = k; picks.cargolost = k; }
+  try { localStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) { /* ignore */ }
+  refreshPicks();
+}
+
+// ---- playback ------------------------------------------------------------------------------
+function ensureAudio() { AudioSys.init(); AudioSys.resume(); }
+function play(method, ...args) { ensureAudio(); AudioSys[method](...args); }
+function at(sec, fn) { setTimeout(fn, sec * 1000); } // lab chrome only — never inside a candidate
+function argOf(name) {
+  const sel = document.getElementById("arg-" + name);
+  if (!sel) return undefined;
+  return name === "haulsize" ? Number(sel.value) : sel.value;
+}
+// Audition candidate k of `name`. cargofull/cargolost/chainsever read CARGOFULL_FREQS, so it is
+// pointed at the right cargofull candidate first: the pair's own for cargofull/cargolost, and the
+// PICKED pair's for chainsever (which is judged against the picked cargolost).
+function cand(name, k) {
+  ensureAudio();
+  if (name === "cargofull" || name === "cargolost") CARGOFULL_FREQS = CAND.cargofull[k].freqs;
+  if (name === "chainsever") CARGOFULL_FREQS = CAND.cargofull[picks.cargofull].freqs;
+  const c = CAND[name][k];
+  const a = argOf(name);
+  c[name].call(AudioSys, a);
+  flash(name, k);
+}
+function audition(name, k) {
+  if (name === "cargofull") { cand("cargofull", k); at(0.9, () => cand("cargolost", k)); return; }
+  if (name === "chainsever") { cand("cargolost", picks.cargofull); at(0.8, () => cand("chainsever", k)); return; }
+  cand(name, k);
+}
+function deliverRun(n, then) {
+  ensureAudio();
+  for (let i = 1; i <= n; i++) at((i - 1) * DOCK_OFFLOAD_INTERVAL, () => AudioSys.deliver(i));
+  at((n - 1) * DOCK_OFFLOAD_INTERVAL, then); // the tier line fires on the pop that empties the chain
+}
+function flash(name, k) {
+  const b = document.getElementById("btn-" + name + "-" + k);
+  if (!b) return;
+  b.classList.add("playing");
+  setTimeout(() => b.classList.remove("playing"), 350);
+}
+
+// ---- volume --------------------------------------------------------------------------------
+for (const [id, cat] of [["volMaster", "master"], ["volSfx", "sfx"]]) {
+  const el = document.getElementById(id), v = document.getElementById(id + "V");
+  el.addEventListener("input", () => { AudioSys.setVol(cat, Number(el.value)); v.textContent = Number(el.value).toFixed(2); });
+}
+
+// ---- grid ----------------------------------------------------------------------------------
+const LETTERS = ["A", "B", "C"];
+function buildGrid() {
+  const tb = document.getElementById("rows");
+  for (const s of SOUNDS) {
+    const tr = document.createElement("tr");
+    if (s.pair) tr.className = "pair";
+    let argHtml = "";
+    if (s.arg === "type") argHtml = `<div class="args">type <select id="arg-${s.name}">${POWERUP_TYPES.map(t => `<option>${t}</option>`).join("")}</select></div>`;
+    if (s.arg === "n") argHtml = `<div class="args">n <select id="arg-${s.name}">${HAUL_TIERS.map(n => `<option>${n}</option>`).join("")}</select></div>`;
+    const sig = s.arg ? `${s.name}(${s.arg})` : `${s.name}()`;
+    let html = `<td class="name">${sig}<small>${s.serves}</small>${argHtml}</td><td class="brief">${s.brief}</td>`;
+    for (let k = 0; k < 3; k++) {
+      const c = CAND[s.name][k];
+      html += `<td class="cand"><button id="btn-${s.name}-${k}" data-play="${s.name}" data-k="${k}">▶ ${LETTERS[k]} · ${c.label}</button>` +
+        `<label id="lab-${s.name}-${k}"><input type="radio" name="pick-${s.pair || s.name}" data-pick="${s.name}" data-k="${k}">picked</label></td>`;
+    }
+    html += `<td><button class="ctx" data-ctx="${s.name}">▶ in context</button><div class="hint">${s.ctxLabel}</div></td>`;
+    tr.innerHTML = html;
+    tb.appendChild(tr);
+  }
+  tb.addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.play) audition(b.dataset.play, Number(b.dataset.k));
+    else if (b.dataset.ctx) { const s = SOUNDS.find(x => x.name === b.dataset.ctx); s.ctx(picks[s.name]); }
+  });
+  tb.addEventListener("change", e => {
+    const r = e.target;
+    if (r.dataset && r.dataset.pick) setPick(r.dataset.pick, Number(r.dataset.k));
+  });
+}
+
+// ---- copy-out ------------------------------------------------------------------------------
+// Prints each picked candidate's method with Function.prototype.toString, re-indented to
+// AudioSys's two-space method level. The candidate's `label` becomes nothing — its header comment
+// is already inside the method text, so what is pasted carries its own brief.
+function methodText(fn) {
+  const lines = fn.toString().split("\n");
+  const closeIndent = lines[lines.length - 1].match(/^\s*/)[0].length;
+  return lines.map((l, i) => "  " + (i === 0 ? l : l.slice(Math.min(closeIndent, l.match(/^\s*/)[0].length)))).join("\n");
+}
+function copyOut() {
+  const p = picks;
+  const summary = SOUNDS.map(s => `${s.name} ${LETTERS[p[s.name]]}`).join(" · ");
+  const fr = CAND.cargofull[p.cargofull].freqs;
+  let out = "";
+  out += `// ==== tools/sfx-lab.html copy-out (CS042 P1, spec §1.6) — picks: ${summary} ====\n`;
+  out += `// Constants — with the other tuning constants; POWERTAG_ROOT beside POWERUP_COLOR.\n`;
+  out += `const CARGOFULL_FREQS = [${fr.join(", ")}]; // cargofull()'s pitches (${CAND.cargofull[p.cargofull].label}); cargolost() and chainsever() read it REVERSED — the pair is matched by construction\n`;
+  out += `const POWERTAG_ROOT = { // per-type roots for powertag()/powerfade() (spec §1.4): the list of pitches the tag voices, so guard's doubled octave is data\n`;
+  for (const t of POWERUP_TYPES) out += `  ${t}:${" ".repeat(7 - t.length)}[${POWERTAG_ROOT[t].join(", ")}],\n`;
+  out = out.replace(/,\n$/, "\n") + "};\n\n";
+  out += `// AudioSys methods — paste inside the object after scooploss(). Each is this.ctx-guarded and routes into this.sfx.\n`;
+  for (const s of SOUNDS) out += methodText(CAND[s.name][p[s.name]][s.name]) + ",\n\n";
+  return out.replace(/,\n\n$/, "\n");
+}
+function refreshPicks() {
+  for (const s of SOUNDS) for (let k = 0; k < 3; k++) {
+    const lab = document.getElementById("lab-" + s.name + "-" + k);
+    const r = lab.querySelector("input");
+    r.checked = picks[s.name] === k;
+    lab.classList.toggle("on", picks[s.name] === k);
+  }
+  document.getElementById("picks").textContent = "picked: " + SOUNDS.map(s => `${s.name} ${LETTERS[picks[s.name]]}`).join(" · ");
+  document.getElementById("out").textContent = copyOut();
+}
+document.getElementById("copyBtn").addEventListener("click", () => {
+  const text = copyOut(), btn = document.getElementById("copyBtn");
+  const done = how => { btn.textContent = "Copied (" + how + ")"; btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Copy to clipboard"; btn.classList.remove("copied"); }, 1800); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => done("clipboard"), () => selectOut(done));
+  } else selectOut(done);
+});
+function selectOut(done) { // file:// fallback: select the block so Ctrl+C takes it
+  const pre = document.getElementById("out");
+  const range = document.createRange(); range.selectNodeContents(pre);
+  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  done("selected — press Ctrl+C");
+}
+
+buildGrid();
+refreshPicks();
+</script>
+</body>
+</html>

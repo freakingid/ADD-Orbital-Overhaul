@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P0 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P1 · Registry: 110 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -41,9 +41,28 @@ carried forward and still live.
   a target. Both seed from what the shipped game actually does (283 px/s, +30%), so the starting
   position is the thing being changed. Model B is now the default and picking a model is an optional
   last step, not the first question.
+- P1 — `tools/sfx-lab.html` (spec §1.6): twelve rows, one per §1.4 sound, three candidates each that differ in
+  *approach* (for `cargofull`: a stepped arpeggio, a filter sweep, a pulsed fill), a picked radio per row,
+  master/SFX sliders on the build's two-stage bus, a per-row context button against the real neighbours
+  (`pickup`/`hit`/`explosion`/`shieldPing`/`achievement`/`powerup`/`lowhp`/`deliver`, ported verbatim — the
+  lab's only port-in), and a copy-out block that prints the twelve picked methods with
+  `Function.prototype.toString`, so what is heard is byte-for-byte what P3/P4 paste. ⛔ **`cargofull` and
+  `cargolost` are ONE radio**: every `cargolost` candidate reads `CARGOFULL_FREQS` reversed, and
+  `chainsever` reads the same array (reversed, then made smaller), so the three are matched by construction;
+  `chainsever`'s audition plays the picked `cargolost` first. Two constants ride in the copy-out:
+  `CARGOFULL_FREQS` and `POWERTAG_ROOT` (the per-type root table, `guard`'s doubled octave as data). No
+  build byte; no `phon`; no test (`tools/` carries none). CLAUDE.md's tools list gained one entry —
+  **49.1 KB / 848 lines after it, ~0.9 KB under the 50 KB ceiling** (HEAD was 48.9 KB, not P9's 48.4).
 
 ## Working / verified
 
+- **P1:** full suite **171 files, 171 passed, 0 failed, 0 skipped** (exit 0, no flake rerun needed);
+  `orbital-overhaul.html` byte-identical (md5 `3087c476…`, same as P0).
+  The lab was exercised headless under a stubbed `AudioContext`: all 36 candidates across every
+  argument (75 calls), every audition/context path, all three pair configurations of the copy-out parsed
+  as a constants block plus an object literal, and no two candidates of a sound share method text.
+  ⚠ **Not yet heard in a browser** — the candidates are tuned by arithmetic, not by ear; that is what
+  GATE A is for. If they come out indistinct, the phase doc says rerun P1 on Opus 5 — it is disposable.
 - **P0:** full suite **171 files, 171 passed, 0 failed, 0 skipped, 0 timed out** (exit 0);
   `orbital-overhaul.html` is byte-identical to `47b1249` (md5 `3087c476…` on both sides), and
   `tools/` carries no suite coverage by long-standing practice,
@@ -232,12 +251,18 @@ None.
 
 ## Next up
 
-- ⛔ **P1 is the next session** — `tools/sfx-lab.html` (spec §1.6). **Fable 5.1, Medium, no
-  `ultrathink`.** Its copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md` and is unaffected by
-  everything the handling work churned through. P2 (`tools/ceremony-lab.html`, Opus 5 / High /
-  ultrathink) follows it. **Nothing in CS042 is blocked.**
-- **GATE A is now partly spent.** Its handling half is closed by §6.8; its sound and ceremony halves
-  still need P1 and P2 built before Paul can sit down to them.
+- ⛔ **P2 is the next session** — `tools/ceremony-lab.html` (spec §3). **Opus 5, High, `ultrathink`.**
+  Its copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. **Nothing in CS042 is blocked.**
+- **GATE A is now partly spent.** Its handling half is closed by §6.8; its sound half has its instrument
+  (P1) and is waiting on Paul; its ceremony half still needs P2 built first.
+- **P1 hazards for P3/P4, recorded so the prompts can account for them:** (1) `powertag()`'s three
+  candidates all carry a **0.16 s internal offset** (the `bankspend()` idiom) so the tag lands after
+  `powerup()`'s second note; if P3 places the call anywhere but immediately after `AudioSys.powerup()`,
+  that offset is wrong. (2) The build's `applyPowerup()` speaks no `collect_guard`/`expire_guard` line
+  (both branches exclude `guard`), so `POWERTAG_ROOT.guard` exists for §1.4's table and has no caller
+  today — P3 should not invent one. (3) `haulsize(n)` clamps the tier to 1–4 from `floor(n/5)`, matching
+  `dock_5/10/15/20`; it is called on the emptying pop with `game.deliveryCount`. (4) The copy-out's
+  `CARGOFULL_FREQS` is a `let` in the lab only — paste it as a `const` with the other tuning constants.
 - **P7 has been rewritten for §6.8** (`IMPLEMENTATION-PHASES-CS042.md`), including its copy-paste
   prompt. It no longer asks for a lab block, no longer builds §6.3's A/B/C, and now carries a
   mandatory GDD §3.4 re-validation as Part 3. ⚠ **Two open flags belong to Paul, not to a phase:**
