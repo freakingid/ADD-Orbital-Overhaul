@@ -1136,7 +1136,16 @@ const { GAME_VERSION, DEBUG_VARS, DOCK_BASE_SCORE, DOCK_BONUS_STEP, DOCK_NEIGHBO
       };
     });
   }
-  const fixed = run(build());
+  // ⛔ NARROWED BY CS042 P6 (spec §2.3 c), one line and the same shape as CS040 P1's narrowing below:
+  // P6 made the milestone INTERVAL grow with the level, so HEAD's nextRepair no longer lands on the
+  // same numbers PRE_FIX_REF's flat interval does — and nextRepair is in this loop precisely to prove
+  // both builds made the same NUMBER of crossings. Rather than drop it (which would lose that proof),
+  // the knob is put at its own minimum, which P6 ships as the exact restoration of the flat interval.
+  // Nothing else about this control run is touched: it never takes a scratch, so P6's hull gate and
+  // spawn lock cannot bite here at any setting.
+  const fixedMod = build();
+  fixedMod.DEBUG.repairMilestoneGrowth = 0;   // the live value every consumer reads; DEBUG is in RETURN
+  const fixed = run(fixedMod);
   // The pre-fix module is built directly rather than through buildPreFix() for one reason: CS040 P1's
   // narrowing below needs REPAIR_FULL_BONUS, which exists at PRE_FIX_REF and does NOT exist at HEAD, so
   // it can only be asked of THIS build. RETURN is shared by both and could never carry it.

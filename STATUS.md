@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P5 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P6 · Registry: 113 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -113,7 +113,43 @@ carried forward and still live.
   §3's Main loop row edited, because GATE A note 4 requires the reversal recorded rather than silently
   re-added.
 
+- P6 — health supply levelling, spec §2's five changes and three knobs. ⛔ **(b) REVERSES CS040 P1 and
+  the build said so in advance:** the one-at-a-time gate moved out of the ambient call site and into
+  `spawnHealthPowerup()`, so all three routes meet it and a second Health on the field is impossible by
+  construction. CS040's comment predicting exactly this ("would be a design change, not a tidy-up") is
+  **rewritten in place, quoting itself**, never deleted. ⛔ **Two bounds, two questions:** the lock
+  (`game.healthSpawnLock`, armed by every route, ticked beside `healthTimer`) bounds the RATE and has a
+  knob; the gate bounds the COUNT and deliberately has none. (c) `nextRepair += REPAIR_MILESTONE * (1 +
+  growth * wave)` — `REPAIR_MILESTONE` itself unmoved at 10,000 (CS040's FORK-B). (d) a crossing pays
+  only while `hp <= SHIP_MAX_HP * 0.70`, the `< SHIP_MAX_HP` clause kept so max 1.0 restores CS040
+  exactly. (e) the four `healthGap*` defs widened, no mechanism. ⛔ **CS040's rescue survives** — the
+  arm still fires on every crossing a hurt run should get, asserted at shipped defaults. Registry
+  110 → 113 (POWERUPS, appended); `test-registry.js` is the only file carrying the number. No GDD edit
+  — §2.7/§2.14 are P11's (its item 2 already names them), and they now read false on the milestone
+  gate and the four gap numbers.
+
 ## Working / verified
+
+- **P6:** full suite **175 files, 175 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, no flake
+  rerun needed), `node --check` clean. `scratchpad/test-cs042-p6.js` is 712 assertions in ten
+  sections, and its load-bearing ones were **mutation-checked, not just run**: removing the moved gate,
+  dropping the sweep's lock arm, reverting the hull gate to `< SHIP_MAX_HP`, dropping the growth term
+  and making the ambient re-roll conditional each turn assertions red. Every probe **isolates one
+  bound** — a gate probe zeroes the lock, a lock probe clears the field — because either mechanism
+  alone would make the other's assertion pass vacuously. §D pins the reversal against the parent
+  (`28f25cd`): the gate WAS at the ambient site there and `healthSpawnBlocked()` did not exist.
+  ⛔ **Nineteen pre-existing tests were legitimately invalidated; all nineteen were WIDENED, not
+  weakened.** Fourteen are the standing registry-allowlist maintenance (110 → 113). Five are real:
+  `test-cs040-p1.js` §B/§C/§F now set P6's three knobs to their neutral ends (`asCS040()`) so CS040's
+  own arithmetic assertions stand untouched, and its **§E is rewritten in place with its changeset** —
+  it pinned the very behaviour (b) reverses, and now also asserts that no knob restores it;
+  `test-cs040-p2.js` reads its bounds off the build's constants instead of retyping numbers (its §D's
+  "strictly between the two ranges" is now the interpolation it actually is, since the widened pairs
+  overlap); `test-cs020-p1.js` §J puts growth at 0 rather than dropping `nextRepair` from a bit-exact
+  loop; `test-f2.js` computes the step from the knob; `test-cs026-p3.js` TRAP 5 names the new
+  `healthSpawnLock` reset line.
+  ⚠ **Not yet played** — every number here is measured headless. Whether the supply now reads as
+  levelled is a GATE C question (spec §7's G3).
 
 - **P5:** full suite **174 files, 174 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, after one
   `test-f6.js` flake rerun — the standing ~1.7% one), `node --check` clean.
@@ -201,6 +237,28 @@ carried forward and still live.
   would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
+
+- **⛔ P6's one judgment call, recorded because the spec did not reach it: a BLOCKED sweep Health roll
+  drops another type, it does not drop nothing.** §2.3 (a) says the lock is "respected by all three
+  routes" but not what the Super Mega Delivery's per-piece roll should do when it lands on Health and
+  the lock is up. Dropping nothing was written first and broke a shipped guarantee two older tests pin
+  by name — every budgeted swept piece pays exactly one powerup (`test-cs018-p9.js`, `test-cs035-p6.js`,
+  and the `SWEEP_POWERUP_CAP` arithmetic itself). So Health leaves the pool while it is blocked and the
+  piece rolls over the other six, which is the same six-type pool §2.3's own "drop health from the sweep
+  pool" variant describes. Consequence: at most ONE Health per sweep, and the SMD's payout volume is
+  unmoved. If Paul wants the reward volume to fall instead, that is a one-line change back.
+
+- **⛔ Two suite files state a registry TOTAL as a literal, which CLAUDE.md reserves for
+  `scratchpad/test-registry.js` (found P6).** `test-cs029-p4.js` §B and `test-cs038-p5.js` §A both
+  carry `eq(X.DEBUG_ENTRIES.length, <number>)`. Both were repointed 110 → 113 the way every earlier
+  phase repointed them, and each now says so in place — rewriting them parent-relative like their
+  siblings is a refactor, not a phase-local call.
+
+- **⛔ GDD §2.7 and §2.14 now read false on health supply (P6). P11 already owns them** (its item 2
+  names both by number). Four claims moved: the milestone's gate is no longer `hp < SHIP_MAX_HP` alone,
+  its interval is no longer flat, "the one-Health-at-a-time gate is the *ambient* call site's, so a
+  milestone can legitimately put a second one on the field" is now the opposite, and the ambient
+  cadence reads 10–16 s / 30–45 s rather than 6–10 / 22–30.
 
 - **✅ DISCHARGED BY P5 (kept for the log): CS042 P2 found two divergences between
   `PLANNED-FEATURES-CS042.md` §3 and the build, and P5 built the lab's model, not §3.3's table.** (1) **§3.3 lists the GAME OVER stack as beat 4, after the panel.
@@ -431,9 +489,17 @@ None.
   - ⚠ **Nobody has seen this in a browser.** Every number in the writeup is measured alpha under a
     stubbed canvas. Whether the cross-fade actually reads as smooth is a GATE C question.
 
-- **P6 is the next session** — health supply levelling (§2); its copy-paste prompt is in
-  `IMPLEMENTATION-PHASES-CS042.md`. **Nothing in CS042 is blocked except P7**, which waits on Paul's
-  §6.7/§6.8 call (see Known issues).
+- **✅ P6 is DONE.** Health supply levelling shipped — see the P6 ledger entry and its
+  "Working / verified" writeup above. All five §2.3 changes landed, the CS040 P1 comment is rewritten
+  rather than deleted, and CS040's rescue is asserted still firing at shipped defaults.
+  - ⛔ **P6 edited no GDD content**, so P11's §0 size re-measure is still mandatory for P5's edits
+    alone, not P6's. §2.7/§2.14's now-false health claims are listed under Known issues.
+  - ⚠ **Nobody has played this.** The three knobs are analytic defaults; G3 is the gate question that
+    tells us whether 12 s / 0.08 / 0.70 are the right numbers, and each knob's own minimum is the A/B.
+- **P8 is the next unblocked session** — scoop levels 6–7 and the flanking orbs (§4). **P7 remains the
+  only blocked phase**, waiting on Paul's §6.7/§6.8 call (see Known issues). ⛔ **P9's
+  `bankSpareHullPct` must ship at 0.70 too** — P6 pinned that number as the changeset's one definition
+  of "hurt" and its own test says so; if the gate moves one, it moves both.
 - **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
   headroom**. P1's entry recorded 848 lines, which was wrong — HEAD measured 853 before this phase;
   the byte figure was right, and the historical numbers are KiB, not KB. The next phase that adds a
@@ -466,8 +532,8 @@ None.
   rule saying it must not grow back. **The structural fix is that a closing phase already re-measures
   §0** — extending that same checklist to re-read the build stamp is the cheap way to stop this
   recurring, and is not yet done.
-- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 502 lines after P5, and it was already 443 at
-  P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
+- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 568 lines after P6, 502 after P5, and it was
+  already 443 at P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
   and deleting a carried-forward item to make room is not a phase-local call.
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.

@@ -18,7 +18,7 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 110,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 113,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
                           // 106 -> 105: CS036 P2 retired levelEndHold (CELEBRATION), the pre-nextWave()
                           // hold, now player-paced. 105 -> 106: CS036 P5 adds dockPingCooldown (DELIVERY).
                           // 106 -> 110: CS037 P2 adds the four BENCHMARK controls (ramp step, ramp
@@ -42,6 +42,11 @@ const COUNTS = {
                           // 109 -> 110: CS040 P4 (spec §2.2) adds hubDryWeightMult (POWERUPS, trailing
                           // healthBankMax) — the recycle hub's dry-weapon relief multiplier. Not a
                           // lever either.
+                          // 110 -> 113: CS042 P6 (spec §2.3 a/c/d) adds three POWERUPS knobs, trailing
+                          // hubDryWeightMult — healthSpawnLock (the global spawn lock every Health route
+                          // arms and respects), repairMilestoneGrowth (the milestone interval's per-level
+                          // growth) and repairMilestoneHullPct (the milestone's hull gate). None a lever;
+                          // health SUPPLY is powerup pacing, not a difficulty ramp.
   sectionHeaders: 11,     // DEBUG_VARS.filter(v => v.header).length — 10 -> 11: CS037 P2's BENCHMARK
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only

@@ -769,9 +769,12 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // WIDENED BY CS040 P2: its four healthGap* rows also land in POWERUPS, after dockPowerupSpeed.
     // WIDENED BY CS040 P3: and healthBankMax, appended after those four. Same reasoning again.
     // WIDENED BY CS040 P4: and hubDryWeightMult, appended after healthBankMax. Same reasoning again.
+    // WIDENED BY CS042 P6: and its three health-supply rows (healthSpawnLock, repairMilestoneGrowth,
+    // repairMilestoneHullPct), appended after hubDryWeightMult. Same reasoning again.
     for (const id of ids.slice(at + 1, gl))
       assert(id.startsWith("magnetPush") || id === "sweepPowerupCap" || id === "dockPowerupSpeed"
-        || id.startsWith("healthGap") || id === "healthBankMax" || id === "hubDryWeightMult",
+        || id.startsWith("healthGap") || id === "healthBankMax" || id === "hubDryWeightMult"
+        || id === "healthSpawnLock" || id.startsWith("repairMilestone"),
         `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
@@ -848,7 +851,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "telemetryCapture"                                // CS038 P3 (the telemetry opt-in switch)
       || id.startsWith("healthGap")                               // CS040 P2 (the pity-driven health cadence)
       || id === "healthBankMax"                                   // CS040 P3 (the health bank's cap)
-      || id === "hubDryWeightMult";                               // CS040 P4 (the hub relief multiplier)
+      || id === "hubDryWeightMult"                                // CS040 P4 (the hub relief multiplier)
+      || id === "healthSpawnLock" || id.startsWith("repairMilestone");  // CS042 P6 (health supply levelling)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

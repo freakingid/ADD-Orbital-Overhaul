@@ -60,7 +60,11 @@ const RETIRED_DEFS = {
   // phase's rows, not P5's; the live count moves with them.
   // NARROWED AGAIN BY CS040 P3: +1 more (healthBankMax, POWERUPS), for the same reason.
   // NARROWED AGAIN BY CS040 P4: +1 more (hubDryWeightMult, POWERUPS), for the same reason.
-  eq(X.DEBUG_ENTRIES.length, 110, "A: DEBUG_ENTRIES.length is the live 110");
+  // NARROWED AGAIN BY CS042 P6: +3 more (healthSpawnLock, repairMilestoneGrowth, repairMilestoneHullPct,
+  // POWERUPS), for the same reason. ⛔ FOUND WHILE REPOINTING: like test-cs029-p4.js §B, this line
+  // states a registry TOTAL as a literal, which CLAUDE.md reserves for scratchpad/test-registry.js.
+  // Repointed the way earlier phases repointed it; rewriting it parent-relative is a refactor.
+  eq(X.DEBUG_ENTRIES.length, 113, "A: DEBUG_ENTRIES.length is the live 113");
 
   // No section header is emptied — CELEBRATION/DELIVERY/HUNTER all keep other rows.
   let section = null; const rowsOf = { CELEBRATION: [], DELIVERY: [], HUNTER: [] };
@@ -188,7 +192,9 @@ const RETIRED_DEFS = {
     // them from X before comparing, same as every other later-phase repoint elsewhere in the suite.
     const LATER_IDS = new Set(["healthGapLowOk", "healthGapHighOk", "healthGapLowHurt", "healthGapHighHurt",
       "healthBankMax",     // NARROWED AGAIN BY CS040 P3, same reasoning
-      "hubDryWeightMult"]); // NARROWED AGAIN BY CS040 P4, same reasoning
+      "hubDryWeightMult", // NARROWED AGAIN BY CS040 P4, same reasoning
+      // NARROWED AGAIN BY CS042 P6: its three health-supply POWERUPS rows, same reasoning again.
+      "healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct"]);
     const xIds = X.DEBUG_VARS.filter(v => !v.header).map(v => v.id).filter(id => !LATER_IDS.has(id));
     const oldIdsSansRetired = oldIds.filter(id => !RETIRED_IDS.includes(id));
     eq(xIds.join(","), oldIdsSansRetired.join(","),

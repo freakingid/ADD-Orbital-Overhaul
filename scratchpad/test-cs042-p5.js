@@ -147,7 +147,12 @@ const has = (rows, s) => rows.some(r => r.str === s);
   if (parentSrc === null) skip("A: registry/lever counts against the parent (no git history)");
   else {
     const P = buildGame({ source: parentSrc });
-    eq(X.DEBUG_ENTRIES.length, P.DEBUG_ENTRIES.length, "A: ⛔ the debug registry is the same size as the parent's");
+    // WIDENED BY CS042 P6, the standing moving-pin maintenance: P5 itself added no row and that is
+    // still what this asserts, but P6 legitimately appended three health-supply knobs after P5 landed,
+    // so the pin names them rather than comparing raw totals.
+    const P6_ROWS = ["healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct"];
+    eq(X.DEBUG_ENTRIES.filter(v => !P6_ROWS.includes(v.id)).length, P.DEBUG_ENTRIES.length,
+      "A: ⛔ the debug registry is the parent's, bar CS042 P6's three health-supply rows");
     eq(X.LEVERS.length, P.LEVERS.length, "A: ⛔ ...and so is LEVERS");
     for (const k of ["levelBannerTime", "levelBannerFade", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"])
       eq(X.DEBUG[k], P.DEBUG[k], `A: ⛔ DEBUG.${k} is unmoved — no ceremony TIMING changed`);

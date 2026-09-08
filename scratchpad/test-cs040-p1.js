@@ -5,10 +5,17 @@
 //
 //   node scratchpad/test-cs040-p1.js
 //
+// ⛔ REPOINTED BY CS042 P6 (spec §2.3), WHICH REVERSED PART OF WHAT THIS FILE PINNED. P6 added three
+// qualifiers to the same arm: a global spawn lock, a milestone interval that grows with the level, and
+// a hull gate at 70%. Every section that pins CS040's own ARITHMETIC now sets P6's three knobs to their
+// neutral ends first (`asCS040()`), which is P6's own "each minimum is its own A/B" claim asserted from
+// the other side — the assertions themselves are untouched. §E is the one that could not be preserved
+// that way and is rewritten in place with its changeset; see its own header.
+//
 // Two traps worth stating, because neither is visible from the changed lines:
-//   - THE ONE-HEALTH-AT-A-TIME GATE IS NOT PART OF THIS. It lives at the AMBIENT call site in update(),
-//     not inside spawnHealthPowerup(), so a milestone legitimately puts a SECOND health powerup on the
-//     field. §E pins that deliberately, so nobody "fixes" it into a gate.
+//   - THE ONE-HEALTH-AT-A-TIME GATE WAS NOT PART OF THIS, and as of CS042 P6 it IS. It used to live at
+//     the AMBIENT call site in update(); P6 moved it into spawnHealthPowerup(), deliberately, so a
+//     milestone can no longer put a SECOND health powerup on the field. §E pins the new rule.
 //   - The telemetry column scoreRepairBonus SURVIVES this phase emitting a literal 0 (§F). CS040 P5
 //     owns the schema change that removes it; P1 only guarantees the cell is never an empty one.
 
@@ -21,6 +28,16 @@ const { assert, eq } = A;
 installSeed(20260826);
 
 const healthOnField = g => g.powerups.filter(p => p.type === "health").length;
+
+// CS042 P6 repoint: put its three health-supply knobs at the ends that reproduce CS040 P1's own
+// behaviour — the lock disabled, the interval flat, the hull gate back at `hp < SHIP_MAX_HP`. What it
+// CANNOT undo is the one-at-a-time gate, which P6 gave no knob on purpose (§E).
+function asCS040(X) {
+  X.applyDebug("healthSpawnLock", 0);
+  X.applyDebug("repairMilestoneGrowth", 0);
+  X.applyDebug("repairMilestoneHullPct", 1.0);
+  return X;
+}
 
 // Park the ship at a known spot at a chosen hull, with the field and the powerups cleared, then set
 // score one point short of the next crossing. Every section starts from here.
@@ -50,7 +67,7 @@ function armed(X, hp) {
 // ================= (B) below max hull: exactly one health spawn, no score, threshold advances ========
 (function sectionB() {
   console.log("(B) a crossing below SHIP_MAX_HP spawns exactly one Health powerup and pays nothing");
-  const X = buildGame(); X.startGame();
+  const X = asCS040(buildGame()); X.startGame();
   let pings = 0; X.AudioSys.shieldPing = () => { pings++; };
   const g = armed(X, X.SHIP_MAX_HP - 50);
   const hpBefore = g.ship.hp, nextBefore = g.nextRepair, scoreBefore = g.score;
@@ -70,7 +87,7 @@ function armed(X, hp) {
 // ================= (C) at exactly SHIP_MAX_HP: nothing at all, but the threshold still advances ======
 (function sectionC() {
   console.log("(C) a crossing at exactly SHIP_MAX_HP spawns nothing, pays nothing and makes no sound");
-  const X = buildGame(); X.startGame();
+  const X = asCS040(buildGame()); X.startGame();
   let pings = 0; X.AudioSys.shieldPing = () => { pings++; };
   const g = armed(X, X.SHIP_MAX_HP);
   const nextBefore = g.nextRepair, scoreBefore = g.score;
@@ -107,36 +124,58 @@ function armed(X, hp) {
     `D: ...and the point was wrapped into the world (${p.x.toFixed(2)}, ${p.y.toFixed(2)})`);
 })();
 
-// ================= (E) the milestone is NOT gated by a health powerup already on the field ==========
+// ================= (E) ⛔ REWRITTEN BY CS042 P6 — the milestone IS gated now =========================
+// This section used to assert the exact opposite, and it was right when it was written: "the crossing
+// spawned a SECOND one — `!game.powerups.some(p => p.type === 'health')` lives at the ambient call site
+// in update(), not inside spawnHealthPowerup()". CS042 P6 (spec §2.3 b) moved that gate into
+// spawnHealthPowerup() on purpose, so all three routes meet it and "more than one on screen" is
+// impossible by construction. Rewritten in place with its changeset, never deleted — and note that
+// asCS040() is deliberately NOT used at the top here: no knob setting restores the old behaviour,
+// because the gate was given none, which the tail of this section asserts directly.
 (function sectionE() {
-  console.log("(E) a milestone spawns even with a Health powerup already out — the one-at-a-time gate is the AMBIENT site's");
+  console.log("(E) a milestone no longer spawns beside a Health powerup already out — CS042 P6 moved the gate");
   const X = buildGame(); X.startGame();
   X.AudioSys.shieldPing = () => {};
   const g = armed(X, X.SHIP_MAX_HP - 50);
   X.spawnHealthPowerup();                       // one already on the field, the ambient way
   eq(healthOnField(g), 1, "E: (setup) one Health powerup is out");
   g.score = g.nextRepair - 1;
+  g.healthSpawnLock = 0;                        // isolate the COUNT bound from CS042 P6's rate bound
 
   X.addScore(1);
 
-  eq(healthOnField(g), 2,
-    "E: ⛔ the crossing spawned a SECOND one — `!game.powerups.some(p => p.type === 'health')` lives at the ambient call site in update(), not inside spawnHealthPowerup()");
+  eq(healthOnField(g), 1,
+    "E: ⛔ CS042 P6 — the crossing spawned NOTHING: the one-at-a-time gate lives inside spawnHealthPowerup() now, and every route respects it");
+  assert(g.nextRepair > X.REPAIR_MILESTONE, "E: ...and the bookkeeping still advanced, exactly as CS040 P1 required");
+  // The neutral ends of P6's three knobs cannot bring the old behaviour back — that is the point.
+  asCS040(X);
+  g.score = g.nextRepair - 1;
+  X.addScore(1);
+  eq(healthOnField(g), 1, "E: ⛔ ...and no knob setting restores it — the gate deliberately has none");
 })();
 
 // ================= (F) repeated crossings, and the telemetry column P5 still owns ====================
 (function sectionF() {
   console.log("(F) four crossings in a row each spawn once and never touch the score; the retired column emits a literal 0");
-  const X = buildGame(); X.startGame();
+  const X = asCS040(buildGame()); X.startGame();
   X.AudioSys.shieldPing = () => {};
   const g = armed(X, X.SHIP_MAX_HP - 100);
   g.score = 0; g.nextRepair = X.REPAIR_MILESTONE;
   g.powerups = [];
 
-  let expected = 0;
-  for (let i = 0; i < 4; i++) { expected += X.REPAIR_MILESTONE; X.addScore(X.REPAIR_MILESTONE); }
+  // CS042 P6 repoint: the player collects between crossings. Four crossings still spawn four pickups,
+  // but they can no longer COEXIST — the one-at-a-time gate (§E) has no knob, so a run that ignores
+  // what already arrived gets nothing more. Collecting is what a player does, and it keeps this
+  // section's claim ("one spawn per crossing, no score from any of them") exactly as it was.
+  let expected = 0, spawns = 0;
+  for (let i = 0; i < 4; i++) {
+    expected += X.REPAIR_MILESTONE; X.addScore(X.REPAIR_MILESTONE);
+    spawns += healthOnField(g); g.powerups = [];
+  }
+  eq(spawns, 4, "F: ⛔ four crossings, four Health spawns — one per crossing, none skipped");
   eq(g.score, expected, "F: ⛔ score is EXACTLY the sum of the awarded points across four crossings — no milestone income of any kind");
   eq(g.nextRepair, X.REPAIR_MILESTONE * 5, "F: nextRepair advanced once per crossing");
-  eq(healthOnField(g), 4, "F: one Health powerup per crossing");
+  eq(healthOnField(g), 0, "F: ...and the last one was collected like the three before it");
 
   // ⛔ REPOINTED BY CS040 P5, WHICH THIS BLOCK ITSELF PREDICTED. P1 left the column emitting a literal
   // 0 so the cell could never be the empty string a deleted counter serialises to, and said P5 owned

@@ -823,6 +823,10 @@ let X = null;
       "game.celebrationT = 0;",
       "game.celebrationOut = null;",
       "game.gameoverT = 0;",
+      // NARROWED AGAIN BY CS042 P6 — the global Health spawn lock is one more NEW CS016-P3-rule field,
+      // sitting with healthTimer. Same treatment: filtered out by name, so any OTHER new line here
+      // still fails this trap.
+      "game.healthSpawnLock = 0;",
     ]);
     const dropDeliveryTickerLine = t => t.split("\n").filter(l => !DROPPED_LINES.has(l.trim())).join("\n");
     // NARROWED AGAIN BY CS031 P3 — the name-entry screen adds three CS016-P3-rule fields to the menu
@@ -868,7 +872,7 @@ let X = null;
       .replace("  game.healthTimer = healthGapRoll();", "  game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear, CS037 P7.1's towLockoutT clear, CS038 P1's linkMsg menu field and CS042 P5's four ceremony fade clocks");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear, CS037 P7.1's towLockoutT clear, CS038 P1's linkMsg menu field, CS042 P5's four ceremony fade clocks and CS042 P6's healthSpawnLock");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),

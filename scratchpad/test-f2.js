@@ -15,6 +15,12 @@
 // REPAIR_AMOUNT and REPAIR_FULL_BONUS are deleted, so (e)/(f)'s original claims have no subject. What
 // survives here is F2's own half of it: the crossing still fires and still advances the threshold.
 // The CS040 contract itself is pinned in test-cs040-p1.js and deliberately not duplicated below.
+//
+// ⛔ WIDENED BY CS042 P6 (spec §2.3 c): the milestone INTERVAL now grows with the level, so "advanced
+// by one interval" is `REPAIR_MILESTONE * (1 + DEBUG.repairMilestoneGrowth * game.wave)` rather than a
+// flat REPAIR_MILESTONE. (e)/(f) compute the expected step from the build's own knob instead of
+// retyping a number, so they keep asserting exactly what they always did — the crossing fires, and the
+// bookkeeping advances whether the reward is paid or not — at any growth setting including 0.
 
 "use strict";
 const fs = require("fs");
@@ -47,7 +53,7 @@ const returnList = [
   "damageShip", "killShip", "addScore",
   "SHIP_MAX_HP", "DMG_SMALL", "DMG_MEDIUM", "DMG_LARGE", "DMG_BULLET", "HUNTER_DAMAGE",
   "KNOCKBACK_SPEED", "HIT_STUN_DURATION",
-  "REPAIR_MILESTONE",
+  "REPAIR_MILESTONE", "DEBUG",
   "WORLD_W", "WORLD_H", "SHIP_RADIUS"
 ];
 const factory = new Function(
@@ -61,9 +67,12 @@ const {
   damageShip, addScore,
   SHIP_MAX_HP, DMG_SMALL, DMG_MEDIUM, DMG_LARGE, DMG_BULLET, HUNTER_DAMAGE,
   KNOCKBACK_SPEED, HIT_STUN_DURATION,
-  REPAIR_MILESTONE,
+  REPAIR_MILESTONE, DEBUG,
   WORLD_W, WORLD_H
 } = A;
+
+// CS042 P6: one crossing's step at the level the run is on. At growth 0 this is REPAIR_MILESTONE.
+const repairStep = () => REPAIR_MILESTONE * (1 + DEBUG.repairMilestoneGrowth * game.wave);
 
 const DT = 1 / 60;
 let passed = 0, failed = 0;
@@ -225,17 +234,19 @@ console.log("(e/f) score milestone: it fires, it advances the threshold, and it 
 clearField();
 resetShip({ hp: 100 });
 game.score = 0; game.nextRepair = REPAIR_MILESTONE;
+const stepE = repairStep();
 addScore(REPAIR_MILESTONE);
 assert(game.ship.hp === 100, `e: the milestone no longer repairs the hull directly (hp=${game.ship.hp})`);
-assert(game.nextRepair === REPAIR_MILESTONE * 2, "e: next repair threshold advanced by one interval");
+assert(game.nextRepair === REPAIR_MILESTONE + stepE, "e: next repair threshold advanced by one interval");
 
 resetShip({ hp: SHIP_MAX_HP });
 game.score = REPAIR_MILESTONE; game.nextRepair = REPAIR_MILESTONE * 2;
+const stepF = repairStep();
 addScore(REPAIR_MILESTONE); // crosses the 2nd milestone at full HP
 assert(game.ship.hp === SHIP_MAX_HP, "f: at full HP, the hull is untouched");
 assert(game.score === REPAIR_MILESTONE * 2,
   `f: ...and the full-HP milestone pays nothing at all (score=${game.score})`);
-assert(game.nextRepair === REPAIR_MILESTONE * 3, "f: the threshold advances at full HP too — the reward is skipped, the bookkeeping is not");
+assert(game.nextRepair === REPAIR_MILESTONE * 2 + stepF, "f: the threshold advances at full HP too — the reward is skipped, the bookkeeping is not");
 
 // =====================================================================
 // (g) shield still prevents damage AND knockback entirely

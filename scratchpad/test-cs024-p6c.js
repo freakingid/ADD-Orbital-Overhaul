@@ -668,7 +668,10 @@ let X = null;
   // CS040 P4 repoint: +1 more (hubDryWeightMult, POWERUPS — the hub's dry-weapon relief multiplier).
   // Not a lever, spec §2.2: a pacing multiplier with no chain and no floor/ceil/steps triple. Same
   // reasoning an eighteenth time.
-  eq(nonLever.length, 56, "G: 56 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1 + CS038 P3/P5 + CS040 P2/P3/P4's registry");
+  // CS042 P6 repoint: +3 more (healthSpawnLock/repairMilestoneGrowth/repairMilestoneHullPct, POWERUPS
+  // — health supply levelling). None a lever, spec §2.3: powerup pacing with no chain and no
+  // floor/ceil/steps triple. Same reasoning a nineteenth time.
+  eq(nonLever.length, 59, "G: 59 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1 + CS038 P3/P5 + CS040 P2/P3/P4 + CS042 P6's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

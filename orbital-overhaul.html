@@ -418,6 +418,20 @@ const LOWHP_GLOW_RGB        = "255,64,64";  // edge-vignette color channels — 
 const LOWHP_RELIEF_FLASH    = 0.5;  // sec — the geometry-only hull-ring "exhale" when low-health CLEARS with the ship alive (§5 relief cue, FLAG-CS010-a). HUD_CAP_FLASH's neighbourhood.
 const REPAIR_MILESTONE = 10000; // score interval that SPAWNS a Health powerup while the hull is hurt
                                 // (CS040 P1; was a direct hull repair, and before that an extra life)
+// CS042 P6 (spec §2.3 c/d): the milestone arm's two qualifiers. ⛔ REPAIR_MILESTONE ITSELF STAYS
+// 10,000 (CS040's FORK-B) — neither of these moves it; they change how far the NEXT threshold is set
+// and whether a crossing is allowed to pay at all.
+// Both consts are only their registry rows' `def` source; the live values are
+// DEBUG.repairMilestoneGrowth / DEBUG.repairMilestoneHullPct (the standing chainGuardIntercepts idiom).
+const REPAIR_MILESTONE_GROWTH   = 0.08; // the interval grows by this fraction of REPAIR_MILESTONE per
+                                        // level: nextRepair += 10000 * (1 + growth * wave). Wave 1 sets
+                                        // 10,800; wave 15 sets 22,000. At 0 the interval is flat, which
+                                        // is CS040's shipped behaviour exactly (spec §2.3's own A/B).
+const REPAIR_MILESTONE_HULL_PCT = 0.70; // a crossing only pays while hp <= this fraction of SHIP_MAX_HP.
+                                        // ⛔ 0.70 IS THIS CHANGESET'S ONE DEFINITION OF "HURT" — P9's
+                                        // bankSpareHullPct (spec §4.5) is the same number by design, and
+                                        // they are meant to move together. At 1.0 the gate reduces to
+                                        // CS040's `hp < SHIP_MAX_HP`, which is why 1.0 is the row's max.
 // CS040 P1 (spec §1.2): REPAIR_AMOUNT (25) and REPAIR_FULL_BONUS (2500) STOOD HERE and are DELETED, not
 // parked — the milestone no longer heals and no longer pays, so neither constant has a consumer left.
 // Do not reinstate either one without reinstating the mechanism, which is Paul's call, not a cleanup
@@ -1123,10 +1137,22 @@ const SWEEP_POWERUP_CAP = 48;
 // CS040 P2 (spec §1.3): pity-driven ambient Health cadence, replacing the flat [18, 26] gap.
 // healthGapRoll() interpolates between these on missing hull — same "pressure-driven, clamped
 // at both ends" shape as guardDropWeight().
-const HEALTH_GAP_LOW_OK    = 22;  // roll floor at full hull
-const HEALTH_GAP_HIGH_OK   = 30;  // roll ceiling at full hull
-const HEALTH_GAP_LOW_HURT  = 6;   // roll floor at zero hull
-const HEALTH_GAP_HIGH_HURT = 10;  // roll ceiling at zero hull
+// CS042 P6 (spec §2.3 e): all four widened — a `def` change only, no mechanism moved. The shape,
+// the interpolation and the four registry rows are byte-identical to CS040 P2's; only the numbers
+// they start at are further apart. Old pairs: [22, 30] full hull, [6, 10] zero hull.
+const HEALTH_GAP_LOW_OK    = 30;  // roll floor at full hull
+const HEALTH_GAP_HIGH_OK   = 45;  // roll ceiling at full hull
+const HEALTH_GAP_LOW_HURT  = 10;  // roll floor at zero hull
+const HEALTH_GAP_HIGH_HURT = 16;  // roll ceiling at zero hull
+// CS042 P6 (spec §2.3 a): THE GLOBAL HEALTH SPAWN LOCK, in seconds. Every one of the three spawn
+// routes — the ambient timer, the score milestone and the Super Mega Delivery's per-piece sweep —
+// arms it when it spawns, and every one of the three refuses to spawn while it is up. It is what
+// bounds the supply RATE whatever the source; the one-at-a-time gate inside spawnHealthPowerup()
+// bounds the COUNT. Two mechanisms, two questions, and neither subsumes the other.
+// This const is only the registry row's `def` source; the live value is DEBUG.healthSpawnLock.
+// ⛔ At 0 the lock is DISABLED outright (`game.healthSpawnLock > 0` is never true), the clean A/B
+// for the whole mechanism — the healthBankMax-at-0 / magnetPushKick-at-0 idiom.
+const HEALTH_SPAWN_LOCK = 12;
 const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (matches the F2 milestone repair)
 // CS040 P3 (spec §1.4): the health BANK's cap — how many spare charges the ship may carry.
 // ⛔ A CHARGE IS A WHOLE CHARGE, worth POWERUP_HEALTH_AMOUNT, never a partial-HP reserve: a pickup at
@@ -4477,6 +4503,21 @@ const DEBUG_VARS = [
   // weight multiplies by 1, byte-identical to today's roll), the magnetPushKick-at-0 idiom.
   { id: "hubDryWeightMult", label: "Hub dry-weapon weight x", unit: "",
     def: HUB_DRY_WEIGHT_MULT, min: 1, max: 20, step: 1 },
+  // CS042 P6 (spec §2.3 a/c/d): three health-SUPPLY knobs, each `def` deriving from its shipped const
+  // (the standing idiom). Not levers — health supply is powerup pacing, not a difficulty ramp — so no
+  // floor/ceil/steps triple, no ▼/↳ glyph, no indent, no LEVERS entry, exactly the reasoning the four
+  // healthGap rows and healthBankMax above already carry.
+  // ⛔ EACH MINIMUM IS ITS OWN A/B, and the three together restore CS040's supply arithmetic: the lock
+  // at 0 never blocks, the growth at 0 leaves the milestone interval flat at REPAIR_MILESTONE, and the
+  // hull gate at 1.0 reduces to `hp < SHIP_MAX_HP`. (The one-at-a-time gate spawnHealthPowerup() now
+  // owns is deliberately NOT knobbed — spec §2.3 b wants "more than one on screen" impossible by
+  // construction, and a knob that could switch it back off would be exactly the construction it is not.)
+  { id: "healthSpawnLock", label: "Health spawn lock", unit: "s",
+    def: HEALTH_SPAWN_LOCK, min: 0, max: 60, step: 1 },
+  { id: "repairMilestoneGrowth", label: "Milestone growth per level", unit: "",
+    def: REPAIR_MILESTONE_GROWTH, min: 0, max: 0.5, step: 0.01 },
+  { id: "repairMilestoneHullPct", label: "Milestone hull gate", unit: "",
+    def: REPAIR_MILESTONE_HULL_PCT, min: 0.1, max: 1.0, step: 0.05 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -9153,6 +9194,11 @@ const game = {
   scoopLevel: 0,                                       // PERSISTENT scoop upgrade level 0..SCOOP_MAX_LEVEL (v3.3 P3; NOT a budgeted effect)
   scoopHits: 0,                                        // running non-lethal-hit tally; every SCOOP_HITS_PER_LEVEL costs a level
   healthTimer: 0,                                      // countdown to the next ambient Health spawn
+  healthSpawnLock: 0,                                  // CS042 P6: sec of global Health spawn lockout left. Armed to
+                                                        // DEBUG.healthSpawnLock by EVERY spawn route and respected by
+                                                        // all three; ticked down beside healthTimer in update().
+                                                        // Declared in BOTH this literal and resetRun() per the standing
+                                                        // CS016 P3 rule — a field in only one reads `undefined` for a run.
   healthBank: 0,                                       // CS040 P3: WHOLE spare Health charges held, 0..DEBUG.healthBankMax,
                                                         // each worth POWERUP_HEALTH_AMOUNT. Banked at a pickup the hull has no
                                                         // room for; spent one-per-hit in damageShip(). Declared in BOTH this
@@ -9585,6 +9631,9 @@ function resetRun(wave, debugRun) {
   game.scoopLevel = 0; game.scoopHits = 0;               // persistent scoop upgrade resets each run (v3.3 P3)
   game.healthBank = 0;             // CS040 P3: the spare-charge reserve is PER-RUN — a fresh run starts empty
   game.healthTimer = healthGapRoll();
+  game.healthSpawnLock = 0;        // CS042 P6: no spawn lockout carries into a fresh run — the same
+                                   // both-places rule as healthBank just above, and 0 is the honest
+                                   // starting value (the first spawn of a run is never rate-limited).
   game.sweepPause = 0;             // CS018 P9: no sweep coalescence-pause carries into a fresh run
   game.cargoMax = CARGO_BASE;      // pre-level-1 default; nextWave() below immediately overwrites it via payloadSlots(game.wave) (8 at level 1) — CS018 P5
   game.cargoFlash = 0;             // CS009 P3: no cap-up flash carries into a fresh run
@@ -9907,18 +9956,39 @@ function addScore(pts) {
   // not be generous exactly when the player is safest, so at SHIP_MAX_HP the crossing does nothing at
   // all, and therefore also makes no sound (FORK-CS040-A: the ping sits INSIDE the spawn arm).
   if (game.score >= game.nextRepair) {
-    // Advances on EVERY crossing, whatever the hull reads. The full-hull case skips the reward, never
+    // Advances on EVERY crossing, whatever the hull reads. A gated-out crossing skips the reward, never
     // the bookkeeping — otherwise a stretch spent at full HP would bank crossings and cash them all at
-    // the first scratch.
-    game.nextRepair += REPAIR_MILESTONE;
-    if (game.ship.hp < SHIP_MAX_HP) {
+    // the first scratch. ⛔ CS042 P6 did not touch that rule: it added a SECOND way for a crossing to
+    // pay nothing (the hull gate below), which makes the rule matter more, not less.
+    // CS042 P6 (spec §2.3 c): the interval GROWS with the level. A milestone is still a flat 10,000
+    // points of SCORE (REPAIR_MILESTONE is unmoved — CS040's FORK-B), but score RATE climbs with wave,
+    // so a flat interval means milestones arrive faster and faster on their own. This cancels that
+    // acceleration at its source instead of anywhere in the score values. At growth 0 it is `+=
+    // REPAIR_MILESTONE`, byte-equivalent to the line CS040 P1 shipped.
+    game.nextRepair += REPAIR_MILESTONE * (1 + DEBUG.repairMilestoneGrowth * game.wave);
+    // ⛔ CS042 P6 (spec §2.3 d) TIGHTENED THIS GATE. `hp < SHIP_MAX_HP` is satisfied by a single
+    // scratch — 249/250 read as "hurt" — so the qualifier is now real damage: at or below
+    // DEBUG.repairMilestoneHullPct of the hull (0.70, this changeset's one definition of "hurt", shared
+    // by design with P9's bankSpareHullPct). The `< SHIP_MAX_HP` clause STAYS, and is what makes the
+    // knob's max of 1.0 reproduce CS040's behaviour exactly rather than paying at a full hull.
+    if (game.ship.hp < SHIP_MAX_HP && game.ship.hp <= SHIP_MAX_HP * DEBUG.repairMilestoneHullPct) {
       // The AMBIENT placement path, reused as-is (spec §1.2: "do not write a second placement path") —
       // random angle, a distance in [POWERUP_HEALTH_MIN_DIST, POWERUP_HEALTH_MAX_DIST], wrapped.
-      // ⛔ The one-health-at-a-time gate lives at the AMBIENT CALL SITE in update(), not inside
+      // ⛔ CS042 P6 (spec §2.3 b) REVERSED CS040 P1 HERE, DELIBERATELY. The comment this replaces read:
+      // "The one-health-at-a-time gate lives at the AMBIENT CALL SITE in update(), not inside
       // spawnHealthPowerup(), so a milestone CAN put a second one on the field. That is what the spec
-      // asks for; adding the gate here would be a design change, not a tidy-up.
-      spawnHealthPowerup();
-      AudioSys.shieldPing();
+      // asks for; adding the gate here would be a design change, not a tidy-up." It was right on every
+      // count, including the last one: this IS a design change, made on purpose, with §2.2's reason —
+      // two ungated routes beside one gated one is most of why the supply reads as a flood. The gate
+      // now lives inside spawnHealthPowerup(), so this route respects it (and the global spawn lock)
+      // like every other. Nothing here was tidied; the placement was moved because the design moved.
+      // ⛔ CS042 P6 did NOT weaken the arm itself. It exists because deleting milestone healing
+      // outright killed both replayed runs many waves early (measured above), and (c)+(d) only slow
+      // and qualify it. Do not tune either knob to where it stops firing.
+      // FORK-CS040-A stands, and now reads off the answer: the ping sits INSIDE the spawn arm, so a
+      // crossing that is refused (lock up, or one Health already on the field) is silent — a reward
+      // tell for a reward that did not arrive would be a lie.
+      if (spawnHealthPowerup()) AudioSys.shieldPing();
     }
   }
 }
@@ -10214,12 +10284,31 @@ function dropPowerup(x, y, vx = 0, vy = 0, hubBias = false) {
   game.powerups.push(new Powerup(x, y, type, vx, vy));
 }
 
-// Ambient Health powerup — floats into the field in a reachable ring around the ship, one at a
-// time (its decay bounds coexistence), on a saucer-like cadence.
+// CS042 P6 (spec §2.3 a/b): THE ONE PLACE THAT DECIDES WHETHER A HEALTH PICKUP MAY APPEAR AT ALL.
+// Two independent bounds, asking two different questions:
+//   * the LOCK (game.healthSpawnLock, armed by every spawn) bounds the RATE — how often, whatever
+//     the source. At DEBUG.healthSpawnLock 0 it can never be up, and this clause vanishes.
+//   * the one-at-a-time gate bounds the COUNT — how many may coexist. It is UNCONDITIONAL and has
+//     no knob, because §2.3 b asks for "more than one on screen" to be impossible by construction.
+// ⛔ The sweep (superMegaDelivery) places its own Health at the swept piece's position rather than in
+// the ambient ring, so it cannot call this — it asks this predicate directly and arms the lock itself.
+// That is the one duplicated pair of lines in the mechanism, and it is deliberate: spec §1.2's
+// "do not write a second placement path" is about PLACEMENT, and the sweep's placement is its own.
+function healthSpawnBlocked() {
+  return game.healthSpawnLock > 0 || game.powerups.some(p => p.type === "health");
+}
+
+// Ambient Health powerup — floats into the field in a reachable ring around the ship, at most one at
+// a time, on a saucer-like cadence.
+// CS042 P6: RETURNS whether it actually spawned, so a caller with a reward tell (the score
+// milestone's shieldPing) can stay silent when the answer was no. Every existing caller may ignore it.
 function spawnHealthPowerup() {
+  if (healthSpawnBlocked()) return false;
   const a = rand(0, TAU), d = rand(POWERUP_HEALTH_MIN_DIST, POWERUP_HEALTH_MAX_DIST);
   const p = wrapPos({ x: game.ship.x + Math.cos(a) * d, y: game.ship.y + Math.sin(a) * d });
   game.powerups.push(new Powerup(p.x, p.y, "health"));
+  game.healthSpawnLock = DEBUG.healthSpawnLock;
+  return true;
 }
 
 // CS018 P9: the SUPER MEGA DELIVERY (PLANNED-FEATURES-CS018.md §4.2 + FLAG-g; source doc §7.3/§7.3.1)
@@ -10277,7 +10366,20 @@ function superMegaDelivery() {
       // pool ungated for the same chain-is-empty reason as the guaranteed set above. Normal
       // POWERUP_DECAY float lifetime (no special casing), launched on the piece's own drift — the
       // same idiom as destroyHunter's large-core drop.
-      const type = pool[Math.floor(Math.random() * pool.length)];
+      // CS042 P6 (spec §2.3 a/b): the sweep is Health's THIRD route and it now answers to the same two
+      // bounds as the other two — the global lock and the one-at-a-time gate, asked through the shared
+      // healthSpawnBlocked() predicate. ⛔ HEALTH LEAVES THE POOL WHEN IT IS BLOCKED; THE ROLL IS NOT
+      // CANCELLED. Every budgeted piece still pays exactly one powerup, which is a shipped guarantee
+      // (the SWEEP_POWERUP_CAP arithmetic above, and the "N pieces pay N powerups" pins in
+      // test-cs018-p9 / test-cs035-p6) that this phase has no business moving: §2 is levelling HEALTH
+      // supply, not shrinking the Super Mega Delivery. A blocked sweep therefore rolls over the same
+      // six types §2.3's own "drop health from the sweep pool" variant describes. In practice this
+      // means at most ONE Health per sweep — the first one arms the lock, and the pool loses it for
+      // every later piece. ⛔ Health's placement stays the SWEEP's (the piece's own position and
+      // drift), so this cannot route through spawnHealthPowerup(); it arms the lock itself.
+      const roll = healthSpawnBlocked() ? pool.filter(t => t !== "health") : pool;
+      const type = roll[Math.floor(Math.random() * roll.length)];
+      if (type === "health") game.healthSpawnLock = DEBUG.healthSpawnLock;
       game.powerups.push(new Powerup(h.x, h.y, type, h.vx, h.vy));
     }
   }
@@ -12798,9 +12900,15 @@ function update(dt) {
   // the answer is "never," the coalescence numbers need the retune P4 does not currently carry.
   // Ambient Health powerup (F6): drifts into the field on a saucer-like cadence, at most one at a
   // time (its own decay bounds coexistence — like the one-saucer-at-a-time gate).
+  // CS042 P6 (spec §2.3 a/b): the one-at-a-time test that STOOD HERE now lives inside
+  // spawnHealthPowerup(), where all three routes meet it — this site simply calls and lets the
+  // callee decide. The re-roll below stays UNCONDITIONAL, exactly as it was when the gate was here:
+  // a refused spawn re-rolls the gap and tries again later, and no re-roll happens anywhere else
+  // (CS040 P2's rule — a player must not be able to farm faster spawns by tanking hits).
+  if (game.healthSpawnLock > 0) game.healthSpawnLock -= dt;
   game.healthTimer -= dt;
   if (game.healthTimer <= 0) {
-    if (!game.powerups.some(p => p.type === "health")) spawnHealthPowerup();
+    spawnHealthPowerup();
     game.healthTimer = healthGapRoll();
   }
 

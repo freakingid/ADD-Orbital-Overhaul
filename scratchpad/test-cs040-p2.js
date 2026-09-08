@@ -4,6 +4,15 @@
 // entry (a pacing pity mechanism, not a difficulty ramp — same reasoning as engineBurnSeconds).
 //
 //   node scratchpad/test-cs040-p2.js
+//
+// ⛔ WIDENED BY CS042 P6 (spec §2.3 e), which moved all four defaults — [6, 10] -> [10, 16] at zero
+// hull and [22, 30] -> [30, 45] at full hull, a `def` change with no mechanism behind it. Every bound
+// below is now READ OFF THE BUILD's own constants instead of retyped as a literal, so this file pins
+// the SHAPE (lerp on hull fraction, clamped at both ends, monotone) rather than one changeset's
+// numbers. §D's "strictly between the two ranges" needed real widening: at the new defaults the
+// half-hull interval is [20, 30.5] and overlaps the full-hull range's floor, so it is stated as the
+// interpolation it actually is, plus the half that still carries the meaning — a half-hull player
+// always waits longer than a zero-hull one.
 
 "use strict";
 const { mkAssert, buildGame } = require("./_harness.js");
@@ -22,36 +31,42 @@ installSeed(20260826);
   assert(typeof X.healthGapRoll === "function", "A: healthGapRoll exists");
 })();
 
-// ================= (B) roll at full hull falls in [22, 30] =================
+// ================= (B) roll at full hull falls in the OK pair =================
 (function sectionB() {
   console.log("(B) full-hull roll falls in [HEALTH_GAP_LOW_OK, HEALTH_GAP_HIGH_OK]");
   const X = buildGame();
   X.game.ship.hp = X.SHIP_MAX_HP;
   for (let i = 0; i < 50; i++) {
     const v = X.healthGapRoll();
-    assert(v >= 22 && v <= 30, `B: roll ${v} in [22, 30]`);
+    assert(v >= X.HEALTH_GAP_LOW_OK && v <= X.HEALTH_GAP_HIGH_OK,
+      `B: roll ${v} in [${X.HEALTH_GAP_LOW_OK}, ${X.HEALTH_GAP_HIGH_OK}]`);
   }
 })();
 
-// ================= (C) roll at zero hull falls in [6, 10] =================
+// ================= (C) roll at zero hull falls in the HURT pair =================
 (function sectionC() {
   console.log("(C) zero-hull roll falls in [HEALTH_GAP_LOW_HURT, HEALTH_GAP_HIGH_HURT]");
   const X = buildGame();
   X.game.ship.hp = 0;
   for (let i = 0; i < 50; i++) {
     const v = X.healthGapRoll();
-    assert(v >= 6 && v <= 10, `C: roll ${v} in [6, 10]`);
+    assert(v >= X.HEALTH_GAP_LOW_HURT && v <= X.HEALTH_GAP_HIGH_HURT,
+      `C: roll ${v} in [${X.HEALTH_GAP_LOW_HURT}, ${X.HEALTH_GAP_HIGH_HURT}]`);
   }
 })();
 
-// ================= (D) half hull falls strictly between the two ranges =================
+// ================= (D) half hull rolls the half-way interpolation of the two pairs =================
 (function sectionD() {
-  console.log("(D) half-hull roll falls between the hurt and ok ranges");
+  console.log("(D) half-hull roll sits on the interpolation, and always above the hurt range");
   const X = buildGame();
   X.game.ship.hp = X.SHIP_MAX_HP / 2;
+  const lo = (X.HEALTH_GAP_LOW_HURT + X.HEALTH_GAP_LOW_OK) / 2;
+  const hi = (X.HEALTH_GAP_HIGH_HURT + X.HEALTH_GAP_HIGH_OK) / 2;
   for (let i = 0; i < 50; i++) {
     const v = X.healthGapRoll();
-    assert(v > 10 && v < 22, `D: roll ${v} strictly between 10 and 22`);
+    assert(v >= lo && v <= hi, `D: roll ${v} inside the half-way interval [${lo}, ${hi}]`);
+    assert(v > X.HEALTH_GAP_HIGH_HURT,
+      `D: ...and above every zero-hull roll (${v} > ${X.HEALTH_GAP_HIGH_HURT}) — a hurt ship still waits least`);
   }
 })();
 
@@ -78,10 +93,16 @@ installSeed(20260826);
 (function sectionF() {
   console.log("(F) four POWERUPS registry knobs, each def-derived from its const; no LEVERS entry");
   const X = buildGame();
-  hasKnob(X, "healthGapLowOk", { def: 22, min: 1, max: 60, step: 1 }, A);
-  hasKnob(X, "healthGapHighOk", { def: 30, min: 1, max: 60, step: 1 }, A);
-  hasKnob(X, "healthGapLowHurt", { def: 6, min: 1, max: 60, step: 1 }, A);
-  hasKnob(X, "healthGapHighHurt", { def: 10, min: 1, max: 60, step: 1 }, A);
+  // CS042 P6 repoint: the four defs moved with spec §2.3 e. They are still asserted as exact numbers
+  // — a knob's def IS a shipped value — and still cross-checked against the consts they derive from.
+  hasKnob(X, "healthGapLowOk", { def: 30, min: 1, max: 60, step: 1 }, A);
+  hasKnob(X, "healthGapHighOk", { def: 45, min: 1, max: 60, step: 1 }, A);
+  hasKnob(X, "healthGapLowHurt", { def: 10, min: 1, max: 60, step: 1 }, A);
+  hasKnob(X, "healthGapHighHurt", { def: 16, min: 1, max: 60, step: 1 }, A);
+  eq(X.DEBUG_ENTRIES.find(v => v.id === "healthGapLowOk").def, X.HEALTH_GAP_LOW_OK, "F: healthGapLowOk's def IS the const");
+  eq(X.DEBUG_ENTRIES.find(v => v.id === "healthGapHighOk").def, X.HEALTH_GAP_HIGH_OK, "F: healthGapHighOk's def IS the const");
+  eq(X.DEBUG_ENTRIES.find(v => v.id === "healthGapLowHurt").def, X.HEALTH_GAP_LOW_HURT, "F: healthGapLowHurt's def IS the const");
+  eq(X.DEBUG_ENTRIES.find(v => v.id === "healthGapHighHurt").def, X.HEALTH_GAP_HIGH_HURT, "F: healthGapHighHurt's def IS the const");
   assert(!X.LEVERS.some(l => l.id.startsWith("healthGap")), "F: no healthGap* lever added");
 })();
 

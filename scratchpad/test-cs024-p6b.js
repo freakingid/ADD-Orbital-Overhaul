@@ -672,7 +672,11 @@ function evalSlice(literal) {
       // CS040 P4 repoint: and hubDryWeightMult (POWERUPS, appended right after healthBankMax) — the
       // recycle hub's dry-weapon relief multiplier, CS040 P4's row, not P6b's. Same reasoning a
       // fourteenth time.
-      .replace(/,hubDryWeightMult/, "");
+      .replace(/,hubDryWeightMult/, "")
+      // CS042 P6 repoint: and the three health-supply rows (healthSpawnLock, repairMilestoneGrowth,
+      // repairMilestoneHullPct — POWERUPS, appended right after hubDryWeightMult) — CS042 P6's rows,
+      // not P6b's. Same reasoning a fifteenth time.
+      .replace(/,healthSpawnLock,repairMilestoneGrowth,repairMilestoneHullPct/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
