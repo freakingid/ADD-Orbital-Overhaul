@@ -152,7 +152,11 @@ function fieldSnap(g) {
     "A: ⛔ C2 — every damage gate still reads !game.levelEndSafe, and not one of them moved to the grace");
 
   // FORK-F -> F2: one header string, no ternary, and `isWave` still bound for the sub-line.
-  const celeb = stripped.slice(stripped.indexOf("function drawCelebration() {"));
+  // ⛔ RE-AIMED BY CS042 P5 (GATE A, A3/B3): the panel's ink moved into drawCelebrationPanel(c, a, wave)
+  // so a dismissed panel's snapshot can be drawn at a fading alpha through the same one renderer;
+  // drawCelebration() is now the two-line wrapper that picks which. F2's claim is about the panel's own
+  // text, which is what that body still holds — this points at the body, not at the wrapper's name.
+  const celeb = stripped.slice(stripped.indexOf("function drawCelebrationPanel(c, a, wave) {"));
   const celebBody = celeb.slice(0, celeb.indexOf("\nfunction ", 1));
   assert(/menuPanel\(CELEB_PANEL_W, CELEB_PANEL_H, "ACHIEVEMENTS UNLOCKED"\)/.test(celebBody),
     "A: ⛔ the panel title is the bare string — the isWave ternary is gone from menuPanel()'s argument");
@@ -400,6 +404,9 @@ function fieldSnap(g) {
   const seen = [];
   X.ctx.fillText = str => seen.push(String(str));
   const drawn = () => { seen.length = 0; X.draw(); return seen; };
+  // CS042 P5: the panel alone, without the announcement dissolving under it — the one draw call
+  // draw() makes for it, so this is still the real renderer and not a re-implementation.
+  const celebStrings = () => { seen.length = 0; X.drawCelebration(); return seen; };
 
   const w = g.wave;
   X.keydown("Enter");                              // the level-end open: resume === "wave"
@@ -407,10 +414,19 @@ function fieldSnap(g) {
   let rows = drawn();
   assert(rows.includes("ACHIEVEMENTS UNLOCKED"),
     "G: ⛔ the LEVEL-END panel's header reads ACHIEVEMENTS UNLOCKED");
-  assert(!rows.some(s => /COMPLETE/i.test(s)),
-    "G: ⛔ ...and nothing on that frame says COMPLETE — the announcement already said it, once");
   assert(rows.includes("During level " + w + " you earned:"),
     "G: ...while the SUB-LINE still names the level, which is what isWave is still for");
+  // ⛔ NARROWED BY CS042 P5 (GATE A, A2 "out 0.35 easeIn — after the press"). This read "nothing on that
+  // frame says COMPLETE"; the announcement now DISSOLVES for CEREMONY_ANNOUNCE_OUT seconds under the
+  // panel fading in over it, so for that long it is legitimately on the frame — that overlap IS the
+  // cross-fade. F2's claim was never about the frame, it was about THE PANEL not repeating a line the
+  // announcement had already delivered, so it is asserted where it belongs (the panel's own strings)
+  // and then re-checked at the frame level once the ghost has expired.
+  assert(!celebStrings().some(s => /COMPLETE/i.test(s)),
+    "G: ⛔ ...and nothing THE PANEL draws says COMPLETE — the announcement already said it, once");
+  X.tickCeremony(X.CEREMONY_ANNOUNCE_OUT);
+  assert(!drawn().some(s => /COMPLETE/i.test(s)),
+    "G: ⛔ ...nor anything on the frame once the announcement's 0.35 s dissolve has run out");
 
   // The game-over site, through the same one call.
   g.celebration = null; g.state = "gameover"; g.entry = null;

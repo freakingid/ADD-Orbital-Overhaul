@@ -108,7 +108,10 @@ function buildInstance() {
     "startGame", "update", "draw", "game", "HighScores", "drawScoreTable", "drawHighScores",
     "SCORES_MAX", "VIEW_W", "VIEW_H", "AudioSys", "DEATH_DURATION", "killShip",
     "scoresMaxScroll", "HS_ROW_CLIP_TOP", "HS_ROW_CLIP_BOTTOM", "HS_GAMEOVER_ROWS",
-    "HS_RESET_LABEL", "HS_HINT"
+    "HS_RESET_LABEL", "HS_HINT",
+    // CS042 P5: §E now has to clear the celebration panel and run the stack's fade-in past full
+    // before it can measure the gameover block's layout (see that section's own note).
+    "dismissCelebration", "tickCeremony", "CEREMONY_GAMEOVER_IN"
   ];
   const factory = new Function(
     "window", "document", "performance", "requestAnimationFrame", "navigator", "localStorage",
@@ -235,6 +238,13 @@ function fillFull(A) {
   // ⚠ CS034 P7: a "force the settled table view, not the initials-entry slots" line stood here. The
   // gameover screen has only the one view now.
   assert(A.game.state === "gameover", "E: reached gameover");
+  // ⛔ CS042 P5 (GATE A, B4 "drawn under the previous beat: yes → no"): the stack no longer renders
+  // while the achievement celebration panel is up — it arrives when the panel is dismissed instead of
+  // being uncovered. A death that banks an unlock therefore opens a panel this section has to clear
+  // before it can measure the stack's layout at all. Dismissing is what a player does; the layout
+  // claim below is unchanged, and the section still measures the real draw() path.
+  if (A.game.celebration) A.dismissCelebration();
+  A.tickCeremony(A.CEREMONY_GAMEOVER_IN);   // ...and past its 0.40 s fade-in, so the stack is at full
   A.__log.length = 0;
   A.draw();
   const all = A.__log.filter(e => e.op === "fillText");

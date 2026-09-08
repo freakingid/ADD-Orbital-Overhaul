@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P4 · Registry: 110 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P5 · Registry: 110 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -94,7 +94,46 @@ carried forward and still live.
   chain (`haulsize(game.deliveryCount)`), and `superMegaDelivery()` (`megadelivery`). No registry row,
   no GDD edit (P11 owns §2.8).
 
+- P5 — the ceremony cross-fade, **GATE A's "Cross-fade" preset taken unedited: fourteen changes, every
+  one a transition.** ⛔ **No timing moved** — no `DEBUG_VARS` row, registry still 110, and
+  `levelBannerTime`/`levelBannerFade`/`levelEndGrace`/`DEATH_DURATION` are all where they were; three
+  plain constants carry the whole numeric content (`CEREMONY_ANNOUNCE_OUT` 0.35, `CEREMONY_PANEL_FADE`
+  0.35, `CEREMONY_GAMEOVER_IN` 0.40) plus the lab's two curves, `easeIn`/`easeOut`, ported verbatim.
+  ⛔ **"Fade-out after the press" is new mechanism, and both dismissals still NULL the field the rest
+  of the build gates on** — `game.levelDone` (the freeze's hold/tail `if`/`else`) and `game.celebration`
+  (`update()`'s early return, both input handlers, the deferred `nextWave()`). Each dissolve is a
+  render-only ghost nothing else reads: `game.levelDoneOut` and `game.celebrationOut`, the latter a
+  snapshot carrying the just-completed `wave` because `nextWave()` runs on the next line. Four fade
+  clocks, ticked by `tickCeremony(dt)` in **`loop()`, not `update()`** — a panel is exactly the term
+  `update()` early-returns on — holding through a pause like the caption and banner rather than like the
+  toasts. `drawLevelBanner()`'s one-expression alpha splits (easeOut in, linear out) and
+  `drawCelebration()` becomes a wrapper over `drawCelebrationPanel(c, a, wave)`. ⛔ **B4 reverses
+  CS034 P7:** the GAME OVER stack is gated on `!game.celebration` again and fades in over 0.40 s instead
+  of being uncovered. No stagger — the lab's controls came back all-zero. GDD §2.18/§2.20/§2.20.1 and
+  §3's Main loop row edited, because GATE A note 4 requires the reversal recorded rather than silently
+  re-added.
+
 ## Working / verified
+
+- **P5:** full suite **174 files, 174 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, after one
+  `test-f6.js` flake rerun — the standing ~1.7% one), `node --check` clean.
+  `scratchpad/test-cs042-p5.js` is 157 assertions in nine sections, and its load-bearing ones were
+  **mutation-checked, not just run**: removing the B4 gate, reverting the banner's fade-in to linear,
+  and dropping the announcement's ghost each turn assertions red, and ⛔ **§F catches the documented
+  HARD HANG** — replacing the freeze's plain `<=` with the crossing one-shot its own header warns about
+  reports `frames: -1` on both degenerate knob settings, with and without a panel. §F is the phase
+  prompt's required regression: `levelBannerFade >= levelBannerTime` and `levelBannerTime === 0` both
+  thaw on the **first** tail frame, driven through the real `loop()`, counter-capped, never wall-clock.
+  §G pins the six standing constraints positively against the parent — `updateLevelEndFreeze`,
+  `tickLevelBanner`, `nextWave`, `Achievements.onUnlock` and **both input handlers** are byte-identical,
+  and no handler, `update()` or the reduced sim reads any of the four new fade fields.
+  ⛔ **Six pre-existing tests were legitimately invalidated; all six were WIDENED, not weakened**, on the
+  standing moving-pin precedent — `test-cs026-p3.js` TRAP 5, `test-cs030-p4.js` §A/§G (a third repoint,
+  folding B4's two edits back by name after asserting them present), `test-cs010-p5.js` §E,
+  `test-cs025-p5.js` §C, `test-cs036-p2.js` §I and `test-cs036-p3.js` §A/§G. Two of those pinned the very
+  behaviours GATE A reverses (the announcement's hard cut, the stack drawn unconditionally); each is
+  rewritten in place with its changeset, never deleted.
+  ⚠ **Not yet seen in a browser** — every number here is measured alpha, not a look call.
 
 - **P4:** full suite **173 files, 173 passed, 0 failed, 0 skipped, 0 timed out** (exit 0),
   `node --check` clean. `scratchpad/test-cs042-p4.js` is 124 assertions in eight sections, same shape
@@ -163,8 +202,8 @@ carried forward and still live.
 
 ## Known issues
 
-- **⛔ CS042 P2 found two divergences between `PLANNED-FEATURES-CS042.md` §3 and the build. P5 must
-  not paste §3.3's table as-is.** (1) **§3.3 lists the GAME OVER stack as beat 4, after the panel.
+- **✅ DISCHARGED BY P5 (kept for the log): CS042 P2 found two divergences between
+  `PLANNED-FEATURES-CS042.md` §3 and the build, and P5 built the lab's model, not §3.3's table.** (1) **§3.3 lists the GAME OVER stack as beat 4, after the panel.
   The build draws it BEFORE the panel, in the same frame as the handoff** — `draw()`'s
   `game.state === "gameover"` block runs, then `drawCelebration()` draws the near-opaque 820×560
   panel over it, covering everything but the footer. So the stack does not "arrive" at the panel's
@@ -176,6 +215,10 @@ carried forward and still live.
   four per-element delays, a shared element fade and a per-row table step on that one beat, all
   zero at shipped. ⚠ **That is the one control not itemised in §3.4**, added deliberately rather
   than by drift; if Paul does not want it in scope, the copy-out simply reports all zeros.
+  **It did: the stagger came back all-zero and none of it ships.** On (1), P5 implemented the
+  lab's reading and the block's own B4 line — the stack stops drawing under the panel entirely —
+  so §3.3's table ordering is now what the build does. ⛔ **§3.3's table is still wrong on paper**
+  and is P11's doc debt, alongside §6.3's two wrong numbers.
 
 - **⛔ §6.8 "one mass, one force" PROPOSED (2026-09-08), superseding §6.7 and §6.3's three models.**
   Paul asked for exactly two knobs — the cargo's effective mass and the Engine's effect on it — with
@@ -373,11 +416,24 @@ None.
   "Working / verified" writeup above. `shieldPing()` → `guardblock()` landed in `breakChain()`'s guard
   branch, `POWERTAG_ROOT` sits beside `POWERUP_LABEL`, and `powertag()`'s 0.16 s offset and the
   `health`/`guard` exclusions all came through as GATE A's note recorded them.
-- **P5 is the next session** — the ceremony edit (§3), **Opus 5, XHigh**; its copy-paste prompt is in
-  `IMPLEMENTATION-PHASES-CS042.md`. ⛔ **Requires the `ceremony-lab` copy-out block above (Cross-fade,
-  taken unedited) — that block IS P5's spec.** Read the six standing constraints in the phase doc
-  before touching `updateLevelEndFreeze()`; the freeze's documented failure mode is a hard hang.
-  **Nothing in CS042 is blocked.**
+- **✅ P5 is DONE.** The ceremony cross-fade is shipped, GATE A's block taken unedited — see the P5
+  ledger entry and its "Working / verified" writeup above. All six standing constraints hold and are
+  asserted positively against the parent; the freeze terminates on the first tail frame under both
+  degenerate banner-knob settings, panel or no panel.
+  - ⛔ **P5 edited GDD content (§2.18, §2.20, §2.20.1, §3's Main loop row), so P11's §0 size re-measure
+    is now mandatory** — that column is snapshotted numbers, not live formulas.
+  - ⛔ **P11 still owns §2.20.1's fuller write-up if it wants one.** P5 wrote only what its own change
+    made false, which is the minimum GATE A note 4 asks for; nothing here is a substitute for P11's own
+    §2 pass.
+  - ⚠ **`IMPLEMENTATION-PHASES-CS042.md` rides along in P5's commit.** Paul edited P5's copy-paste
+    prompt in the working tree before the session started (`[PASTE HERE]` → a pointer at
+    `CS042-GATE-A.md`); it is carried rather than left dangling, and named in the test's scope pin.
+  - ⚠ **Nobody has seen this in a browser.** Every number in the writeup is measured alpha under a
+    stubbed canvas. Whether the cross-fade actually reads as smooth is a GATE C question.
+
+- **P6 is the next session** — health supply levelling (§2); its copy-paste prompt is in
+  `IMPLEMENTATION-PHASES-CS042.md`. **Nothing in CS042 is blocked except P7**, which waits on Paul's
+  §6.7/§6.8 call (see Known issues).
 - **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
   headroom**. P1's entry recorded 848 lines, which was wrong — HEAD measured 853 before this phase;
   the byte figure was right, and the historical numbers are KiB, not KB. The next phase that adds a
@@ -410,6 +466,9 @@ None.
   rule saying it must not grow back. **The structural fix is that a closing phase already re-measures
   §0** — extending that same checklist to re-read the build stamp is the cheap way to stop this
   recurring, and is not yet done.
+- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 502 lines after P5, and it was already 443 at
+  P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
+  and deleting a carried-forward item to make room is not a phase-local call.
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
 - A second, deeper telemetry capture on the v4 build (waves 10+) — see Known issues.

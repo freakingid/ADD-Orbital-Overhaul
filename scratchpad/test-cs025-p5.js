@@ -132,7 +132,8 @@ const RETURN = ["game", "startGame", "update", "draw", "nextWave", "drawLevelBan
   "VOICE_CRITICAL", "VOICE_STILL_TRUE", "VOICE_QUEUE_MAX", "VOICE_PRIORITY",
   "LEVEL_BANNER_TIME", "LEVEL_BANNER_FADE", "LEVEL_BANNER_SIZE", "LEVEL_BANNER_Y",
   "DEBUG", "DEBUG_ENTRIES", "LEVERS", "leverState", "GAME_VERSION", "VIEW_W", "VIEW_H",
-  "WORLD_W", "WORLD_H"];
+  "WORLD_W", "WORLD_H",
+  "easeOut"];   // CS042 P5: §C samples the banner's new fade-in curve against the build's own function
 const RETURN_BOTH = ["LEVERS", "leverState", "GAME_VERSION", "DEBUG_ENTRIES"];
 
 function buildFrom(src, { audio = true, names = RETURN } = {}) {
@@ -270,7 +271,14 @@ function quiet(X) {
   }
 
   near(alphaAt(0.0001), 0.0001 / X.LEVEL_BANNER_FADE, 0.01, "C: alpha starts near 0 (fades IN)");
-  near(alphaAt(X.LEVEL_BANNER_FADE / 2), 0.5, 0.02, "C: half-way through the ramp-in, alpha ~0.5");
+  // ⛔ WIDENED BY CS042 P5 (GATE A, A4 "fade-in curve linear → easeOut"). The ramp-IN is no longer
+  // linear, so the half-way sample is easeOut(0.5) = 0.75, not 0.5. The ramp-OUT below is untouched
+  // (A5 still reports "out 0.50 linear") and still reads 0.5 at its own half-way point, which is what
+  // makes this pair worth keeping: the two ends now curve DIFFERENTLY, and this is where that shows.
+  // Asserted against the build's own easeOut() rather than the literal, so the two cannot drift.
+  near(alphaAt(X.LEVEL_BANNER_FADE / 2), X.easeOut(0.5), 0.02,
+    "C: half-way through the ramp-in, alpha is easeOut(0.5) = 0.75 (CS042 P5)");
+  assert(X.easeOut(0.5) > 0.5, "C: (non-vacuous) easeOut really is above the linear ramp at its midpoint");
   eq(alphaAt(X.LEVEL_BANNER_FADE), 1, "C: at exactly FADE, alpha is full");
   eq(alphaAt(X.LEVEL_BANNER_TIME / 2), 1, "C: mid-life, alpha is full");
   eq(alphaAt(X.LEVEL_BANNER_TIME - X.LEVEL_BANNER_FADE), 1, "C: at the start of the ramp-out, still full");

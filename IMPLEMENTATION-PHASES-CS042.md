@@ -489,7 +489,7 @@ Commit on main with the subject named in P5. Do not push. Update STATUS.md.
 ultrathink
 
 --- ceremony-lab copy-out block follows ---
-[PASTE HERE]
+See file CS042-GATE-A.md
 ```
 
 ### What to build

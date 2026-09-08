@@ -149,7 +149,10 @@ function fakeItems(n) {
   // Call-site ordering, read off draw()'s own body: after the gameover block, in drawMenu()'s slot,
   // before drawToasts(). Draw order mirrors input priority — a menu that owns input draws on top.
   const drawBody = src.slice(src.indexOf("\nfunction draw() {"), src.indexOf("\nfunction drawHUD() {"));
-  const iOver = drawBody.indexOf('if (game.state === "gameover") {');
+  // ⛔ CS042 P5 (GATE A, B4): the condition gained `&& !game.celebration`, so this locator matches the
+  // PREFIX rather than the whole line — what it is finding is the block's position in draw()'s tail,
+  // which is what every assertion below is about, and that has not moved.
+  const iOver = drawBody.indexOf('if (game.state === "gameover"');
   const iCeleb = drawBody.indexOf("drawCelebration();");
   const iMenu = drawBody.indexOf("if (game.paused) drawMenu();");
   const iToast = drawBody.lastIndexOf("drawToasts();");
@@ -445,7 +448,7 @@ function fakeItems(n) {
   // Brace-match the gameover draw block out of BOTH sources and compare bytes. Safe on raw text
   // here: the block contains no braces inside its strings or comments.
   function gameoverBlock(text) {
-    const from = text.indexOf('if (game.state === "gameover") {');
+    const from = text.indexOf('if (game.state === "gameover"');
     if (from < 0) return null;
     let depth = 0;
     for (let i = text.indexOf("{", from); i < text.length; i++) {
@@ -475,12 +478,33 @@ function fakeItems(n) {
     //   and EVERY OTHER executable line of the parent's block survives verbatim, in order, with none
     //   added. That still catches the thing this trap exists for — a stray edit riding along in the
     //   gameover screen — without pretending an instructed deletion never happened.
+    // ⚠ REPOINTED A THIRD TIME, BY CS042 P5 (GATE A, B4 "drawn under the previous beat: yes → no" and
+    //   "fade-in 0.00 → 0.40 easeOut"). Two instructed edits reach this block: the condition gains
+    //   `&& !game.celebration` — CS030 P7's own gate-G6 refinement, back in a new form and for a LOOK
+    //   reason (the stack should arrive when the panel goes, not be uncovered) rather than the
+    //   legibility one it carried the first time — and the stack is wrapped in one globalAlpha pair.
+    //   Both are folded back BY NAME below, exactly as CS034 P7's deletion is, so any OTHER edit to
+    //   this block still fails the comparison.
     const codeLines = t => t.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("//"));
     assert(!/game\.entry|drawEntrySlots/.test(mine),
       "G: ⛔ HEAD's gameover block has no trace of the initials entry left");
+    // CS042 P5's two edits, asserted PRESENT before they are folded away — a fold that matched nothing
+    // would quietly turn this pin back into a byte claim about a block that had in fact changed.
+    assert(mine.includes('if (game.state === "gameover" && !game.celebration) {'),
+      "G: ⛔ CS042 P5 — the block is gated on !game.celebration again (B4: it arrives, it is not uncovered)");
+    assert(mine.includes("ctx.globalAlpha = easeOut(clamp01(game.gameoverT / CEREMONY_GAMEOVER_IN));")
+        && mine.includes("ctx.globalAlpha = 1;"),
+      "G: ⛔ CS042 P5 — ...and the whole stack rides ONE globalAlpha pair, restored to 1 on the way out");
+    const CS042_ADDED = new Set([
+      "ctx.globalAlpha = easeOut(clamp01(game.gameoverT / CEREMONY_GAMEOVER_IN));",
+      "ctx.globalAlpha = 1;",
+    ]);
     // The parent's lines less the entry branch and every brace-only line (the deletion unbalanced them).
     const parentKept = codeLines(theirs).filter(l => !/game\.entry|drawEntrySlots/.test(l) && !/^\}/.test(l));
-    const mineKept = codeLines(mine).filter(l => !/^\}/.test(l));
+    const mineKept = codeLines(mine)
+      .map(l => l === 'if (game.state === "gameover" && !game.celebration) {'
+                ? 'if (game.state === "gameover") {' : l)
+      .filter(l => !/^\}/.test(l) && !CS042_ADDED.has(l));
     let j = 0, missing = null;
     for (const l of parentKept) {
       const k = mineKept.indexOf(l, j);

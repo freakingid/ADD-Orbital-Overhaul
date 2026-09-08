@@ -381,7 +381,7 @@ function clear(X) {
   frames(X, 1800);                                    // 30 s: ⛔ there is NO fade-out to run into
   rows = drawn();
   eq(rows.find(r => r.str === "Level " + g.wave + " Complete").alpha, 1,
-    "I: ⛔ and 30 s later it is STILL at full — no fade-out, the panel or the next banner replaces it");
+    "I: ⛔ and 30 s later it is STILL at full — the HOLD has no clock and nothing ages it out");
   eq(X.ctx.globalAlpha, 1, "I: ...and globalAlpha is restored to 1 before draw() moves on");
 
   // ⛔ NOT gated by Capture's H toggle — the drawLevelBanner()/drawCaption() rule.
@@ -398,10 +398,27 @@ function clear(X) {
   assert(!drawn().some(r => r.str === "Level " + g.wave + " Complete"), "I: at gameover, it does not draw");
   g.state = "playing";
 
-  // The confirming frame replaces it outright.
+  // ⛔ REVERSED BY CS042 P5 (GATE A, A2 "out 0.35 easeIn — after the press"). This used to read "the
+  // confirming frame replaces it outright", and the hard cut it pinned is exactly what the ceremony lab
+  // measured as the clunk. The announcement now DISSOLVES for CEREMONY_ANNOUNCE_OUT seconds under the
+  // banner (or the panel) fading in over it. Two claims replace the one, and the first is the load-
+  // bearing half of the pair — the freeze's hold/tail if/else and both input handlers read
+  // game.levelDone, and a dissolve that kept it alive would be the documented HARD HANG.
   X.keydown("Enter");
-  assert(!drawn().some(r => /Complete/.test(r.str)), "I: ⛔ the confirm removes it from the frame it was drawn on");
-  assert(drawn().some(r => r.str === "Level " + g.wave), "I: ...and the \"Level N+1\" banner is what stands there now");
+  eq(g.levelDone, null, "I: ⛔ the confirm still NULLS game.levelDone — the ghost is a separate field");
+  eq(X.levelDoneActive(), false, "I: ⛔ ...so the predicate both input handlers ask reads false at once");
+  const ghost = drawn().find(r => r.str === "Level " + (g.wave - 1) + " Complete");
+  assert(ghost && ghost.alpha === 1,
+    "I: ⛔ ...and the announcement is STILL DRAWN on that frame, at full, starting its 0.35 s dissolve");
+  assert(drawn().some(r => r.str === "Level " + g.wave), "I: ...with the \"Level N+1\" banner fading in over it");
+  // The ghost is on its own clock, in loop() rather than update() — so drive that clock, not frames().
+  X.tickCeremony(X.CEREMONY_ANNOUNCE_OUT / 2);
+  const halfOut = drawn().find(r => /Complete/.test(r.str));
+  assert(halfOut && halfOut.alpha > 0.2 && halfOut.alpha < 0.3,
+    `I: half-way out it is at easeIn(0.5) = 0.25 (${halfOut && halfOut.alpha})`);
+  X.tickCeremony(X.CEREMONY_ANNOUNCE_OUT);
+  eq(g.levelDoneOut, null, "I: ⛔ the ghost clears itself when its clock runs out");
+  assert(!drawn().some(r => /Complete/.test(r.str)), "I: ⛔ ...and nothing says Complete after that");
 })();
 
 // ================= (J) the knob is retired, and needed no shim =================

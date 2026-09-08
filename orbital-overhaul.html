@@ -2852,6 +2852,35 @@ const LEVEL_BANNER_TIME = 2.2, LEVEL_BANNER_FADE = 0.5, LEVEL_BANNER_SIZE = 72, 
 //          72px line with air to spare, and stays clear up to the size knob's 160 ceiling.
 const LEVEL_DONE_HINT = "ENTER / A  continue", LEVEL_DONE_HINT_DY = 44;
 
+// CS042 P5 (spec §3; GATE A's ceremony-lab copy-out, preset "Cross-fade" taken unedited) — THE
+// CEREMONY CROSS-FADES. Three durations and two curves are the whole numeric content of that block:
+// ⛔ NOTHING ABOUT THE CEREMONY'S TIMING MOVES. No DEBUG_VARS row changes, the registry count is
+// unchanged, and levelBannerTime / levelBannerFade / levelEndGrace / DEATH_DURATION all stay exactly
+// where they were — both sequence totals are identical to shipped. Every one of the fourteen changes
+// P5 implements is a TRANSITION.
+//   Plain constants, not registry rows, on CAPTION_LINGER / LEVEL_BANNER_TIME's own standing LOOK-CALL
+// precedent (CLAUDE.md, Debug registry): pure presentation, tuned by eye in tools/ceremony-lab.html,
+// no gameplay effect.
+//   ANNOUNCE_OUT: "Level N Complete" dissolves for this long AFTER the confirm (A2 out, easeIn). Its
+//                 fade-IN is unchanged and still DEBUG.levelBannerFade, so the two announcements still
+//                 ramp in alike on a slider drag.
+//   PANEL_FADE:   the celebration panel's fade, in AND out, at BOTH call sites — one number, which is
+//                 why drawCelebrationPanel() needs no per-site fork (A3/B3 in easeOut, out easeIn).
+//   GAMEOVER_IN:  the GAME OVER stack's fade-in once the panel is gone (B4 in, easeOut).
+const CEREMONY_ANNOUNCE_OUT = 0.35, CEREMONY_PANEL_FADE = 0.35, CEREMONY_GAMEOVER_IN = 0.40;
+
+// The lab's curves, ported verbatim from tools/ceremony-lab.html's CURVES table, and applied the way
+// its alphaOf() applies them: the curve takes the FRACTION ELAPSED for a fade-in and the FRACTION
+// REMAINING for a fade-out, and where a beat has both ends the two compose with Math.min.
+// ⛔ THE NAME IS THE CURVE'S OWN SHAPE, NOT A PERCEPTUAL DIRECTION — an "easeIn" fade-OUT drops fast
+// and then trails, because it is t*t evaluated on the remaining fraction. Do not "correct" either one
+// into its mirror on the theory that a fade-out should ease the other way; these are the two functions
+// Paul auditioned, and the copy-out block names them by these names.
+//   `linear` is the identity and needs no function here; the lab's fourth curve (`smooth`) has no
+// shipped caller and is deliberately not ported.
+function easeIn(t)  { return t * t; }
+function easeOut(t) { return 1 - (1 - t) * (1 - t); }
+
 // CS038 P5 (spec §4, FORK-CS038-G) — twelve presentation knobs retired off the debug registry to
 // plain constants, same LOOK-CALL convention as CAPTION_LINGER/LEVEL_BANNER_TIME above: pure look,
 // tuned by eye, no gameplay effect. Each lands at exactly its old registry `def`; the provenance
@@ -9307,7 +9336,31 @@ const game = {
   // built once, from the wave that was actually completed. `age` counts UP in seconds (the fade-in's
   // clock) rather than down like levelBanner.life, because this announcement has no duration at all —
   // FORK-CS036-E made it player-paced, so there is nothing for a countdown to count (spec §0.4).
-  levelDone: null
+  levelDone: null,
+  // CS042 P5 (spec §3, GATE A) — THE CEREMONY'S FOUR RENDER-ONLY FADE CLOCKS. ⛔ RENDER-ONLY IS THE
+  // WHOLE POINT AND IS NOT A STYLE CHOICE. The cross-fade's new mechanism is "a gated beat's fade-out
+  // runs AFTER the confirm", and both dismissals hard-cut today by NULLING the state the rest of the
+  // build self-gates on. Keeping game.levelDone alive for another 0.35 s would hang updateLevelEndFreeze()
+  // (its hold/tail if/else reads that field, and a non-null levelDone IS the hold — the documented
+  // hard-hang failure mode); keeping game.celebration alive would keep freezing the field, keep owning
+  // both input handlers, and defer nextWave() for the same 0.35 s. So the dissolve gets its OWN state,
+  // which the RENDERER can see and nothing else in the build reads:
+  //   ⛔ NOTHING BELOW IS EVER READ BY INPUT, BY update(), OR BY A GATE. levelDoneActive() and
+  //   game.celebration are still the only two predicates either input handler asks, and neither one
+  //   changed. A future reader adding a term for one of these fields to an input branch, to
+  //   update()'s early return, or to updateLevelEndFreeze() would be re-creating the exact hang this
+  //   arrangement exists to avoid.
+  // All four are ticked by tickCeremony() in loop() — NOT in update() — because every one of them has
+  // to run across a state that update() refuses to run in at all (see that function's header). Declared
+  // in BOTH this literal and resetRun(), per the standing CS016 P3 rule.
+  levelDoneOut: null,   // { text, t }: "Level N Complete" dissolving, t counting DOWN from CEREMONY_ANNOUNCE_OUT
+  celebrationT: 0,      // the LIVE panel's fade-in clock, counting UP; zeroed whenever no panel is up
+  celebrationOut: null, // { items, scroll, resume, wave, t }: the dismissed panel dissolving. `wave` is
+                        // snapshotted because dismissCelebration() runs nextWave() on the next line at the
+                        // level-end site, and the sub-line reads the just-COMPLETED wave (§2.20).
+  gameoverT: 0          // the GAME OVER stack's fade-in clock, counting UP; zeroed unless the stack is
+                        // actually drawing (state "gameover" with no panel over it), which is what makes
+                        // it need no arming call site of its own at either the seam or the dismissal
 };
 
 // ---------- CS022 P1: per-archetype world size (PLANNED-FEATURES-CS022 §4.1/§4.2/§4.3) ----------
@@ -9580,6 +9633,14 @@ function resetRun(wave, debugRun) {
   game.levelEndPulseT = 0;
   game.levelEndFreeze = false;
   game.levelDone = null;
+  //   CS042 P5: the four ceremony fade clocks join them, at the same site and for a related reason —
+  // a ghost mid-dissolve when the player quits to title must not be inherited by the next run. Unlike
+  // the five above they are pure render state, so this is their ONLY functional reset; the two counters
+  // re-zero themselves every frame they are not wanted (see tickCeremony()).
+  game.levelDoneOut = null;
+  game.celebrationT = 0;
+  game.celebrationOut = null;
+  game.gameoverT = 0;
   VoiceSys.reset();
   // CS033 P2: the run-start hook, in the ONE reset both a fresh run and a resumed run share — a
   // resumed run mints a runId too, harmlessly, since Leaderboard.eligible() gates it out at submit.
@@ -13154,17 +13215,32 @@ function drawCaption() {
 // transient announcement, which is the same category as the achievement toast and the game-over text, and
 // CLAUDE.md's Capture note already places those outside the H toggle. (It is deliberately not treated as
 // a HUD readout — there is no persistent element here for H to hide.)
-// Alpha ramps symmetrically: in over the first LEVEL_BANNER_FADE seconds, out over the last, full opacity
-// between. Taking the MIN of elapsed and remaining gives both ends from one expression and degenerates
-// gracefully if 2*FADE ever exceeds TIME (the banner just peaks below 1 instead of glitching). Uses
-// ctx.globalAlpha, which drawText leaves alone — the same mechanism as the caption's fade-out.
+// Alpha ramps over LEVEL_BANNER_FADE at each end: in over the first FADE seconds, out over the last,
+// full opacity between. Uses ctx.globalAlpha, which drawText leaves alone — the same mechanism as the
+// caption's fade-out.
 // CS026 P5: all four reads are DEBUG.* — levelBannerTime MUST match the value nextWave() seeded
 // game.levelBanner.life with, or elapsed goes negative/jumps on a mid-level slider drag (registry comment).
 // The Math.max(0, ...) guard is what makes that degrade gracefully rather than glitch.
+//
+// ⛔ CS042 P5 (GATE A, A4 "fade-in curve linear → easeOut"; A5 still reports "out 0.50 linear") — THE
+// ONE-EXPRESSION ALPHA HAD TO SPLIT, and this header's old sentence about it ("taking the MIN of elapsed
+// and remaining gives both ends from one expression") is rewritten rather than deleted, because the
+// arrangement it described was deliberate and its replacement has to answer for the same two properties.
+// The ends now curve DIFFERENTLY — easeOut in, linear out — so one expression can no longer produce both.
+// Both properties survive verbatim:
+//   * ⛔ THE Math.max(0, ...) GUARD IS KEPT, ON BOTH ENDS. A mid-level levelBannerTime drag can make
+//     `elapsed` negative, and life is allowed to run negative once the banner expires.
+//   * ⛔ THE DEGENERATE 2*FADE > TIME CASE STILL PEAKS BELOW 1 INSTEAD OF GLITCHING, because the two
+//     ends still compose with Math.min — exactly as tools/ceremony-lab.html's own alphaOf() composes a
+//     beat's fadeIn and fadeOut. With easeOut replaced by the identity this is algebraically the
+//     expression it replaced, since max(0, min(x, y)) === min(max(0, x), max(0, y)); the degenerate
+//     fade === 0 readings (Infinity → 1, and 0/0 → a NaN alpha the canvas ignores) are unchanged too.
 function drawLevelBanner() {
   if (game.state === "playing" && !game.paused && game.levelBanner.life > 0) {
     const elapsed = DEBUG.levelBannerTime - game.levelBanner.life;
-    const a = Math.min(1, Math.max(0, Math.min(elapsed, game.levelBanner.life)) / DEBUG.levelBannerFade);
+    const aIn  = easeOut(Math.min(1, Math.max(0, elapsed) / DEBUG.levelBannerFade));
+    const aOut =         Math.min(1, Math.max(0, game.levelBanner.life) / DEBUG.levelBannerFade);
+    const a = Math.min(aIn, aOut);
     ctx.globalAlpha = a;
     drawText(game.levelBanner.text, VIEW_W/2, VIEW_H/2 + DEBUG.levelBannerY, DEBUG.levelBannerSize, COLOR.text, "center");
     ctx.globalAlpha = 1;
@@ -13223,6 +13299,16 @@ function levelDoneActive() {
 // what step 4 was asking for. What this function still ends is the ANNOUNCEMENT (line one), and that is
 // all it ever needed to end.
 function dismissLevelDone() {
+  // ⛔ CS042 P5 (GATE A, A2 "out 0.35 easeIn — after the press"): the announcement HANDS ITS TEXT TO A
+  // GHOST and then nulls itself, on the same line pair, in this order. game.levelDone still goes null
+  // here and that is non-negotiable — the freeze's hold/tail if/else reads it, and a levelDone kept
+  // alive for the dissolve's 0.35 s is the documented HARD HANG. The ghost is render-only: drawLevelDone()
+  // is its only reader, tickCeremony() its only clock, and levelDoneActive() — which BOTH input handlers
+  // ask — never sees it, so the second confirm of a double-tap still finds nothing to dismiss.
+  //   The `if` is not padding: this function's own header records that it is the one line standing
+  // between a stray future caller and a nextWave() at game over, so a call with nothing up is a
+  // contemplated shape — and a dismissal of nothing dissolves nothing.
+  if (game.levelDone) game.levelDoneOut = { text: game.levelDone.text, t: CEREMONY_ANNOUNCE_OUT };
   game.levelDone = null;
   if (game.state === "playing" && game.pendingAch.length) {
     game.celebration = { items: game.pendingAch, scroll: 0, resume: "wave" };
@@ -13241,21 +13327,43 @@ function dismissLevelDone() {
 // ⛔ A SIBLING of drawHUD() in draw(), not inside it, and NOT gated by Capture's H toggle — the rule
 // drawLevelBanner()'s own header states, for the same reason: a transient announcement is the same
 // category as the achievement toast and the game-over text.
-// ⛔ FADE IN ONLY (spec §1.3). It ramps over DEBUG.levelBannerFade — the banner's own knob, so the two
-// announcements ramp alike — and then holds at full for as long as the player leaves it there. There is
-// no fade-out because there is nothing to fade out into: the celebration panel or the "Level N+1" banner
-// replaces it on the confirming frame.
+// FADE IN over DEBUG.levelBannerFade — the banner's own knob, so the two announcements ramp in alike —
+// then hold at full for as long as the player leaves it there.
 //   The `fade > 0` test is not a style choice. levelBannerFade's slider goes down to 0, and age/0 is
 // Infinity — or NaN on the arm frame, where age is 0 too, and a NaN globalAlpha is silently ignored by
 // the canvas, which would leave the announcement drawing at whatever alpha the previous pass left set.
 // Written as a positive test for the same reason achLeader()'s guards are (CLAUDE.md, Rendering).
+//
+// ⛔ CS042 P5 (GATE A, A2 "out 0.35 easeIn — after the press") — IT NOW FADES OUT TOO, AND THE OLD
+// "FADE IN ONLY" RULE IS REVERSED, NOT MISLAID. That rule's reason was "there is nothing to fade out
+// into: the celebration panel or the 'Level N+1' banner replaces it on the confirming frame" — true of
+// a HARD CUT, and the cross-fade is precisely the decision that there should be something to fade out
+// into. The replacement now arrives over 0.35 s (panel) or 0.50 s (banner) while this dissolves under it.
+//   ⛔ TWO SEPARATE STATES, TWO SEPARATE BRANCHES, AND THE LIVE ONE STILL ASKS levelDoneActive() AND
+// NOTHING ELSE. That predicate answers "is the announcement up?" for this renderer and for both input
+// handlers, and it must keep answering FALSE the instant the player confirms or a second confirm would
+// re-enter dismissLevelDone(). The ghost is a different question — "is its dissolve still running?" —
+// which no input path asks. Its own two terms are levelDoneActive()'s in-play-chrome pair, for the
+// identical reason: this is never drawn over a menu, a gameover or the title.
+//   ⛔ DRAW ORDER IS LOAD-BEARING AND ALREADY CORRECT: draw() calls this BEFORE drawCelebration(), so
+// the dissolving announcement passes under the panel fading in over it, never on top of it.
 function drawLevelDone() {
-  if (!levelDoneActive()) return;
-  const fade = DEBUG.levelBannerFade;
-  const a = fade > 0 ? Math.min(1, game.levelDone.age / fade) : 1;
   const y = VIEW_H/2 + DEBUG.levelBannerY;
-  ctx.globalAlpha = a;
-  drawText(game.levelDone.text, VIEW_W/2, y, DEBUG.levelBannerSize, COLOR.text, "center");
+  if (levelDoneActive()) {
+    const fade = DEBUG.levelBannerFade;
+    ctx.globalAlpha = fade > 0 ? Math.min(1, game.levelDone.age / fade) : 1;
+    drawLevelDoneText(game.levelDone.text, y);
+    return;
+  }
+  const out = game.levelDoneOut;
+  if (!out || game.state !== "playing" || game.paused) return;
+  ctx.globalAlpha = easeIn(clamp01(out.t / CEREMONY_ANNOUNCE_OUT));
+  drawLevelDoneText(out.text, y);
+}
+// The announcement's ink, shared by the live branch and the dissolving one so the two can never drift
+// in position, size, colour or hint — the only thing that differs between them is the alpha already set.
+function drawLevelDoneText(text, y) {
+  drawText(text, VIEW_W/2, y, DEBUG.levelBannerSize, COLOR.text, "center");
   drawMenuHint(LEVEL_DONE_HINT, VIEW_W/2, y + LEVEL_DONE_HINT_DY);
   ctx.globalAlpha = 1;
 }
@@ -14338,8 +14446,12 @@ const CELEB_HINT = "↑↓ scroll    ENTER / A / ESC / B  continue";
 // CELEB_EMBLEM_SIZE is cranked past CELEB_DESC_DY + CELEB_DESC_SIZE (40), which is why the constant
 // is read here. Past ~40 it would also let adjacent rows touch — a consequence noted for whoever
 // next retunes it, not of the shipped layout, whose 32 leaves 20px of air between emblems.
-function celebrationMaxScroll() {
-  const n = game.celebration ? game.celebration.items.length : 0;
+//   CS042 P5: the parameter DEFAULTS to game.celebration, so both input handlers still call it bare and
+// still ask about the live panel. It exists because the renderer now also draws a dismissed panel's
+// snapshot mid-dissolve (see dismissCelebration()), and that ghost has to clamp against ITS OWN row
+// count — through this function, never through a second copy of the arithmetic this header forbids.
+function celebrationMaxScroll(c = game.celebration) {
+  const n = c ? c.items.length : 0;
   if (n === 0) return 0;
   const rowBottom = Math.max(CELEB_DESC_DY + CELEB_DESC_SIZE, CELEB_EMBLEM_DY + CELEB_EMBLEM_SIZE);
   const contentH = (CELEB_ROW0_Y - CELEB_ROW_CLIP_TOP) + (n - 1) * CELEB_ROW_STEP + rowBottom;
@@ -14368,8 +14480,21 @@ function celebrationScroll(dir) {
 // neither knows or cares which panel it dismissed — the scroll/dismiss logic is never forked per
 // call site, which is the whole of spec §5.1's mitigation. Cleared BEFORE nextWave() runs, so the
 // wave it builds is never seeded under a panel that is still up.
+// ⛔ CS042 P5 (GATE A, A3/B3 "out 0.35 easeIn — after the press"): SAME ARRANGEMENT AS
+// dismissLevelDone()'s, for the same reason and with a second wrinkle. game.celebration still goes null
+// here, unconditionally: it gates update()'s early return (the panel is what freezes the field), BOTH
+// input handlers, and — at the level-end site — the deferred nextWave() on the line below. A panel that
+// outlived its own dismissal by 0.35 s would keep freezing the field and keep owning input for that
+// long. So the dissolve is a SNAPSHOT that only drawCelebration() reads.
+//   ⛔ THE SNAPSHOT CARRIES game.wave, and that is the wrinkle. nextWave() runs on the very next line
+// and increments it, so a ghost reading game.wave live would spend its whole dissolve saying "During
+// level N+1 you earned:" about unlocks earned in level N. Everything else the renderer needs (items,
+// scroll, resume) is copied for the ordinary reason: the live object is gone.
 function dismissCelebration() {
-  const resume = game.celebration ? game.celebration.resume : null;
+  const c = game.celebration;
+  const resume = c ? c.resume : null;
+  if (c) game.celebrationOut = { items: c.items, scroll: c.scroll, resume: c.resume,
+                                 wave: game.wave, t: CEREMONY_PANEL_FADE };
   game.celebration = null;
   if (resume === "wave") nextWave();
 }
@@ -14396,9 +14521,19 @@ function drawCelebrationRow(item, x, ry) {
 // drawCaption()/drawLevelBanner() siblings, so the call site stays a bare call.
 // menuPanel() fills before it strokes, so its own near-opaque backdrop is what puts the panel in
 // front of whatever is underneath — there is no separate dimming pass and none is needed.
-function drawCelebration() {
-  const c = game.celebration;
-  if (!c) return;
+// ⛔ CS042 P5 (GATE A, A3/B3 "in 0.35 easeOut / out 0.35 easeIn") — THE PANEL'S INK, DRAWN AT A GIVEN
+// ALPHA, WITH NO PER-SITE FORK. The copy-out gives the level-end and game-over panels the SAME two fade
+// numbers and the SAME two curves, so there is one fade implementation and one renderer; the only fork
+// inside it is the `resume`-derived sub-line, which predates this phase and is untouched.
+//   `c` is either game.celebration (live) or the snapshot dismissCelebration() parked, which is why
+// `wave` arrives as an argument instead of being read off game: the ghost must keep naming the level
+// its unlocks were earned in after nextWave() has moved on (see that function's header).
+//   ⛔ THE ALPHA IS ctx.globalAlpha AND NOTHING ELSE. menuPanel()'s own near-opaque backdrop fill is the
+// shipped one and rides the same alpha — GDD §3.2's two sanctioned fill exceptions gain no third here,
+// and no shadowBlur is added. ctx.save() below captures this alpha and ctx.restore() puts it back, so
+// the clip block cannot leak it.
+function drawCelebrationPanel(c, a, wave) {
+  ctx.globalAlpha = a;
   // CS034 P5 (§4): the level-end open (resume === "wave") reads differently from the game-over one —
   // derived from `resume`, never `game.state` (see dismissCelebration()'s header for why). game.wave is
   // still the just-completed wave here (nextWave() is deferred to dismissal), so it needs no new field.
@@ -14412,14 +14547,14 @@ function drawCelebration() {
   const isWave = c.resume === "wave";
   const { x } = menuPanel(CELEB_PANEL_W, CELEB_PANEL_H, "ACHIEVEMENTS UNLOCKED");
   const n = c.items.length;
-  const sub = isWave ? "During level " + game.wave + " you earned:"
+  const sub = isWave ? "During level " + wave + " you earned:"
                       : (n === 1 ? "1 NEW UNLOCK" : n + " NEW UNLOCKS");
   drawText(sub, VIEW_W / 2, CELEB_SUB_Y, 14, COLOR.dim);
 
   // Clamp against the same ceiling both input handlers clamp against, then clip the row region so a
   // scrolled row can never spill past the panel or under the header/footer — drawAchievements()'s
   // idiom, reproduced rather than shared (that renderer reads game.menu.scroll and this one must not).
-  const maxScroll = celebrationMaxScroll();
+  const maxScroll = celebrationMaxScroll(c);
   c.scroll = Math.max(0, Math.min(maxScroll, c.scroll));
   ctx.save();
   ctx.beginPath();
@@ -14435,6 +14570,18 @@ function drawCelebration() {
     if (c.scroll < maxScroll) drawText("▼", VIEW_W / 2, CELEB_ROW_CLIP_BOTTOM + 10, 16, COLOR.menuIdle, "center");
   }
   drawMenuHint(CELEB_HINT, VIEW_W / 2, CELEB_HINT_Y);
+  ctx.globalAlpha = 1;
+}
+
+// The two panels this frame may hold: the one being dismissed, and the one that is up. ⛔ THEY CANNOT
+// BOTH EXIST — nothing opens a panel inside another panel's 0.35 s dissolve — but the ghost is drawn
+// first anyway, so that if a future call site ever made them overlap, the incoming panel would be the
+// one on top. That is also why draw() still calls this exactly once, in its shipped tail slot.
+function drawCelebration() {
+  const out = game.celebrationOut;
+  if (out) drawCelebrationPanel(out, easeIn(clamp01(out.t / CEREMONY_PANEL_FADE)), out.wave);
+  const c = game.celebration;
+  if (c) drawCelebrationPanel(c, easeOut(clamp01(game.celebrationT / CEREMONY_PANEL_FADE)), game.wave);
 }
 
 // Background stars scattered across the whole world (count scales with world area
@@ -14632,18 +14779,40 @@ function draw() {
   drawLevelBanner(); // CS025 P5: likewise a sibling — the transient "Level N", drawn over the HUD, self-gated
   drawLevelDone(); // CS036 P2: a third sibling — "Level N Complete" over the frozen field, self-gated
 
-  if (game.state === "gameover") {
+  // ⛔ CS042 P5 (GATE A, B4 "drawn under the previous beat: yes → no" + "fade-in 0.00 → 0.40 easeOut") —
+  // THIS REVERSES A CS034 P7 DECISION, AND THE REVERSAL IS DELIBERATE, NOT A REDISCOVERY. What follows
+  // is the history, kept in place rather than deleted, because it is the third time this condition has
+  // moved and the next reader deserves the whole of it:
+  //   v3.6 P6 drew the table behind a two-branch "initials slots first, then the table" condition; CS030
+  // P7's gate-G6 refined that with `&& !game.celebration`, so the slots did not render under the
+  // celebration panel's opaque backdrop; CS034 P7 deleted the initials entry and BOTH halves with it,
+  // leaving this block unconditional. Unconditional is exactly what P2's ceremony lab measured as the
+  // game-over clunk: the stack does not ARRIVE when the panel is dismissed, it is UNCOVERED, having been
+  // drawn underneath the whole time. Paul's answer at GATE A was to make it arrive.
+  //   So the gate is back in a NEW form — `!game.celebration` again, but now for a look reason rather
+  // than a legibility one, and paired with a fade-in that gives the beat somewhere to arrive from.
+  // ⛔ IT READS game.celebration, THE LIVE PANEL ONLY. The dissolving ghost deliberately does NOT
+  // suppress this block: the panel fading out over 0.35 s while the stack fades in over 0.40 s IS the
+  // cross-fade, and gating on the ghost too would restore the hard cut one step later.
+  //   game.gameoverT is zeroed by tickCeremony() on every frame this condition is false, which is what
+  // makes the fade start correctly in both shapes: with unlocks banked it starts at the panel's
+  // dismissal, and with an empty bucket (the common case) at the "dying" → "gameover" seam itself.
+  //   One alpha for the whole stack: the copy-out reports "stack stagger 0.00 / 0.00 / 0.00 / 0.00,
+  // element fade hard cut, row step none". ⛔ NO STAGGER SHIPS — the lab carries the controls and they
+  // came back all-zero, which is an answer, not an omission. drawScoreTable() never touches globalAlpha,
+  // so the whole block rides this one write.
+  if (game.state === "gameover" && !game.celebration) {
+    ctx.globalAlpha = easeOut(clamp01(game.gameoverT / CEREMONY_GAMEOVER_IN));
     drawText("GAME OVER", VIEW_W/2, VIEW_H/2 - 20, 56);
     drawText("FINAL SCORE  " + game.score, VIEW_W/2, VIEW_H/2 + 36, 26);
-    // CS034 P7 (§6.1): the table, UNCONDITIONALLY. v3.6 P6's two-branch "slots first, then the table"
-    // condition — and CS030 P7's gate-G6 refinement of it (`&& !game.celebration`, so the slots did not
-    // render under the panel's backdrop) — both went with the initials entry. A qualifying run's record
-    // is already written by the time this draws, so the fresh entry is simply highlighted.
+    // CS034 P7 (§6.1): the table, on the same terms as everything else in this block. A qualifying run's
+    // record is already written by the time this draws, so the fresh entry is simply highlighted.
     drawScoreTable(VIEW_W/2, VIEW_H/2 + 60, game.lastScoreId);
     // CS029 P2 (§3.2): the CS016 P2 move, applied to the one screen that never got it — the old
     // blinking 22px play-again line and the dim 14px O-menu hint are gone, replaced by one
     // drawMenuHint footer at GAMEOVER_HINT_SIZE (see the const block for why it's 20, not 16).
     drawMenuHint(GAMEOVER_HINT, VIEW_W/2, GAMEOVER_HINT_Y, GAMEOVER_HINT_SIZE);
+    ctx.globalAlpha = 1;
   }
 
   // CS030 P4 (§2.5/§2.7): the achievement celebration panel, an OVERLAY sharing drawMenu()'s tail
@@ -15046,6 +15215,8 @@ function loop(now) {
     DebugCode.armed = false;
     AudioSys.secretDisarm();
   }
+  tickCeremony(dt);     // CS042 P5: the ceremony's four render-only fade clocks — here, not in update(),
+                        // for the reason its own header gives (a panel is exactly what update() stops)
   updateToasts(dt);     // age out achievement-unlock toasts (independent of pause/state) (F9)
   updateMusic();        // v3.4 P6: drive the music state/duck off game.state + menu, then run the scheduler
   draw();
@@ -15081,6 +15252,45 @@ function updateMusic() {
   // owning but never paused) lands.
   MusicSys.setDuck(game.paused && game.menu.screen !== "highscores");
   MusicSys.update();
+}
+
+// CS042 P5 (spec §3, GATE A) — THE CEREMONY'S FADE CLOCKS, all four in one place.
+//
+// ⛔ IT RUNS IN loop(), NOT IN update(), AND THAT IS THE WHOLE REASON IT EXISTS AS ITS OWN FUNCTION.
+// updateToasts() above is the precedent and states the rule in its own header: a thing that has to
+// animate across every state cannot be clocked by the function that refuses to run in most of them.
+// Every one of these four crosses at least one such state, and the celebration panel's fade-in crosses
+// the hardest of them:
+//   * the panel's fade-IN runs while game.celebration is set, which is precisely the term update()
+//     early-returns on. Nothing inside update() ticks during a panel — not even the level-end freeze,
+//     whose own branch carries `!game.celebration` — so a clock placed there would sit at zero for the
+//     panel's entire life and the fade would never happen at all.
+//   * the panel's fade-OUT and the announcement's dissolve cross that same panel at the level-end site
+//     (the announcement dissolves under a panel that is still up), and the frozen tail after it.
+//   * the GAME OVER stack's fade-in runs in state "gameover", where update() returns on its first term.
+//
+// ⛔ IT HOLDS THROUGH A PAUSE, and that is the announcement channel's convention, not the toasts'.
+// game.caption.life and game.levelBanner.life both tick in update()'s PLAYING body precisely so they
+// hold behind a menu and resume rather than expiring unseen (CS025 P5's own note); a ceremony beat is
+// the same category and gets the same treatment from the one term available here. Toasts deliberately
+// do NOT hold, which is why this is a separate function rather than four more lines in that one.
+//
+// ⛔ THE TWO COUNTERS RE-ZERO THEMSELVES. celebrationT and gameoverT are each derived from a condition
+// that is checked every frame, so neither needs an arming call site: no panel means the panel clock is
+// 0, and a stack that is not being drawn means the stack clock is 0. That is what keeps the fade-in
+// correct at the "dying" → "gameover" seam AND at a panel's dismissal without a line at either place.
+function tickCeremony(dt) {
+  if (game.paused) return;
+  if (game.levelDoneOut) {
+    game.levelDoneOut.t -= dt;
+    if (game.levelDoneOut.t <= 0) game.levelDoneOut = null;
+  }
+  if (game.celebrationOut) {
+    game.celebrationOut.t -= dt;
+    if (game.celebrationOut.t <= 0) game.celebrationOut = null;
+  }
+  game.celebrationT = game.celebration ? game.celebrationT + dt : 0;
+  game.gameoverT = (game.state === "gameover" && !game.celebration) ? game.gameoverT + dt : 0;
 }
 
 // Age achievement toasts. Runs in the main loop (not update) so they animate/expire across every
