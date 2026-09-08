@@ -35,7 +35,7 @@ phase bodies can lean on them):
 
 | phase | content | model | effort | ultrathink | build? |
 |---|---|---|---|---|---|
-| **P0** | `tools/handling-lab.html` — drag, cargo, Engine vs chain length (§6.6) | Opus 5 | **High** | yes | no |
+| **P0** | ✅ **DONE** — `tools/handling-lab.html` (§6.6). GATE A's handling half returned a null result; §6.8 is the outcome | Opus 5 | **High** | yes | no |
 | **P1** | `tools/sfx-lab.html` — 12 sounds × 3 candidates (§1.6) | Fable 5.1 | **Medium** | no | no |
 | **P2** | `tools/ceremony-lab.html` — both sequences (§3) | Opus 5 | **High** | yes | no |
 | **⛔ GATE A** | **Paul uses all three labs. No session.** | — | — | — | — |
@@ -43,7 +43,7 @@ phase bodies can lean on them):
 | **P4** | SFX completion — the remaining nine (§1.4) | Sonnet 5 | **Medium** | no | yes |
 | **P5** | The ceremony edit — scope is GATE A's block (§3) | Opus 5 | **XHigh** | yes | yes |
 | **P6** | Health supply levelling — five changes, five knobs (§2.3) | Opus 5 | **High** | yes | yes |
-| **P7** | Handling model + Engine burn condition (§6.3, §6.5) | Opus 5 | **XHigh** | yes | yes |
+| **P7** | One mass for cargo handling + Engine burn condition (§6.8, §6.5) | Opus 5 | **XHigh** | yes | yes |
 | **P8** | Scoop levels 6–7, orbs, level-1 floor (§4.3) | Opus 5 | **High** | yes | yes |
 | **P9** | Scoop loss rate + the reserve rule (§4.4, §4.5) | Opus 5 | **XHigh** | yes | yes |
 | **P10** | Menu navigation repeat (§5) | Sonnet 5 | **Medium** | no | yes |
@@ -53,8 +53,9 @@ phase bodies can lean on them):
 ### Why these settings
 
 **XHigh on P5, P7 and P9** — the three phases that can break the shipped game *silently*. P5 edits a
-freeze whose documented failure mode is a hard hang. P7 restructures the speed penalty, and
-`chainMass()` feeds the verlet chain's momentum tug, which has a stability envelope in GDD §3.4. P9
+freeze whose documented failure mode is a hard hang. P7 (rewritten for §6.8) replaces five handling
+constants with one derived mass and changes the momentum tug's form, and `chainMass()` feeds the
+verlet chain, which has a stability envelope in GDD §3.4 that P7 must re-validate rather than assume. P9
 edits the build's most heavily-commented function and gives an existing mechanism a second job.
 
 **High on P0, P2, P3, P6, P8, P11** — each either mirrors real physics or state closely enough that a
@@ -591,40 +592,58 @@ milestone route**; the milestone interval grows with wave; the hull gate blocks 
 
 ---
 
-## P7 — Handling model and the Engine burn condition
+## P7 — One mass, one force, and the Engine burn condition
 
 **Model:** Opus 5 · **Effort:** XHigh
-**Commit subject:** `cs042 p7: cargo drag model + engine fuel burns only under load`
+**Commit subject:** `cs042 p7: one mass for cargo handling + engine fuel burns only under load`
 
-⛔ **Requires GATE A's `handling-lab` copy-out block.**
+⛔ **REWRITTEN 2026-09-08. This phase no longer builds §6.3's A/B/C models — it builds §6.8.**
+GATE A returned a null result on handling: three passes through `tools/handling-lab.html` produced no
+value Paul trusted, and his read was that a mock ship on an empty field cannot answer a question about
+weight. §6.3's three models, §6.7's `CARGO_COAST`, `SHIP_DRAG` 0.45 and `CARGO_TURN` are **all closed
+and none of them ship**. Read §6.8 and ignore §6.3's tables except as history.
+
+⛔ **This phase needs no lab block.** Both knobs land at values that reproduce today's behaviour, and
+the values are decided at GATE C in a real run.
 
 ### Copy-paste prompt
 
 ```text
 Read CLAUDE.md, then STATUS.md, then this repo's IMPLEMENTATION-PHASES-CS042.md
-section "P7 — Handling model and the Engine burn condition" in full, then
-PLANNED-FEATURES-CS042.md §6 in full, then the GDD subsections P7's "Read" line
-names. GDD §3.4 is mandatory before you touch anything chainMass() feeds — it has
-a stability envelope, and chainMass() drives the verlet chain's momentum tug as
-well as thrust and top speed.
+section "P7 — One mass, one force, and the Engine burn condition" in full, then
+PLANNED-FEATURES-CS042.md §6.8 and §6.5 in full, then the GDD subsections P7's
+"Read" line names. GDD §3.4 is mandatory and its stability envelope must be
+re-validated by this phase — §6.8 changes the momentum tug's form AND lets a laden
+ship sustain much higher speeds for much longer, which is exactly what that
+envelope bounds.
 
 Build P7 and nothing else. Do not build ahead into any later phase.
 
-The handling-lab copy-out block I am pasting below carries the chosen model
-(A, B or C) and every constant. Build that model with those values. If the block
-is missing, STOP — the spec's numbers are analytic and have never been flown, and
-guessing here is exactly what the lab existed to prevent.
+⛔ §6.3's three models, §6.7's CARGO_COAST, the SHIP_DRAG raise to 0.45 and
+CARGO_TURN above 0.0 are ALL CLOSED and none of them ship. §6.8 supersedes them.
+Do not implement anything from §6.3's tables; they are history, and two of their
+numbers are wrong (recorded in STATUS.md).
+
+§6.8 collapses five constants into one. CARGO_THRUST, CARGO_MAXSPD, CARGO_TURN,
+CARGO_MASS all retire; CARGO_UNIT_MASS replaces them; CHAIN_TUG rescales 26 -> 58
+so a full chain tugs exactly as hard as it does today. Each retired constant's
+comment is REWRITTEN to record the retirement and its changeset, never deleted.
 
 Two things this phase must NOT do, both settled and both easy to re-invent:
   1. The Engine gains NO cargo-independent effect. ENGINE_THRUST_MULT,
      ENGINE_MAXSPD_MULT and ENGINE_DRAG_MULT were proposed and WITHDRAWN.
      ENGINE_MASS_MULT stays its only effect, and the Engine doing nothing on an
-     empty chain is correct behaviour, not a bug.
+     empty chain is correct behaviour, not a bug — under §6.8 an empty chain is
+     mass 1 and the multiplier has nothing to act on.
   2. CS024 P6's "FLAT while any fuel remains" rule STANDS. No taper, no sputter,
      no ENGINE_TAPER_SECONDS. Full effect until the tank runs out.
 
 ENGINE_BURN_SECONDS stays 10.0. The only Engine change is one added term on the
 burn condition: the chain must be non-empty.
+
+Two consequences of §6.8 are FLAGGED, NOT RESOLVED (FLAG-CS042-l, FLAG-CS042-m).
+Build them as §6.8 describes and say plainly in the commit body what they do; do
+not soften either one, and do not special-case rotation back out.
 
 Deliver scratchpad/test-cs042-p7.js with the code. Run `node scratchpad/run-all.js`
 before committing — the baseline is 171/171 and test-f6.js is a known ~1.7% flake,
@@ -633,39 +652,36 @@ so rerun that one file before treating a failure as a regression.
 Commit on main with the subject named in P7. Do not push. Update STATUS.md.
 
 ultrathink
-
---- handling-lab copy-out block follows ---
-[PASTE HERE]
 ```
 
 ### What to build
 
-**Read:** spec §6 in full. GDD §2.1 (ship), §2.10.2 (payload curve), §2.14 (Engine budget), §3.4
-(chain physics — ⛔ **read this before touching anything `chainMass()` feeds**).
+**Read:** spec §6.8 and §6.5 in full. GDD §2.1 (ship — thrust, drag, top speed, `shipTurnRate()`),
+§2.10.2 (the payload curve and the handling penalties it names), §2.14 (the Engine budget), §3.4
+(chain physics — ⛔ **read this before touching anything `chainMass()` feeds, and re-validate it**).
 
-**Part 1 — the handling model, from GATE A.** Implement whichever of A / B / C Paul picked.
+**Part 1 — one mass.** `M = 1 + chainMass() * CARGO_UNIT_MASS`, then in `Ship.update`:
 
-If **Model C**: replace the `CARGO_MAXSPD` divisor with a drag term
-`λ_eff = λ_base · (1 + cargo·CARGO_DRAG)`, so terminal speed becomes emergent and `SHIP_MAX_SPEED`
-becomes a rail binding only when unloaded.
-⛔ **`CARGO_MAXSPD`'s comment documents a full-24 top-speed percentage. Rewrite it to record the
-retirement and its changeset — do not delete it.**
-⛔ **`SHIP_MAX_SPEED` stays as the clamp.** It is not removed; it stops being the *binding* limit under
-load, which is the point.
+| quantity | becomes |
+|---|---|
+| acceleration | `SHIP_THRUST / M` |
+| drag | `Math.pow(1 - SHIP_DRAG, dt / M)` — the same idiom, one divisor added |
+| turn | `shipTurnRate()` returns `SHIP_TURN * settings.shipTurnScale / M` |
+| top speed | `SHIP_MAX_SPEED`, flat — the mass divisor is gone |
+
+and in `updateChain`, the momentum tug's `massFactor` becomes `(M - 1) / M`, replacing
+`Math.min(1.4, chainMass() * CARGO_MASS)`. ⛔ **`CHAIN_TUG` rescales 26 → 58** so a full chain tugs
+exactly as hard as today; the arbitrary 1.4 clamp is gone and its asymptote is now physical.
+
+⛔ **`chainMass()` itself is untouched** — it still returns the Engine-multiplied node-mass sum, and it
+is still the single quantity every penalty reads. §6.8 changes what is *done* with it, not what it is.
+
+⛔ **Both knobs go in the debug registry at values that reproduce today**: `cargoUnitMass`
+(`def` 0.07, min 0, max 0.30, step 0.005) and the existing `engineMassMult`. Registry 110 → 111 —
+`scratchpad/test-registry.js` owns that count and is the ONE file that changes for it.
+
 ⛔ **Confirm in the diff that `DEBRIS_SPEED_CAP = 2 * SHIP_MAX_SPEED` still reads the CONSTANT.** It is
 FLAG-CS017-a's guard rail and has nothing to do with player handling.
-
-If **Model B**: only `CARGO_THRUST` and `CARGO_MAXSPD` `def`s move. No structural change.
-
-⛔ **`chainMass()` is untouched in every model.** It feeds `thrustMul`, the speed limit **and**
-`updateChain()`'s momentum tug — GDD §3.4 governs the third and this phase must not perturb it.
-
-`SHIP_DRAG` becomes `DEBUG.shipDrag` (`def` from the constant, min 0.15, max 0.90, step 0.05), at
-GATE A's value. ⚠ **Record in its comment that this is a deliberate Pillar 2 change**, with §6.3's
-coast half-life table, so the next reader knows it was chosen rather than drifted into.
-
-If GATE A said `CARGO_TURN` ships above 0.0 (FLAG-CS042-j), set it and **note that it activates a knob
-shipped dormant since CS010**. If not, leave it at 0.0 and say so.
 
 **Part 2 — the Engine burn condition.** ⛔ **One term added, nothing else:**
 
@@ -677,12 +693,18 @@ if (this.thrusting)   →   if (this.thrusting && game.chain.length > 0)
 It is **not** moved to `update()`'s timer block — "seconds of laden forward thrust" is only measurable
 where it already lives.
 
+**Part 3 — re-validate GDD §3.4.** ⛔ **Not optional and not assumable.** Re-run the documented
+24-node stress at the main-loop `dt` clamp and record the worst-case link stretch against §3.4's ~5 px
+budget, the same way CS010 P2 did. Two things changed that the envelope is sensitive to: the tug's
+form, and how long a laden ship holds high speed. If it exceeds budget, **stop and report** — do not
+raise `CHAIN_ITER` to make a number fit.
+
 **Test — `scratchpad/test-cs042-p7.js`:** drive real `Ship.update()` at dt = 1/60 and assert —
-Engine's terminal-speed gain **rises with chain length and is exactly zero at chain length 0**
-(§6.4's rule, made assertable); the binding limit is drag rather than the cap at a laden chain under
-the chosen model; `DEBRIS_SPEED_CAP` unmoved; **fuel does not decrement while thrusting with an empty
-chain**, and does while thrusting with one node; every knob at its shipped-today value reproduces
-pre-phase numbers.
+acceleration, coast time, turn rate and tug all **change monotonically with chain length, with no
+clamp** (§6.8's whole claim); the Engine's benefit **rises with chain length and is exactly zero at
+chain length 0** (§6.4's rule, made assertable); `CARGO_UNIT_MASS` at 0.07 reproduces today's
+acceleration at every chain length; `DEBRIS_SPEED_CAP` unmoved; **fuel does not decrement while
+thrusting with an empty chain**, and does while thrusting with one node.
 
 ---
 

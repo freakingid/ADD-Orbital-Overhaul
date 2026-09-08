@@ -232,37 +232,36 @@ None.
 
 ## Next up
 
-- **CS042 P1 next** — `tools/sfx-lab.html` (spec §1.6), Fable 5.1 at Medium, no `ultrathink`. Its
-  copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. P0/P1/P2 are all labs and all feed GATE A,
-  where Paul works the three of them in one sitting.
-- **P7, if §6.7 is ratified in its minimum form: one new constant, one line, one debug row, plus the
-  burn condition.** `CARGO_COAST` + `DEBUG.cargoCoast` (registry 110 → 111, `test-registry.js` owns
-  the count) and §6.5's fuel change. Every existing handling constant stays shipped. ⛔ **The plan set
-  P7 to XHigh because Model C rebuilds the speed penalty; that reason is gone twice over now** — the
-  effort call is Paul's, not a phase's.
-- **Superseded by the above, kept for the reasoning: P7 under pass 2's shape was two constants and one
-  burn condition.** On pass 2 with the cap lift off:
-  `CARGO_THRUST` 0.07 → 0.085, `ENGINE_MASS_MULT` 0.5 → **0.35** (0.34 and 0.35 differ by one point of
-  Engine gain once the cap governs, and 0.35 sits on the knob's own 0.05 step, so nothing needs
-  widening), and §6.5's burn condition. `SHIP_DRAG`, `CARGO_MAXSPD`, `CARGO_MASS` and `CARGO_TURN` all
-  stay shipped. **No new constant, no `DEBUG.shipDrag` row, nothing retired, registry unmoved at 110.**
-  ⛔ **The plan set P7 to XHigh because Model C rebuilds the speed penalty; that reason is gone** —
-  the effort call is Paul's, not a phase's.
-- **If Model C does not ship, §6.3's Model C table stops mattering to the build but still ships wrong
-  numbers.** P11's doc pass should correct or strike it along with §6.2's 12-node Engine cells.
+- ⛔ **P1 is the next session** — `tools/sfx-lab.html` (spec §1.6). **Fable 5.1, Medium, no
+  `ultrathink`.** Its copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md` and is unaffected by
+  everything the handling work churned through. P2 (`tools/ceremony-lab.html`, Opus 5 / High /
+  ultrathink) follows it. **Nothing in CS042 is blocked.**
+- **GATE A is now partly spent.** Its handling half is closed by §6.8; its sound and ceremony halves
+  still need P1 and P2 built before Paul can sit down to them.
+- **P7 has been rewritten for §6.8** (`IMPLEMENTATION-PHASES-CS042.md`), including its copy-paste
+  prompt. It no longer asks for a lab block, no longer builds §6.3's A/B/C, and now carries a
+  mandatory GDD §3.4 re-validation as Part 3. ⚠ **Two open flags belong to Paul, not to a phase:**
+  FLAG-CS042-l (`CARGO_UNIT_MASS`'s value — 0.07 reproduces today) and FLAG-CS042-m (§6.8 penalises
+  rotation by construction, reversing his GATE A "no" on `CARGO_TURN`). Both are answerable at GATE C
+  from the debug panel.
+- **What he can already tune in-game today, before any of this ships:** the debug panel's POWERUPS
+  section has **Engine towed-mass multiplier** (0–1, step 0.05, def 0.5, lower is stronger) and
+  **Engine fuel per pickup** (0.5–60 s, def 10). ⛔ **Nothing exposes the chain's own weight** — that
+  is what P7 adds. ⛔ **Turn "Overrides Applied" on or the rows read but do not bite**, and clear the
+  overrides first (FLAG-CS036-a) if a clean baseline matters.
+- **⛔ Doc debt for P11:** §6.3's tables ship two wrong numbers (§6.2's 12-node Engine cells, §6.3's
+  Model C 4- and 12-node rows, both measured in P0). §6.3 and §6.7 are both superseded by §6.8 and
+  should be marked as history rather than left reading as live proposals.
 - **The GDD's front matter and §4 are no longer changelogs — keep them that way.** Both carried
-  per-round status text that nobody's checklist reached, so both aged silently: the front-matter
-  build stamp was sixteen changesets out of date and two of §4's four blockquotes still read "in
-  progress" for rounds that shipped and archived. Each now carries a ⛔ rule saying it must not grow
-  back. **The structural fix is that a closing phase already re-measures §0** — extending that same
-  checklist to re-read the build stamp is the cheap way to stop this recurring, and is not yet done.
+  per-round status text that nobody's checklist reached, so both aged silently. Each now carries a ⛔
+  rule saying it must not grow back. **The structural fix is that a closing phase already re-measures
+  §0** — extending that same checklist to re-read the build stamp is the cheap way to stop this
+  recurring, and is not yet done.
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.
-- **The first thing any future gate should do is clear the debug overrides** (FLAG-CS036-a).
 - A second, deeper telemetry capture on the v4 build (waves 10+) — see Known issues.
-- The three P5 findings above (two stale `% 15` comments, the §3 `leverScale` cross-reference) and
-  the stale playtest-ask knob names are each a one-line fix for whatever changeset next touches the
-  file they live in.
+- The stale `% 15` comments and the stale playtest-ask knob names are each a one-line fix for whatever
+  changeset next touches the file they live in.
 
 ## Playtest asks (open only — answered ones move to the log)
 
