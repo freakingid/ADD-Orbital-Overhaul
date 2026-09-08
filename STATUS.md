@@ -16,6 +16,13 @@ carried forward and still live.
   answer, and the Findings block is the single artefact GATE A hands back. Reference grid and ship
   trail carry the motion read, since the camera is locked to the ship. No build byte; no test
   (`tools/` has never carried suite coverage).
+- P0 follow-up 2 (2026-09-08) — ⛔ **the lab gained the view whose absence let a wrong answer
+  through: a "vs today" column and a three-case weight verdict** (identical / heavier above N /
+  LIGHTER by X at N). Paul's second pass read as a good result at a full chain and was in fact
+  *lighter than the shipped game by up to 64 px/s at 8 nodes*, because the solver had lowered
+  `CARGO_MAXSPD` to 0.010 to stop the speed cap clipping the Engine target — and that cap is the only
+  thing making a SHORT chain heavy today. That lift is now opt-in (`freeCap`), off by default,
+  restores 0.035 when unticked, and warns with the clipped figure instead of silently buying room.
 - P0 follow-up (2026-09-08, same phase, Paul's direction) — ⛔ **the protocol was reframed around two
   OUTCOMES instead of two constants**, after Paul stated the goal in one sentence: *"the only thing I
   want this change to do is make it so cargo is heavier and the engine powerup makes a big difference
@@ -46,11 +53,23 @@ carried forward and still live.
 
 ## Known issues
 
-- **CS042 GATE A, handling half: first pass run, then re-opened by Paul.** His first sweep answered
+- **CS042 GATE A, handling half: second pass run, one decision outstanding.** Paul's pass 2 answered
+  Model **B**, `SHIP_DRAG` **0.35 (unchanged — he flew 0.45 and kept the shipped value, so
+  FLAG-CS042-f closes as "no change" and §6.3's proposed 0.45 does not ship)**, `CARGO_TURN`
+  **0.000** (FLAG-CS042-j closes as "does not ship"), `CARGO_MASS` **0.100 (unchanged)**,
+  `CARGO_THRUST` **0.085**, `ENGINE_MASS_MULT` **0.34**, targeting a full chain at 260 px/s with an
+  Engine gain of +79%. ⛔ **As recorded it does not meet his own stated goal:** with `CARGO_MAXSPD`
+  lowered to 0.010 the ship is *lighter* than today below ~16 nodes (by 64 px/s at 8), and only
+  heavier at 20+. A full chain first reaches 16 nodes at level 9, so through level 8 the change would
+  make cargo lighter, not heavier. **The fix is one checkbox:** leaving `CARGO_MAXSPD` at the shipped
+  0.035 makes short chains identical to today, keeps 20/24 nodes heavier, and still roughly doubles
+  the Engine at a full chain (+56% against today's +30%). The cost is the full-chain Engine gain
+  falling from +79% to +56%. **Awaiting Paul's call between that and reopening G7's base drag**, which
+  is the only other lever that makes the penalty bite at short chains.
+- **CS042 GATE A, handling half: first pass, superseded.** His first sweep answered
   Model **B**, `SHIP_DRAG` **0.45**, `CARGO_TURN` **0.000** (closing FLAG-CS042-j as "does not ship"),
-  and produced a full chain at **167 px/s** with an Engine gain of **+130%**. He then restated the
-  goal (above) and asked to re-run against the reframed protocol, so ⛔ **those numbers are indicative,
-  not decided.** Three things learned from them and worth keeping:
+  and produced a full chain at **167 px/s** with an Engine gain of **+130%**, then restated the goal
+  and re-ran. Superseded by pass 2 above; three things learned from it are still worth keeping:
   - **Model B reaches what §6.3 promised for Model C.** At `CARGO_THRUST` 0.10 with `SHIP_DRAG` 0.45
     the cap stops binding above ~1.5 nodes, so the ship is drag-limited from the first piece of
     Debris and thrust changes are visible. No new constant, nothing retired. He also raised the
@@ -158,13 +177,13 @@ None.
 - **CS042 P1 next** — `tools/sfx-lab.html` (spec §1.6), Fable 5.1 at Medium, no `ultrathink`. Its
   copy-paste prompt is in `IMPLEMENTATION-PHASES-CS042.md`. P0/P1/P2 are all labs and all feed GATE A,
   where Paul works the three of them in one sitting.
-- **P7 is shaping up much smaller than the plan assumed.** On the first pass's shape it is four
-  constants and one burn condition: `SHIP_DRAG` (plus a new `DEBUG.shipDrag` row, registry 110 → 111,
-  `test-registry.js` owns that count), `CARGO_THRUST`, `ENGINE_MASS_MULT` (already a knob — bounds
-  0–1, **step 0.05**, so a solved def like 0.23 either snaps or the step tightens), and §6.5's burn
-  condition. No `CARGO_DRAG`, nothing retired, no restructuring. ⛔ **The plan set P7 to XHigh because
-  Model C rebuilds the speed penalty; if B ships, that reason is gone** — the effort call is Paul's,
-  not a phase's.
+- **P7 has collapsed to two constants and one burn condition.** On pass 2 with the cap lift off:
+  `CARGO_THRUST` 0.07 → 0.085, `ENGINE_MASS_MULT` 0.5 → **0.35** (0.34 and 0.35 differ by one point of
+  Engine gain once the cap governs, and 0.35 sits on the knob's own 0.05 step, so nothing needs
+  widening), and §6.5's burn condition. `SHIP_DRAG`, `CARGO_MAXSPD`, `CARGO_MASS` and `CARGO_TURN` all
+  stay shipped. **No new constant, no `DEBUG.shipDrag` row, nothing retired, registry unmoved at 110.**
+  ⛔ **The plan set P7 to XHigh because Model C rebuilds the speed penalty; that reason is gone** —
+  the effort call is Paul's, not a phase's.
 - **If Model C does not ship, §6.3's Model C table stops mattering to the build but still ships wrong
   numbers.** P11's doc pass should correct or strike it along with §6.2's 12-node Engine cells.
 - **The GDD's front matter and §4 are no longer changelogs — keep them that way.** Both carried

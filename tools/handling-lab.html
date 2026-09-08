@@ -119,6 +119,13 @@
   </label>
   <div class="kv"><span>achieved: speed / gain</span><span id="tAchieved">&mdash;</span></div>
   <div class="kv"><span>today, for reference</span><span>283 px/s &middot; +30%</span></div>
+  <div class="kv"><span>heavier than today above</span><span id="tCross">&mdash;</span></div>
+  <label class="row" style="margin-top:8px"><input type="checkbox" id="freeCap">
+    &nbsp;let the solver lower CARGO_MAXSPD to make room for the Engine <span class="num">(unticking restores 0.035)</span></label>
+  <p class="hint">⛔ That box has a side effect worth seeing: lowering CARGO_MAXSPD raises the speed cap
+    at <i>every</i> chain length, and today's cap is the only thing making a SHORT chain heavy. Leave it
+    off and short chains stay exactly as heavy as they are now; turn it on and the Engine gets more
+    room at a full chain, at the cost of light chains getting faster than today.</p>
   <p class="hint" id="tWarn"></p>
 
   <h2>Test protocol</h2>
@@ -341,8 +348,19 @@ function solveTargets(targetSpeed, targetGainPct) {
   if (model !== "C") {
     const capE = P.shipMaxSpeed / (1 + N * P.engineMassMult * P.cargoMaxspd);
     if (capE < want) {
-      const cm = (P.shipMaxSpeed / want - 1) / (N * Math.max(0.01, P.engineMassMult));
-      P.cargoMaxspd = Math.max(0, Math.min(0.15, Math.floor(cm / 0.005) * 0.005));
+      // ⛔ This lift is OPT-IN, and the reason is the whole of the "vs today" column. CARGO_MAXSPD is
+      // the ONLY thing making a short chain heavy today — the ship is cap-limited at every length —
+      // so lowering it to give the Engine room silently makes light chains FASTER than they are now,
+      // which is the opposite of "cargo is heavier". Off by default; the warning says what it costs.
+      if (freeCap) {
+        const cm = (P.shipMaxSpeed / want - 1) / (N * Math.max(0.01, P.engineMassMult));
+        P.cargoMaxspd = Math.max(0, Math.min(0.15, Math.floor(cm / 0.005) * 0.005));
+      } else {
+        warn = "The speed cap clips the Engine to +" +
+          ((capE / targetSpeed - 1) * 100).toFixed(0) + "% at a full chain, short of the +" +
+          targetGainPct + "% asked for. Tick the box above to buy the room from CARGO_MAXSPD, " +
+          "and watch what the “vs today” column does to short chains.";
+      }
     }
   }
   if (want > P.shipMaxSpeed) {
@@ -582,6 +600,14 @@ function syncChainUI() {
 const tSpeedEl = document.getElementById("tSpeed");
 const tGainEl = document.getElementById("tGain");
 let tSpeed = 0, tGain = 0;              // seeded from the shipped build at boot, not invented
+let freeCap = false;
+document.getElementById("freeCap").addEventListener("change", e => {
+  freeCap = e.target.checked;
+  // Unticking must UNDO the lift, or a lowered cap survives silently and the box stops meaning
+  // anything. The checkbox is really "who owns CARGO_MAXSPD — the solver, or the shipped value".
+  if (!freeCap) P.cargoMaxspd = SHIPPED.cargoMaxspd;
+  applyDials();
+});
 function applyDials() {
   tSpeed = parseFloat(tSpeedEl.value);
   tGain = parseFloat(tGainEl.value);
@@ -597,11 +623,46 @@ function syncDialLabels() {
 }
 // The dials are also a READOUT: hand-editing a constant slider must move them back, or the panel
 // starts lying. Skipped while a dial has focus, so a drag is never fought by its own write-back.
+// ⛔ The verdict the "cargo is heavier" goal actually needs. Three distinct cases, and the middle
+// one is the trap: a config can be heavier at a full chain while being LIGHTER everywhere else,
+// which is what happens when CARGO_MAXSPD is lowered to give the Engine room. Comparing only the
+// full-chain number cannot see it.
+function weightVerdict() {
+  let worstLighter = 0, atNode = 0, firstHeavier = null;
+  for (let k = 25; k <= CARGO_CAP_MAX * 100; k++) {
+    const n = k / 100;
+    const d = solve(n, false, model, P).terminal - solve(n, false, "A", SHIPPED).terminal;
+    if (d > worstLighter) { worstLighter = d; atNode = n; }
+    if (firstHeavier === null && d < -0.5) firstHeavier = n;
+  }
+  if (worstLighter > 0.5) return { kind: "lighter", by: worstLighter, at: atNode };
+  if (firstHeavier === null) return { kind: "same" };
+  return { kind: "heavier", above: firstHeavier };
+}
+// A full chain first reaches N nodes at this level (payloadSlots: 8 through level 4, +2/level, 24 at 12).
+function levelForNodes(n) {
+  for (let l = 1; l <= 12; l++) if ((l <= 4 ? 8 : Math.min(24, 8 + 2 * (l - 4))) >= n) return l;
+  return null;
+}
+function verdictText(v) {
+  if (v.kind === "lighter") return "LIGHTER by up to " + v.by.toFixed(0) + " px/s (at " +
+    v.at.toFixed(0) + " nodes)";
+  if (v.kind === "same") return "identical to today";
+  const lv = levelForNodes(v.above);
+  return v.above <= 1 ? "every chain length" :
+    "above " + v.above.toFixed(0) + " nodes" + (lv ? " (level " + lv + ")" : "") + ", equal below";
+}
+
 function syncDialsFromConstants() {
   const a = solve(CARGO_CAP_MAX, false, model, P), b = solve(CARGO_CAP_MAX, true, model, P);
   const g = (b.terminal / a.terminal - 1) * 100;
   document.getElementById("tAchieved").textContent =
     a.terminal.toFixed(0) + " px/s · +" + g.toFixed(0) + "%";
+  const v = weightVerdict();
+  const cx = document.getElementById("tCross");
+  cx.textContent = verdictText(v);
+  cx.className = v.kind === "lighter" ? "bad" : v.kind === "same" ? "" :
+    (v.above > 8 ? "bad" : "ok");
   const act = document.activeElement;
   if (act !== tSpeedEl) { tSpeedEl.value = Math.round(a.terminal); }
   if (act !== tGainEl) { tGainEl.value = Math.round(g / 5) * 5; }
@@ -796,9 +857,9 @@ function renderProtocol() {
 const SWEEP_ROWS = [0, 4, 8, 12, 16, 20, 24];
 function buildSweep() {
   const cols = '<th>accel</th><th>terminal</th><th>limit</th><th>t90</th><th>half-life</th><th>turn &deg;/s</th>';
-  let h = '<tr><th class="n" rowspan="2">nodes</th><th class="grp" colspan="6">no Engine</th>' +
+  let h = '<tr><th class="n" rowspan="2">nodes</th><th class="grp" colspan="7">no Engine</th>' +
     '<th class="grp" colspan="6">Engine</th><th class="grp" rowspan="2">Engine gain<br>on terminal</th></tr>' +
-    "<tr>" + cols + cols + "</tr>";
+    "<tr>" + cols + '<th>vs today</th>' + cols + "</tr>";
   const cellsFor = r =>
     "<td>" + r.accel.toFixed(0) + "</td><td>" + r.terminal.toFixed(0) + "</td>" +
     '<td class="lim ' + (r.limit === "DRAG" ? "drag" : "") + '">' + r.limit + "</td>" +
@@ -808,7 +869,12 @@ function buildSweep() {
     const a = solve(n, false, model, P), b = solve(n, true, model, P);
     const gain = (b.terminal / a.terminal - 1) * 100;
     const hl = n === nodes ? ' class="hl"' : "";
-    h += "<tr" + hl + '><td class="n">' + n + "</td>" + cellsFor(a) + cellsFor(b) +
+    // ⛔ "vs today" is the column whose absence let a config through that was LIGHTER than the shipped
+    // game below 16 nodes while claiming to make cargo heavier. Negative = heavier than today.
+    const d = a.terminal - solve(n, false, "A", SHIPPED).terminal;
+    const dCell = '<td class="' + (d > 0.5 ? "bad" : d < -0.5 ? "ok" : "") + '">' +
+      (n === 0 ? "&mdash;" : (d >= 0 ? "+" : "") + d.toFixed(0)) + "</td>";
+    h += "<tr" + hl + '><td class="n">' + n + "</td>" + cellsFor(a) + dCell + cellsFor(b) +
       '<td class="gain' + (gain < 0.5 ? " zero" : "") + '">' +
       (gain >= 0 ? "+" : "") + gain.toFixed(0) + "%</td></tr>";
   }
@@ -922,6 +988,7 @@ function buildFindings() {
   L.push("  chain tug:           " + Math.min(1.4, CARGO_CAP_MAX * P.cargoMass).toFixed(2) +
     ", falling to " + Math.min(1.4, CARGO_CAP_MAX * P.engineMassMult * P.cargoMass).toFixed(2) +
     " with the Engine lit");
+  L.push("  heavier than today:  " + verdictText(weightVerdict()));
   L.push("");
   L.push("ANSWERS");
   L.push("  model (G6):          " + (A("model") || model + " (default, unchanged)"));
