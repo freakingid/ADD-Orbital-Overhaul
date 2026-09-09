@@ -485,7 +485,16 @@ const SCORES_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // CS037 P8: "1.0.0.36" -> "1.0.0.37". Still tracking the changeset number.
 // CS038 P7: "1.0.0.37" -> "1.0.0.38". Still tracking the changeset number.
 // CS039 P4: "1.0.0.38" -> "1.0.0.39". Still tracking the changeset number.
-const GAME_VERSION = "1.0.0.40";
+// CS040 P8: "1.0.0.39" -> "1.0.0.40". Still tracking the changeset number.
+// CS042 P11: "1.0.0.40" -> "1.0.0.42". ".41" IS SKIPPED DELIBERATELY AND MUST NOT BE BACK-FILLED,
+// the same rule and the same reason as ".23" above. CS041 was a DOCUMENTATION changeset that shipped
+// no build byte and resolved FORK-CS041-A to "no version bump" — correctly, since there was nothing
+// to stamp — so ".41" describes a build that never existed. ⛔ A no-build-byte changeset leaves its
+// number unused; it does NOT hand that number down to the next one. This phase first shipped ".41"
+// because IMPLEMENTATION-PHASES-CS042.md P11 item 7 said to write the next integer, which had
+// silently stopped being the changeset number one changeset earlier; Paul caught it at the close.
+// The scheme at the head of this block is authoritative over any phase doc that disagrees.
+const GAME_VERSION = "1.0.0.42";
 const VERSION_STAMP_INSET_X = 16; // px in from the right edge of the viewport (title screen only)
 const VERSION_STAMP_INSET_Y = 16; // px in from the bottom edge of the viewport (title screen only)
 
@@ -1357,6 +1366,21 @@ const SCOOP_ORB_OFFSET = [0, 0, 0, 0, 0, 0, 62, 84];  // px lateral from ship ce
 const SCOOP_ORB_R      = [0, 0, 0, 0, 0, 0, 26, 34];  // px capture radius of one orb (2 x pi x r^2 = 4,247 / 7,263 px²)
 const SCOOP_ORB_SEGS = 12;            // sides of the drawn orb ring — a stroked poly, never an arc fill
 const SCOOP_ORB_TETHER_LEVEL = 7;     // the level at which each orb also draws a faint tether to the hull
+// ⛔ CS042 P11 (GATE C, G4) — THE SCOOP RENDERS AS A FIELD, NOT AS HULL. These two numbers are the
+// dash pattern every scoop shape strokes through: the mouth V, both orbs and the level-7 tethers.
+// Paul's GATE C read was that solid glow-strokes out there imply hittable ship geometry, so a hit
+// landing near an orb feels as though it should have hurt — when nothing drawn by the scoop has ever
+// been collidable. A broken outline reads as a projected field; a continuous one reads as a plate.
+// ⛔ PLAIN CONSTANTS, NOT DEBUG_VARS ROWS, and that is the standing rule rather than an omission:
+// pure-presentation values tuned by eye with no gameplay effect live here, exactly like
+// CAPTION_LINGER / CAPTION_FADE / LEVEL_BANNER_TIME and the twelve knobs CS038 P5 retired off the
+// registry. A future retune edits these two numbers. Registry count is unmoved.
+// ⚠ Sized against the shapes they stroke, not picked round: an L6 orb ring is ~160 px of perimeter
+// and an L7 ring ~210, so 6/6 puts ~13-17 dashes around one orb — plainly broken, never dotted.
+// glowStroke's shadowBlur paints a continuous halo THROUGH the gaps while the bright core stays
+// broken, which is the intended look (an energy field, not a dashed line on a blueprint).
+const SCOOP_FIELD_DASH = 6;           // px of stroke in each dash of the scoop's field outline
+const SCOOP_FIELD_GAP  = 6;           // px of gap between dashes
 // ⛔ THE LOAD-TIME GUARD — A DELIBERATE INVARIANT GUARD, NOT TEST SCAFFOLDING. It is what makes
 // inScoopBox() return false at scoopLevel 0, which keeps pickup byte-identical to the pre-scoop
 // build. CS042 P8 extended it over the two orb tables for the same reason (an orb table with a
@@ -8210,6 +8234,27 @@ class Ship {
       // "charged" at all, so the tell informed nobody while adding a second thing moving on the hull.
       // Paul's call, on the record — the ship does not need another visual channel. The suppression
       // itself SHIPS and is unaffected; it simply has no on-ship tell. See GDD §2.14.1.
+      // ⛔ CS042 P11 (GATE C, G4) — EVERY SCOOP SHAPE STROKES DASHED, AND THAT IS THE WHOLE ANSWER
+      // TO G4. Paul's playtest read: the mouth V and the level-6/7 orbs look like ship geometry —
+      // solid glow-strokes that imply hittable hull — so a hit landing near one feels as though it
+      // should have hurt. Nothing drawn here has ever been collidable (inScoopBox() is a capture
+      // test; no collision pass reads any of these points), so the render was contradicting the
+      // mechanics. A broken outline reads as a projected field; a continuous one reads as a plate.
+      // ⛔ TRANSPARENCY WAS THE OTHER CANDIDATE AND IT IS NOT AVAILABLE IN THIS BLOCK. ctx.globalAlpha
+      //   here belongs to the level-end grace pulse under the SET-DRAW-RESTORE idiom above — the same
+      //   reason CS042 P8 made the level-7 tether COLOR.dim rather than scoop-violet at reduced alpha
+      //   ("faint is a colour choice, not an alpha one"). That call is unreversed and still stands.
+      //   A faint solid outline is also still an outline: it dims the boundary without stopping it
+      //   reading as one, and G4 is about what the shape MEANS, not how loud it is.
+      // ⛔ SET-DRAW-RESTORE, AND THE RESTORE IS MANDATORY. drawPoly() wraps its own save()/restore()
+      //   pair, which PRESERVES the dash across the call rather than clearing it — so once set the
+      //   pattern survives every later stroke until it is explicitly cleared. The hull, the thruster
+      //   flame, the shield and every entity drawn after the ship must stroke solid.
+      // ⚠ Cost, because it was flagged as a real question and not a knob turn: two setLineDash()
+      //   calls per drawn frame, on the ship alone, and only while a scoop exists. Nothing else in
+      //   the file uses the pattern — this is its one site.
+      const scoopField = game.scoopLevel > 0;
+      if (scoopField) ctx.setLineDash([SCOOP_FIELD_DASH, SCOOP_FIELD_GAP]);
       if (game.scoopLevel > 0) {
         const lvl = game.scoopLevel, hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
         drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, COLOR.dock, false);
@@ -8239,6 +8284,7 @@ class Ship {
           }
         }
       }
+      if (scoopField) ctx.setLineDash([]);   // ⛔ CS042 P11: back to solid BEFORE the hull below
       const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
       drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);
       if (this.thrusting && Math.random() < 0.8) {

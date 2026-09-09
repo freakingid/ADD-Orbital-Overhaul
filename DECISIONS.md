@@ -23,6 +23,43 @@ through this file first, the same reading CS033's procedural note applied.)
 
 ---
 
+## 2026-09-08 — `GAME_VERSION` tracks the changeset number; CS042 P11 shipped `.41` and it was wrong
+
+⛔ **This is a CORRECTION, not a new rule.** The scheme has been written at `GAME_VERSION`'s own
+comment block since CS010 P0 — *"Changeset = the CS### number, monotonically increasing, never
+resets — the 4th segment IS the changeset number"* — with thirteen `"Still tracking the changeset
+number"` lines under it. CS042's closing phase shipped `1.0.0.41` anyway, because
+`IMPLEMENTATION-PHASES-CS042.md` P11 item 7 said *"bump `1.0.0.40` → `1.0.0.41`"* and that was taken
+at face value. Paul caught it at the close: *"Because this was changeset 42, the version should be
+1.0.0.42."* Corrected in the same phase, before the close was final.
+
+**Decided:** `1.0.0.42`. And **the constant's own comment block is authoritative over any phase doc
+that disagrees with it** — that is the part worth carrying forward, because the phase doc was
+written months after the scheme and simply wrote the next integer.
+
+**How the two fell out of step.** They were in step through CS040. CS041 shipped **no build byte**
+and resolved FORK-CS041-A to "no version bump" — correctly, since there was nothing to stamp — so
+the last-shipped version was `.40` while the next changeset was 42. Writing "the next integer"
+produced `.41`, which describes a build that never existed.
+
+**The rule for the case that caused it.** A changeset that ships no build byte bumps nothing and
+leaves its own number **permanently unused**; it does not hand that number down. `.41` is now a
+deliberate gap and **must not be back-filled** — the identical rule `.23` already carries in that
+same comment block, for CS023, for an almost identical reason. Both are recorded there.
+
+**What would change the answer:** two changesets landing out of order, or a hotfix between closes.
+Neither has happened here — every changeset closes on `main` in sequence. If one did, the field
+would have to become a running count and this entry would retire.
+
+**Where it is enforced today: nowhere automatically, and that is the residual risk.** The two live
+version pins (`scratchpad/test-cs016-p5.js` §A, `test-cs021-p4.js` §A) assert HEAD's literal, so
+they catch a *missing* bump but not a *wrong* one — they passed on `.41`. Asserting the changeset
+number itself would need it to exist somewhere machine-readable, which it does not; the closing
+phase reading the comment block is the whole control.
+
+⛔ **The archived CS042 planning docs still say `1.0.0.41` and were deliberately not rewritten** —
+`archive/` is a historical record of what was planned. `log/CS042.md` carries the supersession.
+
 ## 2026-09-07 — the off-cycle GDD accuracy pass
 
 Paul asked for `ORBITAL-OVERHAUL-GDD.md` to be brought up to the current build so it could be

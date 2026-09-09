@@ -115,6 +115,10 @@ const SCOOP_MAX_LEVEL = 7;    // CS042 P8: 5 -> 7 (levels 6-7 are the orbs)
 const SCOOP_MOUTH_LEVELS = 5; // the mouth curve keeps its OWN five-step span - FORK-CS042-A (a)
 const SCOOP_ORB_SEGS = 12;
 const SCOOP_ORB_TETHER_LEVEL = 7;
+// CS042 P11 (GATE C, G4): the build strokes every scoop shape through this dash pattern, so the lab
+// does too — this instrument's whole contract is that it previews what the game actually draws.
+const SCOOP_FIELD_DASH = 6;
+const SCOOP_FIELD_GAP  = 6;
 const SHIP_HULL = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
 const COLOR = {
   ship: "#9fd8ff",
@@ -297,7 +301,9 @@ function render() {
     const v = [[d, -hw], [16, 0], [d, hw]];
     const color = lvl === level ? COLOR.dock : COLOR.dim;
     ctx.globalAlpha = alpha;
+    ctx.setLineDash([SCOOP_FIELD_DASH, SCOOP_FIELD_GAP]);   // CS042 P11: a field, not hull
     drawPoly(ctx, v, ship.x, ship.y, ship.angle, color, false);
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
 
@@ -308,6 +314,7 @@ function render() {
     if (!(SCOOP_ORB_R[lvl] > 0)) return;
     const off = SCOOP_ORB_OFFSET[lvl], orbR = SCOOP_ORB_R[lvl];
     ctx.globalAlpha = alpha;
+    ctx.setLineDash([SCOOP_FIELD_DASH, SCOOP_FIELD_GAP]);   // CS042 P11: a field, not hull
     for (const side of [-1, 1]) {
       const ring = [];
       for (let i = 0; i < SCOOP_ORB_SEGS; i++) {
@@ -320,6 +327,7 @@ function render() {
           ship.x, ship.y, ship.angle, COLOR.dim, false);
       }
     }
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
 

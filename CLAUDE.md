@@ -151,7 +151,9 @@ just-finished changeset's GDD, before writing `STATUS.md`'s headline number
 snapshotted numbers, not live formulas. A changeset that touched no GDD content
 skips this with a one-line note in `STATUS.md` saying so; otherwise every one of
 the ~35 rows gets re-measured and corrected, not just the sections that phase
-named.
+named. `scratchpad/gdd-sizes.py --check` does the whole table in one command.
+⛔ **The same step re-reads the GDD's own build stamp (CS042 P11)** — line 3's
+version / registry / `LEVERS` line. It has no other owner and ages silently.
 
 ---
 
@@ -185,30 +187,31 @@ single 160 KB line.
 
 ---
 
-## CLAUDE.md's own ceiling (CS041 P1)
+## CLAUDE.md's own ceiling (CS041 P1; the valve first fired CS042 P11)
 
-⛔ **This file stays under 50 KB.** It auto-loads every session,
-unconditionally — the one document with no opt-out — so every byte here is a tax
-on every phase, and unlike `STATUS.md` (~400 lines, rolled into `log/` each
-changeset) it has never had a bound. Measured at CS041 P1's close: **47.1 KB /
-836 lines**. Re-measured at CS041 P9's close (this file's own closing-checklist
-edit included): **48.4 KB / 846 lines** — **~1.6 KB of headroom left, roughly a
-quarter of a changeset's growth at CS040's rate**, down from P1's "roughly two
-changesets'." `### Audio` (5.3 KB) is still the only section over ~4 KB, and so
-the valve's first candidate whenever it is next edited. **The 50 KB threshold is
-still a first guess (FLAG-CS041-b) and has not yet bound anything**, but P9's
-re-measure means the next changeset that adds a paragraph here should check this
-number rather than assume P1's headroom still holds.
+⛔ **This file stays under 50 KB.** It auto-loads every session, unconditionally — the
+one document with no opt-out — so every byte here is a tax on every phase.
 
-**The valve is this file's own header rule turned on itself** — *states rules,
-not reasons; reasons live in `RATIONALE.md`*. Past the ceiling, a section over
-**~4 KB** moves its **reasoning** into `RATIONALE.md` under an `#anchor` and
-keeps its **rule** here, naming that anchor. Nothing is deleted — it relocates
-to a document already on an on-demand contract.
+**The valve is this file's own header rule turned on itself** — *states rules, not
+reasons; reasons live in `RATIONALE.md`*. Past the ceiling, a section over **~4 KB**
+moves its **reasoning** into `RATIONALE.md` under an `#anchor` and keeps its **rule**
+here, naming that anchor. Nothing is deleted — it relocates to a document already on an
+on-demand contract.
 
-⚠ **The valve fires when an over-size section is next edited, never as a
-standing cleanup sweep**, and a section under ~4 KB is not a candidate however
-long the file gets. Adding this rule trimmed nothing (CS041 P1 was forbidden to).
+⚠ **The valve fires when an over-size section is next edited, never as a standing cleanup
+sweep**, and a section under ~4 KB is not a candidate however long the file gets.
+
+⛔ **CS042 P11 FIRED IT, AND THAT EXHAUSTED IT. FLAG-CS041-b IS NOW LIVE AND NEEDS PAUL.**
+`### Audio` went 5.25 → 3.93 KiB (its reasoning to `RATIONALE.md#music`/`#voice`/
+`#voice-queue`/`#captions`/`#voice-repeat`/`#event-sfx`), which is the whole ~1.2 KB the
+valve had to give — **after it, NO section is over ~4 KB**, so the valve has no candidate
+left however far the file grows. CS042's rules took the file to **51.3 KiB / 880 lines,
+~1.3 KB OVER the ceiling**, with their own reasoning already relocated to
+`#cs042-health`/`#cs042-mass`/`#cs042-scoop` rather than written here.
+The three ways out are Paul's call: lower the ~4 KB section threshold, raise the ceiling
+(always "a first guess"), or accept the overrun. **A phase must not silently drop a rule
+to fit, nor silently valve an under-size section.** History: 47.1 KB (CS041 P1) → 48.4
+(CS041 P9) → 49.5 (CS042 P2); this changeset's close measurement is in `STATUS.md`.
 
 ---
 
@@ -326,6 +329,19 @@ constructor / `update(dt)` / `draw()` / `dead`. Kill by setting `dead = true`.
 Never splice mid-loop. *Exception:* tow-chain nodes are plain objects removed via
 `breakChain()` / `chain.pop()` — read GDD §3.4 before touching them.
 
+⛔ **ONE MASS, ONE FORCE (CS042 P7; `RATIONALE.md#cs042-mass`).** `shipMass()` =
+`1 + chainMass() × cargoUnitMass` is the single divisor for acceleration, the drag
+**rate** (`dt / M`), the turn rate and the tug's `(M−1)/M`. `CARGO_THRUST`,
+`CARGO_MAXSPD`, `CARGO_MASS` and `CARGO_TURN` are **DELETED, not parked**. Two
+consequences are deliberate, closed at GATE C, and **not to be "fixed"**: top speed is a
+**flat rail** (FLAG-CS042-l), and rotation **is** penalised (FLAG-CS042-m). `CHAIN_TUG`
+(58) is **derived** — re-solve it if `cargoUnitMass`'s default moves.
+
+⛔ **Menu repeat is the game's own, not the browser's (CS042 P10).** The `keydown` menu
+branch's `if (e.repeat) return;` guard **STAYS**; `tickMenuRepeat(dt)` in `loop()` drives
+both devices. **Up/down only** (FLAG-CS042-e) — structurally, since `menuHeldDir()`
+answers nothing else. `resetMenuNav()` clears `menuKeys{}` and the timer together.
+
 ### Rendering
 
 ⛔ **Render through `drawPoly` + `glowStroke`.** New visible entities define
@@ -352,6 +368,13 @@ one inward from each edge, overlapping at the corners under source-over) — the
 fill exception and the "no `shadowBlur`/`globalAlpha`" contract carry over
 unchanged, only the geometry moved.
 
+⛔ **`ctx.setLineDash()` has exactly one site: the Scoop's field stroke (CS042 P11).**
+`drawPoly`/`glowStroke` stay dash-agnostic. Arm it before the mouth V and **clear it
+before the hull** — `drawPoly()`'s `save()`/`restore()` *preserves* a dash, so an
+unclosed window dashes every stroke after the ship.
+⚠ **SETTLED — nothing in `Ship.draw()`'s scoop block may write `ctx.globalAlpha`**; that
+channel is the level-end grace pulse's (`RATIONALE.md#cs042-scoop`).
+
 ### Scoring
 
 ⛔ **Route all scoring through `addScore()`** — it also handles the HP-repair
@@ -363,79 +386,62 @@ not a gain; routing it through `addScore` would let a score *drop* trip the
 
 ### Audio
 
-⛔ **Tracks are DATA.** New tracks are new `MUSIC_TRACKS` entries built by their
-own `buildXTrack()`. **`MusicSys.update()` / `scheduleStep()` and the `layerGates`
+⛔ **THE VALVE FIRED HERE (CS042 P11).** Reasoning relocated undeleted to
+`RATIONALE.md` — `#music`, `#voice`, `#voice-queue`, `#captions`, `#voice-repeat`,
+`#event-sfx`. Pull the anchor before re-deciding any rule below.
+
+⛔ **Tracks are DATA.** New tracks are new `MUSIC_TRACKS` entries built by their own
+`buildXTrack()`. **`MusicSys.update()` / `scheduleStep()` and the `layerGates`
 gain-gating are not to be modified.** `playNote()`'s voice branch is the one
 extension point. Compose in `tools/music-lab.html`, port **verbatim**, never
 hand-tune gains in the build.
 
-⛔ **`VoiceSys` is a separate module alongside AudioSys/MusicSys — never folded
-into AudioSys**, which is a flat bag of one-shot voices and must not grow a
-sequencer.
+⛔ **`VoiceSys` is a separate module alongside AudioSys/MusicSys — never folded into
+AudioSys**, which is a flat bag of one-shot voices and must not grow a sequencer.
 
-1. ⛔ **Lines are DATA.** `VOICE_LINES` is keyed by event, each an array of
-   `{text, phon}`. Adding a line is a data edit. **Selection excludes the alternative
-   picked last time for that event (CS038 P4 mechanism 1)** — a uniform pick over the
-   remaining n−1, stepped past the excluded index; a one-line event has nothing to
-   exclude and is unaffected, which is exactly why mechanism 2 (item 8) exists.
-2. ⛔ **You never derive, edit, or improve a `phon` string.** Every `phon` is
-   composed and zero-error-verified in `tools/voice-robot-lab.html` (or
-   programmatically against the build's `PH` table) and pasted in verbatim.
-   **Features ship silent until that gate clears.** The acoustic engine (`PH`,
-   `buildUtterance` / `buildPitch`, `_schedule`), the `VOICE_STYLES` table, and
-   the ring-modulation stage are all ported verbatim from the labs. The labs'
-   g2p, flanger, and crush stages do **not** ship.
+1. ⛔ **Lines are DATA** — `VOICE_LINES`, keyed by event, each an array of
+   `{text, phon}`. Adding one is a data edit. **The pick excludes the alternative
+   used last time for that event** (CS038 P4 mechanism 1).
+2. ⛔ **You never derive, edit, or improve a `phon` string** — composed and
+   zero-error-verified in `tools/voice-robot-lab.html`, pasted verbatim.
+   **Features ship silent until that gate clears.** `PH`, `buildUtterance`/
+   `buildPitch`, `_schedule`, `VOICE_STYLES` and the ring-modulation stage are
+   ported verbatim; the labs' g2p, flanger and crush stages do **not** ship.
 3. ⛔ **Ask "did an effect end?" through `powerActive(type)`, never `powerFx`.**
-4. ⚠ **SETTLED — superseded lines DROP, except the five `VOICE_CRITICAL` events,
-   which PARK and are RE-VALIDATED.** `VOICE_CRITICAL` = `health_low`,
-   `health_relief`, `cargo_full`, `level`, and `chain_lost` (CS037 P5). A critical line
-   that loses the gate is parked on a FIFO queue (`VOICE_QUEUE_MAX`, deduped by event —
-   a newer line **replaces** a parked one in place, keeping its slot) and is exempt from
-   the cooldown gap. At drain, `VOICE_STILL_TRUE[event](entry)` restates the
-   trigger's own condition; a line gone false is discarded **silently**, never
-   spoken late. The older blanket "never queue" rule was over-broad, not wrong —
-   don't restore it, and don't widen this either. See `RATIONALE.md#voice-queue`.
-   - ⛔ **Criticality is ORTHOGONAL to priority. Two questions, two tables, don't
-     merge them.** Priority answers *may this line interrupt?*; criticality
-     answers *may this line wait?* `VOICE_PRIORITY` is untouched — `cargo_full`
-     stays 1, `level` stays 2.
-   - ⛔ **No TTL — standing prohibition, and it also binds item 8's repeat window
-     (CS038 P4).** The park drain takes no `dt`; a TTL would tick the game clock
-     while `busyUntil` (and `lastSpoke`, item 8) live on the audio clock, which
-     doesn't pause.
+4. ⚠ **SETTLED — superseded lines DROP, except the five `VOICE_CRITICAL` events**
+   (`health_low`, `health_relief`, `cargo_full`, `level`, `chain_lost`), **which PARK
+   and are RE-VALIDATED.** FIFO, capped at `VOICE_QUEUE_MAX`, deduped by event (a
+   newer line replaces a parked one **in place**), cooldown-exempt; at drain
+   `VOICE_STILL_TRUE[event]` restates the trigger's condition and a line gone false
+   is discarded **silently**. Don't restore the blanket "never queue"; don't widen it.
+   - ⛔ **Criticality is ORTHOGONAL to priority — two questions, two tables.**
+     `VOICE_PRIORITY` is untouched: `cargo_full` 1, `level` 2.
+   - ⛔ **No TTL, and that binds item 8 too** — both run on the audio clock.
    - ⛔ **Adding a critical event means raising `VOICE_QUEUE_MAX` with it.**
-5. ⛔ **One gate, two outputs.** `_emit(line, p)` resolves the single
-   cooldown/priority gate and drives **both** caption and audio; `_schedule(utt)`
-   is the scheduler. Keep the gate arithmetic byte-identical — captions must obey
-   the drop / pre-empt / park rules exactly like audio. Captions are independent
-   of voice volume and of the Off style (voice Off still captions).
-6. ⚠ **SETTLED:** `drawCaption()` is a **sibling** of `drawHUD()`, not inside it
-   — captions survive the `H` capture toggle. `drawLevelBanner()` is a second
-   sibling and is **not** a caption: set unconditionally in `nextWave()`,
-   independent of `AudioSys.ctx`, `settings.captions` and `voiceEnabled()`, and
-   it never touches the voice gate. That independence is the point. Don't tidy
-   it into the caption path.
-7. Every entry point is `if (!AudioSys.ctx) return;`-guarded (headless-safe).
-   The low-health voice has its own latch (`game.lowHpVoiced`) that menus do not
-   tear down — distinct from the siren latch.
-8. ⛔ **Per-event repeat suppression (CS038 P4) is a THIRD question, answered by a
-   THIRD mechanism — orthogonal to both priority and criticality.** Priority asks
-   *may this line interrupt?*, criticality asks *may this line wait?*, repeat
-   suppression asks *has this event JUST spoken?* Two independent parts:
-   - **Mechanism 1 — the no-immediate-repeat picker**, in `say()` (item 1).
-   - **Mechanism 2 — the entry-gate repeat window**, in `_emit()`, sitting at the
-     TOP of the gate, before the busy/cooldown branches: an event inside its own
-     window (`voiceRepeatGap(event)` — `VOICE_REPEAT_GAP` 12s ordinary,
-     `VOICE_REPEAT_GAP_CRITICAL` 20s for a `VOICE_CRITICAL` event) is **DROPPED,
-     never enqueued.** ⚠ **SETTLED — a repeat-suppressed critical DROPS, it does
-     NOT park.** Parking it would replay the identical line seconds later, which
-     is exactly what this mechanism exists to stop — a deliberate exception to
-     item 4's park-and-revalidate rule, not a contradiction of it. `level` is
-     exempt (`VOICE_REPEAT_EXEMPT`): it carries data (a different number each
-     time), so consecutive levels are never a repeat.
-   - ⛔ **THE WINDOW RUNS ON `AudioSys.now()`** — the same clock `busyUntil` uses,
-     never game time. A long pause lets a window lapse, which is correct:
-     re-saying a line after five minutes is not a repeat.
+5. ⛔ **One gate, two outputs.** `_emit(line, p)` resolves the one cooldown/priority
+   gate and drives **both** caption and audio; `_schedule(utt)` is the scheduler.
+   Keep the gate arithmetic byte-identical. Captions are independent of voice volume
+   and of the Off style (voice Off still captions).
+6. ⚠ **SETTLED:** `drawCaption()` is a **sibling** of `drawHUD()`.
+   `drawLevelBanner()` is a second sibling and is **not** a caption — set
+   unconditionally in `nextWave()`, independent of `AudioSys.ctx`,
+   `settings.captions` and `voiceEnabled()`, never touching the voice gate. Don't
+   tidy it into the caption path.
+7. Every entry point is `if (!AudioSys.ctx) return;`-guarded. The low-health voice
+   has its own latch (`game.lowHpVoiced`) that menus do not tear down.
+8. ⛔ **Per-event repeat suppression (CS038 P4) is a THIRD question with a THIRD
+   mechanism.** Priority: *may this interrupt?* Criticality: *may it wait?* This:
+   *has this event JUST spoken?* Mechanism 1 is item 1's picker. **Mechanism 2 is the
+   entry-gate window at the TOP of `_emit()`, above the busy/cooldown branches:** an
+   event inside `voiceRepeatGap(event)` (`VOICE_REPEAT_GAP` 12s,
+   `VOICE_REPEAT_GAP_CRITICAL` 20s) is **DROPPED, never enqueued.** ⚠ **SETTLED — a
+   repeat-suppressed critical DROPS, it does NOT park**, a deliberate exception to
+   item 4. `level` is exempt (`VOICE_REPEAT_EXEMPT`). ⛔ **The window runs on
+   `AudioSys.now()`**, never game time.
+9. ⛔ **An event SFX fires at its TRIGGER SITE, immediately above the `say()` — never
+   inside `_emit()`** (CS042 P3, FORK-CS042-B). All twelve CS042 cues are ported
+   **verbatim** from `tools/sfx-lab.html` and pinned byte-for-byte against
+   `CS042-GATE-A.md`. `powertag()` goes immediately after `AudioSys.powerup()`.
 
 ### Save data
 
@@ -569,6 +575,12 @@ makes `inScoopBox` return `false` at `scoopLevel` 0, which keeps garbage pickup
 byte-identical to the pre-scoop build. Do not delete it on a cleanup pass. If it
 fires, `SCOOP_CONFIG` / `buildScoopSteps` broke the invariant — the assertion is
 correct (GDD §2.14.1).
+- ⛔ CS042 P8 extended it over `SCOOP_ORB_OFFSET`/`SCOOP_ORB_R` **and added a LENGTH
+  check** — the orb tables are literals where the mouth tables are generated.
+- ⛔ **`SCOOP_MAX_LEVEL` (7) and `SCOOP_MOUTH_LEVELS` (5) are TWO constants answering TWO
+  questions.** The cap sizes the orb tables and the HUD ring; the mouth's own span is
+  what `buildScoopSteps()` divides by. Using the cap there silently shrinks levels 2–4
+  (FORK-CS042-A; `RATIONALE.md#cs042-scoop`).
 
 ⚠ **SETTLED — `POWERUP_DROP_TYPES` is the *budgeted-effect* list. The drop table
 is the separate `POWERUP_DROP_WEIGHTS`.** They answer different questions and
@@ -655,16 +667,27 @@ and does not change the CS038 P3 contract that capture defaults OFF and is OFF a
 launch. Don't "fix" this into persisting on the theory that a real menu implies a real
 setting; the whole point of `sessionSwitch` is that this one doesn't.
 
-### Healing (CS040)
+### Healing (CS040, levelled CS042 P6/P9)
 
 ⛔ **`applyPowerup()`'s health arm is the ONLY place HP is ever added to the hull.** A
 Health pickup applies what room remains up to `POWERUP_HEALTH_AMOUNT` and banks a whole
 spare charge (`game.healthBank`, spent automatically on the next damage event) for any
 leftover — there is no other writer of `game.ship.hp` in the upward direction anywhere in
 the build. The score milestone (`REPAIR_MILESTONE`, every 10,000 points) does **not**
-heal; it only ever *spawns* a Health pickup for the player to go collect, gated on the
-hull being below `SHIP_MAX_HP` — at full hull a crossing does nothing at all, not even a
-sound. Do not add a second HP source, and do not read a milestone crossing as healing.
+heal; it only ever *spawns* a Health pickup for the player to go collect. Do not add a
+second HP source, and do not read a milestone crossing as healing. (The bank's auto-spend
+in `damageShip()` is that arm's downstream half, not a second source.)
+
+⛔ **CS042 levelled the supply — four rules, reasons at `RATIONALE.md#cs042-health`.**
+- ⛔ **The one-at-a-time gate lives in `spawnHealthPowerup()` (P6, reversing CS040 P1).**
+  It bounds the COUNT and has no knob; `healthSpawnLock` bounds the RATE and has one.
+- ⛔ **The milestone interval grows** (`repairMilestoneGrowth`) and **a crossing pays only
+  while `hp <= SHIP_MAX_HP * repairMilestoneHullPct`**; the older `< SHIP_MAX_HP` clause
+  stays beside it, so that knob at 1.0 restores CS040 exactly.
+- ⛔ **`repairMilestoneHullPct` and `bankSpareHullPct` are the SAME NUMBER (0.70).** The
+  suite asserts they are *equal*, not that each is 0.70.
+- ⛔ **A banked charge either heals or spares a scoop level — NEVER both** (P9), on a
+  threshold over the **post-damage** hull. At `scoopLevel` 0 it heals.
 
 ⛔ **`REPAIR_AMOUNT` and `REPAIR_FULL_BONUS` are DELETED, not parked — do not restore
 either.** Before CS040 P1 a milestone added +25 HP directly (`REPAIR_AMOUNT`) or, if

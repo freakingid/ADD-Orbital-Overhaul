@@ -11,7 +11,9 @@ breath, which made it 528 lines that every session paid for in full. The rules
 stayed; the reasoning moved here.
 
 **Everything below is relocated prose**, taken out of `CLAUDE.md` as it stood at
-`89a9a3a` (the CS026-complete commit) and moved, not rewritten. Where the rule
+`89a9a3a` (the CS026-complete commit) and moved, not rewritten. **The last five
+anchors were relocated later, by CS042 P11, when the valve fired for the first
+time** — same contract, different donor commit; each says so at its own head. Where the rule
 has since been narrowed, retired or superseded, a `**Status:**` line says so and
 the original text is kept underneath as-is — a faithful record beats a tidy one.
 
@@ -35,6 +37,11 @@ the original text is kept underneath as-is — a faithful record beats a tidy on
 | [`#code-map`](#code-map) | Code map — annotations, and the retired v2.0 in-flight list |
 | [`#tools`](#tools) | Design instruments (`tools/`) |
 | [`#capture`](#capture) | Capture tools — shipped, not scaffolding |
+| [`#voice-repeat`](#voice-repeat) | Audio — per-event repeat suppression, the third mechanism |
+| [`#event-sfx`](#event-sfx) | Audio — an event SFX fires at its trigger site, never inside `_emit()` |
+| [`#cs042-health`](#cs042-health) | Healing — the CS042 supply qualifiers and the bank's second job |
+| [`#cs042-mass`](#cs042-mass) | Math and lifecycle — one mass, one force, and the four retired divisors |
+| [`#cs042-scoop`](#cs042-scoop) | Two traps / Rendering — the cap vs the mouth span, and the dashed field |
 
 ---
 
@@ -758,3 +765,278 @@ frame. Moving it earlier produces a silently half-drawn export rather than an
 error. And because `drawCaption()` and `drawLevelBanner()` are siblings of
 `drawHUD()` rather than parts of it (see [`#captions`](#captions)), `H` does not
 hide them — nor menus, toasts, or game-over text.
+
+---
+
+<a id="voice-repeat"></a>
+
+## `#voice-repeat` — why repeat suppression is a third mechanism, not a tuning of the first two
+
+Relocated from `CLAUDE.md`'s `### Audio` by CS042 P11's valve firing. The rule stayed;
+this is the reasoning that came out with it.
+
+> **Mechanism 1 — the no-immediate-repeat picker**, in `say()`: a uniform pick over the
+> alternatives for an event EXCLUDING whichever index was picked last time for it,
+> recorded in `lastLine` (keyed by event) at PICK time — not on a successful `_emit` — so
+> a pick the gate then drops still rotates. A one-line event (`cargo_full`, `chain_lost`)
+> has nothing to exclude and is unaffected, **which is exactly why mechanism 2 exists.**
+>
+> **Mechanism 2 — the entry-gate repeat window**, in `_emit()`, sitting at the very TOP of
+> the gate, above the busy/cooldown branches: an event that passed the gate within its own
+> window (`lastSpoke`, keyed by event, stamped in `AudioSys`-clock seconds) is **DROPPED —
+> including a critical one, which does NOT park.** Parking it would replay the identical
+> line seconds later, which is precisely what this mechanism exists to stop; that is a
+> deliberate exception to the park-and-revalidate rule, not a contradiction of it.
+
+Three things make this a separate question rather than a knob on the other two.
+
+1. **The three questions are genuinely independent.** Priority answers *may this line
+   interrupt one that is playing?*; criticality answers *may this line wait?*; repeat
+   suppression answers *has this event JUST spoken?* An event can be high-priority,
+   critical, and still a repeat — and the right answer to a repeat is neither "interrupt"
+   nor "wait", it is "say nothing". No table already in the system encodes that.
+2. **It was found by playtest, on the two events the picker could not help.** CS038's gate
+   B found `cargo_full` and `chain_lost` — both `VOICE_CRITICAL`, both with exactly one
+   line, and both made more frequent by CS037 P5's full-tow-release-on-damage change —
+   repeating often enough to read as a bug. Mechanism 1 cannot rotate a one-line event, so
+   the fix had to sit at the gate rather than at the pick. The same gate confirmed
+   `health_low` / `chain_broken` / `chain_guard` (3–4 alternatives each) already read as
+   varied, which is what sized CS039's line-authoring worklist to the one-line events
+   first.
+3. **The clock choice is load-bearing.** The window runs on `AudioSys.now()`, the same
+   clock `busyUntil` uses, and takes **no `dt`** — the same no-TTL rule the park queue
+   follows, for the same reason: a TTL would tick the game clock while the window's clock
+   does not pause. A long pause therefore lets a window *lapse*, which is correct —
+   re-saying a line after five minutes is not a repeat.
+
+`level` is exempt (`VOICE_REPEAT_EXEMPT`) because it carries data — a different number
+every firing — so consecutive levels are never a repeat. Nothing else shares that
+property: the `dock_*` tiers carry data too, but a second `dock_10` genuinely **is** a
+repeat of the same line. Both windows (12 s ordinary, 20 s critical) were playtested at
+gate B3/B4 and no needed repeat — a genuine second `health_low` after a real recovery, a
+`chain_lost` on a separate disaster — was ever eaten. `VoiceSys.reset()` clears both
+`lastLine` and `lastSpoke`, so a fresh run picks and repeats unconstrained by the last one.
+
+---
+
+<a id="event-sfx"></a>
+
+## `#event-sfx` — why an event SFX goes at the trigger site and never inside the gate
+
+Written by CS042 P11 alongside the valve firing, from `PLANNED-FEATURES-CS042.md` §1.3 and
+FORK-CS042-B. `CLAUDE.md`'s `### Audio` item 9 carries the rule.
+
+The audit that produced CS042 §1 asked a simple question of every voice event: *if Dan
+does not speak, does the player learn anything happened?* For most of them the answer was
+no. The tow chain filling up, the payload being cut loose, a chain-guard charge absorbing
+a hit, a hull edge crossing, a powerup landing or expiring — each announced itself only
+through `VoiceSys`, and `VoiceSys` is the one subsystem in the build that is *designed* to
+say nothing. It drops a superseded line, parks a critical one, suppresses a repeat, and is
+switched off entirely by a settings value many players will use. Every one of those is
+correct behaviour for a voice channel and a disaster for an event tell.
+
+So the twelve cues exist to be the layer that never goes quiet, and **that only works if
+they are outside the gate.** Placing the call inside `_emit()` — the obvious "one place,
+one event" refactor a future session will propose — silently re-imports every rule the
+sounds were added to escape: a `cargofull` inside its own repeat window would vanish, a
+`chain_lost` pre-empted by a higher-priority line would take its sound with it, and voice
+Off would mute the game's event feedback wholesale. The rule is therefore stated as a
+*placement*, not as a policy: the call sits at the trigger site, immediately above the
+`say()`, and the two are read together. `breakChain()`'s sever tail reads the **same**
+`chain.length === 0` predicate the `say()` on the next line uses, so sound and line can
+never disagree about what happened.
+
+The sound landing slightly *before* the voice is a consequence of that placement, not a
+second mechanism: `_schedule()` leads by 0.10 s. Do not add an offset to "fix" it.
+
+Two smaller placements are load-bearing for their own reasons. `powertag()` carries a
+0.16 s internal offset so the tag lands after `AudioSys.powerup()`'s second note — that
+offset is measured against `powerup()` starting immediately before it, so moving the call
+anywhere else makes the offset wrong rather than merely different. And `guardblock()` is
+the one **replacement** among the twelve: `breakChain()`'s guard branch used to borrow
+`AudioSys.shieldPing()`, which §1.4's audit found made chain armour and the ship's own
+shield indistinguishable — the defect the new cue exists to fix. Its comment is rewritten
+in place to record the reversal rather than deleted.
+
+The port-verbatim rule is the same one music already lives under, for the same reason:
+`tools/sfx-lab.html` auditioned three candidates per sound at the volume the game plays
+them at, and the picks are only meaningful while nobody re-tunes a gain on either side of
+the port. That is why the suite pins all twelve byte-for-byte against `CS042-GATE-A.md` —
+a re-tuned gain is the one failure a behavioural test can never see.
+
+---
+
+<a id="cs042-health"></a>
+
+## `#cs042-health` — why the health supply grew three qualifiers and the bank grew a second job
+
+Written by CS042 P11 from `PLANNED-FEATURES-CS042.md` §2 and §4.5. `CLAUDE.md`'s
+`### Healing` carries the rules.
+
+**The flood was measured, not felt.** CS040's own telemetry showed the score milestone
+supplying 63% / 62% of all healing across two captures, and climbing with wave on its own
+because score *rate* climbs with wave while the milestone interval was flat. CS040 P1 had
+already stopped the milestone healing directly; what remained was that it kept *spawning*,
+faster and faster, at exactly the point a run should be getting harder. The growth term
+(`repairMilestoneGrowth`) answers that half arithmetically rather than by capping anything,
+and at 0 the interval is flat again and CS040's numbers return byte-for-byte.
+
+**The hull gate answers a different half.** A milestone crossing at 96% hull was buying a
+pickup for a scratch. `repairMilestoneHullPct` makes a crossing pay only while the player
+is genuinely hurt. The older `< SHIP_MAX_HP` clause is deliberately kept beside it so the
+knob at 1.0 reduces to CS040's rule exactly — a clean A/B rather than an approximation of
+one.
+
+**Two bounds, two questions, and only one of them is a knob.** Whether two Health pickups
+may exist at once is a yes/no design rule, so the one-at-a-time gate has no dial; how often
+any route may spawn is a rate, so `healthSpawnLock` has one. Moving the count gate out of
+the ambient call site into `spawnHealthPowerup()` **reverses CS040 P1**, whose own comment
+predicted this exact change and called it "a design change, not a tidy-up" — that comment
+is rewritten in place rather than deleted, because the reversal is only legible beside it.
+
+One consequence the spec did not reach: when the Super Mega Delivery's per-piece roll lands
+on Health while the lock is up, Health leaves the pool and the piece rolls over the other
+six. Dropping nothing was written first and broke a shipped guarantee two older tests pin
+by name — every budgeted swept piece pays exactly one powerup. The sweep's payout volume is
+therefore unmoved and at most one Health arrives per sweep.
+
+**The bank's second job is a threshold on the post-damage hull, and that is the first thing
+a future reader will question.** `s.hp -= amount` runs near the top of `damageShip()`, so by
+the time the spend is reached the hull is essentially never at maximum — a literal full-hull
+test there would be dead code that never fired once. This was built and measured: replacing
+the shipped predicate with `s.hp >= SHIP_MAX_HP` and driving both builds over ten
+post-damage hulls spares 6 times on the shipped one and **0** on the counterfactual.
+
+`repairMilestoneHullPct` and `bankSpareHullPct` are the same 0.70 because CS042 has exactly
+one definition of "hurt", and the suite asserts they are *equal* rather than each being
+0.70 — so a one-sided retune fails rather than quietly splitting the definition.
+
+At the shipped 2-hit loss rate a charge buys **half** a scoop level, not a whole one. That
+follows from a judgment call §4.5 does not reach: a spared hit does not advance
+`game.scoopHits` either. The alternative — let the tally climb and block only the level
+drop — spends a charge silently on every hit that was not yet the costly one, which is
+exactly what the `"SCOOP SAVED"` floater exists to prevent. If a charge should buy a whole
+level, that is a different mechanism, not a tuning change.
+
+---
+
+<a id="cs042-mass"></a>
+
+## `#cs042-mass` — why four cargo divisors became one mass, and why two of the results are deliberate
+
+Written by CS042 P11 from `PLANNED-FEATURES-CS042.md` §6.8. `CLAUDE.md`'s
+`### Math and lifecycle` carries the rule.
+
+**This shape came out of a null result, not a preference.** `CARGO_THRUST`,
+`CARGO_MAXSPD`, `CARGO_MASS` and `CARGO_TURN` were four separately hand-tuned coefficients
+for four symptoms of one physical fact, and three full passes through
+`tools/handling-lab.html` produced no set Paul trusted. The structural reason is that
+`1/(1 + m·k)` **asymptotes**: raising `k` can never make a mid haul bite without
+over-penalising a full one, which is why CS010 had leaned on the tug for mid-range heft and
+shipped `CARGO_TURN` dormant as "the real structural fix for inertia". The lab also
+diagnosed a defect none of the coefficients could reach — drag was `(1 − SHIP_DRAG)^dt`
+with **no cargo term at all**, so an empty ship and a 24-node haul both bled to a tenth of
+their speed in the same 5.35 s. Mass set the ceiling and then stopped mattering.
+
+Paul's direction, verbatim: *"I just want to affect the 'effective mass' of the cargo, and
+the 'effective thrust' added by the engine powerup, and have you or the game code calculate
+all that other business within reason for a ship and cargo flying in the relative
+weightlessness of space."*
+
+So `M = 1 + chainMass() × cargoUnitMass`, and every handling term is that one mass under
+one force. `CARGO_UNIT_MASS` ships at 0.07 — `CARGO_THRUST`'s own old value — chosen so
+**acceleration is byte-identical to every build since CS010 at every chain length**. What
+moves is coast (5.3 s → 14.3 s), turn (241 → 90 °/s) and the tug's mid range, every column
+monotonic in node count with no clamp anywhere. At 0 the ship is weightless however much it
+tows, which is the one-knob A/B for the entire model.
+
+**Two consequences were flagged before they shipped and closed at GATE C as right.**
+Terminal speed is `SHIP_THRUST/λ₀` regardless of load, so the top-speed penalty disappears
+and a full haul can eventually reach 520 where it used to clamp at 283 — it takes 5.6 s to
+get there and then cannot stop for 14 s. **Mass limits agility, not speed**, which is what
+"relative weightlessness" means. And rotation is penalised by construction, reversing
+FLAG-CS042-j's earlier close; under one mass there is no way to exempt rotation without
+special-casing it back out, and §6.8 declines to.
+
+**`CHAIN_TUG` 26 → 58 is derived, not tuned.** The mass factor changed form from the
+clamped `min(1.4, m·CARGO_MASS)` to the physical `(M−1)/M`, which at 24 nodes is 0.627
+where the old clamp was 1.4; 26 × 1.4 = 36.40 and 58 × 0.627 = 36.36, so a full chain tugs
+exactly as hard as before. Re-solve it from that same equality if `cargoUnitMass`'s default
+ever moves.
+
+**The cost, measured and not softened:** only the endpoints were held. The two curves cross
+at m ≈ 8 — below it the new tug is stronger (+37% at 2 nodes, +22% at 4), above it weaker,
+worst at m = 14 (**−21%**), recovering to −0.1% at 24. That is what retiring the 14-node
+flat spot costs, and CS010 P2's own reason for raising `CARGO_MASS` was exactly that
+mid-range heft. If a mid haul ever reads floaty, a `CHAIN_TUG` retune is the first place to
+look — and it re-opens GDD §3.4's stability envelope, which CS042 P7 re-validated at 4.112
+px, byte-identical to its parent.
+
+GATE A's own lesson is worth keeping with this: a mock ship on an empty field has no
+enemies, no dock, no chain to lose and nothing to be late for, which is most of what makes
+a haul feel heavy. Inertia was not judgeable outside a real run, and that is why the two
+knobs went into the debug panel at values reproducing the old build and the question went
+to GATE C.
+
+---
+
+<a id="cs042-scoop"></a>
+
+## `#cs042-scoop` — the cap versus the mouth's span, and why the field is dashed rather than faint
+
+Written by CS042 P11 from `PLANNED-FEATURES-CS042.md` §4 and GATE C's G4. `CLAUDE.md`'s
+`### Two traps` and `### Rendering` carry the rules.
+
+**The two constants.** `buildScoopSteps()` divides by `(N − 1)`. Raising the cap 5 → 7
+while `N` stayed the cap would re-spread the same min→max range over seven steps and
+silently shrink every existing level — L2's mouth 38.7 → 33.0 px, L3 55.8 → 44.4, L4
+72.9 → 55.8, with only L1 and L5 held. Nothing would have failed; the levels the player
+already knew would simply have got smaller. FORK-CS042-A resolved to give the mouth its own
+span (`SCOOP_MOUTH_LEVELS`, 5) and let levels above it clamp to the top step, so **the
+mouth's numbers do not move when the cap does**. Both readings were measured rather than
+argued: the new builder fed the parent's own config reproduces levels 1–5 bit-for-bit, and
+the counterfactual shrinks exactly 2, 3 and 4.
+
+**Why the orbs, rather than a wider mouth.** §4.2 measured that the levels were not
+discernible in play, and a bigger cone reads as a bigger number. Levels 6–7 grant the
+Scoop's first *lateral* reach instead — the first level that gives a capability. The
+predicate was deliberately not forked to do it: one disc test off `inScoopBox()`'s existing
+`shortDelta()` projection, so both callers get the orbs for free and a fresh `Math.hypot`
+never gets a chance to break at the wrap seam.
+
+**Why the level-1 floor moved.** At `minWidthMult` 1.2 / `minDepth` 20 the L1 mouth sat
+almost entirely inside the 18-px base pickup disc: 713 px² of box against a 1,018 px²
+circle. The first Scoop pickup — the one that teaches what a Scoop *is* — changed almost
+nothing. At 2.6 / 34 it is 2,200 px², unmistakably outside the circle. ⚠ The spec's claim
+that this puts L1 "just ahead of the Magnet" is wrong on its own numbers: the Magnet's
+boosted circle is 2,606 px², so L1 sits below it and §4.2's finding that the Magnet beats
+Scoop levels 1–2 outright still holds at level 1. The constants shipped as specified;
+moving them further to clear the Magnet would be new design.
+
+**Why the render is dashed and not faint (GATE C, G4).** Paul's playtest read was that the
+mouth V and the orbs look like *ship geometry* — solid glow-strokes that imply hittable
+hull — so a hit landing near an orb feels as though it should have hurt. Nothing the Scoop
+draws has ever been collidable: `inScoopBox()` is a capture test and no collision pass
+reads any of those points. The render was contradicting the mechanics.
+
+Two directions were on the table and neither was chosen at the gate. Transparency is not
+available in that block: `ctx.globalAlpha` there belongs to the level-end grace pulse's
+SET-DRAW-RESTORE, which is the same reason CS042 P8 made the level-7 tether a **colour**
+choice rather than an alpha one. Composing a second alpha writer correctly is possible but
+reverses a call made one phase earlier, and — more to the point — **a faint outline is
+still an outline.** It dims the boundary without stopping it reading as one, and G4 is
+about what the shape *means*, not how loud it is.
+
+A broken outline is a different claim: it does not read as a surface at all.
+`glowStroke`'s `shadowBlur` paints a continuous halo through the gaps while the bright core
+stays broken, which is the energy-field look rather than a dashed line on a blueprint. The
+cost Paul flagged is real but small — two `setLineDash()` calls per drawn frame, on the
+ship alone, and only while a scoop exists. `drawPoly`/`glowStroke` stay dash-agnostic on
+purpose: the pattern belongs to the one caller that wants it, so every other stroke in the
+build keeps working without knowing the feature exists. The clear is mandatory rather than
+tidy — `drawPoly()`'s own `save()`/`restore()` *preserves* a dash, so an unclosed window
+would dash the hull, the flame, the shield and every entity drawn after the ship.
+
+⚠ It shipped unseen in a browser. 6/6 px was sized off the shapes it strokes (13–18 dashes
+around an orb ring), not picked round, but whether it reads right is the first thing to
+look at next.

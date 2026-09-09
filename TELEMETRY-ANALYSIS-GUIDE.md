@@ -138,7 +138,7 @@ Six checks. Each has caught something real.
 | `rapidLeft` | trigger-pulls remaining |
 | `tripleLeft` | trigger-pulls remaining (a 3-fan is ONE pull) |
 | `magnetLeft` | canisters the magnet will still hook |
-| `engineLeft` | **seconds** of forward thrust — the only fractional budget |
+| `engineLeft` | **seconds** of forward thrust — the only fractional budget. ⛔ **As of CS042 P7 the tank burns only while the chain is NON-EMPTY**, so an unladen stretch no longer drains it; a flat `engineLeft` across several rows can mean "flying empty", not "not thrusting" |
 | `guardLeft` | chain-guard intercepts remaining |
 | `scoopLevel` | 0…`SCOOP_MAX_LEVEL`, persistent; decays by damage, never by time |
 
@@ -336,16 +336,21 @@ Re-grep these; do not trust the values below across builds.
 | saucer body | 20 small / 35 medium | ramming a saucer |
 | `POWERUP_HEALTH_AMOUNT` | 25 | HP per health pickup (also the size of one banked charge) |
 | `REPAIR_MILESTONE` | 10000 | score interval that now SPAWNS a Health pickup (CS040 P1) — see the behavioural facts below |
-| `SCOOP_MAX_LEVEL` | 5 | scoop ceiling |
-| `SCOOP_HITS_PER_LEVEL` | 5 | hits that cost one scoop level |
+| `SCOOP_MAX_LEVEL` | **7** (was 5 before CS042 P8) | scoop ceiling; levels 6–7 add the flanking capture orbs |
+| `SCOOP_HITS_PER_LEVEL` | **2** (was 5 before CS042 P9) | hits that cost one scoop level — see §7's `scoopHits` trap |
 | `SCOOP_MAX_BONUS` | 500 | score paid when a scoop pickup lands at max |
 | `RAPID_SHOTS / TRIPLE_SHOTS / MAGNET_PIECES` | 40 / 30 / 40 | budget granted per pickup |
 | `ENGINE_BURN_SECONDS` | 10.0 | thrust-seconds per engine pickup |
 | `DEBUG.chainGuardIntercepts` | 3 | intercepts per guard pickup |
 | `POWERUP_DROP_WEIGHTS` | rapid 30, triple 30, scoop 20, magnet 10, engine 10; guard's `20` is a placeholder, never read as a weight | expected drop mix |
 | `DEBUG.healthBankMax` | 2 (`def` from `HEALTH_BANK_MAX`) | spare Health charges the bank can hold, `0` disables banking |
-| `DEBUG.healthGapLowOk / HighOk` | 22 / 30 s (`def` from `HEALTH_GAP_LOW_OK` / `HEALTH_GAP_HIGH_OK`) | ambient health roll range at full hull |
-| `DEBUG.healthGapLowHurt / HighHurt` | 6 / 10 s (`def` from `HEALTH_GAP_LOW_HURT` / `HEALTH_GAP_HIGH_HURT`) | ambient health roll range at zero hull |
+| `DEBUG.healthGapLowOk / HighOk` | **30 / 45 s** (was 22 / 30 before CS042 P6; `def` from `HEALTH_GAP_LOW_OK` / `HEALTH_GAP_HIGH_OK`) | ambient health roll range at full hull |
+| `DEBUG.healthGapLowHurt / HighHurt` | **10 / 16 s** (was 6 / 10 before CS042 P6; `def` from `HEALTH_GAP_LOW_HURT` / `HEALTH_GAP_HIGH_HURT`) | ambient health roll range at zero hull |
+| `DEBUG.healthSpawnLock` | 12 s (`def` from `HEALTH_SPAWN_LOCK`, CS042 P6) | global lockout after **any** Health spawn; `0` disables it. The separate one-at-a-time gate has no knob |
+| `DEBUG.repairMilestoneGrowth` | 0.08 (CS042 P6) | the milestone interval widens by this fraction of `REPAIR_MILESTONE` per level; `0` = flat |
+| `DEBUG.repairMilestoneHullPct` | 0.70 (CS042 P6) | a milestone crossing pays only while `hp <= SHIP_MAX_HP ×` this; `1.0` = CS040's rule |
+| `DEBUG.bankSpareHullPct` | 0.70 (CS042 P9) | above this **post-damage** hull a banked charge spares a scoop level instead of healing. Same number as the row above, by design |
+| `DEBUG.cargoUnitMass` | 0.07 (`def` from `CARGO_UNIT_MASS`, CS042 P7) | `shipMass()` = `1 + chainMass() ×` this — the one divisor for thrust, drag rate, turn and tug. `0` = weightless cargo |
 | `DEBUG.hubDryWeightMult` | 4 (`def` from `HUB_DRY_WEIGHT_MULT`) | multiplier on a zero-budget type's roll weight, recycle-hub drop only |
 | `CARGO_CAP_MAX` | 24 | tow cap ceiling |
 

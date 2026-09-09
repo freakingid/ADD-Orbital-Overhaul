@@ -2,8 +2,8 @@
 
 A hand-curated queue of what's next, for Paul. Distinct from `STATUS.md` (current changeset only,
 reset every close) and `DECISIONS.md` (judgment calls already made) — this is the backlog those
-feed into and draw from. Snapshotted at CS041's close (`1.0.0.40`) and updated by the 2026-09-07 off-cycle GDD pass;
-check `STATUS.md` for whether any of this has since moved.
+feed into and draw from. Snapshotted at **CS042's close (`1.0.0.42`)**; check `STATUS.md` for whether any of this has since
+moved.
 
 **Not session-authoritative.** A future session should treat this as a starting point for
 conversation with Paul, not a work order to execute unprompted — several items below need a human
@@ -11,36 +11,42 @@ decision (a playtest, a "yes go ahead") before they're implementation-ready.
 
 ---
 
-## ⛔ RESUME HERE — last worked 2026-09-07 (off-cycle GDD accuracy pass)
+## ⛔ RESUME HERE — last worked 2026-09-08 (CS042 closed)
 
-**If a session was told "pick up where we left off," this block is the clue.** It is the only
-dated resume point in the repo; everything below it is the standing backlog, which is a different
-thing. Delete this block once its "next step" is done or Paul redirects — a stale resume note is
-worse than none, and that is the exact failure the pass below was cleaning up after.
+**If a session was told "pick up where we left off," this block is the clue.** It is the only dated
+resume point in the repo; everything below it is the standing backlog, which is a different thing.
+Delete this block once its "next step" is done or Paul redirects — a stale resume note is worse than
+none.
 
-**What just happened.** `ORBITAL-OVERHAUL-GDD.md` was swept for accuracy against the shipped build.
-⛔ **Not a changeset, not CS042, no build byte changed** — suite 171/171, 0 skips. The staleness was
-concentrated in the sections no closing-phase checklist owns: the front-matter build stamp (16
-changesets out of date), §4's per-version blockquotes (two still marked *"in progress"* for rounds
-long shipped), and §6's watch list (three entries built on retired knobs). §2 and §3 largely held up.
-Six false claims and one documentation gap were fixed; §1.1 was added. Full account: `STATUS.md`'s
-off-cycle ledger entry, the findings in its Known issues, and the four judgment calls in
-`DECISIONS.md` under its dated 2026-09-07 heading.
+**What just happened.** **CS042 shipped and closed** (`1.0.0.40 → 1.0.0.42` — the last field tracks the
+changeset number now, Paul's call at the close; registry 110 → 117,
+`LEVERS` unmoved at 18, suite 171 → 180 files all green with zero skips). Twelve event SFX so every
+announced event sounds without Dan; a cross-fade over both ceremonies; health supply levelling; four
+cargo handling divisors replaced by one `shipMass()`; the Scoop redesigned on both sides (levels 6–7
+with flanking capture orbs, loss rate 5 → 2 hits, a health charge that can spare a level); menu
+navigation key repeat; and a dashed field stroke so the Scoop stops reading as hittable hull. Full
+narrative: `log/CS042.md`. Both planning docs are in `archive/`.
 
-**The next step, and it is BLOCKED on Paul, not on work.** The whole point of the pass was to make
-this GDD comparable against the **Orbital Overhaul 2** design document. ⛔ **That document is not in
-this repo and nobody here has seen it.** Ask Paul for the path or the file. Do **not** infer OO2's
-design from this repo and do **not** assume the two documents share a structure.
+**Two things need Paul before anything else here does.**
 
-- **Where to start once the OO2 doc is in hand:** GDD **§1.1** ("The game in one page — the core
-  loop"), specifically its closing **"What the game deliberately does NOT have"** list. That list was
-  written for this comparison — it is where two designs usually diverge most.
-- ⚠ **§1.1 is a SUMMARY and is never authoritative.** §2 wins any disagreement. The standing call in
-  `DECISIONS.md` is that if §1.1 is ever found contradicting §2, **delete it rather than repair it**.
+1. ⛔ **`CLAUDE.md` closed the changeset OVER its own 50 KB ceiling (51.25 KiB), and the size valve
+   that was supposed to prevent that is spent** — it fired on `### Audio` exactly as designed, and
+   afterwards no section is over the ~4 KB the valve requires. This is FLAG-CS041-b, now live.
+   Three ways out, all his call: lower the section threshold, raise the ceiling (it has always been
+   "a first guess"), or accept the overrun. **Nothing is blocked** — the file works — but the next
+   changeset that adds a rule to it faces this immediately. Detail: `STATUS.md`'s Open questions.
+2. ⛔ **The Orbital Overhaul 2 comparison is still where it was, and still blocked on him.** The
+   2026-09-07 GDD accuracy pass existed to make this GDD comparable against the **OO2** design
+   document; ⛔ **that document is not in this repo and nobody here has seen it.** Ask Paul for the
+   path or the file. Do **not** infer OO2's design from this repo and do **not** assume the two
+   documents share a structure. Start at GDD **§1.1**'s closing *"What the game deliberately does
+   NOT have"* list — it was written for this comparison. ⚠ §1.1 is a SUMMARY and never
+   authoritative; if it is ever found contradicting §2, `DECISIONS.md`'s standing call is to
+   **delete it rather than repair it**.
 
-**Unblocked work, if Paul is away and you want something to do:** the "Documentation" section below
-(six §3 rows still unswept for prose staleness; the closing-phase checklist gap) and the four stale
-code comments under "Small, mechanical fixes." None of those need him.
+**Unblocked work, if Paul is away and you want something to do:** the deferred SFX retune (below —
+it is a `tools/sfx-lab.html` session, never a hand-edit), the "Documentation" section, and the four
+stale code comments under "Small, mechanical fixes." None of those need him.
 
 ## Needs a person, not code
 
@@ -60,6 +66,19 @@ code comments under "Small, mechanical fixes." None of those need him.
     tail?
   - Does the dock apron read as pressure or as litter, now that CS035 P2's lockout means a parked
     ship no longer cleans up around itself?
+- **⚠ Paul flagged some of CS042's twelve event SFX as wanting a retune and EXPLICITLY DEFERRED it
+  to a later changeset.** ⛔ **It is a `tools/sfx-lab.html` session, not a hand-edit in the build** —
+  all twelve methods are pinned byte-for-byte against `CS042-GATE-A.md`, so re-tuning a gain in
+  place fails the suite by design. He has not said which sounds.
+- **⛔ NEW, and the most answerable thing on this list: does the dashed Scoop read as an energy
+  field?** CS042 P11 answered GATE C's G4 without ever opening a browser. The mouth V, both level-6/7
+  orbs and the level-7 tethers now stroke through a 6/6 px dash so they stop reading as hittable
+  hull. `SCOOP_FIELD_DASH` / `SCOOP_FIELD_GAP` are two plain constants at the top of the Scoop block
+  — no knob, no gate needed to retune.
+- **The seven knobs CS042 added stand at analytic defaults, unplaytested against their own extremes.**
+  `DIFFICULTY-LEVERS.md` §4 names each one's A/B. The two most worth a deliberate look are
+  `cargoUnitMass` (at 0 the whole one-mass model switches off) and `bankSpareHullPct` (at 1.0 a
+  banked charge always heals, at 0.0 it always spares a scoop level).
 - **`CS039-VOICE-WORKLIST.md`** (written CS038 P7) — still unconsumed. Records which voice events
   most need line alternatives, for whenever Paul next sits down with `tools/voice-robot-lab.html`.
 
@@ -78,6 +97,11 @@ code comments under "Small, mechanical fixes." None of those need him.
   — reword once Paul decides how he wants the question asked.
 - `CLAUDE.md` documentation debt: `Achievements.save()` is no longer `afd_achievements_v2`'s only
   writer, and `mergeUnlock()` goes unnoted (flagged CS037 P6, deferred every changeset since).
+- **⛔ When writing `PLANNED-FEATURES-CS043.md` / `IMPLEMENTATION-PHASES-CS043.md`, state the
+  version bump as `1.0.0.43` — the CHANGESET NUMBER — not "the next integer."** CS042's phase doc
+  wrote the next integer, shipped `1.0.0.41`, and both live version pins passed it, because they
+  assert HEAD's literal and cannot know what it should have been. `GAME_VERSION`'s own comment
+  block is authoritative. `DECISIONS.md`, 2026-09-08.
 
 ## Balance / design, lower urgency
 
@@ -99,25 +123,35 @@ code comments under "Small, mechanical fixes." None of those need him.
 
 ## Documentation, from the 2026-09-07 off-cycle GDD pass
 
-- **Six §3 rows have still never been swept for prose-level staleness** (Canvas/scaling, AudioSys,
-  MusicSys, VoiceSys, Input, Chain physics). Every real find in that pass was a claim with no dead
+- **Five §3 rows have still never been swept for prose-level staleness** (Canvas/scaling, AudioSys,
+  MusicSys, VoiceSys, Input — **Chain physics came off this list at CS042 P11**, rewritten for the
+  one-mass model). Every real find in that pass was a claim with no dead
   identifier in it, which is exactly what `scratchpad/gdd-audit.py` cannot see — so these six are
   unchecked, not checked-and-clean.
-- **Extend the closing-phase checklist to re-read the GDD's build stamp and §4.** Both were years
-  stale for the same structural reason: no phase owned them. §0's size rows already get a
-  closing-phase re-measure; adding these two is a one-line rule change and would close the loop.
-- **`scratchpad/gdd-sizes.py` exists but is uncommitted and unreferenced by any rule.** It makes the
-  CS041 P9 §0 re-measure one command (`--check`, exits non-zero on drift). If it is kept, name it in
-  `CLAUDE.md`'s closing-phase rule the way `gdd-audit.py` is named in the staleness rule; if not,
-  delete it — an orphan tool nobody is told to run is worse than no tool.
+- ~~Extend the closing-phase checklist to re-read the GDD's build stamp~~ — **done CS042 P11.**
+  `CLAUDE.md`'s §0 re-measure rule now re-reads line 3's version / registry / `LEVERS` stamp in the
+  same step, and the stamp is current for the first time in sixteen changesets. ⚠ **§4's half is NOT
+  done** — it carries a ⛔ "must not grow back into a changelog" rule but still has no checklist
+  owner, which is the same structural gap.
+- ~~`scratchpad/gdd-sizes.py` is uncommitted and unreferenced~~ — **done:** it is committed, and
+  `CLAUDE.md`'s closing-phase rule now names `--check` the way the staleness rule names
+  `gdd-audit.py`. CS042 P11 used it and it found sixteen drifted rows.
+- **⛔ §0's two AGGREGATE size figures have no owner either.** The re-measure rule covers the ~35
+  table rows; the preamble's "always-read floor" and "§4–§7" numbers are separate snapshots, and the
+  second was found ~55% understated at CS042 P11 (~14 KB claimed, 21.8 KB measured) having drifted
+  independently of any changeset. Either fold them into `gdd-sizes.py --check` or say in the rule
+  that they are re-read too.
 
 ## Not started
 
-- **CS042 has no scope yet.** Nothing here is pre-committed to the next changeset — this file is
-  the queue to pull from when `PLANNED-FEATURES-CS042.md` gets written, not a substitute for it.
+- **CS043 has no scope yet.** Nothing here is pre-committed to the next changeset — this file is
+  the queue to pull from when `PLANNED-FEATURES-CS043.md` gets written, not a substitute for it.
+  ⚠ **CS042 did not reach anything it planned to and then dropped** — every phase in its build order
+  shipped, both gates were answered, and all five forks and thirteen flags closed. What it *opened*
+  is FLAG-CS041-b, at the top of this file.
 
 ---
 
-*Source: `STATUS.md` at CS041's close (`log/CS041.md` has the full changeset narrative), plus the
-2026-09-07 off-cycle GDD accuracy pass. Update this file as items resolve or new ones surface — it
+*Source: `STATUS.md` at CS042's close (`log/CS042.md` has the full changeset narrative), which in
+turn carried forward CS041's and the 2026-09-07 off-cycle GDD accuracy pass's open items. Update this file as items resolve or new ones surface — it
 isn't rolled into `log/` automatically the way `STATUS.md` is.*
