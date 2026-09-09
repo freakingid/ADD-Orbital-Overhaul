@@ -16,7 +16,8 @@ decision (a playtest, a "yes go ahead") before they're implementation-ready.
 **If a session was told "pick up where we left off," this block is the clue.** It is the only dated
 resume point in the repo; everything below it is the standing backlog, which is a different thing.
 Delete this block once its "next step" is done or Paul redirects — a stale resume note is worse than
-none.
+none. (⚠ Paul-facing companion, not session context: **`START-HERE.md`** at the repo root explains
+*how* a session is run here — the ritual, not the state. This block stays the authority on the state.)
 
 **Where things stand.** **CS043 is in flight and one phase deep.** It deletes the level-end pause —
 the freeze on wave clear, the "Level N Complete" announcement, and the achievement panel at the level
