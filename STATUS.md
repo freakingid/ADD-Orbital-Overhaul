@@ -1,10 +1,25 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.42 · Changeset: CS042 · Phase: P11 (closed) · Registry: 117 · Levers: 18
+Version: 1.0.0.42 · Changeset: CS043 · Phase: P0 · Registry: 117 · Levers: 18
 
-⛔ **CS042 is CLOSED. Nothing is in flight.** Both planning docs are in `archive/`; the full
-narrative for every phase and both gates is `log/CS042.md`. `CS042-GATE-A.md` stays at the repo
-root — three phases are pinned byte-for-byte against it and those pins must keep resolving.
-Everything under **Known issues** below is carried forward and still live.
+⛔ **CS043 is IN FLIGHT — P0 landed, P1-P5 not yet run.** CS042 is CLOSED underneath it: both of
+CS042's planning docs are in `archive/`, and its full narrative is `log/CS042.md`. `CS042-GATE-A.md`
+stays at the repo root — three CS042 phases are pinned byte-for-byte against it and those pins must
+keep resolving. `PLANNED-FEATURES-CS043.md` and `IMPLEMENTATION-PHASES-CS043.md` carry CS043's own
+spec and phase prompts; FORK-CS043-A is already resolved (§8: span the whole protection window).
+Everything under **Known issues** below not resolved by P0 is carried forward and still live.
+
+## Phase ledger — CS043
+
+- P0 — Five stale build/suite comments fixed, comments only, no build byte: `nextWave()`'s comment
+  near its `worldSizeFor()` call, which still described the retired CS021/CS022 archetype cadence
+  ("up at every 3rd level... 42 times in a 63-level run"), now describes what the code actually does
+  — one boundary, one resize per run at the default `earlyWorldLevels`, none at 0 (§7.1); the v1.5
+  history note no longer calls the retired `RAMP_WAVES` "the single knob" in the present tense; the
+  Achievements weekly-rotation modulus, stale at `% 15` in two places (`orbital-overhaul.html:99` and
+  `test-f9.js`'s header) against the shipped 16-entry `WEEKLY` pool, corrected to `% 16`; and the
+  `settings` object's `voiceStyle`/`captions` comments, which still claimed "NOT persisted yet (later
+  phase)" after CS011 P3 shipped both, now say so. `scratchpad/test-cs043-p0.js` pins the extracted
+  script comment-stripped-identical against its literal parent SHA.
 
 ## Phase ledger — CS042
 
@@ -123,17 +138,6 @@ Full narrative for every phase and both gates: `log/CS042.md`.
   measured; §6.3 and §6.7 read as live proposals when §6.8 superseded both. **The corrected figures
   are in the GDD and in the build's own comments** — the spec is archived history now, and none of
   it was carried forward wrong.
-- **⛔ Stale COMMENTS in the build and the suite — FIVE, each a one-line fix for whatever changeset
-  next touches the file.** ⛔ **The fifth was found while planning CS043 and it had already misled a
-  doc:** `nextWave()`'s comment (~line 10193) still describes the retired CS021/CS022 archetype world
-  cadence — "up at every 3rd level and back down at the level after, 42 times in a 63-level run" —
-  which CS024 P1 retired. `worldSizeFor()` has two return values and one boundary, so `resizeWorld()`
-  fires **once per run**, at the `earlyWorldLevels` 5 → 6 seam, and never again. `CS043-KICKOFF.md`'s
-  Q1 was written from that stale comment and put a wrong cadence to Paul. The other four: Two stale `% 15` comments (`orbital-overhaul.html:99`;
-  `scratchpad/test-f9.js:11`'s header — its assertions already use 16 correctly); the `settings`
-  object's comment claiming `voiceStyle`/`captions` are "NOT persisted yet (later phase)" when
-  CS011 P3 shipped both; and `orbital-overhaul.html:54` still calling `RAMP_WAVES` "the single knob"
-  for difficulty when CS024 P4 retired the ramp and renamed the constant.
 - **⛔ Prose-level GDD staleness: narrowed again, not closed.** CS042 P11 swept §2.1, §2.7, §2.8,
   §2.10/.1/.2, §2.12, §2.14/.1, §2.16, §2.19, §2.20.1, §1.1 and §3's Chain physics and Constants
   rows. ⛔ **Still unswept for prose (as opposed to dead identifiers): five §3 rows** —
@@ -216,13 +220,12 @@ Full narrative for every phase and both gates: `log/CS042.md`.
   block, since CS010 P0); CS042's phase doc wrote the next integer instead and shipped a wrong
   version that both live pins passed. A changeset shipping no build byte bumps nothing and leaves
   its number permanently unused, exactly as CS041 did. `DECISIONS.md`, 2026-09-08.
-- **CS043 is PLANNED, NOT STARTED — no build byte exists.** `CS043-KICKOFF.md` (off-cycle, 2026-09-09)
-  carries Paul's decision to **delete the level-end beat**; `PLANNED-FEATURES-CS043.md` and
-  `IMPLEMENTATION-PHASES-CS043.md` are written and **awaiting Paul's review**. Six phases (P0 optional,
-  P1 the deletion, P2 panel, P3 banner/grace/pulse, P4 spawn floor, GATE A, P5 close). ⛔ **One fork is
-  open and it is Paul's: FORK-CS043-A** — does the ship's alpha pulse span the whole protection window
-  or stay on the grace? It must resolve before P3 runs. The plan absorbs the four stale comments (P0)
-  and the fifth above; the four surviving moving-`HEAD` pins and the deferred SFX retune are NOT in it.
+- **CS043 is IN FLIGHT — P0 landed this session, P1 next.** `PLANNED-FEATURES-CS043.md` and
+  `IMPLEMENTATION-PHASES-CS043.md` carry the spec and phase prompts. Six phases (P0 done, P1 the
+  deletion, P2 panel, P3 banner/grace/pulse, P4 spawn floor, GATE A, P5 close). **FORK-CS043-A is
+  RESOLVED** — the ship's alpha pulse spans the whole protection window (Paul, at review,
+  2026-09-09) — so P3 runs without waiting on it. The four surviving moving-`HEAD` pins and the
+  deferred SFX retune are NOT in this changeset's scope.
 - `TODO.md` carries the rest of the standing backlog.
 - **⚠ Paul flagged some of P3/P4's event SFX as wanting a retune and EXPLICITLY DEFERRED it to a
   later changeset.** Not a defect, not blocked. ⛔ **Any such retune is a `tools/sfx-lab.html`

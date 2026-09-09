@@ -51,7 +51,7 @@
    `mass` field; chain thrust/top-speed/tug now scale with the chain's total mass
    (sum of node.mass), not its node count.
    v1.5: Global difficulty ramp — difficultyFactor(wave) climbs from ~0 at wave 1
-   toward 1 over many waves (RAMP_WAVES is the single knob), and threat parameters
+   toward 1 over many waves (RAMP_WAVES was the single knob at the time), and threat parameters
    interpolate floor->ceiling through it via ramp() (CS024 P4: ramp() is gone with the
    last lever on it, and the curve itself — never a difficulty lever after CS018 P4 —
    is renamed musicIntensity()/MUSIC_INTENSITY_WAVES to say what it actually drives).
@@ -96,7 +96,7 @@
    produces (kills by type/tier, dock deliveries, HP thresholds, powerup usage, wave reached,
    damage-free waves, play time) via light hooks at each event site; unlocks pop a non-blocking toast
    and are browsable in a viewer (Pause -> Options -> Achievements). Weekly rotation index =
-   (isoYear*52 + isoWeek) % 15; progress + unlock state persist to their own localStorage key. This
+   (isoYear*52 + isoWeek) % 16; progress + unlock state persist to their own localStorage key. This
    completes the v2.0 feature set (Phases 1-9).
    ============================================================ */
 
@@ -4313,8 +4313,8 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 const settings = {
   musicTrack:      "zen",  // "zen" | "derelict" | "drift" | "warehouse" — selected gameplay track (v3.5; zen default)
   shipTurnScale:   SHIP_TURN_SCALE_DEFAULT, // CS010 §10b: player rotation-speed multiplier (0.5..1.5), read by shipTurnRate()
-  voiceStyle:      "comms", // CS011: selected Dan voice — "off" or a VOICE_STYLE_VALUES id. NOT persisted yet (later phase).
-  captions:        true,    // CS011: show on-screen captions of Dan's lines. NOT persisted yet (later phase).
+  voiceStyle:      "comms", // CS011: selected Dan voice — "off" or a VOICE_STYLE_VALUES id. Persisted since CS011 P3.
+  captions:        true,    // CS011: show on-screen captions of Dan's lines. Persisted since CS011 P3.
   autoShield:      false,   // CS012 P5: auto-raise the shield on a hit at critical hull (costs energy + AUTO_SHIELD_SCORE_PENALTY). Off by default.
 };
 
@@ -10184,12 +10184,12 @@ function nextWave() {
   // wave the player reached before ever touching a powerup. (FLAG A-1-b — a MAX counter, not a sum.)
   if (game.stats.powerupsPicked === 0)
     Achievements.lifetime.maxWaveNoPowerup = Math.max(Achievements.lifetime.maxWaveNoPowerup, game.wave);
-  // CS022 P1 (§4.1/§4.2): the torus period is a function of the level's ARCHETYPE, so it can change at
-  // every wave boundary — up at every 3rd level and back down at the level after, 42 times in a
-  // 63-level run. THIS SITE IS THE ONLY CORRECT ONE and both halves of that are load-bearing: it must
-  // run AFTER game.wave++ (worldSizeFor reads the NEW level) and BEFORE `new Dock()` on the next line
-  // (dock placement is ship-relative and wrap-aware, so it needs both the new period and the
-  // re-centred ship). Only a real change resizes — a field level following a field level moves nothing.
+  // CS024 P1 retired the orbit-level archetypes: worldSizeFor() now has two return values and one
+  // boundary (earlyWorldLevels, default 5), firing exactly ONCE per run at the 5->6 boundary (never
+  // at all if earlyWorldLevels is 0). THIS SITE IS THE ONLY CORRECT ONE and both halves of that are
+  // load-bearing: it must run AFTER game.wave++ (worldSizeFor reads the NEW level) and BEFORE
+  // `new Dock()` on the next line (dock placement is ship-relative and wrap-aware, so it needs both
+  // the new period and the re-centred ship). Only a real change resizes — nothing moves otherwise.
   const nextWorldSize = worldSizeFor(game.wave);
   if (nextWorldSize !== game.worldSize) resizeWorld(nextWorldSize);
   game.dock = new Dock(); // recycling dock relocates each wave

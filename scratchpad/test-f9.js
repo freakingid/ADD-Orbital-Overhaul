@@ -8,7 +8,7 @@
 // viewer layout is legible, and — the big one — whether achievements + lifetime counters actually
 // PERSIST across a real reload (localStorage is stubbed here / absent in the artifact sandbox).
 // What IS checkable headlessly, and what this verifies:
-//  (A) ISO-week math + the deterministic weekly rotation: (isoYear*52+isoWeek) % 15, 5-wide slice,
+//  (A) ISO-week math + the deterministic weekly rotation: (isoYear*52+isoWeek) % 16, 5-wide slice,
 //      wrap-around, and a year-boundary (2027-01-01 -> ISO 2026-W53);
 //  (B) persistence: weekly unlocks reset when the calendar week rolls over, lifetime progress is
 //      retained, and same-week unlocks round-trip through localStorage;
