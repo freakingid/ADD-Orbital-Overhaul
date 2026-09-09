@@ -123,8 +123,13 @@ Full narrative for every phase and both gates: `log/CS042.md`.
   measured; §6.3 and §6.7 read as live proposals when §6.8 superseded both. **The corrected figures
   are in the GDD and in the build's own comments** — the spec is archived history now, and none of
   it was carried forward wrong.
-- **⛔ Stale COMMENTS in the build and the suite — four, each a one-line fix for whatever changeset
-  next touches the file.** Two stale `% 15` comments (`orbital-overhaul.html:99`;
+- **⛔ Stale COMMENTS in the build and the suite — FIVE, each a one-line fix for whatever changeset
+  next touches the file.** ⛔ **The fifth was found while planning CS043 and it had already misled a
+  doc:** `nextWave()`'s comment (~line 10193) still describes the retired CS021/CS022 archetype world
+  cadence — "up at every 3rd level and back down at the level after, 42 times in a 63-level run" —
+  which CS024 P1 retired. `worldSizeFor()` has two return values and one boundary, so `resizeWorld()`
+  fires **once per run**, at the `earlyWorldLevels` 5 → 6 seam, and never again. `CS043-KICKOFF.md`'s
+  Q1 was written from that stale comment and put a wrong cadence to Paul. The other four: Two stale `% 15` comments (`orbital-overhaul.html:99`;
   `scratchpad/test-f9.js:11`'s header — its assertions already use 16 correctly); the `settings`
   object's comment claiming `voiceStyle`/`captions` are "NOT persisted yet (later phase)" when
   CS011 P3 shipped both; and `orbital-overhaul.html:54` still calling `RAMP_WAVES` "the single knob"
@@ -211,9 +216,14 @@ Full narrative for every phase and both gates: `log/CS042.md`.
   block, since CS010 P0); CS042's phase doc wrote the next integer instead and shipped a wrong
   version that both live pins passed. A changeset shipping no build byte bumps nothing and leaves
   its number permanently unused, exactly as CS041 did. `DECISIONS.md`, 2026-09-08.
-- **CS043 is unstarted.** `TODO.md` carries the standing backlog; the items most ready are the four
-  stale build/suite comments, the four surviving moving-`HEAD` pins, and the deferred SFX retune
-  below.
+- **CS043 is PLANNED, NOT STARTED — no build byte exists.** `CS043-KICKOFF.md` (off-cycle, 2026-09-09)
+  carries Paul's decision to **delete the level-end beat**; `PLANNED-FEATURES-CS043.md` and
+  `IMPLEMENTATION-PHASES-CS043.md` are written and **awaiting Paul's review**. Six phases (P0 optional,
+  P1 the deletion, P2 panel, P3 banner/grace/pulse, P4 spawn floor, GATE A, P5 close). ⛔ **One fork is
+  open and it is Paul's: FORK-CS043-A** — does the ship's alpha pulse span the whole protection window
+  or stay on the grace? It must resolve before P3 runs. The plan absorbs the four stale comments (P0)
+  and the fifth above; the four surviving moving-`HEAD` pins and the deferred SFX retune are NOT in it.
+- `TODO.md` carries the rest of the standing backlog.
 - **⚠ Paul flagged some of P3/P4's event SFX as wanting a retune and EXPLICITLY DEFERRED it to a
   later changeset.** Not a defect, not blocked. ⛔ **Any such retune is a `tools/sfx-lab.html`
   session, not a hand-edit in the build** — the twelve methods are pinned byte-for-byte against
