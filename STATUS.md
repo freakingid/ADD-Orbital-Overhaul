@@ -746,8 +746,23 @@ None.
 ## Next up
 
 - **✅ P10 IS DONE.** Menu navigation repeat shipped — see the P10 ledger entry and its "Working /
-  verified" writeup. **GATE C is next** (blocking playtest, no session), **then P11 closes.** No phase
-  is blocked.
+  verified" writeup.
+- **⛔ GATE C IS ANSWERED (2026-09-08).** G1/G2/G3/G5/G6/G7/G8/G9/G10 all **ship as-is — no tuning
+  change from any of them.** FLAG-CS042-l (`CARGO_UNIT_MASS` 0.07) and FLAG-CS042-m (the turn penalty,
+  90 → 241 °/s empty-to-full) both close as "fine as shipped."
+  - ⛔ **G4 is the one actionable finding, and it's a RENDER-ONLY ask, not a mechanics change.** The
+    level-6/7 orbs and the scoop mouth read as *ship geometry* — solid glow-strokes that imply hittable
+    hull — when neither has ever taken damage (true since the Scoop shipped, not new to P8). Paul's
+    read: they should look like an energy field / tractor beam, not armor, so a hit landing near them
+    doesn't feel like it should have hurt. Two candidate directions, **neither chosen**: transparency
+    (`ctx.globalAlpha` on the orb/mouth strokes) or a dashed line (Paul flagged possible cost —
+    `ctx.setLineDash()` is cheap per call but is a pattern nothing in `drawPoly`/`glowStroke` uses
+    today, so it's a real evaluation, not a knob turn). **P11 owns this as its GATE C tuning pass
+    (item 1)** — pick a direction and ship it; no new registry row implied unless P11 wants the alpha
+    value tunable.
+  - ⚠ **Separately, Paul flagged some of P3/P4's event SFX as wanting a retune — EXPLICITLY DEFERRED to
+    a later changeset.** Not P11's problem; do not touch `AudioSys` tuning in the close.
+  - **Then P11 closes.** No phase is blocked.
 - ⛔ **GATE A IS ANSWERED (2026-09-08). Both copy-out blocks live verbatim in `CS042-GATE-A.md`**,
   a root artefact on `CS039-VOICE-WORKLIST.md`'s precedent, with a "what this means for the phase"
   note under each. ⛔ **P3, P4 and P5 read that file; it is their input and this bullet is not a
