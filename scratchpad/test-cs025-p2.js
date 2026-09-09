@@ -1196,7 +1196,8 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id === "hubDryWeightMult"                                      // CS040 P4 (the hub relief multiplier)
       || id === "healthSpawnLock" || id.startsWith("repairMilestone")    // CS042 P6 (health supply levelling)
       || id === "cargoUnitMass"                                          // CS042 P7 (one mass, one force — §6.8)
-      || id === "bankSpareHullPct";                                      // CS042 P9 (the bank's scoop-save gate)
+      || id === "bankSpareHullPct"                                       // CS042 P9 (the bank's scoop-save gate)
+      || id.startsWith("menuRepeat");                                    // CS042 P10 (the menu's own repeat timer)
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))

@@ -856,7 +856,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "hubDryWeightMult"                                // CS040 P4 (the hub relief multiplier)
       || id === "healthSpawnLock" || id.startsWith("repairMilestone")  // CS042 P6 (health supply levelling)
       || id === "cargoUnitMass"                                   // CS042 P7 (one mass, one force — §6.8)
-      || id === "bankSpareHullPct";                               // CS042 P9 (the bank's scoop-save gate)
+      || id === "bankSpareHullPct"                                // CS042 P9 (the bank's scoop-save gate)
+      || id.startsWith("menuRepeat");                             // CS042 P10 (the menu's own repeat timer)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

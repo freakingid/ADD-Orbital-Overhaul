@@ -153,9 +153,10 @@ const has = (rows, s) => rows.some(r => r.str === s);
     // names them rather than comparing raw totals.
     const LATER_ROWS = ["healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct",
       "cargoUnitMass",       // CS042 P7 (spec §6.8)
-      "bankSpareHullPct"];   // CS042 P9 (spec §4.5)
+      "bankSpareHullPct",    // CS042 P9 (spec §4.5)
+      "menuRepeatDelay", "menuRepeatRate"];   // CS042 P10 (spec §5.2)
     eq(X.DEBUG_ENTRIES.filter(v => !LATER_ROWS.includes(v.id)).length, P.DEBUG_ENTRIES.length,
-      "A: ⛔ the debug registry is the parent's, bar CS042 P6's three health-supply rows, P7's one handling row and P9's one bank row");
+      "A: ⛔ the debug registry is the parent's, bar CS042 P6's three health-supply rows, P7's one handling row, P9's one bank row and P10's two menu-repeat rows");
     eq(X.LEVERS.length, P.LEVERS.length, "A: ⛔ ...and so is LEVERS");
     for (const k of ["levelBannerTime", "levelBannerFade", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"])
       eq(X.DEBUG[k], P.DEBUG[k], `A: ⛔ DEBUG.${k} is unmoved — no ceremony TIMING changed`);
@@ -484,9 +485,19 @@ const has = (rows, s) => rows.some(r => r.str === s);
   };
   const kd = t => region(t, 'window.addEventListener("keydown"', 'window.addEventListener("keyup"');
   const gp = t => region(t, "function handleGamepadMenu()", "function menuDirState()");
-  for (const [name, cut] of [["keydown", kd], ["handleGamepadMenu", gp]]) {
-    const mine = cut(stripped), theirs = cut(parentStripped);
-    eq(squash(mine), squash(theirs), `G: ⛔ ${name} is byte-identical to the parent — neither gate moved`);
+  // WIDENED BY CS042 P10 (spec §5.3): the menu's own held-direction repeat needs somewhere to read
+  // keyboard held-state from, since branch (2) returns before writing keys{} — P5's byte-identity
+  // claim about these two regions is against ITS OWN parent (58ff605), which predates P10 entirely, so
+  // it is the standing moving-pin situation (CLAUDE.md), not a P5 regression. The two known, named
+  // diffs are stripped before comparing; everything else in both regions is still byte-checked.
+  const KD_DIFF = 'if (!e.repeat && (k === "arrowup" || k === "w" || k === "arrowdown" || k === "s")) menuKeys[k] = true;';
+  const GP_DIFF = "const menuKeys = {};";
+  for (const [name, cut, diff] of [["keydown", kd, KD_DIFF], ["handleGamepadMenu", gp, GP_DIFF]]) {
+    const raw = cut(stripped);
+    assert(raw.includes(diff), `G: (setup) ${name} carries CS042 P10's own known diff`);
+    const mine = raw.replace(diff, ""), theirs = cut(parentStripped);
+    eq(squash(mine), squash(theirs),
+      `G: ⛔ ${name} is byte-identical to the parent once CS042 P10's own named diff is stripped — neither gate moved beyond it`);
     assert(!/levelDoneOut|celebrationOut|celebrationT|gameoverT/.test(mine),
       `G: ⛔ ...and ${name} reads none of the four fade fields — they are invisible to input`);
     assert(/if \(levelDoneActive\(\)\)/.test(mine) && /if \(game\.celebration\)/.test(mine),

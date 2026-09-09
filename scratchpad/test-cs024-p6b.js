@@ -613,6 +613,11 @@ function evalSlice(literal) {
       // tail-ordering rule above its strip goes exactly here: below CELEBRATION's, above the banners'.
       // CS038 P3 repoint: telemetryCapture joins it immediately after — CS038 P3's row, not P6b's, so
       // the strip widens to match rather than gaining its own separate clause.
+      // CS042 P10 repoint: and menuRepeatDelay,menuRepeatRate (GLOBAL, appended right after
+      // telemetryCapture) — the menu's own held-direction repeat timer, CS042 P10's rows, not P6b's.
+      // It is now the true tail (below CELEBRATION's strip above, above telemetryCapture's below), per
+      // the same tail-ordering rule.
+      .replace(/,menuRepeatDelay,menuRepeatRate$/, "")
       .replace(/,telemetryInterval,telemetryCapture$/, "")
       .replace(/,levelBannerTime,levelBannerFade,levelBannerSize,levelBannerY$/, "")
       .replace(/,startLevel$/, "")

@@ -337,7 +337,10 @@ const emptyChain = X => { X.game.cargoMax = 4; X.game.chain.length = 0; };
   }
 
   // the three knobs are plain constants, not registry rows (CS038 §4's direction; CAPTION_* is the precedent)
-  assert(!X.DEBUG_ENTRIES.some(e => /repeat/i.test(e.id) || /repeat/i.test(e.label || "")),
+  // ⛔ WIDENED (CS042 P10): a bare /repeat/i substring match also caught menuRepeatDelay/menuRepeatRate,
+  // an unrelated menu-navigation knob that happens to share the English word — this trap only ever
+  // meant the VOICE repeat-suppression window, so it's narrowed to what it actually protects.
+  assert(!X.DEBUG_ENTRIES.some(e => /^voiceRepeat/i.test(e.id) || /voice.*repeat/i.test(e.label || "")),
     "TRAP: no VOICE_REPEAT_* row was added to the debug registry");
   eq(X.VoiceSys._emit.length, 2, "TRAP: _emit's declared arity is still 2 (the event parameter stays optional)");
 })();

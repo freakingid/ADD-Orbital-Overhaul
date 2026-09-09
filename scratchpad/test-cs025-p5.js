@@ -537,7 +537,8 @@ function quiet(X) {
       || id === "hubDryWeightMult"                                          // CS040 P4 (hub relief mult)
       || id === "healthSpawnLock" || id.startsWith("repairMilestone")       // CS042 P6 (health supply)
       || id === "cargoUnitMass"                                             // CS042 P7 (one mass, §6.8)
-      || id === "bankSpareHullPct";                                         // CS042 P9 (bank scoop-save)
+      || id === "bankSpareHullPct"                                          // CS042 P9 (bank scoop-save)
+      || id.startsWith("menuRepeat");                                       // CS042 P10 (menu repeat timer)
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

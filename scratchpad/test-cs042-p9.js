@@ -536,8 +536,13 @@ console.log("(H) standing traps and the phase's own scope");
       "H: ...and nothing else compares srcTag either");
 
     // Exactly one registry row, and it is this phase's.
+    // WIDENED BY CS042 P10 (the standing moving-pin maintenance): X is the LIVE build, and P10
+    // legitimately appends its own two menu-repeat rows after P9 landed — named rather than
+    // wildcarded, same idiom as every other repoint in the suite.
+    const LATER_ROWS = ["menuRepeatDelay", "menuRepeatRate"];   // CS042 P10 (spec §5.2)
     const added = X.DEBUG_ENTRIES.map(e => e.id).filter(id => !P.DEBUG_ENTRIES.some(e => e.id === id));
-    eq(added.join(","), "bankSpareHullPct", "H: ⛔ exactly ONE registry row was added, and it is P9's");
+    eq(added.filter(id => !LATER_ROWS.includes(id)).join(","), "bankSpareHullPct",
+      "H: ⛔ exactly ONE registry row was added, and it is P9's");
     const removed = P.DEBUG_ENTRIES.map(e => e.id).filter(id => !X.DEBUG_ENTRIES.some(e => e.id === id));
     eq(removed.length, 0, "H: ...and none was retired");
     eq(X.DEBUG_ENTRIES.map(e => e.id).filter(id => P.DEBUG_ENTRIES.some(e => e.id === id)).join(","),

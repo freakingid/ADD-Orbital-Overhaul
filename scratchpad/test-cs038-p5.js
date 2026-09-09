@@ -68,7 +68,9 @@ const RETIRED_DEFS = {
   // for the same reason. Same literal-total caveat as the CS042 P6 note above.
   // NARROWED AGAIN BY CS042 P9: +1 more (bankSpareHullPct, POWERUPS — spec §4.5's heal-or-spare
   // gate), for the same reason. Same literal-total caveat as the two notes above.
-  eq(X.DEBUG_ENTRIES.length, 115, "A: DEBUG_ENTRIES.length is the live 115");
+  // NARROWED AGAIN BY CS042 P10: +2 more (menuRepeatDelay/menuRepeatRate, GLOBAL — spec §5.2's menu
+  // repeat timer), for the same reason. Same literal-total caveat as the notes above.
+  eq(X.DEBUG_ENTRIES.length, 117, "A: DEBUG_ENTRIES.length is the live 117");
 
   // No section header is emptied — CELEBRATION/DELIVERY/HUNTER all keep other rows.
   let section = null; const rowsOf = { CELEBRATION: [], DELIVERY: [], HUNTER: [] };
@@ -202,7 +204,9 @@ const RETIRED_DEFS = {
       // NARROWED AGAIN BY CS042 P7: its cargoUnitMass SHIP row, same reasoning again.
       "cargoUnitMass",
       // NARROWED AGAIN BY CS042 P9: its bankSpareHullPct POWERUPS row, same reasoning again.
-      "bankSpareHullPct"]);
+      "bankSpareHullPct",
+      // NARROWED AGAIN BY CS042 P10: its menuRepeatDelay/menuRepeatRate GLOBAL rows, same reasoning again.
+      "menuRepeatDelay", "menuRepeatRate"]);
     const xIds = X.DEBUG_VARS.filter(v => !v.header).map(v => v.id).filter(id => !LATER_IDS.has(id));
     const oldIdsSansRetired = oldIds.filter(id => !RETIRED_IDS.includes(id));
     eq(xIds.join(","), oldIdsSansRetired.join(","),

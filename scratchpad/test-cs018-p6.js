@@ -150,10 +150,13 @@ if (!X) { console.error("Cannot continue without a built instance."); process.ex
   // P6 left; the list simply names one more trailing row.
   // REPOINTED BY CS038 P3: telemetryCapture joins GLOBAL right after telemetryInterval — the first
   // sessionSwitch row. Same non-claim: this section's ownership is unmoved, one more trailing row named.
+  // REPOINTED BY CS042 P10: menuRepeatDelay/menuRepeatRate join GLOBAL right after telemetryCapture —
+  // the menu's own held-direction repeat timer. Same non-claim, two more trailing rows named.
   const globalIds = X.DEBUG_VARS.slice(gIdx + 1, nextHIdx === -1 ? undefined : nextHIdx).map(v => v.id);
   assert(deepEq(globalIds, ["sweepCoalescePause", "debrisBounceRestitution", "earlyWorldLevels", "startLevel",
-    "levelBannerTime", "levelBannerFade", "levelBannerSize", "levelBannerY", "telemetryInterval", "telemetryCapture"]),
-    `B: GLOBAL header followed by sweepCoalescePause, debrisBounceRestitution, CS026 P3's earlyWorldLevels, P6d's startLevel, CS026 P5's four level banner knobs, CS037 P4's telemetryInterval and CS038 P3's telemetryCapture, freqJitter still removed (got ${JSON.stringify(globalIds)})`);
+    "levelBannerTime", "levelBannerFade", "levelBannerSize", "levelBannerY", "telemetryInterval", "telemetryCapture",
+    "menuRepeatDelay", "menuRepeatRate"]),
+    `B: GLOBAL header followed by sweepCoalescePause, debrisBounceRestitution, CS026 P3's earlyWorldLevels, P6d's startLevel, CS026 P5's four level banner knobs, CS037 P4's telemetryInterval, CS038 P3's telemetryCapture and CS042 P10's menuRepeatDelay/menuRepeatRate, freqJitter still removed (got ${JSON.stringify(globalIds)})`);
   assert(!X.DEBUG_VARS.some(v => v.id === "freqJitter"), "B: freqJitter entry is gone from DEBUG_VARS (CS024 P2)");
   assert(!("freqJitter" in X.DEBUG), "B: DEBUG.freqJitter is gone (CS024 P2)");
 

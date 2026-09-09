@@ -3688,9 +3688,18 @@ window.addEventListener("keydown", e => {
   // (2) A menu is open — route to menu navigation, do NOT record gameplay keys.
   if (menuActive()) {
     e.preventDefault();
+    // CS042 P10 (spec §5.3): menuKeys{} is the menu-only twin of keys{}, held state for
+    // tickMenuRepeat()'s up/down repeat. Written ONLY on a genuine (non-repeat) keydown — never on a
+    // repeat — so that a resetMenuNav() clear can't be immediately undone by the browser's own
+    // auto-repeat re-firing this same handler a frame later while the key is still physically down.
+    // It must NEVER write keys{} — that is exactly the leak the early return below exists to stop.
+    if (!e.repeat && (k === "arrowup" || k === "w" || k === "arrowdown" || k === "s")) menuKeys[k] = true;
     // Browser key auto-repeat (~30/sec while held) would otherwise spam menu actions — e.g. spin
     // the 3-value Music Track row back to its start and re-enter setState() nearly every frame,
-    // restarting the crossfade ramp and pinning the music near-silent. Matches the gamepad path
+    // restarting the crossfade ramp and pinning the music near-silent. The suppression below STAYS —
+    // it is not what this phase removes: the game now supplies its OWN repeat, at its own rate
+    // (tickMenuRepeat, up/down only, MENU_REPEAT_DELAY/MENU_REPEAT_RATE), from the frame loop, so the
+    // original hazard is answered rather than reintroduced. Matches the gamepad path
     // (handleGamepadMenu -> menuNavEdges()), which is already strictly edge-detected.
     if (e.repeat) return;
     handleMenuKey(k);
@@ -3760,7 +3769,11 @@ window.addEventListener("keydown", e => {
   // instead (see there); this line still serves gameover.
   if (k === "o" && (game.state === "title" || game.state === "gameover")) openPause();
 });
-window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+window.addEventListener("keyup", e => {
+  const k = e.key.toLowerCase();
+  keys[k] = false;
+  menuKeys[k] = false;   // CS042 P10 (spec §5.3): the menu-only twin, cleared on release too
+});
 
 // Gamepad menu/system dispatcher, mirroring the keydown handler's three contexts. Called once per
 // frame from the main loop right after pollGamepad(). Same priority order:
@@ -3851,6 +3864,12 @@ function handleGamepadMenu() {
 // Directional menu nav from the gamepad: D-Pad or Left Stick, edge-detected against a latch so a
 // held direction moves the cursor once (not every frame). Only consulted while a menu is open.
 const menuNav = { up: false, down: false, left: false, right: false };
+// CS042 P10 (spec §5.3): held KEYBOARD state for the menu's own repeat timer (tickMenuRepeat, below) —
+// up/down only. Branch (2) of the keydown listener returns before writing keys{} (that early return is
+// exactly what stops a menu keypress leaking into ship rotation/thrust), so this is a SEPARATE map,
+// written in branch (2) on keydown, cleared in the keyup listener and at every resetMenuNav() site. It
+// must NEVER be read from, or written into, keys{}.
+const menuKeys = {};
 function menuDirState() {
   const b = gamepad.buttons, ax = gamepad.axes, dz = GP_DEADZONE;
   return {
@@ -3872,13 +3891,53 @@ function menuNavEdges() {
   return edges;
 }
 // Prime the latch to the CURRENT direction state so a direction held at the moment a menu opens
-// doesn't fire a phantom first move.
-function resetMenuNav() { Object.assign(menuNav, menuDirState()); }
+// doesn't fire a phantom first move. CS042 P10 (spec §5.3): also clears menuKeys{} and the repeat
+// timer, for the same reason — a direction held across a screen change must not repeat into whatever
+// takes input next either. Called at four sites (menu open, the wave-clear arm, both celebration-panel
+// opens); openDebug()'s own call inherits the same fix for the same reason.
+function resetMenuNav() {
+  Object.assign(menuNav, menuDirState());
+  for (const k in menuKeys) menuKeys[k] = false;
+  menuRepeat.dir = null; menuRepeat.t = 0;
+}
 // First gamepad button that went down THIS frame (for pad rebind capture); -1 if none.
 function firstPressedButton() {
   const cur = gamepad.buttons, prev = gamepad.prevButtons;
   for (let i = 0; i < cur.length; i++) if (cur[i] && !prev[i]) return i;
   return -1;
+}
+
+// CS042 P10 (spec §5): the game's own menu-repeat. Browser key auto-repeat (~30/sec while held) stays
+// suppressed (keydown listener's `if (e.repeat) return;`, kept and explained in place) — this supplies
+// the game's own rate instead, from the frame loop, at ONE shared timer driving BOTH devices through
+// the existing menuInput(). Up/down only — left/right and confirm/back/pause never repeat (Paul's
+// explicit call, the direct answer to the Music Track crossfade hazard the e.repeat guard was written
+// to stop, CS025 P5).
+const MENU_REPEAT_DELAY = 0.40;  // seconds held before the first repeat
+const MENU_REPEAT_RATE  = 0.10;  // seconds between repeats thereafter — 10/sec
+const menuRepeat = { dir: null, t: 0 };
+function menuHeldDir() {
+  if (menuKeys["arrowup"]   || menuKeys["w"]) return "up";
+  if (menuKeys["arrowdown"] || menuKeys["s"]) return "down";
+  const g = menuDirState();   // already a held-state read (§5.3) — no separate gamepad map needed
+  if (g.up)   return "up";
+  if (g.down) return "down";
+  return null;
+}
+// Ticked once per frame from loop(), beside handleGamepadMenu(). The FIRST move on a held direction is
+// already delivered by the edge-detected paths above (keyboard's handleMenuKey, gamepad's
+// menuNavEdges()) — this only fires the REPEATS: nothing until menuRepeatDelay has been held, then once
+// every menuRepeatRate. Subtracting menuRepeatRate (rather than resetting t to 0) on every fire is what
+// keeps the repeats evenly spaced after the first one.
+function tickMenuRepeat(dt) {
+  const held = menuActive() ? menuHeldDir() : null;
+  if (held !== menuRepeat.dir) { menuRepeat.dir = held; menuRepeat.t = 0; return; }
+  if (!held) return;
+  menuRepeat.t += dt;
+  if (menuRepeat.t >= DEBUG.menuRepeatDelay) {
+    menuInput(held);
+    menuRepeat.t -= DEBUG.menuRepeatRate;
+  }
 }
 
 // ---------- Menu state machine, Options & Rebinding (F8) ----------
@@ -4756,6 +4815,15 @@ const DEBUG_VARS = [
   // nothing. A silent trap for exactly the person using the panel.
   { id: "telemetryCapture", label: "Telemetry capture", unit: "",
     def: 0, min: 0, max: 1, step: 1, boolLabels: ["OFF", "ON"], sessionSwitch: true },
+  // CS042 P10 (spec §5.2): the menu's own held-direction repeat, replacing browser key auto-repeat
+  // (still suppressed — see the keydown listener's `if (e.repeat) return;`) with a rate the game
+  // controls. Up/down only; left/right and confirm/back/pause never repeat (tickMenuRepeat()).
+  // ⛔ menuRepeatDelay AT ITS MAXIMUM is effectively pre-phase behaviour — nothing repeats inside any
+  // realistic hold — the gate's own A/B.
+  { id: "menuRepeatDelay", label: "Menu repeat delay", unit: "s",
+    def: MENU_REPEAT_DELAY, min: 0.1, max: 1.5, step: 0.05 },
+  { id: "menuRepeatRate", label: "Menu repeat rate", unit: "s",
+    def: MENU_REPEAT_RATE, min: 0.03, max: 0.5, step: 0.01 },
   { header: "CELEBRATION" },
   // CS038 P5: the two knobs that used to live here (scroll step, emblem size) are retired to
   // CELEB_SCROLL_STEP / CELEB_EMBLEM_SIZE constants — pure look, tuned by eye, no gameplay effect.
@@ -15573,6 +15641,7 @@ function loop(now) {
   if (Bench.running) { Bench.frame(); requestAnimationFrame(loop); return; }
   pollGamepad();        // refresh the first-gamepad snapshot once per frame, before anything reads it
   handleGamepadMenu();  // edge-triggered controller menu/system actions (Start/A/B)
+  tickMenuRepeat(dt);   // CS042 P10 (spec §5): the menu's own held-direction repeat, both devices
   update(dt);
   // CS015 P4: expire the debug secret-code arming window on inactivity. Lives HERE (loop() runs every
   // frame) and NOT update(), which early-returns while paused/at title — the very states the code is

@@ -156,7 +156,9 @@ let X = null;
   // before CELEBRATION — 12 -> 13. Same non-claim: nothing else was appended to GLOBAL.
   // REPOINTED BY CS038 P5: celebrationScrollStep/celebrationEmblemSize are retired outright (spec §4),
   // so CELEBRATION's header no longer carries its own 2 rows — 13 -> 11.
-  eq(iY, X.DEBUG_VARS.length - 1 - 11, "A: levelBannerY is followed by CS037 P4's telemetryInterval and CS038 P3's telemetryCapture (the last two GLOBAL rows), then CS030 P3's (now knob-less) CELEBRATION header, CS035 P3's 3 surviving rows and CS037 P2's BENCHMARK header + its 4 rows");
+  // REPOINTED BY CS042 P10: menuRepeatDelay/menuRepeatRate join GLOBAL's tail, after telemetryCapture —
+  // 11 -> 13. Same non-claim: nothing else was appended to GLOBAL.
+  eq(iY, X.DEBUG_VARS.length - 1 - 13, "A: levelBannerY is followed by CS037 P4's telemetryInterval, CS038 P3's telemetryCapture and CS042 P10's menuRepeatDelay/menuRepeatRate (the last four GLOBAL rows), then CS030 P3's (now knob-less) CELEBRATION header, CS035 P3's 3 surviving rows and CS037 P2's BENCHMARK header + its 4 rows");
   eq(X.DEBUG_VARS[iY + 1].id, "telemetryInterval", "A: ...and that next row is telemetryInterval, GLOBAL's new tail");
 
   const rTime = X.DEBUG_VARS[iTime], rFade = X.DEBUG_VARS[iFade], rSize = X.DEBUG_VARS[iSize], rY = X.DEBUG_VARS[iY];
@@ -398,7 +400,9 @@ let X = null;
     // phase that removes four constants still shows here as a net +1.
     // REPOINTED BY CS042 P9: +1 more (bankSpareHullPct, the health bank's heal-or-spare gate, spec
     // §4.5) — same idiom again, named rather than wildcarded.
-    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 34, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS037 P2's four, CS037 P4's one, CS037 P7's two, CS037 P7.1's two, CS038 P3's one, CS040 P2's four, CS040 P3's one, CS040 P4's one, CS042 P6's three, CS042 P7's one and CS042 P9's one, less CS036 P2's one retirement and CS038 P5's twelve, plus CS036 P5's one addition (measured, not counted)");
+    // REPOINTED BY CS042 P10: +2 more (menuRepeatDelay, menuRepeatRate, the menu's own held-direction
+    // repeat timer, spec §5.2) — same idiom again, named rather than wildcarded.
+    eq(X.DEBUG_ENTRIES.length - parentEntryCount, 36, "F: ⛔ TRAP 4 — the registry grows by exactly four of this phase's own rows, CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS037 P2's four, CS037 P4's one, CS037 P7's two, CS037 P7.1's two, CS038 P3's one, CS040 P2's four, CS040 P3's one, CS040 P4's one, CS042 P6's three, CS042 P7's one, CS042 P9's one and CS042 P10's two, less CS036 P2's one retirement and CS038 P5's twelve, plus CS036 P5's one addition (measured, not counted)");
     eq(parentEntryCount, 81, "F: ⛔ TRAP 4 — (setup) the parent's own registry was 81, matching P4's own recorded count");
   }
 

@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P9 · Registry: 115 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P10 · Registry: 117 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -171,7 +171,45 @@ carried forward and still live.
   (`bankSpareHullPct`, POWERUPS, appended). One doc byte outside the build: the telemetry guide's §7
   `scoopHits` trap, which spec §4.4 assigns to this phase. No GDD edit (P11 owns §2.12/§2.14/§2.14.1).
 
+- P10 — menu navigation repeat (spec §5). ⛔ **The keyboard's `if (e.repeat) return;` guard STAYS** —
+  the comment beside it is rewritten in place to say why (browser auto-repeat is ~30/sec and once
+  pinned the Music Track row's crossfade near-silent) and that the guard is not what this phase removes.
+  One shared timer, `tickMenuRepeat(dt)`, ticked in `loop()` beside `handleGamepadMenu()`, feeds the
+  existing `menuInput()` for both devices — up/down only; left/right and confirm/back/pause never
+  repeat (Paul's explicit call). Keyboard held-state lives in a new `menuKeys{}` map (menu-only twin of
+  `keys{}`, written in branch (2) on a genuine keydown, cleared on keyup and never written into `keys{}`
+  itself). ⛔ **`resetMenuNav()` clears `menuKeys{}` and the repeat timer's own state too**, at all four
+  named call sites (menu open, the wave-clear arm, both celebration-panel opens) — `openDebug()`'s own
+  call inherits the same fix as a side effect of the shared function, not a fifth named site. First
+  repeat after `DEBUG.menuRepeatDelay` (def 0.40s), then every `DEBUG.menuRepeatRate` (def 0.10s) —
+  subtracting the rate rather than resetting to 0 on each fire keeps repeats evenly spaced. Registry
+  115 → 117 (`menuRepeatDelay`/`menuRepeatRate`, GLOBAL, appended). No GDD edit (spec names none).
+  ⛔ **Eighteen pre-existing tests were legitimately invalidated by the two new registry rows and by
+  P5's own moving byte-identity pin against its parent; all eighteen were WIDENED, not weakened** —
+  sixteen are the standing registry-allowlist/total maintenance every prior phase has repointed the
+  same way, one (`test-cs038-p4.js`) had a loose `/repeat/i` substring trap narrowed to what it actually
+  protects (`VOICE_REPEAT_*`, unrelated to this phase's menu-repeat knobs), and one
+  (`test-cs042-p5.js` §G) strips CS042 P10's own two named diffs from the `keydown`/`handleGamepadMenu`
+  regions before its byte-identity check against P5's own parent, rather than requiring full identity.
+
 ## Working / verified
+
+- **P10:** full suite **179 files, 179 passed, 0 failed, 0 skipped, 0 timed out** (exit 0),
+  `node --check` clean, `test-f6.js` rerun clean (the standing ~1.7% flake). `scratchpad/test-cs042-p10.js`
+  is 51 assertions in eight sections, driving the REAL `keydown`/`keyup` listeners and `tickMenuRepeat()`
+  through `_harness.js`'s `listeners` hook — no reimplemented logic. Mutation-checked on two of its
+  load-bearing claims: dropping the delay gate (repeat on any held frame) turns eight assertions red,
+  and removing `resetMenuNav()`'s new `menuKeys{}`/`menuRepeat` clear turns three red (§F, the
+  held-across-a-screen-change claim). §C counts real tick calls against the real `DEBUG` values rather
+  than asserting a hand-derived frame number, so it is immune to floating-point dt-accumulation jitter
+  (measured: the first repeat lands on tick 26, one priming tick plus 25 accumulating ticks, not the
+  naive 24). §E drives the real `menuHeldDir()` against every non-up/down key name it could plausibly
+  see and confirms none of them registers as a direction — the structural reason confirm/back/pause and
+  left/right can never repeat through this timer. §D confirms the same for a real value row (Sound
+  screen's SFX Volume slider): one nudge on keydown, none on a 90-frame hold.
+  ⚠ **Not yet played.** Whether 0.40s/10-per-second reads right under a real hold, and whether
+  `menuRepeatDelay` at its minimum (0.1s) or `menuRepeatRate` at its extremes feel better, is a GATE C
+  question — the debug panel exposes both knobs live (`Overrides Applied` must be ON, FLAG-CS036-a).
 
 - **P9:** full suite **178 files, 178 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, measured
   after the commit — see the moving-`HEAD` pin note below), `node --check` clean.
@@ -707,6 +745,9 @@ None.
 
 ## Next up
 
+- **✅ P10 IS DONE.** Menu navigation repeat shipped — see the P10 ledger entry and its "Working /
+  verified" writeup. **GATE C is next** (blocking playtest, no session), **then P11 closes.** No phase
+  is blocked.
 - ⛔ **GATE A IS ANSWERED (2026-09-08). Both copy-out blocks live verbatim in `CS042-GATE-A.md`**,
   a root artefact on `CS039-VOICE-WORKLIST.md`'s precedent, with a "what this means for the phase"
   note under each. ⛔ **P3, P4 and P5 read that file; it is their input and this bullet is not a
@@ -769,8 +810,7 @@ None.
   - ⚠ **Nobody has flown this.** Every number in the writeup is measured headless, and the whole point
     of §6.8 was that a mock ship on an empty field could not answer the question.
 - **✅ P9 IS DONE.** The loss rate and the health reserve shipped — see the P9 ledger entry and its
-  "Working / verified" writeup. **P10 is the next session** (menu navigation repeat, spec §5), then
-  GATE C, then P11 closes. **No phase is blocked.**
+  "Working / verified" writeup.
   - ⛔ **The gate ships at 0.70, the same number as P6's `repairMilestoneHullPct`, and the test asserts
     the two are equal rather than each being 0.70.** CS042 has one definition of "hurt"; if either
     moves, both move, and the pin makes a one-sided change fail.

@@ -18,7 +18,7 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 115,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 117,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
                           // 106 -> 105: CS036 P2 retired levelEndHold (CELEBRATION), the pre-nextWave()
                           // hold, now player-paced. 105 -> 106: CS036 P5 adds dockPingCooldown (DELIVERY).
                           // 106 -> 110: CS037 P2 adds the four BENCHMARK controls (ramp step, ramp
@@ -57,6 +57,9 @@ const COUNTS = {
                           // repairMilestoneHullPct) — the health bank's heal-or-spare threshold, and
                           // the same 0.70 repairMilestoneHullPct carries, deliberately. Not a lever
                           // either; the bank is powerup pacing, not a difficulty ramp.
+                          // 115 -> 117: CS042 P10 (spec §5.2) adds menuRepeatDelay/menuRepeatRate
+                          // (GLOBAL, trailing telemetryCapture) — the menu's own held-direction repeat
+                          // timer. Neither a lever; menu pacing is not a difficulty axis.
   sectionHeaders: 11,     // DEBUG_VARS.filter(v => v.header).length — 10 -> 11: CS037 P2's BENCHMARK
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only
