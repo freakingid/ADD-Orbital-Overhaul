@@ -2,8 +2,8 @@
 
 A hand-curated queue of what's next, for Paul. Distinct from `STATUS.md` (current changeset only,
 reset every close) and `DECISIONS.md` (judgment calls already made) — this is the backlog those
-feed into and draw from. Snapshotted at **CS042's close (`1.0.0.42`)**; check `STATUS.md` for whether any of this has since
-moved.
+feed into and draw from. Snapshotted at **CS042's close (`1.0.0.42`)** and refreshed at **CS043 P0
+(2026-09-09)**; check `STATUS.md` for whether any of this has since moved.
 
 **Not session-authoritative.** A future session should treat this as a starting point for
 conversation with Paul, not a work order to execute unprompted — several items below need a human
@@ -11,30 +11,43 @@ decision (a playtest, a "yes go ahead") before they're implementation-ready.
 
 ---
 
-## ⛔ RESUME HERE — last worked 2026-09-08 (CS042 closed)
+## ⛔ RESUME HERE — last worked 2026-09-09 (CS043 P0 landed; P1 is next)
 
 **If a session was told "pick up where we left off," this block is the clue.** It is the only dated
 resume point in the repo; everything below it is the standing backlog, which is a different thing.
 Delete this block once its "next step" is done or Paul redirects — a stale resume note is worse than
 none.
 
-**What just happened.** **CS042 shipped and closed** (`1.0.0.40 → 1.0.0.42` — the last field tracks the
-changeset number now, Paul's call at the close; registry 110 → 117,
-`LEVERS` unmoved at 18, suite 171 → 180 files all green with zero skips). Twelve event SFX so every
-announced event sounds without Dan; a cross-fade over both ceremonies; health supply levelling; four
-cargo handling divisors replaced by one `shipMass()`; the Scoop redesigned on both sides (levels 6–7
-with flanking capture orbs, loss rate 5 → 2 hits, a health charge that can spare a level); menu
-navigation key repeat; and a dashed field stroke so the Scoop stops reading as hittable hull. Full
-narrative: `log/CS042.md`. Both planning docs are in `archive/`.
+**Where things stand.** **CS043 is in flight and one phase deep.** It deletes the level-end pause —
+the freeze on wave clear, the "Level N Complete" announcement, and the achievement panel at the level
+seam (the panel becomes game-over-only) — because the beat lands mid-fight, at a moment the player
+did not choose. That reversal is Paul's, taken off-cycle, and it deliberately outweighs CS036's own
+H1 playtest finding; `DECISIONS.md` and `PLANNED-FEATURES-CS043.md` §0 record it so no future session
+reads the deletion as a tidy-up mistake. **P0 shipped 2026-09-09 as `eb7c6b9`** — five stale comments
+corrected, comments only, with a phase pin proving the extracted script is byte-identical to its
+parent once comments are stripped. No gameplay byte has moved yet.
 
-**Two things need Paul before anything else here does.**
+**⛔ THE NEXT STEP, and it needs no decision from anyone: run P1.** Open
+`IMPLEMENTATION-PHASES-CS043.md`, go to its **P1** section, set the model and effort named there
+(**Opus 5 · XHigh · ultrathink yes**), and paste that section's copy-paste prompt block as the
+session's first message. It carries its own read chain and scope fence — nothing has to be remembered
+or added to it. P1 is the deletion itself and it is the one phase in this changeset that can break the
+shipped game silently, which is why it is the expensive one. Then: **P2** panel → **P3**
+banner/grace/pulse → **P4** spawn floor → **⛔ GATE A, a blocking playtest with no session** → **P5**
+close (version bump to `1.0.0.43`, docs, `STATUS.md` roll, archive).
 
-1. ⛔ **`CLAUDE.md` closed the changeset OVER its own 50 KB ceiling (51.25 KiB), and the size valve
-   that was supposed to prevent that is spent** — it fired on `### Audio` exactly as designed, and
-   afterwards no section is over the ~4 KB the valve requires. This is FLAG-CS041-b, now live.
-   Three ways out, all his call: lower the section threshold, raise the ceiling (it has always been
-   "a first guess"), or accept the overrun. **Nothing is blocked** — the file works — but the next
-   changeset that adds a rule to it faces this immediately. Detail: `STATUS.md`'s Open questions.
+**Nothing blocks P1, P2 or P3.** FORK-CS043-A — the changeset's only fork — was resolved at review on
+2026-09-09: the ship's alpha pulse spans the **whole** protection window, not just the grace.
+
+**Two things still need Paul, neither of them blocking P1.**
+
+1. ⛔ **`CLAUDE.md` is OVER its own 50 KB ceiling (51.25 KiB) and the size valve that was supposed to
+   prevent that is spent** — it fired on `### Audio` exactly as designed, and afterwards no section is
+   over the ~4 KB the valve requires. This is FLAG-CS041-b, live since CS042's close. Three ways out,
+   all his call: lower the section threshold, raise the ceiling (it has always been "a first guess"),
+   or accept the overrun. **Nothing is blocked** — the file works — but **P5 has to report the measured
+   delta either way**, so an answer before the close is worth having. CS043 is expected to come out
+   ahead: the level-end ceremony's rules shrink and only §5's spawn floor is added.
 2. ⛔ **The Orbital Overhaul 2 comparison is still where it was, and still blocked on him.** The
    2026-09-07 GDD accuracy pass existed to make this GDD comparable against the **OO2** design
    document; ⛔ **that document is not in this repo and nobody here has seen it.** Ask Paul for the
@@ -44,9 +57,15 @@ narrative: `log/CS042.md`. Both planning docs are in `archive/`.
    authoritative; if it is ever found contradicting §2, `DECISIONS.md`'s standing call is to
    **delete it rather than repair it**.
 
-**Unblocked work, if Paul is away and you want something to do:** the deferred SFX retune (below —
-it is a `tools/sfx-lab.html` session, never a hand-edit), the "Documentation" section, and the four
-stale code comments under "Small, mechanical fixes." None of those need him.
+**Housekeeping worth knowing before you start.** The tree is clean and the suite is **181/181, 0
+failed, 0 skipped**. ⚠ Both documented flakes (`test-cs035-p3` §F ~5%, `test-f6` §F ~1.7%) happened to
+fire in the same run at P0's close and both passed on rerun — a rerun is still the standing way to
+tell either from a real regression. **`eb7c6b9` and `82e3419` are unpushed**; pushing is Paul's and no
+session does it.
+
+**Unblocked work, if Paul is away and you want something else to do:** the deferred SFX retune (below
+— it is a `tools/sfx-lab.html` session, never a hand-edit) and the "Documentation" section. ⚠ The four
+stale code comments that used to sit here are **done** — CS043 P0 fixed those four plus a fifth.
 
 ## Needs a person, not code
 
@@ -84,24 +103,25 @@ stale code comments under "Small, mechanical fixes." None of those need him.
 
 ## Small, mechanical fixes — bundle into whichever changeset next touches the file
 
-- **Four stale comments, all needing a build or test edit.** Two `% 15` comments found CS041 P5
-  (`orbital-overhaul.html:99` and `scratchpad/test-f9.js:11`'s header — the code at both sites is
-  already correct at `WEEKLY.length`, currently 16; only the comment lies), plus two found by the
-  2026-09-07 off-cycle GDD pass: the `settings` object's comment says `voiceStyle`/`captions` are
-  "NOT persisted yet (later phase)" when CS011 P3 shipped both, and `orbital-overhaul.html:54` still
-  calls `RAMP_WAVES` the single difficulty knob when it was renamed `MUSIC_INTENSITY_WAVES` and now
-  drives music intensity only. Bundle them into whichever changeset next touches these files.
+- ~~Four stale comments, all needing a build or test edit (two `% 15`, the `settings` object's "NOT
+  persisted yet," and `RAMP_WAVES` as "the single knob")~~ — **done 2026-09-09, CS043 P0 (`eb7c6b9`)**,
+  along with a **fifth** the CS043 planning session turned up: `nextWave()`'s comment still described
+  the CS021/CS022 archetype world cadence ("42 times in a 63-level run") that CS024 P1 retired, and
+  `CS043-KICKOFF.md`'s Q1 had already been written from it. ⚠ **That is the cautionary one** — a stale
+  comment did not just sit there, it fed a wrong question to Paul. `resizeWorld()` fires **once per
+  run**, at the `earlyWorldLevels` 5 → 6 seam.
 - ~~GDD §3's Entities row describes `Powerup.radius`/`Dock.radius` via the dead `leverScale()`~~ —
   **done 2026-09-07**: past-tensed, with the live plain-constant rule stated in the same row.
 - `STATUS.md`'s H10/H11 playtest ask names four retired debug knobs (see "heartbeat" bullet above)
   — reword once Paul decides how he wants the question asked.
 - `CLAUDE.md` documentation debt: `Achievements.save()` is no longer `afd_achievements_v2`'s only
   writer, and `mergeUnlock()` goes unnoted (flagged CS037 P6, deferred every changeset since).
-- **⛔ When writing `PLANNED-FEATURES-CS043.md` / `IMPLEMENTATION-PHASES-CS043.md`, state the
-  version bump as `1.0.0.43` — the CHANGESET NUMBER — not "the next integer."** CS042's phase doc
-  wrote the next integer, shipped `1.0.0.41`, and both live version pins passed it, because they
-  assert HEAD's literal and cannot know what it should have been. `GAME_VERSION`'s own comment
-  block is authoritative. `DECISIONS.md`, 2026-09-08.
+- ~~When writing CS043's planning docs, state the version bump as `1.0.0.43` — the CHANGESET NUMBER —
+  not "the next integer"~~ — **done**: both docs say `1.0.0.43` as a literal (`PLANNED-FEATURES-CS043.md`
+  §9). ⛔ **The underlying rule stands for CS044 and after**: CS042's phase doc wrote "the next integer,"
+  shipped `1.0.0.41`, and both live version pins passed it, because they assert HEAD's literal and cannot
+  know what it should have been. `GAME_VERSION`'s own comment block is authoritative. `DECISIONS.md`,
+  2026-09-08.
 
 ## Balance / design, lower urgency
 

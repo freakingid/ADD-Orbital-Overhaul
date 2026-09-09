@@ -8,6 +8,12 @@ keep resolving. `PLANNED-FEATURES-CS043.md` and `IMPLEMENTATION-PHASES-CS043.md`
 spec and phase prompts; FORK-CS043-A is already resolved (§8: span the whole protection window).
 Everything under **Known issues** below not resolved by P0 is carried forward and still live.
 
+⛔ **The dated "where was I" note is `TODO.md`'s RESUME HERE block, and it is the only one** — it was
+rewritten at P0's close and points at P1. Don't start a second resume note here; this file is build
+reality, not a session log. **State at P0's close:** clean tree, suite **181/181, 0 failed, 0 skipped**
+(both `test-cs035-p3` §F and `test-f6` §F flaked once in one run and passed on rerun — the two
+documented flakes, not regressions). `eb7c6b9` and `82e3419` are **unpushed**; pushing is Paul's.
+
 ## Phase ledger — CS043
 
 - P0 — Five stale build/suite comments fixed, comments only, no build byte: `nextWave()`'s comment
