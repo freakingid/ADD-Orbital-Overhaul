@@ -12,6 +12,15 @@
 //      decremented by dt ONLY on frames where thrust is applied — the decrement lives in
 //      Ship.update()'s thrust branch, never in update()'s timer block, so rotating burns nothing.
 //      ENGINE_MASS_MULT stays a FLAT 0.5 (now a debug knob) while any fuel remains; it does NOT taper.
+//      ⛔ WIDENED BY CS042 P7 (spec §6.5) — THE BURN CONDITION GAINED ONE TERM: THE CHAIN MUST BE
+//      NON-EMPTY. With nothing in tow the Engine does literally nothing (§6.4), so an unloaded flight
+//      used to spend the whole tank on nothing at all. Every staging in §B/§C that measures the burn
+//      therefore LAYS A CHAIN — and that is not cosmetic: without one, "rotation burns nothing" and
+//      "firing burns nothing" would pass for the new term's reason rather than their own, which is
+//      exactly the vacuous pass this file exists to prevent. §C gains the new term's own pins: an
+//      empty chain burns nothing under held thrust, one node burns, and the guard sits INSIDE the
+//      thrust branch rather than widening it. ENGINE_BURN_SECONDS is NOT resized and the FLAT rule
+//      is NOT reversed — a tank that no longer leaks is the whole change.
 //   3. BANKING SURVIVES FOR EVERY TYPE — a same-type pickup ADDS budget and arms the HUD bank badge,
 //      exactly as v3.6 P4 established. Engine and Guard enter the banking rule for the first time.
 //   4. THE HUD's active-effect rows lose their dual time/count shape. The drawRingArc denominator
@@ -371,10 +380,13 @@ function layChain(X, n) {
   }
 
   // --- engine: one THRUSTING FRAME (the full treatment is section C) ---
+  // WIDENED BY CS042 P7 (spec §6.5): the chain must be non-empty for the tank to burn at all, so the
+  // staging lays one node. Without it this measures the NEW term instead of the old claim.
   {
     const X = build();
     const g = quietRun(X);
     X.applyPowerup("engine");
+    layChain(X, 1);
     const start = g.powerBudget.engine;
     X.keys["arrowup"] = true;
     g.ship.update(DT);
@@ -409,21 +421,53 @@ function layChain(X, n) {
   const iBrace = shipUpdate.indexOf("AudioSys.thrust(");   // the statement immediately after the branch
   assert(iThrust > -1 && iBurn > iThrust && iBurn < iBrace,
     "C: ...specifically INSIDE the `if (this.thrusting)` branch, before it closes");
+  // ⛔ WIDENED BY CS042 P7 (spec §6.5): the chain term is an INNER guard on the decrement, never a
+  // widening of the branch above it. Thrust itself must obviously still work with an empty chain, and
+  // §6.5 requires the decrement stay exactly where it is, read after the thrust it paid for — so the
+  // guard and the assignment share one line and `if (this.thrusting) {` is byte-unchanged.
+  assert(/if \(game\.chain\.length > 0\) game\.powerBudget\.engine = Math\.max\(0, game\.powerBudget\.engine - dt\);/.test(shipUpdate),
+    "C: ⛔ the burn is guarded by `game.chain.length > 0` ON THE DECREMENT'S OWN LINE");
+  assert(/if \(this\.thrusting\) \{/.test(shipUpdate),
+    "C: ...and the thrust branch itself is still the bare `if (this.thrusting) {` — the term did NOT widen it");
 
-  // 1) THRUST BURNS. 120 frames of held thrust take exactly 120*dt off the tank.
+  // 1) LADEN THRUST BURNS. 120 frames of held thrust take exactly 120*dt off the tank.
+  // WIDENED BY CS042 P7 (spec §6.5): "thrust burns" is now "LADEN thrust burns", so the staging tows.
   X.applyPowerup("engine");
+  layChain(X, 4);
   let fuel = g.powerBudget.engine;
   eq(fuel, X.DEBUG.engineBurnSeconds, "C: a pickup grants DEBUG.engineBurnSeconds of fuel");
   X.keys["arrowup"] = true;
   for (let i = 0; i < 120; i++) g.ship.update(DT);
   X.keys["arrowup"] = false;
-  close(g.powerBudget.engine, fuel - 120 * DT, "C: 120 thrusting frames burned exactly 120*dt", 1e-9);
+  close(g.powerBudget.engine, fuel - 120 * DT, "C: 120 LADEN thrusting frames burned exactly 120*dt", 1e-9);
+
+  // 1b) ⛔ CS042 P7 (spec §6.5), THE NEW TERM, BOTH DIRECTIONS. An empty chain burns NOTHING under the
+  // same held thrust that just drained the tank above; a single node is enough to start it burning
+  // again. One node, not four — the term is `length > 0`, not a mass threshold.
+  {
+    const Y = build();
+    const gy = quietRun(Y);
+    Y.applyPowerup("engine");
+    const before = gy.powerBudget.engine;
+    Y.keys["arrowup"] = true;
+    for (let i = 0; i < 600; i++) gy.ship.update(DT);   // ten seconds — the whole tank, twice over
+    Y.keys["arrowup"] = false;
+    assert(Math.hypot(gy.ship.vx, gy.ship.vy) > 100, "C: (precondition) the unloaded ship really did thrust");
+    eq(gy.powerBudget.engine, before, "C: ⛔ 600 frames of UNLOADED thrust burned NOTHING — the tank no longer leaks");
+    assert(Y.powerActive("engine"), "C: ...so the Engine is still up, saved for a haul it can help");
+    layChain(Y, 1);
+    Y.keys["arrowup"] = true;
+    for (let i = 0; i < 60; i++) gy.ship.update(DT);
+    Y.keys["arrowup"] = false;
+    close(gy.powerBudget.engine, before - 60 * DT, "C: ⛔ ...and ONE towed node is enough to start it burning again", 1e-9);
+  }
 
   // 2) ROTATION BURNS NOTHING. Both directions, 600 frames — ten simulated seconds, twice the whole tank.
   for (const dir of ["arrowleft", "arrowright"]) {
     const Y = build();
     const gy = quietRun(Y);
     Y.applyPowerup("engine");
+    layChain(Y, 4);   // CS042 P7: laden, so this measures ROTATION and not the new chain term
     const before = gy.powerBudget.engine;
     const angleBefore = gy.ship.angle;
     Y.keys[dir] = true;
@@ -440,6 +484,7 @@ function layChain(X, n) {
     const gy = quietRun(Y);
     Y.applyPowerup("engine");
     Y.applyPowerup("rapid");
+    layChain(Y, 4);   // CS042 P7: laden, so this measures IDLING/FIRING and not the new chain term
     const before = gy.powerBudget.engine;
     for (let i = 0; i < 300; i++) { gy.ship.cooldown = 0; Y.keys[" "] = true; Y.update(DT); }
     Y.keys[" "] = false;
@@ -485,6 +530,7 @@ function layChain(X, n) {
     const Y = build();
     const gy = quietRun(Y);
     gy.powerBudget.engine = 0.01;
+    layChain(Y, 1);   // CS042 P7: the tank only burns under load, so the clamp needs something in tow
     Y.keys["arrowup"] = true;
     gy.ship.update(0.05);
     gy.ship.update(0.05);

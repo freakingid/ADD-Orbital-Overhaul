@@ -54,7 +54,11 @@ const extractScript = html => {
   return m[1];
 };
 const currentSrc = extractScript(fs.readFileSync(htmlPath, "utf8"));
-const headSrc = extractScript(execSync("git show HEAD:orbital-overhaul.html", { cwd: repoRoot }).toString());
+// ⛔ maxBuffer ADDED CS042 P7: execSync defaults to a 1 MiB buffer and orbital-overhaul.html crossed
+// that at CS042 P6's commit, so this line threw ENOBUFS the moment P6 became HEAD. See the fuller note
+// at test-cs010-p1.js — three sites lacked the suite's standing 64 MB idiom and all three got it.
+const headSrc = extractScript(execSync("git show HEAD:orbital-overhaul.html",
+  { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString());
 
 // ---- Web Audio mock (the test-cs010-p9.js §D idiom): nodes are Proxies that no-op methods but expose
 // AudioParams; FakeAudioContext.currentTime is a plain ASSIGNABLE field so Dan's clock can be advanced

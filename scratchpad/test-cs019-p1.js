@@ -240,10 +240,13 @@ function makeTellCounter(X) {
   return c;
 }
 // Drive `frames` REAL update(1/60) frames, sampling the tell counter and recording per-frame state.
-function run(X, frames, counter) {
+// `perFrame` (CS019 unaware; added CS042 P7) runs after each frame — see §F's freezeShip note. Every
+// existing caller omits it and is byte-unchanged.
+function run(X, frames, counter, perFrame) {
   const g = X.game, log = [];
   for (let f = 1; f <= frames; f++) {
     X.update(1 / 60);
+    if (perFrame) perFrame(X);
     if (counter) counter.sample();
     log.push({ f, budget: g.powerBudget.guard, chain: g.chain.length,   // CS024 P6: the timed field is deleted
       garbage: g.garbage.length, deliveries: g.deliveryCount,
@@ -688,7 +691,20 @@ const scanEndH = () => scriptSrc.indexOf("break chainScan;", scanStartH());
     return withRandom(seededRandom(0xC0FFEE), () => {
       layChain(X, 10);
       stageDebris(X, 5, 3);
-      const log = run(X, 60, null);
+      // ⛔ WIDENED BY CS042 P7 (spec §6.8), AND THE FREEZE IS WHAT MAKES THE PIN SURVIVE HANDLING
+      // CHANGES AT ALL. This section compares the live build against a FIXED pre-CS019 SHA, and the
+      // node positions it compares are driven by the anchor, which is the ship. P7 rewrote the
+      // momentum tug (min(1.4, m·CARGO_MASS) -> (M−1)/M, CHAIN_TUG 26 -> 58), so the two builds now
+      // pull the ship back by different amounts and the bit-identical position claim broke — on a
+      // difference that has nothing to do with the chain guard, which is all this section measures.
+      // Zeroing the ship's velocity after every frame makes the anchor STATIC in both builds, so the
+      // constraint solver sees identical input and the comparison is bit-exact again — the same
+      // "kinematic isolates the solver" technique test-p6.js §E and test-cs010-p2.js §D1 already use.
+      // It is a WIDENING, not a weakening: the claim keeps its full strength and now cannot be
+      // broken by any future ship-handling change either. The ship never thrusts or rotates here, so
+      // the only thing being suppressed is the tug's feedback.
+      const freezeShip = Y => { Y.game.ship.vx = 0; Y.game.ship.vy = 0; };
+      const log = run(X, 60, null, freezeShip);
       return {
         chain: g.chain.length,
         garbage: g.garbage.length,

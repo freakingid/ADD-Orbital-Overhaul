@@ -682,7 +682,9 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
       "healthBankMax",     // REPOINTED BY CS040 P3: the health bank's cap joins the excluded set
       "hubDryWeightMult", // REPOINTED BY CS040 P4: the hub relief multiplier joins the excluded set
       // REPOINTED BY CS042 P6: the three health-supply rows join the excluded set, same idiom.
-      "healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct"]);
+      "healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct",
+      // REPOINTED BY CS042 P7: cargoUnitMass (spec §6.8) joins it too, same idiom.
+      "cargoUnitMass"]);
     const laterIdsOld = new Set(["deliveryFloatLife", "deliveryFloatRise"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));

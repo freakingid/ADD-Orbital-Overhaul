@@ -535,7 +535,8 @@ function quiet(X) {
       || id.startsWith("healthGap")                                         // CS040 P2 (pity health cadence)
       || id === "healthBankMax"                                             // CS040 P3 (health bank cap)
       || id === "hubDryWeightMult"                                          // CS040 P4 (hub relief mult)
-      || id === "healthSpawnLock" || id.startsWith("repairMilestone");      // CS042 P6 (health supply)
+      || id === "healthSpawnLock" || id.startsWith("repairMilestone")       // CS042 P6 (health supply)
+      || id === "cargoUnitMass";                                            // CS042 P7 (one mass, §6.8)
     const oldLeverIds = OLD.LEVERS.map(l => l.id);
     const liveById = {};
     for (const lev of X.LEVERS) liveById[lev.id] = lev;

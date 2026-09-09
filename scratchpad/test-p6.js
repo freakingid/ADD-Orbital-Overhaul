@@ -8,6 +8,12 @@
 //  (A) config: CARGO_BASE=12, CARGO_CAP_MAX=24, CARGO_GROW_PER=30 (positive); CHAIN_ITER>=3;
 //      retuned coefficients CARGO_THRUST=0.06 / CARGO_MAXSPD=0.03 / CARGO_MASS=0.07; the old
 //      CHAIN_MAX constant is gone.
+//      ⛔ REWRITTEN BY CS042 P7 (spec §6.8): all three of those coefficients — and CARGO_TURN with
+//      them — are RETIRED, replaced by the single CARGO_UNIT_MASS (0.07) that shipMass() reads.
+//      (A) now pins their ABSENCE and the replacement's presence; (D) re-derives the same measured
+//      claims from the one-mass formulas. B-8's own numbers are kept where they survived: full-24
+//      thrust is still ~37%, byte-identical, because 0.07 IS CARGO_THRUST's old value. Full-24 top
+//      speed is NOT 54% any more — it is 100%, because the top-speed divisor is gone (FLAG-CS042-l).
 //  (B) REPOINTED BY CS018 P5 (FORK-CS018-B): the delivery-earned growCap curve this section
 //      originally proved is retired outright — cargoMax is now GRANTED by
 //      levelDef(game.wave).payloadSlots in nextWave(), never by game.stats.delivered. cargoMax
@@ -21,6 +27,15 @@
 //      is genuinely lighter than the old 12 (headroom to grow); Engine at m=24 behaves like m=12;
 //      the momentum-tug massFactor uses the 0.07 coeff (0.84 at m=12, saturated 1.4 at m=20 and
 //      m=24 alike — min(1.4, m*0.07) already caps at m~=20, so 24 doesn't get worse).
+//      ⛔ REWRITTEN BY CS042 P7 (spec §6.8). Three of those five claims survive VERBATIM and are the
+//      strongest evidence the phase's central promise held: full-24 thrust is still ~37%, a base-12
+//      chain is still lighter than the old 12, and Engine-at-24 still behaves exactly like plain
+//      m=12. Two are legitimately reversed and are rewritten in place: TOP SPEED no longer has a
+//      cargo divisor at all (FLAG-CS042-l, so the m=24 ratio is 1.0, not 0.54), and the tug's
+//      massFactor is the unclamped (M−1)/M — so m=20 and m=24 no longer land on the SAME saturated
+//      1.4, which is precisely the 14-node flat spot §6.8 set out to retire. The m=20-vs-m=24
+//      assertion therefore flips from "equal" to "strictly greater", same measurement, opposite
+//      claim, and that flip is the whole point of the change.
 //  (E) chain constraint stability at CARGO_CAP_MAX (24) nodes across hard thrust-flips + a wrap:
 //      no NaN, no explosion, worst-case link stretch stays bounded (~5px budget on the 20px
 //      CHAIN_LINK; bump CHAIN_ITER if exceeded).
@@ -67,7 +82,10 @@ const returnList = [
   "startGame", "update", "draw", "game", "keys",
   "updateChain", "chainAnchor", "chainMass",
   "CARGO_BASE", "CARGO_CAP_MAX",
-  "CHAIN_LINK", "CHAIN_ITER", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
+  // CS042 P7: the four CARGO_* divisors are retired (spec §6.8); shipMass/CARGO_UNIT_MASS replace them.
+  // They are still probed BY NAME in (A) — via A.<name>, which is undefined for a retired symbol —
+  // rather than destructured here, where an undefined export would throw at build time.
+  "CHAIN_LINK", "CHAIN_ITER", "CHAIN_TUG", "CARGO_UNIT_MASS", "shipMass",
   "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "ENGINE_MASS_MULT", "DOCK_OFFLOAD_INTERVAL",
   "DOCK_RADIUS", "DOCK_POWERUP_SPEED", "shortDelta", "WORLD_W", "WORLD_H", "DEBUG"
 ];
@@ -80,7 +98,7 @@ const {
   startGame, update, draw, game, keys,
   updateChain, chainAnchor, chainMass,
   CARGO_BASE, CARGO_CAP_MAX,
-  CHAIN_LINK, CHAIN_ITER, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
+  CHAIN_LINK, CHAIN_ITER, CHAIN_TUG, CARGO_UNIT_MASS, shipMass,
   SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, ENGINE_MASS_MULT, DOCK_OFFLOAD_INTERVAL,
   DOCK_RADIUS, DOCK_POWERUP_SPEED, shortDelta, WORLD_W, WORLD_H, DEBUG
 } = A;
@@ -131,7 +149,7 @@ function fillChain(n, mass = 1.0, over = {}) {
 startGame();
 game.state = "playing"; game.paused = false;
 console.log(`(config) CARGO_BASE=${CARGO_BASE} CARGO_CAP_MAX=${CARGO_CAP_MAX} CARGO_GROW_PER=${CARGO_GROW_PER} CHAIN_ITER=${CHAIN_ITER}`);
-console.log(`(config) CARGO_THRUST=${CARGO_THRUST} CARGO_MAXSPD=${CARGO_MAXSPD} CARGO_MASS=${CARGO_MASS}`);
+console.log(`(config) CARGO_UNIT_MASS=${CARGO_UNIT_MASS} CHAIN_TUG=${CHAIN_TUG} (CS042 P7: four divisors -> one mass)`);
 
 // =====================================================================
 // (A) config
@@ -142,9 +160,20 @@ assert(CARGO_CAP_MAX === 24, `A: CARGO_CAP_MAX is 24 (got ${CARGO_CAP_MAX})`);
 assert(CARGO_GROW_PER > 0, `A: CARGO_GROW_PER positive (got ${CARGO_GROW_PER})`);
 assert(CHAIN_ITER >= 3, `A: CHAIN_ITER >= 3 (got ${CHAIN_ITER})`);
 // CS010 P2 retune (all playtest knobs): thrust 0.06->0.07, top-speed 0.03->0.035, tug 0.07->0.10.
-assert(near(CARGO_THRUST, 0.07), `A: CARGO_THRUST = 0.07 (CS010; got ${CARGO_THRUST})`);
-assert(near(CARGO_MAXSPD, 0.035), `A: CARGO_MAXSPD = 0.035 (CS010; got ${CARGO_MAXSPD})`);
-assert(near(CARGO_MASS, 0.10), `A: CARGO_MASS = 0.10 (CS010; got ${CARGO_MASS})`);
+// ⛔ REWRITTEN BY CS042 P7 (spec §6.8), NOT DELETED: those three constants and CARGO_TURN are retired
+// outright — four hand-tuned divisors collapsed into one mass. The claim inverts to their ABSENCE
+// (which is the form that does the work now: a silently-restored divisor is what this should catch),
+// plus the replacement's own value. 0.07 carries straight over from CARGO_THRUST, deliberately, so
+// that acceleration is byte-identical at every chain length — see (D).
+for (const gone of ["CARGO_THRUST", "CARGO_MAXSPD", "CARGO_MASS", "CARGO_TURN"]) {
+  assert(A[gone] === undefined, `A: ${gone} is RETIRED (CS042 P7 §6.8) — not exported at all`);
+  assert(!new RegExp("^\\s*const\\s+" + gone + "\\s*=", "m").test(scriptSrc),
+    `A: ...and ${gone} is not declared anywhere in the build`);
+}
+assert(near(A.CARGO_UNIT_MASS, 0.07), `A: CARGO_UNIT_MASS = 0.07 (CS042 P7; got ${A.CARGO_UNIT_MASS})`);
+assert(near(A.DEBUG.cargoUnitMass, A.CARGO_UNIT_MASS),
+  "A: ...and DEBUG.cargoUnitMass, the value shipMass() actually reads, derives from it");
+assert(A.CHAIN_TUG === 58, `A: CHAIN_TUG rescaled 26 -> 58 with the tug's new (M−1)/M form (got ${A.CHAIN_TUG})`);
 assert(CHAIN_MAX_GONE, "A: old fixed CHAIN_MAX constant is gone (replaced by cargoMax/CARGO_BASE)");
 assert(near(DOCK_OFFLOAD_INTERVAL, 0.05), `A: DOCK_OFFLOAD_INTERVAL retuned to 0.05 (got ${DOCK_OFFLOAD_INTERVAL})`);
 
@@ -242,9 +271,20 @@ assert(game.chain.length === CARGO_CAP_MAX, `C: at cargoMax=${CARGO_CAP_MAX} a 2
 // (D) physics retune — MEASURED by driving the real Ship.update
 // =====================================================================
 console.log("(D) mass-penalty retune (driven through Ship.update)");
-const drag = Math.pow(1 - SHIP_DRAG, DT);
+// CS042 P7: drag now divides its exponent by the same mass, so the measurement helpers below have to
+// divide out the drag THEY actually got rather than a single mass-blind factor. massOf() reads the
+// build's own shipMass() at a given staging — never this file's arithmetic.
+function massOf(nodes, mass = 1.0, engine = false) {
+  clearField(); resetShip();
+  game.powerBudget.engine = engine ? 1 : 0;
+  fillChain(nodes, mass);
+  return shipMass();
+}
+const dragAt = M => Math.pow(1 - SHIP_DRAG, DT / M);
 
-// thrustMul measured: from rest, one thrust frame, angle 0 => vx = SHIP_THRUST*thrustMul*dt*drag
+// thrustMul measured: from rest, one thrust frame, angle 0 => vx = (SHIP_THRUST/M)*dt*drag(M).
+// The RATIO reported is still "what fraction of the unloaded acceleration did this chain get", which
+// is what every assertion below reads, and is exactly 1/M under §6.8.
 function measureThrustMul(nodes, mass = 1.0, engine = false) {
   clearField(); resetShip();
   // CS024 P6: 1 second of fuel is far more than the single DT frame measured below burns, and
@@ -253,9 +293,10 @@ function measureThrustMul(nodes, mass = 1.0, engine = false) {
   fillChain(nodes, mass);
   keys["w"] = true;                 // hold thrust
   game.ship.vx = 0; game.ship.vy = 0;
+  const M = shipMass();             // read BEFORE the frame, like the build does
   game.ship.update(DT);             // ship physics only (no tug), real code path
   keys["w"] = false;
-  return game.ship.vx / (SHIP_THRUST * DT * drag);
+  return game.ship.vx / (SHIP_THRUST * DT * dragAt(M));
 }
 // top-speed ratio measured: start way over speed, one thrust frame clamps to maxSp, then drag =>
 // vx = maxSp*drag => maxSp = vx/drag ; ratio = maxSp / SHIP_MAX_SPEED
@@ -267,20 +308,29 @@ function measureMaxSpRatio(nodes, mass = 1.0, engine = false) {
   fillChain(nodes, mass);
   keys["w"] = true;
   game.ship.vx = 99999; game.ship.vy = 0;
+  const M = shipMass();
   game.ship.update(DT);
   keys["w"] = false;
-  return (game.ship.vx / drag) / SHIP_MAX_SPEED;
+  return (game.ship.vx / dragAt(M)) / SHIP_MAX_SPEED;
 }
 
 const tm24 = measureThrustMul(CARGO_CAP_MAX);
 const ms24 = measureMaxSpRatio(CARGO_CAP_MAX);
-assert(near(tm24, 1 / (1 + CARGO_CAP_MAX * CARGO_THRUST), 2e-3), `D: thrustMul at m=24 matches formula (got ${tm24.toFixed(4)})`);
-assert(near(ms24, 1 / (1 + CARGO_CAP_MAX * CARGO_MAXSPD), 2e-3), `D: top-speed ratio at m=24 matches formula (got ${ms24.toFixed(4)})`);
-// CS010 P2 retune (playtest knobs): the mid haul now bites harder via the tug (CARGO_MASS 0.07->0.10),
-// and thrust/top-speed got a modest firming (0.06->0.07 / 0.03->0.035). Full-24 lands at ~37% thrust /
+const M24 = massOf(CARGO_CAP_MAX);
+assert(near(tm24, 1 / M24, 2e-3), `D: thrustMul at m=24 is exactly 1/shipMass() (got ${tm24.toFixed(4)}, M=${M24.toFixed(4)})`);
+// ⛔ REWRITTEN BY CS042 P7 (spec §6.8, FLAG-CS042-l): the top-speed divisor is DELETED. SHIP_MAX_SPEED
+// is a flat rail at every chain length, so this ratio is 1, not 1/(1 + m·CARGO_MAXSPD). A full haul now
+// reaches the same 520 an empty ship does; it merely takes 5.6 s instead of 1.5 s and cannot then stop
+// for 14 s. Mass limits agility, not speed. This is the assertion that would go red if the divisor were
+// ever quietly restored, which is why it is stated as an equality rather than dropped.
+assert(near(ms24, 1, 2e-3), `D: ⛔ top-speed ratio at m=24 is a FLAT 1 — the cargo divisor is retired (got ${ms24.toFixed(4)})`);
+// CS010 P2 retune (playtest knobs): the mid haul bit harder via the tug (CARGO_MASS 0.07->0.10), and
+// thrust/top-speed got a modest firming (0.06->0.07 / 0.03->0.035). Full-24 landed at ~37% thrust /
 // ~54% top speed (was ~41%/~58% under v3.4 P1) — deliberately heavier, still above the "broken" ~33%/50%.
-assert(Math.abs(tm24 - 0.3731) < 0.01, `D: full 24-chain thrust ≈ 37% (got ${(tm24 * 100).toFixed(1)}%)`);
-assert(Math.abs(ms24 - 0.5435) < 0.01, `D: full 24-chain top speed ≈ 54% (got ${(ms24 * 100).toFixed(1)}%)`);
+// ⛔ CS042 P7: the THRUST half is unchanged and that is the phase's central claim, held here as a
+// literal on purpose — CARGO_UNIT_MASS ships at CARGO_THRUST's own 0.07 precisely so acceleration is
+// byte-identical to every build since CS010. The top-speed half is the reversed one, above.
+assert(Math.abs(tm24 - 0.3731) < 0.01, `D: full 24-chain thrust ≈ 37%, UNMOVED by CS042 P7 (got ${(tm24 * 100).toFixed(1)}%)`);
 
 // A base-12 chain is genuinely LIGHTER than the old 12 (headroom to grow into).
 const tm12 = measureThrustMul(12);
@@ -288,15 +338,44 @@ const ms12 = measureMaxSpRatio(12);
 const OLD_TM12 = 1 / (1 + 12 * 0.10), OLD_MS12 = 1 / (1 + 12 * 0.05); // pre-B-8 coefficients
 assert(tm12 > OLD_TM12 + 0.05, `D: base-12 thrust lighter than old-12 (${(tm12 * 100).toFixed(1)}% vs ${(OLD_TM12 * 100).toFixed(1)}%)`);
 assert(ms12 > OLD_MS12 + 0.05, `D: base-12 top speed lighter than old-12 (${(ms12 * 100).toFixed(1)}% vs ${(OLD_MS12 * 100).toFixed(1)}%)`);
+// ⛔ CS042 P7 (spec §6.8): the drag RATE is the term that carries "heavy" now, and it was mass-BLIND
+// before this phase — an empty ship and a full 24-node haul bled to a tenth of their speed in the same
+// 5.35 s, which is why every earlier tuning pass on the divisors above failed to make cargo feel heavy.
+// Measured through the real Ship.update, not the formula: a full chain must coast strictly longer than
+// a base-12 one, and that strictly longer than an empty ship.
+function coastFrames(nodes) {
+  clearField(); resetShip();
+  fillChain(nodes);
+  game.ship.vx = 400; game.ship.vy = 0;
+  let f = 0;
+  while (game.ship.vx > 40 && f < 100000) { game.ship.update(DT); f++; }
+  return f;
+}
+const c0 = coastFrames(0), c12 = coastFrames(12), c24 = coastFrames(CARGO_CAP_MAX);
+assert(c0 < c12 && c12 < c24,
+  `D: ⛔ coast time rises strictly with towed mass — 0/12/24 nodes = ${c0}/${c12}/${c24} frames (was mass-blind pre-CS042)`);
+assert(near(c24 / c0, massOf(CARGO_CAP_MAX), 0.02),
+  `D: ...and by exactly the mass ratio, since drag divides its exponent by M (got ${(c24 / c0).toFixed(4)})`);
 
 // FLAG B-8-a: Engine (halves effective mass) at m=24 behaves like plain m=12.
 const tm24eng = measureThrustMul(CARGO_CAP_MAX, 1.0, true);
 const tm12eng = measureThrustMul(CARGO_CAP_MAX / 2);
 assert(near(tm24eng, tm12eng, 2e-3), `D: Engine at 24 nodes == plain 12 nodes (${tm24eng.toFixed(4)} vs ${tm12eng.toFixed(4)})`);
-assert(near(tm24eng, 1 / (1 + (CARGO_CAP_MAX / 2) * CARGO_THRUST), 2e-3), "D: Engine-at-24 matches m=12 formula");
+assert(near(tm24eng, 1 / massOf(CARGO_CAP_MAX / 2), 2e-3), "D: Engine-at-24 matches the m=12 one-mass formula");
+// ⛔ CS042 P7 (spec §6.4 / FORK-CS042-C): the Engine is still the ONLY thing that moves chainMass(),
+// and with nothing towed there is nothing for it to halve — shipMass() is exactly 1 either way, so
+// the Engine does literally nothing on an empty chain. That is the DESIGN, Paul's explicit call,
+// and the burn condition's new chain term (§6.5) exists precisely because of it.
+assert(near(measureThrustMul(0, 1.0, true), measureThrustMul(0, 1.0, false), 1e-12),
+  "D: ⛔ the Engine changes NOTHING with an empty chain — mass 1 either way, by design");
 
-// Momentum-tug massFactor uses the CS010 0.10 coeff: 1.2 at m=12 (uncapped); the min(1.4, m*0.10)
-// saturates at m=14, so m=20 and m=24 both land at the same capped 1.4 — 24 doesn't get worse than 20.
+// ⛔ REWRITTEN BY CS042 P7 (spec §6.8). WAS: "massFactor uses the CS010 0.10 coeff — 1.2 at m=12
+// (uncapped); the min(1.4, m*0.10) saturates at m=14, so m=20 and m=24 both land at the same capped
+// 1.4 — 24 doesn't get worse than 20." That clamp is retired. massFactor is now (M−1)/M, the cargo's
+// SHARE of the total mass: unclamped, monotonic, asymptotic to 1 on its own, so m=20 and m=24 are no
+// longer equal — retiring that flat spot is exactly what the change was for. CHAIN_TUG was rescaled
+// 26 -> 58 in the same edit so the FULL chain's actual yank is unmoved, which is asserted below in the
+// units that matter (force per px of stretch), not just as a factor.
 function measureTugMassFactor(nodes) {
   clearField(); resetShip();
   const a = chainAnchor();
@@ -314,9 +393,16 @@ function measureTugMassFactor(nodes) {
 const mf12 = measureTugMassFactor(12);
 const mf20 = measureTugMassFactor(20);
 const mf24 = measureTugMassFactor(CARGO_CAP_MAX);
-assert(near(mf12, 12 * CARGO_MASS, 2e-3), `D: tug massFactor at m=12 = ${(12 * CARGO_MASS).toFixed(2)} uncapped (got ${mf12.toFixed(4)})`);
-assert(near(mf20, 1.4, 2e-3), `D: tug massFactor at m=20 capped at 1.4 (got ${mf20.toFixed(4)})`);
-assert(near(mf24, 1.4, 2e-3), `D: tug massFactor at m=24 (new cap) still capped at 1.4, same as m=20 (got ${mf24.toFixed(4)})`);
+const share = m => { const M = 1 + m * DEBUG.cargoUnitMass; return (M - 1) / M; };
+assert(near(mf12, share(12), 2e-3), `D: tug massFactor at m=12 is (M−1)/M = ${share(12).toFixed(4)} (got ${mf12.toFixed(4)})`);
+assert(near(mf20, share(20), 2e-3), `D: tug massFactor at m=20 is (M−1)/M = ${share(20).toFixed(4)} (got ${mf20.toFixed(4)})`);
+assert(near(mf24, share(CARGO_CAP_MAX), 2e-3), `D: tug massFactor at m=24 is (M−1)/M = ${share(CARGO_CAP_MAX).toFixed(4)} (got ${mf24.toFixed(4)})`);
+assert(mf24 > mf20 && mf20 > mf12,
+  `D: ⛔ THE FLAT SPOT IS GONE — the yank still grows from m=12 to 20 to 24 (${mf12.toFixed(3)} < ${mf20.toFixed(3)} < ${mf24.toFixed(3)}); the old min(1.4,·) tied 20 and 24`);
+// ...and the FULL chain's actual pull-back force per px of stretch is unmoved by the rescale: the old
+// build's was CHAIN_TUG(26) x the clamped 1.4 = 36.4, and CS042 P7 solved 58 from exactly that equality.
+assert(Math.abs(CHAIN_TUG * mf24 - 26 * 1.4) < 0.1,
+  `D: ⛔ a FULL chain tugs as hard as it did pre-CS042 — ${(CHAIN_TUG * mf24).toFixed(2)} vs the old 36.40 accel/px`);
 
 // =====================================================================
 // (E) stability at CARGO_CAP_MAX nodes: hard thrust-flips + a wrap

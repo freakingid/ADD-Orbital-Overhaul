@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P6 · Registry: 113 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P7 · Registry: 114 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -128,7 +128,42 @@ carried forward and still live.
   — §2.7/§2.14 are P11's (its item 2 already names them), and they now read false on the milestone
   gate and the four gap numbers.
 
+- P7 — one mass, one force (spec §6.8) plus the Engine's laden-only burn (§6.5). ⛔ **Four constants
+  RETIRED, one replaces them:** `CARGO_THRUST`/`CARGO_MAXSPD`/`CARGO_MASS`/`CARGO_TURN` are deleted,
+  their comment rewritten in place as a tombstone; `CARGO_UNIT_MASS` (0.07) feeds the new
+  `shipMass()` = `1 + chainMass() × DEBUG.cargoUnitMass`, and acceleration, the drag **rate**, the
+  turn rate and the tug's `(M−1)/M` all divide by that one number. Top speed is a flat rail.
+  `CHAIN_TUG` 26 → 58 holds a full chain's yank fixed. ⛔ **Both flagged consequences shipped as
+  specified and are asserted, not softened** — FLAG-CS042-l (top speed is mass-independent; a full
+  haul reaches 520, not 283) and FLAG-CS042-m (rotation is penalised, 241 → 90 °/s, reversing Paul's
+  GATE A close of FLAG-CS042-j). The Engine gained no cargo-independent effect and no taper; its only
+  change is one added term on the burn condition. Registry 113 → 114 (`cargoUnitMass`, SHIP). GDD
+  §3.4 rewritten and its stability envelope re-validated (4.112 px, unmoved; `CHAIN_ITER` stays 4).
+
 ## Working / verified
+
+- **P7:** full suite **176 files, 176 passed, 0 failed, 0 skipped, 0 timed out** (exit 0),
+  `node --check` clean. `scratchpad/test-cs042-p7.js` is 189 assertions in eight sections, and its
+  load-bearing ones were **mutation-checked, not just run**: restoring the top-speed divisor, exempting
+  rotation from the mass, dropping the burn's chain term, re-clamping the tug's `massFactor`, making
+  drag mass-blind again, moving `CARGO_UNIT_MASS` off 0.07, giving the Engine a cargo-independent
+  effect and leaving `CHAIN_TUG` at 26 each turn 4–37 assertions red. §D and §G measure against the
+  phase's own parent (`aebd3df`) rather than asserting from arithmetic: acceleration is byte-identical
+  at every chain length with and without the Engine, while coast, turn and terminal speed are shown
+  to have moved.
+  ⛔ **Twenty pre-existing tests were legitimately invalidated; all twenty were WIDENED, not weakened.**
+  Fifteen are the standing registry-allowlist maintenance (113 → 114). Five are real: `test-cs024-p6.js`
+  lays a chain in every burn staging — **without one, "rotation burns nothing" and "firing burns nothing"
+  would have passed for the NEW term's reason rather than their own** — and gains the new term's own
+  pins; `test-f3.js` §D keeps its mass-sum thesis and re-asserts it on coast and turn, the two terms P7
+  newly made mass-sensitive, because the top-speed equality it used to carry is now trivially true;
+  `test-p6.js` §A pins the four retirements' absence and §D flips the m=20-vs-m=24 tug claim from
+  "equal" to "strictly greater" (the retired flat spot); `test-cs019-p1.js` §F freezes the ship so its
+  bit-identical chain-position compare isolates the solver from handling, the same technique
+  `test-p6.js` §E already uses; and `test-cs010-p2.js` §B records the `CARGO_TURN` reversal in place
+  and proves the divisor live off the knob instead of a source substitution.
+  ⚠ **Not yet played.** Every number here is measured headless. Whether "heavier cargo, and the Engine
+  offsetting it" now reads right is FLAG-CS042-l/m and a GATE C question.
 
 - **P6:** full suite **175 files, 175 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, no flake
   rerun needed), `node --check` clean. `scratchpad/test-cs042-p6.js` is 712 assertions in ten
@@ -238,6 +273,65 @@ carried forward and still live.
 
 ## Known issues
 
+- **⛔ P7 FOUND A LATENT SUITE TRIPWIRE THAT CS042 P6'S OWN COMMIT ARMED, AND IT IS FIXED: the game
+  file crossed 1 MiB, and `execSync`'s default `maxBuffer` IS 1 MiB.** `orbital-overhaul.html` went
+  1,040,713 → **1,050,828 bytes** at P6, so from the moment that commit became `HEAD`, every suite
+  file shelling out `git show HEAD:orbital-overhaul.html` **without** the standing 64 MB `maxBuffer`
+  died with `ENOBUFS`. It could only fire *after* the phase that armed it, which is why P6 measured
+  175/175 and the tree then measured 173/175 with nothing changed. Three sites lacked the idiom every
+  other git-show site in the suite already had: `test-cs010-p1.js` and `test-cs025-p4.js` hard-failed,
+  and **`test-cs010-p2.js` was worse — its call is inside a `try/catch`, so the throw was swallowed
+  and its whole HEAD-vs-worktree comparison silently stopped running while the file still reported a
+  clean pass.** All three now carry `maxBuffer: 64 * 1024 * 1024`. ⚠ **Nothing sweeps for the next
+  one:** any future site added without it has the same latent failure, and the file will keep growing.
+
+- **⛔ A FIFTH MOVING-`HEAD` PIN FOUND AND REPAIRED (P7): `test-cs010-p2.js` §D.** All three of its
+  stability comparisons asked "is the WORKING TREE at least as stable as `HEAD`?" — so for eleven
+  changesets they compared a build against itself and passed vacuously, and the first phase to
+  legitimately change the physics made them fail for a reason unrelated to CS010. Both sides are now
+  literal SHAs (`a66ef10` vs `a66ef10^`, CS010 P2's own commit and its parent), which reproduces
+  CS010's own recorded figures exactly (8.17 vs 8.33 px at mass 24, 11.61 vs 12.61 at mass 6) and can
+  never be re-aimed again. The file also now skips **loudly** (`SKIP_TAG`) instead of a `console.warn`
+  nobody counts. **The four pins listed further down are unaffected and still open.**
+
+- **⛔ P7 measured a consequence of §6.8 the spec did not state: THE MOMENTUM TUG'S MID RANGE IS
+  WEAKER, and only the endpoints were held.** `CHAIN_TUG` 26 → 58 was solved to hold a *full* chain's
+  yank fixed and it does (36.40 → 36.36 accel/px), but the two curves have different shapes between
+  the endpoints. Old `26 × min(1.4, m·0.10)` is a straight line clamping flat from m=14; new
+  `58 × (M−1)/M` saturates smoothly. **They cross at m ≈ 8:** below it the new tug is stronger (+37%
+  at 2 nodes, +22% at 4), above it weaker — **worst at m=14, −21%** — recovering to −0.1% at 24. That
+  is what retiring the 14-node flat spot costs, and CS010 P2's own reason for raising `CARGO_MASS`
+  was exactly this mid-range heft. Not a defect and not softened; the full table is in
+  `scratchpad/test-cs042-p7.js` §D, printed on every run, and in GDD §3.4. ⚠ **If GATE C reports a
+  mid haul feeling floaty, this is the first place to look** — and the fix is a `CHAIN_TUG` retune,
+  which is one number and re-opens §3.4's envelope.
+
+- **⛔ GDD §3.4's envelope was RE-VALIDATED and holds, but P7 recorded a reading worth Paul's eye.**
+  At the documented methodology (24 nodes, 900 frames, dt = 1/60, kinematic v = 420/260) worst-case
+  link stretch is **4.112 px, byte-identical to the parent (delta 0.000)**, so `CHAIN_ITER` stays at 4
+  and nothing was raised to fit. ⚠ **But the same kinematic stress at the speed §6.8 newly makes
+  attainable (520/320) gives 5.118 px — 2.4% over the ~5 px budget, and identical on the parent**, so
+  it is a property of the solver at that speed rather than of this phase; what changed is that a laden
+  ship can now get there. The faithful stresses grew +0.49 to +0.59 px, from figures (7.2–8.4 px) that
+  were already above 5 px on the parent for the big-timestep reason §3.4 itself records. No NaN, no
+  velocity explosion, no node lost. **Raising `CHAIN_ITER` to 5 would take the worst case 13.4 → 11.9
+  px**, measured — offered, not taken, because the phase forbids raising it to make a number fit and
+  the documented budget was never exceeded.
+
+- **⛔ GDD §2.1, §2.10, §2.10.1, §2.10.2, §2.14 and §1.1 now read false on handling (P7). P11 owns
+  only two of them today.** Its item 2 names **§2.1 and §2.10.2** ("the handling model and drag") —
+  the other four are NOT on its list and should be added: **§2.10** states the mass penalty as
+  `1 + m×CARGO_THRUST` / `1 + m×CARGO_MAXSPD` and the tug as `CHAIN_TUG (26) × stretch × …`;
+  **§2.10.1** cites the three retired coefficients by name in its tow-cap rationale; **§2.14**'s
+  Engine bullet says the tank is "decremented by `dt` ONLY on frames where forward thrust is applied"
+  (it now also requires a non-empty chain) and calls the unloaded no-op "FLAG-4a, accepted" when
+  §6.5 has now acted on it; and **§1.1**, which is in the always-read floor, says "mass divides thrust
+  and top speed (a full 24-node haul ≈ 37% thrust / 54% top speed)" — the thrust half is still exact,
+  the top-speed half is not. §3's **Chain physics** row also names `shipTurnRate()`'s old expression.
+  ⛔ **P7 edited §3.4 only** (its own mandatory re-validation target) and left the rest to P11 on P6's
+  precedent. **P7 also edited GDD content, so P11's §0 size re-measure stays mandatory** — §3.4's own
+  row is already corrected in place (5.2 → 9.0 KB), which is one row of ~35, not a substitute for it.
+
 - **⛔ P6's one judgment call, recorded because the spec did not reach it: a BLOCKED sweep Health roll
   drops another type, it does not drop nothing.** §2.3 (a) says the lock is "respected by all three
   routes" but not what the Super Mega Delivery's per-piece roll should do when it lands on Health and
@@ -278,7 +372,7 @@ carried forward and still live.
   so §3.3's table ordering is now what the build does. ⛔ **§3.3's table is still wrong on paper**
   and is P11's doc debt, alongside §6.3's two wrong numbers.
 
-- **⛔ §6.8 "one mass, one force" PROPOSED (2026-09-08), superseding §6.7 and §6.3's three models.**
+- **✅ SHIPPED BY P7 (kept for the log): §6.8 "one mass, one force", proposed 2026-09-08, superseding §6.7 and §6.3's three models.**
   Paul asked for exactly two knobs — the cargo's effective mass and the Engine's effect on it — with
   the code deriving the rest "within reason for a ship and cargo flying in the relative weightlessness
   of space". ⛔ **It collapses five constants into one:** `M = 1 + chainMass() × CARGO_UNIT_MASS`, then
@@ -297,6 +391,10 @@ carried forward and still live.
     sustains much higher speeds for much longer, which is what that envelope bounds.
   - ⚠ **Answered in the real game, not the lab.** Paul's own read after three lab passes; the two
     knobs go in the debug panel at values that reproduce today, and GATE C decides.
+  - **✅ All of the above landed as written.** Registry went 113 → 114 rather than the 110 → 111 the
+    proposal wrote, because CS042 P6 added three rows in between. §3.4 was re-validated and holds. The
+    one thing the proposal did not predict is the tug's mid-range deficit — its own Known-issues item
+    above.
 
 - **⛔ GATE A's handling question came back NULL (2026-09-08). `CARGO_COAST` has no value and
   FLAG-CS042-k stays open.** Paul's third findings block was the shipped defaults with every protocol
@@ -307,7 +405,10 @@ carried forward and still live.
   **Do not send him back to the lab for a fourth pass without changing something structural.**
   Spec §6.7 now carries the two ways forward: ship the knob at 0.0 (byte-equivalent to today) and make
   the value a GATE C playtest question, or defer §6.7 to its own changeset and cut P7 to §6.5 alone.
-  **P7 is blocked on that choice; nothing else in CS042 is blocked at all.**
+  **P7 was blocked on that choice; nothing else in CS042 ever was.** ✅ **Resolved by §6.8, which
+  supersedes §6.7 outright — `CARGO_COAST` never shipped as a constant, and FLAG-CS042-k closes with
+  it.** The drag divisor it proposed is what `dt / M` turned out to be, so the mechanism landed and
+  the knob did not.
 
 - **⛔ §6.7 `CARGO_COAST` is PROPOSED and unratified. Paul approved the mechanism on 2026-09-08; the
   value is FLAG-CS042-k and nothing ships until he signs off.** His goal, verbatim: *"I just want the
@@ -496,8 +597,24 @@ None.
     alone, not P6's. §2.7/§2.14's now-false health claims are listed under Known issues.
   - ⚠ **Nobody has played this.** The three knobs are analytic defaults; G3 is the gate question that
     tells us whether 12 s / 0.08 / 0.70 are the right numbers, and each knob's own minimum is the A/B.
-- **P8 is the next unblocked session** — scoop levels 6–7 and the flanking orbs (§4). **P7 remains the
-  only blocked phase**, waiting on Paul's §6.7/§6.8 call (see Known issues). ⛔ **P9's
+- **✅ P7 IS DONE, AND IT WAS THE ONLY BLOCKED PHASE.** §6.8 shipped as written — see the P7 ledger
+  entry and its "Working / verified" writeup. §6.3's three models, §6.7's `CARGO_COAST`, the
+  `SHIP_DRAG` raise to 0.45 and `CARGO_TURN` above 0.0 are all closed and none of them shipped, so
+  FLAG-CS042-k is superseded and closed with §6.7.
+  - ⛔ **Two flags are Paul's, not a phase's, and both are answerable from the debug panel at GATE C.**
+    **FLAG-CS042-l** — `CARGO_UNIT_MASS`'s value. It ships at **0.07**, which holds acceleration
+    byte-identical to every build since CS010; the row is **SHIP → "Cargo mass per unit"** (0–0.30,
+    step 0.005). ⛔ **At 0 the whole model is off** — thrust, drag, turn and tug all read unloaded
+    however much is towed — which is the clean A/B for §6.8 as a whole. **FLAG-CS042-m** — rotation is
+    now penalised (241 → 90 °/s empty-to-full), reversing his GATE A "`CARGO_TURN` does not ship".
+    There is no way to exempt rotation under one mass short of special-casing it back out, so the
+    only dial is the same knob.
+  - ⛔ **Turn "Overrides Applied" ON or both rows read but do not bite**, and clear the overrides first
+    (FLAG-CS036-a) if a clean baseline matters. The partner knob, **POWERUPS → "Engine towed-mass
+    multiplier"** (0–1, def 0.5, lower is stronger), is unchanged and is the second of the two dials.
+  - ⚠ **Nobody has flown this.** Every number in the writeup is measured headless, and the whole point
+    of §6.8 was that a mock ship on an empty field could not answer the question.
+- **P8 is the next session** — scoop levels 6–7 and the flanking orbs (§4). **No phase is blocked.** ⛔ **P9's
   `bankSpareHullPct` must ship at 0.70 too** — P6 pinned that number as the changeset's one definition
   of "hurt" and its own test says so; if the gate moves one, it moves both.
 - **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
@@ -513,17 +630,10 @@ None.
   today — P3 should not invent one. (3) `haulsize(n)` clamps the tier to 1–4 from `floor(n/5)`, matching
   `dock_5/10/15/20`; it is called on the emptying pop with `game.deliveryCount`. (4) The copy-out's
   `CARGOFULL_FREQS` is a `let` in the lab only — paste it as a `const` with the other tuning constants.
-- **P7 has been rewritten for §6.8** (`IMPLEMENTATION-PHASES-CS042.md`), including its copy-paste
-  prompt. It no longer asks for a lab block, no longer builds §6.3's A/B/C, and now carries a
-  mandatory GDD §3.4 re-validation as Part 3. ⚠ **Two open flags belong to Paul, not to a phase:**
-  FLAG-CS042-l (`CARGO_UNIT_MASS`'s value — 0.07 reproduces today) and FLAG-CS042-m (§6.8 penalises
-  rotation by construction, reversing his GATE A "no" on `CARGO_TURN`). Both are answerable at GATE C
-  from the debug panel.
-- **What he can already tune in-game today, before any of this ships:** the debug panel's POWERUPS
-  section has **Engine towed-mass multiplier** (0–1, step 0.05, def 0.5, lower is stronger) and
-  **Engine fuel per pickup** (0.5–60 s, def 10). ⛔ **Nothing exposes the chain's own weight** — that
-  is what P7 adds. ⛔ **Turn "Overrides Applied" on or the rows read but do not bite**, and clear the
-  overrides first (FLAG-CS036-a) if a clean baseline matters.
+- **P7's own prompt in `IMPLEMENTATION-PHASES-CS042.md` still reads "Registry 110 → 111" and
+  "the baseline is 171/171"** — both were true when it was written and neither is now (114, and 176
+  files). Left as-is: it is a spent prompt, and rewriting a phase doc after the phase ran is P11's
+  archive pass, not a phase-local edit.
 - **⛔ Doc debt for P11:** §6.3's tables ship two wrong numbers (§6.2's 12-node Engine cells, §6.3's
   Model C 4- and 12-node rows, both measured in P0). §6.3 and §6.7 are both superseded by §6.8 and
   should be marked as history rather than left reading as live proposals.
@@ -532,8 +642,8 @@ None.
   rule saying it must not grow back. **The structural fix is that a closing phase already re-measures
   §0** — extending that same checklist to re-read the build stamp is the cheap way to stop this
   recurring, and is not yet done.
-- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 568 lines after P6, 502 after P5, and it was
-  already 443 at P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
+- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 678 lines after P7, 568 after P6, 502 after P5,
+  and it was already 443 at P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
   and deleting a carried-forward item to make room is not a phase-local call.
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.

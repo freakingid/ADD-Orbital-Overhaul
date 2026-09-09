@@ -1192,7 +1192,8 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id.startsWith("healthGap")                                     // CS040 P2 (pity-driven health cadence)
       || id === "healthBankMax"                                         // CS040 P3 (the health bank's cap)
       || id === "hubDryWeightMult"                                      // CS040 P4 (the hub relief multiplier)
-      || id === "healthSpawnLock" || id.startsWith("repairMilestone");   // CS042 P6 (health supply levelling)
+      || id === "healthSpawnLock" || id.startsWith("repairMilestone")    // CS042 P6 (health supply levelling)
+      || id === "cargoUnitMass";                                         // CS042 P7 (one mass, one force — §6.8)
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))

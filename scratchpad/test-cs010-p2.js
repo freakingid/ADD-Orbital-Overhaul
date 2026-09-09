@@ -6,23 +6,42 @@
 // Follows the standing rule (GDD 5.4): stub window/document/rAF/navigator/localStorage, eval the REAL
 // <script> block, and drive the ACTUAL functions — never reimplement game logic. Sections:
 //  (A) node --check on the extracted <script>.
-//  (B) shipTurnRate(): scale 0.5/1.0/1.5 x chain mass 0/12/24 (CARGO_TURN=0 -> mass-independent),
-//      plus a CARGO_TURN=0.02 rebuild to prove the mass divisor is actually wired.
+//  (B) shipTurnRate(): scale 0.5/1.0/1.5 x chain mass 0/12/24, and the mass divisor's own A/B.
+//      ⛔ REWRITTEN BY CS042 P7 (spec §6.8), AND IT IS A REVERSAL, RECORDED IN PLACE. This section
+//      pinned CARGO_TURN shipping DORMANT at 0.0 — "rotation is UNAFFECTED by cargo" — and proved the
+//      divisor was merely wired by rebuilding the source with 0.02 substituted in. Under one mass
+//      there is no separate turn coefficient to leave dormant: shipTurnRate() divides by shipMass(),
+//      the same mass acceleration, drag and the tug divide by, so a heavy chain DOES resist turning
+//      (241 -> 90 deg/s across 0 -> 24 nodes). That is FLAG-CS042-m, it reverses Paul's own GATE A
+//      close of FLAG-CS042-j, and it is deliberate rather than a regression. The claim inverts and
+//      the substitution is retired: DEBUG.cargoUnitMass is a LIVE knob, so the A/B (0 restores exact
+//      mass-independence, and only that) is now measurable on the shipped build with no rebuild.
 //  (C) settings.shipTurnScale persistence: round-trip through afd_settings_v1, missing key -> 1.0,
 //      corrupt (string / out-of-range / unreadable JSON) -> 1.0, returnToDefaults() leaves it alone.
-//  (D) FLAG-3a chain-stability re-run at 24 nodes / 900 frames, HEAD build vs this working tree:
+//  (D) FLAG-3a chain-stability re-run at 24 nodes / 900 frames, CS010 P2's commit vs its own parent:
 //        (D1) documented envelope methodology (dt=1/60, kinematic v=420/260) -> reproduces ~4.11px and
 //             asserts < 5px + neutrality (delta ~0);
-//        (D2) the dt=0.05 clamp, realistic FAITHFUL stress (real ship.update, tug feeds back so
-//             CARGO_MASS is exercised) at mass 24/12/6 -> assert no NaN, speed bounded, and worktree
-//             stretch <= HEAD (non-regression; the retune must not worsen stability);
+//        (D2) the dt=0.05 clamp, realistic FAITHFUL stress (real ship.update, tug feeds back so the
+//             tug coefficient is exercised) at mass 24/12/6 -> no NaN, speed bounded, and the CS010 P2
+//             commit's stretch <= its own parent's (non-regression; that retune must not worsen it);
 //        (D3) the dt=0.05 clamp, kinematic v=420/260 -> report only (the over-stress velocity is
 //             unphysical at the big timestep; identical on both builds, so it's a methodology artifact).
+//      ⛔ REPOINTED BY CS042 P7 — A FIFTH MOVING-`HEAD` PIN, FOUND AND FIXED. Every comparison in (D)
+//      read `git show HEAD:` and asked "is the WORKING TREE at least as stable as HEAD?". That is the
+//      exact defect CLAUDE.md's pin rule names: it silently re-aims at every later commit, so after
+//      CS010 P2 landed it compared a build against itself and passed vacuously, and the first phase to
+//      legitimately change the physics (this one — a laden ship now sustains far higher speeds for far
+//      longer) made it fail for a reason that has nothing to do with CS010. Both sides are now LITERAL
+//      SHAs: the CS010 P2 commit (a66ef10) against its own parent. CS010's claim is thereby measured
+//      on CS010's own commit, is permanently true, and can never be re-aimed again. The LIVE build's
+//      envelope keeps its own absolute check in (D1) — worst-case stretch under the documented ~5 px
+//      budget — and CS042 P7's own §3.4 re-validation lives in scratchpad/test-cs042-p7.js.
 
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const { parentSource, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
@@ -33,9 +52,14 @@ const extractScript = html => {
 };
 
 const currentSrc = extractScript(fs.readFileSync(htmlPath, "utf8"));
-let headSrc = null;
-try { headSrc = extractScript(execSync("git show HEAD:orbital-overhaul.html", { cwd: repoRoot, encoding: "utf8" })); }
-catch (e) { console.warn("  (note: no HEAD build; the HEAD-vs-worktree stress comparison will be skipped)"); }
+// ⛔ CS042 P7: the two sides of (D)'s non-regression comparison, as LITERAL SHAs — see the header note.
+// P2_REF is CS010 P2's own commit; P2_PARENT_REF is what it was measured against at the time. Fetched
+// through _phase-ref.js's parentSource(), which already carries the 64 MB maxBuffer this file's old
+// hand-rolled execSync did not (orbital-overhaul.html crossed execSync's 1 MiB default at CS042 P6's
+// commit) and which resolves the pre-CS029 `asteroids-deluxe.html` spelling these two refs still use.
+const P2_REF = "a66ef10", P2_PARENT_REF = "a66ef10^";
+const p2Src = parentSource(P2_REF);
+const p2ParentSrc = parentSource(P2_PARENT_REF);
 
 // ---- stubs (mirrors test-cs010-p1.js) ----
 const noopCtx = new Proxy({}, { get: () => () => {} });
@@ -57,14 +81,18 @@ function FakeAudioContext() {
   }, { get(t, p) { return p in t ? t[p] : () => makeAudioNode(); } });
 }
 
-// Full return list for the worktree (has the new symbols). STRESS is a HEAD-safe subset (HEAD predates
-// shipTurnRate/settings.shipTurnScale/CARGO_TURN), used for both builds in the stress so shapes match.
-const FULL = ["shipTurnRate", "chainMass", "settings", "saveSettings", "loadSettings", "returnToDefaults",
+// Full return list for the worktree. CS042 P7: the four CARGO_* divisors are RETIRED (spec §6.8), so
+// naming them here would throw at build time; (B) probes their absence off the SOURCE instead, and
+// shipMass/CARGO_UNIT_MASS/DEBUG/applyDebug are what answer the questions they used to.
+const FULL = ["shipTurnRate", "shipMass", "chainMass", "settings", "saveSettings", "loadSettings", "returnToDefaults",
   "game", "startGame", "updateChain", "chainAnchor", "shortDelta", "input", "menuControls", "drawControlsMenu",
   "REBINDABLE", "SHIP_TURN", "SHIP_TURN_SCALE_MIN", "SHIP_TURN_SCALE_MAX", "SHIP_TURN_SCALE_STEP",
-  "CHAIN_LINK", "WORLD_W", "WORLD_H", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD", "CARGO_TURN"];
+  "CHAIN_LINK", "WORLD_W", "WORLD_H", "CARGO_UNIT_MASS", "DEBUG", "applyDebug"];
+// STRESS is the subset every build in (D) can export — the two CS010-era builds and the live one alike.
+// It deliberately names no tuning constant: the coefficients differ across those three builds by
+// construction, and the stress measures the SOLVER, not the numbers feeding it.
 const STRESS = ["chainMass", "game", "startGame", "updateChain", "chainAnchor", "shortDelta", "input",
-  "CHAIN_LINK", "WORLD_W", "WORLD_H", "CARGO_MASS"];
+  "CHAIN_LINK", "WORLD_W", "WORLD_H"];
 
 function buildInstance(scriptSrc, lsStore, returnList) {
   lsStore = lsStore || {};
@@ -86,8 +114,11 @@ function buildInstance(scriptSrc, lsStore, returnList) {
   return factory(windowStub, documentStub, { now: () => Date.now() }, () => 0, { getGamepads: () => [] }, localStorageStub);
 }
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
+// CS042 P7: this file's git-dependent pin now SKIPS LOUDLY like every other one in the suite
+// (_phase-ref.js's FORK-CS026-H contract) instead of printing a bare console.warn nobody counts.
+function skip(what) { skipped++; console.log(`  ${SKIP_TAG}: ${what}`); }
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
 // ================= (A) syntax =====================
@@ -101,35 +132,63 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
 // ================= (B) shipTurnRate() =====================
 (function () {
-  console.log("(B) shipTurnRate() over scale x chain mass");
+  console.log("(B) shipTurnRate() over scale x chain mass — the ONE mass divisor (CS042 P7 §6.8)");
   const A = buildInstance(currentSrc);
   A.startGame();
   const setMass = (inst, m) => { inst.game.chain.length = 0; for (let i = 0; i < m; i++) inst.game.chain.push({ mass: 1.0 }); };
   const ST = A.SHIP_TURN;
-  assert(A.CARGO_TURN === 0.0, `CARGO_TURN ships at 0.0 (dormant); got ${A.CARGO_TURN}`);
 
-  // Shipped CARGO_TURN = 0 => turn rate is SHIP_TURN*scale regardless of load (penalty dormant).
+  // ⛔ CARGO_TURN IS RETIRED, NOT SET TO SOMETHING. Probed two ways, because the point is that no
+  // separate turn coefficient exists to be left dormant or quietly revived.
+  assert(A.CARGO_TURN === undefined, `CARGO_TURN is RETIRED (CS042 P7 §6.8); got ${A.CARGO_TURN}`);
+  assert(!/^\s*const\s+CARGO_TURN\s*=/m.test(currentSrc), "...and it is not declared anywhere in the build");
+  // The one divisor both turn sites now go through, stated as source so a second expression cannot
+  // creep in beside it — the "both sites read one function" guarantee is what this section owns.
+  assert(/function shipTurnRate\(\) \{\s*\n\s*return SHIP_TURN \* settings\.shipTurnScale \/ shipMass\(\);\s*\n\}/.test(currentSrc),
+    "shipTurnRate() is exactly SHIP_TURN * scale / shipMass() — one mass, no second coefficient");
+
+  // ⛔ REVERSED BY CS042 P7 (FLAG-CS042-m), AND THE REVERSAL IS THE ASSERTION. This loop used to prove
+  // turn was mass-INDEPENDENT at every load. It now proves turn divides by shipMass() at every load,
+  // measured against the build's own shipMass() rather than a retyped coefficient.
   for (const scale of [0.5, 1.0, 1.5]) {
     A.settings.shipTurnScale = scale;
     for (const mass of [0, 12, 24]) {
       setMass(A, mass);
+      const want = ST * scale / A.shipMass();
       const got = A.shipTurnRate();
-      assert(near(got, ST * scale), `scale=${scale} mass=${mass}: got ${got.toFixed(6)} expected ${(ST * scale).toFixed(6)} (mass-independent at CARGO_TURN=0)`);
+      assert(near(got, want), `scale=${scale} mass=${mass}: got ${got.toFixed(6)} want ${want.toFixed(6)} (SHIP_TURN*scale/shipMass)`);
     }
   }
+  // ...and it really does FALL as the load grows — the half CARGO_TURN's dormant 0.0 never delivered.
+  A.settings.shipTurnScale = 1.0;
+  setMass(A, 0); const turn0 = A.shipTurnRate();
+  setMass(A, 12); const turn12 = A.shipTurnRate();
+  setMass(A, 24); const turn24 = A.shipTurnRate();
+  assert(turn0 > turn12 && turn12 > turn24,
+    `⛔ a heavier chain turns strictly slower (${turn0.toFixed(3)} > ${turn12.toFixed(3)} > ${turn24.toFixed(3)} rad/s) — the CS010 §3 "inertia" fix, finally live`);
+  assert(near(turn0, ST), "an EMPTY chain still turns at exactly SHIP_TURN x scale — mass 1, nothing to divide");
 
-  // Prove the divisor is live: rebuild with CARGO_TURN=0.02 and check the penalty applies.
-  const B = buildInstance(currentSrc.replace(/const CARGO_TURN = 0\.0;/, "const CARGO_TURN = 0.02;"));
-  B.startGame();
-  assert(B.CARGO_TURN === 0.02, `substituted build has CARGO_TURN=0.02; got ${B.CARGO_TURN}`);
-  for (const scale of [0.5, 1.0, 1.5]) {
-    B.settings.shipTurnScale = scale;
-    for (const mass of [0, 12, 24]) {
-      setMass(B, mass);
-      const got = B.shipTurnRate(), want = ST * scale / (1 + mass * 0.02);
-      assert(near(got, want), `CARGO_TURN=0.02 scale=${scale} mass=${mass}: got ${got.toFixed(6)} want ${want.toFixed(6)}`);
+  // THE DIVISOR'S A/B, ON THE SHIPPED BUILD. The source substitution this section used to need is
+  // retired with the constant: DEBUG.cargoUnitMass is a live registry knob, so the same proof runs
+  // against the real build. At 0 the model is off and rotation is mass-independent again, which is
+  // exactly the byte-for-byte pre-CS042 behaviour this file originally pinned — kept, as the A/B.
+  for (const k of [0, 0.02, A.CARGO_UNIT_MASS]) {
+    A.applyDebug("cargoUnitMass", k);
+    for (const scale of [0.5, 1.0, 1.5]) {
+      A.settings.shipTurnScale = scale;
+      for (const mass of [0, 12, 24]) {
+        setMass(A, mass);
+        const want = ST * scale / (1 + mass * k);
+        assert(near(A.shipTurnRate(), want), `cargoUnitMass=${k} scale=${scale} mass=${mass}: want ${want.toFixed(6)} got ${A.shipTurnRate().toFixed(6)}`);
+      }
+    }
+    if (k === 0) {
+      setMass(A, 24);
+      assert(near(A.shipTurnRate(), ST * A.settings.shipTurnScale),
+        "at cargoUnitMass 0 a FULL chain turns exactly as an empty one does — the whole model's clean A/B");
     }
   }
+  A.applyDebug("cargoUnitMass", A.CARGO_UNIT_MASS);
 })();
 
 // ================= (C) persistence =====================
@@ -238,45 +297,57 @@ function stressFaithful(inst, nodeMass, dt) {
 
 (function () {
   console.log("(D) FLAG-3a chain-stability stress — 24 nodes, 900 frames");
-  const W = buildInstance(currentSrc, {}, STRESS);
-  console.log(`    worktree coeffs: CARGO_MASS=${W.CARGO_MASS} (HEAD was 0.07), TUG cap 1.4 unchanged`);
+  // ⛔ BOTH SIDES ARE LITERAL SHAs AS OF CS042 P7 — see the header note. The claim FLAG-3a asked for is
+  // "CS010 P2's towed-mass retune did not worsen chain stability", and that is a statement about CS010
+  // P2's commit against its own parent. Measured that way it is permanently true and permanently
+  // checkable; measured against a moving HEAD it passed vacuously for eleven changesets and then failed
+  // on an unrelated phase. The LIVE build keeps its own absolute envelope check in (D1).
+  const haveRefs = p2Src !== null && p2ParentSrc !== null;
+  const P2 = haveRefs ? () => buildInstance(p2Src, {}, STRESS) : null;
+  const P2P = haveRefs ? () => buildInstance(p2ParentSrc, {}, STRESS) : null;
+  if (!haveRefs) skip(`D: the ${P2_REF} vs ${P2_PARENT_REF} stability comparison (no git history)`);
 
   // (D1) Documented envelope methodology: dt=1/60, kinematic v=420/260. Reproduces the GDD's 4.11px.
+  // The absolute budget is asserted on the LIVE build — that half was never a comparison and is the
+  // part that must keep binding as the build changes. CS042 P7 measured it unmoved at 4.11px: the
+  // kinematic stress overwrites ship velocity every frame, so it isolates the constraint solver from
+  // the handling model, which is exactly why it is the documented methodology.
   const w1 = stressKinematic(buildInstance(currentSrc, {}, STRESS), 1 / 60);
-  console.log(`  (D1) dt=1/60 kinematic v=420/260: worktree worstStretch=${w1.worst.toFixed(2)}px (documented budget ~5px, prior 4.11px)`);
-  assert(!w1.nan, "D1: no NaN");
-  assert(w1.worst < 5.0, `D1: worktree stretch ${w1.worst.toFixed(2)}px under the documented ~5px budget`);
-  if (headSrc) {
-    const h1 = stressKinematic(buildInstance(headSrc, {}, STRESS), 1 / 60);
-    console.log(`       HEAD ${h1.worst.toFixed(2)}px  delta ${(w1.worst - h1.worst).toFixed(3)}px  (kinematic isolates the solver -> the retune is neutral)`);
-    assert(Math.abs(w1.worst - h1.worst) < 0.01, `D1: retune stability-neutral under the documented methodology (delta ${(w1.worst - h1.worst).toFixed(3)}px)`);
+  console.log(`  (D1) dt=1/60 kinematic v=420/260: live build worstStretch=${w1.worst.toFixed(2)}px (documented budget ~5px, GDD §3.4's 4.11px)`);
+  assert(!w1.nan, "D1: no NaN in the live build");
+  assert(w1.worst < 5.0, `D1: the LIVE build's stretch ${w1.worst.toFixed(2)}px is under the documented ~5px budget`);
+  if (haveRefs) {
+    const a1 = stressKinematic(P2(), 1 / 60), b1 = stressKinematic(P2P(), 1 / 60);
+    console.log(`       ${P2_REF} ${a1.worst.toFixed(2)}px vs parent ${b1.worst.toFixed(2)}px  delta ${(a1.worst - b1.worst).toFixed(3)}px  (kinematic isolates the solver -> the retune was neutral)`);
+    assert(Math.abs(a1.worst - b1.worst) < 0.01, `D1: CS010 P2's retune was stability-neutral under the documented methodology (delta ${(a1.worst - b1.worst).toFixed(3)}px)`);
   }
 
-  // (D2) The real dt=0.05 clamp, realistic faithful stress. This exercises the tug (CARGO_MASS). At
-  // dt=0.05 the chain sags more than the 1/60 envelope figure — inherent to the big timestep, present
-  // on BOTH builds — so the meaningful assertion is NON-REGRESSION (worktree <= HEAD), plus sanity.
-  console.log("  (D2) dt=0.05 (clamp) faithful stress — the CARGO_MASS-sensitive run:");
+  // (D2) The real dt=0.05 clamp, realistic faithful stress — real ship.update, so the tug feeds back
+  // and the retuned tug coefficient is genuinely exercised. At dt=0.05 the chain sags more than the
+  // 1/60 envelope figure, inherent to the big timestep and present on both builds, so the meaningful
+  // assertion is NON-REGRESSION across CS010 P2's own commit boundary, plus live sanity.
+  console.log("  (D2) dt=0.05 (clamp) faithful stress — the tug-sensitive run:");
   for (const nodeMass of [1.0, 0.5, 0.25]) {
     const w = stressFaithful(buildInstance(currentSrc, {}, STRESS), nodeMass, 0.05);
-    let line = `       node=${nodeMass} massSum=${w.mass}: worktree worst=${w.worst.toFixed(3)}px maxShipSpeed=${w.maxSpeed.toFixed(0)} NaN=${w.nan}`;
-    assert(!w.nan, `D2 node=${nodeMass}: no NaN`);
-    assert(w.maxSpeed < 2000, `D2 node=${nodeMass}: ship speed ${w.maxSpeed.toFixed(0)} bounded (no blowup)`);
-    if (headSrc) {
-      const h = stressFaithful(buildInstance(headSrc, {}, STRESS), nodeMass, 0.05);
-      line += ` | HEAD ${h.worst.toFixed(3)}px  delta ${(w.worst - h.worst >= 0 ? "+" : "") + (w.worst - h.worst).toFixed(3)}px`;
-      assert(w.worst <= h.worst + 0.05, `D2 node=${nodeMass}: retune must not worsen stretch (worktree ${w.worst.toFixed(3)} <= HEAD ${h.worst.toFixed(3)} + eps)`);
+    let line = `       node=${nodeMass} massSum=${w.mass}: live worst=${w.worst.toFixed(3)}px maxShipSpeed=${w.maxSpeed.toFixed(0)} NaN=${w.nan}`;
+    assert(!w.nan, `D2 node=${nodeMass}: the live build produces no NaN`);
+    assert(w.maxSpeed < 2000, `D2 node=${nodeMass}: live ship speed ${w.maxSpeed.toFixed(0)} bounded (no blowup)`);
+    if (haveRefs) {
+      const a = stressFaithful(P2(), nodeMass, 0.05), b = stressFaithful(P2P(), nodeMass, 0.05);
+      line += ` | ${P2_REF} ${a.worst.toFixed(3)}px vs parent ${b.worst.toFixed(3)}px  delta ${(a.worst - b.worst >= 0 ? "+" : "") + (a.worst - b.worst).toFixed(3)}px`;
+      assert(a.worst <= b.worst + 0.05, `D2 node=${nodeMass}: CS010 P2's retune did not worsen stretch (${a.worst.toFixed(3)} <= ${b.worst.toFixed(3)} + eps)`);
     }
     console.log(line);
   }
 
   // (D3) Report-only: the same over-stress velocity at dt=0.05 is unphysical (v=420 -> 21px/frame at
-  // this timestep). Identical on both builds -> a methodology artifact, not a regression.
+  // this timestep). Identical across the CS010 P2 boundary -> a methodology artifact, not a regression.
   const w3 = stressKinematic(buildInstance(currentSrc, {}, STRESS), 0.05);
-  let l3 = `  (D3) dt=0.05 kinematic v=420/260 (over-stress, report only): worktree ${w3.worst.toFixed(2)}px NaN=${w3.nan}`;
+  let l3 = `  (D3) dt=0.05 kinematic v=420/260 (over-stress, report only): live ${w3.worst.toFixed(2)}px NaN=${w3.nan}`;
   assert(!w3.nan, "D3: no NaN even under the over-stress");
-  if (headSrc) {
-    const h3 = stressKinematic(buildInstance(headSrc, {}, STRESS), 0.05);
-    l3 += ` | HEAD ${h3.worst.toFixed(2)}px delta ${(w3.worst - h3.worst).toFixed(3)}px`;
+  if (haveRefs) {
+    const a3 = stressKinematic(P2(), 0.05), b3 = stressKinematic(P2P(), 0.05);
+    l3 += ` | ${P2_REF} ${a3.worst.toFixed(2)}px vs parent ${b3.worst.toFixed(2)}px delta ${(a3.worst - b3.worst).toFixed(3)}px`;
   }
   console.log(l3);
 })();
@@ -327,5 +398,5 @@ function stressFaithful(inst, nodeMass, dt) {
   assert(threw === null, `drawControlsMenu renders without throwing at every slider value (${threw})`);
 })();
 
-console.log(`\n${passed} passed, ${failed} failed`);
+console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed > 0 ? 1 : 0);

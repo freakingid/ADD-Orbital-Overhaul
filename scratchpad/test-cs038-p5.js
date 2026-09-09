@@ -64,7 +64,9 @@ const RETIRED_DEFS = {
   // POWERUPS), for the same reason. ⛔ FOUND WHILE REPOINTING: like test-cs029-p4.js §B, this line
   // states a registry TOTAL as a literal, which CLAUDE.md reserves for scratchpad/test-registry.js.
   // Repointed the way earlier phases repointed it; rewriting it parent-relative is a refactor.
-  eq(X.DEBUG_ENTRIES.length, 113, "A: DEBUG_ENTRIES.length is the live 113");
+  // NARROWED AGAIN BY CS042 P7: +1 more (cargoUnitMass, SHIP — spec §6.8's one-mass handling knob),
+  // for the same reason. Same literal-total caveat as the CS042 P6 note above.
+  eq(X.DEBUG_ENTRIES.length, 114, "A: DEBUG_ENTRIES.length is the live 114");
 
   // No section header is emptied — CELEBRATION/DELIVERY/HUNTER all keep other rows.
   let section = null; const rowsOf = { CELEBRATION: [], DELIVERY: [], HUNTER: [] };
@@ -194,7 +196,9 @@ const RETIRED_DEFS = {
       "healthBankMax",     // NARROWED AGAIN BY CS040 P3, same reasoning
       "hubDryWeightMult", // NARROWED AGAIN BY CS040 P4, same reasoning
       // NARROWED AGAIN BY CS042 P6: its three health-supply POWERUPS rows, same reasoning again.
-      "healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct"]);
+      "healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct",
+      // NARROWED AGAIN BY CS042 P7: its cargoUnitMass SHIP row, same reasoning again.
+      "cargoUnitMass"]);
     const xIds = X.DEBUG_VARS.filter(v => !v.header).map(v => v.id).filter(id => !LATER_IDS.has(id));
     const oldIdsSansRetired = oldIds.filter(id => !RETIRED_IDS.includes(id));
     eq(xIds.join(","), oldIdsSansRetired.join(","),

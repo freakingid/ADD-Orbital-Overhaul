@@ -445,9 +445,12 @@ const snap12 = h => { const o = {}; for (const k of TWELVE) o[k] = h[k]; return 
   // CS035 P2 repoint, same reason: dockBounceSpeed is caught by /bounce/ and is the dock lockout's
   // push speed — a DELIVERY knob, nothing to do with the drift or with debrisBounce()'s elastic
   // solver (which it deliberately does not call). It sits first because DELIVERY precedes POWERUPS.
+  // CS042 P7 repoint, same reason a third time: cargoUnitMass is caught by /mass/i and is spec §6.8's
+  // one-mass handling knob — a SHIP knob, nothing to do with the drift. It sits first because SHIP is
+  // the registry's first section.
   eq(X.DEBUG_ENTRIES.filter(e => /bounce|restitution|gravity|drift|mass/i.test(e.id)).map(e => e.id).join(","),
-    "dockBounceSpeed,engineMassMult,debrisBounceRestitution",
-    "A: REPOINTED BY CS024 P1/P6 + CS035 P2 — debrisBounceRestitution is still the ONLY survivor of CS023 P4's two knobs (debrisDriftAccel gone); engineMassMult is CS024 P6's POWERUPS knob, dockBounceSpeed CS035 P2's DELIVERY one");
+    "cargoUnitMass,dockBounceSpeed,engineMassMult,debrisBounceRestitution",
+    "A: REPOINTED BY CS024 P1/P6 + CS035 P2 + CS042 P7 — debrisBounceRestitution is still the ONLY survivor of CS023 P4's two knobs (debrisDriftAccel gone); engineMassMult is CS024 P6's POWERUPS knob, dockBounceSpeed CS035 P2's DELIVERY one, cargoUnitMass CS042 P7's SHIP one");
   assert(!/\bdrifting\b/.test(codeOnly),
     "A: REPOINTED BY CS024 P1 (inverted) — the `drifting` field appears NOWHERE in executable source");
   eq((codeOnly.match(/function maxOrbitSpeed\(/g) || []).length, 0,

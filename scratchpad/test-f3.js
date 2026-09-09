@@ -16,6 +16,14 @@
 //  (D) chain tow physics now scale off the chain's MASS SUM, not its node count:
 //      thrust penalty, top-speed penalty, and the momentum tug all match the mass-sum
 //      formulas, and an 8x mass-1.0 chain tows IDENTICALLY to a 16x mass-0.5 chain.
+//      ⛔ REWRITTEN BY CS042 P7 (spec §6.8) — THE FORMULAS MOVED; THE MASS-SUM THESIS DID NOT, and
+//      it is the thesis this file owns. Four divisors collapsed into one mass, shipMass() =
+//      1 + chainMass()·DEBUG.cargoUnitMass, so accel is SHIP_THRUST/M, the drag RATE divides by M,
+//      turn divides by M and the tug reads (M−1)/M. Two consequences here: the top-speed penalty is
+//      GONE (SHIP_MAX_SPEED is a flat rail — FLAG-CS042-l), which makes the old "16x0.5 == 8x1.0"
+//      top-speed check trivially true, so this section now also checks that equivalence where it
+//      newly BITES — the coast and the turn rate, both mass-blind before P7 and both mass-sensitive
+//      after it. Nothing was dropped; two stronger probes were added beside the weakened one.
 
 "use strict";
 const fs = require("fs");
@@ -48,8 +56,10 @@ const returnList = [
   "liveLevers",                       // CS026 P2: the split count is a lever now — see (A)/(B) below
   "DEBRIS_GARBAGE", "DEBRIS_SCORE",
   "GARBAGE_PICKUP", "DEBUG",
-  "CHAIN_LINK", "CHAIN_TUG", "CARGO_MASS", "CARGO_THRUST", "CARGO_MAXSPD",
-  "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG",
+  // CS042 P7: CARGO_MASS/CARGO_THRUST/CARGO_MAXSPD are RETIRED constants (spec §6.8) and no longer
+  // exist to export; shipMass/CARGO_UNIT_MASS/DEBUG/shipTurnRate replace what they answered.
+  "CHAIN_LINK", "CHAIN_TUG", "CARGO_UNIT_MASS", "shipMass", "shipTurnRate",
+  "SHIP_THRUST", "SHIP_MAX_SPEED", "SHIP_DRAG", "SHIP_TURN",
   "WORLD_W", "WORLD_H", "worldDims"   // CS026 P3: worldDims, because WORLD_W/WORLD_H are only a snapshot
 ];
 const factory = new Function(
@@ -63,8 +73,8 @@ const {
   destroyDebris, updateChain, scatterChain, chainMass, liveLevers,
   DEBRIS_GARBAGE,
   GARBAGE_PICKUP, DEBUG,
-  CHAIN_LINK, CHAIN_TUG, CARGO_MASS, CARGO_THRUST, CARGO_MAXSPD,
-  SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG,
+  CHAIN_LINK, CHAIN_TUG, CARGO_UNIT_MASS, shipMass, shipTurnRate,
+  SHIP_THRUST, SHIP_MAX_SPEED, SHIP_DRAG, SHIP_TURN,
   WORLD_W, WORLD_H, worldDims
 } = A;
 
@@ -223,12 +233,19 @@ function measureThrustVx(masses) {
   keys["arrowup"] = false;
   return game.ship.vx;
 }
-const drag = Math.pow(1 - SHIP_DRAG, DT);
-const expThrustMul8 = 1 / (1 + 8 * CARGO_THRUST);
-const expVx8 = SHIP_THRUST * expThrustMul8 * DT * drag;   // angle 0 => pure +x, from rest
+// CS042 P7: mass divides BOTH the acceleration and the drag exponent, so the expected first-frame
+// velocity carries M in two places. M is read off the build's own knob, never a retyped literal.
+const M8 = 1 + 8 * DEBUG.cargoUnitMass;
+const drag = Math.pow(1 - SHIP_DRAG, DT / M8);
+const expVx8 = (SHIP_THRUST / M8) * DT * drag;   // angle 0 => pure +x, from rest
 const vx8 = measureThrustVx(Array(8).fill(1.0));
 assert(near(vx8, expVx8, 1e-9),
-  `D: 8-node thrust accel matches mass-sum thrustMul (got ${vx8.toFixed(6)}, exp ${expVx8.toFixed(6)})`);
+  `D: 8-node thrust accel matches the one-mass divisor SHIP_THRUST/M (got ${vx8.toFixed(6)}, exp ${expVx8.toFixed(6)})`);
+// ...and M really is the build's own shipMass() at that staging, not this file's arithmetic.
+clearField(); resetShip({ angle: 0 });
+game.chain.push(...Array(8).fill(1.0).map(mm => node(cx, cy, mm)));
+assert(near(shipMass(), M8, 1e-12), `D: shipMass() at mass-sum 8 is 1 + 8*cargoUnitMass (got ${shipMass()})`);
+clearField();
 const vx16 = measureThrustVx(Array(16).fill(0.5));
 assert(near(vx16, vx8, 1e-9), `D: thrust — 16x0.5 tows identically to 8x1.0 (got ${vx16.toFixed(6)} vs ${vx8.toFixed(6)})`);
 // and it really is heavier than an empty ship
@@ -244,12 +261,39 @@ function terminalSpeed(masses) {
   keys["arrowup"] = false;
   return Math.hypot(game.ship.vx, game.ship.vy);
 }
-const expMaxSp8 = SHIP_MAX_SPEED / (1 + 8 * CARGO_MAXSPD);
+// ⛔ REWRITTEN BY CS042 P7 (spec §6.8, FLAG-CS042-l): the top-speed DIVISOR is retired. Terminal speed
+// is SHIP_THRUST/λ₀ at every chain length — mass-independent — so SHIP_MAX_SPEED is a flat rail that
+// binds always, and a laden ship reaches it too (it just takes longer). The old expectation
+// SHIP_MAX_SPEED/(1 + m·CARGO_MAXSPD) is what this phase deliberately deleted; this is its mirror.
+const expMaxSp8 = SHIP_MAX_SPEED;
 const term8 = terminalSpeed(Array(8).fill(1.0));
 assert(Math.abs(term8 - expMaxSp8) < expMaxSp8 * 0.02 && term8 <= expMaxSp8 + 1e-6,
-  `D: 8-node terminal speed ~= mass-sum maxSp ${expMaxSp8.toFixed(1)} (got ${term8.toFixed(1)})`);
+  `D: 8-node terminal speed reaches the FLAT rail ${expMaxSp8.toFixed(1)} — no cargo divisor left (got ${term8.toFixed(1)})`);
 const term16 = terminalSpeed(Array(16).fill(0.5));
 assert(Math.abs(term16 - term8) < 0.5, `D: top speed — 16x0.5 == 8x1.0 (got ${term16.toFixed(2)} vs ${term8.toFixed(2)})`);
+// ⛔ ...and because that equality is now trivially true (both hit the same rail), the mass-sum thesis
+// is re-asserted on the two terms P7 newly made mass-sensitive, where it is NOT trivial: the coast and
+// the turn rate. Both were mass-BLIND before this phase, so neither could have carried this check.
+function coastFrames(masses) {
+  clearField(); resetShip({ angle: 0 });
+  game.chain.push(...masses.map(mm => node(cx, cy, mm)));
+  game.ship.vx = 400; game.ship.vy = 0;
+  let f = 0;
+  while (game.ship.vx > 40 && f < 100000) { game.ship.update(DT); f++; }
+  return f;
+}
+function turnRateOf(masses) {
+  clearField(); resetShip({ angle: 0 });
+  game.chain.push(...masses.map(mm => node(cx, cy, mm)));
+  return shipTurnRate();
+}
+const coast8 = coastFrames(Array(8).fill(1.0)), coast16 = coastFrames(Array(16).fill(0.5));
+const coast0 = coastFrames([]);
+assert(coast8 === coast16, `D: coast — 16x0.5 stops in the same frame as 8x1.0 (${coast8} vs ${coast16})`);
+assert(coast8 > coast0, `D: ...and a laden ship genuinely coasts LONGER than an empty one (${coast8} > ${coast0})`);
+const turn8 = turnRateOf(Array(8).fill(1.0)), turn16 = turnRateOf(Array(16).fill(0.5));
+assert(near(turn8, turn16, 1e-12), `D: turn — 16x0.5 turns at the same rate as 8x1.0 (${turn8} vs ${turn16})`);
+assert(turn8 < turnRateOf([]), "D: ...and a laden ship turns SLOWER than an empty one (FLAG-CS042-m, deliberate)");
 
 // -- momentum tug: call updateChain directly with a known first-link stretch --
 function measureTugVx(masses, stretch) {
@@ -262,7 +306,10 @@ function measureTugVx(masses, stretch) {
   return game.ship.vx;
 }
 const stretch = 10;
-const expMassFactor8 = Math.min(1.4, 8 * CARGO_MASS);
+// CS042 P7 (spec §6.8): the tug's massFactor is the cargo's SHARE of the total mass, (M−1)/M — the
+// arbitrary min(1.4, m·CARGO_MASS) clamp is gone, and CHAIN_TUG was rescaled 26 -> 58 in the same edit
+// so a FULL chain tugs exactly as hard as it did before.
+const expMassFactor8 = (M8 - 1) / M8;
 const expTugVx8 = CHAIN_TUG * stretch * expMassFactor8 * DT;  // node0 pulls in +x
 const tug8 = measureTugVx(Array(8).fill(1.0), stretch);
 assert(near(tug8, expTugVx8, 1e-6),

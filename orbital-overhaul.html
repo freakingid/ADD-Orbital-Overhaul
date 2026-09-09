@@ -630,30 +630,71 @@ const GUARD_CHAIN_BLUR = 14;    // link glow blur while guarded (vs the normal 6
 // drives growth anymore. The old fixed `CHAIN_MAX` (12) was the ancestor of CARGO_BASE.
 const CARGO_BASE = 12;          // HISTORICAL (CS018 P5): pre-table level-1 value; the table's level-1 value is 8, not this
 const CARGO_CAP_MAX = 24;       // ceiling — still current: payloadSlots() tops out here at level 12, and the Maxed Out latch still keys off it
-const CHAIN_TUG = 26;           // ship pull-back accel per px of chain stretch
-// Towed-mass penalty coefficients — ALL FOUR ARE PLAYTEST KNOBS (CS010 §3). The complaint they
-// address: a typical mid-sized haul (~6-12 towed mass) didn't "feel heavy." Background: v3.0 P6 grew
-// the tow cap from a fixed 12 to a growing CARGO_BASE 12 -> CARGO_CAP_MAX 24 and softened the three
-// divisors in lock-step so a FULL chain (mass ~24) would land near the old full-12 feel — which left
-// the low-to-mid range far too light. (The old comment here still solved 1/(1+20·k) for a *20*-node
-// ceiling; the ceiling has been 24 since v3.4 P1 — that comment was stale and is corrected here.)
+// CS042 P7 (spec §6.8): RESCALED 26 -> 58, and it is a DERIVED constant now, not a knob. The tug's
+// massFactor changed form from the clamped min(1.4, m·CARGO_MASS) to the physical (M−1)/M, which at a
+// full 24-node chain is 0.627 where the old clamped one was 1.4. 26 × 1.4 = 36.40 and 58 × 0.627 =
+// 36.36, so A FULL CHAIN TUGS EXACTLY AS HARD AS IT DID BEFORE THIS PHASE — the rescale is what buys
+// that, and the mid-range growth (which no longer flat-spots at 14 nodes) is the actual change. Solve
+// it again from that same equality if CARGO_UNIT_MASS's default ever moves.
+const CHAIN_TUG = 58;           // ship pull-back accel per px of chain stretch
+// ================================================================================================
+// ⛔ CS042 P7 (spec §6.8) — ONE MASS, ONE FORCE. FOUR CONSTANTS RETIRED HERE; ONE REPLACES ALL FOUR.
+// ================================================================================================
+// CARGO_MASS (0.10, the tug's mass-factor coefficient), CARGO_THRUST (0.07, the acceleration divisor),
+// CARGO_MAXSPD (0.035, the top-speed divisor) and CARGO_TURN (0.0, the dormant turn divisor) ALL STOOD
+// HERE and are DELETED, not parked — every reader of all four is gone, there is no "old model" flag and
+// no commented-out fallback. Each was a separately hand-tuned divisor for one symptom of the same
+// physical fact, and four coefficients for one quantity is precisely what made the mid range
+// untunable: three GATE A passes through tools/handling-lab.html produced no set Paul trusted, and
+// that null result is what produced §6.8. His direction, verbatim: "I just want to affect the
+// 'effective mass' of the cargo, and the 'effective thrust' added by the engine powerup, and have you
+// or the game code calculate all that other business within reason for a ship and cargo flying in the
+// relative weightlessness of space."
 //
-// The divisor shape 1/(1+m·k) ASYMPTOTES, so raising CARGO_THRUST/CARGO_MAXSPD can never make the
-// mid range bite hard without over-penalizing the full chain. So the CS010 first pass leans on the
-// TUG (CARGO_MASS), which strengthens the mid-range momentum pull-back WITHOUT moving the full-chain
-// endpoint (its 1.4 cap is unchanged — see updateChain), and ships CARGO_TURN as the real structural
-// fix for "inertia" (mass resisting ROTATION), dormant at 0.0 so enabling it is Paul's one-number call.
-// See STATUS.md (CS010 P2) for the before/after and candidate tables.
-const CARGO_MASS = 0.10;        // PLAYTEST KNOB (CS010: 0.07->0.10). Tug mass-factor per unit towed mass
-                                // (F5: mass sum, not count) via min(1.4, m·this): the 1.4 cap is now reached
-                                // at m=14 (was m≈20), so a mid chain feels the momentum tug sooner; full-24 tug unchanged (capped).
-const CARGO_THRUST = 0.07;      // PLAYTEST KNOB (CS010: 0.06->0.07). Thrust divisor per unit towed mass. full-24 accel 40.9%->37.3%
-const CARGO_MAXSPD = 0.035;     // PLAYTEST KNOB (CS010: 0.03->0.035). Max-speed divisor per unit towed mass. full-24 top speed 58.1%->54.3%
-const CARGO_TURN = 0.0;         // PLAYTEST KNOB (CS010 §3, the proposed "inertia" fix — SHIPPED DORMANT).
-                                // Turn-rate divisor per unit towed mass in shipTurnRate(): SHIP_TURN·scale/(1+m·this).
-                                // At 0.0, rotation is UNAFFECTED by cargo (byte-identical to pre-CS010 turn × the player scale).
-                                // Raise it to make a heavy chain resist turning — the missing half of "mass = inertia".
-                                // Candidate values + turn-mult table: STATUS.md (CS010 P2).
+// So the four divisors became one mass, and every handling term is that mass under one force:
+//
+//     M      = 1 + chainMass() × DEBUG.cargoUnitMass     <- shipMass(), declared beside chainMass()
+//     accel  = SHIP_THRUST / M                  (was SHIP_THRUST / (1 + m·CARGO_THRUST))
+//     drag   = (1 − SHIP_DRAG) ^ (dt / M)       (was (1 − SHIP_DRAG) ^ dt — mass-BLIND, the defect
+//                                                §6.7 diagnosed: an empty ship and a full haul both
+//                                                bled to a tenth of their speed in the same 5.35 s.
+//                                                §6.7's proposed CARGO_COAST never shipped as its own
+//                                                constant — this dt divisor is what it turned out to be)
+//     turn   = SHIP_TURN × scale / M            (was ... / (1 + m·CARGO_TURN), i.e. nothing at 0.0)
+//     tug    = CHAIN_TUG × stretch × (M−1)/M    (was ... × min(1.4, m·CARGO_MASS) — the arbitrary 1.4
+//                                                clamp is gone; (M−1)/M is a physical asymptote, so the
+//                                                14-node flat spot goes with it)
+//     top    = SHIP_MAX_SPEED, a flat rail      (was SHIP_MAX_SPEED / (1 + m·CARGO_MAXSPD))
+//
+// ⛔ TWO CONSEQUENCES ARE DELIBERATE AND ARE FLAGGED, NOT OVERSIGHTS. DO NOT "FIX" EITHER ONE.
+//   * FLAG-CS042-l — THE TOP-SPEED PENALTY DISAPPEARS. Terminal speed is a/λ = SHIP_THRUST/λ₀ at every
+//     chain length, so it is mass-INDEPENDENT and SHIP_MAX_SPEED binds always: a full haul can
+//     eventually reach 520 px/s where it used to clamp at 283. It takes 5.6 s to get there (against
+//     4.6 s to today's 283) and then cannot stop for 14 s. Mass limits agility, not speed — that is
+//     what "relative weightlessness" means, and it is the whole reason this shape was chosen.
+//   * FLAG-CS042-m — ROTATION IS PENALISED, BY CONSTRUCTION: 241 °/s empty -> 90 °/s at a full chain.
+//     This REVERSES Paul's GATE A close of FLAG-CS042-j ("CARGO_TURN does not ship"). Under one mass
+//     there is no way to exempt rotation without special-casing it back out, and §6.8 declines to.
+// Both are GATE C questions, answered in a real run from the debug panel — never in the lab, which is
+// GATE A's own lesson (a mock ship on an empty field has nothing to be late for).
+//
+// The CS010 §3 reasoning the four retired constants carried is kept because it is WHY this shape was
+// reached: the divisor 1/(1+m·k) ASYMPTOTES, so raising k could never make a mid haul bite without
+// over-penalising a full one — which is why CS010 leaned on the tug for mid-range heft and shipped
+// CARGO_TURN dormant as "the real structural fix for inertia (mass resisting ROTATION)". §6.8 is that
+// fix, arrived at from the other end. Candidate tables and CS010's before/after: log/CS010.md.
+const CARGO_UNIT_MASS = 0.07;   // mass that each unit of TOWED mass (Σ node.mass, F5 — not node count)
+                                // adds to a ship of mass 1. Supplies DEBUG.cargoUnitMass's def, which
+                                // is what shipMass() actually reads (the standing engineMassMult /
+                                // chainGuardIntercepts idiom). 0.07 is CARGO_THRUST's own old value,
+                                // chosen so ACCELERATION IS BYTE-IDENTICAL to the pre-CS042 build at
+                                // every chain length: a full 24-node chain is still 37% thrust. What
+                                // moves is coast (5.3 s -> 14.3 s), turn (241 -> 90 °/s) and the tug's
+                                // mid range, every column monotonic in node count with no clamp
+                                // anywhere. ⛔ AT 0 THE SHIP IS WEIGHTLESS HOWEVER MUCH IT TOWS —
+                                // thrust, drag, turn AND tug all reduce to their unloaded values at
+                                // once, which is the clean one-knob A/B for the entire model.
+                                // Its partner knob is DEBUG.engineMassMult, under POWERUPS.
 
 // CS042 P3 (spec §1.4): the cargo-cue pitch set, ported VERBATIM from tools/sfx-lab.html's copy-out
 // block (GATE A pick: cargofull A). It lives here with the other CARGO_* tuning constants because it
@@ -4237,6 +4278,19 @@ const DEBUG_VARS = [
   // to clear a whole load up to ~480px long, not one piece. A pure feel number.
   { id: "towReleaseSpeed", label: "Tow release speed", unit: "px/s",
     def: 120, min: 20, max: 300, step: 10 },
+  // CS042 P7 (spec §6.8): the cargo's effective mass — ONE of the changeset's two handling knobs, and
+  // the one nothing exposed before this phase. Its partner is engineMassMult under POWERUPS (the Engine
+  // is a powerup, so it stays there; the two are read at the same site, one frame apart, via
+  // chainMass()). def derives from CARGO_UNIT_MASS, which stays in place as the documented shipped
+  // value — the standing engineMassMult/scoopHitsPerLevel idiom. Read LIVE at shipMass(), so a retune
+  // bites on the very next frame, which is what makes GATE C answerable in one sitting.
+  //   NOT A LEVER (§2.13 / DIFFICULTY-LEVERS.md §4): the ship's handling is a capability the player
+  // manages, not a threat parameter on the wave odometer — no floor/ceil/steps triple, no ▼/↳ glyph,
+  // no indent. ⛔ 0 TURNS THE WHOLE MODEL OFF, not just "less mass": shipMass() returns 1 however much
+  // is towed, so thrust, drag, turn AND tug all read unloaded at once. That is the deliberate A/B for
+  // §6.8 as a whole, the same way magnetResumeDelay's 0 is the A/B for the magnet suppression.
+  { id: "cargoUnitMass", label: "Cargo mass per unit", unit: "",
+    def: CARGO_UNIT_MASS, min: 0, max: 0.30, step: 0.005 },
   { header: "GARBAGE" },
   // CS024 P5 (spec §2.5): garbageAttractRadius/Force are resolved as NOT levers (GARBAGE_MAGNET_RANGE/
   // _PULL are frozen constants, Gate A Q1's answer) and stay plain flat knobs, unchanged in shape from
@@ -7865,19 +7919,22 @@ class Ship {
     if (input.right()) this.angle += turn;
 
     this.thrusting = input.thrust();
-    // towed cargo makes the ship heavier: weaker thrust, lower top speed. Scales with
-    // the chain's total mass, not its node count (F5) — all-mass-1.0 cargo behaves
-    // exactly as the old length-based penalty did.
-    const cargo = chainMass();
-    const thrustMul = 1 / (1 + cargo * CARGO_THRUST);
-    const maxSp = SHIP_MAX_SPEED / (1 + cargo * CARGO_MAXSPD);
+    // ⛔ CS042 P7 (spec §6.8) — ONE MASS, ONE FORCE. Towed cargo makes the ship heavier, and heavier
+    // means exactly one thing: shipMass(). Acceleration divides by it, the drag RATE divides by it
+    // (below), the turn rate divides by it (shipTurnRate) and the momentum tug reads (M−1)/M off it
+    // (updateChain). It scales with the chain's total MASS, not its node count (F5).
+    //   ⛔ TOP SPEED IS A FLAT RAIL NOW and no longer divides by anything — FLAG-CS042-l, deliberate.
+    // Terminal speed under this model is SHIP_THRUST/λ₀ regardless of load, so the clamp binds at every
+    // chain length and a full haul can eventually reach the full 520. The four retired divisor
+    // constants (and why) are documented at CARGO_UNIT_MASS.
+    const M = shipMass();
     if (this.thrusting) {
-      this.vx += Math.cos(this.angle) * SHIP_THRUST * thrustMul * dt;
-      this.vy += Math.sin(this.angle) * SHIP_THRUST * thrustMul * dt;
+      this.vx += Math.cos(this.angle) * (SHIP_THRUST / M) * dt;
+      this.vy += Math.sin(this.angle) * (SHIP_THRUST / M) * dt;
       const sp = Math.hypot(this.vx, this.vy);
-      if (sp > maxSp) {
-        this.vx *= maxSp / sp;
-        this.vy *= maxSp / sp;
+      if (sp > SHIP_MAX_SPEED) {
+        this.vx *= SHIP_MAX_SPEED / sp;
+        this.vy *= SHIP_MAX_SPEED / sp;
       }
       // CS024 P6 (spec §3.4/§4.7) — ENGINE IS FUEL, AND THIS IS THE ONLY PLACE IT BURNS. The decrement
       // lives INSIDE the thrust branch, deliberately NOT in update()'s per-frame timer block: the tank
@@ -7886,11 +7943,25 @@ class Ship {
       // acceleration binding — so "reverse burns nothing" holds structurally, not by a second check.)
       // Read AFTER the thrust it paid for, so the frame that empties the tank still got its thrust,
       // and clamped at 0 so a large dt can never drive the budget negative and read as "active".
-      game.powerBudget.engine = Math.max(0, game.powerBudget.engine - dt);
+      //   ⛔ CS042 P7 (spec §6.5) — THE BURN CONDITION GAINS ONE TERM: THE CHAIN MUST BE NON-EMPTY.
+      // With an empty chain M is 1 and the Engine does literally nothing (§6.4), so an unloaded flight
+      // used to spend the whole tank on nothing at all. The effective condition is now
+      // `thrusting && game.chain.length > 0`, expressed as this inner guard rather than by widening the
+      // branch above — the thrust itself must obviously still work unloaded, and §6.5 requires the
+      // decrement stay exactly where it is, read after the thrust it paid for. ENGINE_BURN_SECONDS is
+      // NOT resized (still 10.0): a tank that no longer leaks is the whole change, and its real
+      // duration rising is the point. CS024 P6's "FLAT while any fuel remains" rule is untouched —
+      // no taper, no sputter, full effect until the tank runs out.
+      if (game.chain.length > 0) game.powerBudget.engine = Math.max(0, game.powerBudget.engine - dt);
     }
     AudioSys.thrust(this.thrusting && game.state === "playing" && !game.paused);
 
-    const drag = Math.pow(1 - SHIP_DRAG, dt);
+    // ⛔ CS042 P7 (spec §6.8): the same exponential-decay idiom with ONE divisor added — cargo divides
+    // the decay RATE, so a heavy haul coasts (and stops, and drifts) for longer rather than merely
+    // topping out lower. Before this phase drag was mass-blind, which is why an empty ship and a full
+    // 24-node haul both bled to a tenth of their speed in the same 5.35 s and cargo stopped mattering
+    // the moment you let go of thrust.
+    const drag = Math.pow(1 - SHIP_DRAG, dt / M);
     this.vx *= drag; this.vy *= drag;
     this.x += this.vx * dt; this.y += this.vy * dt;
     wrap(this);
@@ -11613,13 +11684,30 @@ function chainMass() {
   return powerActive("engine") ? m * DEBUG.engineMassMult : m;
 }
 
+// ⛔ CS042 P7 (spec §6.8) — THE ONE MASS. The ship is mass 1; each unit of towed mass adds
+// DEBUG.cargoUnitMass. Acceleration, the drag RATE, the turn rate and the momentum tug are all this
+// one number under one force, which is why there is now exactly one quantity to tune and why those
+// four terms can never disagree about how heavy the haul is. Four hand-tuned divisors used to answer
+// that question separately — see the retirement note at CARGO_UNIT_MASS.
+//   It reads chainMass(), so it inherits BOTH of that function's properties for free: the Engine's
+// relief flows through all four terms at once (that is what "effective thrust added by the Engine"
+// is, named by its cause), and an empty chain is EXACTLY 1 — every term reduces to its unloaded
+// value and ENGINE_MASS_MULT has nothing to act on. ⛔ The Engine doing nothing with an empty chain
+// is the DESIGN (spec §6.4 / FORK-CS042-C, Paul's explicit call), not a bug to fix.
+function shipMass() {
+  return 1 + chainMass() * DEBUG.cargoUnitMass;
+}
+
 // Ship turn rate (CS010 §10b + §3): the ONE place both Ship.update turn sites read, so they can
-// never diverge. Folds in the player's rotation-speed preference (settings.shipTurnScale) AND an
-// optional towed-mass turn penalty (CARGO_TURN). At the shipped CARGO_TURN = 0 this is exactly
-// SHIP_TURN * scale — cargo does not affect rotation, byte-identical to pre-CS010 turn × the slider.
-// CARGO_TURN > 0 makes a heavy chain resist turning (the proposed "inertia" fix; see the constant).
+// never diverge. Folds in the player's rotation-speed preference (settings.shipTurnScale) AND the
+// towed-mass penalty. ⛔ CS042 P7 (spec §6.8): the divisor is now shipMass() — the SAME mass
+// acceleration, drag and the tug divide by — where it used to be (1 + chainMass() × CARGO_TURN) with
+// CARGO_TURN shipped dormant at 0.0, i.e. no cargo effect on rotation at all. That reversal is
+// FLAG-CS042-m and it is deliberate: 241 °/s empty -> 90 °/s at a full chain, with no way to exempt
+// rotation under one mass short of special-casing it back out. settings.shipTurnScale is unchanged
+// and is still a player PREFERENCE multiplying the design default, not a balance value.
 function shipTurnRate() {
-  return SHIP_TURN * settings.shipTurnScale / (1 + chainMass() * CARGO_TURN);
+  return SHIP_TURN * settings.shipTurnScale / shipMass();
 }
 
 function wrapNode(n) { // wrap verlet nodes; shift prev pos too so velocity survives
@@ -11947,7 +12035,14 @@ function updateChain(dt) {
   const [tdx, tdy] = shortDelta(a0.x, a0.y, chain[0].x, chain[0].y);
   const td = Math.hypot(tdx, tdy);
   if (td > CHAIN_LINK) {
-    const massFactor = Math.min(1.4, chainMass() * CARGO_MASS);
+    // ⛔ CS042 P7 (spec §6.8): (M−1)/M, where M is shipMass() — the SAME one mass acceleration, drag
+    // and the turn rate divide by. It replaces min(1.4, chainMass() × CARGO_MASS), whose 1.4 clamp was
+    // an arbitrary stability guard reached at 14 nodes, flat-spotting the yank from there to 24. This
+    // form is the cargo's SHARE of the total mass, so it rises with every node and asymptotes at 1 on
+    // its own — physical, unclamped, and monotonic. CHAIN_TUG was rescaled 26 -> 58 in the same edit so
+    // a FULL chain tugs exactly as hard as it did before; see the constant.
+    const M = shipMass();
+    const massFactor = (M - 1) / M;
     const f = CHAIN_TUG * (td - CHAIN_LINK) * massFactor;
     game.ship.vx += (tdx / td) * f * dt;
     game.ship.vy += (tdy / td) * f * dt;

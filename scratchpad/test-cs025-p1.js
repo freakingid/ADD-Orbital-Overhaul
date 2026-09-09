@@ -852,7 +852,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id.startsWith("healthGap")                               // CS040 P2 (the pity-driven health cadence)
       || id === "healthBankMax"                                   // CS040 P3 (the health bank's cap)
       || id === "hubDryWeightMult"                                // CS040 P4 (the hub relief multiplier)
-      || id === "healthSpawnLock" || id.startsWith("repairMilestone");  // CS042 P6 (health supply levelling)
+      || id === "healthSpawnLock" || id.startsWith("repairMilestone")  // CS042 P6 (health supply levelling)
+      || id === "cargoUnitMass";                                  // CS042 P7 (one mass, one force — §6.8)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));

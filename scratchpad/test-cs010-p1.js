@@ -29,7 +29,14 @@ const currentSrc = extractScript(currentHtml);
 
 let headHtml;
 try {
-  headHtml = execSync("git show HEAD:orbital-overhaul.html", { cwd: repoRoot, encoding: "utf8" });
+  // ⛔ maxBuffer ADDED CS042 P7, AND IT WAS A HARD FAILURE, NOT A PRECAUTION. execSync's default
+  // maxBuffer is 1 MiB (1,048,576 B) and orbital-overhaul.html crossed it at CS042 P6's commit
+  // (1,040,713 -> 1,050,828 B), so `git show HEAD:...` started dying with ENOBUFS the moment that
+  // commit became HEAD — a latent tripwire that could only fire AFTER the phase that armed it. Every
+  // other git-show site in the suite already carried this 64 MB idiom; three did not (here,
+  // test-cs010-p2.js and test-cs025-p4.js) and all three are fixed together.
+  headHtml = execSync("git show HEAD:orbital-overhaul.html",
+    { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 } catch (e) {
   console.error("Could not read HEAD version of orbital-overhaul.html:", e.message);
   process.exit(1);

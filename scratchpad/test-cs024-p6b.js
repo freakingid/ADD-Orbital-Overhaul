@@ -676,7 +676,11 @@ function evalSlice(literal) {
       // CS042 P6 repoint: and the three health-supply rows (healthSpawnLock, repairMilestoneGrowth,
       // repairMilestoneHullPct — POWERUPS, appended right after hubDryWeightMult) — CS042 P6's rows,
       // not P6b's. Same reasoning a fifteenth time.
-      .replace(/,healthSpawnLock,repairMilestoneGrowth,repairMilestoneHullPct/, "");
+      .replace(/,healthSpawnLock,repairMilestoneGrowth,repairMilestoneHullPct/, "")
+      // CS042 P7 repoint: and cargoUnitMass (SHIP, appended right after towReleaseSpeed) — spec §6.8's
+      // one-mass handling knob, CS042 P7's row, not P6b's. Same reasoning a sixteenth time. Interior,
+      // not tail-anchored, like the towRelease strip above: every later section already followed SHIP.
+      .replace(/,cargoUnitMass/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it
@@ -742,8 +746,17 @@ function evalSlice(literal) {
     // retunes the table (spec §5.2) and composes guard's dynamic weight with the existing chain-length
     // gate (spec §5.3), touching comments and code near both symbols. Their shape is pinned by
     // scratchpad/test-cs035-p6.js and by test-cs017-p6.js §A/F, not by this fixed-ref diff.
-    for (const sym of ["POWERUP_DROP_TYPES", "engineMassMult"])
+    for (const sym of ["POWERUP_DROP_TYPES"])
       assert(!new RegExp("^[-+].*\\b" + sym + "\\b", "m").test(diff), `G: TRAP 5 — no diff line touches ${sym}`);
+    // REPOINTED BY CS042 P7 — `engineMassMult` moves from the "no line mentions it" list to the SHARPER
+    // powerActive pin below, for the identical reason and by the identical mechanism. P7 (spec §6.8)
+    // adds cargoUnitMass beside it as the second handling knob and its comments name engineMassMult as
+    // the partner they are read with — four ADDED comment lines that mention the symbol without
+    // disturbing the row, its `def`, or chainMass()'s read of it. There are no `-` lines at all. What
+    // P6b actually promised is that the POWERUPS knob itself was left alone, and that is what is
+    // checked now: nothing removed or rewritten, and no second registry row claiming the id.
+    assert(!/^-.*\bengineMassMult\b/m.test(diff), "G: TRAP 5 — no diff line REMOVES or rewrites engineMassMult");
+    assert(!/^\+.*id:\s*"engineMassMult"/m.test(diff), "G: TRAP 5 — ...and no diff line re-declares its registry row");
     // REPOINTED BY CS025 P1 — `powerActive` LEAVES the "no line mentions it" list and gains a SHARPER
     // pin of its own, for the same reason engineBurnSeconds left it: a fixed-ref diff pin measured
     // against a MOVING working tree cannot outlive a later phase legitimately adding a READER. CS025 P1

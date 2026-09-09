@@ -18,7 +18,7 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 113,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 114,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
                           // 106 -> 105: CS036 P2 retired levelEndHold (CELEBRATION), the pre-nextWave()
                           // hold, now player-paced. 105 -> 106: CS036 P5 adds dockPingCooldown (DELIVERY).
                           // 106 -> 110: CS037 P2 adds the four BENCHMARK controls (ramp step, ramp
@@ -47,6 +47,12 @@ const COUNTS = {
                           // arms and respects), repairMilestoneGrowth (the milestone interval's per-level
                           // growth) and repairMilestoneHullPct (the milestone's hull gate). None a lever;
                           // health SUPPLY is powerup pacing, not a difficulty ramp.
+                          // 113 -> 114: CS042 P7 (spec §6.8) adds cargoUnitMass (SHIP, trailing
+                          // towReleaseSpeed) — the cargo's effective mass, the one quantity the "one
+                          // mass, one force" model leaves to tune. Its four predecessors
+                          // (CARGO_THRUST/CARGO_MAXSPD/CARGO_MASS/CARGO_TURN) were plain constants and
+                          // never registry rows, so this is a net +1 even though the build retired four.
+                          // Not a lever — handling is a capability, not a threat parameter.
   sectionHeaders: 11,     // DEBUG_VARS.filter(v => v.header).length — 10 -> 11: CS037 P2's BENCHMARK
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only
