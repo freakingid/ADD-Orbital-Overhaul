@@ -671,7 +671,8 @@ let X = null;
       || id === "healthBankMax"                                           // CS040 P3 (health bank cap)
       || id === "hubDryWeightMult"                                        // CS040 P4 (hub relief mult)
       || id === "healthSpawnLock" || id.startsWith("repairMilestone")     // CS042 P6 (health supply)
-      || id === "cargoUnitMass";                                          // CS042 P7 (one mass, §6.8)
+      || id === "cargoUnitMass"                                           // CS042 P7 (one mass, §6.8)
+      || id === "bankSpareHullPct";                                       // CS042 P9 (bank scoop-save)
     eq(added.filter(id => !LATER_ROWS(id)).join(","), "junkSplitFloor,junkSplitCeil,junkSplitSteps",
       `J: exactly THREE rows were added by THIS phase, in that order (all added since: ${added.join(", ")})`);
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldRows.includes(id)).join(","), oldRows.join(","),

@@ -18,7 +18,7 @@
 
 // ⛔ THE NUMBERS. Nothing else in scratchpad/ may repeat them.
 const COUNTS = {
-  registryEntries: 114,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
+  registryEntries: 115,   // DEBUG_ENTRIES.length === DEBUG_VARS.filter(v => !v.header).length
                           // 106 -> 105: CS036 P2 retired levelEndHold (CELEBRATION), the pre-nextWave()
                           // hold, now player-paced. 105 -> 106: CS036 P5 adds dockPingCooldown (DELIVERY).
                           // 106 -> 110: CS037 P2 adds the four BENCHMARK controls (ramp step, ramp
@@ -53,6 +53,10 @@ const COUNTS = {
                           // (CARGO_THRUST/CARGO_MAXSPD/CARGO_MASS/CARGO_TURN) were plain constants and
                           // never registry rows, so this is a net +1 even though the build retired four.
                           // Not a lever — handling is a capability, not a threat parameter.
+                          // 114 -> 115: CS042 P9 (spec §4.5) adds bankSpareHullPct (POWERUPS, trailing
+                          // repairMilestoneHullPct) — the health bank's heal-or-spare threshold, and
+                          // the same 0.70 repairMilestoneHullPct carries, deliberately. Not a lever
+                          // either; the bank is powerup pacing, not a difficulty ramp.
   sectionHeaders: 11,     // DEBUG_VARS.filter(v => v.header).length — 10 -> 11: CS037 P2's BENCHMARK
   levers: 18,             // LEVERS.length
   powerupDropTypes: 5,    // POWERUP_DROP_TYPES.length — the BUDGETED-effect list, append-only

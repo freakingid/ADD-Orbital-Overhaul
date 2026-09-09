@@ -368,7 +368,7 @@ function compareBuilds(L, R, tag) {
     // REPOINTED BY CS040 P2: +4 more (healthGapLowOk/HighOk/LowHurt/HighHurt).
     // REPOINTED BY CS040 P3: +1 more (healthBankMax, the health bank's cap).
     // REPOINTED BY CS040 P4: +1 more (hubDryWeightMult, the hub relief multiplier).
-    eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1 - 12 + 4 + 1 + 1 + 3 + 1, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture, CS038 P5's twelve retirements, CS040 P2's four, CS040 P3's one, CS040 P4's one, CS042 P6's three and CS042 P7's one later)");
+    eq(OLD.DEBUG_ENTRIES.length + 2 + 4 + 1 + 4 + 5 + 5 - 1 + 1 + 4 + 1 + 2 + 2 + 1 - 12 + 4 + 1 + 1 + 3 + 1 + 1, X.DEBUG_ENTRIES.length, "E: ...same registry (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture, CS038 P5's twelve retirements, CS040 P2's four, CS040 P3's one, CS040 P4's one, CS042 P6's three, CS042 P7's one and CS042 P9's one later)");
     assert(Object.keys(OLD).length > 500, "E: ...and the harvest re-ran against the parent's own symbol set");
   }
 })();

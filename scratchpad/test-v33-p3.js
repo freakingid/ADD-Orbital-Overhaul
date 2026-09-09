@@ -167,7 +167,13 @@ assert(POWERUP_DECAY === 26, `0: POWERUP_DECAY 14->26 (got ${POWERUP_DECAY})`);
 // it always meant: the tables are cap-length, and the mouth's top step is maxWidthMult.
 assert(SCOOP_MAX_LEVEL === 7, `0: SCOOP_MAX_LEVEL === 7 (CS042 P8: 5 -> 7, got ${SCOOP_MAX_LEVEL})`);
 assert(SCOOP_MOUTH_LEVELS === 5, `0: the mouth curve still spans 5 steps (got ${SCOOP_MOUTH_LEVELS})`);
-assert(SCOOP_HITS_PER_LEVEL === 5, `0: SCOOP_HITS_PER_LEVEL 2->5 (v3.4 P3 durability, got ${SCOOP_HITS_PER_LEVEL})`);
+// REWRITTEN IN PLACE BY CS042 P9 (spec §4.4), not deleted: the rate is reversed BACK to 2 at Paul's
+// request. v3.4 P3 took it 2 -> 5 for durability, and the build's own comment called the resulting
+// stickiness "the intent, not a bug to 'fix.'" §4.4 reverses exactly that call — the scoop is meant
+// to be visibly losable — so this pin records the reversal rather than the retune it was written for.
+// ⛔ THIS is the file's rate pin, and it is a LITERAL. §5 below reads the same quantity off the build
+// instead, because its claim is the mechanism, not the number.
+assert(SCOOP_HITS_PER_LEVEL === 2, `0: SCOOP_HITS_PER_LEVEL is back to 2 (CS042 P9 reverses v3.4 P3's 2->5, got ${SCOOP_HITS_PER_LEVEL})`);
 assert(SCOOP_WIDTH.length === SCOOP_MAX_LEVEL + 1 && SCOOP_DEPTH.length === SCOOP_MAX_LEVEL + 1,
   `0: SCOOP_WIDTH/DEPTH are ${SCOOP_MAX_LEVEL + 1}-entry (index = level)`);
 assert(SCOOP_WIDTH[0] === 0 && SCOOP_DEPTH[0] === 0,
@@ -241,18 +247,28 @@ assert(captured(5, 30, 0, 0) && !captured(0, 30, 0, 0),
   "4: the exact mouth capture that works at L5 does not happen at L0");
 
 // =====================================================================
-console.log("(5) scoop decays by damage: 5 hits = -1 level, 4 = none, 10 = -2; level 0 harmless");
+console.log("(5) scoop decays by damage: N hits = -1 level, N-1 = none, 2N more = -2; level 0 harmless");
 {
   beginPlaying();
   const s = placeShip(0, liveDims()[0] / 2, liveDims()[1] / 2);   // CS026 P3: the LIVE world centre
   game.scoopLevel = 3; game.scoopHits = 0;
   const hit = () => { s.invuln = 0; return damageShip(10, s.x + 100, s.y); }; // non-lethal, i-frames cleared
-  hit(); hit(); hit(); hit();
-  assert(game.scoopLevel === 3 && game.scoopHits === 4, "5: 4 hits -> no level drop yet, tally at 4");
-  hit(); // 5th hit
-  assert(game.scoopLevel === 2 && game.scoopHits === 0, "5: 5 hits -> dropped exactly one level (3->2), tally reset");
-  hit(); hit(); hit(); hit(); hit(); hit(); hit(); hit(); hit(); hit(); // 10 more hits
-  assert(game.scoopLevel === 0, "5: 10 hits total from L2 -> dropped two levels (now 0)");
+  // REPOINTED BY CS042 P9 (spec §4.4): the rate moved 5 -> 2. THIS section's claim was never the rate
+  // — it is the MECHANISM (the tally climbs, the Nth hit costs exactly one level and resets it, and
+  // level 0 is inert) — so it reads N off the build and stays exactly as sharp at 2 as it was at 5.
+  // The rate itself is pinned as a literal in §0 above, where the reversal is recorded. That split is
+  // CS042 P8's own repair applied again: never read an expectation off the knob you are pinning, and
+  // never hardcode a count beside a knob you are not.
+  // The health bank is empty on a fresh run, so §4.5's spare arm cannot fire and cannot mask a hit.
+  const N = SCOOP_HITS_PER_LEVEL;
+  assert(N >= 2, `5: (setup) the rate leaves room for a rise before the loss (got ${N})`);
+  assert(game.healthBank === 0, "5: (setup) the health bank is empty, so no charge can spare a level here");
+  for (let i = 0; i < N - 1; i++) hit();
+  assert(game.scoopLevel === 3 && game.scoopHits === N - 1, `5: ${N - 1} hits -> no level drop yet, tally at ${N - 1}`);
+  hit(); // the Nth hit
+  assert(game.scoopLevel === 2 && game.scoopHits === 0, `5: ${N} hits -> dropped exactly one level (3->2), tally reset`);
+  for (let i = 0; i < 2 * N; i++) hit();
+  assert(game.scoopLevel === 0, `5: ${3 * N} hits total from L3 -> dropped all three levels (now 0)`);
   // level 0: hits are harmless, no underflow, no crash
   game.scoopLevel = 0; game.scoopHits = 0;
   hit(); hit(); hit();

@@ -1110,10 +1110,12 @@ function stepProbe(X, p, dt = 1 / 60) {
     // WIDENED BY CS040 P4: and hubDryWeightMult, appended after healthBankMax. Same reasoning again.
     // WIDENED BY CS042 P6: and its three health-supply rows (healthSpawnLock, repairMilestoneGrowth,
     // repairMilestoneHullPct), appended after hubDryWeightMult. Same reasoning again.
+    // WIDENED BY CS042 P9: and bankSpareHullPct, appended after those three. Same reasoning again.
     for (const id of ids.slice(spread + 1, gl))
       assert(id === "sweepPowerupCap" || id === "dockPowerupSpeed" || id.startsWith("healthGap")
         || id === "healthBankMax" || id === "hubDryWeightMult"
-        || id === "healthSpawnLock" || id.startsWith("repairMilestone"),
+        || id === "healthSpawnLock" || id.startsWith("repairMilestone")
+        || id === "bankSpareHullPct",
         `K: every POWERUPS row after magnetPushSpread was appended by a LATER phase (found ${id})`);
   }
 
@@ -1193,7 +1195,8 @@ function stepProbe(X, p, dt = 1 / 60) {
       || id === "healthBankMax"                                         // CS040 P3 (the health bank's cap)
       || id === "hubDryWeightMult"                                      // CS040 P4 (the hub relief multiplier)
       || id === "healthSpawnLock" || id.startsWith("repairMilestone")    // CS042 P6 (health supply levelling)
-      || id === "cargoUnitMass";                                         // CS042 P7 (one mass, one force — §6.8)
+      || id === "cargoUnitMass"                                          // CS042 P7 (one mass, one force — §6.8)
+      || id === "bankSpareHullPct";                                      // CS042 P9 (the bank's scoop-save gate)
     eq(added.filter(id => !LATER(id)).join(","), "magnetPushKick,magnetPushSpread",
       "K: exactly TWO ids were added by THIS phase, in that order");
     for (const id of added.filter(LATER))
@@ -1203,8 +1206,17 @@ function stepProbe(X, p, dt = 1 / 60) {
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldIds.has(id)).join(","),
        OLD.DEBUG_ENTRIES.map(v => v.id).join(","),
        "K: every pre-existing id keeps its relative order (append-only within POWERUPS)");
-    for (const oe of OLD.DEBUG_ENTRIES)
+    // WIDENED BY CS042 P9, on test-cs024-p6e.js §G's own precedent — see test-cs025-p1.js §G for the
+    // same widening. §4.4 retunes scoopHitsPerLevel's def 5 -> 2 deliberately, so the pin names it.
+    const RETUNED_SINCE = new Set(["scoopHitsPerLevel"]);   // CS042 P9 (spec §4.4)
+    for (const oe of OLD.DEBUG_ENTRIES) {
+      if (RETUNED_SINCE.has(oe.id)) {
+        assert(X.DEBUG[oe.id] !== OLD.DEBUG[oe.id],
+          `K: DEBUG.${oe.id} is a DELIBERATE later-phase retune, so it must differ from the parent`);
+        continue;
+      }
       eq(X.DEBUG[oe.id], OLD.DEBUG[oe.id], `K: DEBUG.${oe.id} is byte-identical to the parent on an untouched panel`);
+    }
     // CS030 P3 added a whole new CELEBRATION section header, not just rows under an existing one.
     const oldHeaders = new Set(OLD.DEBUG_VARS.filter(v => v.header).map(v => v.header));
     const headersAdded = X.DEBUG_VARS.filter(v => v.header && !oldHeaders.has(v.header)).length;

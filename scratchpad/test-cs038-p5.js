@@ -66,7 +66,9 @@ const RETIRED_DEFS = {
   // Repointed the way earlier phases repointed it; rewriting it parent-relative is a refactor.
   // NARROWED AGAIN BY CS042 P7: +1 more (cargoUnitMass, SHIP — spec §6.8's one-mass handling knob),
   // for the same reason. Same literal-total caveat as the CS042 P6 note above.
-  eq(X.DEBUG_ENTRIES.length, 114, "A: DEBUG_ENTRIES.length is the live 114");
+  // NARROWED AGAIN BY CS042 P9: +1 more (bankSpareHullPct, POWERUPS — spec §4.5's heal-or-spare
+  // gate), for the same reason. Same literal-total caveat as the two notes above.
+  eq(X.DEBUG_ENTRIES.length, 115, "A: DEBUG_ENTRIES.length is the live 115");
 
   // No section header is emptied — CELEBRATION/DELIVERY/HUNTER all keep other rows.
   let section = null; const rowsOf = { CELEBRATION: [], DELIVERY: [], HUNTER: [] };
@@ -198,7 +200,9 @@ const RETIRED_DEFS = {
       // NARROWED AGAIN BY CS042 P6: its three health-supply POWERUPS rows, same reasoning again.
       "healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct",
       // NARROWED AGAIN BY CS042 P7: its cargoUnitMass SHIP row, same reasoning again.
-      "cargoUnitMass"]);
+      "cargoUnitMass",
+      // NARROWED AGAIN BY CS042 P9: its bankSpareHullPct POWERUPS row, same reasoning again.
+      "bankSpareHullPct"]);
     const xIds = X.DEBUG_VARS.filter(v => !v.header).map(v => v.id).filter(id => !LATER_IDS.has(id));
     const oldIdsSansRetired = oldIds.filter(id => !RETIRED_IDS.includes(id));
     eq(xIds.join(","), oldIdsSansRetired.join(","),

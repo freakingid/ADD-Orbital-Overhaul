@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P8 · Registry: 114 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P9 · Registry: 115 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -156,7 +156,51 @@ carried forward and still live.
   `minWidthMult` 1.2 → 2.6, `minDepth` 20 → 34, §4.2's area table in the constant's comment. No registry
   row, no lever, no GDD edit (P11 owns §2.14.1). ⛔ **§4.4/§4.5 are P9's and were not built.**
 
+- P9 — the Scoop's RISK side (spec §4.4–§4.5): the loss rate and the health reserve.
+  `SCOOP_HITS_PER_LEVEL` 5 → 2, and ⛔ **its comment is REWRITTEN IN PLACE, quoting v3.4 P3's own
+  "that's the intent, not a bug to 'fix.'" verbatim** — the reversal is only legible beside the call
+  it reverses. The knob's meaning is untouched: a flat hits-per-level count, no table, no curve, same
+  bounds; only the `def` moved. ⛔ **NO TRIGGER CHANGED, and that is asserted, not assumed:**
+  `breakChain()` and `scatterChain()` are byte-identical to the parent and the `srcTag` switch is too,
+  so FORK-S1 stays resolved by the build already being right. The reserve is one branch inside CS040
+  P3's existing auto-spend: above `DEBUG.bankSpareHullPct` (0.70) of hull a charge SPARES a scoop
+  level, at or below it the charge heals as it always did, and at `scoopLevel` 0 it heals because
+  there is nothing to spare. ⛔ **Never both, one charge per damage event, still below the `hp <= 0`
+  exit.** `AudioSys.bankspend()` rings either way; the spare arm's own tell is a `"SCOOP SAVED"`
+  floater mirroring `"SCOOP -1"` — no new sound, no new voice event. Registry 114 → 115
+  (`bankSpareHullPct`, POWERUPS, appended). One doc byte outside the build: the telemetry guide's §7
+  `scoopHits` trap, which spec §4.4 assigns to this phase. No GDD edit (P11 owns §2.12/§2.14/§2.14.1).
+
 ## Working / verified
+
+- **P9:** full suite **178 files, 178 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, measured
+  after the commit — see the moving-`HEAD` pin note below), `node --check` clean.
+  `scratchpad/test-cs042-p9.js` is 176 assertions in eight sections, and its load-bearing ones were
+  **mutation-checked, not just run**: nine substitutions were applied to the build and every one turned
+  assertions red — reverting the rate to 5 (9), dropping the `!scoopSpared` guard so the spare buys
+  nothing (8), `>` becoming `>=` at the gate (4), letting the spare arm heal as well (4), dropping the
+  `scoopLevel > 0` arm (9), dropping the `"SCOOP SAVED"` tell (2), moving the gate off P6's 0.70 (4),
+  reading the PRE-damage hull (7), and ⛔ **the one that matters — "unifying" the two paths so
+  `breakChain()` also erodes the scoop (6)**. ⛔ **§B is the assertion nothing else in the suite makes:**
+  `breakChain(0)`, every partial `breakChain(i)`, an intercepted break and a lethal hit all leave
+  `game.scoopLevel` AND `game.scoopHits` untouched, while `damageShip()` moves both — measured from
+  identical starting state, with the payload really cut loose each time so the call is never a no-op.
+  ⛔ **§F MEASURES the comment's own claim rather than asserting it:** the shipped predicate is
+  replaced by a literal `s.hp >= SHIP_MAX_HP` and both builds are driven over ten post-damage hulls —
+  the shipped one spares 6 times, the full-hull counterfactual **0**. That is the "dead code" the
+  comment warns a future reader about, built and run.
+  ⛔ **Twenty pre-existing tests were legitimately invalidated; all twenty were WIDENED, not weakened.**
+  Sixteen are the standing registry-allowlist maintenance (114 → 115). Four are real: `test-v33-p3.js`
+  §0 records the reversal in place and its §5 now reads the rate off the build (its claim was always the
+  mechanism, never the number — CS042 P8's own repair applied again); `test-cs015-p5.js` §E does the same
+  for the const and its §F1 derives the default-path count; `test-cs042-p8.js` §H said the rate and the
+  reserve belong to P9 and now records that P9 built both; and `test-cs026-p4.js` §A's FloatText
+  call-site census goes 8 → 9 for the `"SCOOP SAVED"` push. Three files also gained a
+  deliberate-retune exemption (`test-cs024-p6e.js` §G's own `P7_INTENDED` mechanism, copied to
+  `test-cs025-p1.js` §G and `test-cs025-p2.js` §K), because `scoopHitsPerLevel` is the one pre-existing
+  knob whose live value moved — which §H asserts is the ONLY one.
+  ⚠ **Not yet played.** Every number here is measured headless. Whether losing a level every two hits
+  reads as pressure rather than punishment, and whether the reserve teaches its own rule, is GATE C.
 
 - **P8:** full suite **177 files, 177 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, no flake
   rerun needed), `node --check` clean. `scratchpad/test-cs042-p8.js` is 189 assertions in eight sections,
@@ -325,6 +369,38 @@ carried forward and still live.
   would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
+
+- **⛔ GDD §2.14.1, §2.14 and §2.12 now read false on scoop loss and the health bank (P9). P11 already
+  owns all three** (its item 2 names §2.14.1 and §2.14; §2.12 should be added). §2.14.1's "Losing
+  levels" bullet states the rate as "**5** as of v3.4 P3, up from 2", computes "at 5 hits/level a
+  level-5 scoop survives 25 non-lethal hits", and closes by calling the resulting stickiness "the
+  intent of the P3 retune, not a bug for a future session to 'fix.'" — the number, the arithmetic and
+  the **intent** are all reversed now, and the cap is 7 rather than 5 (P8's own item below).
+  §2.14's tuning-constants paragraph repeats "`SCOOP_HITS_PER_LEVEL` (**5** as of v3.4 P3, was 2)" and
+  does not list the new `BANK_SPARE_HULL_PCT`; its health-bank bullet says a charge "**auto-spends**
+  the instant the hull next drops below max" full stop, which is now only one of the charge's two jobs.
+  ⚠ **§2.12's own scoop-decay bullet says "(2)" and is therefore ACCIDENTALLY CORRECT again** — it was
+  stale from v3.4 P3 until this phase, so P11 should re-derive it rather than assume it was checked;
+  what §2.12 does lack is any mention of the spare arm, which sits inside the `damageShip()` block that
+  section owns. **P9 edited no GDD content**, on P6/P7/P8's precedent, so P11's §0 size re-measure stays
+  mandatory for P5's and P7's edits.
+
+- **⛔ P9'S ONE JUDGMENT CALL, RECORDED BECAUSE §4.5 DOES NOT REACH IT: a spared hit does not advance
+  `game.scoopHits` either.** The spec's table says the scoop is "kept", which two readings satisfy —
+  buy off the whole hit, or let the tally climb and block only the level drop. P9 built the first.
+  The second spends a charge silently on every hit that was not yet the costly one, which is exactly
+  what the `"SCOOP SAVED"` floater exists to prevent, and a third reading (spend only on the hit that
+  would drop a level) would make the bank block reach into the scoop tally when §4.5 frames the whole
+  decision as one threshold on the hull. Consequence: at the shipped 2-hit rate one charge buys half a
+  level, not a whole one. If Paul wants a charge to buy a whole level, that is a different mechanism,
+  not a tuning change.
+
+- **⚠ SPEC DOC DEBT, RECORDED NOT FIXED: §4.4's illustrative fraction is stale and §4.5's is fine.**
+  §4.4 reasons from a level-5 cap — "a player now loses three or four scoop levels across a run instead
+  of one" against "roughly seven non-lethal hits in a full-health run". P8 raised the cap to 7, so those
+  same seven hits cost three levels out of **seven**, not out of five. The mechanism and the knob are
+  unchanged; only the fraction is stale, and it is already noted in the constant's own comment. Measured
+  alongside it: a full ladder now takes 14 non-lethal hits to strip, down from 35.
 
 - **⛔ GDD §2.14.1 now reads false on the Scoop in five places (P8). P11 already owns it** (its item 2
   names §2.14.1 by number). The claims that moved: the level range is stated as `0…SCOOP_MAX_LEVEL = 5`
@@ -692,10 +768,27 @@ None.
     multiplier"** (0–1, def 0.5, lower is stronger), is unchanged and is the second of the two dials.
   - ⚠ **Nobody has flown this.** Every number in the writeup is measured headless, and the whole point
     of §6.8 was that a mock ship on an empty field could not answer the question.
+- **✅ P9 IS DONE.** The loss rate and the health reserve shipped — see the P9 ledger entry and its
+  "Working / verified" writeup. **P10 is the next session** (menu navigation repeat, spec §5), then
+  GATE C, then P11 closes. **No phase is blocked.**
+  - ⛔ **The gate ships at 0.70, the same number as P6's `repairMilestoneHullPct`, and the test asserts
+    the two are equal rather than each being 0.70.** CS042 has one definition of "hurt"; if either
+    moves, both move, and the pin makes a one-sided change fail.
+  - ⛔ **The knob's two ends are the GATE C A/B and neither is an off switch.** POWERUPS → **"Bank
+    scoop-save hull gate"** (0–1, step 0.05, def 0.70): at **1.0** the charge always heals and the scoop
+    always drops, which is CS040's rule at P9's faster loss rate; at **0.0** a charge always spares while
+    a scoop exists. Turn "Overrides Applied" ON or the row reads but does not bite (FLAG-CS036-a).
+  - ⛔ **`test-cs024-p6.js` §H TRAP 2 went red mid-phase exactly as predicted below** — it diffs
+    `damageShip` against `HEAD`, so it fails from the first edit until the commit lands. It is green
+    again on the committed tree. Still a moving-`HEAD` pin, still unfixed, and the next phase to touch
+    that function will pay the same cost.
+  - ⚠ **Nobody has played this.** Whether "you notice it going" reads as pressure rather than
+    punishment, and whether the reserve teaches its own rule from one floater, are GATE C questions.
+
 - **✅ P8 IS DONE.** Scoop levels 6–7, the flanking orbs and the level-1 floor shipped — see the P8 ledger
   entry and its "Working / verified" writeup. FORK-CS042-A landed as resolution (a) and is measured both
-  ways. **P9 is the next session** — the loss rate and the health reserve (§4.4/§4.5). **No phase is
-  blocked.**
+  ways. **P9 has since shipped §4.4/§4.5** — see its own entry above; the four notes below were P8's
+  hand-off to it and all four were acted on.
   - ⛔ **P9's `bankSpareHullPct` must ship at 0.70 too** — P6 pinned that number as the changeset's one
     definition of "hurt" and its own test says so; if the gate moves one, it moves both.
   - ⛔ **P9 must rewrite `SCOOP_HITS_PER_LEVEL`'s comment in place, not delete it.** It still ends *"the
@@ -735,8 +828,8 @@ None.
   rule saying it must not grow back. **The structural fix is that a closing phase already re-measures
   §0** — extending that same checklist to re-read the build stamp is the cheap way to stop this
   recurring, and is not yet done.
-- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 771 lines after P8, 678 after P7, 568 after P6,
-  502 after P5, and it was already 443 at P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
+- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 864 lines after P9, 771 after P8, 678 after P7,
+  568 after P6, 502 after P5, and it was already 443 at P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
   and deleting a carried-forward item to make room is not a phase-local call.
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.

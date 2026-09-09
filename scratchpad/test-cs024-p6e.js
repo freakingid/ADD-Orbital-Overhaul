@@ -383,12 +383,16 @@ const P6E_PARENT_REF = "7c4c6b3f69ab2764629996e1dd280e4896267ba4"; // "Docs for 
   // silently tolerated: Gate B Q11 retuned engineBurnSeconds 5.0 -> 10.0 (the only number the gate
   // moved), and P7 owns the version bump to "1.0.0.24". Everything else must still match the reference.
   // A future phase adding to this list must have a gate answer or a phase prompt behind it.
-  const P7_INTENDED = new Set(["engineBurnSeconds"]);
+  // WIDENED BY CS042 P9, using exactly the escape hatch the paragraph above describes: §4.4 retunes
+  // scoopHitsPerLevel's def 5 -> 2 at Paul's request (the scoop is meant to be losable again), so it
+  // is a DELIBERATE later retune and is named here rather than allowed to fail this pin silently.
+  // The set's name is P6e's own and is kept — it is the deliberate-retune allowlist, not P7's alone.
+  const P7_INTENDED = new Set(["engineBurnSeconds", "scoopHitsPerLevel"]);
   if (OLD) {
     const A = buildFrom(scriptSrc).exports;
     for (const e of OLD.DEBUG_ENTRIES) { // every id HEAD knew about still resolves to the same native value
       if (P7_INTENDED.has(e.id)) {
-        assert(A.DEBUG[e.id] !== OLD.DEBUG[e.id], `G: DEBUG.${e.id} is a DELIBERATE P7 retune, so it must differ from P6e's parent`);
+        assert(A.DEBUG[e.id] !== OLD.DEBUG[e.id], `G: DEBUG.${e.id} is a DELIBERATE later-phase retune, so it must differ from P6e's parent`);
         continue;
       }
       eq(A.DEBUG[e.id], OLD.DEBUG[e.id], `G: DEBUG.${e.id} is byte-identical to P6e's parent on an untouched panel`);

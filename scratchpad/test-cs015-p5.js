@@ -204,7 +204,12 @@ function beginPlaying(A) {
   // three literals moved.
   // REPOINTED BY CS024 P5: GARBAGE_COALESCE_DELAY itself is now deleted — replaced outright by the
   // coalescePause lever's floor, which carries the exact same value (5.0) forward.
-  assert(A.SCOOP_HITS_PER_LEVEL === 5, "E: SCOOP_HITS_PER_LEVEL const unchanged (5)");
+  // REWRITTEN IN PLACE BY CS042 P9 (spec §4.4): the const is reversed back to 2 at Paul's request —
+  // v3.4 P3's 2 -> 5 durability retune, and the "effectively sticky once earned / that's the intent"
+  // comment that went with it, are both reversed. The CLAIM this section makes is unchanged and is
+  // what the symbolic assertion above still checks: the const is the single source of truth and the
+  // registry `def` derives from it. Only the literal moved.
+  assert(A.SCOOP_HITS_PER_LEVEL === 2, "E: SCOOP_HITS_PER_LEVEL const is 2 (CS042 P9 reverses v3.4 P3's 2->5)");
   assert(A.leverState(1).coalescePause === 5.0, "E: coalescePause lever's floor is 5.0 (replaces the retired GARBAGE_COALESCE_DELAY 3.0->5.0 retune)");
   assert(A.GARBAGE_MAGNET_RANGE === 160, "E: GARBAGE_MAGNET_RANGE is 160 (CS024 P4 Gate A Q1: was 180)");
   assert(A.GARBAGE_MAGNET_PULL === 30, "E: GARBAGE_MAGNET_PULL is 30 (CS024 P4 Gate A Q1: was 40)");
@@ -226,12 +231,16 @@ function beginPlaying(A) {
   const s = A.game.ship;
   const hit = () => { s.invuln = 0; return A.damageShip(10, s.x + 100, s.y); };
 
-  // Default (5): confirm unchanged behavior first (regression).
+  // Default: confirm unchanged behavior first (regression). REPOINTED BY CS042 P9 (spec §4.4) — the
+  // default moved 5 -> 2, so the count is read off the const rather than typed. The literal is pinned
+  // in §E above; this half's claim is only that the default path still costs exactly one level at
+  // whatever the shipped rate is, and the DIAL half below is what proves the live knob is read.
+  const DEF = A.SCOOP_HITS_PER_LEVEL;
   A.game.scoopLevel = 3; A.game.scoopHits = 0;
-  for (let i = 0; i < 4; i++) hit();
-  assert(A.game.scoopLevel === 3 && A.game.scoopHits === 4, "F1: at the default (5), 4 hits -> no drop yet");
+  for (let i = 0; i < DEF - 1; i++) hit();
+  assert(A.game.scoopLevel === 3 && A.game.scoopHits === DEF - 1, `F1: at the default (${DEF}), ${DEF - 1} hits -> no drop yet`);
   hit();
-  assert(A.game.scoopLevel === 2 && A.game.scoopHits === 0, "F1: the 5th hit drops exactly one level (default unchanged)");
+  assert(A.game.scoopLevel === 2 && A.game.scoopHits === 0, `F1: the ${DEF}th hit drops exactly one level (default unchanged)`);
 
   // Dial the knob to 3 -> a level should now cost only 3 hits.
   A.applyDebug("scoopHitsPerLevel", 3);

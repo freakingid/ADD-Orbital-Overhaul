@@ -676,7 +676,10 @@ let X = null;
   // parameter on the wave odometer — no chain, no floor/ceil/steps triple. Same reasoning a twentieth
   // time. Note this is a net +1 even though the same phase RETIRED four constants (CARGO_THRUST/
   // CARGO_MAXSPD/CARGO_MASS/CARGO_TURN): none of the four was ever a registry row.
-  eq(nonLever.length, 60, "G: 60 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1 + CS038 P3/P5 + CS040 P2/P3/P4 + CS042 P6/P7's registry");
+  // CS042 P9 repoint: +1 more (bankSpareHullPct, POWERUPS — the health bank's heal-or-spare gate,
+  // spec §4.5). Not a lever: the bank is powerup pacing, not a threat parameter on the wave odometer
+  // — no chain, no floor/ceil/steps triple. Same reasoning a twenty-first time.
+  eq(nonLever.length, 61, "G: 61 non-lever knobs survive P6/P6d/P6e/P6f + CS025 P1/P2 + CS026 P3/P4/P5 + CS030 P3 + CS034 P8 + CS035 P2/P3/P4/P6 + CS036 P2/P5 + CS037 P2/P4/P7/P7.1 + CS038 P3/P5 + CS040 P2/P3/P4 + CS042 P6/P7/P9's registry");
   for (const e of nonLever) {
     assert(!e.label.includes("▼") && !e.label.includes("↳"), `G: non-lever knob ${e.id} carries no chain glyph`);
     assert(!e.label.startsWith(" "), `G: ...and no indent`);

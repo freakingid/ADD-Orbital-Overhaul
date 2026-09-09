@@ -507,10 +507,14 @@ console.log("(H) standing traps and the phase's own scope");
     "H: P8 adds NO debug-registry row — the orbs are geometry, tuned in tools/scoop-lab.html");
   assert(!X.LEVERS.some(l => /scoop/i.test(l.id || "")),
     "H: P8 adds no difficulty lever — the Scoop has never been levered and still is not");
-  eq(X.SCOOP_HITS_PER_LEVEL, 5,
-    "H: ⛔ SCOOP_HITS_PER_LEVEL is UNTOUCHED at 5 — the loss rate is §4.4 and belongs to P9, not here");
-  assert(!/bankSpareHullPct|healthReserve/i.test(bare),
-    "H: ...and §4.5's health-reserve rule has not been built ahead either");
+  // REWRITTEN IN PLACE BY CS042 P9: this pin said the loss rate and the health reserve belong to P9
+  // and not to P8. They did, and P9 has now built both — so the pin flips from "P8 must not touch
+  // this" to "P9 did, and P8's own scope claim still holds", which is the half that was ever P8's.
+  // Deleting it would throw away the record that P8 deliberately left SCOOP_HITS_PER_LEVEL alone.
+  eq(X.SCOOP_HITS_PER_LEVEL, 2,
+    "H: ⛔ SCOOP_HITS_PER_LEVEL is 2 — P8 left it at 5 deliberately and CS042 P9 (§4.4) moved it, not P8");
+  assert(/bankSpareHullPct/.test(bare),
+    "H: ...and §4.5's health reserve is P9's too, built there and not ahead of itself here");
   eq(X.SCOOP_MAX_BONUS, 500, "H: the at-cap bonus is unmoved — a pick at 7 pays exactly what a pick at 5 did");
   // The at-cap arm still fires at the NEW cap, not the old one.
   {

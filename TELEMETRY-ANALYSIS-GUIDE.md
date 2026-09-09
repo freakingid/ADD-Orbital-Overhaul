@@ -574,6 +574,17 @@ than the coefficients.
   simultaneously, which is why it gets a trap entry as well as a schema entry — `scoopHits` is
   documented correctly from the day it shipped, so it does not repeat that history, but the shape
   of the mistake is exactly the kind this trap entry exists to prevent a second time.
+  ⛔ **`scoopHits`' RATE moved at CS042 P9 (spec §4.4): `SCOOP_HITS_PER_LEVEL` went 5 → 2, so the
+  sawtooth resets more than twice as often in any capture taken from that build on.** The column's
+  SHAPE is unchanged and so is every rule above — it is still a sawtooth, still excluded by name from
+  monotonicity checks and cumulative totals, still without a cumulative twin. Only the tooth got
+  shorter. **A steeper, more frequent sawtooth in a v4 log is the shipped loss rate, not a defect and
+  not a player in trouble**; compare captures only within one build, and read the run's own
+  `DEBUG.scoopHitsPerLevel` off the export header's `levers=` fingerprint before comparing two.
+  The companion change in the same phase — a banked health charge can spend itself sparing a scoop
+  level instead of healing, above `bankSpareHullPct` (0.70) of hull — means a hit can now leave
+  `scoopHits` flat while `hp` still drops, so the old "`scoopLevel` ↔ `hp`, one cause two effects"
+  reading at the top of this section is weaker than it was: some hits no longer erode the scoop at all.
 - **Ring truncation makes every total a lower bound.** See §2.2.
 - **15 s aliasing.** Anything faster than the interval is invisible: an i-frame window, a chain
   sever and recovery, a powerup picked and fully spent. Absence of a change between two rows is not

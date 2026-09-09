@@ -147,14 +147,15 @@ const has = (rows, s) => rows.some(r => r.str === s);
   if (parentSrc === null) skip("A: registry/lever counts against the parent (no git history)");
   else {
     const P = buildGame({ source: parentSrc });
-    // WIDENED BY CS042 P6, then again by CS042 P7 — the standing moving-pin maintenance: P5 itself
+    // WIDENED BY CS042 P6, then again by P7 and P9 — the standing moving-pin maintenance: P5 itself
     // added no row and that is still what this asserts, but P6 legitimately appended three
-    // health-supply knobs after P5 landed and P7 one handling knob, so the pin names them rather than
-    // comparing raw totals.
+    // health-supply knobs after P5 landed, P7 one handling knob and P9 one bank knob, so the pin
+    // names them rather than comparing raw totals.
     const LATER_ROWS = ["healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct",
-      "cargoUnitMass"];   // CS042 P7 (spec §6.8)
+      "cargoUnitMass",       // CS042 P7 (spec §6.8)
+      "bankSpareHullPct"];   // CS042 P9 (spec §4.5)
     eq(X.DEBUG_ENTRIES.filter(v => !LATER_ROWS.includes(v.id)).length, P.DEBUG_ENTRIES.length,
-      "A: ⛔ the debug registry is the parent's, bar CS042 P6's three health-supply rows and P7's one handling row");
+      "A: ⛔ the debug registry is the parent's, bar CS042 P6's three health-supply rows, P7's one handling row and P9's one bank row");
     eq(X.LEVERS.length, P.LEVERS.length, "A: ⛔ ...and so is LEVERS");
     for (const k of ["levelBannerTime", "levelBannerFade", "levelEndGrace", "levelEndFade", "levelEndGracePulseEnd"])
       eq(X.DEBUG[k], P.DEBUG[k], `A: ⛔ DEBUG.${k} is unmoved — no ceremony TIMING changed`);

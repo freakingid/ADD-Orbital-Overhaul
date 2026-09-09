@@ -1203,6 +1203,21 @@ const POWERUP_HEALTH_AMOUNT = 25;    // +HP on Health pickup, capped at max (mat
 // which applyPowerup(), resumeFromSave()'s clamp and the HUD pip row all read (the standing
 // chainGuardIntercepts idiom).
 const HEALTH_BANK_MAX = 2;
+// CS042 P9 (spec §4.5): the banked charge's SECOND job, and the one threshold that decides which job
+// it does. Above this fraction of SHIP_MAX_HP a spent charge SPARES a scoop level instead of healing.
+// ⛔ THE HULL IS READ AFTER THE DAMAGE LANDS, WHICH IS WHY THIS IS A THRESHOLD AND NOT "IS THE HULL
+// FULL". damageShip() subtracts the hit before it ever reaches the bank, so the hull is essentially
+// never at maximum there — a literal full-hull rule would be dead code that never fired once. That
+// is the first thing this reads as being wrong, and it is not.
+// ⛔ NEVER BOTH: one charge does one job. See the auto-spend block in damageShip() for the arms.
+// ⛔ 0.70 IS THE SAME NUMBER AS REPAIR_MILESTONE_HULL_PCT, deliberately — CS042 has exactly one
+// definition of "hurt" (spec §2.3 d / §4.5), and if one of the two moves the other moves with it.
+// This const is only the registry row's `def` source; the live value is DEBUG.bankSpareHullPct.
+// ⛔ Both ends of the row are real settings rather than an off switch, which is what makes the knob
+// the gate's whole A/B: at 1.0 the hull is never above the gate, so the charge always heals and the
+// scoop always erodes (CS040's rule exactly, at P9's faster loss rate); at 0.0 a charge always
+// spares while a scoop exists.
+const BANK_SPARE_HULL_PCT = 0.70;
 const POWERUP_HEALTH_MIN_DIST = 220; // ambient Health spawns in a ring this..MAX from the ship (reachable, visible)
 const POWERUP_HEALTH_MAX_DIST = 520;
 // CS040 P4 (spec §2.2, FORK-CS040-C c1): the recycle hub's dry-weapon relief multiplier. Applied only
@@ -1350,11 +1365,20 @@ const SCOOP_ORB_TETHER_LEVEL = 7;     // the level at which each orb also draws 
 // would index `undefined` at the top level and capture nothing rather than failing loudly.
 if (SCOOP_WIDTH[0] !== 0 || SCOOP_DEPTH[0] !== 0 || SCOOP_ORB_OFFSET[0] !== 0 || SCOOP_ORB_R[0] !== 0) throw new Error("SCOOP step 0 must be 0 - inScoopBox depends on it");
 if (SCOOP_ORB_OFFSET.length !== SCOOP_MAX_LEVEL + 1 || SCOOP_ORB_R.length !== SCOOP_MAX_LEVEL + 1) throw new Error("SCOOP orb tables must be SCOOP_MAX_LEVEL+1 long - inScoopBox indexes them by level");
-const SCOOP_HITS_PER_LEVEL = 5;              // non-lethal hits that cost one scoop level (playtest knob, v3.4 P3
-                                              // 2->5). At 5 hits/level a level-5 scoop survives 25 non-lethal
-                                              // hits; with SHIP_MAX_HP 250 and DMG_MEDIUM 35 a full-health run
-                                              // only takes ~7 hits total, so the scoop is now effectively sticky
-                                              // once earned. That's the intent, not a bug to "fix."
+// CS042 P9 (spec §4.4) — ⛔ THE STICKINESS IS REVERSED, AT PAUL'S REQUEST. This comment is REWRITTEN
+// in place rather than deleted, because what it used to say was a deliberate design call and the
+// reversal is only legible beside it. v3.4 P3 took this constant 2 -> 5 and wrote the result down as
+// the intent: "At 5 hits/level a level-5 scoop survives 25 non-lethal hits; with SHIP_MAX_HP 250 and
+// DMG_MEDIUM 35 a full-health run only takes ~7 hits total, so the scoop is now effectively sticky
+// once earned. That's the intent, not a bug to 'fix.'" CS042 §4.4 reverses exactly that: the wanted
+// feel is that you NOTICE the scoop going, so it goes back to 2. Against the same ~7 non-lethal hits
+// a run now sheds three scoop levels instead of one.
+// ⛔ THE KNOB'S MEANING IS UNTOUCHED. DEBUG.scoopHitsPerLevel is a flat hits-per-level count, as it
+// has always been — no table, no curve, no per-level ramp. Only this `def` moved.
+// ⚠ §4.4 reasons from a level-5 cap ("three or four levels out of five"); CS042 P8 raised the cap to
+// SCOOP_MAX_LEVEL 7, so the fraction in the spec is stale even though the mechanism is not.
+const SCOOP_HITS_PER_LEVEL = 2;              // non-lethal hits that cost one scoop level (playtest knob;
+                                              // v3.4 P3 took it 2->5, CS042 P9 takes it back to 2)
 const SCOOP_MAX_BONUS = 500;                 // score paid when a scoop pickup lands at max level (once mirrored the full-HP REPAIR_FULL_BONUS, deleted CS040 P1; this one stands; tunable)
 const SCOOP_SPILL_KICK = 85;                 // v3.3 P4 (9c): px/s outward kick on the leftover when a clump is PARTIALLY scooped ("the rest floats off and away"); playtest knob (~60-110)
 // CS025 P3 added four SCOOP_MAGNET_* look-call constants here (stroke width / blur / nose-V width /
@@ -4627,6 +4651,18 @@ const DEBUG_VARS = [
     def: REPAIR_MILESTONE_GROWTH, min: 0, max: 0.5, step: 0.01 },
   { id: "repairMilestoneHullPct", label: "Milestone hull gate", unit: "",
     def: REPAIR_MILESTONE_HULL_PCT, min: 0.1, max: 1.0, step: 0.05 },
+  // CS042 P9 (spec §4.5): the health bank's heal-or-spare threshold, `def` deriving from
+  // BANK_SPARE_HULL_PCT (the standing idiom). Not a lever, for the reasons healthBankMax and the four
+  // healthGap rows above already carry — the bank is powerup pacing, not a difficulty ramp — so no
+  // floor/ceil/steps triple, no ▼/↳ glyph, no indent, no LEVERS entry.
+  // ⛔ NEITHER END IS AN OFF SWITCH, unlike most of this section's minima: 1.0 restores CS040's
+  // always-heal charge (the gate's clean A/B for the whole rule) and 0.0 makes the charge always
+  // spare the scoop while one exists. Both are settings, which is what makes this row span the design
+  // space §4.5 describes rather than just enabling and disabling it.
+  // ⛔ It is the SAME NUMBER as repairMilestoneHullPct above and is meant to move with it — see
+  // BANK_SPARE_HULL_PCT's own comment for why the changeset holds one definition of "hurt".
+  { id: "bankSpareHullPct", label: "Bank scoop-save hull gate", unit: "",
+    def: BANK_SPARE_HULL_PCT, min: 0, max: 1, step: 0.05 },
   // CS018 P6: GLOBAL fields — not per-lever tiers. Frequency jitter (formerly this section's own
   // `freqJitter` knob, scaling every frequency-shaped lever — appearance + direction-change) is CS024
   // P2's to freeze at its shipped 25% default (FREQ_JITTER, at jitteredInterval()'s site) and remove
@@ -11435,9 +11471,33 @@ function damageShip(amount, srcX, srcY, srcTag) {
   // dmgFrom* all describe the HIT, and the trough it caused was real whether or not a charge answers
   // it. The `hp < SHIP_MAX_HP` guard is the spec's own wording ("at the point hull drops below max"),
   // and it also means a 0-damage call could never burn a charge for nothing.
+  //
+  // CS042 P9 (spec §4.5) — THE CHARGE GAINS A SECOND JOB, AND ONE THRESHOLD CHOOSES BETWEEN THEM.
+  // ⛔ NEVER BOTH. One charge, one job: it either heals or it spares a scoop level, never each a bit.
+  // ⛔ THE HULL READ HERE IS THE POST-DAMAGE HULL, WHICH IS EXACTLY WHY THE RULE IS A THRESHOLD AND
+  //   NOT "IS THE HULL FULL". `s.hp -= amount` ran near the top of this function, so by the time
+  //   control reaches this line the hull is essentially never at maximum — a literal full-hull test
+  //   would be dead code that never fired once. This is the first thing a future reader will
+  //   question. It is not a bug, and it is not a sloppy approximation of a full-hull rule.
+  // ⛔ At scoopLevel 0 there is nothing to spare, so the charge heals whatever the hull reads. That
+  //   arm is not an exception to the threshold — it is what makes the threshold answerable at all.
+  // ⛔ THE SPEND GATE ITSELF IS UNCHANGED: the same `hp < SHIP_MAX_HP && healthBank > 0`, the same
+  //   one charge per damage event (FLAG-CS040-b), the same position below the `s.hp <= 0` exit, and
+  //   AudioSys.bankspend() still rings on BOTH arms — the arms differ in what the charge buys, not
+  //   in whether one was spent.
+  let scoopSpared = false;   // the spare arm's only output, read by the scoop-decay block below
   if (s.hp < SHIP_MAX_HP && game.healthBank > 0) {
     game.healthBank--;
-    s.hp = Math.min(SHIP_MAX_HP, s.hp + POWERUP_HEALTH_AMOUNT);
+    if (game.scoopLevel > 0 && s.hp > SHIP_MAX_HP * DEBUG.bankSpareHullPct) {
+      // The spare arm. No heal: the hull came through healthy enough that the scoop is the more
+      // valuable thing for the charge to buy. The floater mirrors the loss arm's "SCOOP -1" below, so
+      // the two read as one event answered two ways — without it a charge would vanish silently and
+      // the player could never learn the rule.
+      scoopSpared = true;
+      game.floaters.push(new FloatText("SCOOP SAVED", s.x, s.y - 22, POWERUP_COLOR.scoop));
+    } else {
+      s.hp = Math.min(SHIP_MAX_HP, s.hp + POWERUP_HEALTH_AMOUNT);
+    }
     AudioSys.bankspend();
   }
   for (let i = 0; i < 6; i++) game.particles.push(new Particle(s.x, s.y, "#ff9060"));
@@ -11494,7 +11554,17 @@ function damageShip(amount, srcX, srcY, srcTag) {
   // scoop level. scoopHits is a running tally — it is NOT reset by a scoop pickup (FORK-3: no), only
   // when a level is actually lost, and it doesn't accumulate at level 0 (hits there are harmless).
   // A shielded / i-frame hit early-returned above, so it never reaches here.
-  if (game.scoopLevel > 0) {
+  // ⛔ CS042 P9 (spec §4.5) — NO TRIGGER CHANGE HERE, AND THAT IS THE POINT. Scoop loss is keyed on
+  //   the SHIP being hit. breakChain(0) — a hazard hitting a chain NODE — takes the whole payload and
+  //   leaves the scoop untouched, because it never calls this function at all. FORK-S1 resolved to
+  //   "the build is already right": those are two different events and the separation IS the feature.
+  //   Do not unify the two paths. No srcTag test is needed either — the switch above already
+  //   enumerates exactly the sources in scope, and shielded / i-framed / auto-shielded hits returned
+  //   long before this line.
+  // ⛔ What P9 DID add is `scoopSpared`: a banked charge spent on a healthy hull buys this whole block
+  //   off for one hit. The TALLY does not advance either — sparing the scoop means the hit never
+  //   touched it, not that the level drop was deferred onto the next hit.
+  if (game.scoopLevel > 0 && !scoopSpared) {
     game.scoopHits++;
     if (game.scoopHits >= DEBUG.scoopHitsPerLevel) {
       game.scoopLevel = Math.max(0, game.scoopLevel - 1);

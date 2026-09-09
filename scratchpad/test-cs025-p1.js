@@ -771,10 +771,12 @@ function fullAndHolding(X, { level = 1 } = {}) {
     // WIDENED BY CS040 P4: and hubDryWeightMult, appended after healthBankMax. Same reasoning again.
     // WIDENED BY CS042 P6: and its three health-supply rows (healthSpawnLock, repairMilestoneGrowth,
     // repairMilestoneHullPct), appended after hubDryWeightMult. Same reasoning again.
+    // WIDENED BY CS042 P9: and bankSpareHullPct, appended after those three. Same reasoning again.
     for (const id of ids.slice(at + 1, gl))
       assert(id.startsWith("magnetPush") || id === "sweepPowerupCap" || id === "dockPowerupSpeed"
         || id.startsWith("healthGap") || id === "healthBankMax" || id === "hubDryWeightMult"
-        || id === "healthSpawnLock" || id.startsWith("repairMilestone"),
+        || id === "healthSpawnLock" || id.startsWith("repairMilestone")
+        || id === "bankSpareHullPct",
         `G: every POWERUPS row after magnetResumeDelay was appended by a LATER phase (found ${id})`);
   }
 
@@ -853,7 +855,8 @@ function fullAndHolding(X, { level = 1 } = {}) {
       || id === "healthBankMax"                                   // CS040 P3 (the health bank's cap)
       || id === "hubDryWeightMult"                                // CS040 P4 (the hub relief multiplier)
       || id === "healthSpawnLock" || id.startsWith("repairMilestone")  // CS042 P6 (health supply levelling)
-      || id === "cargoUnitMass";                                  // CS042 P7 (one mass, one force — §6.8)
+      || id === "cargoUnitMass"                                   // CS042 P7 (one mass, one force — §6.8)
+      || id === "bankSpareHullPct";                               // CS042 P9 (the bank's scoop-save gate)
     for (const id of notP1)
       assert(LATER(id), `G: ...and every other added id is a later phase's (found ${id})`);
     const removed = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !X.DEBUG_ENTRIES.some(v => v.id === id));
@@ -862,8 +865,19 @@ function fullAndHolding(X, { level = 1 } = {}) {
     eq(X.DEBUG_ENTRIES.map(v => v.id).filter(id => oldIds.has(id)).join(","),
        OLD.DEBUG_ENTRIES.map(v => v.id).join(","),
        "G: every pre-existing id keeps its relative order");
-    for (const oe of OLD.DEBUG_ENTRIES)
+    // WIDENED BY CS042 P9, on test-cs024-p6e.js §G's own precedent: a phase may legitimately RETUNE an
+    // existing row's def, and the pin then has to name it rather than go red. §4.4 takes
+    // scoopHitsPerLevel's def 5 -> 2 (the scoop is meant to be losable), so the assertion flips to
+    // "this one MUST differ" and every other id stays byte-strict.
+    const RETUNED_SINCE = new Set(["scoopHitsPerLevel"]);   // CS042 P9 (spec §4.4)
+    for (const oe of OLD.DEBUG_ENTRIES) {
+      if (RETUNED_SINCE.has(oe.id)) {
+        assert(X.DEBUG[oe.id] !== OLD.DEBUG[oe.id],
+          `G: DEBUG.${oe.id} is a DELIBERATE later-phase retune, so it must differ from the parent`);
+        continue;
+      }
       eq(X.DEBUG[oe.id], OLD.DEBUG[oe.id], `G: DEBUG.${oe.id} is byte-identical to the parent on an untouched panel`);
+    }
     // Likewise re-stated as the permanent structural truth it was always testing: the panel grows by
     // exactly one row per added registry entry (plus one per added SECTION HEADER — CS030 P3 added a
     // whole new CELEBRATION section, not just rows under an existing one), never by a hidden special case.

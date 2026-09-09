@@ -202,9 +202,13 @@ let X = null;
   // `floater` maker), seven to eight and the untouched remainder six to seven. It is a developer
   // instrument's constructor, not a delivery floater, and it names none of this phase's knobs — which
   // is exactly what the split below measures.
-  eq(totalSites, 8, "A: (setup) eight FloatText call sites exist in the source (CS035 P1 removed two, CS035 P2 one more, CS037 P2 added one)");
+  // RE-REPOINTED BY CS042 P9 (spec §4.5): damageShip()'s health-bank spare arm pushes a "SCOOP SAVED"
+  // floater, mirroring the "SCOOP -1" the loss arm already pushed — eight to nine, and the untouched
+  // remainder seven to eight. Like CS037 P2's benchmark floater it names none of this phase's knobs,
+  // which is what the split below actually measures.
+  eq(totalSites, 9, "A: (setup) nine FloatText call sites exist in the source (CS035 P1 removed two, CS035 P2 one more, CS037 P2 and CS042 P9 added one each)");
   eq(knobSites, 1, "A: ...exactly one of them is still one of this phase's (the incidental push is deleted)");
-  eq(totalSites - knobSites, 7, "A: ⛔ ...and the other seven are byte-identical to the parent (CS012 P3's own trailing-optional precedent)");
+  eq(totalSites - knobSites, 8, "A: ⛔ ...and the other eight are byte-identical to the parent (CS012 P3's own trailing-optional precedent)");
 })();
 
 // ================= (B) the registry =====================

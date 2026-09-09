@@ -680,7 +680,10 @@ function evalSlice(literal) {
       // CS042 P7 repoint: and cargoUnitMass (SHIP, appended right after towReleaseSpeed) — spec §6.8's
       // one-mass handling knob, CS042 P7's row, not P6b's. Same reasoning a sixteenth time. Interior,
       // not tail-anchored, like the towRelease strip above: every later section already followed SHIP.
-      .replace(/,cargoUnitMass/, "");
+      .replace(/,cargoUnitMass/, "")
+      // CS042 P9 repoint: and bankSpareHullPct (POWERUPS, appended right after repairMilestoneHullPct)
+      // — spec §4.5's heal-or-spare gate, CS042 P9's row, not P6b's. Same reasoning a seventeenth time.
+      .replace(/,bankSpareHullPct/, "");
     eq(collapsedX, collapse(OLD.DEBUG_VARS),
       `G: the registry's entries and their ORDER are identical to ${PRE_P6B_REF} once P6c's three-rows-per-lever split is collapsed`);
     // The nine restaged knobs' DERIVED SLIDER STEP is the one registry consequence P6b has, and it

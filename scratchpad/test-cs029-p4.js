@@ -120,7 +120,9 @@ const src = scriptSource();
   // than rewritten parent-relative like its siblings — that is a refactor, not a phase-local call.
   // REPOINTED BY CS042 P7: +1 — cargoUnitMass, the cargo's effective mass (spec §6.8). Same literal-total
   // caveat as the CS042 P6 note directly above; still repointed, still not rewritten parent-relative.
-  eq(X.DEBUG_ENTRIES.length, 114, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture, CS038 P5's twelve retirements, CS040 P2's four, CS040 P3's one, CS040 P4's one, CS042 P6's three and CS042 P7's one later) — G1=C carries no new registry row");
+  // REPOINTED BY CS042 P9: +1 — bankSpareHullPct, the health bank's heal-or-spare gate (spec §4.5).
+  // Same literal-total caveat as the two notes directly above; still repointed, not rewritten.
+  eq(X.DEBUG_ENTRIES.length, 115, "B: ⛔ DEBUG_ENTRIES.length is unchanged from this phase's own parent (bar CS030 P3's two, CS034 P8's net four, CS035 P2's one, CS035 P3's four, CS035 P4's five, CS035 P6's five, CS036 P2's one retirement, CS036 P5's one addition CS037 P2's four BENCHMARK controls, CS037 P4's telemetryInterval, CS037 P7's two delivery score knobs, CS037 P7.1's two tow release knobs, CS038 P3's telemetryCapture, CS038 P5's twelve retirements, CS040 P2's four, CS040 P3's one, CS040 P4's one, CS042 P6's three, CS042 P7's one and CS042 P9's one later) — G1=C carries no new registry row");
   assert(!("deliveryFloatAnchorFrac" in X.DEBUG), "B: DELIVERY_FLOAT_ANCHOR_FRAC did not become a registry row");
   assert(!("minGap" in X.DEBUG) && !("deliveryFloatMinGap" in X.DEBUG),
     "B: no minGap knob either — that belongs to model B, which was not picked");

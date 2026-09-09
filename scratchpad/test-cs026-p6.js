@@ -684,7 +684,9 @@ const isLeader = str => str.length > 0 && [...str].every(ch => ch === "·");
       // REPOINTED BY CS042 P6: the three health-supply rows join the excluded set, same idiom.
       "healthSpawnLock", "repairMilestoneGrowth", "repairMilestoneHullPct",
       // REPOINTED BY CS042 P7: cargoUnitMass (spec §6.8) joins it too, same idiom.
-      "cargoUnitMass"]);
+      "cargoUnitMass",
+      // REPOINTED BY CS042 P9: bankSpareHullPct (spec §4.5) joins it too, same idiom.
+      "bankSpareHullPct"]);
     const laterIdsOld = new Set(["deliveryFloatLife", "deliveryFloatRise"]);
     const xIdsSansLater = X.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsX.has(id));
     const oldIdsSansLater = OLD.DEBUG_ENTRIES.map(v => v.id).filter(id => !laterIdsOld.has(id));
