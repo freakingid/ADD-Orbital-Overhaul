@@ -9,11 +9,22 @@
 //  (A) node --check passes on the extracted script (syntax).
 //  (B) inScoopBox() returns byte-identical booleans before/after this phase's render-only edit,
 //      across every scoop level and a spread of forward/lateral/wrap-adjacent poses.
+//
+// ⛔ A SIXTH MOVING-`HEAD` PIN, FOUND AND REPAIRED BY CS042 P8 — the same defect and the same fix
+// as test-cs010-p2.js §D (CS042 P7). Until now §B compared `git show HEAD:...` against the WORKING
+// TREE, so for thirty-odd changesets it compared a build against itself and passed vacuously; the
+// first phase to legitimately change the capture geometry (CS042 P8's flanking orbs) made it fail
+// for a reason that has nothing to do with CS010. Both sides are now LITERAL SHAs — CS010 P1's own
+// commit and its parent — which reproduces CS010's original claim exactly ("this edit is
+// render-only") and can never be re-aimed. The parent predates the CS029 rename, so the source is
+// fetched through _phase-ref.js's parentSource(), which carries both game-file names.
 
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+
+const { parentSource, SKIP_TAG } = require("./_phase-ref.js");
 
 const repoRoot = path.join(__dirname, "..");
 const htmlPath = path.join(repoRoot, "orbital-overhaul.html");
@@ -27,21 +38,12 @@ function extractScript(html) {
 const currentHtml = fs.readFileSync(htmlPath, "utf8");
 const currentSrc = extractScript(currentHtml);
 
-let headHtml;
-try {
-  // ⛔ maxBuffer ADDED CS042 P7, AND IT WAS A HARD FAILURE, NOT A PRECAUTION. execSync's default
-  // maxBuffer is 1 MiB (1,048,576 B) and orbital-overhaul.html crossed it at CS042 P6's commit
-  // (1,040,713 -> 1,050,828 B), so `git show HEAD:...` started dying with ENOBUFS the moment that
-  // commit became HEAD — a latent tripwire that could only fire AFTER the phase that armed it. Every
-  // other git-show site in the suite already carried this 64 MB idiom; three did not (here,
-  // test-cs010-p2.js and test-cs025-p4.js) and all three are fixed together.
-  headHtml = execSync("git show HEAD:orbital-overhaul.html",
-    { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-} catch (e) {
-  console.error("Could not read HEAD version of orbital-overhaul.html:", e.message);
-  process.exit(1);
-}
-const headSrc = extractScript(headHtml);
+// CS010 P1's own commit and its parent. LITERALS — see the header. parentSource() already carries
+// the 64 MB maxBuffer (the ENOBUFS tripwire CS042 P7 found) and resolves the pre-CS029 filename.
+const CS010_P1     = "0b3d07b762e90fa0f6c5f2ac0df5adac18b03588";
+const CS010_P1_PAR = "39369b909ebb54e247667460f065375f481ec6af";
+const headSrc  = parentSource(CS010_P1_PAR);   // the build CS010 P1 edited
+const afterSrc = parentSource(CS010_P1);       // the build CS010 P1 produced
 
 const noopCtx = new Proxy({}, { get: () => () => {} });
 const canvasStub = { width: 1280, height: 720, style: {}, getContext: () => noopCtx };
@@ -88,7 +90,7 @@ function buildInstance(scriptSrc) {
   return factory(windowStub, documentStub, performanceStub, rafStub, navigatorStub, localStorageStub);
 }
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond, msg) { if (cond) passed++; else { failed++; console.error("  FAIL: " + msg); } }
 
 // ================= (A) syntax check =====================
@@ -107,10 +109,15 @@ function assert(cond, msg) { if (cond) passed++; else { failed++; console.error(
 
 // ================= (B) inScoopBox() byte-identical before/after =====================
 (function sectionB() {
-  console.log("(B) inScoopBox() unchanged across levels/poses, HEAD vs working tree");
+  console.log("(B) inScoopBox() unchanged across levels/poses, CS010 P1's parent vs CS010 P1");
+  if (!headSrc || !afterSrc) {
+    skipped++;
+    console.log(`  ${SKIP_TAG}: CS010 P1 (${CS010_P1.slice(0, 7)}) or its parent is unreachable`);
+    return;
+  }
 
   const before = buildInstance(headSrc);
-  const after = buildInstance(currentSrc);
+  const after = buildInstance(afterSrc);
 
   before.startGame();
   after.startGame();
@@ -125,6 +132,8 @@ function assert(cond, msg) { if (cond) passed++; else { failed++; console.error(
     [0, 5], [0, -5], [0, 44], [0, 45], [0, 46], [30, 20], [30, -20], [50, 40], [1270, 0], [-1270, 0]
   ];
 
+  // 0..5 was the whole range at CS010 (SCOOP_MAX_LEVEL was 5 on BOTH pinned builds; CS042 P8 later
+  // raised the live cap to 7, which cannot reach back into either of these two commits).
   let cases = 0;
   for (let lvl = 0; lvl <= 5; lvl++) {
     before.game.scoopLevel = after.game.scoopLevel = lvl;
@@ -142,5 +151,5 @@ function assert(cond, msg) { if (cond) passed++; else { failed++; console.error(
   console.log(`  (${cases} poses x levels checked)`);
 })();
 
-console.log(`\n${passed} passed, ${failed} failed`);
+console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed > 0 ? 1 : 0);

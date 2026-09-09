@@ -40,9 +40,10 @@
 <div id="canvasWrap"><canvas id="cv" width="900" height="720"></canvas></div>
 <div id="panel">
   <h1>Scoop Lab</h1>
-  <p class="sub">Standalone design harness for SCOOP_CONFIG. Not part of the game build — no
-  build step, no imports; this file carries its own copies of the real math (buildScoopSteps,
-  inScoopBox, drawPoly, glowStroke). Drag the green canisters to eyeball the mouth.</p>
+  <p class="sub">Standalone design harness for SCOOP_CONFIG and (CS042 P8) the flanking orbs. Not
+  part of the game build — no build step, no imports; this file carries its own copies of the real
+  math (buildScoopSteps, inScoopBox, drawPoly, glowStroke). Drag the green canisters to eyeball the
+  mouth and the orbs.</p>
 
   <h2>Config</h2>
   <label>maxWidthMult (L5 mouth width, x SHIP_DRAW_W)
@@ -66,19 +67,39 @@
       <span class="val" id="maxDepthVal"></span></div>
   </label>
 
+  <h2>Flanking orbs (L6-L7)</h2>
+  <p class="hint">CS042 P8 / spec §4.3. The mouth's own curve stops at L5 — levels 6 and 7 read L5's
+  mouth and add two capture discs abreast of the ship. Lateral reach, not a bigger cone.</p>
+  <label>L6 orb offset (px lateral, both sides)
+    <div class="row"><input type="range" id="orbOffset6" min="0" max="160" step="1">
+      <span class="val" id="orbOffset6Val"></span></div>
+  </label>
+  <label>L6 orb radius (px)
+    <div class="row"><input type="range" id="orbR6" min="0" max="70" step="1">
+      <span class="val" id="orbR6Val"></span></div>
+  </label>
+  <label>L7 orb offset (px lateral, both sides)
+    <div class="row"><input type="range" id="orbOffset7" min="0" max="160" step="1">
+      <span class="val" id="orbOffset7Val"></span></div>
+  </label>
+  <label>L7 orb radius (px)
+    <div class="row"><input type="range" id="orbR7" min="0" max="70" step="1">
+      <span class="val" id="orbR7Val"></span></div>
+  </label>
+
   <h2>Level</h2>
   <div id="levelRow"></div>
-  <label class="row" id="ghostToggle"><input type="checkbox" id="ghostAll"> show all 6 levels (ghost overlay)</label>
+  <label class="row" id="ghostToggle"><input type="checkbox" id="ghostAll"> show all 8 levels (ghost overlay)</label>
   <p class="hint">Ship hull drawn at SHIP_DRAW_W = 18px (grepped from Ship.draw()'s poly). Garbage
   canisters drawn at radius 7 (grepped from drawCanister()). Highlighted = currently inside the
-  mouth per the real inScoopBox math.</p>
+  mouth OR an orb, per the real inScoopBox math.</p>
 
   <h2>Generated arrays</h2>
   <pre id="arrayOut"></pre>
 
   <h2>Copy config</h2>
   <pre id="configOut"></pre>
-  <button id="copyBtn">Copy SCOOP_CONFIG literal</button>
+  <button id="copyBtn">Copy SCOOP_CONFIG + orb tables</button>
 </div>
 
 <script>
@@ -90,32 +111,44 @@
 const TAU = Math.PI * 2;
 const SHIP_RADIUS = 13;
 const SHIP_DRAW_W = 18; // the drawn hull's width — the unit the scoop is spec'd in
-const SCOOP_MAX_LEVEL = 5;
+const SCOOP_MAX_LEVEL = 7;    // CS042 P8: 5 -> 7 (levels 6-7 are the orbs)
+const SCOOP_MOUTH_LEVELS = 5; // the mouth curve keeps its OWN five-step span - FORK-CS042-A (a)
+const SCOOP_ORB_SEGS = 12;
+const SCOOP_ORB_TETHER_LEVEL = 7;
 const SHIP_HULL = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
 const COLOR = {
   ship: "#9fd8ff",
   garbage: "#c8ff50",
   garbageHot: "#ffcf5a", // lab-only: highlight for "inside the mouth"
   dock: "#70ffa0",
+  scoop: "#c07bff",      // POWERUP_COLOR.scoop - the orbs' violet
   dim: "#3a5a80",
   text: "#a8d4ff",
 };
 
+// CS042 P8: the divisor is SCOOP_MOUTH_LEVELS, never SCOOP_MAX_LEVEL - using the cap here would
+// re-spread the curve over seven steps and shrink levels 2-4. Levels above the mouth's span clamp
+// to its top step.
 function buildScoopSteps(min, max, curve) {
   const steps = [0];
   for (let k = 1; k <= SCOOP_MAX_LEVEL; k++) {
-    steps.push(min + (max - min) * Math.pow((k - 1) / (SCOOP_MAX_LEVEL - 1), curve));
+    const m = Math.min(k, SCOOP_MOUTH_LEVELS);
+    steps.push(min + (max - min) * Math.pow((m - 1) / (SCOOP_MOUTH_LEVELS - 1), curve));
   }
   return steps;
 }
 
-function inScoopBox(g, ship, SCOOP_WIDTH, SCOOP_DEPTH, lvl) {
+function inScoopBox(g, ship, SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_ORB_OFFSET, SCOOP_ORB_R, lvl) {
   if (lvl <= 0) return false;
   const dx = g.x - ship.x, dy = g.y - ship.y;
   const ca = Math.cos(ship.angle), sa = Math.sin(ship.angle);
   const forward =  dx * ca + dy * sa;
   const lateral = -dx * sa + dy * ca;
-  return Math.abs(lateral) <= SCOOP_WIDTH[lvl] / 2 && forward >= -SHIP_RADIUS && forward <= SCOOP_DEPTH[lvl];
+  if (Math.abs(lateral) <= SCOOP_WIDTH[lvl] / 2 && forward >= -SHIP_RADIUS && forward <= SCOOP_DEPTH[lvl]) return true;
+  const orbR = SCOOP_ORB_R[lvl];
+  if (orbR <= 0) return false;
+  const off = Math.abs(lateral) - SCOOP_ORB_OFFSET[lvl];
+  return forward * forward + off * off <= orbR * orbR;
 }
 
 function drawPoly(ctx, points, x, y, angle, color, closed = true) {
@@ -152,8 +185,10 @@ const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 const ship = { x: cv.width / 2, y: cv.height / 2, angle: -Math.PI / 2 };
 
-const cfg = { maxWidthMult: 5.0, minWidthMult: 1.2, curve: 1.0, minDepth: 20, maxDepth: 60 };
-let level = 5;
+const cfg = { maxWidthMult: 5.0, minWidthMult: 2.6, curve: 1.0, minDepth: 34, maxDepth: 60 };
+// CS042 P8: the two orb tables, editable at their only two non-zero levels. Index = scoop level.
+const orb = { orbOffset6: 62, orbR6: 26, orbOffset7: 84, orbR7: 34 };
+let level = 7;
 let ghostAll = false;
 
 // scatter of draggable garbage canisters
@@ -173,14 +208,21 @@ function rand(a, b) { return a + Math.random() * (b - a); }
 
 // ---- controls wiring ----
 const ids = ["maxWidthMult", "minWidthMult", "curve", "minDepth", "maxDepth"];
+const orbIds = ["orbOffset6", "orbR6", "orbOffset7", "orbR7"];
 for (const id of ids) {
   const el = document.getElementById(id);
   el.value = cfg[id];
   el.addEventListener("input", () => { cfg[id] = parseFloat(el.value); syncLabels(); render(); });
 }
+for (const id of orbIds) {
+  const el = document.getElementById(id);
+  el.value = orb[id];
+  el.addEventListener("input", () => { orb[id] = parseFloat(el.value); syncLabels(); render(); });
+}
 function syncLabels() {
   for (const id of ids) document.getElementById(id + "Val").textContent =
     (Number.isInteger(cfg[id]) ? cfg[id] : cfg[id].toFixed(2));
+  for (const id of orbIds) document.getElementById(id + "Val").textContent = orb[id];
 }
 syncLabels();
 
@@ -204,7 +246,7 @@ const copyBtn = document.getElementById("copyBtn");
 copyBtn.addEventListener("click", () => {
   const text = document.getElementById("configOut").textContent;
   const done = () => { copyBtn.classList.add("copied"); copyBtn.textContent = "Copied!";
-    setTimeout(() => { copyBtn.classList.remove("copied"); copyBtn.textContent = "Copy SCOOP_CONFIG literal"; }, 1200); };
+    setTimeout(() => { copyBtn.classList.remove("copied"); copyBtn.textContent = "Copy SCOOP_CONFIG + orb tables"; }, 1200); };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done, done);
   } else {
@@ -241,6 +283,8 @@ function mousePos(e) {
 function render() {
   const SCOOP_WIDTH = buildScoopSteps(cfg.minWidthMult * SHIP_DRAW_W, cfg.maxWidthMult * SHIP_DRAW_W, cfg.curve);
   const SCOOP_DEPTH = buildScoopSteps(cfg.minDepth, cfg.maxDepth, cfg.curve);
+  const SCOOP_ORB_OFFSET = [0, 0, 0, 0, 0, 0, orb.orbOffset6, orb.orbOffset7];
+  const SCOOP_ORB_R      = [0, 0, 0, 0, 0, 0, orb.orbR6,      orb.orbR7];
 
   ctx.clearRect(0, 0, cv.width, cv.height);
 
@@ -257,13 +301,37 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
+  // CS042 P8: the flanking orbs, the game's own render — a SCOOP_ORB_SEGS-gon stroked in
+  // POWERUP_COLOR.scoop per side, plus a faint COLOR.dim tether to the hull at the tether level.
+  // No fill, matching the build.
+  function drawOrbs(lvl, alpha) {
+    if (!(SCOOP_ORB_R[lvl] > 0)) return;
+    const off = SCOOP_ORB_OFFSET[lvl], orbR = SCOOP_ORB_R[lvl];
+    ctx.globalAlpha = alpha;
+    for (const side of [-1, 1]) {
+      const ring = [];
+      for (let i = 0; i < SCOOP_ORB_SEGS; i++) {
+        const a = (i / SCOOP_ORB_SEGS) * TAU;
+        ring.push([Math.cos(a) * orbR, side * off + Math.sin(a) * orbR]);
+      }
+      drawPoly(ctx, ring, ship.x, ship.y, ship.angle, lvl === level ? COLOR.scoop : COLOR.dim);
+      if (lvl >= SCOOP_ORB_TETHER_LEVEL) {
+        drawPoly(ctx, [[0, side * SHIP_RADIUS], [0, side * (off - orbR)]],
+          ship.x, ship.y, ship.angle, COLOR.dim, false);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // ghost overlay: nested mouths for every level, dim, so the scaling BETWEEN steps is visible
   if (ghostAll) {
     for (let lvl = 1; lvl <= SCOOP_MAX_LEVEL; lvl++) {
       drawScoopV(lvl, lvl === level ? 1.0 : 0.28);
+      drawOrbs(lvl, lvl === level ? 1.0 : 0.28);
     }
   } else if (level > 0) {
     drawScoopV(level, 1.0);
+    drawOrbs(level, 1.0);
   }
 
   // ship hull
@@ -274,15 +342,25 @@ function render() {
   let inside = 0;
   for (const c of canisters) {
     const d2 = (c.x - ship.x) ** 2 + (c.y - ship.y) ** 2;
-    const hit = d2 < GARBAGE_PICKUP * GARBAGE_PICKUP || inScoopBox(c, ship, SCOOP_WIDTH, SCOOP_DEPTH, level);
+    const hit = d2 < GARBAGE_PICKUP * GARBAGE_PICKUP ||
+      inScoopBox(c, ship, SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_ORB_OFFSET, SCOOP_ORB_R, level);
     if (hit) inside++;
     drawCanister(ctx, c.x, c.y, c.spin, hit ? COLOR.garbageHot : COLOR.garbage);
   }
 
+  // Box area = width x (depth + SHIP_RADIUS), the exact region inScoopBox() tests; orbs add
+  // 2 x pi x r^2 (they overlap the mouth slightly at L6, so this reads a little high there).
+  const boxArea = SCOOP_WIDTH[level] * (SCOOP_DEPTH[level] + SHIP_RADIUS);
+  const orbArea = 2 * Math.PI * SCOOP_ORB_R[level] * SCOOP_ORB_R[level];
   document.getElementById("arrayOut").textContent =
-    `SCOOP_WIDTH = [${SCOOP_WIDTH.map(v => v.toFixed(1)).join(", ")}]\n` +
-    `SCOOP_DEPTH = [${SCOOP_DEPTH.map(v => v.toFixed(1)).join(", ")}]\n\n` +
+    `SCOOP_WIDTH      = [${SCOOP_WIDTH.map(v => v.toFixed(1)).join(", ")}]\n` +
+    `SCOOP_DEPTH      = [${SCOOP_DEPTH.map(v => v.toFixed(1)).join(", ")}]\n` +
+    `SCOOP_ORB_OFFSET = [${SCOOP_ORB_OFFSET.join(", ")}]\n` +
+    `SCOOP_ORB_R      = [${SCOOP_ORB_R.join(", ")}]\n\n` +
     `level ${level}: width ${SCOOP_WIDTH[level].toFixed(1)}px, depth ${SCOOP_DEPTH[level].toFixed(1)}px, ` +
+    `orb ${SCOOP_ORB_OFFSET[level]}/${SCOOP_ORB_R[level]}px\n` +
+    `area: mouth ${boxArea.toFixed(0)} + orbs ${orbArea.toFixed(0)} = ${(boxArea + orbArea).toFixed(0)} px² ` +
+    `(base circle ${(Math.PI * GARBAGE_PICKUP * GARBAGE_PICKUP).toFixed(0)} px²)\n` +
     `${inside}/${canisters.length} canisters captured`;
 
   document.getElementById("configOut").textContent =
@@ -292,7 +370,9 @@ function render() {
   curve:        ${cfg.curve.toFixed(2)},
   minDepth:     ${cfg.minDepth},
   maxDepth:     ${cfg.maxDepth},
-};`;
+};
+const SCOOP_ORB_OFFSET = [${SCOOP_ORB_OFFSET.join(", ")}];
+const SCOOP_ORB_R      = [${SCOOP_ORB_R.join(", ")}];`;
 }
 render();
 </script>

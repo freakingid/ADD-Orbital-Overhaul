@@ -1267,7 +1267,18 @@ const POWERUP_BUDGET = { rapid: RAPID_SHOTS, triple: TRIPLE_SHOTS, magnet: MAGNE
 // HITS (never on a clock). Each level widens/deepens an oriented capture BOX (the "mouth") on the
 // ship's facing axis that scoops garbage in ADDITION to the base GARBAGE_PICKUP circle (they're OR'd,
 // so scoopLevel 0 is byte-identical to the pre-scoop build).
-const SCOOP_MAX_LEVEL = 5;
+// CS042 P8 (spec §4.3): 5 -> 7. Levels 1-5 grow the forward mouth exactly as before; levels 6 and 7
+// add the flanking ORBS below — the Scoop's first LATERAL reach, and the first level that grants a
+// capability rather than a bigger number. This constant governs the CAP, the HUD ring's segment
+// count and the two orb tables. It does NOT govern the mouth curve — see SCOOP_MOUTH_LEVELS.
+const SCOOP_MAX_LEVEL = 7;
+// ⛔ CS042 P8 — THE MOUTH CURVE HAS ITS OWN SPAN, AND IT IS NOT SCOOP_MAX_LEVEL. FORK-CS042-A (a).
+// buildScoopSteps() divides by (N - 1). Handing it SCOOP_MAX_LEVEL after the cap went 5 -> 7 would
+// re-spread the same min->max range over seven steps and SILENTLY SHRINK every existing level:
+// L2's mouth would go 38.7 -> 33.0 px, L3 55.8 -> 44.4, L4 72.9 -> 55.8, with only L1 and L5 held.
+// The mouth therefore keeps its own five-step span, and levels 6-7 read level 5's mouth unchanged.
+// The mouth's numbers do not move when the cap does.
+const SCOOP_MOUTH_LEVELS = 5;
 const SHIP_DRAW_W = 18;    // the drawn hull's width (see Ship's draw poly) - the unit the scoop is spec'd in
 // v3.4 P3: SCOOP_WIDTH/SCOOP_DEPTH are GENERATED from this config instead of hand-picked, so the mouth's
 // size curve can be tuned with tools/scoop-lab.html instead of eyeballing raw px arrays. Edit these five
@@ -1275,26 +1286,70 @@ const SHIP_DRAW_W = 18;    // the drawn hull's width (see Ship's draw poly) - th
 const SCOOP_CONFIG = {
   maxWidthMult: 5.0,   // v3.6 P1c: 3.0 -> 5.0 (L5 mouth 54px -> 90px). Playtest starting point, not a
                         // decision — re-pick in tools/scoop-lab.html.
-  minWidthMult: 1.2,   // L1 mouth width, same units
+  // ⛔ CS042 P8 (spec §4.2/§4.3) — THE LEVEL-1 FLOOR, RAISED. minWidthMult 1.2 -> 2.6 (L1 mouth
+  // 21.6 -> 46.8 px) and minDepth 20 -> 34. §4.2 measured the defect: at 1.2/20 the L1 mouth spans
+  // +/-10.8 lateral and -13..+20 forward against an 18-px base pickup disc, so it sits almost
+  // entirely INSIDE the circle and the first pickup — the one that teaches what a Scoop is —
+  // changes almost nothing. The measurement IS the justification, so it is recorded here.
+  // Box area = width x (depth + SHIP_RADIUS), the exact region inScoopBox() tests; the base pickup
+  // circle (GARBAGE_PICKUP 18) is 1,018 px² for scale.
+  //
+  //   Level |  before (1.2 / 20)  |  after (2.6 / 34)   | L5 mouth is unmoved by design
+  //   ------+---------------------+---------------------+------------------------------
+  //     1   | 21.6 x 20 =    713  | 46.8 x 34 =  2,200  |  <- the fix: ~3.1x the old mouth
+  //     2   | 38.7 x 30 =  1,664  | 57.6 x 40.5 = 3,082 |
+  //     3   | 55.8 x 40 =  2,957  | 68.4 x 47 =  4,104  |
+  //     4   | 72.9 x 50 =  4,593  | 79.2 x 53.5 = 5,267 |
+  //     5   | 90.0 x 60 =  6,570  | 90.0 x 60 =  6,570  |  <- identical, both endpoints held
+  //
+  // ⚠ Spec §4.3's prose says L1 lands at "~2,246 px² ... just ahead of the Magnet". The measured
+  // figure at the constants it names is 2,200 px², and the Magnet's boosted pickup circle
+  // (MAGNET_PICKUP_MULT 1.6 -> r 28.8) is 2,606 px², so L1 is BELOW the Magnet on either number.
+  // The constants ship as §4.3 specifies them; the prose is doc debt, not a reason to invent a
+  // different value. See STATUS.md.
+  minWidthMult: 2.6,   // L1 mouth width, same units (CS042 P8: 1.2 -> 2.6)
   curve:        1.0,   // step distribution: 1.0 = linear; >1 = weighted toward the LARGE end
-  minDepth:     20,    // px forward of ship center at L1
+  minDepth:     34,    // px forward of ship center at L1 (CS042 P8: 20 -> 34)
   maxDepth:     60,    // v3.6 P1c: 36 -> 60, proportional to the width bump. Playtest starting point,
                         // not a decision — re-pick in tools/scoop-lab.html.
 };
 // Build a SCOOP_MAX_LEVEL+1-length step table: index 0 is ALWAYS 0 (byte-identical to the pre-scoop
-// build at scoopLevel 0 — see inScoopBox); indices 1..SCOOP_MAX_LEVEL interpolate min->max via `curve`
-// (1.0 linear, >1 weights growth toward the top levels).
+// build at scoopLevel 0 — see inScoopBox); indices 1..SCOOP_MOUTH_LEVELS interpolate min->max via
+// `curve` (1.0 linear, >1 weights growth toward the top levels).
+// ⛔ CS042 P8: the interpolation divides by (SCOOP_MOUTH_LEVELS - 1), NEVER (SCOOP_MAX_LEVEL - 1).
+// The table is still cap-length so `inScoopBox`/`Ship.draw()` can index it by raw level, but every
+// level above the mouth's own span CLAMPS to the top step rather than re-spreading the curve.
+// Restoring SCOOP_MAX_LEVEL here is the one edit that silently shrinks levels 2-4 — see
+// SCOOP_MOUTH_LEVELS' own comment for the exact numbers it would move.
 function buildScoopSteps(min, max, curve) {
   const steps = [0];
   for (let k = 1; k <= SCOOP_MAX_LEVEL; k++) {
-    steps.push(min + (max - min) * Math.pow((k - 1) / (SCOOP_MAX_LEVEL - 1), curve));
+    const m = Math.min(k, SCOOP_MOUTH_LEVELS);
+    steps.push(min + (max - min) * Math.pow((m - 1) / (SCOOP_MOUTH_LEVELS - 1), curve));
   }
   return steps;
 }
 const SCOOP_WIDTH = buildScoopSteps(SCOOP_CONFIG.minWidthMult * SHIP_DRAW_W,
                                      SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W, SCOOP_CONFIG.curve);
 const SCOOP_DEPTH = buildScoopSteps(SCOOP_CONFIG.minDepth, SCOOP_CONFIG.maxDepth, SCOOP_CONFIG.curve);
-if (SCOOP_WIDTH[0] !== 0 || SCOOP_DEPTH[0] !== 0) throw new Error("SCOOP step 0 must be 0 - inScoopBox depends on it");
+// CS042 P8 (spec §4.3) — THE FLANKING ORBS. Two capture discs abreast of the ship, one per side, at
+// +/-SCOOP_ORB_OFFSET[lvl] lateral in the SAME ship-local space the mouth is tested in, each of
+// radius SCOOP_ORB_R[lvl], OR'd into the capture region beside the mouth and the base circle. Index
+// = scoop level, so both tables are SCOOP_MAX_LEVEL+1 long and zero at every level below the orb
+// tier; the load-time guard below is what makes a level-0 ship unable to grow orbs. Starting values
+// from spec §4.3 — re-pick in tools/scoop-lab.html, which renders and sizes them.
+const SCOOP_ORB_OFFSET = [0, 0, 0, 0, 0, 0, 62, 84];  // px lateral from ship center, mirrored both sides
+const SCOOP_ORB_R      = [0, 0, 0, 0, 0, 0, 26, 34];  // px capture radius of one orb (2 x pi x r^2 = 4,247 / 7,263 px²)
+const SCOOP_ORB_SEGS = 12;            // sides of the drawn orb ring — a stroked poly, never an arc fill
+const SCOOP_ORB_TETHER_LEVEL = 7;     // the level at which each orb also draws a faint tether to the hull
+// ⛔ THE LOAD-TIME GUARD — A DELIBERATE INVARIANT GUARD, NOT TEST SCAFFOLDING. It is what makes
+// inScoopBox() return false at scoopLevel 0, which keeps pickup byte-identical to the pre-scoop
+// build. CS042 P8 extended it over the two orb tables for the same reason (an orb table with a
+// non-zero index 0 grows orbs on a level-0 ship) and added the LENGTH check: the mouth tables are
+// generated from the cap while the orb tables are literals, so a future cap change that misses them
+// would index `undefined` at the top level and capture nothing rather than failing loudly.
+if (SCOOP_WIDTH[0] !== 0 || SCOOP_DEPTH[0] !== 0 || SCOOP_ORB_OFFSET[0] !== 0 || SCOOP_ORB_R[0] !== 0) throw new Error("SCOOP step 0 must be 0 - inScoopBox depends on it");
+if (SCOOP_ORB_OFFSET.length !== SCOOP_MAX_LEVEL + 1 || SCOOP_ORB_R.length !== SCOOP_MAX_LEVEL + 1) throw new Error("SCOOP orb tables must be SCOOP_MAX_LEVEL+1 long - inScoopBox indexes them by level");
 const SCOOP_HITS_PER_LEVEL = 5;              // non-lethal hits that cost one scoop level (playtest knob, v3.4 P3
                                               // 2->5). At 5 hits/level a level-5 scoop survives 25 non-lethal
                                               // hits; with SHIP_MAX_HP 250 and DMG_MEDIUM 35 a full-health run
@@ -8055,6 +8110,31 @@ class Ship {
         const lvl = game.scoopLevel, hw = SCOOP_WIDTH[lvl] / 2, d = SCOOP_DEPTH[lvl];
         drawPoly([[d, -hw], [16, 0], [d, hw]], this.x, this.y, this.angle, COLOR.dock, false);
       }
+      // The flanking orbs (CS042 P8, spec §4.3) — levels 6-7, drawn alongside the mouth V and still
+      // BEFORE the hull. One stroked ring per side at ship-local (0, +/-SCOOP_ORB_OFFSET[lvl]) with
+      // radius SCOOP_ORB_R[lvl], in POWERUP_COLOR.scoop so the orbs read as the Scoop's own violet
+      // rather than the mouth's collector green. A SCOOP_ORB_SEGS-gon through drawPoly, so it strokes
+      // through glowStroke like every other vector. NO FILL (Pillar 1) — never a ctx.arc fill.
+      // Geometry is derived from the same two tables inScoopBox() tests, never hardcoded.
+      // ⛔ The level-7 tether is COLOR.dim rather than scoop-violet at reduced alpha: ctx.globalAlpha
+      // in this block is already owned by the level-end grace pulse under the SET-DRAW-RESTORE idiom
+      // above, and a second writer here would clobber it. "Faint" is a colour choice, not an alpha one.
+      // ⛔ CS025 P5's prohibition applies here too — no magnet-pull recolour, on either shape.
+      if (SCOOP_ORB_R[game.scoopLevel] > 0) {
+        const lvl = game.scoopLevel, off = SCOOP_ORB_OFFSET[lvl], orbR = SCOOP_ORB_R[lvl];
+        for (const side of [-1, 1]) {
+          const ring = [];
+          for (let i = 0; i < SCOOP_ORB_SEGS; i++) {
+            const a = (i / SCOOP_ORB_SEGS) * TAU;
+            ring.push([Math.cos(a) * orbR, side * off + Math.sin(a) * orbR]);
+          }
+          drawPoly(ring, this.x, this.y, this.angle, POWERUP_COLOR.scoop);
+          if (lvl >= SCOOP_ORB_TETHER_LEVEL) {
+            drawPoly([[0, side * SHIP_RADIUS], [0, side * (off - orbR)]],
+              this.x, this.y, this.angle, COLOR.dim, false);
+          }
+        }
+      }
       const pts = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
       drawPoly(pts, this.x, this.y, this.angle, COLOR.ship);
       if (this.thrusting && Math.random() < 0.8) {
@@ -10277,10 +10357,14 @@ function magnetPulling() {
   return powerActive("magnet") && game.magnetHoldT <= 0;
 }
 
-// The Scoop capture BOX (v3.3 P3, spec §8) — an oriented "mouth" on the ship's facing axis. Rotate the
-// wrap-aware ship->garbage delta into ship-local space (project onto the facing axis and its normal) and
-// test the box: |lateral| <= SCOOP_WIDTH[lvl]/2 AND -SHIP_RADIUS <= forward <= SCOOP_DEPTH[lvl]. At
-// scoopLevel 0 the box is empty (width/depth 0), so pickup falls back to exactly the base circle.
+// The Scoop capture region (v3.3 P3, spec §8; orbs CS042 P8, spec §4.3) — an oriented "mouth" on the
+// ship's facing axis, plus two flanking orb discs at the top two levels. Rotate the wrap-aware
+// ship->garbage delta into ship-local space (project onto the facing axis and its normal) once, then
+// test the mouth box (|lateral| <= SCOOP_WIDTH[lvl]/2 AND -SHIP_RADIUS <= forward <= SCOOP_DEPTH[lvl])
+// and the orbs against that ONE projection. At scoopLevel 0 every table reads 0, so pickup falls back
+// to exactly the base circle.
+// ⛔ ONE PREDICATE, TWO CALLERS — the Debris pickup pass and the powerup pickup pass both call this,
+// and both get the orbs. Do not fork it.
 function inScoopBox(g) {
   const lvl = game.scoopLevel;
   if (lvl <= 0) return false;
@@ -10289,7 +10373,16 @@ function inScoopBox(g) {
   const ca = Math.cos(s.angle), sa = Math.sin(s.angle);
   const forward =  dx * ca + dy * sa;  // along the ship's facing axis
   const lateral = -dx * sa + dy * ca;  // perpendicular
-  return Math.abs(lateral) <= SCOOP_WIDTH[lvl] / 2 && forward >= -SHIP_RADIUS && forward <= SCOOP_DEPTH[lvl];
+  if (Math.abs(lateral) <= SCOOP_WIDTH[lvl] / 2 && forward >= -SHIP_RADIUS && forward <= SCOOP_DEPTH[lvl]) return true;
+  // CS042 P8: the flanking orbs (levels 6-7). Discs centred at ship-local (forward 0,
+  // lateral +/-SCOOP_ORB_OFFSET[lvl]). The nearer orb is always the one whose sign matches
+  // `lateral`, so |lateral| collapses the mirrored pair into a single distance test.
+  // ⛔ WRAP-AWARE THROUGHOUT — this reuses the shortDelta() projection above and never takes a
+  // fresh Math.hypot on raw world coordinates, which breaks at the wrap seam.
+  const orbR = SCOOP_ORB_R[lvl];
+  if (orbR <= 0) return false;    // zero below the orb tier — the load-time guard's subject
+  const off = Math.abs(lateral) - SCOOP_ORB_OFFSET[lvl];
+  return forward * forward + off * off <= orbR * orbR;
 }
 
 // Effective player-bullet cap. Triple Shot wins over Rapid Fire when both are active because its

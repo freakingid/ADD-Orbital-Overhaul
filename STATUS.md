@@ -1,5 +1,5 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.40 · Changeset: CS042 · Phase: P7 · Registry: 114 · Levers: 18
+Version: 1.0.0.40 · Changeset: CS042 · Phase: P8 · Registry: 114 · Levers: 18
 ⛔ **CS042 is in flight.** `PLANNED-FEATURES-CS042.md` is the spec and `IMPLEMENTATION-PHASES-CS042.md`
 carries the build order plus a copy-paste prompt per phase. CS041 and the 2026-09-07 off-cycle GDD pass
 are both closed; their narratives are in `log/CS041.md`. Everything under **Known issues** below is
@@ -140,7 +140,60 @@ carried forward and still live.
   change is one added term on the burn condition. Registry 113 → 114 (`cargoUnitMass`, SHIP). GDD
   §3.4 rewritten and its stability envelope re-validated (4.112 px, unmoved; `CHAIN_ITER` stays 4).
 
+- P8 — the Scoop's REWARD side (spec §4.1–§4.3): levels 6–7, the flanking orbs, the level-1 floor.
+  ⛔ **THE TRAP IS DEFUSED BY A SECOND CONSTANT, NOT A CLAMP AT THE CALL SITE:** `SCOOP_MOUTH_LEVELS` (5)
+  is what `buildScoopSteps()` divides by, `SCOOP_MAX_LEVEL` (7) sizes the tables, levels above the mouth's
+  span clamp to its top step. Measured both ways — the new builder fed the parent's own config reproduces
+  levels 1–5 **bit-for-bit**, and the counterfactual (divide by the cap) shrinks 2, 3 and 4, as
+  FORK-CS042-A predicted. `SCOOP_ORB_OFFSET`/`SCOOP_ORB_R` are literal cap-length tables, zero below 6,
+  ±62/26 and ±84/34. ⛔ **The guard grew two ways:** over both orb tables' index 0, and a new LENGTH
+  check — the mouth tables are generated from the cap and the orb tables are literals, so a cap change
+  that missed them would index `undefined` and capture nothing rather than fail loudly. `inScoopBox()`
+  gains one disc test off its existing `shortDelta()` projection (no fresh `Math.hypot`), so **both**
+  callers get the orbs and the predicate is not forked. Render: two `SCOOP_ORB_SEGS`-gons in
+  `POWERUP_COLOR.scoop` beside the mouth V, before the hull, plus a `COLOR.dim` tether at level 7 — **a
+  colour choice, not an alpha one**, since `ctx.globalAlpha` there belongs to the grace pulse. Floor:
+  `minWidthMult` 1.2 → 2.6, `minDepth` 20 → 34, §4.2's area table in the constant's comment. No registry
+  row, no lever, no GDD edit (P11 owns §2.14.1). ⛔ **§4.4/§4.5 are P9's and were not built.**
+
 ## Working / verified
+
+- **P8:** full suite **177 files, 177 passed, 0 failed, 0 skipped, 0 timed out** (exit 0, no flake
+  rerun needed), `node --check` clean. `scratchpad/test-cs042-p8.js` is 189 assertions in eight sections,
+  and its load-bearing ones were **mutation-checked, not just run**: nine substitutions were applied to the
+  build and every one turned assertions red — dropping the orb branch (31), restoring the cap as the mouth
+  divisor (18), dropping the orb tables from the guard (5), reverting the level-1 floor (6), moving the
+  tether to level 6 (2), hardcoding 5 HUD segments (2), filling an orb (2), swapping the wrap-aware
+  projection for a raw `Math.hypot` (4), and forking the powerup caller off the orbs (3). ⛔ **One of those
+  found a defect in the test itself and it was fixed, not accepted:** the tether assertion originally read
+  its expectation off `SCOOP_ORB_TETHER_LEVEL`, so it moved with the very knob it existed to pin and a
+  tether at level 6 passed. It now expects the literal 7, and the constant's value is asserted once,
+  separately. §A and §B measure against the phase's own parent (`4e15049`) rather than asserting from
+  arithmetic. **HUD legibility, measured as the phase requires:** at `HUD_FX_RING_R` = 16 a lit wedge is
+  **12.44 px** of arc at seven segments (18.19 at five), the inter-wedge gap is **1.92 px and unchanged**
+  (`HUD_RING_SEG_GAP` is in radians, so it does not shrink with the count), and the stroke is 4 px wide.
+  A wedge is still 3.1× its own stroke width and 6.5× the gap beside it, so seven segments read as
+  segments. **No HUD tuning note for P11.**
+  ⛔ **Three pre-existing tests were legitimately invalidated; all three were WIDENED, not weakened.**
+  `test-v33-p3.js` §0 reads its table-length and mouth-top claims off `SCOOP_MAX_LEVEL`/`SCOOP_MOUTH_LEVELS`
+  instead of the literal 5 they were written against, §1 derives its pick count from the cap, and §10's
+  edge probes gain the orb term the predicate itself gained — with an assertion that the orb term is
+  identically false at levels 1–5, so at every level that file was originally written against the mouth's
+  boundary claims are exactly as sharp as before. `tools/lowhp-glow-lab.html`'s copied `SCOOP_MAX_LEVEL`
+  was resynced to 7 (`test-cs038-p2.js` exists to catch exactly that drift, and did).
+  ⚠ **Not yet seen in a browser.** Every number here is measured headless. Whether the orbs read as a
+  *capability* rather than a bigger number is a GATE C question.
+
+- **⛔ P8 FOUND AND REPAIRED A SIXTH MOVING-`HEAD` PIN: `test-cs010-p1.js` §B.** It compared
+  `git show HEAD:orbital-overhaul.html` against the WORKING TREE and asserted `inScoopBox()` was
+  byte-identical, so for thirty-odd changesets it compared a build against itself and passed vacuously —
+  and the first phase to legitimately change the capture geometry made it fail for a reason unrelated to
+  CS010. Both sides are now literal SHAs (`0b3d07b` and its parent `39369b9`, CS010 P1's own commit and
+  the build it edited), which reproduces CS010's original render-only claim exactly (684 poses × levels,
+  all identical) and can never be re-aimed. The parent predates the CS029 rename, so the source comes
+  through `_phase-ref.js`'s `parentSource()`, which carries both game-file names and the 64 MB
+  `maxBuffer`. The file now also skips **loudly** (`SKIP_TAG`) and counts the skip in its own summary
+  line, replacing a `process.exit(1)`. **The four pins listed further down are unaffected and still open.**
 
 - **P7:** full suite **176 files, 176 passed, 0 failed, 0 skipped, 0 timed out** (exit 0),
   `node --check` clean. `scratchpad/test-cs042-p7.js` is 189 assertions in eight sections, and its
@@ -272,6 +325,31 @@ carried forward and still live.
   would never have found. Full byte table and candidate accounting: `log/CS041.md`.
 
 ## Known issues
+
+- **⛔ GDD §2.14.1 now reads false on the Scoop in five places (P8). P11 already owns it** (its item 2
+  names §2.14.1 by number). The claims that moved: the level range is stated as `0…SCOOP_MAX_LEVEL = 5`
+  and the pickup as "capped at 5"; `buildScoopSteps`'s step formula is given as dividing by
+  `(SCOOP_MAX_LEVEL − 1)` over `k in 1..SCOOP_MAX_LEVEL`, which is now `SCOOP_MOUTH_LEVELS` with a clamp
+  above it; the shipped config is quoted as `{maxWidthMult: 5.0, minWidthMult: 1.2, curve: 1.0,
+  minDepth: 20, maxDepth: 60}`, two of whose values moved; the render bullet describes the prong-V as the
+  Scoop's only ship-side shape; and the `tools/scoop-lab.html` paragraph says "show all 6 levels", now 8.
+  ⛔ **§0's row for §2.14.1 is also incomplete** — its third column lists "mouth geometry … the ship's
+  scoop render" and should name the orbs and the two orb tables, so a future phase editing them finds the
+  row. That row exists, so this is a gap in it, not a missing row. **P8 edited no GDD content**, on P6/P7's
+  precedent, so P11's §0 size re-measure remains mandatory for P5's and P7's edits, not P8's.
+
+- **⚠ SPEC DOC DEBT FOUND BY P8, RECORDED NOT FIXED: §4.3's level-1 justification does not hold on its
+  own numbers.** It says the raised floor puts level 1 at "~2,246 px² — clearly outside the base circle
+  and just ahead of the Magnet". The first half is right and is the defect §4.2 named: the measured box
+  area at the constants §4.3 specifies is **2,200 px²** against a 1,018 px² base circle, so the first
+  pickup is now unmistakable. The second half is wrong on either number — the Magnet's boosted pickup
+  circle (`MAGNET_PICKUP_MULT` 1.6 → r 28.8) is **2,606 px²**, so level 1 sits *below* it, and §4.2's own
+  finding 2 ("the Magnet beats Scoop levels 1 and 2 outright") therefore still holds at level 1. ⛔ **The
+  constants shipped exactly as §4.3 specifies them** — moving `minWidthMult` to clear the Magnet would be
+  inventing design, which is Paul's call, not a phase's. The arithmetic is printed on every run of
+  `test-cs042-p8.js` §B. Also for P11: §4.2's "vs base circle" column is not reproducible from its own
+  "Box area" column (its box areas are exact; the ratios are not `box/circle`, `(box+circle)/circle`, or
+  the union of the two), so that column should be recomputed or dropped rather than carried into the GDD.
 
 - **⛔ P7 FOUND A LATENT SUITE TRIPWIRE THAT CS042 P6'S OWN COMMIT ARMED, AND IT IS FIXED: the game
   file crossed 1 MiB, and `execSync`'s default `maxBuffer` IS 1 MiB.** `orbital-overhaul.html` went
@@ -614,9 +692,24 @@ None.
     multiplier"** (0–1, def 0.5, lower is stronger), is unchanged and is the second of the two dials.
   - ⚠ **Nobody has flown this.** Every number in the writeup is measured headless, and the whole point
     of §6.8 was that a mock ship on an empty field could not answer the question.
-- **P8 is the next session** — scoop levels 6–7 and the flanking orbs (§4). **No phase is blocked.** ⛔ **P9's
-  `bankSpareHullPct` must ship at 0.70 too** — P6 pinned that number as the changeset's one definition
-  of "hurt" and its own test says so; if the gate moves one, it moves both.
+- **✅ P8 IS DONE.** Scoop levels 6–7, the flanking orbs and the level-1 floor shipped — see the P8 ledger
+  entry and its "Working / verified" writeup. FORK-CS042-A landed as resolution (a) and is measured both
+  ways. **P9 is the next session** — the loss rate and the health reserve (§4.4/§4.5). **No phase is
+  blocked.**
+  - ⛔ **P9's `bankSpareHullPct` must ship at 0.70 too** — P6 pinned that number as the changeset's one
+    definition of "hurt" and its own test says so; if the gate moves one, it moves both.
+  - ⛔ **P9 must rewrite `SCOOP_HITS_PER_LEVEL`'s comment in place, not delete it.** It still ends *"the
+    scoop is now effectively sticky once earned. That's the intent, not a bug to 'fix.'"* — the very call
+    §4.4 reverses. P8 left it untouched deliberately: the constant is P9's and reversing its stated intent
+    while its number stays at 5 would have been a comment that contradicted the code.
+  - ⚠ **P9's own arithmetic moved under it, and the spec's does not know.** §4.4 reasons from "roughly
+    seven non-lethal hits in a full-health run" against a level-**5** cap ("a player now loses three or
+    four scoop levels across a run instead of one"). The cap is 7 now, so at 2 hits/level seven hits cost
+    three levels out of seven rather than three out of five. The mechanism is unchanged and the knob still
+    means what it always meant; only §4.4's illustrative fraction is stale.
+  - ⚠ **Nobody has flown this.** Whether the orbs read as a *capability* is exactly what GATE C is for,
+    and levels 6–7 are only reachable after seven scoop pickups, so the gate needs a long run or the
+    debug panel.
 - **⛔ CLAUDE.md's own ceiling is close.** 49.5 KiB / 857 lines at P2's close, **543 bytes of
   headroom**. P1's entry recorded 848 lines, which was wrong — HEAD measured 853 before this phase;
   the byte figure was right, and the historical numbers are KiB, not KB. The next phase that adds a
@@ -642,8 +735,8 @@ None.
   rule saying it must not grow back. **The structural fix is that a closing phase already re-measures
   §0** — extending that same checklist to re-read the build stamp is the cheap way to stop this
   recurring, and is not yet done.
-- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 678 lines after P7, 568 after P6, 502 after P5,
-  and it was already 443 at P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
+- ⛔ **`STATUS.md` is over its own ~400-line ceiling — 771 lines after P8, 678 after P7, 568 after P6,
+  502 after P5, and it was already 443 at P4's close.** Flagged rather than trimmed: the fix is the closing phase's roll into `log/CS042.md`,
   and deleting a carried-forward item to make room is not a phase-local call.
 - `CS039-VOICE-WORKLIST.md` (written CS038 P7) still records which voice events most need line
   alternatives, for Paul's next `tools/voice-robot-lab.html` session — still unconsumed.

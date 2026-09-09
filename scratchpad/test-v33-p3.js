@@ -92,12 +92,13 @@ const returnList = ["startGame", "update", "game", "Garbage", "applyPowerup", "d
   "dropPowerup", "destroySaucer", "destroyHunter", "destroyDebris",
   "DebrisSatellite", "HunterSatellite", "Saucer", "Achievements",
   "POWERUP_DROP_WEIGHTS", "POWERUP_DROP_TYPES", "POWERUP_DECAY",
-  "SCOOP_MAX_LEVEL", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
+  "SCOOP_MAX_LEVEL", "SCOOP_MOUTH_LEVELS", "SCOOP_WIDTH", "SCOOP_DEPTH", "SCOOP_HITS_PER_LEVEL",
   // CS026 P3: `worldDims` joins the list. WORLD_W/WORLD_H are a MODULE-LOAD SNAPSHOT of the 2560x1440
   // field world; startGame() now drops a fresh run into the 1920x1080 small world, so every seam and
   // centre this file stages goes through liveDims() below instead.
   "SCOOP_MAX_BONUS", "GARBAGE_PICKUP", "SHIP_RADIUS", "WORLD_W", "WORLD_H", "worldDims",
   "buildScoopSteps", "SCOOP_CONFIG", "SHIP_DRAW_W", "inScoopBox",
+  "SCOOP_ORB_OFFSET", "SCOOP_ORB_R",
   "liveLevers"];   // CS026 P2: the Debris split count is a lever now — see (11)
 const wrapped = new Function(
   "window", "document", "navigator", "performance", "requestAnimationFrame", "localStorage",
@@ -106,9 +107,10 @@ const G = wrapped(windowStub, documentStub, navigatorStub, performanceStub, rafS
 const { startGame, update, game, Garbage, applyPowerup, damageShip,
   dropPowerup, destroySaucer, destroyHunter, destroyDebris,
   DebrisSatellite, HunterSatellite, Saucer, Achievements,
-  POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, SCOOP_MAX_LEVEL,
+  POWERUP_DROP_WEIGHTS, POWERUP_DROP_TYPES, POWERUP_DECAY, SCOOP_MAX_LEVEL, SCOOP_MOUTH_LEVELS,
   SCOOP_WIDTH, SCOOP_DEPTH, SCOOP_HITS_PER_LEVEL, SCOOP_MAX_BONUS, GARBAGE_PICKUP, SHIP_RADIUS,
-  WORLD_W, WORLD_H, worldDims, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox, liveLevers } = G;
+  WORLD_W, WORLD_H, worldDims, buildScoopSteps, SCOOP_CONFIG, SHIP_DRAW_W, inScoopBox,
+  SCOOP_ORB_OFFSET, SCOOP_ORB_R, liveLevers } = G;
 // CS026 P3: the LIVE torus period, read off the game's own state rather than the load-time snapshot.
 const liveDims = () => worldDims(game.worldSize);
 const scriptHasPowerupDropChance = /const\s+POWERUP_DROP_CHANCE\b/.test(scriptSrc);
@@ -159,13 +161,19 @@ function captured(level, forward, lateral, angle = 0, sx = w => w / 2, sy = (w, 
 console.log("(0) constants + drop-table separation");
 assert(!scriptHasPowerupDropChance, "0: POWERUP_DROP_CHANCE is gone from the source (v3.6 P3: no chance gate left)");
 assert(POWERUP_DECAY === 26, `0: POWERUP_DECAY 14->26 (got ${POWERUP_DECAY})`);
-assert(SCOOP_MAX_LEVEL === 5, `0: SCOOP_MAX_LEVEL === 5 (got ${SCOOP_MAX_LEVEL})`);
+// REPOINTED BY CS042 P8 (spec §4.3): the cap went 5 -> 7 and the mouth curve kept its own
+// five-step span (SCOOP_MOUTH_LEVELS). Both claims below are the SAME claims, read off the build's
+// own two constants instead of the literal 5 they were written against, so this pin now says what
+// it always meant: the tables are cap-length, and the mouth's top step is maxWidthMult.
+assert(SCOOP_MAX_LEVEL === 7, `0: SCOOP_MAX_LEVEL === 7 (CS042 P8: 5 -> 7, got ${SCOOP_MAX_LEVEL})`);
+assert(SCOOP_MOUTH_LEVELS === 5, `0: the mouth curve still spans 5 steps (got ${SCOOP_MOUTH_LEVELS})`);
 assert(SCOOP_HITS_PER_LEVEL === 5, `0: SCOOP_HITS_PER_LEVEL 2->5 (v3.4 P3 durability, got ${SCOOP_HITS_PER_LEVEL})`);
-assert(SCOOP_WIDTH.length === 6 && SCOOP_DEPTH.length === 6, "0: SCOOP_WIDTH/DEPTH are 6-entry (index = level)");
+assert(SCOOP_WIDTH.length === SCOOP_MAX_LEVEL + 1 && SCOOP_DEPTH.length === SCOOP_MAX_LEVEL + 1,
+  `0: SCOOP_WIDTH/DEPTH are ${SCOOP_MAX_LEVEL + 1}-entry (index = level)`);
 assert(SCOOP_WIDTH[0] === 0 && SCOOP_DEPTH[0] === 0,
   "0: level-0 mouth has zero width & depth (the load-bearing invariant inScoopBox depends on)");
-assert(SCOOP_WIDTH[5] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W,
-  `0: L5 width === maxWidthMult * SHIP_DRAW_W exactly (got ${SCOOP_WIDTH[5]})`);
+assert(SCOOP_WIDTH[SCOOP_MOUTH_LEVELS] === SCOOP_CONFIG.maxWidthMult * SHIP_DRAW_W,
+  `0: mouth-top width === maxWidthMult * SHIP_DRAW_W exactly (got ${SCOOP_WIDTH[SCOOP_MOUTH_LEVELS]})`);
 assert(typeof SCOOP_MAX_BONUS === "number" && SCOOP_MAX_BONUS > 0, "0: SCOOP_MAX_BONUS is a positive score");
 assert(Array.isArray(POWERUP_DROP_TYPES) && !POWERUP_DROP_TYPES.includes("scoop"),
   "0: POWERUP_DROP_TYPES (the TIMED-effect list) does NOT contain scoop (FLAG A-9)");
@@ -193,7 +201,9 @@ console.log("(1) applyPowerup('scoop') climbs then caps + pays a bonus");
   applyPowerup("scoop"); // 6th pick, already at max
   assert(game.scoopLevel === SCOOP_MAX_LEVEL, "1: a pick at max does NOT exceed SCOOP_MAX_LEVEL");
   assert(game.score === before + SCOOP_MAX_BONUS, `1: a pick at max pays SCOOP_MAX_BONUS (${SCOOP_MAX_BONUS})`);
-  assert(game.stats.powerupsPicked === picked0 + 6,
+  // CS042 P8: SCOOP_MAX_LEVEL + 1 picks were made (one per level, plus the at-cap pick above), so
+  // the count is derived from the cap rather than retyping the 6 that was true when it was 5.
+  assert(game.stats.powerupsPicked === picked0 + SCOOP_MAX_LEVEL + 1,
     "1: each scoop pick counts as a powerup (FLAG A-8: freezes maxWaveNoPowerup — accepted, it IS a powerup)");
 }
 
@@ -345,11 +355,29 @@ console.log("(10) the drawn scoop V's points match SCOOP_DEPTH/WIDTH; inScoopBox
       { name: "lateral-inside",  forward: 0, lateral: expectHw - eps,                want: true },
       { name: "lateral-outside", forward: 0, lateral: expectHw + eps,                want: false },
     ];
+    // WIDENED BY CS042 P8, NOT WEAKENED. inScoopBox() is now mouth OR orb, so an "outside the
+    // mouth" probe can legitimately land inside a flanking orb (at L6, lateral 45.5 sits inside the
+    // +/-62 r26 disc). The probes and their mouth-side expectations are untouched; each answer just
+    // gains the orb term the predicate itself gained, computed straight off the build's two tables.
+    // ⛔ orbHit is asserted identically FALSE at levels 1-5 below, so at every level this file was
+    // originally written against, `p.want || orbHit(...)` reduces to `p.want` — the mouth's own
+    // boundary claims are exactly as sharp as they were.
+    const orbHit = (forward, lateral) => {
+      const r = SCOOP_ORB_R[lvl];
+      if (!(r > 0)) return false;
+      const off = Math.abs(lateral) - SCOOP_ORB_OFFSET[lvl];
+      return forward * forward + off * off <= r * r;
+    };
+    if (lvl <= SCOOP_MOUTH_LEVELS) {
+      assert(probes.every(p => !orbHit(p.forward, p.lateral)),
+        `10: L${lvl} has no orbs, so every probe below is a pure mouth-boundary test`);
+    }
     for (const p of probes) {
       const g = placeGarbage(p.forward, p.lateral);
       const got = inScoopBox(g);
-      assert(got === p.want,
-        `10: L${lvl} ${p.name} (forward=${p.forward.toFixed(2)}, lateral=${p.lateral.toFixed(2)}) inScoopBox=${got}, want ${p.want}`);
+      const want = p.want || orbHit(p.forward, p.lateral);
+      assert(got === want,
+        `10: L${lvl} ${p.name} (forward=${p.forward.toFixed(2)}, lateral=${p.lateral.toFixed(2)}) inScoopBox=${got}, want ${want}`);
     }
   }
 }

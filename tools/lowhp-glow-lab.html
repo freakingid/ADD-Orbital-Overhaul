@@ -259,7 +259,8 @@ const HUD_SHIELD_R_GAP = 9;
 const HUD_SHIP_GLYPH = [[8.8, 0], [-6.05, -4.95], [-3.3, 0], [-6.05, 4.95]];
 const HUD_FX_BASE_Y = 640, HUD_FX_ROW_H = 40, HUD_FX_RING_R = 16, HUD_FX_GLYPH_R = 9;
 const HUD_RING_SEG_GAP = 0.12;
-const SCOOP_MAX_LEVEL = 5;
+const SCOOP_MAX_LEVEL = 7;   // CS042 P8: 5 -> 7. The SCOOP row's segment count is derived
+                             // from this, so the mock HUD keeps showing what the build draws.
 const SHIP_HULL = [[16, 0], [-11, -9], [-6, 0], [-11, 9]];
 const POWERUP_DROP_TYPES = ["rapid", "triple", "magnet", "engine", "guard"];
 const POWERUP_COLOR = { rapid: "#ffd24a", triple: "#ff8adf", magnet: "#8ab6ff",
