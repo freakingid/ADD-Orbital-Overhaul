@@ -57,10 +57,9 @@ function assertOnlyChanged(X, before, changedField, delta, label) {
 function quiet(X) {
   const g = X.game;
   g.state = "playing"; g.paused = false; g.celebration = null; g.levelEndSafe = false;
-  // CS036 P1/P2: an empty debris+hunters field arms the wave-clear freeze/ceremony at the end of
-  // the frame it empties on — left armed, the NEXT update() takes the reduced-sim early return and
-  // never reaches collision at all (test-cs035-p3.js's arm() lifts this by hand for the same reason).
-  g.levelEndFreeze = false; g.levelDone = null;
+  // CS043 P1: the freeze and the announcement it armed are DELETED, so the two hand-clears that stood
+  // here are gone with them. An empty debris field still arms the protection window and now also runs
+  // nextWave() inline on that frame; the callers below re-empty the arrays after every clear.
   g.debris.length = 0; g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
   g.garbage.length = 0; g.powerups.length = 0; g.floaters.length = 0; g.chain.length = 0;
   g.particles.length = 0;

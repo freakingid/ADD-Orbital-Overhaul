@@ -47,8 +47,8 @@ function live() {
   const X = buildGame({ audio: false });
   X.startGame();
   const g = X.game;
-  g.state = "playing"; g.paused = false; g.celebration = null; g.levelDone = null;
-  g.levelEndFreeze = false; g.levelEndSafe = false;
+  g.state = "playing"; g.paused = false; g.celebration = null;  // CS043 P1: no game.levelDone to clear
+  g.levelEndSafe = false;                                      // ...and no game.levelEndFreeze either
   g.debris.length = 0; g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
   g.garbage.length = 0; g.powerups.length = 0; g.floaters.length = 0; g.chain.length = 0;
   g.particles.length = 0;

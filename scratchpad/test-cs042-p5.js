@@ -7,15 +7,17 @@
 // both sequence totals stay at shipped. So this file measures ALPHA over real frames, and pins the
 // numbers that did NOT move against the parent build.
 //
-// Three traps, in the order they can bite:
-//   1. ⛔ THE FREEZE'S DOCUMENTED FAILURE MODE IS A HARD HANG. Two dismissals now leave a ghost
-//      behind, and if either ghost were the state updateLevelEndFreeze() reads, or if the thaw
-//      waited on one, the field would never move again. §F drives both degenerate banner-knob
-//      settings to a counter cap — the phase prompt's required regression.
-//   2. ⛔ THE FADE CLOCKS RUN IN loop(), NOT update(). A panel is exactly what update() refuses to
+// ⛔ NARROWED BY CS043 P1, WHICH DELETED HALF OF WHAT THIS PHASE CROSS-FADED. The level-end ceremony
+// — the freeze, the "Level N Complete" announcement, its 0.35 s dissolve and the level-seam panel —
+// is gone (CS043 spec §1.1). What P5 built that SURVIVES is the game-over half: the panel's fade in
+// and out, the "Level N+1" banner's split alpha, and the GAME OVER stack arriving rather than being
+// uncovered. Those are measured below, unchanged; the deleted halves are tombstoned where they stood.
+//
+// Two traps, in the order they can bite:
+//   1. ⛔ THE FADE CLOCKS RUN IN loop(), NOT update(). A panel is exactly what update() refuses to
 //      run through, so a clock placed there sits at zero for the panel's whole life.
-//   3. The new state must be invisible to input. levelDoneActive() and game.celebration stay the
-//      only two predicates either handler asks.
+//   2. The fade state must be invisible to input. game.celebration is the only predicate either
+//      handler asks about a panel, and none of the fade fields may ever join it.
 
 "use strict";
 const { installSeed } = require("./_seeded-random.js");
@@ -107,7 +109,7 @@ const has = (rows, s) => rows.some(r => r.str === s);
 
 // ================= (A) the shape of the change =================
 (function sectionA() {
-  console.log("(A) node --check; the three constants, the lab's two curves, and where the clocks tick");
+  console.log("(A) node --check; the two surviving constants, the lab's two curves, and where the clocks tick");
   const { execFileSync } = require("child_process");
   const fs = require("fs"), path = require("path");
   const tmp = path.join(__dirname, "_cs042p5_extracted.js");
@@ -117,8 +119,12 @@ const has = (rows, s) => rows.some(r => r.str === s);
   finally { fs.unlinkSync(tmp); }
 
   const X = build();
-  // The copy-out's three numbers, and nothing else new.
-  eq(X.CEREMONY_ANNOUNCE_OUT, 0.35, "A: ⛔ A2's dissolve is 0.35 s");
+  // The copy-out's numbers, and nothing else new.
+  // ⛔ CS043 P1: CEREMONY_ANNOUNCE_OUT (A2's 0.35 s dissolve) STOOD FIRST HERE and is deleted with the
+  // announcement it timed. Three constants became two; the two below are unmoved, which is what P5's
+  // "no timing moved" claim was ever about.
+  assert(X.probe("CEREMONY_ANNOUNCE_OUT") === "__ReferenceError__",
+    "A: ⛔ CEREMONY_ANNOUNCE_OUT is GONE from the build, not merely unread");
   eq(X.CEREMONY_PANEL_FADE, 0.35, "A: ⛔ A3/B3's panel fade is 0.35 s — ONE number, both ends, both sites");
   eq(X.CEREMONY_GAMEOVER_IN, 0.40, "A: ⛔ B4's stack fade-in is 0.40 s");
 
@@ -138,8 +144,8 @@ const has = (rows, s) => rows.some(r => r.str === s);
     "A: ⛔ ...after update() and before draw(), so a frame's fades are current when it is drawn");
   assert(!/tickCeremony/.test(bodyOf(stripped, "function update(dt) {")),
     "A: ⛔ update() does NOT tick them — a panel is exactly what it refuses to run through");
-  assert(!/tickCeremony/.test(bodyOf(stripped, "function updateLevelEndFreeze(dt) {")),
-    "A: ⛔ ...and neither does the freeze's reduced sim");
+  assert(!/function updateLevelEndFreeze/.test(stripped),
+    "A: ⛔ ...and the freeze's reduced sim, which carried the same prohibition, is deleted outright (CS043 P1)");
   eq((stripped.match(/tickCeremony\(/g) || []).length, 2,
     "A: ⛔ tickCeremony appears twice in live code — its declaration and loop()'s one call");
 
@@ -164,71 +170,35 @@ const has = (rows, s) => rows.some(r => r.str === s);
   }
 })();
 
-// ================= (B) A2 — "Level N Complete" dissolves AFTER the press =================
-(function sectionB() {
-  console.log("(B) the announcement holds, then dissolves over 0.35 s on an easeIn curve");
-  const X = build(); X.startGame(); settle(X);
-  const g = clear(X);
-  const w = g.wave;
+// ================= (B) ⛔ DELETED BY CS043 P1 — A2's announcement had no dissolve left to measure ===
+// This section measured "Level N Complete" fading in over levelBannerFade, holding at full for as long
+// as the player left it, then dissolving for CEREMONY_ANNOUNCE_OUT seconds on easeIn after the press —
+// with the load-bearing invariant that game.levelDone still went NULL on that press, because the
+// freeze's hold/tail if/else read it and a levelDone kept alive for the dissolve was the documented
+// HARD HANG. CS043 P1 deletes the announcement, its ghost, its constant, the freeze and the predicate,
+// so every one of those subjects is gone at once (CS043 spec §1.1).
+// ⛔ ONE CLAIM HERE HAD A SUBJECT THAT SURVIVES AND IS CARRIED, NOT DROPPED: a ghost's clock HOLDS
+// through a pause, the announcement channel's own convention rather than the toasts'. The surviving
+// ghost is the panel's, so it is asserted at the end of §C.
 
-  let rows = shots(X);
-  eq(find(rows, "Level " + w + " Complete").alpha, 0, "B: (setup) it fades IN from 0 — unchanged");
-  frames(X, Math.round(X.DEBUG.levelBannerFade / DT) + 2);
-  eq(find(rows = shots(X), "Level " + w + " Complete").alpha, 1, "B: (setup) ...and holds at full");
-
-  X.keydown("Enter");
-  // ⛔ THE INVARIANT FIRST: the field the freeze reads still goes null on the confirm.
-  eq(g.levelDone, null, "B: ⛔ game.levelDone is NULL on the confirm — the hold/tail if/else still reads it");
-  eq(X.levelDoneActive(), false, "B: ⛔ ...so the predicate both input handlers ask is false at once");
-  assert(!!g.levelDoneOut, "B: ...and the dissolve lives on its own render-only field instead");
-  eq(g.levelDoneOut.text, "Level " + w + " Complete", "B: which carries the text it was seeded with");
-
-  const at = p => {                                    // alpha p of the way through the dissolve
-    const Y = build(); Y.startGame(); settle(Y);
-    const gy = clear(Y);
-    const wy = gy.wave;                                // ⛔ BEFORE the confirm: it reaches nextWave()
-    frames(Y, Math.round(Y.DEBUG.levelBannerFade / DT) + 2);
-    Y.keydown("Enter");
-    Y.tickCeremony(Y.CEREMONY_ANNOUNCE_OUT * p);
-    const r = find(shots(Y), "Level " + wy + " Complete");
-    return r ? r.alpha : null;
-  };
-  close(at(0), 1, "B: at the press it is still at full — the dissolve starts there", 1e-9);
-  close(at(0.25), X.easeIn(0.75), "B: a quarter through, easeIn(0.75)", 1e-9);
-  close(at(0.5), X.easeIn(0.5), "B: half way, easeIn(0.5) = 0.25 — it drops fast, then trails", 1e-9);
-  close(at(0.75), X.easeIn(0.25), "B: three quarters through, easeIn(0.25)", 1e-9);
-  assert(X.easeIn(0.5) < 0.5, "B: (non-vacuous) easeIn really is below the linear ramp at its midpoint");
-
-  // It clears itself, on the clock, and draws nothing after.
-  X.tickCeremony(X.CEREMONY_ANNOUNCE_OUT);
-  eq(g.levelDoneOut, null, "B: ⛔ the ghost clears itself when its own clock runs out");
-  assert(!shots(X).some(r => /Complete/.test(r.str)), "B: ⛔ ...and nothing says Complete after that");
-
-  // ⛔ IN-PLAY CHROME, exactly like the live announcement: never over a pause, a gameover or the title.
-  const Z = build(); Z.startGame(); settle(Z);
-  const gz = clear(Z);
-  Z.keydown("Enter");
-  gz.paused = true;
-  assert(!shots(Z).some(r => /Complete/.test(r.str)), "B: paused, the ghost does not draw");
-  Z.tickCeremony(X.CEREMONY_ANNOUNCE_OUT * 2);
-  assert(!!gz.levelDoneOut, "B: ⛔ ...and its clock HOLDS through the pause, like the banner and the caption");
-  gz.paused = false;
-  gz.state = "gameover";
-  assert(!shots(Z).some(r => /Complete/.test(r.str)), "B: at gameover, the ghost does not draw");
-})();
-
-// ================= (C) A3/B3 — the panel fades in and out, one implementation, both sites ==========
+// ================= (C) A3/B3 — the panel fades in and out, one implementation, one site ===========
+// ⛔ NARROWED BY CS043 P1 FROM "both sites" TO ONE. P5's point was that the panel's fade is ONE number
+// and ONE implementation at BOTH call sites, so drawCelebrationPanel() needs no per-site fork. The
+// level-end site is deleted (CS043 spec §0.1c), so the claim is now about the renderer being unforked
+// at the site that remains — which is still what a future second site would have to reuse.
 (function sectionC() {
-  console.log("(C) the celebration panel: in 0.35 easeOut, out 0.35 easeIn, at BOTH call sites");
+  console.log("(C) the celebration panel: in 0.35 easeOut, out 0.35 easeIn, at the game-over site");
   const TITLE = "ACHIEVEMENTS UNLOCKED";
 
-  // ---- the level-end site ----
   const X = build(); X.startGame(); settle(X);
-  const g = clear(X);
-  const w = g.wave;
+  const g = quiet(X);
+  lastSatellite(X, g);                        // keep the wave from clearing under the death
   g.pendingAch.push({ id: "t", name: "Test", desc: "d", tierIdx: 0, pool: "lifetime" });
-  X.keydown("Enter");
-  eq(g.celebration.resume, "wave", "C: (setup) the level-end panel is up");
+  const w = g.wave;
+  X.killShip();
+  frames(X, Math.ceil(X.DEATH_DURATION / DT) + 4);
+  eq(g.state, "gameover", "C: (setup) reached gameover");
+  assert(!!g.celebration && g.celebration.resume === null, "C: (setup) the panel is up, stamped resume:null");
   eq(g.celebrationT, 0, "C: ⛔ its fade-in clock starts at 0 — no panel means no clock");
 
   const inAt = p => { g.celebrationT = X.CEREMONY_PANEL_FADE * p; return find(shots(X), TITLE).alpha; };
@@ -248,48 +218,53 @@ const has = (rows, s) => rows.some(r => r.str === s);
 
   // The dismissal: the field the rest of the build gates on goes null, the ghost takes over.
   X.keydown("Enter");
-  eq(g.celebration, null, "C: ⛔ game.celebration is NULL on the confirm — update(), both handlers and nextWave() need it to be");
+  eq(g.celebration, null, "C: ⛔ game.celebration is NULL on the confirm — update() and both handlers need it to be");
   assert(!!g.celebrationOut, "C: ...and the dissolve is a snapshot on its own field");
-  eq(g.celebrationOut.wave, w, "C: ⛔ which carries the COMPLETED wave — nextWave() ran on the next line and moved game.wave");
-  eq(g.wave, w + 1, "C: (non-vacuous) game.wave really did advance, so the snapshot is doing work");
+  // ⛔ celebrationOut.wave STAYS (CS043 spec §2). Its purpose was never the level-end site alone: it
+  // stops the ghost reading game.wave LIVE. nextWave() no longer runs on the line below, so the
+  // pressure is off — but the snapshot is correct as written and is not made live again.
+  eq(g.celebrationOut.wave, w, "C: ⛔ the snapshot still carries its own wave rather than reading game.wave live");
 
   const outAt = p => { g.celebrationOut.t = X.CEREMONY_PANEL_FADE * (1 - p); return find(shots(X), TITLE).alpha; };
   close(outAt(0), 1, "C: at the press the ghost is still at full", 1e-9);
   close(outAt(0.5), X.easeIn(0.5), "C: half way out, easeIn(0.5) = 0.25", 1e-9);
-  assert(has(shots(X), "During level " + w + " you earned:"),
-    "C: ⛔ the ghost's sub-line still names the level the unlocks came from, not the new one");
+  // killShip()'s final evaluate() banks whatever the run itself earned, so the count is read off the
+  // snapshot rather than assumed — the claim is the FORK, not the number.
+  const n = g.celebrationOut.items.length;
+  assert(has(shots(X), n === 1 ? "1 NEW UNLOCK" : n + " NEW UNLOCKS"),
+    "C: ⛔ while the resume-derived sub-line fork is untouched (§2.20)");
   X.tickCeremony(X.CEREMONY_PANEL_FADE);
   eq(g.celebrationOut, null, "C: ⛔ the ghost clears itself on its own clock");
   assert(!has(shots(X), TITLE), "C: ...and the panel is gone");
 
-  // ---- the game-over site: the SAME numbers, through the SAME renderer ----
-  const Y = build(); Y.startGame(); settle(Y);
-  const gy = quiet(Y);
-  lastSatellite(Y, gy);                       // keep the wave from clearing under the death
-  gy.pendingAch.push({ id: "u", name: "U", desc: "d", tierIdx: undefined, pool: "weekly" });
-  Y.killShip();
-  frames(Y, Math.ceil(Y.DEATH_DURATION / DT) + 4);
-  eq(gy.state, "gameover", "C: (setup) reached gameover");
-  assert(!!gy.celebration && gy.celebration.resume === null, "C: (setup) the game-over panel is up");
-  gy.celebrationT = Y.CEREMONY_PANEL_FADE * 0.5;
-  close(find(shots(Y), TITLE).alpha, Y.easeOut(0.5),
-    "C: ⛔ the GAME-OVER panel fades in on the same curve and the same number — one implementation");
-  Y.keydown("Enter");
-  gy.celebrationOut.t = Y.CEREMONY_PANEL_FADE * 0.5;
-  close(find(shots(Y), TITLE).alpha, Y.easeIn(0.5), "C: ⛔ ...and out on the same one too");
-  // killShip()'s final evaluate() banks whatever the run itself earned, so the count is read off the
-  // snapshot rather than assumed — the claim is the FORK, not the number.
-  const nY = gy.celebrationOut.items.length;
-  assert(has(shots(Y), nY === 1 ? "1 NEW UNLOCK" : nY + " NEW UNLOCKS"),
-    "C: ⛔ while the resume-derived sub-line fork is untouched (§2.20)");
-
-  // ⛔ ONE RENDERER, TWO CALLERS. The panel's ink is not forked per site.
+  // ⛔ ONE RENDERER, ONE CALLER-OF-RECORD. The panel's ink is not forked per site, which is what would
+  // let a second site be added without a second implementation.
   eq((stripped.match(/function drawCelebrationPanel\(/g) || []).length, 1, "C: ⛔ drawCelebrationPanel is declared once");
   eq((stripped.match(/drawCelebrationPanel\(/g) || []).length, 3,
-    "C: ⛔ ...and called exactly twice, both from drawCelebration()");
+    "C: ⛔ ...and called exactly twice, both from drawCelebration() — the live panel and the ghost");
   assert(!/menuPanel\(CELEB_PANEL_W/.test(bodyOf(stripped, "function drawCelebration() {")),
     "C: ⛔ the wrapper draws no chrome of its own — it only picks which panel to hand the renderer");
+
+  // ⛔ CARRIED FROM §B, WHOSE OWN SUBJECT IS DELETED: a ghost's clock HOLDS through a pause. That is the
+  // announcement channel's convention (game.caption.life and game.levelBanner.life do the same), and
+  // deliberately NOT the toasts', which is why tickCeremony() is its own function rather than four more
+  // lines in updateToasts(). The surviving ghost is the panel's.
+  const Z = build(); Z.startGame(); settle(Z);
+  const gz = quiet(Z);
+  lastSatellite(Z, gz);
+  gz.pendingAch.push({ id: "u", name: "U", desc: "d", tierIdx: 1, pool: "lifetime" });
+  Z.killShip();
+  frames(Z, Math.ceil(Z.DEATH_DURATION / DT) + 4);
+  Z.keydown("Enter");
+  assert(!!gz.celebrationOut, "C: (setup) the ghost is dissolving");
+  gz.paused = true;
+  Z.tickCeremony(Z.CEREMONY_PANEL_FADE * 2);
+  assert(!!gz.celebrationOut, "C: ⛔ ...and its clock HOLDS through a pause, like the banner and the caption");
+  gz.paused = false;
+  Z.tickCeremony(Z.CEREMONY_PANEL_FADE * 2);
+  eq(gz.celebrationOut, null, "C: (non-vacuity) ...and runs again the moment the pause lifts");
 })();
+
 
 // ================= (D) A4/A5 — the banner's alpha splits: easeOut in, linear out ==================
 (function sectionD() {
@@ -386,97 +361,53 @@ const has = (rows, s) => rows.some(r => r.str === s);
   eq(gy.gameoverT, 0, "E: ⛔ the clock re-zeroes the moment the stack is not being drawn");
 })();
 
-// ================= (F) ⛔ THE REGRESSION — the freeze still terminates =============================
-// The phase prompt's required assert. updateLevelEndFreeze()'s own header states the failure mode in
-// terms: a crossing one-shot HANGS on both degenerate knob settings, and the plain `<=` is what makes
-// them degrade to "unfreeze immediately" instead. P5 leaves ghosts behind on both dismissals, so the
-// question this section answers is whether either ghost can hold the field still.
-(function sectionF() {
-  console.log("(F) ⛔ both degenerate banner-knob settings still thaw — counter-capped, never wall-clock");
-  // Frames from the confirm to the thaw, or -1 if it never came. ⛔ -1 IS THE HANG.
-  function framesToThaw(knobs, withPanel, cap = 1200) {
-    const X = build(); X.startGame(); settle(X);
-    const g = clear(X);
-    if (withPanel) g.pendingAch.push({ id: "t", name: "T", desc: "d", tierIdx: 0, pool: "lifetime" });
-    Object.assign(X.DEBUG, knobs);          // set BEFORE the confirm: nextWave() seeds life from them
-    X.keydown("Enter");                     // dismiss the announcement
-    if (withPanel) {
-      if (!g.celebration) return -2;
-      X.keydown("Enter");                   // ...and the panel, which is what reaches nextWave()
-    }
-    eq(g.levelDone, null, `F: (setup) the announcement is down [${JSON.stringify(knobs)}, panel=${withPanel}]`);
-    for (let i = 1; i <= cap; i++) {
-      X.loop(100000 + i * DT * 1000);       // the REAL frame: update, tickCeremony, draw
-      if (!g.levelEndFreeze) return i;
-    }
-    return -1;
-  }
-  const D = build().DEBUG;
-  const cases = [
-    ["shipped knobs", { levelBannerTime: D.levelBannerTime, levelBannerFade: D.levelBannerFade }],
-    // ⛔ fade >= time: nextWave() seeds a banner already inside its own fade-out.
-    ["levelBannerFade >= levelBannerTime", { levelBannerTime: 1.0, levelBannerFade: 3.0 }],
-    // ⛔ time === 0: there is no banner at all.
-    ["levelBannerTime === 0", { levelBannerTime: 0, levelBannerFade: 0.5 }],
-  ];
-  for (const [label, knobs] of cases) {
-    for (const withPanel of [false, true]) {
-      const n = framesToThaw(knobs, withPanel);
-      assert(n > 0, `F: ⛔ ${label}, panel=${withPanel} — the freeze TERMINATES (frames: ${n})`);
-      if (label !== "shipped knobs" && n > 0) {
-        eq(n, 1, `F: ⛔ ${label}, panel=${withPanel} — ...on the FIRST tail frame, before anything is drawn`);
-      }
-    }
-  }
-  // Non-vacuous: at the shipped knobs it genuinely waits, so the two above are measuring something.
-  assert(framesToThaw(cases[0][1], false) > 60,
-    "F: (non-vacuous) at the shipped knobs the tail really does run ~1.7 s before thawing");
-
-  // ⛔ AND THE THAW DOES NOT WAIT ON EITHER GHOST. Both are still live when the field comes back.
-  const X = build(); X.startGame(); settle(X);
-  const g = clear(X);
-  g.pendingAch.push({ id: "t", name: "T", desc: "d", tierIdx: 0, pool: "lifetime" });
-  X.DEBUG.levelBannerTime = 0;
-  X.keydown("Enter"); X.keydown("Enter");
-  X.loop(200000);
-  eq(g.levelEndFreeze, false, "F: ⛔ the field is live again on the first tail frame...");
-  assert(!!g.levelDoneOut || !!g.celebrationOut,
-    "F: ⛔ ...with a ghost still dissolving — the thaw reads the banner, never a fade clock");
-  assert(!/levelDoneOut|celebrationOut|celebrationT|gameoverT/.test(bodyOf(stripped, "function updateLevelEndFreeze(dt) {")),
-    "F: ⛔ and structurally: the reduced sim mentions none of the four fade fields");
-})();
-
-// ================= (G) the six standing constraints, said positively =============================
+// ================= (F) ⛔ DELETED BY CS043 P1 — there is no freeze left to terminate ===============
+// This was the phase prompt's required regression, and its subject is gone. updateLevelEndFreeze()'s
+// own header stated the failure mode in terms: a crossing one-shot HANGS on both degenerate
+// banner-knob settings (fade >= time, and time === 0), and the plain `<=` is what made them degrade to
+// "unfreeze immediately" instead. P5 left ghosts behind on both dismissals, so this section drove both
+// settings, with and without a panel, to a counter cap to prove neither ghost could hold the field
+// still. CS043 P1 deletes the freeze, the reduced sim and both dismissals' announcement half, so there
+// is nothing left that can fail to terminate.
+// ⚠ ONE THING THE DEGENERATE PAIR STILL DOES, AND IT PREDATES THIS CHANGESET: at levelBannerTime 0 the
+// banner is seeded already expired, tickLevelBanner()'s crossing one-shot never fires, and
+// game.levelEndSafe stays TRUE for the rest of the run. Measured on this phase's own parent as well as
+// on HEAD — identical on both, so it is a property of the grace's arm and not of the deletion. It is
+// reachable only from the debug panel. Recorded in STATUS.md rather than fixed here.
+// ================= (G) the standing constraints that survive, said positively =====================
+// ⛔ NARROWED BY CS043 P1. Three of the six were about the level-end ceremony and their subjects are
+// gone: the reduced sim's byte-identity (the function is deleted), dismissLevelDone()'s refusal to
+// lift the freeze (both deleted), and update()'s freeze branch (deleted). The three that survive are
+// the ones that were never about the ceremony — tickLevelBanner(), nextWave()'s refusal to reset the
+// window, and onUnlock()'s flushed bucket — plus the both-handlers rule, which now cuts the OTHER way.
 (function sectionG() {
-  console.log("(G) the standing constraints: both handlers, the five reduced-sim jobs, the one if/else, nextWave");
+  console.log("(G) the standing constraints: the banner tick, nextWave, the flushed bucket, both handlers");
   if (parentStripped === null) { skip("G: the standing constraints against the parent (no git history)"); return; }
 
-  // 1 + 2 + 3. The reduced sim is BYTE-IDENTICAL to the parent: five jobs, hold and tail one if/else.
-  eq(squash(bodyOf(stripped, "function updateLevelEndFreeze(dt) {")),
-     squash(bodyOf(parentStripped, "function updateLevelEndFreeze(dt) {")),
-    "G: ⛔ updateLevelEndFreeze() is byte-identical to the parent — all five jobs, the one if/else, the plain <=");
+  // 1. ⛔ tickLevelBanner() SURVIVES CS043 P1 and matters more: with the freeze gone it is the grace's
+  // only arm. Its body is byte-identical to the parent's — the crossing one-shot and the levelEndSafe
+  // clause both unsimplified — which is the whole of what P5 claimed about it.
   eq(squash(bodyOf(stripped, "function tickLevelBanner(dt) {")),
      squash(bodyOf(parentStripped, "function tickLevelBanner(dt) {")),
-    "G: ⛔ ...and so is tickLevelBanner(), the job without which the freeze is a hard hang");
+    "G: ⛔ tickLevelBanner() is byte-identical to the parent — the crossing one-shot and the levelEndSafe clause");
 
-  // 4. nextWave() gains NO resets for the five level-end fields.
+  // 2. ⛔ nextWave() gains NO resets for the level-end fields. CS043 P1 adds a CALLER (the wave-clear
+  // latch) but not a line: the body's executable source is still the parent's, byte for byte.
   eq(squash(bodyOf(stripped, "function nextWave() {")), squash(bodyOf(parentStripped, "function nextWave() {")),
     "G: ⛔ nextWave() is byte-identical — it runs INSIDE the window and resets none of it");
 
-  // 5. game.pendingAch is a flushed bucket, never filtered by game.wave (CS030 §0.4). onUnlock is a
+  // 3. game.pendingAch is a flushed bucket, never filtered by game.wave (CS030 §0.4) — a rule CS043 P1
+  // makes MORE live, not less, since the bucket now spans a whole run instead of one level. onUnlock is a
   // METHOD on Achievements, so it is cut by its own indentation rather than by bodyOf's column-0 brace.
   const onUnlock = t => { const i = t.indexOf("  onUnlock(ach, tierIdx) {"); return t.slice(i, t.indexOf("\n  },", i)); };
   eq(squash(onUnlock(stripped)), squash(onUnlock(parentStripped)),
     "G: ⛔ Achievements.onUnlock() is byte-identical — the bucket is still flushed, never filtered by wave");
   assert(!/game\.wave/.test(onUnlock(stripped)), "G: ⛔ ...and it reads game.wave nowhere");
 
-  // 6. dismissLevelDone() still does not lift the freeze.
-  const dis = bodyOf(stripped, "function dismissLevelDone() {");
-  assert(!/levelEndFreeze/.test(dis), "G: ⛔ dismissLevelDone() does not mention levelEndFreeze (FORK-CS036-B)");
-  assert(/nextWave\(\);/.test(dis) && /return;/.test(dis), "G: (setup) ...while still carrying the fork and its deferring return");
-
-  // ⛔ BOTH INPUT HANDLERS OR NEITHER (CS030 P4) — and here it is NEITHER. The two guarded branches are
-  // byte-identical to the parent's in both handlers, and no handler reads a fade field.
+  // ⛔ BOTH INPUT HANDLERS OR NEITHER (CS030 P4) — and CS043 P1 is the NEITHER case on the way OUT: the
+  // announcement's branch is deleted from both, in one phase. That is this file's one named diff against
+  // its own parent now, stripped from the PARENT side before comparing so everything else in both
+  // regions is still byte-checked. No handler reads a fade field, then or now.
   // ⛔ The end marker is searched FORWARD from the start marker. `\n};` in particular matches the first
   // column-0 object close in the whole file, which is nowhere near the game literal.
   const region = (text, from, to) => {
@@ -492,30 +423,40 @@ const has = (rows, s) => rows.some(r => r.str === s);
   // diffs are stripped before comparing; everything else in both regions is still byte-checked.
   const KD_DIFF = 'if (!e.repeat && (k === "arrowup" || k === "w" || k === "arrowdown" || k === "s")) menuKeys[k] = true;';
   const GP_DIFF = "const menuKeys = {};";
-  for (const [name, cut, diff] of [["keydown", kd, KD_DIFF], ["handleGamepadMenu", gp, GP_DIFF]]) {
+  // CS043 P1's own named diff, on the PARENT side: the announcement's branch, in each handler's own
+  // wording. Both are three lines under execSource(), which strips their comment blocks.
+  const KD_GONE = 'if (levelDoneActive()) {\nif (!e.repeat && (bindings.confirm.keys.includes(k) || bindings.back.keys.includes(k))) dismissLevelDone();\nreturn;\n}';
+  const GP_GONE = 'if (levelDoneActive()) {\nif (pressedConfirm || pressedBack) dismissLevelDone();\nreturn;\n}';
+  for (const [name, cut, diff, gone] of [["keydown", kd, KD_DIFF, KD_GONE], ["handleGamepadMenu", gp, GP_DIFF, GP_GONE]]) {
     const raw = cut(stripped);
     assert(raw.includes(diff), `G: (setup) ${name} carries CS042 P10's own known diff`);
-    const mine = raw.replace(diff, ""), theirs = cut(parentStripped);
-    eq(squash(mine), squash(theirs),
-      `G: ⛔ ${name} is byte-identical to the parent once CS042 P10's own named diff is stripped — neither gate moved beyond it`);
-    assert(!/levelDoneOut|celebrationOut|celebrationT|gameoverT/.test(mine),
-      `G: ⛔ ...and ${name} reads none of the four fade fields — they are invisible to input`);
-    assert(/if \(levelDoneActive\(\)\)/.test(mine) && /if \(game\.celebration\)/.test(mine),
-      `G: (non-vacuous) ${name} still asks the two predicates it always did`);
+    const mine = squash(raw.replace(diff, ""));
+    const theirsRaw = squash(cut(parentStripped));
+    assert(theirsRaw.includes(gone), `G: (setup) the parent's ${name} carries the announcement branch CS043 P1 deletes`);
+    const theirs = theirsRaw.replace(gone + "\n", "");
+    eq(mine, theirs,
+      `G: ⛔ ${name} is byte-identical to the parent once CS042 P10's diff and CS043 P1's deleted branch are named — neither gate moved beyond them`);
+    assert(!/celebrationOut|celebrationT|gameoverT/.test(mine),
+      `G: ⛔ ...and ${name} reads none of the fade fields — they are invisible to input`);
+    assert(!/levelDoneActive/.test(mine), `G: ⛔ ...and no longer asks levelDoneActive() at all (CS043 P1)`);
+    assert(/if \(game\.celebration\)/.test(mine), `G: (non-vacuous) ${name} still asks the panel's own predicate`);
   }
-  // update()'s two early returns are the other place a fade field must never appear.
+  // update()'s early return is the other place a fade field must never appear.
   const upd = bodyOf(stripped, "function update(dt) {");
-  assert(/if \(game\.levelEndFreeze && game\.state === "playing" && !game\.paused && !game\.celebration\) \{/.test(upd),
-    "G: ⛔ update()'s freeze branch still carries its three negative terms, unchanged");
+  assert(!/levelEndFreeze/.test(upd),
+    "G: ⛔ update()'s freeze branch is deleted outright (CS043 P1) — the 'dying' one is the only reduced sim left");
   assert(/if \(game\.state !== "playing" \|\| game\.paused \|\| game\.celebration\) \{/.test(upd),
     "G: ⛔ ...and the general early return still reads the LIVE panel and nothing else");
-  assert(!/levelDoneOut|celebrationOut|celebrationT|gameoverT/.test(upd),
-    "G: ⛔ update() reads none of the four fade fields at all");
+  assert(!/celebrationOut|celebrationT|gameoverT/.test(upd),
+    "G: ⛔ update() reads none of the fade fields at all");
 
-  // The four fields are declared in BOTH the game literal and resetRun() (the CS016 P3 rule).
+  // The fields are declared in BOTH the game literal and resetRun() (the CS016 P3 rule). ⛔ CS043 P1:
+  // FOUR became THREE — levelDoneOut went with the announcement's dissolve.
   const lit = region(stripped, "\nconst game = {", "\n};");
   const rr = bodyOf(stripped, "function resetRun(wave, debugRun) {");
-  for (const f of ["levelDoneOut", "celebrationT", "celebrationOut", "gameoverT"]) {
+  assert(!/levelDoneOut/.test(lit) && !/levelDoneOut/.test(rr),
+    "G: ⛔ levelDoneOut is gone from BOTH the game literal and resetRun()");
+  for (const f of ["celebrationT", "celebrationOut", "gameoverT"]) {
     assert(new RegExp("^\\s*" + f + ":", "m").test(lit), `G: ${f} is declared in the game literal`);
     assert(new RegExp("game\\." + f + " =", "").test(rr), `G: ...and reset in resetRun()`);
   }
@@ -524,22 +465,33 @@ const has = (rows, s) => rows.some(r => r.str === s);
 // ================= (H) headless safety: no throw, and globalAlpha never leaks ====================
 (function sectionH() {
   console.log("(H) every ceremony state draws without throwing and leaves globalAlpha at 1");
+  // ⛔ RE-STAGED BY CS043 P1 OVER THE STATES THAT STILL EXIST. The old walk went hold -> announcement
+  // dissolving under the panel fading in -> panel out over the banner fading in -> frozen tail, and
+  // four of those five states are deleted. The surviving ceremony is: a clear with its banner, then
+  // the death seam's panel in, out, and the GAME OVER stack arriving behind it.
   const X = build(); X.startGame(); settle(X);
-  const g = clear(X);
+  const g = quiet(X);
+  lastSatellite(X, g);
   g.pendingAch.push({ id: "t", name: "T", desc: "d", tierIdx: 0, pool: "lifetime" });
   const states = [];
   const checkpoint = label => { X.draw(); states.push([label, X.ctx.globalAlpha]); };
-  checkpoint("hold");
-  X.keydown("Enter");                        // announcement dissolving under the panel fading in
-  checkpoint("dissolve + panel in");
-  X.tickCeremony(X.CEREMONY_PANEL_FADE / 2);
-  checkpoint("panel held");
-  X.keydown("Enter");                        // panel dissolving over the banner fading in
-  checkpoint("panel out + banner in");
-  X.tickCeremony(X.CEREMONY_PANEL_FADE);
+  checkpoint("live play");
+  g.debris.length = 0; g.waveClearTimer = 0;
+  X.update(DT);                              // a real clear: banner fading in over a live field
+  assert(g.levelBanner.life > 0, "H: (setup) the clear seeded the banner");
+  checkpoint("banner in");
   frames(X, 40);
-  checkpoint("tail");
-  g.state = "gameover"; g.gameoverT = X.CEREMONY_GAMEOVER_IN / 2;
+  checkpoint("banner held");
+  X.killShip();
+  frames(X, Math.ceil(X.DEATH_DURATION / DT) + 4);
+  eq(g.state, "gameover", "H: (setup) reached gameover");
+  assert(!!g.celebration, "H: (setup) ...with the panel up");
+  g.celebrationT = X.CEREMONY_PANEL_FADE / 2;
+  checkpoint("panel in");
+  X.keydown("Enter");
+  g.celebrationOut.t = X.CEREMONY_PANEL_FADE / 2;
+  checkpoint("panel out + stack in");
+  g.gameoverT = X.CEREMONY_GAMEOVER_IN / 2;
   checkpoint("stack fading in");
   for (const [label, a] of states) eq(a, 1, `H: ⛔ globalAlpha is 1 after draw() — ${label}`);
   assert(states.length === 6, "H: (setup) every checkpoint ran");

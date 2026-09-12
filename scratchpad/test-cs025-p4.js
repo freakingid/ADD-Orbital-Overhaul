@@ -90,9 +90,9 @@ const documentStub = { getElementById: () => canvasStub, createElement: () => ca
 
 const RETURN = ["VoiceSys", "AudioSys", "game", "startGame", "update", "killShip", "settings",
   "SHIP_MAX_HP", "LOW_HP_THRESHOLD", "VOICE_COOLDOWN", "VOICE_PRIORITY", "VOICE_LINES", "VOICE_CRITICAL",
-  "VOICE_QUEUE_MAX", "VOICE_STILL_TRUE", "DEBUG_ENTRIES", "GAME_VERSION", "voiceEnabled",
-  // REPOINTED BY CS036 P2: §G's 600 frames now need a player at the completion hold — see there.
-  "levelDoneActive", "dismissLevelDone"];
+  "VOICE_QUEUE_MAX", "VOICE_STILL_TRUE", "DEBUG_ENTRIES", "GAME_VERSION", "voiceEnabled"];
+  // CS043 P1: levelDoneActive / dismissLevelDone stood here — deleted with the completion hold,
+  // which no longer exists: a wave clear advances the level inline, with no player confirm to give.
 
 // Names that exist in BOTH HEAD and the current build — used for the byte-identity traps (K).
 const RETURN_BOTH = ["VoiceSys", "buildUtterance", "buildPitch", "parsePhonTokens", "PH", "VOICE_STYLES",
@@ -428,13 +428,12 @@ function emptyChain(inst) { inst.game.chain.length = 0; inst.game.cargoMax = 4; 
 
   let maxDepth = 0, threw = null;
   try {
-    // REPOINTED BY CS036 P2: the wave clear that makes this section non-vacuous no longer reaches
-    // nextWave() by itself — CS036 P2 freezes the field on "Level N Complete" until the player confirms,
-    // and the level announcement that parks on the queue fires from inside nextWave(). The confirm is
-    // driven here, before update(), in the real frame order. Nothing else about the section changes:
-    // the drain is still measured across 600 frames against a permanently-busy channel.
+    // ⛔ REPOINTED AGAIN BY CS043 P1, back to the pre-CS036 shape: the wave clear reaches nextWave() by
+    // itself again — the completion hold that used to stand between them is DELETED, so there is no
+    // confirm to drive. The level announcement that parks on the queue still fires from inside
+    // nextWave(). Nothing else about the section changes: the drain is still measured across 600 frames
+    // against a permanently-busy channel.
     for (let i = 0; i < 600; i++) {
-      if (A.levelDoneActive()) A.dismissLevelDone();
       A.update(1 / 60);
       maxDepth = Math.max(maxDepth, A.VoiceSys.queue.length);
     }

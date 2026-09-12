@@ -64,14 +64,37 @@ const F9_STALE = "(isoYear*52+isoWeek) % 15";
 })();
 
 // ================= (B) comment-stripped: byte-identical to the parent =====================
+// ⛔ REPOINTED BY CS043 P1, AND THE DEFECT IT FIXES IS WORTH NAMING. The pin was written as
+// `execSource(THE LIVE BUILD) === execSource(parent)`. The PARENT is a literal, exactly as CLAUDE.md
+// requires — but the SUBJECT was HEAD, so the comparison silently re-aimed at every later commit and
+// went red the moment P1 moved its first executable byte. That is the moving-reference defect wearing
+// its mirror image: a fixed reference is only half of a fixed pin, and the phase's OWN COMMIT is the
+// other half. It is resolved the sanctioned way — by subject, inside `PARENT_SHA..HEAD`, which is a
+// bounded range that cannot reach into unrelated history — and falls back to the working tree only
+// while P0 itself is uncommitted, which is the one situation where the live build IS the subject.
 (function sectionB() {
-  console.log("(B) execSource(current) === execSource(parent) — comments-only change, proven");
+  console.log("(B) execSource(P0's own commit) === execSource(P0's parent) — comments-only, proven, and FIXED");
   if (parentSrc === null) { skip("B: comment-stripped comparison (no git history)"); return; }
+  const own = ownCommits(PARENT_SHA, PHASE_SUBJECT);
+  if (own === null) { skip("B: comment-stripped comparison (own commit unresolvable)"); return; }
+  if (own.length > 1) {
+    A.failed++;
+    console.error(`  FAIL: B: ${own.length} commits share the subject "${PHASE_SUBJECT}" — the pin no longer names one commit`);
+    return;
+  }
+  let subject = bare;                       // provisional: P0 is not committed yet
+  if (own.length === 1) {
+    const ownSrc = parentSource(own[0]);
+    if (ownSrc === null) { skip("B: comment-stripped comparison (own commit's source unreadable)"); return; }
+    subject = execSource(ownSrc);
+  } else {
+    console.log("  (measured against the WORKING TREE — P0 is not committed yet)");
+  }
   const pBare = execSource(parentSrc);
-  eq(bare.length, pBare.length,
-    "B: comment-stripped current build is the same LENGTH as the comment-stripped parent");
-  eq(bare, pBare,
-    "B: ⛔ comment-stripped current build is BYTE-IDENTICAL to the comment-stripped parent — " +
+  eq(subject.length, pBare.length,
+    "B: P0's comment-stripped build is the same LENGTH as the comment-stripped parent");
+  eq(subject, pBare,
+    "B: ⛔ P0's comment-stripped build is BYTE-IDENTICAL to the comment-stripped parent — " +
     "not one byte of executable code changed");
 })();
 

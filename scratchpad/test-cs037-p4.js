@@ -79,16 +79,11 @@ console.log("(A) interval timing against game time, with a pause interposed");
   close(X.game.stats.gameTime, gtBefore, "A: ...consistent with gameTime, which also froze", 1e-9);
   X.game.paused = false;
 
-  // The level-end ceremony runs its own reduced sim and returns before the cleanup block, so its
-  // seconds do not count either — the same "menu, pause and level-ceremony time" rule (spec §5.3).
-  // game.levelDone holds the freeze open (updateLevelEndFreeze's HOLD arm); without it the freeze
-  // lifts on the first frame and this would measure an ordinary frame instead.
-  X.game.levelEndFreeze = true; X.game.levelDone = { level: 1, age: 0 };
-  run(X, 20);
-  eq(X.Telemetry.rows.length, 1, "A: 20 s of level-end FREEZE frames add no row either");
-  close(X.Telemetry.acc, accBefore, "A: ...nor move the accumulator", 1e-9);
-  close(X.game.stats.gameTime, gtBefore, "A: ...consistent with gameTime, which the freeze also stops", 1e-9);
-  X.game.levelEndFreeze = false; X.game.levelDone = null;
+  // ⛔ CS043 P1: A SECOND, IDENTICAL MEASUREMENT STOOD HERE — 20 s of level-end FREEZE frames, which
+  // the ceremony's reduced sim returned from before the cleanup block, so its seconds did not count
+  // either. The freeze is DELETED and a level boundary is an ordinary playing frame now, so the
+  // "menu, pause and level-ceremony time does not count" rule (spec §5.3) has one instance left and
+  // the PAUSE block above is it. The rule is unchanged; only one of its two witnesses is gone.
 
   run(X, 15);
   eq(X.Telemetry.rows.length, 2, "A: play resumes and the next row lands one interval later");

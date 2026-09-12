@@ -54,7 +54,10 @@ function live(t = 100) {
 function quiet(X) {
   const g = X.game;
   g.state = "playing"; g.paused = false; g.celebration = null; g.levelEndSafe = false;
-  g.levelEndFreeze = false; g.levelDone = null;
+  // CS043 P1: game.levelEndFreeze / game.levelDone were reset here — both deleted with the ceremony.
+  // ⛔ ...and one inert satellite joins the field below for the other half of that change: an empty
+  // game.debris now CLEARS THE WAVE on the next frame, and the clearing frame runs nextWave() inline,
+  // whose VoiceSys.sayLevel("level") would take the very channel these closures are measuring.
   g.debris.length = 0; g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
   g.garbage.length = 0; g.powerups.length = 0; g.floaters.length = 0; g.chain.length = 0;
   g.particles.length = 0;
@@ -62,6 +65,8 @@ function quiet(X) {
   g.ship.x = X.WORLD_W / 2; g.ship.y = X.WORLD_H / 2;
   g.ship.vx = 0; g.ship.vy = 0; g.ship.dead = false; g.ship.shieldOn = false; g.ship.invuln = 0;
   g.ship.hp = X.SHIP_MAX_HP; g.ship.energy = 1;
+  g.debris.push({ x: (g.ship.x + X.WORLD_W / 2) % X.WORLD_W, y: (g.ship.y + X.WORLD_H / 2) % X.WORLD_H,
+    vx: 0, vy: 0, size: 1, radius: 5, damage: 1, dead: false, update() {}, draw() {} });
   g.towLockoutT = 0; g.deliveryCount = 0;
   X.settings.autoShield = false;
   // ⛔ The dock is placed randomly 260-620 px from the ship, and the pickup gate is shut inside its

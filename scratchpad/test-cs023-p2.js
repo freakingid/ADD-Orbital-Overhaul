@@ -1003,11 +1003,24 @@ const COALESCE_HARVEST_CEILING = 500000;
   //             finding), so this is expected to measure ZERO on both counters; it is kept because a
   //             future change that put either pass into the death path must be caught.
   // ONE SATELLITE IS DELIBERATELY LEFT ALIVE in the blitz, or wave-clear advances the level mid-measurement.
+  //   ⛔ REPOINTED BY CS043 P1: the HARVEST now needs the same protection, for a reason that did not
+  // exist before. CS036 froze the field at a clear, so a fully harvested board simply sat there and the
+  // 120-frame tail measured the post-harvest Debris pile. CS043 P1 deletes the freeze and calls
+  // nextWave() inline on the clearing frame, so an empty board immediately becomes a fresh one — the
+  // tail would never accumulate and the harvest would roll through sixteen levels instead of measuring
+  // one. The fix keeps the harvest FULL (all three lineages are still cascaded, which is the load this
+  // probe exists to measure) by parking one extra inert size-1 satellite at the antipode and excluding
+  // it from the kill selection. It costs +1 body on peakDebris and a handful of debris pairs, both of
+  // which make every ceiling gate below strictly more conservative, never less.
   function probe(level, seed, mode) {
     const Y = withRandom(seededRandom(seed), () => buildFrom(instrumented, { extra: ["__PROBE"] }));
     withRandom(seededRandom(seed), () => { Y.startGame(); atWave(Y, level); });
     Y.game.state = "playing"; Y.game.paused = false;
-    const spawned = Y.game.debris.length;
+    const spawned = Y.game.debris.length;         // ⛔ read BEFORE the sentinel joins the array
+    const [SW, SH] = [Y.WORLD_W, Y.WORLD_H];
+    const sentinel = new Y.DebrisSatellite((Y.game.ship.x + SW / 2) % SW, (Y.game.ship.y + SH / 2) % SH, 1, 0);
+    sentinel.__sentinel = true;
+    Y.game.debris.push(sentinel);
     let frames = 0, sinceKill = 0, tail = 0;
     let worstD = 0, worstDFrame = 0, worstDBodies = 0, worstC = 0, worstCGarbage = 0;
     let worstDDead = 0, worstCDead = 0, deadFrames = 0;   // only the frames AFTER the ship dies
@@ -1020,20 +1033,21 @@ const COALESCE_HARVEST_CEILING = 500000;
         if (mode === "death") {
           if (frames === 90) Y.killShip();
           else if (frames < 90) {
-            const live = Y.game.debris.filter(d => !d.dead);
+            const live = Y.game.debris.filter(d => !d.dead && !d.__sentinel);
             if (++sinceKill >= 6 && live.length) { sinceKill = 0; Y.destroyDebris(live[0], true); }
             Y.game.ship.hp = Y.SHIP_MAX_HP;
           }
         } else {
           Y.game.ship.hp = Y.SHIP_MAX_HP;
-          const live = Y.game.debris.filter(d => !d.dead);
+          const live = Y.game.debris.filter(d => !d.dead && !d.__sentinel);
           if (mode === "blitz") {
             for (let k = 0; k + 1 < live.length; k++) Y.destroyDebris(live[k], true);   // all but one
           } else if (++sinceKill >= 6 && live.length) {
             sinceKill = 0; Y.destroyDebris(live[0], true);
           }
         }
-        if (Y.game.debris.length === 0) tail++;
+        // The tail is "nothing left to harvest", which is now one body rather than none (the sentinel).
+        if (Y.game.debris.filter(d => !d.__sentinel).length === 0) tail++;
         Y.__PROBE.debrisPairs = 0; Y.__PROBE.coalescePairs = 0;
         const bodiesIn = Y.game.debris.length;
         const t0 = process.hrtime.bigint();

@@ -624,7 +624,7 @@ function pieceSpeed(piece) { return Math.hypot(piece.vx, piece.vy); }
     const probe = (A, p) => {
       A.game.saucers.length = 0; A.game.saucerTimer = -1;
       A.game.debris.length = 0; A.game.hunters.length = 0;
-      A.game.waveClearTimer = -1e9; A.game.levelEndFreeze = false; A.game.levelDone = null;
+      A.game.waveClearTimer = -1e9;   // CS043 P1: the freeze/announcement clears that stood beside this are gone
       A.game.state = "playing"; A.game.paused = false;
       withPinnedRandom(p, () => A.update(0));
       return A.game.saucers.length === 1 ? A.game.saucers[0].small : null;

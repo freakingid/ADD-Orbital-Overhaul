@@ -130,9 +130,8 @@ function makeCtxStub() {
 }
 const RETURN = [
   "game", "startGame", "nextWave", "update", "draw",
-  // REPOINTED BY CS036 P2: §H's smoke run needs the completion hold's two functions — the field now
-  // freezes at every clear until a player confirms, and §H is that player.
-  "levelDoneActive", "dismissLevelDone",
+  // CS043 P1: levelDoneActive / dismissLevelDone stood here — deleted with the completion hold,
+  // which no longer exists: a wave clear advances the level inline, with no player confirm to give.
   "worldDims", "worldSizeFor", "resizeWorld", "applyWorldSize",
   "WORLD_SIZE_EARLY", "WORLD_SIZE_FIELD", "WORLD_SIZE_ORBIT", "WORLD_SIZE_MAX",
   "VIEW_W", "VIEW_H", "CULL_MARGIN", "DEBRIS_RADII",
@@ -774,12 +773,11 @@ let X = null;
     // NARROWED AGAIN BY CS035 P3 — the level-end protection window's three CS016-P3-rule fields
     // (`levelEndSafe` / `levelEndGraceT` / `levelEndPulseT`), reset here and DELIBERATELY NOWHERE ELSE:
     // nextWave() runs inside the window and must not touch them. Same treatment, filtered out by name.
-    // NARROWED AGAIN BY CS036 P1 — `levelEndFreeze`, the level-end ceremony's freeze flag, is a FOURTH
-    // field of that same window and lands at that same site for that same reason (it spans nextWave()).
-    // Same treatment, filtered out by name.
-    // NARROWED AGAIN BY CS036 P2 — `levelDone`, the completion announcement, is the FIFTH and last field
-    // of that window, reset at the same site for the same reason. Same treatment, by name; a sixth would
-    // still fail this trap.
+    // ⛔ RE-TIGHTENED BY CS043 P1 — CS036 P1's `levelEndFreeze` and CS036 P2's `levelDone` were each
+    // added to DROPPED_LINES as a fourth and fifth field of that same window. Both fields are now
+    // DELETED from the build, so their two entries are REMOVED from the set rather than left standing:
+    // an entry whose line no longer exists would silently swallow it if a future phase re-added one.
+    // The window is back to its CS035 P3 three.
     // NARROWED AGAIN BY CS036 P5 — `dockPingTimer`, the dock push's ping cooldown, is a NEW CS016-P3-rule
     // field, unrelated to the level-end window (it lives beside hpReliefFlash, not that group). Same
     // treatment: filtered out by name.
@@ -807,8 +805,6 @@ let X = null;
       "game.levelEndSafe = false;",
       "game.levelEndGraceT = 0;",
       "game.levelEndPulseT = 0;",
-      "game.levelEndFreeze = false;",
-      "game.levelDone = null;",
       "game.dockPingTimer = 0;",
       "PlayPeaks.reset();",
       "Telemetry.reset();",
@@ -818,10 +814,10 @@ let X = null;
       // §1.4), another NEW CS016-P3-rule field sitting beside the scoop resets. Same treatment:
       // filtered out by name, so any OTHER new line here still fails this trap.
       "game.healthBank = 0;",
-      // NARROWED AGAIN BY CS042 P5 — the ceremony cross-fade's four render-only fade clocks (GATE A),
-      // four more NEW CS016-P3-rule fields sitting with the other level-end resets. Same treatment:
-      // filtered out by name, so any OTHER new line here still fails this trap.
-      "game.levelDoneOut = null;",
+      // NARROWED AGAIN BY CS042 P5 — the ceremony cross-fade's render-only fade clocks (GATE A), more
+      // NEW CS016-P3-rule fields sitting with the other level-end resets. Same treatment: filtered out
+      // by name, so any OTHER new line here still fails this trap. ⛔ CS043 P1: there were FOUR and
+      // there are THREE — `game.levelDoneOut = null;` is removed with the announcement's own dissolve.
       "game.celebrationT = 0;",
       "game.celebrationOut = null;",
       "game.gameoverT = 0;",
@@ -874,7 +870,7 @@ let X = null;
       .replace("  game.healthTimer = healthGapRoll();", "  game.healthTimer = rand(POWERUP_HEALTH_GAP[0], POWERUP_HEALTH_GAP[1]);")
       + "\n  nextWave();";
     eq(foldResetRun(foldMenuReset(dropDeliveryTickerLine(strip(bodyOf(scriptSrc, "function resetRun(wave, debugRun) {"))))), strip(bodyOf(ps, "function startGame()")),
-      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P1's levelEndFreeze, CS036 P2's levelDone, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear, CS037 P7.1's towLockoutT clear, CS038 P1's linkMsg menu field, CS042 P5's four ceremony fade clocks and CS042 P6's healthSpawnLock");
+      "G: ⛔ TRAP 5 — the run-reset list's EXECUTABLE source is unchanged apart from CS029 P4's deliveryTicker reset, CS030 P1's pendingAch/celebration resets, CS031 P3's three name-entry menu fields, CS032 P2's resumedRun field + extraction into resetRun(), CS032 P3's slotMode/slotMsg menu fields, CS033 P2's Leaderboard.beginRun() call, CS034 P7's deleted initials-entry reset + hsFilter menu field, CS035 P3's three level-end window resets, CS036 P5's dockPingTimer, CS037 P2.1's PlayPeaks.reset(), CS037 P4's Telemetry.reset(), CS037 P6's Achievements.resumeBaseline clear, CS037 P7.1's towLockoutT clear, CS038 P1's linkMsg menu field, CS042 P5's ceremony fade clocks (four, three after CS043 P1) and CS042 P6's healthSpawnLock");
     // worldSizeFor is the one function that DID change, which is what makes the three pins above mean
     // something: the instrument can tell a changed body from an unchanged one.
     assert(strip(bodyOf(scriptSrc, "function worldSizeFor(level) {")) !== strip(bodyOf(ps, "function worldSizeFor(level) {")),
@@ -937,15 +933,11 @@ let X = null;
       // panel at a clear and freezes the field until dismissal, which would park this run short of
       // the 5 -> 6 boundary. The world resize, not the panel, is what it is crossing to reach.
       A.game.pendingAch.length = 0;
-      // REPOINTED BY CS036 P2: a clear now FREEZES the field behind a "Level N Complete" announcement
-      // that ends on player input, not on a timer — so this run needs a confirm to keep advancing, and
-      // this line is that player. Without it the sim parks on the first clear and never reaches 5 -> 6.
-      // ⛔ AND AGAIN BY CS036 P3, which extended the freeze PAST the confirm to the next banner's
-      // fade-out: this loop empties the field on a fixed 90-frame cadence, so it would empty it DURING
-      // those frozen frames — where the wave-clear latch cannot re-arm, because waveClearTimer never
-      // returns to 0 without a live frame that has debris in it. The run would park at level 4. The tail
-      // is test-cs036-p3.js's subject; here it is lifted by hand at the confirm.
-      if (A.levelDoneActive()) { A.dismissLevelDone(); A.game.levelEndFreeze = false; }
+      // ⛔ REPOINTED AGAIN BY CS043 P1, and this time nothing is driven in at all: the announcement, the
+      // freeze and its tail are DELETED, so every frame this loop runs is a live one and a clear advances
+      // the level on the frame it happens. The 90-frame emptying cadence below can no longer land inside
+      // a frozen stretch, because there is no frozen stretch — which is what the two repoints above were
+      // both working around.
       A.update(1 / 60);
       if (i % 200 === 0) A.draw();
       sizes.add(A.game.worldSize);

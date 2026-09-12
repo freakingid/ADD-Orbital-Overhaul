@@ -47,7 +47,7 @@ function live(t = 100) {
 function quiet(X) {
   const g = X.game;
   g.state = "playing"; g.paused = false; g.celebration = null; g.levelEndSafe = false;
-  g.levelEndFreeze = false; g.levelDone = null;
+  // CS043 P1: game.levelEndFreeze / game.levelDone were reset here — both deleted with the ceremony.
   // One immortal dummy debris piece, parked far off-field, so the wave never reads as cleared and
   // triggers the level-end freeze mid-test (the standing idiom — see test-cs034-p8.js's
   // driveDeliveryVisit / test-cs018-p9.js's quietBoard).

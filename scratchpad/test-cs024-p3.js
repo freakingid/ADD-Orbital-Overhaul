@@ -148,8 +148,8 @@ function makeCtxStub(log) {
 
 const RETURN = [
   "game", "startGame", "nextWave", "update", "draw", "settings",
-  // REPOINTED BY CS036 P2: §B's five real wave transitions need a player at the completion hold.
-  "levelDoneActive", "dismissLevelDone",
+  // CS043 P1: levelDoneActive / dismissLevelDone stood here — deleted with the completion hold,
+  // which no longer exists: a wave clear advances the level inline, with no player confirm to give.
   "Garbage", "HunterSatellite", "DebrisSatellite", "Bullet",
   "coalesceGarbage", "cullGarbage", "betterCullVictim", "largeHunterCount", "noteLargeHunterSpawn",
   "destroyHunter", "destroyDebris", "shatterClump", "addScore",
@@ -397,14 +397,13 @@ const liveCount = X => X.game.garbage.filter(p => !p.dead).length;
       // clear FREEZES the field behind "Level N Complete" until the player confirms. So the loop is short
       // and unconditional again: one frame to arm the ceremony, the confirm, one frame to settle. The
       // claim (garbage carries ACROSS a transition) is untouched.
-      // AND AGAIN BY CS036 P3: the confirm no longer lifts the freeze — it runs on through nextWave()
-      // until the "Level N+1" banner starts fading out, ~1.7 s later, and a frozen frame resolves no
-      // wave clear at all, so the next iteration would never arm and the loop would stall at wave 2.
-      // Lifted by hand the moment the confirm has reached nextWave(); the tail belongs to
-      // test-cs036-p3.js, not to a garbage-density pin.
+      // ⛔ AND AGAIN BY CS043 P1, which is the last repoint this loop should ever need: the whole
+      // ceremony is DELETED. There is no hold, no confirm, no freeze and no tail — the wave-clear latch
+      // calls nextWave() inline on the frame the field empties, so ONE frame does the transition. The
+      // pendingAch clear stays: a banked unlock would still open the celebration panel at game over, and
+      // this pin is about garbage carrying ACROSS a transition, not about the panel.
       for (let f = 0; f < 3; f++) {
         g.pendingAch.length = 0;
-        if (X.levelDoneActive()) { X.dismissLevelDone(); g.levelEndFreeze = false; }
         X.update(1 / 60);
       }
     }

@@ -160,6 +160,10 @@ function buildFrom(src, { audio = true, names = RETURN } = {}) {
 }
 const build = opts => buildFrom(scriptSrc, opts);
 
+// ⛔ REPOINTED BY CS043 P1: emptying game.debris now CLEARS THE WAVE on the very next frame, and the
+// clearing frame calls nextWave() inline — which reseeds game.levelBanner, the subject of this whole
+// file. Before CS043 the clear froze the field instead, so an empty board was a stable state to measure
+// from. One inert size-1 satellite at the antipode keeps the wave open; nothing here ever shoots it.
 function quiet(X) {
   const g = X.game;
   g.state = "playing"; g.paused = false; if (g.menu) g.menu.screen = null;
@@ -169,6 +173,10 @@ function quiet(X) {
   g.ship.vx = 0; g.ship.vy = 0; g.ship.dead = false; g.ship.hp = 250; g.ship.angle = 0;
   g.ship.invuln = 0;
   g.camera = { x: g.ship.x, y: g.ship.y };
+  g.debris.push({
+    x: (g.ship.x + X.WORLD_W / 2) % X.WORLD_W, y: (g.ship.y + X.WORLD_H / 2) % X.WORLD_H,
+    vx: 0, vy: 0, size: 1, radius: 5, damage: 1, dead: false, update() {}, draw() {},
+  });
   return g;
 }
 

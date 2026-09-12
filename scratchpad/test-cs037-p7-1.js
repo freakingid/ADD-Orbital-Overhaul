@@ -37,7 +37,7 @@ const methodBodyOf = (text, sig) => { const i = text.indexOf(sig); return trimTr
 function quiet(X) {
   const g = X.game;
   g.state = "playing"; g.paused = false; g.celebration = null; g.levelEndSafe = false;
-  g.levelEndFreeze = false; g.levelDone = null;
+  // CS043 P1: game.levelEndFreeze / game.levelDone were reset here — both deleted with the ceremony.
   // An immortal dummy Debris satellite, parked far away — an EMPTY debris array would start the
   // wave-clear timer, which fires nextWave() mid-measurement across a multi-frame section (test-cs025-p1's
   // own idiom; test-cs037-p5.js gets away without one only because every one of its sections drives a

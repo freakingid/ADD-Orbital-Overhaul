@@ -38,7 +38,7 @@ const bodyOf = (text, sig) => { const i = text.indexOf(sig); return text.slice(i
 function quiet(X) {
   const g = X.game;
   g.state = "playing"; g.paused = false; g.celebration = null; g.levelEndSafe = false;
-  g.levelEndFreeze = false; g.levelDone = null;
+  // CS043 P1: game.levelEndFreeze / game.levelDone were reset here — both deleted with the ceremony.
   g.debris.length = 0; g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
   g.garbage.length = 0; g.powerups.length = 0; g.floaters.length = 0; g.chain.length = 0;
   g.particles.length = 0;

@@ -46,7 +46,7 @@ const TOW_MASS = 1;
 function quiet(G, opts = {}) {
   const g = G.game;
   G.startGame();
-  g.state = "playing"; g.paused = false; g.celebration = null; g.levelDone = null;
+  g.state = "playing"; g.paused = false; g.celebration = null;  // CS043 P1: no game.levelDone to clear
   g.levelEndSafe = false;
   g.debris.length = 0; g.hunters.length = 0; g.saucers.length = 0; g.bullets.length = 0;
   g.garbage.length = 0; g.powerups.length = 0; g.floaters.length = 0; g.chain.length = 0;

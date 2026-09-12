@@ -1,18 +1,18 @@
 # Orbital Overhaul — STATUS
-Version: 1.0.0.42 · Changeset: CS043 · Phase: P0 · Registry: 117 · Levers: 18
+Version: 1.0.0.42 · Changeset: CS043 · Phase: P1 · Registry: 117 · Levers: 18
 
-⛔ **CS043 is IN FLIGHT — P0 landed, P1-P5 not yet run.** CS042 is CLOSED underneath it: both of
+⛔ **CS043 is IN FLIGHT — P0 and P1 landed, P2-P5 not yet run.** CS042 is CLOSED underneath it: both of
 CS042's planning docs are in `archive/`, and its full narrative is `log/CS042.md`. `CS042-GATE-A.md`
 stays at the repo root — three CS042 phases are pinned byte-for-byte against it and those pins must
 keep resolving. `PLANNED-FEATURES-CS043.md` and `IMPLEMENTATION-PHASES-CS043.md` carry CS043's own
 spec and phase prompts; FORK-CS043-A is already resolved (§8: span the whole protection window).
-Everything under **Known issues** below not resolved by P0 is carried forward and still live.
+Everything under **Known issues** below not resolved by P0 or P1 is carried forward and still live.
 
 ⛔ **The dated "where was I" note is `TODO.md`'s RESUME HERE block, and it is the only one** — it was
-rewritten at P0's close and points at P1. Don't start a second resume note here; this file is build
-reality, not a session log. **State at P0's close:** clean tree, suite **181/181, 0 failed, 0 skipped**
-(both `test-cs035-p3` §F and `test-f6` §F flaked once in one run and passed on rerun — the two
-documented flakes, not regressions). `eb7c6b9` and `82e3419` are **unpushed**; pushing is Paul's.
+rewritten at P1's close and points at P2. Don't start a second resume note here; this file is build
+reality, not a session log. **State at P1's close:** clean tree, suite **179/179, 0 failed, 0 skipped**
+(181 minus the three CS036 files P1 deletes, plus P1's own). `82e3419`, `eb7c6b9`, `5f312bc`, `7479dad`
+and P1's own commit are all **unpushed**; pushing is Paul's.
 
 ## Phase ledger — CS043
 
@@ -26,6 +26,18 @@ documented flakes, not regressions). `eb7c6b9` and `82e3419` are **unpushed**; p
   `settings` object's `voiceStyle`/`captions` comments, which still claimed "NOT persisted yet (later
   phase)" after CS011 P3 shipped both, now say so. `scratchpad/test-cs043-p0.js` pins the extracted
   script comment-stripped-identical against its literal parent SHA.
+
+- P1 — ⛔ **The level-end pause is DELETED.** No freeze, no "Level N Complete", no input branch on
+  either device; `update()`'s wave-clear latch opens the protection window, runs the Perfect Wave block
+  unmoved, and calls `nextWave()` inline as its own last act. Eleven names gone from live code
+  (`updateLevelEndFreeze`, `levelDoneActive`, `dismissLevelDone`, `drawLevelDone`/`Text`, three `game`
+  fields, two constants and `CEREMONY_ANNOUNCE_OUT`), all tombstoned where they stood. The window is
+  bounded again at `levelBannerTime + levelEndGrace`, and every frame of it is live play — which
+  retires FORK-CS036-C → C2's redundancy without moving a gate. `tickLevelBanner()` survives with one
+  caller and is now the grace's only arm. **One judgment call the spec's sketch did not reach: the new
+  `nextWave()` call carries `game.state === "playing"`** — see Known issues. The three CS036 test files
+  are deleted and their surviving assertions carried into `scratchpad/test-cs043-p1.js`; twenty more
+  suite files edited. Build 1,081,177 → 1,071,130 bytes.
 
 ## Phase ledger — CS042
 
@@ -81,9 +93,32 @@ Full narrative for every phase and both gates: `log/CS042.md`.
 
 ## Working / verified
 
-- Full suite at close: **180 files, 180 passed, 0 failed, 0 skipped, 0 timed out** (exit 0),
-  `node --check` clean, no flake rerun needed. Zero skips is asserted, not assumed. Baseline at the
-  changeset's start was 171 files; nine new test files landed, one per build phase plus P11's.
+- **Suite at P1's close: 179 files, 0 failed, 0 skipped, exit 0**, `node --check` clean. The file
+  count went 181 → 179: three deleted (`test-cs036-p1/-p2/-p3.js`, whose feature is deleted), one
+  added (`test-cs043-p1.js`). Zero skips is asserted, not assumed.
+- **⛔ WHAT P1 CARRIED OUT OF THE THREE DELETED FILES, and what it dropped** (spec §6.1's rule — a
+  deletion is not a licence to drop an assertion that still has a subject). **Carried** into
+  `test-cs043-p1.js` §E: `tickLevelBanner()`'s one-dt tick, its crossing one-shot and its
+  `levelEndSafe` clause, with the caller count flipped 3 → 2 (p1 §C); the voice queue draining and
+  `VoiceSys.update()` last in the playing body (p1 §D); `AudioSys.thrust(false)` on the general
+  early-return (p1 §F); `nextWave()` resetting none of the three window fields and `resetRun()` being
+  the one reset site (p1 §H); the four `!game.levelEndSafe` gate sites, unmoved (p3 §A, FORK-C → C2);
+  `DEBUG.levelEndHold` still retired with no migration shim (p2 §A/§J); the caption's two surviving
+  clock rules (p3 §H). **Carried into §C whole**: the Perfect Wave / No Scratches / Flawless Run
+  bookkeeping, at the latch, once per clear, on the completed wave (p2 §G) — the phase's named trap.
+  **Carried into §D, flipped**: both-handlers-or-neither, asserted as *neither* (p2 §A/§E).
+  **Dropped, subject deleted**: every frozen-frame measurement (p1 §A/§B/§G), the two deliberate stops
+  under the freeze (p1 §E — replaced by its inverse, the clearing frame running both to its own end),
+  the untimed hold and its held-button immunity (p2 §C/§D/§F), the announcement's render and dissolve
+  (p2 §I), the tail's crossing and the degenerate-knob thaw (p3 §B/§C/§D), and the panel-header check
+  (p3 §G, whose game-over half `test-cs042-p5.js` §C already owns).
+- **The three edit-heavy files were re-staged, not trimmed.** `test-cs035-p3.js` §E's subject (the
+  level-seam panel deferring `nextWave()`) is gone, so the section was rewritten around the two
+  assertions in it that were always this file's own — the window surviving the wave boundary — and §A
+  and §B were flipped to their mirror images. `test-cs030-p5.js`'s panel sections moved to the death
+  seam, the one call site left, and its "one NEW open site" pin flipped back to parity with its CS030
+  P4 parent. `test-cs042-p5.js` lost §B and §F outright (the announcement's dissolve and the freeze's
+  termination) and had §C, §G and §H re-staged at game over.
 - **P11's build change is one render edit and it is measured as render-only.**
   `scratchpad/test-cs042-p11.js` is 147 assertions in seven sections. §E pins `inScoopBox()`,
   `buildScoopSteps()` and `damageShip()` byte-identical against the phase's literal parent, holds all
@@ -103,6 +138,62 @@ Full narrative for every phase and both gates: `log/CS042.md`.
 
 ## Known issues
 
+- **⛔ P1's JUDGMENT CALL, recorded because the spec's §1.2 sketch shows a bare `nextWave()`: the new
+  inline call carries `game.state === "playing"`.** It is the one surviving term of the deleted
+  `levelDoneActive()`, carried with the call rather than dropped. `killShip()` flips the state
+  mid-frame from a collision pass above the wave-clear branch, so a player who dies on the very frame
+  the last Garbage Satellite dies reaches the advance already dying — and without the term the level
+  advances out from under them, over-reporting `game.wave` by one in the high-score record and the
+  leaderboard's `wave_reached` (both written at the `dying` → `gameover` seam that follows) and
+  spawning a fresh field into the death spectacle. Reproduced on the parent before the guard was
+  written. `test-cs030-p5.js` §B pinned the guarantee by name and still does; `test-cs043-p1.js` §F
+  pins the mechanism. **The ARM above it is deliberately left ungated** — an orphaned `levelEndSafe` on
+  a death frame is shipped and `resetRun()` clears it.
+- **⛔ A SEVENTH MOVING PIN, AND IT IS THE MIRROR IMAGE OF THE SIX ALREADY FOUND — FIXED THIS PHASE.**
+  `test-cs043-p0.js` §B compared `execSource(THE LIVE BUILD)` against `execSource(P0's literal
+  parent)`. The *reference* was a literal, exactly as `CLAUDE.md` requires, but the *subject* was HEAD,
+  so the pin silently re-aimed at every later commit and went red on P1's first executable byte. ⛔
+  **A fixed reference is only half of a fixed pin.** Repaired by resolving P0's own commit by subject
+  inside `PARENT_SHA..HEAD` and comparing that, falling back to the working tree only while P0 itself
+  is uncommitted. ⚠ **Nothing sweeps for the next one, and this class is invisible to the existing
+  "moving-`HEAD`" search** — those look for `HEAD` in the reference position, and here `HEAD` was the
+  subject. Any "comments-only" or "byte-identical" phase pin written against the live build has it.
+- **⛔ AN EMPTY `game.debris` IS NO LONGER A STABLE STATE, AND FIVE SUITE FILES DEPENDED ON IT BEING
+  ONE.** Before CS043 a cleared field froze; now the clearing frame runs `nextWave()` inline, which
+  advances the level, **relocates the dock** and spawns a new field. `test-cs023-p2.js` (its harvest
+  probe rolled through sixteen levels), `test-cs025-p5.js` (the banner it measures was reseeded),
+  `test-cs026-p6.js` and `test-cs034-p9.js` (the dock anchor moved out from under the floater) and
+  `test-cs042-p3.js` (`sayLevel()` took the voice channel) all needed one inert sentinel satellite
+  parked at the antipode, and `test-v33-p3.js` needed one too (the relocated dock's own lockout push
+  shoved the staged canister out of the scoop box it was measuring — one of six wrap-seam cases failed
+  and five did not, which is what a relocation does). ⚠ **This is now a standing hazard for every new
+  test**: a `quiet()` helper that empties the field must leave one body in it, or the next frame is a
+  level transition.
+- **⛔ One GDD section outside the prompt's list was corrected because P1 made it false: §2.16's
+  `resetMenuNav()` call-site inventory.** It read "all four of its named call sites (menu open, the
+  wave-clear arm, both celebration-panel opens)"; P1 deletes two of the four — the wave-clear arm's
+  call and `dismissLevelDone()`'s — leaving the menu open and `killShip()`'s panel open. Corrected in
+  place with the deletion named, not re-counted silently.
+- **⛔ GDD §2.20's "Level-end call site (P5)" bullet is now FALSE and P1 deliberately did not touch
+  it.** Nothing opens the celebration panel at a level seam any more, so that bullet describes a
+  deleted path, and §2.20's header note about the panel's two call sites goes with it. **§2.20 is
+  P2's** (phases doc, P2 prompt: "Update GDD §2.20"), and spec §9 already lists it for this changeset
+  — recorded here so the gap between P1 and P2 is visible rather than silent.
+- **⚠ At `DEBUG.levelBannerTime` 0 the protection window NEVER CLOSES, and that predates CS043.** The
+  banner is seeded already expired, so `tickLevelBanner()`'s crossing one-shot never fires,
+  `levelEndGraceT` stays 0 and `levelEndSafe` stays true for the rest of the run. Measured identically
+  on P1's own parent, so it is a property of the grace's arm rather than of the deletion. Reachable
+  only from the debug panel; flagged, not fixed (GDD §2.20.1's degenerate-cases bullet).
+- **⚠ `PLANNED-FEATURES-CS043.md` §0 SAYS THE REVERSAL IS RECORDED IN `DECISIONS.md` AND
+  `log/CS043.md`, AND NEITHER ENTRY EXISTS.** The log is the closing phase's to write, so that half is
+  merely early; the `DECISIONS.md` entry has **no owner** and arguably no home — `CLAUDE.md`'s document
+  map scopes that file to calls made *where no plan doc covered the question*, and this one is covered
+  at length by the spec's own §0/§0.1. P1 wrote neither: `DECISIONS.md` is outside its scope fence and
+  the entry records Paul's own decision. GDD §2.20.1 now points at the spec, which does carry it, and
+  says so in parentheses rather than asserting a record that is not there.
+- **⚠ GDD §0's size row for §2.20.1 still reads 17.6 KB and the section was rewritten this phase.**
+  No action for P1 — the closing phase re-measures all ~35 rows by standing instruction
+  (`scratchpad/gdd-sizes.py --check`) — noted only so the delta is expected rather than surprising.
 - **⛔ `CLAUDE.md` IS OVER ITS 50 KB CEILING AND THE VALVE THAT WAS SUPPOSED TO STOP THAT IS SPENT.**
   It closes at **52,480 bytes / 880 lines = 51.25 KiB, ~1.25 KB over**. The valve fired exactly as
   the phase prompt prescribed — `### Audio` 5,252 → 4,026 bytes, its reasoning relocated undeleted
@@ -226,12 +317,14 @@ Full narrative for every phase and both gates: `log/CS042.md`.
   block, since CS010 P0); CS042's phase doc wrote the next integer instead and shipped a wrong
   version that both live pins passed. A changeset shipping no build byte bumps nothing and leaves
   its number permanently unused, exactly as CS041 did. `DECISIONS.md`, 2026-09-08.
-- **CS043 is IN FLIGHT — P0 landed this session, P1 next.** `PLANNED-FEATURES-CS043.md` and
-  `IMPLEMENTATION-PHASES-CS043.md` carry the spec and phase prompts. Six phases (P0 done, P1 the
-  deletion, P2 panel, P3 banner/grace/pulse, P4 spawn floor, GATE A, P5 close). **FORK-CS043-A is
-  RESOLVED** — the ship's alpha pulse spans the whole protection window (Paul, at review,
-  2026-09-09) — so P3 runs without waiting on it. The four surviving moving-`HEAD` pins and the
-  deferred SFX retune are NOT in this changeset's scope.
+- **CS043 is IN FLIGHT — P0 and P1 landed, P2 next.** `PLANNED-FEATURES-CS043.md` and
+  `IMPLEMENTATION-PHASES-CS043.md` carry the spec and phase prompts. Six phases (P0 and P1 done, P2
+  panel, P3 banner/grace/pulse, P4 spawn floor, GATE A, P5 close). **FORK-CS043-A is RESOLVED** — the
+  ship's alpha pulse spans the whole protection window (Paul, at review, 2026-09-09) — so P3 runs
+  without waiting on it. ⚠ **P2 inherits two things from P1**: `dismissCelebration()`'s `resume ===
+  "wave"` fork is now UNREACHABLE (P1 left it standing rather than half-deleting it across two
+  phases), and GDD §2.20's level-end call site is stale — see Known issues. The four surviving
+  moving-`HEAD` pins and the deferred SFX retune are NOT in this changeset's scope.
 - `TODO.md` carries the rest of the standing backlog.
 - **⚠ Paul flagged some of P3/P4's event SFX as wanting a retune and EXPLICITLY DEFERRED it to a
   later changeset.** Not a defect, not blocked. ⛔ **Any such retune is a `tools/sfx-lab.html`

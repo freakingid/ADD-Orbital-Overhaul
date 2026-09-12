@@ -37,7 +37,12 @@ const { assert, eq, close } = A;
   const X = buildGame();
   X.startGame();
   const g = X.game;
+  // ⛔ CS043 P1: an empty game.debris now CLEARS THE WAVE on the next frame, and the clearing frame runs
+  // nextWave() inline — which RELOCATES the dock. The anchor this section compares against would move
+  // out from under the floater it is measuring. One inert satellite at the antipode keeps the wave open.
   g.debris.length = 0; g.hunters.length = 0; g.saucers.length = 0;
+  g.debris.push({ x: (g.dock.x + X.WORLD_W / 2) % X.WORLD_W, y: (g.dock.y + X.WORLD_H / 2) % X.WORLD_H,
+    vx: 0, vy: 0, size: 1, radius: 5, damage: 1, dead: false, update() {}, draw() {} });
   g.ship.x = g.dock.x; g.ship.y = g.dock.y; g.ship.vx = 0; g.ship.vy = 0;
   g.chain.length = 0;
   // `towed: false` deliberately kept on the seeded node: the field is dead, and a stale one must not

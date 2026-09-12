@@ -55,16 +55,15 @@ function settle(X, secs = 4) {
   for (let i = 0; i < Math.round(secs / DT); i++) X.update(DT);
 }
 // Open the window through the real code path: an empty field, one frame.
-// ⛔ REPOINTED BY CS036 P2: that same frame now also arms the CEREMONY — game.levelEndFreeze plus the
-// "Level N Complete" announcement — and a frozen frame updates no entity and resolves no collision at
-// all. Every damage-gate section below would then pass VACUOUSLY, measuring a stopped world instead of
-// a protected one. So the freeze is lifted by hand here, which is exactly what the player's confirm
-// does in play and what CS036 P3's own unfreeze will do at the banner: levelEndSafe / levelEndGraceT /
-// levelEndPulseT — this file's actual subject — are left exactly as the real arm set them.
+// ⛔ REPOINTED BY CS043 P1, and the hand-lift it used to need is GONE. CS036 P2 made this same frame arm
+// a freeze as well, so every damage-gate section below would have passed VACUOUSLY against a stopped
+// world unless the freeze were lifted here by hand. That whole ceremony is deleted: the clearing frame
+// is an ordinary playing frame that also runs nextWave(), and every frame after it is live. levelEndSafe
+// / levelEndGraceT / levelEndPulseT — this file's actual subject — are exactly as the real arm set them,
+// as they always were, and now nothing has to be undone to see them.
 function arm(X) {
   const g = quiet(X);
   X.update(DT);
-  g.levelEndFreeze = false; g.levelDone = null;
   return g;
 }
 
@@ -80,51 +79,56 @@ function arm(X) {
   eq(g.levelEndSafe, false, "A: (setup) the window is shut while a satellite is alive");
   eq(g.debris.length, 1, "A: (setup) exactly one satellite in the field");
 
+  const w = g.wave;
   X.update(DT);
-  eq(g.debris.length, 0, "A: the bullet killed it — the field is empty at the end of this same frame");
-  eq(g.levelEndSafe, true, "A: ⛔ and the window is ALREADY open, on that same frame, not when the hold expires");
+  eq(a.dead, true, "A: the bullet killed it — the field emptied inside this same frame");
+  // ⛔ REPOINTED BY CS043 P1: the field is NOT empty at the end of the frame any more. The wave-clear
+  // latch calls nextWave() inline, which spawns the new level's satellites before the frame is out, so
+  // "empty at the end of the frame" and "the level advanced in the same frame" are the same claim read
+  // two ways — and the second is now the one that is true.
+  eq(g.wave, w + 1, "A: ⛔ ...and the level advanced in that same update(), not after a hold");
+  assert(g.debris.length > 0, "A: ...with the new level's field already spawned under the window");
+  eq(g.levelEndSafe, true, "A: ⛔ and the window is ALREADY open, on that same frame");
   eq(g.levelEndPulseT, 0, "A: the pulse phase restarts at the arm, so the window always opens at full brightness");
-  eq(g.levelEndGraceT, 0, "A: the grace is NOT armed yet — that is the banner's job, three steps later");
+  eq(g.levelEndGraceT, 0, "A: the grace is NOT armed yet — that is the banner's job, one step later");
   eq(g.ship.invuln, 0, "A: ⛔ ship.invuln is untouched — level-end protection is a separate state from hit-stun");
-  assert(g.waveClearTimer > 0, "A: the hold is running");
+  assert(g.waveClearTimer > 0, "A: the latch's own accumulator ran — which is what makes `=== 0` fire once");
 
   // The arm is a once-per-clear latch, not a per-frame write: a pulse mid-window is never rewound.
-  // REPOINTED BY CS036 P2: the same frame armed the freeze too, and the pulse phase lives in update()'s
-  // playing body — 30 FROZEN frames would advance nothing and this claim would read as a failure. Lift
-  // it, as arm() does and for the same reason; the latch under test is levelEndSafe's, not the freeze's.
-  // ⛔ REPOINTED AGAIN BY CS036 P3 (FORK-CS036-D -> D1): the phase accumulates during the GRACE ONLY now,
-  // and the grace is three steps away from here, so "it kept accumulating" is no longer a way to see the
-  // latch at all. A hand-seeded sentinel makes the same point without depending on the pulse's condition:
-  // a second arm would run `game.levelEndPulseT = 0` on its own second line and wipe it.
-  eq(g.levelEndFreeze, true, "A: ⛔ ...and CS036 P2's ceremony armed on the SAME latch, in the same frame");
-  eq(g.levelDone.text, "Level " + g.wave + " Complete", "A: ...seeding the completed wave's announcement");
-  g.levelEndFreeze = false; g.levelDone = null;
+  // REPOINTED BY CS036 P3 (FORK-CS036-D -> D1): the phase accumulates during the GRACE ONLY, and the
+  // grace is two steps away from here, so "it kept accumulating" is not a way to see the latch. A
+  // hand-seeded sentinel makes the same point without depending on the pulse's condition: a second arm
+  // would run `game.levelEndPulseT = 0` on its own second line and wipe it.
+  // ⛔ REPOINTED AGAIN BY CS043 P1: the two ceremony assertions that stood here — the freeze armed on the
+  // same latch, and the announcement seeded with the completed wave's name — are DELETED with the
+  // ceremony, along with the hand-lift under them. What the latch arms now is levelEndSafe + the pulse
+  // phase, and nextWave() runs on that same frame (see test-cs043-p1.js).
   g.levelEndPulseT = 7;
   for (let i = 0; i < 30; i++) X.update(DT);
   eq(g.levelEndSafe, true, "A: still open half a second later");
   eq(g.levelEndPulseT, 7, "A: ⛔ the sentinel phase is untouched — the `waveClearTimer === 0` latch did not re-arm and re-zero it");
 })();
 
-// ================= (B) ⛔ the hold is RETIRED — no timer advances the wave at all =================
-// ⛔ REWRITTEN BY CS036 P2 AS ITS OWN MIRROR IMAGE, not re-pointed to a new duration. This section
-// pinned "the pre-nextWave() hold is DEBUG.levelEndHold (5.0 s), REPLACING the 2.5 literal" — and
-// CS036 P2 (spec §1.2, FORK-CS036-E) retired that knob outright, because the pause it timed is
-// player-paced now: "Level N Complete" holds until confirm or back. What survives is the half of the
-// claim that is still checkable here — the 2.5 literal is gone, and so is everything that replaced it,
-// so NO amount of elapsed time advances the wave. That the player's confirm does is CS036 P2's own
-// claim and is pinned in test-cs036-p2.js; this file does not restate it.
+// ================= (B) ⛔ the pre-nextWave() PAUSE IS RETIRED, and now so is the wait itself ========
+// ⛔ REWRITTEN AS ITS OWN MIRROR IMAGE TWICE, never re-pointed to a new duration — the standing
+// convention for a pin whose subject inverts. It began as "the pre-nextWave() hold is
+// DEBUG.levelEndHold (5.0 s), REPLACING the 2.5 literal". CS036 P2 retired that knob and made the pause
+// player-paced, so it became "NO amount of elapsed time advances the wave". ⛔ CS043 P1 deletes the
+// player-paced pause too (spec §0.1a/b), so it flips once more, to the strongest form it has ever had:
+// NO WAIT OF ANY KIND STANDS BETWEEN THE CLEAR AND THE ADVANCE. The retired knob's own absence is the
+// one assertion that has survived all three shapes unchanged.
 (function sectionB() {
-  console.log("(B) ⛔ RETIRED: no timer advances the wave — not 2.5s, not 5.0s, not thirty seconds");
+  console.log("(B) ⛔ RETIRED: no hold of any kind — the clearing frame IS the advance");
   const X = buildGame(); X.startGame(); settle(X);
-  const g = arm(X);
+  const g = quiet(X);
   const w = g.wave;
   assert(!("levelEndHold" in X.DEBUG), "B: ⛔ DEBUG.levelEndHold does not exist — the knob is retired, not retuned");
-  settle(X, 2.6 - DT);                       // past the retired 2.5 literal
-  eq(g.wave, w, "B: ⛔ at 2.6s the wave has NOT advanced — the 2.5 literal is genuinely gone");
-  eq(g.levelEndSafe, true, "B: ...and the window is still open");
-  settle(X, 27.4);                           // 30s in total: six times the retired 5.0s hold
-  eq(g.wave, w, "B: ⛔ nor at THIRTY seconds — nothing left in this branch is timed");
-  eq(g.levelEndSafe, true, "B: ...the window simply stays open, waiting on the player");
+  assert(!X.DEBUG_ENTRIES.some(e => e.id === "levelEndHold"), "B: ⛔ ...and no registry row declares it");
+  X.update(DT);
+  eq(g.wave, w + 1, "B: ⛔ ONE frame — the 2.5 literal, the 5.0 knob and the player-paced hold are all gone");
+  eq(g.levelEndSafe, true, "B: ...and the window opened on that same frame");
+  settle(X, 30);
+  eq(g.levelEndSafe, false, "B: ⛔ thirty seconds later the window has CLOSED — it is bounded now, not open-ended");
 })();
 
 // ================= (C) hostile bullet vs the ship during the window =================
@@ -217,31 +221,25 @@ function arm(X) {
   assert(h2.guardT > 0, "D: (non-vacuity) ...and stamps the absorb cooldown");
 })();
 
-// ================= (E) the celebration panel still fires, and still defers nextWave() =================
+// ================= (E) the window survives the wave boundary it was built to span =================
+// ⛔ REWRITTEN BY CS043 P1, BECAUSE ITS OLD SUBJECT IS DELETED AND ITS SURVIVING CLAIM IS NOT. This
+// section pinned the celebration panel firing at the level seam with resume:"wave" and DEFERRING
+// nextWave() to its dismissal. CS043 P1 deletes dismissLevelDone(), the only thing that ever opened a
+// panel there, so the level-seam panel and its deferral are gone (spec §0.1c) and the panel is a
+// game-over beat. ⛔ THE LAST TWO ASSERTIONS WERE NEVER ABOUT THE PANEL — they are this file's own
+// subject, "the window survives the wave boundary", and they are kept here rather than dropped with the
+// section around them. The panel's absence at a clear is CS043 P1's claim and is pinned in
+// test-cs043-p1.js, not here.
 (function sectionE() {
-  console.log("(E) the celebration branch is untouched — it opens at the confirm and defers nextWave()");
+  console.log("(E) nextWave() runs inside the open window, and the window outlives it");
   const X = buildGame(); X.startGame(); settle(X);
-  // ⛔ REPOINTED BY CS036 P2: NOT arm() here — this section needs the ceremony left standing, because
-  // the panel now opens from dismissLevelDone() (the fork moved there with the retired hold) rather
-  // than from a timer inside update(). Everything below is unchanged: what the panel carries, that it
-  // defers nextWave(), and that the protection window survives all of it.
   const g = quiet(X);
-  X.update(DT);
-  g.pendingAch.push({ id: "t", name: "Test", desc: "d", tierIdx: 0, pool: "lifetime" });
   const w = g.wave;
-  eq(g.levelDone !== null, true, "E: (setup) the completion announcement is up");
-  X.dismissLevelDone();                        // the player presses on
-  assert(g.celebration !== null, "E: the panel opened at the confirm");
-  eq(g.celebration.resume, "wave", "E: ...carrying resume: \"wave\"");
-  eq(g.wave, w, "E: ⛔ and nextWave() was DEFERRED — the wave has not advanced");
-  eq(g.pendingAch.length, 0, "E: the bucket was flushed into the panel");
-  eq(g.levelEndSafe, true, "E: the window stays open across the frozen panel");
-  const pulse = g.levelEndPulseT;
-  settle(X, 1);
-  eq(g.levelEndPulseT, pulse, "E: ...and freezes with everything else while the panel is up (update() early-returns)");
-
-  X.dismissCelebration();
-  eq(g.wave, w + 1, "E: dismissal runs the deferred nextWave()");
+  g.pendingAch.push({ id: "t", name: "Test", desc: "d", tierIdx: 0, pool: "lifetime" });
+  X.update(DT);
+  eq(g.wave, w + 1, "E: the clearing frame ran nextWave() inline");
+  eq(g.celebration, null, "E: ⛔ ...and opened NO celebration panel on the way — that beat is a game-over one now");
+  assert(g.pendingAch.length >= 1, "E: ...so the banked unlock stays in the bucket, for game over to flush");
   eq(g.levelEndSafe, true, "E: ⛔ and the window survives the wave boundary it was built to span");
   assert(g.levelBanner.life > 0, "E: the \"Level N\" banner is now running, inside the window");
 })();
@@ -250,13 +248,12 @@ function arm(X) {
 (function sectionF() {
   console.log("(F) banner expiry -> levelEndGraceT = DEBUG.levelEndGrace -> reaches 0 -> the window shuts");
   const X = buildGame(); X.startGame(); settle(X);
+  const w = X.game.wave;
   const g = arm(X);
-  const w = g.wave;
-  // REPOINTED BY CS036 P2: the hold that used to run out into nextWave() is retired — the player's
-  // confirm is what reaches it. With no panel pending, dismissLevelDone() calls nextWave() inline,
-  // which is the same seam this section always started from.
-  X.dismissLevelDone();
-  eq(g.wave, w + 1, "F: (setup) no panel pending, so the confirm ran straight into nextWave()");
+  // ⛔ REPOINTED AGAIN BY CS043 P1: arm() above IS the seam now. The clearing frame opens the window and
+  // runs nextWave() on its own line, so there is nothing to drive in between — which is the same seam
+  // this section always started from, one frame earlier than CS036 P2 put it.
+  eq(g.wave, w + 1, "F: (setup) the clearing frame ran straight into nextWave()");
   assert(g.levelBanner.life > 0, "F: (setup) the banner is up");
   eq(g.levelEndGraceT, 0, "F: the grace is still unarmed while the banner runs");
   eq(g.levelEndSafe, true, "F: ...and the window is open the whole time");
@@ -320,8 +317,7 @@ function arm(X) {
 (function sectionH() {
   console.log("(H) nextWave() called mid-window leaves levelEndSafe / levelEndGraceT / levelEndPulseT alone");
   const X = buildGame(); X.startGame(); settle(X);
-  const g = arm(X);
-  X.dismissLevelDone();                       // CS036 P2: the confirm, not a hold, is what reaches nextWave()
+  const g = arm(X);                           // CS043 P1: arm() already ran nextWave() — no confirm to drive
   settle(X, X.DEBUG.levelBannerTime + 0.1);   // past the banner's crossing, so the grace is live too
   assert(g.levelEndSafe && g.levelEndGraceT > 0 && g.levelEndPulseT > 0,
     "H: (setup) all three fields carry live mid-window values");

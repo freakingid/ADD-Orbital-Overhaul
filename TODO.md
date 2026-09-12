@@ -11,7 +11,7 @@ decision (a playtest, a "yes go ahead") before they're implementation-ready.
 
 ---
 
-## ⛔ RESUME HERE — last worked 2026-09-09 (CS043 P0 landed; P1 is next)
+## ⛔ RESUME HERE — last worked 2026-09-12 (CS043 P1 landed; P2 is next)
 
 **If a session was told "pick up where we left off," this block is the clue.** It is the only dated
 resume point in the repo; everything below it is the standing backlog, which is a different thing.
@@ -19,28 +19,36 @@ Delete this block once its "next step" is done or Paul redirects — a stale res
 none. (⚠ Paul-facing companion, not session context: **`START-HERE.md`** at the repo root explains
 *how* a session is run here — the ritual, not the state. This block stays the authority on the state.)
 
-**Where things stand.** **CS043 is in flight and one phase deep.** It deletes the level-end pause —
-the freeze on wave clear, the "Level N Complete" announcement, and the achievement panel at the level
-seam (the panel becomes game-over-only) — because the beat lands mid-fight, at a moment the player
-did not choose. That reversal is Paul's, taken off-cycle, and it deliberately outweighs CS036's own
-H1 playtest finding; `DECISIONS.md` and `PLANNED-FEATURES-CS043.md` §0 record it so no future session
-reads the deletion as a tidy-up mistake. **P0 shipped 2026-09-09 as `eb7c6b9`** — five stale comments
-corrected, comments only, with a phase pin proving the extracted script is byte-identical to its
-parent once comments are stripped. No gameplay byte has moved yet.
+**Where things stand.** **CS043 is in flight and two phases deep, and the big one has landed.** It
+deletes the level-end pause — the freeze on wave clear, the "Level N Complete" announcement, and the
+achievement panel at the level seam (the panel becomes game-over-only) — because the beat lands
+mid-fight, at a moment the player did not choose. That reversal is Paul's, taken off-cycle, and it
+deliberately outweighs CS036's own H1 playtest finding; `PLANNED-FEATURES-CS043.md` §0 records it in
+his own words so no future session reads the deletion as a tidy-up mistake. (⚠ That spec also says the
+reversal is recorded in `DECISIONS.md` and `log/CS043.md`. **Neither entry exists** — the log is the
+closing phase's, the `DECISIONS.md` one has no owner. `STATUS.md` carries the flag.)
 
-**⛔ THE NEXT STEP, and it needs no decision from anyone: run P1.** Open
-`IMPLEMENTATION-PHASES-CS043.md`, go to its **P1** section, set the model and effort named there
-(**Opus 5 · XHigh · ultrathink yes**), and paste that section's copy-paste prompt block as the
+**P0 shipped 2026-09-09 as `eb7c6b9`** — five stale comments corrected, comments only. **P1 shipped
+2026-09-12 and is the deletion itself**: no freeze, no announcement, no input branch on either device;
+the wave-clear latch calls `nextWave()` inline on the clearing frame, with the Perfect Wave block
+unmoved above it. The field never stops at a level boundary now. ⚠ **One judgment call the spec's own
+sketch did not reach** — the new call carries `game.state === "playing"`, without which the level
+advanced out from under a ship that died on its clearing frame; `STATUS.md` → Known issues has it,
+along with two other things P1 found and one it fixed.
+
+**⛔ THE NEXT STEP, and it needs no decision from anyone: run P2.** Open
+`IMPLEMENTATION-PHASES-CS043.md`, go to its **P2** section, set the model and effort named there
+(**Opus 5 · High · ultrathink yes**), and paste that section's copy-paste prompt block as the
 session's first message. It carries its own read chain and scope fence — nothing has to be remembered
-or added to it. P1 is the deletion itself and it is the one phase in this changeset that can break the
-shipped game silently, which is why it is the expensive one. Then: **P2** panel → **P3**
-banner/grace/pulse → **P4** spawn floor → **⛔ GATE A, a blocking playtest with no session** → **P5**
-close (version bump to `1.0.0.43`, docs, `STATUS.md` roll, archive).
+or added to it. P2 deletes `dismissCelebration()`'s `"wave"` fork, which P1 left standing rather than
+half-deleting across two phases, and updates GDD §2.20, whose level-end call site P1 made stale. Then:
+**P3** banner/grace/pulse → **P4** spawn floor → **⛔ GATE A, a blocking playtest with no session** →
+**P5** close (version bump to `1.0.0.43`, docs, `STATUS.md` roll, archive).
 
-**Nothing blocks P1, P2 or P3.** FORK-CS043-A — the changeset's only fork — was resolved at review on
+**Nothing blocks P2, P3 or P4.** FORK-CS043-A — the changeset's only fork — was resolved at review on
 2026-09-09: the ship's alpha pulse spans the **whole** protection window, not just the grace.
 
-**Two things still need Paul, neither of them blocking P1.**
+**Two things still need Paul, neither of them blocking P2.**
 
 1. ⛔ **`CLAUDE.md` is OVER its own 50 KB ceiling (51.25 KiB) and the size valve that was supposed to
    prevent that is spent** — it fired on `### Audio` exactly as designed, and afterwards no section is

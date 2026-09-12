@@ -132,8 +132,8 @@ function makeCtxStub() {
 }
 const RETURN = [
   "game", "startGame", "nextWave", "update", "draw",
-  // REPOINTED BY CS036 P2: §K's smoke run needs the completion hold's two functions — see there.
-  "levelDoneActive", "dismissLevelDone",
+  // CS043 P1: levelDoneActive / dismissLevelDone stood here — deleted with the completion hold,
+  // which no longer exists: a wave clear advances the level inline, with no player confirm to give.
   "LEVERS", "LEVER_ORDER", "buildLeverOrder", "leverState", "leverValues", "leverTable", "liveLevers",
   "DEBUG", "debugShown", "DEBUG_VARS", "DEBUG_ENTRIES", "applyDebug",
   "destroyDebris", "destroyHunter", "DebrisSatellite", "HunterSatellite",
@@ -781,10 +781,8 @@ let X = null;
       // celebration panel at a clear and freezes the field until dismissal, which would park this
       // smoke run on one level. The levers, not the panel, are what it crosses the plateau to reach.
       A.game.pendingAch.length = 0;
-      // REPOINTED BY CS036 P2: a clear now FREEZES the field behind a "Level N Complete" announcement
-      // that ends on player input, not on a timer — so this run needs a confirm to keep advancing, and
-      // this line is that player. Without it the sim parks on the first clear and never reaches the plateau.
-      if (A.levelDoneActive()) A.dismissLevelDone();
+      // ⛔ REPOINTED AGAIN BY CS043 P1: the announcement and the freeze behind it are DELETED, so a clear
+      // advances the level inline on its own frame again and this run needs no confirm driven into it.
       A.update(1 / 60);
       if (i % 200 === 0) A.draw();
       // Clear the field periodically so the run actually advances levels through the real wave-clear

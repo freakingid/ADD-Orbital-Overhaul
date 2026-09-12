@@ -337,7 +337,12 @@ let X = null;
   const X3 = build();
   X3.startGame();
   const h = X3.game;
+  // ⛔ CS043 P1: an empty game.debris now CLEARS THE WAVE on the next frame, and the clearing frame runs
+  // nextWave() inline — which RELOCATES the dock. The anchor this section compares against would move
+  // out from under the floater it is measuring. One inert satellite at the antipode keeps the wave open.
   h.debris.length = 0; h.hunters.length = 0; h.saucers.length = 0;
+  h.debris.push({ x: (h.dock.x + X3.WORLD_W / 2) % X3.WORLD_W, y: (h.dock.y + X3.WORLD_H / 2) % X3.WORLD_H,
+    vx: 0, vy: 0, size: 1, radius: 5, damage: 1, dead: false, update() {}, draw() {} });
   h.ship.x = h.dock.x; h.ship.y = h.dock.y; h.ship.vx = 0; h.ship.vy = 0;
   h.chain.length = 0;
   h.chain.push({ x: h.dock.x + 120, y: h.dock.y + 90, px: 0, py: 0, mass: 1, towed: false });

@@ -122,10 +122,21 @@ function assert(cond, msg) {
 }
 const wrapC = (v, size) => ((v % size) + size) % size;
 
+// ⛔ REPOINTED BY CS043 P1: emptying game.debris now CLEARS THE WAVE on the very next frame, and the
+// clearing frame calls nextWave() inline — which RELOCATES the dock ship-relative and spawns a fresh
+// field. The dock's CS035 P2 lockout push can then shove the staged canister straight out of the scoop
+// box being measured, which is how the y-seam case failed and the five others did not. Before CS043
+// the clear froze the field instead, so an empty board was a stable state to measure a single frame
+// from. One inert size-1 satellite at the antipode keeps the wave open; nothing here ever shoots it.
 function beginPlaying() {
   startGame();
   game.state = "playing"; game.paused = false;
   game.debris = []; game.hunters = []; game.saucers = []; game.garbage = []; game.chain = [];
+  const [bw, bh] = liveDims();
+  game.debris.push({
+    x: (game.ship.x + bw / 2) % bw, y: (game.ship.y + bh / 2) % bh,
+    vx: 0, vy: 0, size: 1, radius: 5, damage: 1, dead: false, update() {}, draw() {},
+  });
 }
 function placeShip(angle, sx, sy) {
   const s = game.ship;
